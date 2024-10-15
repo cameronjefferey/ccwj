@@ -1,0 +1,10 @@
+Symbol,Description,Quantity,Price,price_change_percent,price_change_dollar,market_value,day_change_percent,day_change_dollar,cost_bases,gain_or_loss_percent,gain_or_loss_dollat,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
+ASTS,AST SPACEMOBILE INC CLASS A,300,24.32,-0.032,-0.81,7294.5,-0.032,-241.5,7610.94,-0.0416,-316.44,F,No,--,0.2277,--,25.37,45518,N/A,N/A,N/A,-19.15,1.97,39.08,7474672,--,--,Equity,3647
+CFLT,CONFLUENT INC CLASS A,1,22.31,-0.0022,-0.05,22.31,-0.0022,-0.05,21.42,0.0415,0.89,F,No,--,0.0007,--,21.42,45504,N/A,N/A,N/A,-18.84,14.69,35.07,3377802,--,--,Equity,11
+JXN,JACKSON FINL INC CLASS A,100,99.15,-0.0037,-0.37,9915,-0.0037,-37,9790,0.0128,125,B,No,--,0.3095,--,97.9,45511,0.0281,0.7,45540,3.61,36.06,100.78,536900,--,--,Equity,2975
+ONON,ON HLDG AG FCLASS A,300,49.34,-0.0055,-0.28,14800.5,-0.0055,-82.5,15693,-0.0569,-892.5,--,No,--,0.462,--,52.31,45517,N/A,N/A,N/A,94.1,23.41,52.8,2176890,--,--,Equity,4440
+ASTS 10/18/2024 25.50 C,CALL AST SPACEMOBILE INC$25.5 EXP 10/18/24,-3,0.6,-0.4,-0.4,-180,0.4,120,-322,0.441,142,--,N/A,--,--,45583,1.07,--,--,--,--,--,0.4,3.7,298,-1.19,OTM,Option,-3 Covered Call
+JXN 10/18/2024 105.00 C,CALL JACKSON FINL INC $105 EXP 10/18/24,-1,0.13,-0.2857,-0.05,-12.5,0.2857,5,-36.34,0.656,23.84,--,N/A,--,--,45583,0.36,--,--,--,--,--,0.15,0.65,40,-5.85,OTM,Option,-1 Covered Call
+ONON 10/18/2024 55.00 C,CALL ON HLDG AG $55 EXP 10/18/24,-3,0.05,6.3529,0.04,-15,-6.3529,-12.96,-163.01,0.908,148.01,--,N/A,--,--,45583,0.54,--,--,--,--,--,0.02,1.43,2,-5.67,OTM,Option,-3 Covered Call
+Cash & Cash Investments,--,--,--,--,--,-4778.44,0,0,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,Cash and Money Market,--
+Account Total,--,--,--,--,--,27046.37,-0.0091,-249.01,32594.01,-0.0236,-769.2,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--
