@@ -1,0 +1,31 @@
+[0m09:47:39.933034 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1082a1d90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x109db8ca0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x109da66a0>]}
+
+
+============================== 09:47:39.944125 | 39e271d2-189e-496d-aa96-e6b21fcea03b ==============================
+[0m09:47:39.944125 [info ] [MainThread]: Running with dbt=1.7.12
+[0m09:47:39.945019 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'write_json': 'True', 'log_cache_events': 'False', 'partial_parse': 'True', 'cache_selected_only': 'False', 'profiles_dir': '/Users/cameronsmith/.dbt', 'version_check': 'True', 'fail_fast': 'False', 'log_path': 'logs', 'warn_error': 'None', 'debug': 'False', 'use_colors': 'True', 'use_experimental_parser': 'False', 'no_print': 'None', 'quiet': 'False', 'log_format': 'default', 'invocation_command': 'dbt seed -s cflt_prices', 'introspect': 'True', 'static_parser': 'True', 'target_path': 'None', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'send_anonymous_usage_stats': 'True'}
+[0m09:47:39.946009 [error] [MainThread]: Encountered an error:
+Runtime Error
+  No dbt_project.yml found at expected path /Users/cameronsmith/dbt/ccwj/dbt_project.yml
+  Verify that each entry within packages.yml (and their transitive dependencies) contains a file named dbt_project.yml
+  
+[0m09:47:39.949084 [debug] [MainThread]: Resource report: {"command_name": "seed", "command_wall_clock_time": 0.12223024, "process_user_time": 2.700809, "process_kernel_time": 0.352638, "process_mem_max_rss": "90513408", "command_success": false, "process_in_blocks": "0", "process_out_blocks": "0"}
+[0m09:47:39.951449 [debug] [MainThread]: Command `dbt seed` failed at 09:47:39.950688 after 0.12 seconds
+[0m09:47:39.953497 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1082a1d90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x109d558b0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x109da66a0>]}
+[0m09:47:39.954695 [debug] [MainThread]: Flushing usage events
+[0m10:01:05.035491 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e55de50>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x110069370>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1100564c0>]}
+
+
+============================== 10:01:05.042583 | ba40d01d-2f9a-4dbd-a1fa-c711ca3cbe73 ==============================
+[0m10:01:05.042583 [info ] [MainThread]: Running with dbt=1.7.12
+[0m10:01:05.043479 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'log_cache_events': 'False', 'write_json': 'True', 'partial_parse': 'True', 'cache_selected_only': 'False', 'profiles_dir': '/Users/cameronsmith/.dbt', 'version_check': 'True', 'debug': 'False', 'log_path': 'logs', 'warn_error': 'None', 'fail_fast': 'False', 'use_colors': 'True', 'use_experimental_parser': 'False', 'no_print': 'None', 'quiet': 'False', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'introspect': 'True', 'log_format': 'default', 'invocation_command': 'dbt build', 'target_path': 'None', 'static_parser': 'True', 'send_anonymous_usage_stats': 'True'}
+[0m10:01:05.044187 [error] [MainThread]: Encountered an error:
+Runtime Error
+  No dbt_project.yml found at expected path /Users/cameronsmith/dbt/ccwj/dbt_project.yml
+  Verify that each entry within packages.yml (and their transitive dependencies) contains a file named dbt_project.yml
+  
+[0m10:01:05.045690 [debug] [MainThread]: Resource report: {"command_name": "build", "command_wall_clock_time": 0.07872348, "process_user_time": 2.195361, "process_kernel_time": 0.178641, "process_mem_max_rss": "89194496", "command_success": false, "process_in_blocks": "0", "process_out_blocks": "0"}
+[0m10:01:05.046512 [debug] [MainThread]: Command `dbt build` failed at 10:01:05.046330 after 0.08 seconds
+[0m10:01:05.047061 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e55de50>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1100076d0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x110056b80>]}
+[0m10:01:05.047520 [debug] [MainThread]: Flushing usage events
+[0m10:01:10.348821 [debug] [MainThread]: Error sending anonymous usage statistics. Disabling tracking for this execution. If you wish to permanently disable tracking, see: https://docs.getdbt.com/reference/global-configs#send-anonymous-usage-stats.

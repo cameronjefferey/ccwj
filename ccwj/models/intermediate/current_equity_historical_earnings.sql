@@ -35,8 +35,7 @@ select
     case when action = 'Sell' then quantity*-1 else quantity end as quantity,
     sum(case when action = 'Sell' then quantity*-1 else quantity end) over (partition by symbol,option_security_type order by date) as stock_action_quantity,
 from {{ ref('history')}}
-where symbol = 'CFLT'
-    and action in ('Buy','Sell')
+where action in ('Buy','Sell')
 order by date
 )
 , final as (
@@ -59,9 +58,6 @@ from {{ ref('calendar_symbol_dates')}}
       on lower(cflt_prices.symbol) = lower(calendar_symbol_dates.symbol)
          and date(cflt_prices.date) = date(calendar_symbol_dates.day)
 where 1=1
-   
-
-   and calendar_symbol_dates.symbol = 'CFLT'
 )
 select 
    day,
