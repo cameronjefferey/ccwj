@@ -9,6 +9,5 @@ select
    gain_or_loss_dollar,
    security_type,
    margin_requirement,
-   case 
-      when quantity
+   
 from {{ ref('current')}}

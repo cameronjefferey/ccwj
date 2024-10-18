@@ -27084,3 +27084,736 @@ where EXTRACT(DAYOFWEEK from day) in (2,3,4,5,6);
 [0m15:36:50.859266 [debug] [MainThread]: Command `cli build` succeeded at 15:36:50.858974 after 5.88 seconds
 [0m15:36:50.860157 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c2d4d90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10efe8dc0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ddb0640>]}
 [0m15:36:50.861382 [debug] [MainThread]: Flushing usage events
+[0m08:43:56.192977 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e6dc1c0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1101a1040>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1101eb7f0>]}
+
+
+============================== 08:43:56.202604 | 65e30f86-2435-493e-af34-e0192e7dd723 ==============================
+[0m08:43:56.202604 [info ] [MainThread]: Running with dbt=1.7.12
+[0m08:43:56.203862 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'write_json': 'True', 'log_cache_events': 'False', 'partial_parse': 'True', 'cache_selected_only': 'False', 'warn_error': 'None', 'debug': 'False', 'version_check': 'True', 'log_path': '/Users/cameronsmith/dbt/ccwj/logs', 'profiles_dir': '/Users/cameronsmith/.dbt', 'fail_fast': 'False', 'use_colors': 'True', 'use_experimental_parser': 'False', 'no_print': 'None', 'quiet': 'False', 'log_format': 'default', 'static_parser': 'True', 'invocation_command': 'dbt ', 'introspect': 'True', 'target_path': 'None', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'send_anonymous_usage_stats': 'True'}
+[0m08:43:57.293990 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x110262eb0>]}
+[0m08:43:57.487824 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x110f6c190>]}
+[0m08:43:57.489438 [info ] [MainThread]: Registered adapter: bigquery=1.7.0
+[0m08:43:57.526403 [debug] [MainThread]: checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, vars: {}, profile: , target: dev, version: 1.7.12
+[0m08:43:57.554437 [info ] [MainThread]: Unable to do partial parsing because config vars, config profile, or config target have changed
+[0m08:43:57.555375 [debug] [MainThread]: previous checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, current checksum: fa6823f8c585472225a314a12a364bc70861436aed1c3e1f496a6b09c5e31653
+[0m08:43:57.556643 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'partial_parser', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x11111aeb0>]}
+[0m08:44:00.609043 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'load_project', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1116c40d0>]}
+[0m08:44:00.645086 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'resource_counts', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1111c8220>]}
+[0m08:44:00.646007 [info ] [MainThread]: Found 22 models, 3 seeds, 3 tests, 0 sources, 0 exposures, 0 metrics, 447 macros, 0 groups, 0 semantic models
+[0m08:44:00.649550 [info ] [MainThread]: 
+[0m08:44:00.651423 [debug] [MainThread]: Acquiring new bigquery connection 'master'
+[0m08:44:00.655188 [debug] [ThreadPool]: Acquiring new bigquery connection 'list_ccwj-dbt'
+[0m08:44:00.656264 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m08:44:02.810257 [debug] [ThreadPool]: Re-using an available connection from the pool (formerly list_ccwj-dbt, now list_ccwj-dbt_analytics)
+[0m08:44:02.811840 [debug] [ThreadPool]: Opening a new connection, currently in state closed
+[0m08:44:03.209218 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1116c4be0>]}
+[0m08:44:03.210786 [info ] [MainThread]: Concurrency: 4 threads (target='dev')
+[0m08:44:03.211566 [info ] [MainThread]: 
+[0m08:44:03.217255 [debug] [Thread-1  ]: Began running node model.ccwj.calendar_dates
+[0m08:44:03.218046 [debug] [Thread-2  ]: Began running node seed.ccwj.0417_current
+[0m08:44:03.219020 [debug] [Thread-3  ]: Began running node seed.ccwj.0417_history
+[0m08:44:03.219798 [debug] [Thread-4  ]: Began running node seed.ccwj.cflt_prices
+[0m08:44:03.220742 [info ] [Thread-1  ]: 1 of 10 START sql view model analytics.calendar_dates .......................... [RUN]
+[0m08:44:03.221893 [info ] [Thread-2  ]: 2 of 10 START seed file analytics.0417_current ................................. [RUN]
+[0m08:44:03.223123 [info ] [Thread-3  ]: 3 of 10 START seed file analytics.0417_history ................................. [RUN]
+[0m08:44:03.224513 [info ] [Thread-4  ]: 4 of 10 START seed file analytics.cflt_prices .................................. [RUN]
+[0m08:44:03.226254 [debug] [Thread-1  ]: Re-using an available connection from the pool (formerly list_ccwj-dbt_analytics, now model.ccwj.calendar_dates)
+[0m08:44:03.227754 [debug] [Thread-2  ]: Acquiring new bigquery connection 'seed.ccwj.0417_current'
+[0m08:44:03.229324 [debug] [Thread-3  ]: Acquiring new bigquery connection 'seed.ccwj.0417_history'
+[0m08:44:03.231494 [debug] [Thread-4  ]: Acquiring new bigquery connection 'seed.ccwj.cflt_prices'
+[0m08:44:03.232559 [debug] [Thread-1  ]: Began compiling node model.ccwj.calendar_dates
+[0m08:44:03.233461 [debug] [Thread-2  ]: Began compiling node seed.ccwj.0417_current
+[0m08:44:03.234362 [debug] [Thread-3  ]: Began compiling node seed.ccwj.0417_history
+[0m08:44:03.235101 [debug] [Thread-4  ]: Began compiling node seed.ccwj.cflt_prices
+[0m08:44:03.252062 [debug] [Thread-1  ]: Writing injected SQL for node "model.ccwj.calendar_dates"
+[0m08:44:03.253642 [debug] [Thread-2  ]: Timing info for seed.ccwj.0417_current (compile): 08:44:03.253159 => 08:44:03.253167
+[0m08:44:03.254668 [debug] [Thread-3  ]: Timing info for seed.ccwj.0417_history (compile): 08:44:03.254139 => 08:44:03.254144
+[0m08:44:03.255955 [debug] [Thread-4  ]: Timing info for seed.ccwj.cflt_prices (compile): 08:44:03.255499 => 08:44:03.255505
+[0m08:44:03.256905 [debug] [Thread-2  ]: Began executing node seed.ccwj.0417_current
+[0m08:44:03.257628 [debug] [Thread-3  ]: Began executing node seed.ccwj.0417_history
+[0m08:44:03.258337 [debug] [Thread-4  ]: Began executing node seed.ccwj.cflt_prices
+[0m08:44:03.270223 [debug] [Thread-1  ]: Timing info for model.ccwj.calendar_dates (compile): 08:44:03.235603 => 08:44:03.269707
+[0m08:44:03.311121 [debug] [Thread-1  ]: Began executing node model.ccwj.calendar_dates
+[0m08:44:03.339295 [debug] [Thread-2  ]: Opening a new connection, currently in state init
+[0m08:44:03.426606 [debug] [Thread-4  ]: Opening a new connection, currently in state init
+[0m08:44:03.460592 [debug] [Thread-1  ]: Writing runtime sql for node "model.ccwj.calendar_dates"
+[0m08:44:03.533787 [debug] [Thread-3  ]: Opening a new connection, currently in state init
+[0m08:44:03.535046 [debug] [Thread-1  ]: Opening a new connection, currently in state closed
+[0m08:44:03.538492 [debug] [Thread-1  ]: On model.ccwj.calendar_dates: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.calendar_dates"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`calendar_dates`
+  OPTIONS()
+  as SELECT day
+FROM UNNEST(
+    GENERATE_DATE_ARRAY(DATE('2020-01-01'), date_add(current_date(),INTERVAL 90 DAY), INTERVAL 1 DAY)
+) AS day;
+
+
+[0m08:44:03.985252 [debug] [Thread-1  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:285648ad-fdc9-4c85-be24-402b0cee5b36&page=queryresults
+[0m08:44:04.468430 [debug] [Thread-1  ]: Timing info for model.ccwj.calendar_dates (execute): 08:44:03.358384 => 08:44:04.468020
+[0m08:44:04.469779 [debug] [Thread-1  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1119daee0>]}
+[0m08:44:04.470807 [info ] [Thread-1  ]: 1 of 10 OK created sql view model analytics.calendar_dates ..................... [[32mCREATE VIEW (0 processed)[0m in 1.24s]
+[0m08:44:04.472391 [debug] [Thread-1  ]: Finished running node model.ccwj.calendar_dates
+[0m08:44:07.111905 [debug] [Thread-4  ]: On seed.ccwj.cflt_prices: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "seed.ccwj.cflt_prices"} */
+
+    alter table `ccwj-dbt`.`analytics`.`cflt_prices` set OPTIONS()
+  
+[0m08:44:07.122390 [debug] [Thread-2  ]: On seed.ccwj.0417_current: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "seed.ccwj.0417_current"} */
+
+    alter table `ccwj-dbt`.`analytics`.`0417_current` set OPTIONS()
+  
+[0m08:44:07.373422 [debug] [Thread-4  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:6229caab-b601-4aee-98ef-33b3151d9b86&page=queryresults
+[0m08:44:07.416115 [debug] [Thread-2  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:005095f5-8eba-4387-9c24-133f7465ca7b&page=queryresults
+[0m08:44:07.499049 [debug] [Thread-3  ]: On seed.ccwj.0417_history: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "seed.ccwj.0417_history"} */
+
+    alter table `ccwj-dbt`.`analytics`.`0417_history` set OPTIONS()
+  
+[0m08:44:07.712070 [debug] [Thread-2  ]: Writing runtime SQL for node "seed.ccwj.0417_current"
+[0m08:44:07.715363 [debug] [Thread-4  ]: Writing runtime SQL for node "seed.ccwj.cflt_prices"
+[0m08:44:07.720401 [debug] [Thread-2  ]: Timing info for seed.ccwj.0417_current (execute): 08:44:03.258838 => 08:44:07.720026
+[0m08:44:07.721737 [debug] [Thread-2  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x11188db80>]}
+[0m08:44:07.725346 [debug] [Thread-4  ]: Timing info for seed.ccwj.cflt_prices (execute): 08:44:03.293591 => 08:44:07.724981
+[0m08:44:07.726347 [info ] [Thread-2  ]: 2 of 10 OK loaded seed file analytics.0417_current ............................. [[32mINSERT 9[0m in 4.49s]
+[0m08:44:07.727797 [debug] [Thread-4  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111801340>]}
+[0m08:44:07.728947 [debug] [Thread-2  ]: Finished running node seed.ccwj.0417_current
+[0m08:44:07.729829 [info ] [Thread-4  ]: 4 of 10 OK loaded seed file analytics.cflt_prices .............................. [[32mINSERT 596[0m in 4.50s]
+[0m08:44:07.731291 [debug] [Thread-1  ]: Began running node model.ccwj.current
+[0m08:44:07.732602 [debug] [Thread-4  ]: Finished running node seed.ccwj.cflt_prices
+[0m08:44:07.734012 [info ] [Thread-1  ]: 5 of 10 START sql view model analytics.current ................................. [RUN]
+[0m08:44:07.735706 [debug] [Thread-1  ]: Re-using an available connection from the pool (formerly model.ccwj.calendar_dates, now model.ccwj.current)
+[0m08:44:07.736393 [debug] [Thread-1  ]: Began compiling node model.ccwj.current
+[0m08:44:07.742732 [debug] [Thread-1  ]: Writing injected SQL for node "model.ccwj.current"
+[0m08:44:07.745778 [debug] [Thread-1  ]: Timing info for model.ccwj.current (compile): 08:44:07.736856 => 08:44:07.745032
+[0m08:44:07.746497 [debug] [Thread-1  ]: Began executing node model.ccwj.current
+[0m08:44:07.752934 [debug] [Thread-1  ]: Writing runtime sql for node "model.ccwj.current"
+[0m08:44:07.755194 [debug] [Thread-1  ]: Opening a new connection, currently in state closed
+[0m08:44:07.756417 [debug] [Thread-1  ]: On model.ccwj.current: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current`
+  OPTIONS()
+  as with fix as (
+select 
+    symbol as trade_symbol,
+    split(symbol," ")[0] as symbol,
+    split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
+    split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
+    split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,
+    Description,
+    Quantity,
+    Price,
+    price_change_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(price_change_dollar as  string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(price_change_dollar as  string), ')', ''), '($', ''))
+       when cast(price_change_dollar as  string) LIKE '$%' THEN REPLACE(REPLACE(cast(price_change_dollar as  string), ')', ''), '$', '')
+       else cast(price_change_dollar as  string)
+    end, r'\$|,', '') as FLOAT64) as price_change_dollar,
+   CAST(REGEXP_REPLACE(case 
+       when cast(market_value as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(market_value as string), ')', ''), '($', ''))
+       when cast(market_value as string) LIKE '$%' THEN REPLACE(REPLACE(cast(market_value as string), ')', ''), '$', '')
+       else cast(market_value as string)
+    end, r'\$|,', '') as FLOAT64) as market_value,
+    day_change_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(day_change_dollar as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(day_change_dollar as string), ')', ''), '($', ''))
+       when cast(day_change_dollar as string) LIKE '$%' THEN REPLACE(REPLACE(cast(day_change_dollar as string), ')', ''), '$', '')
+       else cast(day_change_dollar as string)
+    end, r'\$|,', '') as FLOAT64) as day_change_dollar,
+    CAST(REGEXP_REPLACE(case 
+       when cast(cost_bases as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(cost_bases as string), ')', ''), '($', ''))
+       when cast(cost_bases as string) LIKE '$%' THEN REPLACE(REPLACE(cast(cost_bases as string), ')', ''), '$', '')
+       else cast(cost_bases as string)
+    end, r'\$|,', '') as FLOAT64) as cost_basis,
+    gain_or_loss_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(gain_or_loss_dollat as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(gain_or_loss_dollat as string), ')', ''), '($', ''))
+       when cast(gain_or_loss_dollat as string) LIKE '$%' THEN REPLACE(REPLACE(cast(gain_or_loss_dollat as string), ')', ''), '$', '')
+       else cast(gain_or_loss_dollat as string)
+    end, r'\$|,', '') as FLOAT64) as gain_or_loss_dollar,
+    rating,
+    divident_reinvestment,
+    is_capital_gain,
+    percent_of_account,
+    expiration_date,
+    cost_per_share,
+    last_earnings_date,
+    dividend_yield,
+    last_dividend,
+    ex_dividend_date,
+    pe_ratio,
+    annual_week_low,
+    annual_week_high,
+    volume,
+    intrinsic_value,
+    in_the_money,
+    security_type,
+    margin_requirement,
+    
+from `ccwj-dbt`.`analytics`.`0417_current`
+)
+select 
+    *
+from fix 
+where symbol not in ('Cash & Cash Investments','Account Total');
+
+
+[0m08:44:07.804677 [debug] [Thread-3  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:d6a48bf1-5169-4f66-bffb-046d5b34b7ed&page=queryresults
+[0m08:44:08.147942 [debug] [Thread-3  ]: Writing runtime SQL for node "seed.ccwj.0417_history"
+[0m08:44:08.152164 [debug] [Thread-3  ]: Timing info for seed.ccwj.0417_history (execute): 08:44:03.287877 => 08:44:08.151800
+[0m08:44:08.153376 [debug] [Thread-3  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x11180ce80>]}
+[0m08:44:08.154326 [info ] [Thread-3  ]: 3 of 10 OK loaded seed file analytics.0417_history ............................. [[32mINSERT 1869[0m in 4.92s]
+[0m08:44:08.155804 [debug] [Thread-3  ]: Finished running node seed.ccwj.0417_history
+[0m08:44:08.156855 [debug] [Thread-2  ]: Began running node model.ccwj.history
+[0m08:44:08.157754 [info ] [Thread-2  ]: 6 of 10 START sql view model analytics.history ................................. [RUN]
+[0m08:44:08.159338 [debug] [Thread-2  ]: Re-using an available connection from the pool (formerly seed.ccwj.0417_current, now model.ccwj.history)
+[0m08:44:08.160208 [debug] [Thread-2  ]: Began compiling node model.ccwj.history
+[0m08:44:08.165350 [debug] [Thread-2  ]: Writing injected SQL for node "model.ccwj.history"
+[0m08:44:08.167163 [debug] [Thread-2  ]: Timing info for model.ccwj.history (compile): 08:44:08.160661 => 08:44:08.166730
+[0m08:44:08.167816 [debug] [Thread-2  ]: Began executing node model.ccwj.history
+[0m08:44:08.174073 [debug] [Thread-2  ]: Writing runtime sql for node "model.ccwj.history"
+[0m08:44:08.175274 [debug] [Thread-2  ]: Opening a new connection, currently in state closed
+[0m08:44:08.176128 [debug] [Thread-2  ]: On model.ccwj.history: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.history"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`history`
+  OPTIONS()
+  as with fix as (
+select 
+    date as old_date,
+    cast(coalesce(SAFE.PARSE_DATE('%m/%d/%y',split(date," ")[0]),SAFE.PARSE_DATE('%m/%d/%Y',split(date," ")[0]))as date) as date,
+    action,
+    
+    symbol as trade_symbol,
+    split(symbol," ")[0] as symbol,
+    split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
+    split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
+    split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,
+    case 
+        when action in ('Buy','Sell') then 'Equity'
+        when split(symbol," ")[SAFE_OFFSET(3)]  = 'C' then 'Option'
+    end as security_type,
+    case 
+        when action in ('Assigned','Expired','Buy to Close','Sell to Close') then 'Close' 
+        else 'Open'
+    end as trade_type,
+    quantity,
+    price,
+    fees_and_comm,
+    amount as amount_old,
+    CAST(REGEXP_REPLACE(case 
+       when cast(amount as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(amount as string), ')', ''), '($', ''))
+       when cast(amount as string) LIKE '$%' THEN REPLACE(REPLACE(cast(amount as string), ')', ''), '$', '')
+       when action in ('Expired','Assigned','Journal') then '0'
+       else cast(amount as string)
+    end, r'\$|,', '') as FLOAT64) as amount
+from `ccwj-dbt`.`analytics`.`0417_history`
+)
+select 
+    *
+from fix 
+where symbol in ('CFLT','ONON','JXN','ASTS')
+order by date desc;
+
+
+[0m08:44:08.347712 [debug] [Thread-1  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:fc52e307-c95d-4681-858a-0a00c3649136&page=queryresults
+[0m08:44:08.620708 [debug] [Thread-2  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:18ea18a9-7f42-46a7-b983-4d84308b79d8&page=queryresults
+[0m08:44:08.673328 [debug] [Thread-1  ]: Timing info for model.ccwj.current (execute): 08:44:07.747118 => 08:44:08.672937
+[0m08:44:08.674558 [debug] [Thread-1  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111801340>]}
+[0m08:44:08.675556 [info ] [Thread-1  ]: 5 of 10 OK created sql view model analytics.current ............................ [[32mCREATE VIEW (0 processed)[0m in 0.94s]
+[0m08:44:08.676851 [debug] [Thread-1  ]: Finished running node model.ccwj.current
+[0m08:44:08.678089 [debug] [Thread-3  ]: Began running node model.ccwj.calendar_symbol_dates
+[0m08:44:08.679379 [info ] [Thread-3  ]: 7 of 10 START sql view model analytics.calendar_symbol_dates ................... [RUN]
+[0m08:44:08.680806 [debug] [Thread-3  ]: Re-using an available connection from the pool (formerly seed.ccwj.0417_history, now model.ccwj.calendar_symbol_dates)
+[0m08:44:08.681603 [debug] [Thread-3  ]: Began compiling node model.ccwj.calendar_symbol_dates
+[0m08:44:08.688553 [debug] [Thread-3  ]: Writing injected SQL for node "model.ccwj.calendar_symbol_dates"
+[0m08:44:08.692873 [debug] [Thread-3  ]: Timing info for model.ccwj.calendar_symbol_dates (compile): 08:44:08.682091 => 08:44:08.692408
+[0m08:44:08.693549 [debug] [Thread-3  ]: Began executing node model.ccwj.calendar_symbol_dates
+[0m08:44:08.700366 [debug] [Thread-3  ]: Writing runtime sql for node "model.ccwj.calendar_symbol_dates"
+[0m08:44:08.701851 [debug] [Thread-3  ]: Opening a new connection, currently in state closed
+[0m08:44:08.703058 [debug] [Thread-3  ]: On model.ccwj.calendar_symbol_dates: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.calendar_symbol_dates"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`calendar_symbol_dates`
+  OPTIONS()
+  as with all_symbols as (
+select distinct symbol
+from `ccwj-dbt`.`analytics`.`current`
+)
+
+select 
+    calendar_dates.day,
+    all_symbols.symbol
+from `ccwj-dbt`.`analytics`.`calendar_dates`
+    cross join all_symbols;
+
+
+[0m08:44:08.990921 [debug] [Thread-2  ]: Timing info for model.ccwj.history (execute): 08:44:08.168215 => 08:44:08.990537
+[0m08:44:08.992174 [debug] [Thread-2  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111a2f6a0>]}
+[0m08:44:08.993134 [info ] [Thread-2  ]: 6 of 10 OK created sql view model analytics.history ............................ [[32mCREATE VIEW (0 processed)[0m in 0.83s]
+[0m08:44:08.994312 [debug] [Thread-2  ]: Finished running node model.ccwj.history
+[0m08:44:09.341831 [debug] [Thread-3  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:9201dddb-fe5e-4aaf-82c5-2df8cd7e31ea&page=queryresults
+[0m08:44:09.679107 [debug] [Thread-3  ]: Timing info for model.ccwj.calendar_symbol_dates (execute): 08:44:08.693944 => 08:44:09.678714
+[0m08:44:09.680597 [debug] [Thread-3  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111801340>]}
+[0m08:44:09.681626 [info ] [Thread-3  ]: 7 of 10 OK created sql view model analytics.calendar_symbol_dates .............. [[32mCREATE VIEW (0 processed)[0m in 1.00s]
+[0m08:44:09.682775 [debug] [Thread-3  ]: Finished running node model.ccwj.calendar_symbol_dates
+[0m08:44:09.684085 [debug] [Thread-1  ]: Began running node model.ccwj.current_equity_historical_earnings
+[0m08:44:09.684793 [debug] [Thread-4  ]: Began running node model.ccwj.current_option_historical_earnings
+[0m08:44:09.685764 [info ] [Thread-1  ]: 8 of 10 START sql view model analytics.current_equity_historical_earnings ...... [RUN]
+[0m08:44:09.686981 [info ] [Thread-4  ]: 9 of 10 START sql view model analytics.current_option_historical_earnings ...... [RUN]
+[0m08:44:09.688756 [debug] [Thread-1  ]: Re-using an available connection from the pool (formerly model.ccwj.current, now model.ccwj.current_equity_historical_earnings)
+[0m08:44:09.690041 [debug] [Thread-4  ]: Re-using an available connection from the pool (formerly seed.ccwj.cflt_prices, now model.ccwj.current_option_historical_earnings)
+[0m08:44:09.690822 [debug] [Thread-1  ]: Began compiling node model.ccwj.current_equity_historical_earnings
+[0m08:44:09.691533 [debug] [Thread-4  ]: Began compiling node model.ccwj.current_option_historical_earnings
+[0m08:44:09.700177 [debug] [Thread-1  ]: Writing injected SQL for node "model.ccwj.current_equity_historical_earnings"
+[0m08:44:09.707692 [debug] [Thread-4  ]: Writing injected SQL for node "model.ccwj.current_option_historical_earnings"
+[0m08:44:09.710246 [debug] [Thread-4  ]: Timing info for model.ccwj.current_option_historical_earnings (compile): 08:44:09.700749 => 08:44:09.709696
+[0m08:44:09.711417 [debug] [Thread-4  ]: Began executing node model.ccwj.current_option_historical_earnings
+[0m08:44:09.712813 [debug] [Thread-1  ]: Timing info for model.ccwj.current_equity_historical_earnings (compile): 08:44:09.692062 => 08:44:09.712198
+[0m08:44:09.721003 [debug] [Thread-4  ]: Writing runtime sql for node "model.ccwj.current_option_historical_earnings"
+[0m08:44:09.722424 [debug] [Thread-1  ]: Began executing node model.ccwj.current_equity_historical_earnings
+[0m08:44:09.728678 [debug] [Thread-1  ]: Writing runtime sql for node "model.ccwj.current_equity_historical_earnings"
+[0m08:44:09.730135 [debug] [Thread-4  ]: Opening a new connection, currently in state closed
+[0m08:44:09.732361 [debug] [Thread-4  ]: On model.ccwj.current_option_historical_earnings: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current_option_historical_earnings"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current_option_historical_earnings`
+  OPTIONS()
+  as with option_history as (
+select 
+    date,
+    coalesce(lead(date) over (partition by symbol order by date asc)-1,current_date()) as next_option_date,
+    action,
+    symbol,
+    security_type,
+    trade_type,
+    case 
+        when action in ('Assigned','Expired','Buy to Close','Sell to Close') then quantity*-1 
+        else quantity
+    end as quantity,
+    amount,
+    row_number() over (partition by symbol,trade_type order by date asc) as order_number,
+    sum(case 
+        when action in ('Assigned','Expired','Buy to Close','Sell to Close') then quantity*-1 
+        else quantity
+    end) over (partition by symbol,trade_type order by date asc) as cumulative_sum,
+from `ccwj-dbt`.`analytics`.`history`
+where 1=1
+    and action in ('Sell to Open','Sell to Close','Buy to Open','Buy to Close','Expired','Assigned')
+order by date desc 
+)
+, daily_totals as (
+select 
+    date,
+    symbol,
+    sum(quantity) as total,
+    sum(amount) as amount,
+from option_history 
+group by 1,2
+)
+, cumulative_daily_totals as (
+select 
+    date,
+    symbol,
+    coalesce(lead(date) over (partition by symbol order by date)-1,current_date()) as next_option_date,
+    total,
+    sum(total) over (partition by symbol order by date asc) as cum_total,
+    sum(amount) over (partition by symbol order by date asc) as cum_amount,
+from daily_totals
+
+)
+, final as (
+select 
+    calendar_symbol_dates.day,
+    calendar_symbol_dates.symbol,
+    cumulative_daily_totals.cum_total as quantity,
+    cumulative_daily_totals.cum_amount as amount,
+from `ccwj-dbt`.`analytics`.`calendar_symbol_dates`
+    join cumulative_daily_totals 
+        on cumulative_daily_totals.symbol = calendar_symbol_dates.symbol
+            and date(cumulative_daily_totals.date) <= date(calendar_symbol_dates.day)
+            and date(cumulative_daily_totals.next_option_date) >= date(calendar_symbol_dates.day)
+where calendar_symbol_dates.day <= current_date()
+order by calendar_symbol_dates.day desc 
+)
+select *
+from final;
+
+
+[0m08:44:09.733866 [debug] [Thread-1  ]: Opening a new connection, currently in state closed
+[0m08:44:09.736640 [debug] [Thread-1  ]: On model.ccwj.current_equity_historical_earnings: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current_equity_historical_earnings"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current_equity_historical_earnings`
+  OPTIONS()
+  as with current_holdings as (
+select 
+   distinct symbol
+from `ccwj-dbt`.`analytics`.`current`
+)
+, holdings_earnings_historical as (
+select 
+   date,
+   current_holdings.symbol,
+   history.security_type,
+   sum(amount) as gain_or_loss,
+from current_holdings 
+   join `ccwj-dbt`.`analytics`.`history` 
+      on current_holdings.symbol = history.symbol
+group by 1,2,3
+)
+, running_earnings_historical as (
+select 
+   date,
+   symbol,
+   security_type,
+   gain_or_loss,
+   sum(gain_or_loss) over (partition by symbol,security_type order by date asc) as running_earnings_historical
+from holdings_earnings_historical
+where 1=1
+   and security_type = 'Equity'
+)
+, daily_holdings_value as (
+select 
+    symbol,
+    row_number() over (partition by symbol,action,option_security_type order by date) as stock_action_order,
+    date,
+    coalesce(lead(date) over (partition by symbol, option_security_type order by date)-1,current_date()) as next_equity_date,
+    action,
+    case when action = 'Sell' then quantity*-1 else quantity end as quantity,
+    sum(case when action = 'Sell' then quantity*-1 else quantity end) over (partition by symbol,option_security_type order by date) as stock_action_quantity,
+from `ccwj-dbt`.`analytics`.`history`
+where action in ('Buy','Sell')
+order by date
+)
+, final as (
+select 
+   calendar_symbol_dates.day,
+   calendar_symbol_dates.symbol,
+   daily_holdings_value.stock_action_quantity,
+   running_earnings_historical.gain_or_loss,
+   sum(running_earnings_historical.gain_or_loss) over (partition by calendar_symbol_dates.symbol order by calendar_symbol_dates.day asc) as running_earnings_historical,
+   cflt_prices.close as closing_price
+from `ccwj-dbt`.`analytics`.`calendar_symbol_dates` 
+   left join running_earnings_historical
+      on running_earnings_historical.date = calendar_symbol_dates.day 
+         and running_earnings_historical.symbol = calendar_symbol_dates.symbol 
+   left join daily_holdings_value 
+      on daily_holdings_value.symbol = calendar_symbol_dates.symbol 
+         and daily_holdings_value.date <= calendar_symbol_dates.day 
+         and daily_holdings_value.next_equity_date >= calendar_symbol_dates.day 
+   left join `ccwj-dbt`.`analytics`.`cflt_prices`
+      on lower(cflt_prices.symbol) = lower(calendar_symbol_dates.symbol)
+         and date(cflt_prices.date) = date(calendar_symbol_dates.day)
+where 1=1
+)
+select 
+   day,
+   symbol,
+   running_earnings_historical,
+   stock_action_quantity*closing_price as daily_holdings_value,
+   round(running_earnings_historical+(stock_action_quantity*closing_price),2) as historical_equity_holdings
+from final 
+where 1=1
+   and day BETWEEN '2022-01-01' and current_date()
+   and closing_price is not null 
+order by day desc;
+
+
+[0m08:44:10.366650 [debug] [Thread-4  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:ef1a3291-78df-4267-83a2-2bca11e4e569&page=queryresults
+[0m08:44:10.367588 [debug] [Thread-1  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:9c2e3422-e647-475e-aefa-bbdb6ed81351&page=queryresults
+[0m08:44:10.713051 [debug] [Thread-4  ]: Timing info for model.ccwj.current_option_historical_earnings (execute): 08:44:09.713255 => 08:44:10.712641
+[0m08:44:10.714623 [debug] [Thread-4  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111b487c0>]}
+[0m08:44:10.716053 [info ] [Thread-4  ]: 9 of 10 OK created sql view model analytics.current_option_historical_earnings . [[32mCREATE VIEW (0 processed)[0m in 1.02s]
+[0m08:44:10.718027 [debug] [Thread-4  ]: Finished running node model.ccwj.current_option_historical_earnings
+[0m08:44:10.724717 [debug] [Thread-1  ]: Timing info for model.ccwj.current_equity_historical_earnings (execute): 08:44:09.723156 => 08:44:10.724322
+[0m08:44:10.726020 [debug] [Thread-1  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111767910>]}
+[0m08:44:10.727046 [info ] [Thread-1  ]: 8 of 10 OK created sql view model analytics.current_equity_historical_earnings . [[32mCREATE VIEW (0 processed)[0m in 1.04s]
+[0m08:44:10.728429 [debug] [Thread-1  ]: Finished running node model.ccwj.current_equity_historical_earnings
+[0m08:44:10.729707 [debug] [Thread-3  ]: Began running node model.ccwj.current_holdings_historical_earnings
+[0m08:44:10.730824 [info ] [Thread-3  ]: 10 of 10 START sql view model analytics.current_holdings_historical_earnings ... [RUN]
+[0m08:44:10.732542 [debug] [Thread-3  ]: Re-using an available connection from the pool (formerly model.ccwj.calendar_symbol_dates, now model.ccwj.current_holdings_historical_earnings)
+[0m08:44:10.733502 [debug] [Thread-3  ]: Began compiling node model.ccwj.current_holdings_historical_earnings
+[0m08:44:10.747054 [debug] [Thread-3  ]: Writing injected SQL for node "model.ccwj.current_holdings_historical_earnings"
+[0m08:44:10.750182 [debug] [Thread-3  ]: Timing info for model.ccwj.current_holdings_historical_earnings (compile): 08:44:10.733974 => 08:44:10.749384
+[0m08:44:10.751490 [debug] [Thread-3  ]: Began executing node model.ccwj.current_holdings_historical_earnings
+[0m08:44:10.759515 [debug] [Thread-3  ]: Writing runtime sql for node "model.ccwj.current_holdings_historical_earnings"
+[0m08:44:10.761408 [debug] [Thread-3  ]: Opening a new connection, currently in state closed
+[0m08:44:10.762745 [debug] [Thread-3  ]: On model.ccwj.current_holdings_historical_earnings: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current_holdings_historical_earnings"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current_holdings_historical_earnings`
+  OPTIONS()
+  as with combined as (
+select 
+    'Equity' as security_type,
+    current_equity_historical_earnings.day,
+    current_equity_historical_earnings.symbol,
+    current_equity_historical_earnings.historical_equity_holdings as daily_earnings,
+
+from `ccwj-dbt`.`analytics`.`current_equity_historical_earnings`
+UNION ALL 
+select 
+    'Options' as security_type,
+    current_option_historical_earnings.day,
+    current_option_historical_earnings.symbol,
+    current_option_historical_earnings.amount as daily_earnings,
+
+from `ccwj-dbt`.`analytics`.`current_option_historical_earnings`
+)
+select *
+from combined 
+where EXTRACT(DAYOFWEEK from day) in (2,3,4,5,6);
+
+
+[0m08:44:11.391576 [debug] [Thread-3  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:3718582b-4f5d-49d2-92e0-26169d66ce8a&page=queryresults
+[0m08:44:11.733144 [debug] [Thread-3  ]: Timing info for model.ccwj.current_holdings_historical_earnings (execute): 08:44:10.752057 => 08:44:11.732734
+[0m08:44:11.734630 [debug] [Thread-3  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '65e30f86-2435-493e-af34-e0192e7dd723', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111b38220>]}
+[0m08:44:11.735801 [info ] [Thread-3  ]: 10 of 10 OK created sql view model analytics.current_holdings_historical_earnings  [[32mCREATE VIEW (0 processed)[0m in 1.00s]
+[0m08:44:11.737350 [debug] [Thread-3  ]: Finished running node model.ccwj.current_holdings_historical_earnings
+[0m08:44:11.740356 [debug] [MainThread]: Connection 'master' was properly closed.
+[0m08:44:11.740979 [debug] [MainThread]: Connection 'model.ccwj.current_equity_historical_earnings' was properly closed.
+[0m08:44:11.741525 [debug] [MainThread]: Connection 'model.ccwj.history' was properly closed.
+[0m08:44:11.742048 [debug] [MainThread]: Connection 'model.ccwj.current_holdings_historical_earnings' was properly closed.
+[0m08:44:11.742804 [debug] [MainThread]: Connection 'model.ccwj.current_option_historical_earnings' was properly closed.
+[0m08:44:11.743941 [info ] [MainThread]: 
+[0m08:44:11.745566 [info ] [MainThread]: Finished running 7 view models, 3 seeds in 0 hours 0 minutes and 11.09 seconds (11.09s).
+[0m08:44:11.751492 [debug] [MainThread]: Command end result
+[0m08:44:11.775425 [info ] [MainThread]: 
+[0m08:44:11.776356 [info ] [MainThread]: [32mCompleted successfully[0m
+[0m08:44:11.777284 [info ] [MainThread]: 
+[0m08:44:11.778391 [info ] [MainThread]: Done. PASS=10 WARN=0 ERROR=0 SKIP=0 TOTAL=10
+[0m08:44:11.782203 [debug] [MainThread]: Resource report: {"command_name": "build", "command_success": true, "command_wall_clock_time": 15.717443, "process_user_time": 8.825471, "process_kernel_time": 0.840087, "process_mem_max_rss": "147611648", "process_in_blocks": "0", "process_out_blocks": "0"}
+[0m08:44:11.784189 [debug] [MainThread]: Command `cli build` succeeded at 08:44:11.783693 after 15.72 seconds
+[0m08:44:11.786017 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e6dc1c0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111b6a850>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1112c61c0>]}
+[0m08:44:11.787164 [debug] [MainThread]: Flushing usage events
+[0m08:47:13.487166 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111cfc250>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1137bd370>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x113807a30>]}
+
+
+============================== 08:47:13.495425 | a7b69c8a-78a0-4e3e-8fd4-f61118417a57 ==============================
+[0m08:47:13.495425 [info ] [MainThread]: Running with dbt=1.7.12
+[0m08:47:13.496797 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'log_cache_events': 'False', 'write_json': 'True', 'partial_parse': 'True', 'cache_selected_only': 'False', 'warn_error': 'None', 'debug': 'False', 'version_check': 'True', 'log_path': '/Users/cameronsmith/dbt/ccwj/logs', 'profiles_dir': '/Users/cameronsmith/.dbt', 'fail_fast': 'False', 'use_colors': 'True', 'use_experimental_parser': 'False', 'no_print': 'None', 'quiet': 'False', 'log_format': 'default', 'introspect': 'True', 'static_parser': 'True', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'target_path': 'None', 'invocation_command': 'dbt ', 'send_anonymous_usage_stats': 'True'}
+[0m08:47:14.434819 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1137bd0d0>]}
+[0m08:47:14.621615 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1145c1070>]}
+[0m08:47:14.623268 [info ] [MainThread]: Registered adapter: bigquery=1.7.0
+[0m08:47:14.658943 [debug] [MainThread]: checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, vars: {}, profile: , target: dev, version: 1.7.12
+[0m08:47:14.695958 [info ] [MainThread]: Unable to do partial parsing because config vars, config profile, or config target have changed
+[0m08:47:14.697112 [debug] [MainThread]: previous checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, current checksum: fa6823f8c585472225a314a12a364bc70861436aed1c3e1f496a6b09c5e31653
+[0m08:47:14.698479 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'partial_parser', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114710f70>]}
+[0m08:47:17.365036 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'load_project', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114ce30d0>]}
+[0m08:47:17.396199 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'resource_counts', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x11479a6a0>]}
+[0m08:47:17.397176 [info ] [MainThread]: Found 23 models, 3 seeds, 3 tests, 0 sources, 0 exposures, 0 metrics, 447 macros, 0 groups, 0 semantic models
+[0m08:47:17.400607 [info ] [MainThread]: 
+[0m08:47:17.402169 [debug] [MainThread]: Acquiring new bigquery connection 'master'
+[0m08:47:17.404736 [debug] [ThreadPool]: Acquiring new bigquery connection 'list_ccwj-dbt'
+[0m08:47:17.405687 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m08:47:19.522898 [debug] [ThreadPool]: Re-using an available connection from the pool (formerly list_ccwj-dbt, now list_ccwj-dbt_analytics)
+[0m08:47:19.524601 [debug] [ThreadPool]: Opening a new connection, currently in state closed
+[0m08:47:19.817127 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114ce3610>]}
+[0m08:47:19.820837 [info ] [MainThread]: Concurrency: 4 threads (target='dev')
+[0m08:47:19.822554 [info ] [MainThread]: 
+[0m08:47:19.831545 [debug] [Thread-1  ]: Began running node seed.ccwj.0417_current
+[0m08:47:19.833813 [info ] [Thread-1  ]: 1 of 3 START seed file analytics.0417_current .................................. [RUN]
+[0m08:47:19.836883 [debug] [Thread-1  ]: Re-using an available connection from the pool (formerly list_ccwj-dbt_analytics, now seed.ccwj.0417_current)
+[0m08:47:19.838865 [debug] [Thread-1  ]: Began compiling node seed.ccwj.0417_current
+[0m08:47:19.841260 [debug] [Thread-1  ]: Timing info for seed.ccwj.0417_current (compile): 08:47:19.840038 => 08:47:19.840053
+[0m08:47:19.842700 [debug] [Thread-1  ]: Began executing node seed.ccwj.0417_current
+[0m08:47:19.950249 [debug] [Thread-1  ]: Opening a new connection, currently in state closed
+[0m08:47:23.787695 [debug] [Thread-1  ]: On seed.ccwj.0417_current: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "seed.ccwj.0417_current"} */
+
+    alter table `ccwj-dbt`.`analytics`.`0417_current` set OPTIONS()
+  
+[0m08:47:24.115492 [debug] [Thread-1  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:e81f6ed1-bd30-40aa-ac17-c918528c3ee2&page=queryresults
+[0m08:47:24.461074 [debug] [Thread-1  ]: Writing runtime SQL for node "seed.ccwj.0417_current"
+[0m08:47:24.490255 [debug] [Thread-1  ]: Timing info for seed.ccwj.0417_current (execute): 08:47:19.843853 => 08:47:24.489590
+[0m08:47:24.491897 [debug] [Thread-1  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114e83a30>]}
+[0m08:47:24.493086 [info ] [Thread-1  ]: 1 of 3 OK loaded seed file analytics.0417_current .............................. [[32mINSERT 9[0m in 4.66s]
+[0m08:47:24.494495 [debug] [Thread-1  ]: Finished running node seed.ccwj.0417_current
+[0m08:47:24.496210 [debug] [Thread-3  ]: Began running node model.ccwj.current
+[0m08:47:24.497666 [info ] [Thread-3  ]: 2 of 3 START sql view model analytics.current .................................. [RUN]
+[0m08:47:24.499312 [debug] [Thread-3  ]: Acquiring new bigquery connection 'model.ccwj.current'
+[0m08:47:24.500319 [debug] [Thread-3  ]: Began compiling node model.ccwj.current
+[0m08:47:24.521360 [debug] [Thread-3  ]: Writing injected SQL for node "model.ccwj.current"
+[0m08:47:24.523673 [debug] [Thread-3  ]: Timing info for model.ccwj.current (compile): 08:47:24.500924 => 08:47:24.522948
+[0m08:47:24.524872 [debug] [Thread-3  ]: Began executing node model.ccwj.current
+[0m08:47:24.580084 [debug] [Thread-3  ]: Writing runtime sql for node "model.ccwj.current"
+[0m08:47:24.581377 [debug] [Thread-3  ]: Opening a new connection, currently in state init
+[0m08:47:24.582777 [debug] [Thread-3  ]: On model.ccwj.current: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current`
+  OPTIONS()
+  as with fix as (
+select 
+    symbol as trade_symbol,
+    split(symbol," ")[0] as symbol,
+    split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
+    split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
+    split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,
+    Description,
+    Quantity,
+    Price,
+    price_change_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(price_change_dollar as  string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(price_change_dollar as  string), ')', ''), '($', ''))
+       when cast(price_change_dollar as  string) LIKE '$%' THEN REPLACE(REPLACE(cast(price_change_dollar as  string), ')', ''), '$', '')
+       else cast(price_change_dollar as  string)
+    end, r'\$|,', '') as FLOAT64) as price_change_dollar,
+   CAST(REGEXP_REPLACE(case 
+       when cast(market_value as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(market_value as string), ')', ''), '($', ''))
+       when cast(market_value as string) LIKE '$%' THEN REPLACE(REPLACE(cast(market_value as string), ')', ''), '$', '')
+       else cast(market_value as string)
+    end, r'\$|,', '') as FLOAT64) as market_value,
+    day_change_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(day_change_dollar as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(day_change_dollar as string), ')', ''), '($', ''))
+       when cast(day_change_dollar as string) LIKE '$%' THEN REPLACE(REPLACE(cast(day_change_dollar as string), ')', ''), '$', '')
+       else cast(day_change_dollar as string)
+    end, r'\$|,', '') as FLOAT64) as day_change_dollar,
+    CAST(REGEXP_REPLACE(case 
+       when cast(cost_bases as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(cost_bases as string), ')', ''), '($', ''))
+       when cast(cost_bases as string) LIKE '$%' THEN REPLACE(REPLACE(cast(cost_bases as string), ')', ''), '$', '')
+       else cast(cost_bases as string)
+    end, r'\$|,', '') as FLOAT64) as cost_basis,
+    gain_or_loss_percent,
+    CAST(REGEXP_REPLACE(case 
+       when cast(gain_or_loss_dollat as string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(gain_or_loss_dollat as string), ')', ''), '($', ''))
+       when cast(gain_or_loss_dollat as string) LIKE '$%' THEN REPLACE(REPLACE(cast(gain_or_loss_dollat as string), ')', ''), '$', '')
+       else cast(gain_or_loss_dollat as string)
+    end, r'\$|,', '') as FLOAT64) as gain_or_loss_dollar,
+    rating,
+    divident_reinvestment,
+    is_capital_gain,
+    percent_of_account,
+    expiration_date,
+    cost_per_share,
+    last_earnings_date,
+    dividend_yield,
+    last_dividend,
+    ex_dividend_date,
+    pe_ratio,
+    annual_week_low,
+    annual_week_high,
+    volume,
+    intrinsic_value,
+    in_the_money,
+    security_type,
+    margin_requirement,
+    
+from `ccwj-dbt`.`analytics`.`0417_current`
+)
+select 
+    *
+from fix 
+where symbol not in ('Cash & Cash Investments','Account Total');
+
+
+[0m08:47:25.030815 [debug] [Thread-3  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:c7c81d7f-c7d7-4d6f-8bcf-7bbe27c10a6a&page=queryresults
+[0m08:47:25.350957 [debug] [Thread-3  ]: Timing info for model.ccwj.current (execute): 08:47:24.525596 => 08:47:25.350541
+[0m08:47:25.352322 [debug] [Thread-3  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114e28040>]}
+[0m08:47:25.353507 [info ] [Thread-3  ]: 2 of 3 OK created sql view model analytics.current ............................. [[32mCREATE VIEW (0 processed)[0m in 0.85s]
+[0m08:47:25.355395 [debug] [Thread-3  ]: Finished running node model.ccwj.current
+[0m08:47:25.356739 [debug] [Thread-2  ]: Began running node model.ccwj.current_account_earnings
+[0m08:47:25.357839 [info ] [Thread-2  ]: 3 of 3 START sql view model analytics.current_account_earnings ................. [RUN]
+[0m08:47:25.359365 [debug] [Thread-2  ]: Acquiring new bigquery connection 'model.ccwj.current_account_earnings'
+[0m08:47:25.360220 [debug] [Thread-2  ]: Began compiling node model.ccwj.current_account_earnings
+[0m08:47:25.365649 [debug] [Thread-2  ]: Writing injected SQL for node "model.ccwj.current_account_earnings"
+[0m08:47:25.367838 [debug] [Thread-2  ]: Timing info for model.ccwj.current_account_earnings (compile): 08:47:25.360705 => 08:47:25.367395
+[0m08:47:25.368523 [debug] [Thread-2  ]: Began executing node model.ccwj.current_account_earnings
+[0m08:47:25.375835 [debug] [Thread-2  ]: Writing runtime sql for node "model.ccwj.current_account_earnings"
+[0m08:47:25.377199 [debug] [Thread-2  ]: Opening a new connection, currently in state init
+[0m08:47:25.378396 [debug] [Thread-2  ]: On model.ccwj.current_account_earnings: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current_account_earnings"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current_account_earnings`
+  OPTIONS()
+  as select 
+    *
+from `ccwj-dbt`.`analytics`.`current`
+where symbol like 'Account%';
+
+
+[0m08:47:26.148996 [debug] [Thread-2  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:e1f16a76-5db2-406d-9f28-0b9b3a4154cf&page=queryresults
+[0m08:47:26.480122 [debug] [Thread-2  ]: Timing info for model.ccwj.current_account_earnings (execute): 08:47:25.368941 => 08:47:26.479327
+[0m08:47:26.482364 [debug] [Thread-2  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': 'a7b69c8a-78a0-4e3e-8fd4-f61118417a57', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114ed2e50>]}
+[0m08:47:26.484093 [info ] [Thread-2  ]: 3 of 3 OK created sql view model analytics.current_account_earnings ............ [[32mCREATE VIEW (0 processed)[0m in 1.12s]
+[0m08:47:26.486226 [debug] [Thread-2  ]: Finished running node model.ccwj.current_account_earnings
+[0m08:47:26.491411 [debug] [MainThread]: Connection 'master' was properly closed.
+[0m08:47:26.492810 [debug] [MainThread]: Connection 'seed.ccwj.0417_current' was properly closed.
+[0m08:47:26.493814 [debug] [MainThread]: Connection 'model.ccwj.current' was properly closed.
+[0m08:47:26.494641 [debug] [MainThread]: Connection 'model.ccwj.current_account_earnings' was properly closed.
+[0m08:47:26.495601 [info ] [MainThread]: 
+[0m08:47:26.496531 [info ] [MainThread]: Finished running 1 seed, 2 view models in 0 hours 0 minutes and 9.09 seconds (9.09s).
+[0m08:47:26.499309 [debug] [MainThread]: Command end result
+[0m08:47:26.533859 [info ] [MainThread]: 
+[0m08:47:26.534740 [info ] [MainThread]: [32mCompleted successfully[0m
+[0m08:47:26.535789 [info ] [MainThread]: 
+[0m08:47:26.537171 [info ] [MainThread]: Done. PASS=3 WARN=0 ERROR=0 SKIP=0 TOTAL=3
+[0m08:47:26.542418 [debug] [MainThread]: Resource report: {"command_name": "build", "command_success": true, "command_wall_clock_time": 13.175106, "process_user_time": 8.196781, "process_kernel_time": 0.694986, "process_mem_max_rss": "138035200", "process_in_blocks": "0", "process_out_blocks": "0"}
+[0m08:47:26.544412 [debug] [MainThread]: Command `cli build` succeeded at 08:47:26.543820 after 13.18 seconds
+[0m08:47:26.545290 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x111cfc250>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114b42700>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x114760af0>]}
+[0m08:47:26.546004 [debug] [MainThread]: Flushing usage events
+[0m08:49:13.253495 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10b3b81c0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ce7da90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10cea6130>]}
+
+
+============================== 08:49:13.262794 | 8f54963d-bca8-404c-9a4e-aaf0a2397062 ==============================
+[0m08:49:13.262794 [info ] [MainThread]: Running with dbt=1.7.12
+[0m08:49:13.264006 [debug] [MainThread]: running dbt with arguments {'printer_width': '80', 'indirect_selection': 'eager', 'write_json': 'True', 'log_cache_events': 'False', 'partial_parse': 'True', 'cache_selected_only': 'False', 'warn_error': 'None', 'fail_fast': 'False', 'profiles_dir': '/Users/cameronsmith/.dbt', 'log_path': '/Users/cameronsmith/dbt/ccwj/logs', 'debug': 'False', 'version_check': 'True', 'use_colors': 'True', 'use_experimental_parser': 'False', 'no_print': 'None', 'quiet': 'False', 'log_format': 'default', 'static_parser': 'True', 'warn_error_options': 'WarnErrorOptions(include=[], exclude=[])', 'invocation_command': 'dbt ', 'target_path': 'None', 'introspect': 'True', 'send_anonymous_usage_stats': 'True'}
+[0m08:49:14.632228 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ce8a6a0>]}
+[0m08:49:14.924365 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10dd670d0>]}
+[0m08:49:14.926236 [info ] [MainThread]: Registered adapter: bigquery=1.7.0
+[0m08:49:14.993120 [debug] [MainThread]: checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, vars: {}, profile: , target: dev, version: 1.7.12
+[0m08:49:15.028543 [info ] [MainThread]: Unable to do partial parsing because config vars, config profile, or config target have changed
+[0m08:49:15.030246 [debug] [MainThread]: previous checksum: a427c19f51b78ccd38011c8add8ea1d2fe11791fef384f6369691c999d93f765, current checksum: fa6823f8c585472225a314a12a364bc70861436aed1c3e1f496a6b09c5e31653
+[0m08:49:15.032059 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'partial_parser', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10dde4160>]}
+[0m08:49:18.221919 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'load_project', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e396e50>]}
+[0m08:49:18.250675 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'resource_counts', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10dca62e0>]}
+[0m08:49:18.251600 [info ] [MainThread]: Found 23 models, 3 seeds, 3 tests, 0 sources, 0 exposures, 0 metrics, 447 macros, 0 groups, 0 semantic models
+[0m08:49:18.252334 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e1a1c10>]}
+[0m08:49:18.256767 [info ] [MainThread]: 
+[0m08:49:18.259587 [debug] [MainThread]: Acquiring new bigquery connection 'master'
+[0m08:49:18.261861 [debug] [ThreadPool]: Acquiring new bigquery connection 'list_ccwj-dbt'
+[0m08:49:18.262846 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m08:49:21.323659 [debug] [ThreadPool]: Re-using an available connection from the pool (formerly list_ccwj-dbt, now list_ccwj-dbt_analytics)
+[0m08:49:21.325827 [debug] [ThreadPool]: Opening a new connection, currently in state closed
+[0m08:49:21.783003 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e3b7e80>]}
+[0m08:49:21.785320 [info ] [MainThread]: Concurrency: 4 threads (target='dev')
+[0m08:49:21.786820 [info ] [MainThread]: 
+[0m08:49:21.794388 [debug] [Thread-1  ]: Began running node model.ccwj.current_account_earnings
+[0m08:49:21.796811 [info ] [Thread-1  ]: 1 of 1 START sql view model analytics.current_account_earnings ................. [RUN]
+[0m08:49:21.799338 [debug] [Thread-1  ]: Re-using an available connection from the pool (formerly list_ccwj-dbt_analytics, now model.ccwj.current_account_earnings)
+[0m08:49:21.801138 [debug] [Thread-1  ]: Began compiling node model.ccwj.current_account_earnings
+[0m08:49:21.833445 [debug] [Thread-1  ]: Writing injected SQL for node "model.ccwj.current_account_earnings"
+[0m08:49:21.837332 [debug] [Thread-1  ]: Timing info for model.ccwj.current_account_earnings (compile): 08:49:21.802198 => 08:49:21.836346
+[0m08:49:21.839033 [debug] [Thread-1  ]: Began executing node model.ccwj.current_account_earnings
+[0m08:49:21.929337 [debug] [Thread-1  ]: Writing runtime sql for node "model.ccwj.current_account_earnings"
+[0m08:49:21.931770 [debug] [Thread-1  ]: Opening a new connection, currently in state closed
+[0m08:49:21.932914 [debug] [Thread-1  ]: On model.ccwj.current_account_earnings: /* {"app": "dbt", "dbt_version": "1.7.12", "profile_name": "ccwj", "target_name": "dev", "node_id": "model.ccwj.current_account_earnings"} */
+
+
+  create or replace view `ccwj-dbt`.`analytics`.`current_account_earnings`
+  OPTIONS()
+  as select 
+    *
+from `ccwj-dbt`.`analytics`.`current`
+where symbol like 'Account%';
+
+
+[0m08:49:22.507035 [debug] [Thread-1  ]: BigQuery adapter: https://console.cloud.google.com/bigquery?project=ccwj-dbt&j=bq:US:0345df8f-20f7-4d10-8dfb-56c7ef8c4381&page=queryresults
+[0m08:49:22.918081 [debug] [Thread-1  ]: Timing info for model.ccwj.current_account_earnings (execute): 08:49:21.839757 => 08:49:22.917561
+[0m08:49:22.920214 [debug] [Thread-1  ]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '8f54963d-bca8-404c-9a4e-aaf0a2397062', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e4dccd0>]}
+[0m08:49:22.922294 [info ] [Thread-1  ]: 1 of 1 OK created sql view model analytics.current_account_earnings ............ [[32mCREATE VIEW (0 processed)[0m in 1.12s]
+[0m08:49:22.924550 [debug] [Thread-1  ]: Finished running node model.ccwj.current_account_earnings
+[0m08:49:22.934543 [debug] [MainThread]: Connection 'master' was properly closed.
+[0m08:49:22.935393 [debug] [MainThread]: Connection 'model.ccwj.current_account_earnings' was properly closed.
+[0m08:49:22.936500 [info ] [MainThread]: 
+[0m08:49:22.937996 [info ] [MainThread]: Finished running 1 view model in 0 hours 0 minutes and 4.68 seconds (4.68s).
+[0m08:49:22.940096 [debug] [MainThread]: Command end result
+[0m08:49:23.000168 [info ] [MainThread]: 
+[0m08:49:23.001985 [info ] [MainThread]: [32mCompleted successfully[0m
+[0m08:49:23.003430 [info ] [MainThread]: 
+[0m08:49:23.004847 [info ] [MainThread]: Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+[0m08:49:23.011123 [debug] [MainThread]: Resource report: {"command_name": "run", "command_success": true, "command_wall_clock_time": 9.875711, "process_user_time": 8.902937, "process_kernel_time": 0.921911, "process_mem_max_rss": "136314880", "process_in_blocks": "0", "process_out_blocks": "0"}
+[0m08:49:23.012906 [debug] [MainThread]: Command `cli run` succeeded at 08:49:23.012433 after 9.88 seconds
+[0m08:49:23.014305 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10b3b81c0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10dfacd00>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ce8a6a0>]}
+[0m08:49:23.015109 [debug] [MainThread]: Flushing usage events
