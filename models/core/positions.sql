@@ -4,7 +4,7 @@ select
     description,
     quantity,
     day_change_dollar,
-    cost_bases,
+    cost_basis,
     
 from {{ ref('current')}}
 

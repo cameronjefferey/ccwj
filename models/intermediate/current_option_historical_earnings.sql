@@ -36,6 +36,7 @@ select
     symbol,
     coalesce(lead(date) over (partition by symbol order by date)-1,current_date()) as next_option_date,
     total,
+    amount,
     sum(total) over (partition by symbol order by date asc) as cum_total,
     sum(amount) over (partition by symbol order by date asc) as cum_amount,
 from daily_totals
@@ -45,7 +46,8 @@ from daily_totals
 select 
     calendar_symbol_dates.day,
     calendar_symbol_dates.symbol,
-    cumulative_daily_totals.cum_total as quantity,
+    cumulative_daily_totals.amount as daily_options_value,
+    cumulative_daily_totals.cum_total as options_quantity,
     cumulative_daily_totals.cum_amount as amount,
 from {{ ref('calendar_symbol_dates')}}
     join cumulative_daily_totals 

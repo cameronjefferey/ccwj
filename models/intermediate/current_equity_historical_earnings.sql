@@ -63,6 +63,7 @@ select
    day,
    symbol,
    running_earnings_historical,
+   stock_action_quantity as equity_shares_quantity,
    stock_action_quantity*closing_price as daily_holdings_value,
    round(running_earnings_historical+(stock_action_quantity*closing_price),2) as historical_equity_holdings
 from final 
