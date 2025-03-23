@@ -1,5 +1,6 @@
 with fix as (
 select 
+    account,
     symbol as trade_symbol,
     split(symbol," ")[0] as symbol,
     split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
@@ -60,5 +61,4 @@ from {{ ref('0417_current')}}
 select 
     *
 from fix 
-where symbol not in ('Cash & Cash Investments','Account Total')
 

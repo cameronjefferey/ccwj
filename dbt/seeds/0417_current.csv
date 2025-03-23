@@ -1,10 +1,12 @@
-Symbol,Description,Quantity,Price,price_change_percent,price_change_dollar,market_value,day_change_percent,day_change_dollar,cost_bases,gain_or_loss_percent,gain_or_loss_dollat,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-ASTS,AST SPACEMOBILE INC CLASS A,300,27.7,0.0023,0.06,8310.72,-0.0307,-263.28,8574,-0.0307,-263.28,F,No,--,0.254,--,28.58,45518,N/A,N/A,N/A,-21.07,1.97,39.08,8980355,--,--,Equity,4155
-CFLT,CONFLUENT INC CLASS A,1,22.03,-0.0063,-0.14,22.03,-0.0063,-0.14,21.42,0.0285,0.61,F,No,--,0.0007,--,21.42,45504,N/A,N/A,N/A,-18.68,14.69,35.07,787097,--,--,Equity,11
-JXN,JACKSON FINL INC CLASS A,100,98.95,0.0158,1.54,9895,0.0158,154,9790,0.0107,105,B,No,--,0.3024,--,97.9,45511,0.0284,0.7,45540,3.53,36.06,101.73,160686,--,--,Equity,2969
-ONON,ON HLDG AG FCLASS A,300,48.31,N/A,N/A,14493,N/A,N/A,15693,-0.0765,-1200,--,No,--,0.4429,--,52.31,45517,N/A,N/A,N/A,91.64,24.15,52.8,2235560,--,--,Equity,4348
-ASTS 10/25/2024 30.00 C,CALL AST SPACEMOBILE INC$30 EXP 10/25/24,-3,0.48,-0.1364,-0.08,-142.5,0.3341,71.5,-214,0.3341,71.5,--,N/A,--,--,45590,0.71,--,--,--,--,--,0.2,6.5,5425,-2.3,OTM,Option,-3  Covered Call
-JXN 11/15/2024 100.00 C,CALL JACKSON FINL INC $100 EXP 11/15/24,-1,5.2,0.1685,0.75,-520,-0.0627,-30.67,-489.33,-0.0627,-30.67,--,N/A,--,--,45611,4.89,--,--,--,--,--,2.37,7,201,-1.05,OTM,Option,-1  Covered Call
-ONON 10/25/2024 50.00 C,CALL ON HLDG AG $50 EXP 10/25/24,-3,0.26,-0.2031,-0.07,-76.5,0.2114,20.51,-97.01,0.2114,20.51,--,N/A,--,--,45590,0.32,--,--,--,--,--,0.16,3.67,167,-1.69,OTM,Option,-3  Covered Call
-Cash & Cash Investments,--,--,--,--,--,-4902.36,-2.7074,-7773.66,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,Cash and Money Market,--
-Account Total,--,--,--,--,--,27079.39,-0.2241,-7821.74,33278.08,-0.039,-1296.33,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--
+Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
+Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,26.5,-0.12,-0.0045,620073.5,-2807.88,-0.0045,75514.46,544559.04,7.2113,D,No,,0.9719,,3.23,45699,,,,-24.83,17.79,37.9,4685194,,,Equity,310037
+Sara Investment,Cash & Cash Investments,,,,,,17922.92,0,0,,,,,,,0.0281,,,,,,,,,,,,,Cash and Money Market,
+Sara Investment,Account Total,,,,,,637996.42,-2807.88,-0.0044,75514.46,544559.04,7.2113,,,,,,,,,,,,,,,,,,
+Cameron Investment,PWRMF,POWER METALS CORP F,3067,0.93,-0.01,-0.006,2852.31,-17.18,-0.006,2236.66,615.65,0.2753,,No,,0.0763,,0.73,45595,,,,-217.08,0.16,1.04,54789,,,Equity,Not Marginable
+Cameron Investment,TEM,TEMPUS AI INC CLASS A,100,51.35,3.31,0.0689,5135,331,0.0689,7017,-1882,-0.2682,,No,,0.1373,,70.17,45712,,,,-7.71,22.89,91.45,9929833,,,Equity,2568
+Cameron Investment,VST,VISTRA CORP,200,130.58,-1.32,-0.01,26116,-264,-0.01,28623.98,-2507.98,-0.0876,C,No,,0.6984,,143.12,45715,0.0069,0.22,45646,18.84,64.26,199.84,7484279,,,Equity,7835
+Cameron Investment,ABSI 05/16/2025 5.00 C,CALL ABSCI CORP $5 EXP 05/16/25,45,0.2,0.03,0.1429,900,112.5,0.1429,6194.74,-5294.74,-0.8547,,,,0.0241,45793,1.38,,,,,,0.15,3.7,15,-1.99,OTM,Option,
+Cameron Investment,ACHR 04/17/2025 10.00 C,CALL ARCHER AVIATION INC$10 EXP 04/17/25,30,0.39,0.1,0.3276,1155,285,0.3276,9919.83,-8764.83,-0.8836,,,,0.0309,45764,3.31,,,,,,0.13,3.8,1385,-1.28,OTM,Option,
+Cameron Investment,TEM 03/28/2025 52.00 C,CALL TEMPUS AI INC $52 EXP 03/28/25,-1,2.1,1.01,0.9222,-210,-100.75,-0.9222,-174.34,-35.66,-0.2045,,,,,45744,1.74,,,,,,0.5,10.28,715,-0.65,OTM,Option,-1  Covered Call
+Cameron Investment,Cash & Cash Investments,,,,,,1234.17,0,0,,,,,,,0.033,,,,,,,,,,,,,Cash and Money Market,
+Cameron Investment,Account Total,,,,,,37182.48,346.57,0.0094,53817.87,-17869.56,-0.332,,,,,,,,,,,,,,,,,,

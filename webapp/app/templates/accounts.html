@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Account Overview</h1>
+
+    <!-- Filter Form -->
+    <form method="GET">
+        <label for="account">Select Account:</label>
+        <select name="account" id="account" onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account }}" {% if account == selected_account %}selected{% endif %}>
+                    {{ account }}
+                </option>
+            {% endfor %}
+        </select>
+    </form>
+
+    <!-- Earnings Table -->
+    <h2>Account Earnings</h2>
+    <table border="1">
+        <tr>
+            <th>Account</th>
+            <th>Market Value</th>
+        </tr>
+        {% for account, market_value in data.account_dashboard_total %}
+        <tr>
+            <td>{{ account }}</td>
+            <td>{{ market_value }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- Unrealized Gains Table -->
+    <h2>Account Unrealized Gains/Losses</h2>
+    <table border="1">
+        <tr>
+            <th>Account</th>
+            <th>Realized Gains/Losses</th>
+            <th>Unrealized Gains/Losses</th>
+        </tr>
+        {% for account, realized_gain_or_loss, unrealized_gain_or_loss in data.account_gains %}
+        <tr>
+            <td>{{ account }}</td>
+            <td>{{ realized_gain_or_loss }}</td>
+            <td>{{ unrealized_gain_or_loss }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+{% endblock %}

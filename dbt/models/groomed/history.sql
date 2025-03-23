@@ -1,5 +1,6 @@
 with fix as (
 select 
+    account,
     date as old_date,
     cast(coalesce(SAFE.PARSE_DATE('%m/%d/%y',split(date," ")[0]),SAFE.PARSE_DATE('%m/%d/%Y',split(date," ")[0]))as date) as date,
     action,
