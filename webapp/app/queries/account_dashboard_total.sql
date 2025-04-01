@@ -1,2 +1,3 @@
-SELECT account,market_value
+SELECT account, market_value
 FROM `ccwj-dbt.analytics.account_total`
+

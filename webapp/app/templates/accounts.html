@@ -14,6 +14,14 @@
                 </option>
             {% endfor %}
         </select>
+
+        <label for="start_date">Start Date:</label>
+        <input type="date" name="start_date" id="start_date" value="{{ start_date }}">
+
+        <label for="end_date">End Date:</label>
+        <input type="date" name="end_date" id="end_date" value="{{ end_date }}">
+
+        <button type="submit">Filter</button>
     </form>
 
     <!-- Earnings Table -->
@@ -44,6 +52,29 @@
             <td>{{ account }}</td>
             <td>{{ realized_gain_or_loss }}</td>
             <td>{{ unrealized_gain_or_loss }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- Current Positions Table -->
+    <h2>Account Positions</h2>
+    <table border="1">
+        <tr>
+            <th>Account</th>
+            <th>Symbol</th>
+            <th>Strategy</th>
+            <th>Number Of Shares</th>
+            <th>Number of Options</th>
+            <th>Position Value</th>
+        </tr>
+        {% for account, symbol, strategy, number_of_shares, number_of_options, position_value in data.account_current_portfolio %}
+        <tr>
+            <td>{{ account }}</td>
+            <td>{{ symbol }}</td>
+            <td>{{ strategy }}</td>
+            <td>{{ number_of_shares }}</td>
+            <td>{{ number_of_options }}</td>
+            <td>{{ position_value }}</td>
         </tr>
         {% endfor %}
     </table>
