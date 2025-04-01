@@ -1,6 +1,7 @@
 with fix as (
 select 
     account,
+    current_date() as transaction_date,
     symbol as trade_symbol,
     split(symbol," ")[0] as symbol,
     split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
