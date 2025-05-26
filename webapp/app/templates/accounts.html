@@ -1,81 +1,106 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h1>Account Overview</h1>
+<div class="container mt-4">
+    <h2 class="text-center mb-4">Account Overview</h2>
 
     <!-- Filter Form -->
-    <form method="GET">
-        <label for="account">Select Account:</label>
-        <select name="account" id="account" onchange="this.form.submit()">
-            <option value="">All Accounts</option>
-            {% for account in accounts %}
-                <option value="{{ account }}" {% if account == selected_account %}selected{% endif %}>
-                    {{ account }}
-                </option>
-            {% endfor %}
-        </select>
-
-        <label for="start_date">Start Date:</label>
-        <input type="date" name="start_date" id="start_date" value="{{ start_date }}">
-
-        <label for="end_date">End Date:</label>
-        <input type="date" name="end_date" id="end_date" value="{{ end_date }}">
-
-        <button type="submit">Filter</button>
+    <form method="GET" class="mb-5 row g-3 align-items-end justify-content-center">
+        <div class="col-md-3">
+            <label for="account" class="form-label fw-bold">Select Account:</label>
+            <select name="account" id="account" class="form-select">
+                <option value="">All Accounts</option>
+                {% for account in accounts %}
+                    <option value="{{ account }}" {% if account == selected_account %}selected{% endif %}>
+                        {{ account }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="start_date" class="form-label fw-bold">Start Date:</label>
+            <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="form-control">
+        </div>
+        <div class="col-md-3">
+            <label for="end_date" class="form-label fw-bold">End Date:</label>
+            <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="form-control">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+        </div>
     </form>
 
-    <!-- Earnings Table -->
-    <h2>Account Earnings</h2>
-    <table border="1">
-        <tr>
-            <th>Account</th>
-            <th>Market Value</th>
-        </tr>
-        {% for account, market_value in data.account_dashboard_total %}
-        <tr>
-            <td>{{ account }}</td>
-            <td>{{ market_value }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <!-- Market Value Table -->
+    <h4>📈 Account Market Value</h4>
+    <div class="table-responsive mb-5">
+        <table class="table table-bordered table-striped">
+            <thead class="table-light">
+                <tr>
+                    <th>Account</th>
+                    <th>Market Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account, market_value in data.account_dashboard_total %}
+                <tr>
+                    <td>{{ account }}</td>
+                    <td>{{ market_value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 
-    <!-- Unrealized Gains Table -->
-    <h2>Account Unrealized Gains/Losses</h2>
-    <table border="1">
-        <tr>
-            <th>Account</th>
-            <th>Realized Gains/Losses</th>
-            <th>Unrealized Gains/Losses</th>
-        </tr>
-        {% for account, realized_gain_or_loss, unrealized_gain_or_loss in data.account_gains %}
-        <tr>
-            <td>{{ account }}</td>
-            <td>{{ realized_gain_or_loss }}</td>
-            <td>{{ unrealized_gain_or_loss }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <!-- Gains Table -->
+    <h4>💸 Realized & Unrealized Gains</h4>
+    <div class="table-responsive mb-5">
+        <table class="table table-bordered table-striped">
+            <thead class="table-light">
+                <tr>
+                    <th>Account</th>
+                    <th>Realized Gains/Losses</th>
+                    <th>Unrealized Gains/Losses</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account, realized_gain_or_loss, unrealized_gain_or_loss in data.account_gains %}
+                <tr>
+                    <td>{{ account }}</td>
+                    <td>{{ realized_gain_or_loss }}</td>
+                    <td>{{ unrealized_gain_or_loss }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 
     <!-- Current Positions Table -->
-    <h2>Account Positions</h2>
-    <table border="1">
-        <tr>
-            <th>Account</th>
-            <th>Symbol</th>
-            <th>Strategy</th>
-            <th>Number Of Shares</th>
-            <th>Number of Options</th>
-            <th>Position Value</th>
-        </tr>
-        {% for account, symbol, strategy, number_of_shares, number_of_options, position_value in data.account_current_portfolio %}
-        <tr>
-            <td>{{ account }}</td>
-            <td>{{ symbol }}</td>
-            <td>{{ strategy }}</td>
-            <td>{{ number_of_shares }}</td>
-            <td>{{ number_of_options }}</td>
-            <td>{{ position_value }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+    <h4>📊 Current Portfolio</h4>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead class="table-light">
+                <tr>
+                    <th>Account</th>
+                    <th>Symbol</th>
+                    <th>Strategy</th>
+                    <th>Number of Shares</th>
+                    <th>Number of Options</th>
+                    <th>Position Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account, symbol, strategy, number_of_shares, number_of_options, position_value in data.account_current_portfolio %}
+                <tr>
+                    <td>{{ account }}</td>
+                    <td>{{ symbol }}</td>
+                    <td>{{ strategy }}</td>
+                    <td>{{ number_of_shares }}</td>
+                    <td>{{ number_of_options }}</td>
+                    <td>{{ position_value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endblock %}

@@ -2,3 +2,4 @@
 target/
 dbt_packages/
 logs/
+webapp/app/__pycache__/

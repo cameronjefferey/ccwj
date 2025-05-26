@@ -1,6 +1,7 @@
 from flask import render_template, request
 from app import app
 from app.bigquery_client import get_bigquery_client, query_bigquery
+from collections import defaultdict
 
 @app.route('/')
 @app.route('/index')
@@ -62,3 +63,88 @@ def accounts():
 
     return render_template('accounts.html', data=results, accounts=sorted(accounts), selected_account=selected_account, start_date=start_date, end_date=end_date)
 
+@app.route('/strategy')
+def strategy():
+    client = get_bigquery_client()
+
+    selected_account = request.args.get('account')
+    selected_symbol = request.args.get('symbol')
+    selected_strategy = request.args.get('strategy')
+
+    queries = {
+        "strategy_option_strategy_outcome": {
+            "file": "strategy_option_strategy_outcome.sql",
+            "fields": ["account", "symbol", "strategy", "strategy_outcome"]
+        },
+        "strategy_option_position_strategy_outcome": {
+            "file": "strategy_option_position_strategy_outcome.sql",
+            "fields": ["account", "symbol", "trade_symbol", "trade_outcome", "strategy"]
+        }
+    }
+
+    results = {}
+    accounts = set()
+    symbols = set()
+    strategies = set()
+
+    for key, query_info in queries.items():
+        query_results = query_bigquery(client, query_info["file"])
+        fields = query_info["fields"]
+
+        data = [tuple(getattr(row, field, None) for field in fields) for row in query_results]
+
+        # Register filters
+        if "account" in fields:
+            accounts.update([row[0] for row in data if row[0]])
+
+        if "symbol" in fields:
+            symbol_index = fields.index("symbol")
+            symbols.update([row[symbol_index] for row in data if row[symbol_index]])
+
+        if "strategy" in fields:
+            strategy_index = fields.index("strategy")
+            strategies.update([row[strategy_index] for row in data if row[strategy_index]])
+
+        # Apply filters
+        if selected_account:
+            data = [row for row in data if row[0] == selected_account]
+        if selected_symbol and "symbol" in fields:
+            data = [row for row in data if row[symbol_index] == selected_symbol]
+        if selected_strategy and "strategy" in fields:
+            data = [row for row in data if row[strategy_index] == selected_strategy]
+
+        # Drop symbol only for the strategy_option_strategy_outcome table
+        
+
+        if key == "strategy_option_strategy_outcome":
+            # Group by (account, strategy) and sum strategy_outcome
+            grouped = defaultdict(float)
+            for row in data:
+                account = row[0]
+                strategy = row[2]
+                outcome = float(row[3]) if row[3] is not None else 0
+                grouped[(account, strategy)] += outcome
+
+            display_fields = ["account", "strategy", "strategy_outcome"]
+            display_data = [(acct, strat, outcome) for (acct, strat), outcome in grouped.items()]
+
+        else:
+            display_fields = fields
+            display_data = data
+
+        results[key] = {
+            "headers": display_fields,
+            "rows": display_data,
+            "raw": data
+        }
+
+    return render_template(
+        "strategy.html",
+        data=results,
+        accounts=sorted(accounts),
+        symbols=sorted(symbols),
+        strategies=sorted(strategies),
+        selected_account=selected_account,
+        selected_symbol=selected_symbol,
+        selected_strategy=selected_strategy
+    )
