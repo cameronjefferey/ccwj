@@ -3,13 +3,14 @@ select
     account,
     current_date() as transaction_date,
     symbol as trade_symbol,
+    'holding' as action,
     split(symbol," ")[0] as symbol,
     split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
     split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
     split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,
     Description,
-    Quantity,
-    Price,
+    SAFE_CAST(quantity as FLOAT64)as quantity,
+    price,
     price_change_percent,
     CAST(REGEXP_REPLACE(case 
        when cast(price_change_dollar as  string) LIKE '($%)' THEN CONCAT('-', REPLACE(REPLACE(cast(price_change_dollar as  string), ')', ''), '($', ''))

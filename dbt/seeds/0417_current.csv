@@ -1,12 +1,10 @@
 Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,26.5,-0.12,-0.0045,620073.5,-2807.88,-0.0045,75514.46,544559.04,7.2113,D,No,,0.9719,,3.23,45699,,,,-24.83,17.79,37.9,4685194,,,Equity,310037
-Sara Investment,Cash & Cash Investments,,,,,,17922.92,0,0,,,,,,,0.0281,,,,,,,,,,,,,Cash and Money Market,
-Sara Investment,Account Total,,,,,,637996.42,-2807.88,-0.0044,75514.46,544559.04,7.2113,,,,,,,,,,,,,,,,,,
-Cameron Investment,PWRMF,POWER METALS CORP F,3067,0.93,-0.01,-0.006,2852.31,-17.18,-0.006,2236.66,615.65,0.2753,,No,,0.0763,,0.73,45595,,,,-217.08,0.16,1.04,54789,,,Equity,Not Marginable
-Cameron Investment,TEM,TEMPUS AI INC CLASS A,100,51.35,3.31,0.0689,5135,331,0.0689,7017,-1882,-0.2682,,No,,0.1373,,70.17,45712,,,,-7.71,22.89,91.45,9929833,,,Equity,2568
-Cameron Investment,VST,VISTRA CORP,200,130.58,-1.32,-0.01,26116,-264,-0.01,28623.98,-2507.98,-0.0876,C,No,,0.6984,,143.12,45715,0.0069,0.22,45646,18.84,64.26,199.84,7484279,,,Equity,7835
-Cameron Investment,ABSI 05/16/2025 5.00 C,CALL ABSCI CORP $5 EXP 05/16/25,45,0.2,0.03,0.1429,900,112.5,0.1429,6194.74,-5294.74,-0.8547,,,,0.0241,45793,1.38,,,,,,0.15,3.7,15,-1.99,OTM,Option,
-Cameron Investment,ACHR 04/17/2025 10.00 C,CALL ARCHER AVIATION INC$10 EXP 04/17/25,30,0.39,0.1,0.3276,1155,285,0.3276,9919.83,-8764.83,-0.8836,,,,0.0309,45764,3.31,,,,,,0.13,3.8,1385,-1.28,OTM,Option,
-Cameron Investment,TEM 03/28/2025 52.00 C,CALL TEMPUS AI INC $52 EXP 03/28/25,-1,2.1,1.01,0.9222,-210,-100.75,-0.9222,-174.34,-35.66,-0.2045,,,,,45744,1.74,,,,,,0.5,10.28,715,-0.65,OTM,Option,-1  Covered Call
-Cameron Investment,Cash & Cash Investments,,,,,,1234.17,0,0,,,,,,,0.033,,,,,,,,,,,,,Cash and Money Market,
-Cameron Investment,Account Total,,,,,,37182.48,346.57,0.0094,53817.87,-17869.56,-0.332,,,,,,,,,,,,,,,,,,
+Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,22.06,0.17,0.0078,516181.94,3977.83,0.0078,75514.46,440667.48,5.8355,D,No,,0.9607,,3.227251591948,45777,,,,-22.41,17.79,37.9,1762702,,,Equity,258091
+Sara Investment,CFLT 06/20/2025 24.00 C,CALL CONFLUENT INC $24 EXP 06/20/25,-150,0.6,0.025,0.0435,-9000,-375,-0.0435,-9300.26,300.26,0.0323,,,,,45828,0.620017333333,,,,,,0.3,9.2,47,-1.94,OTM,Option, -150  Covered Call 1
+Sara Investment,CFLT 06/20/2025 25.00 C,CALL CONFLUENT INC $25 EXP 06/20/25,-50,0.375,0.025,0.0714,-1875,-125,-0.0714,-2066.81,191.81,0.0928,,,,,45828,0.413362,,,,,,0.17,13.6,26,-2.94,OTM,Option, -50  Covered Call 2
+Sara Investment,Cash & Cash Investments,,,,,,21126.5,0,0,,,,,,,0.0393,,,,,,,,,,,,,Cash and Money Market,
+Sara Investment,Account Total,,,,,,526433.44,3477.83,0.0067,64147.39,441159.55,6.8773,,,,,,,,,,,,,,,,,,
+Cameron Investment,CRWV 06/20/2025 130.00 C,CALL COREWEAVE INC $130 EXP 06/20/25,6,5.6,-0.1902,-0.0328,3360,-114.12,-0.0328,7005.97,-3645.97,-0.5204,,,,0.4659,45828,11.676616666667,,,,,,2.49,13.08,72,-25.35,OTM,Option,-
+Cameron Investment,NVDA 05/30/2025 130.00 C,CALL NVIDIA CORP $130 EXP 05/30/25,5,6.325,-0.6625,-0.0948,3162.5,-331.25,-0.0948,3528.3,-365.8,-0.1037,,,,0.4385,45807,7.0566,,,,,,0.57,10.45,22350,1.985,ITM,Option,-
+Cameron Investment,Cash & Cash Investments,,,,,,689.66,0,0,,,,,,,0.0956,,,,,,,,,,,,,Cash and Money Market,
+Cameron Investment,Account Total,,,,,,7212.16,-445.37,-0.0582,10534.27,-4011.77,-0.3808,,,,,,,,,,,,,,,,,,
