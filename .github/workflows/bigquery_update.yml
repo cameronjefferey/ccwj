@@ -20,4 +20,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run the update script
-        run: python ccwj/dbt/scripts/update_daily_position_performance.py
+        run: python dbt/scripts/update_daily_position_performance.py
