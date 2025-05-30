@@ -10,4 +10,4 @@ ccwj:
       location: us
       gcs_bucket: "{{ env_var('DBT_GCS_BUCKET') }}"
       dataproc_region: "{{ env_var('DBT_DATAPROC_REGION') }}"
-      keyfile: "/home/runner/.dbt/gcloud_keyfile.json"
+      keyfile_json: "{{ env_var('DBT_KEYFILE_JSON') | fromjson }}"
