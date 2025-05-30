@@ -31,7 +31,7 @@ jobs:
       - name: Set up dbt profile
         run: |
           mkdir -p ~/.dbt
-          cp dbt/profiles.yml.template ~/.dbt/profiles.yml
+          cp dbt/profiles.yml ~/.dbt/profiles.yml
 
       - name: Run Upstream Models
         run: |
