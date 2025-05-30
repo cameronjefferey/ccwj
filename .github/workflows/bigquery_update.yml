@@ -1,6 +1,13 @@
+name: Update Daily Position Performance
+
+on:
+  push:
+    branches: [master]
+
 jobs:
   update-performance:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -20,5 +27,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Python Script
-        run: python dbt/models/current_position_stock_price.py
+      - name: Run the update script
+        run: python dbt/scripts/current_position_stock_price.py
