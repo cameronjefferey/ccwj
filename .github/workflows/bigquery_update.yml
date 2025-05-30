@@ -30,4 +30,4 @@ jobs:
           echo "$GCP_KEY" > $GOOGLE_APPLICATION_CREDENTIALS
 
       - name: Run Python Script
-        run: python dbt/models/update_daily_position_performance.py
+        run: python dbt/models/current_position_stock_price.py
