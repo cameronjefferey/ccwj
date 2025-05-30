@@ -35,7 +35,7 @@ jobs:
       - name: Run Upstream DBT Models
         run: |
           cd dbt
-          dbt build +positions_with_open_dates
+          dbt build -s +positions_with_open_dates
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
@@ -43,7 +43,7 @@ jobs:
           DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
 
       - name: Run the update script
-        run: python dbt/models/current_position_stock_price.py
+        run: python current_position_stock_price.py
 
       - name: Run Remaining DBT Models
         run: |
