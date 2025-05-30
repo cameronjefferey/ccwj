@@ -43,7 +43,14 @@ jobs:
           DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
 
       - name: Run the update script
-        run: python current_position_stock_price.py
+        run: |
+          cd dbt
+          python current_position_stock_price.py
+        env:
+          DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
+          DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
+          DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+          DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
 
       - name: Run Remaining DBT Models
         run: |
