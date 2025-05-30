@@ -2,10 +2,10 @@ name: Update Daily Performance
 
 on:
   push:
-    branches: [master]
+    branches: [master]  # Or your production branch
 
 jobs:
-  update-performance:
+  run-python-script:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,25 +22,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Create dbt profiles.yml
+      - name: Authenticate with Google Cloud
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /home/runner/work/_temp/keyfile.json
+          GCP_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
         run: |
-          mkdir -p ~/.dbt
-          echo "${{ secrets.DBT_KEYFILE_JSON }}" > ~/.dbt/keyfile.json
-          cat > ~/.dbt/profiles.yml <<EOF
-          ccwj:
-            target: dev
-            outputs:
-              dev:
-                type: bigquery
-                method: service-account
-                project: ${{ secrets.DBT_PROJECT_ID }}
-                dataset: analytics
-                threads: 4
-                keyfile: /github/home/.dbt/keyfile.json
-                gcs_bucket: ${{ secrets.DBT_GCS_BUCKET }}
-                dataproc_region: ${{ secrets.DBT_DATAPROC_REGION }}
-          EOF
+          echo "$GCP_KEY" > $GOOGLE_APPLICATION_CREDENTIALS
 
-      - name: Build Project
-        run: dbt build
-        working-directory: ./dbt
+      - name: Run Python Script
+        run: python dbt/models/update_daily_position_performance.py
