@@ -8,12 +8,6 @@ jobs:
   update-performance:
     runs-on: ubuntu-latest
 
-    env:
-      DBT_PROJECT_ID: ccwj-dbt
-      DBT_GCS_BUCKET: happytrader-dbt-bucket
-      DBT_DATAPROC_REGION: us
-      DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -22,11 +16,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Copy DBT profile to default location
-        run: |
-          mkdir -p ~/.dbt
-          cp ccwj/.dbt/profiles.yml ~/.dbt/profiles.yml
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
@@ -38,15 +27,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Upstream Models
+      - name: Set up DBT profiles
         run: |
-          cd ccwj/dbt
+          mkdir -p ~/.dbt
+          cp dbt/profiles.yml ~/.dbt/profiles.yml
+
+      - name: Run Upstream DBT Models
+        run: |
+          cd dbt
           dbt build +positions_with_open_dates
+        env:
+          DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
+          DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
+          DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+          DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
 
       - name: Run the update script
-        run: python ccwj/dbt/models/current_position_stock_price.py
+        run: python dbt/models/current_position_stock_price.py
 
-      - name: Run All Other Models
+      - name: Run Remaining DBT Models
         run: |
-          cd ccwj/dbt
+          cd dbt
           dbt build --exclude +positions_with_open_dates
+        env:
+          DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
+          DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
+          DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+          DBT_KEYFILE_JSON: ${{ secrets.DBT_KEYFILE_JSON }}
