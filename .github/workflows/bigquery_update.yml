@@ -43,3 +43,4 @@ jobs:
 
       - name: Build Project
         run: dbt build
+        working-directory: ./dbt
