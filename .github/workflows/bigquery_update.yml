@@ -27,5 +27,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run Upstream Models
+        run: dbt build +positions_with_open_dates
+
       - name: Run the update script
         run: python dbt/models/current_position_stock_price.py
+      
+      - name: Run All Other Models
+        run: dbt build --exclude +positions_with_open_dates
