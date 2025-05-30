@@ -1,6 +1,13 @@
+name: Update Daily Performance
+
+on:
+  push:
+    branches: [master]
+
 jobs:
   update-performance:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -15,10 +22,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Write profiles.yml
+      - name: Create dbt profiles.yml
         run: |
           mkdir -p ~/.dbt
-          echo "$DBT_KEYFILE_JSON" > ~/.dbt/keyfile.json
+          echo "${{ secrets.DBT_KEYFILE_JSON }}" > ~/.dbt/keyfile.json
           cat > ~/.dbt/profiles.yml <<EOF
           ccwj:
             target: dev
@@ -34,8 +41,5 @@ jobs:
                 dataproc_region: ${{ secrets.DBT_DATAPROC_REGION }}
           EOF
 
-      - name: Run dbt
+      - name: Build Project
         run: dbt build
-
-      - name: Run daily position updater
-        run: python dbt/models/current_position_stock_price.py
