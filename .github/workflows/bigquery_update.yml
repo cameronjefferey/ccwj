@@ -1,11 +1,6 @@
-on:
-  push:
-    branches: [master]
-
 jobs:
-  run-dbt-and-update:
+  update-performance:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -17,7 +12,27 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Write profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          echo "$DBT_KEYFILE_JSON" > ~/.dbt/keyfile.json
+          cat > ~/.dbt/profiles.yml <<EOF
+          ccwj:
+            target: dev
+            outputs:
+              dev:
+                type: bigquery
+                method: service-account
+                project: ${{ secrets.DBT_PROJECT_ID }}
+                dataset: analytics
+                threads: 4
+                keyfile: /github/home/.dbt/keyfile.json
+                gcs_bucket: ${{ secrets.DBT_GCS_BUCKET }}
+                dataproc_region: ${{ secrets.DBT_DATAPROC_REGION }}
+          EOF
 
       - name: Run dbt
         run: dbt build
