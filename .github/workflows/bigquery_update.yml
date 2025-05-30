@@ -5,7 +5,7 @@ on:
     branches: [master]
 
 jobs:
-  update-project:
+  update-performance:
     runs-on: ubuntu-latest
 
     env:
@@ -23,25 +23,30 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Copy DBT profile to default location
+        run: |
+          mkdir -p ~/.dbt
+          cp ccwj/.dbt/profiles.yml ~/.dbt/profiles.yml
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: '${{ secrets.DBT_KEYFILE_JSON }}'
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Set up dbt profile
-        run: |
-          mkdir -p ~/.dbt
-          cp dbt/profiles.yml ~/.dbt/profiles.yml
-
       - name: Run Upstream Models
         run: |
-          cd dbt
+          cd ccwj/dbt
           dbt build +positions_with_open_dates
 
       - name: Run the update script
-        run: python dbt/models/current_position_stock_price.py
+        run: python ccwj/dbt/models/current_position_stock_price.py
 
       - name: Run All Other Models
         run: |
-          cd dbt
+          cd ccwj/dbt
           dbt build --exclude +positions_with_open_dates
