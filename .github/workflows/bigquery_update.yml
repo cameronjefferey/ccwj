@@ -17,30 +17,41 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: '${{ secrets.DBT_KEYFILE_JSON }}'
+      - name: Set up DBT credentials and profile
+        run: |
+          mkdir -p ~/.dbt
+          echo "${{ secrets.DBT_KEYFILE_JSON }}" > ~/.dbt/keyfile.json
+          cat > ~/.dbt/profiles.yml <<EOL
+ccwj:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: ccwj-dbt
+      dataset: analytics
+      threads: 4
+      keyfile: ~/.dbt/keyfile.json
+EOL
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
-      - name: Install dbt and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
 
-      - name: Run Upstream Models
+      - name: Install dbt
+        run: |
+          pip install dbt-bigquery
+
+      - name: Run upstream DBT model
         run: |
           cd dbt
-          dbt build +positions_with_open_dates
+          dbt build -s +positions_with_open_dates
 
       - name: Run the update script
         run: python dbt/models/current_position_stock_price.py
-      
-      - name: Run All Other Models
+
+      - name: Run remaining DBT models
         run: |
           cd dbt
           dbt build --exclude +positions_with_open_dates
