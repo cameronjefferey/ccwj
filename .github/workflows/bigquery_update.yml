@@ -28,4 +28,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run the update script
-        run: python dbt/scripts/current_position_stock_price.py
+        run: python dbt/models/current_position_stock_price.py
