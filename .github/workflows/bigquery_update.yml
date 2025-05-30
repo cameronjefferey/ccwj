@@ -5,7 +5,7 @@ on:
     branches: [master]
 
 jobs:
-  update-performance:
+  update-project:
     runs-on: ubuntu-latest
 
     env:
