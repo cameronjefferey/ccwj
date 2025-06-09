@@ -1,0 +1,1 @@
+select distinct * from ccwj-dbt.analytics.daily_position_performance

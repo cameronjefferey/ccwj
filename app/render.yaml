@@ -1,0 +1,11 @@
+# render.yaml
+services:
+  - type: web
+    name: happytrader-flask
+    env: python
+    buildCommand: ""
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/gcp-key.json
+    autoDeploy: true

@@ -3,4 +3,5 @@ target/
 dbt_packages/
 logs/
 webapp/app/__pycache__/
-.dbt/profiles.yml
+dbt/profiles.yml
+profiles.yml

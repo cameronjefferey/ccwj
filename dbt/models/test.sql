@@ -1,4 +1,1 @@
-select * 
-from {{ ref('calendar_dates_and_positions')}}
-where account = 'Sara Investment'
-and symbol is not null 
+select distinct * from ccwj-dbt.analytics.daily_position_performance where account = "Cameron 401k"

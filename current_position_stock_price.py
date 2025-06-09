@@ -10,6 +10,7 @@ client = bigquery.Client()
 query = """
     SELECT account, symbol, position_open_date
     FROM `ccwj-dbt.analytics.positions_with_open_dates`
+    WHERE position_open_date is not null 
 """
 positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
@@ -30,6 +31,10 @@ for _, row in positions_df.iterrows():
         hist["account"] = account
         hist["symbol"] = symbol
         hist.rename(columns={"Date": "date", "Close": "close_price", "Dividends": "dividend"}, inplace=True)
+
+        # Ensure we're only keeping data from on/after position_open_date
+        hist = hist[hist["date"].dt.date >= row["position_open_date"]]
+
         all_data.append(hist)
     except Exception as e:
         print(f"Error fetching data for {symbol}: {e}")
@@ -40,6 +45,7 @@ if all_data:
     final_df = final_df[["account", "symbol", "date", "close_price", "dividend"]]
 
     table_id = "ccwj-dbt.analytics.daily_position_performance"
+    final_df = final_df.drop_duplicates()
     job = client.load_table_from_dataframe(
         final_df,
         table_id,

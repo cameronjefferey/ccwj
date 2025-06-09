@@ -3,7 +3,8 @@ with position_open_dates as (
         account,
         trade_symbol,
         min(transaction_date) as position_open_date
-    from {{ ref('history') }}
+    from {{ ref('history_and_current_combined') }}
+    where is_current_position_establishement_1_0 = 1
     group by 1, 2
 )
 select 
