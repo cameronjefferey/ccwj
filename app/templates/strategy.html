@@ -10,11 +10,12 @@
             <label for="account" class="form-label">Account:</label>
             <select name="account" id="account" class="form-select">
                 <option value="">All</option>
-                {% for acc in accounts %}
-                    <option value="{{ acc }}" {% if acc == selected_account %}selected{% endif %}>{{ acc }}</option>
-                {% endfor %}
+                {% if accounts %}
+                    {% for acc in accounts %}
+                        <option value="{{ acc }}" {% if acc == selected_account %}selected{% endif %}>{{ acc }}</option>
+                    {% endfor %}
                 {% else %}
-                    <td colspan="{{ table.headers|length }}" class="text-center">No data available</td>
+                    <option disabled>No accounts available</option>
                 {% endif %}
             </select>
         </div>
@@ -54,32 +55,22 @@
                     <h5>📊 Strategy Outcome Chart (by Account)</h5>
                     <canvas id="strategyChart" height="120"></canvas>
                     <script>
-                            {% if table.rows %}
-                            {% for row in table.rows %}
-
                         const labels = [
-                            {% for row in table.rows %}
-                                '{{ row[1]|replace("'", "\\'") }} ({{ row[0]|replace("'", "\\'") }})'{{ "," if not loop.last }}
-                            {% endfor %}
+                            {% for row in table.rows %}'{{ row[1]|replace("'", "\\'") }} ({{ row[0]|replace("'", "\\'") }})'{% if not loop.last %}, {% endif %}{% endfor %}
                         ];
                         const values = [
-                            {% for row in table.rows %}
-                                {{ row[2]|float }}{{ "," if not loop.last }}
-                            {% endfor %}
+                            {% for row in table.rows %}{{ row[2]|float }}{% if not loop.last %}, {% endif %}{% endfor %}
                         ];
 
                         function getDivergingColor(value, min, max) {
-                            if (value === 0) return 'rgb(220, 220, 220)'; // gray for zero
+                            if (value === 0) return 'rgb(220, 220, 220)';
                             const scale = Math.max(Math.abs(min), Math.abs(max));
                             const ratio = Math.min(Math.abs(value) / scale, 1);
-
                             if (value < 0) {
-                                // Red for negative
                                 const r = 200 + Math.round(55 * ratio);
                                 const g = 100 - Math.round(80 * ratio);
                                 return `rgb(${r}, ${g}, 100)`;
                             } else {
-                                // Green for positive
                                 const r = 100 - Math.round(80 * ratio);
                                 const g = 200 + Math.round(55 * ratio);
                                 return `rgb(${r}, ${g}, 100)`;
@@ -90,7 +81,7 @@
                         const maxValue = Math.max(...values);
                         const barColors = values.map(v => getDivergingColor(v, minValue, maxValue));
 
-                        new Chart(ctx, {
+                        new Chart(document.getElementById('strategyChart'), {
                             type: 'bar',
                             data: {
                                 labels: labels,
