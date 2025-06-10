@@ -13,6 +13,10 @@ def index():
     ]
     return render_template('index.html', title='Home', user=user, posts=posts)
 
+@app.route("/ping")
+def ping():
+    return "✅ Flask app is alive"
+
 @app.route('/accounts')
 def accounts():
     client = get_bigquery_client()
