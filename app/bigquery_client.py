@@ -1,15 +1,28 @@
 import os
+import json
+import base64
 from google.cloud import bigquery
+from google.oauth2 import service_account
 
 def get_bigquery_client():
-    # Ensure credentials env var is set
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not credentials_path:
-        raise EnvironmentError("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
-    if not os.path.exists(credentials_path):
-        raise FileNotFoundError(f"Credential file not found at {credentials_path}")
+    json_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-    return bigquery.Client()
+    if json_path and os.path.exists(json_path):
+        # Local dev
+        credentials = service_account.Credentials.from_service_account_file(json_path)
+    else:
+        # Render: decode from env variable
+        json_data = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64")
+        if not json_data:
+            raise EnvironmentError("Missing Google credentials")
+
+        creds_dict = json.loads(
+            base64.b64decode(json_data.encode()).decode()
+        )
+
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
+
+    return bigquery.Client(credentials=credentials, project=credentials.project_id)
 
 def query_bigquery(client, query_file, start_date=None, end_date=None):
     query_path = os.path.join(os.path.dirname(__file__), "queries", query_file)
