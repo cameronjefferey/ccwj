@@ -2,7 +2,8 @@
 target/
 dbt_packages/
 logs/
-webapp/app/__pycache__/
+app/__pycache__/
 dbt/profiles.yml
 profiles.yml
 .flaskenv
+
