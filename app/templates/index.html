@@ -2,26 +2,29 @@
 
 {% block content %}
 <div class="container mt-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4">Welcome to Happy Trader</h1>
+        <p class="lead">An analytics dashboard built for serious options traders.</p>
+    </div>
+
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-8">
+            <p>
+                Happy Trader helps you analyze your option trading strategies with clarity. 
+                Whether you're running spreads, straddles, or selling premium, this tool lets you track, 
+                compare, and evaluate performance across positions, strategies, accounts, and time.
+            </p>
+            <p>
+                Our goal is to help you answer: “What’s working?” and “What’s not?”
+                Using powerful data models, you’ll see strategy outcomes, position-level details, and 
+                account analytics — all in one place.
+            </p>
+        </div>
+    </div>
+
     <div class="text-center">
-        <h1 class="mb-4">Welcome to Happy Trader 🎉</h1>
-        <p class="lead">
-            Happy Trader is your command center for evaluating and optimizing your <strong>options trading strategies</strong>.
-        </p>
-        <p class="mt-3">
-            Use the interactive dashboards to analyze your positions, review strategy performance, and uncover what is or isn’t working.
-            Whether you're fine-tuning your delta exposure, tracking position outcomes, or preparing for earnings season, Happy Trader brings your trading data to life.
-        </p>
-        <hr class="my-4">
-        <h3 class="mt-5">Features</h3>
-        <ul class="list-group list-group-flush text-start mt-3">
-            <li class="list-group-item">📊 Strategy analysis by account and symbol</li>
-            <li class="list-group-item">📈 Position-level insights: gain/loss, earnings dates, ex-dividends</li>
-            <li class="list-group-item">🧠 Understand which strategies are actually working — and which aren’t</li>
-            <li class="list-group-item">🔍 Filter by symbol, account, or strategy to drill into the data</li>
-        </ul>
-        <p class="mt-4">
-            Happy Trader helps you become a smarter, more confident trader.
-        </p>
+        <a href="/strategy" class="btn btn-primary btn-lg">Explore Strategy Outcomes</a>
+        <a href="/accounts" class="btn btn-outline-secondary btn-lg ms-3">View Account Performance</a>
     </div>
 </div>
 {% endblock %}
