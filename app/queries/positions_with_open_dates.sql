@@ -1,1 +1,0 @@
-select distinct account,symbol,position_open_date from `ccwj-dbt.analytics.current_positions`

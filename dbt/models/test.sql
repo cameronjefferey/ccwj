@@ -1,1 +1,0 @@
-select distinct * from ccwj-dbt.analytics.daily_position_performance where account = "Cameron 401k"

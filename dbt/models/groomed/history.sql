@@ -18,10 +18,10 @@ select
         when action in ('Assigned','Expired','Buy to Close','Sell to Close') then 'Close' 
         else 'Open'
     end as trade_type,
-    SAFE_CAST(quantity as FLOAT64)as quantity,
+    SAFE_CAST(case when action in ('Sell to Open') then quantity*-1 else quantity end as FLOAT64) as quantity,
     price,
     fees_and_comm,
-    SAFE_CAST(amount as FLOAT64) as amount,
+    SAFE_CAST(case when action = 'Expired' then 0 else amount end as FLOAT64) as amount,
     SAFE_CAST(amount as FLOAT64)/nullif(SAFE_CAST(quantity as FLOAT64),0) as cost_per_share,
 from {{ ref('0417_history')}}
 )

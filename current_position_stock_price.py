@@ -8,9 +8,11 @@ client = bigquery.Client()
 
 # Step 2: Query BigQuery to get current positions
 query = """
-    SELECT account, symbol, position_open_date
-    FROM `ccwj-dbt.analytics.positions_with_open_dates`
-    WHERE position_open_date is not null 
+    SELECT account, symbol, min(transaction_date) AS position_open_date
+    FROM `ccwj-dbt.analytics.history_and_current_combined`
+    WHERE is_current_position_establishement_1_0 = 1
+        and security_type = 'Equity' 
+    GROUP BY 1,2
 """
 positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
