@@ -4,6 +4,5 @@ dbt_packages/
 logs/
 app/__pycache__/
 dbt/profiles.yml
-profiles.yml
 .flaskenv
-
+profiles.yml

@@ -21,7 +21,7 @@ select
     quantity,
     min(amount) as call_open_amount,
     max(next_position_amount) as call_close_amount,
-{# TODO: This would be to account for rolling order. Might need to rethink
+{# TODO: The +1 is to account for rolling orders. Might need to rethink
 the best way to do this. Right now it would be "first full 
 day of trading" would be the open date which feels sus #}
     min(transaction_date+1) as position_open_date,
@@ -53,8 +53,13 @@ when positions close and open on the same day #}
     case 
         when option_calls_sold.position_close_date = calendar_dates_and_positions.day 
             then option_calls_sold.call_open_amount + option_calls_sold.call_close_amount
-        else option_calls_sold.call_open_amount
+        else null
     end as option_calls_sold_gain_or_loss,
+    sum(case 
+        when option_calls_sold.position_close_date = calendar_dates_and_positions.day 
+            then option_calls_sold.call_open_amount + option_calls_sold.call_close_amount
+        else null
+    end) over ( partition by calendar_dates_and_positions.account,calendar_dates_and_positions.symbol order by calendar_dates_and_positions.day) as running_options_gain_or_loss,
 from {{ ref('calendar_dates_and_positions')}}
     left join equity_open_date
         on calendar_dates_and_positions.day >= equity_open_date.position_open_date

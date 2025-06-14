@@ -11,5 +11,5 @@ select
     symbol,
     account,
     'Options Sold' as security_type,
-    option_calls_sold_gain_or_loss as gain_or_loss 
+    running_options_gain_or_loss as gain_or_loss 
 from {{ ref('daily_equity_held')}}
