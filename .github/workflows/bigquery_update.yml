@@ -36,7 +36,7 @@ jobs:
       - name: Run Upstream DBT Models
         run: |
           cd dbt
-          dbt build -s +positions_with_open_dates
+          dbt build -s +history_and_current_combined
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
@@ -48,7 +48,7 @@ jobs:
       - name: Run Remaining DBT Models
         run: |
           cd dbt
-          dbt build --exclude +positions_with_open_dates
+          dbt build --exclude +history_and_current_combined
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
