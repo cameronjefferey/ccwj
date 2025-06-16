@@ -53,6 +53,18 @@ jobs:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$GITHUB_OUTPUT"
+
+      - name: Get recent commits
+        id: commits
+        run: |
+          echo "log<<EOF" >> "$GITHUB_OUTPUT"
+          git log -n 5 --pretty=format:'- <a href="https://github.com/${{ github.repository }}/commit/%H">%h</a> - %an: %s' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Notify Dad by Email
         uses: dawidd6/action-send-mail@v3
         with:
@@ -70,5 +82,4 @@ jobs:
             <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
             <p><strong>Deployed by:</strong> ${{ github.actor }}</p>
             <p><strong>Recent Commits:</strong></p>
-            <pre>${{ github.event.head_commit.message }}</pre>
-
+            <pre>${{ steps.commits.outputs.log }}</pre>
