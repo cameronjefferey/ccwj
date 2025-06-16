@@ -1,14 +1,6 @@
 select 
     account,
     symbol,
-    transaction_date,
-from {{ ref('history_and_current_combined')}}
-where is_current_position_establishement_1_0 = 1
-    and security_type = 'Equity'
-
-select 
-    account,
-    symbol,
     trade_symbol,
     quantity,
     amount,

@@ -53,11 +53,15 @@ when positions close and open on the same day #}
     case 
         when option_calls_sold.position_close_date = calendar_dates_and_positions.day 
             then option_calls_sold.call_open_amount + option_calls_sold.call_close_amount
+        when option_calls_sold.position_close_date = current_date() 
+            then option_calls_sold.call_open_amount + current_position_stock_price.close_price
         else null
     end as option_calls_sold_gain_or_loss,
     sum(case 
         when option_calls_sold.position_close_date = calendar_dates_and_positions.day 
             then option_calls_sold.call_open_amount + option_calls_sold.call_close_amount
+        when option_calls_sold.position_close_date = current_date() 
+            then option_calls_sold.call_open_amount + current_position_stock_price.close_price
         else null
     end) over ( partition by calendar_dates_and_positions.account,calendar_dates_and_positions.symbol order by calendar_dates_and_positions.day) as running_options_gain_or_loss,
 from {{ ref('calendar_dates_and_positions')}}

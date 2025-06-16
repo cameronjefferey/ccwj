@@ -1,7 +1,11 @@
 with fix as (
 select 
     account,
-    current_date() as transaction_date,
+    CASE
+      WHEN EXTRACT(DAYOFWEEK FROM CURRENT_DATE()) = 7 THEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)  -- Saturday
+      WHEN EXTRACT(DAYOFWEEK FROM CURRENT_DATE()) = 1 THEN DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)  -- Sunday
+      ELSE CURRENT_DATE()
+    END AS transaction_date,
     symbol as trade_symbol,
     'holding' as action,
     split(symbol," ")[0] as symbol,
