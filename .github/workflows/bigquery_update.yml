@@ -58,29 +58,25 @@ jobs:
         id: date
         run: echo "date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$GITHUB_OUTPUT"
 
-      - name: Get Recent Commits
-        id: commits
-        run: |
-          LOG=$(git log -n 5 --pretty=format:"- <a href='https://github.com/${{ github.repository }}/commit/%H'>%h</a> - %an: %s")
-          echo "log<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$LOG" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Get Commit Message
+  id: commit
+  run: echo "message=$(git log -1 --pretty=format:'%s')" >> "$GITHUB_OUTPUT"
 
-      - name: Notify Dad by Email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 HappyTrader Deployed!"
-          to: cameronjsmith@gmail.com
-          from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
-          content_type: text/html
-          body: |
-            <h3>🚀 Deployment Completed</h3>
-            <p><strong>Date:</strong> ${{ steps.date.outputs.date }}</p>
-            <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
-            <p><strong>Deployed by:</strong> ${{ github.actor }}</p>
-            <p><strong>Recent Commits:</strong></p>
-            <pre>${{ steps.commits.outputs.log }}</pre>
+- name: Notify Dad by Email
+  uses: dawidd6/action-send-mail@v3
+  with:
+    server_address: smtp.gmail.com
+    server_port: 465
+    username: ${{ secrets.EMAIL_USERNAME }}
+    password: ${{ secrets.EMAIL_PASSWORD }}
+    subject: "🚀 HappyTrader Deployed!"
+    to: cameronjsmith@gmail.com
+    from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
+    content_type: text/html
+    body: |
+      HappyTrader was just deployed to production 🎉<br><br>
+      
+      💬 <strong>Commit:</strong> "${{ steps.commit.outputs.message }}"<br>
+
+      🕒 <strong>Time:</strong> ${{ github.event.head_commit.timestamp }}<br>
+      👤 <strong>Deployed by:</strong> ${{ github.actor }}<br>
