@@ -53,3 +53,22 @@ jobs:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+      - name: Notify Dad by Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "🚀 HappyTrader Deployed!"
+          to: cameronjsmith@gmail.com
+          from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
+          content_type: text/html
+          body: |
+            <h3>🚀 Deployment Completed</h3>
+            <p><strong>Date:</strong> ${{ steps.date.outputs.date }}</p>
+            <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
+            <p><strong>Deployed by:</strong> ${{ github.actor }}</p>
+            <p><strong>Recent Commits:</strong></p>
+            <pre>${{ github.event.head_commit.message }}</pre>
+
