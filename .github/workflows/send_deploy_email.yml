@@ -11,14 +11,14 @@ jobs:
       - name: 📥 Checkout repo
         uses: actions/checkout@v3
 
-      - name: 🧾 Read deploy.txt content into output
+      - name: 🧾 Read deploy.txt safely
         id: read_deploy_message
         run: |
-          {
-            echo "message<<EOF"
-            cat deploy.txt
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          DEPLOY_MSG=$(cat deploy.txt)
+          DEPLOY_MSG="${DEPLOY_MSG//'%'/'%25'}"
+          DEPLOY_MSG="${DEPLOY_MSG//$'\n'/'%0A'}"
+          DEPLOY_MSG="${DEPLOY_MSG//$'\r'/'%0D'}"
+          echo "message=$DEPLOY_MSG" >> $GITHUB_OUTPUT
 
       - name: 📧 Send Email Notification
         uses: dawidd6/action-send-mail@v3
