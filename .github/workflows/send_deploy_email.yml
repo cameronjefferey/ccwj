@@ -1,24 +1,26 @@
-name: ✉️ Send Deploy Email
+name: 📬 Send Deploy Email
 
 on:
-  workflow_dispatch:  # Manual button in GitHub UI
+  workflow_dispatch:
 
 jobs:
-  notify:
+  send-email:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout Repo
+      - name: 📥 Checkout repo
         uses: actions/checkout@v3
 
-      - name: 📄 Read deploy.txt contents
-        id: deploy_msg
+      - name: 🧾 Read deploy.txt content into output
+        id: read_deploy_message
         run: |
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          cat deploy.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "message<<EOF"
+            cat deploy.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: 📧 Send Email to Dad
+      - name: 📧 Send Email Notification
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -28,10 +30,5 @@ jobs:
           subject: "🚀 HappyTrader Manual Update"
           to: cameronjsmith@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
-          content_type: text/html
-          body: |
-            <h3>🚀 Manual Deployment Update</h3>
-            <p><strong>Sent by:</strong> ${{ github.actor }}</p>
-            <p><strong>Update Message:</strong></p>
-            <pre>${{ steps.deploy_msg.outputs.message }}</pre>
-            <p><strong>Commit:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">{{ github.sha }}</a></p>
+          content_type: text/plain
+          body: ${{ steps.read_deploy_message.outputs.message }}
