@@ -2,6 +2,11 @@ name: ✉️ Send Deploy Email
 
 on:
   workflow_dispatch:
+    inputs:
+      message:
+        description: 'Enter the update message to include in the email'
+        required: true
+        type: string
 
 jobs:
   notify:
@@ -10,13 +15,6 @@ jobs:
     steps:
       - name: 📥 Checkout Repo
         uses: actions/checkout@v3
-
-      - name: 📄 Read deploy message
-        id: deploy_msg
-        run: |
-          echo "msg<<EOF" >> $GITHUB_OUTPUT
-          cat deploy.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: 📧 Send Email to Dad
         uses: dawidd6/action-send-mail@v3
@@ -33,5 +31,5 @@ jobs:
             <h3>🚀 Manual Deployment Update</h3>
             <p><strong>Sent by:</strong> ${{ github.actor }}</p>
             <p><strong>Update Message:</strong></p>
-            <pre>${{ steps.deploy_msg.outputs.msg }}</pre>
+            <pre>${{ github.event.inputs.message }}</pre>
             <p><strong>Commit:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">{{ github.sha }}</a></p>
