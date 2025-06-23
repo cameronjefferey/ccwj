@@ -1,0 +1,37 @@
+name: ✉️ Send Deploy Email
+
+on:
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: 📄 Read deploy message
+        id: deploy_msg
+        run: |
+          echo "msg<<EOF" >> $GITHUB_OUTPUT
+          cat deploy.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 📧 Send Email to Dad
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "🚀 HappyTrader Manual Update"
+          to: cameronjsmith@gmail.com
+          from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
+          content_type: text/html
+          body: |
+            <h3>🚀 Manual Deployment Update</h3>
+            <p><strong>Sent by:</strong> ${{ github.actor }}</p>
+            <p><strong>Update Message:</strong></p>
+            <pre>${{ steps.deploy_msg.outputs.msg }}</pre>
+            <p><strong>Commit:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">{{ github.sha }}</a></p>
