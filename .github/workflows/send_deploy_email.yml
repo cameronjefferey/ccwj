@@ -1,12 +1,7 @@
 name: ✉️ Send Deploy Email
 
 on:
-  workflow_dispatch:
-    inputs:
-      message:
-        description: 'Enter the update message to include in the email'
-        required: true
-        type: string
+  workflow_dispatch:  # Manual button in GitHub UI
 
 jobs:
   notify:
@@ -16,6 +11,13 @@ jobs:
       - name: 📥 Checkout Repo
         uses: actions/checkout@v3
 
+      - name: 📄 Read deploy.txt contents
+        id: deploy_msg
+        run: |
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          cat deploy.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: 📧 Send Email to Dad
         uses: dawidd6/action-send-mail@v3
         with:
@@ -23,12 +25,13 @@ jobs:
           server_port: 465
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 HappyTrader Updates"
+          subject: "🚀 HappyTrader Manual Update"
           to: cameronjsmith@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
           content_type: text/html
           body: |
-            <h3>🚀 Changes have been made:</h3>
-
-
-            ${{ github.event.inputs.message }}
+            <h3>🚀 Manual Deployment Update</h3>
+            <p><strong>Sent by:</strong> ${{ github.actor }}</p>
+            <p><strong>Update Message:</strong></p>
+            <pre>${{ steps.deploy_msg.outputs.message }}</pre>
+            <p><strong>Commit:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">{{ github.sha }}</a></p>
