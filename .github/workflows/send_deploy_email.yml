@@ -23,13 +23,12 @@ jobs:
           server_port: 465
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 HappyTrader Manual Update"
+          subject: "🚀 HappyTrader Updates"
           to: cameronjsmith@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
           content_type: text/html
           body: |
-            <h3>🚀 Manual Deployment Update</h3>
-            <p><strong>Sent by:</strong> ${{ github.actor }}</p>
-            <p><strong>Update Message:</strong></p>
-            <pre>${{ github.event.inputs.message }}</pre>
-            <p><strong>Commit:</strong> <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">{{ github.sha }}</a></p>
+            <h3>🚀 Changes have been made:</h3>
+
+
+            ${{ github.event.inputs.message }}
