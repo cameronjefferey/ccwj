@@ -27,7 +27,7 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "🚀 HappyTrader Deployment Notes"
-          to: cameronjsmith@gmail.com
+          to: cameronjsmith23@gmail.com, jeffcanuk@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
           content_type: text/plain
           body: ${{ steps.read_deploy.outputs.body }}
