@@ -1,1 +1,17 @@
+Old Updates
+- Launch site on happytrader.me 
+
+New Updates
 - 6/23: Updated code to include the current option position. 
+- 6/23: Create a deploy email for updates
+
+Future Updates
+
+Positions Page
+- Add Dividends
+- Add logic for PMCC
+- Add more metadata for positions
+    - Overall G/L 
+    - Next Dividend Date
+    - Next Earnings Date 
+    - Cost per Share (factoring in Option G/L)
