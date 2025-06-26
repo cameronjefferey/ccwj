@@ -11,43 +11,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Read and convert deploy.txt to HTML
-        id: deploy_notes
+      - name: Read deploy.txt into variable
+        id: read_deploy
         run: |
-          RAW=$(cat deploy.txt)
-
-          HTML=$(echo "$RAW" | awk '
-            BEGIN {
-              print "<h3>🚀 Deployment Notes</h3>"
-            }
-            /^$/ { print ""; next }
-            /^[A-Za-z ]+$/ { print "<h4>" $0 "</h4>"; next }
-            /^-/ { sub(/^- /, ""); print "<li>" $0 "</li>"; next }
-            { print "<p>" $0 "</p>" }
-          ' | awk '
-            BEGIN { in_ul = 0 }
-            /<li>/ {
-              if (!in_ul) {
-                print "<ul>"
-                in_ul = 1
-              }
-              print
-              next
-            }
-            {
-              if (in_ul) {
-                print "</ul>"
-                in_ul = 0
-              }
-              print
-            }
-            END {
-              if (in_ul) print "</ul>"
-            }
-          ')
-
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$HTML" >> $GITHUB_OUTPUT
+          DEPLOY_CONTENT=$(cat deploy.txt)
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$DEPLOY_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send Email
@@ -60,5 +29,5 @@ jobs:
           subject: "🚀 HappyTrader Deployment Notes"
           to: cameronjsmith@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
-          content_type: text/html
-          body: ${{ steps.deploy_notes.outputs.message }}
+          content_type: text/plain
+          body: ${{ steps.read_deploy.outputs.body }}
