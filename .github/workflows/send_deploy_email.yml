@@ -1,4 +1,4 @@
-name: 📬 Send Deploy Email
+name: Send Deploy Email
 
 on:
   workflow_dispatch:
@@ -8,27 +8,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: 🧾 Read deploy.txt safely
-        id: read_deploy_message
+      - name: Read and convert deploy.txt to HTML
+        id: deploy_notes
         run: |
-          DEPLOY_MSG=$(cat deploy.txt)
-          DEPLOY_MSG="${DEPLOY_MSG//'%'/'%25'}"
-          DEPLOY_MSG="${DEPLOY_MSG//$'\n'/'%0A'}"
-          DEPLOY_MSG="${DEPLOY_MSG//$'\r'/'%0D'}"
-          echo "message=$DEPLOY_MSG" >> $GITHUB_OUTPUT
+          RAW=$(cat deploy.txt)
 
-      - name: 📧 Send Email Notification
+          HTML=$(echo "$RAW" | awk '
+            BEGIN {
+              print "<h3>🚀 Deployment Notes</h3>"
+            }
+            /^$/ { print ""; next }
+            /^[A-Za-z ]+$/ { print "<h4>" $0 "</h4>"; next }
+            /^-/ { sub(/^- /, ""); print "<li>" $0 "</li>"; next }
+            { print "<p>" $0 "</p>" }
+          ' | awk '
+            BEGIN { in_ul = 0 }
+            /<li>/ {
+              if (!in_ul) {
+                print "<ul>"
+                in_ul = 1
+              }
+              print
+              next
+            }
+            {
+              if (in_ul) {
+                print "</ul>"
+                in_ul = 0
+              }
+              print
+            }
+            END {
+              if (in_ul) print "</ul>"
+            }
+          ')
+
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$HTML" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send Email
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 HappyTrader Feature Update"
+          subject: "🚀 HappyTrader Deployment Notes"
           to: cameronjsmith@gmail.com
           from: "HappyTrader Bot <cameronjsmith23@gmail.com>"
-          content_type: text/plain
-          body: ${{ steps.read_deploy_message.outputs.message }}
+          content_type: text/html
+          body: ${{ steps.deploy_notes.outputs.message }}
