@@ -78,6 +78,5 @@ from {{ ref('calendar_dates_and_positions')}}
         and calendar_dates_and_positions.day <= option_calls_sold.position_close_date
         and calendar_dates_and_positions.symbol = option_calls_sold.symbol
         and calendar_dates_and_positions.account = option_calls_sold.account
-where equity_open_date.account = 'Cameron 401k'
 )
 select * from final

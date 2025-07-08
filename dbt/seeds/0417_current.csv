@@ -1,18 +1,14 @@
 Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,22.06,0.17,0.0078,516181.94,3977.83,0.0078,75514.46,440667.48,5.8355,D,No,,0.9607,,3.227251591948,45777,,,,-22.41,17.79,37.9,1762702,,,Equity,258091
-Sara Investment,CFLT 06/20/2025 24.00 C,CALL CONFLUENT INC $24 EXP 06/20/25,-150,0.6,0.025,0.0435,-9000,-375,-0.0435,-9300.26,300.26,0.0323,,,,,45828,0.620017333333,,,,,,0.3,9.2,47,-1.94,OTM,Option, -150  Covered Call 1
-Sara Investment,CFLT 06/20/2025 25.00 C,CALL CONFLUENT INC $25 EXP 06/20/25,-50,0.375,0.025,0.0714,-1875,-125,-0.0714,-2066.81,191.81,0.0928,,,,,45828,0.413362,,,,,,0.17,13.6,26,-2.94,OTM,Option, -50  Covered Call 2
-Sara Investment,Cash & Cash Investments,,,,,,21126.5,0,0,,,,,,,0.0393,,,,,,,,,,,,,Cash and Money Market,
-Sara Investment,Account Total,,,,,,526433.44,3477.83,0.0067,64147.39,441159.55,6.8773,,,,,,,,,,,,,,,,,,
-Cameron Investment,CRWV 06/20/2025 130.00 C,CALL COREWEAVE INC $130 EXP 06/20/25,6,5.6,-0.1902,-0.0328,3360,-114.12,-0.0328,7005.97,-3645.97,-0.5204,,,,0.4659,45828,11.676616666667,,,,,,2.49,13.08,72,-25.35,OTM,Option,-
-Cameron Investment,NVDA 05/30/2025 130.00 C,CALL NVIDIA CORP $130 EXP 05/30/25,5,6.325,-0.6625,-0.0948,3162.5,-331.25,-0.0948,3528.3,-365.8,-0.1037,,,,0.4385,45807,7.0566,,,,,,0.57,10.45,22350,1.985,ITM,Option,-
-Cameron Investment,Cash & Cash Investments,,,,,,689.66,0,0,,,,,,,0.0956,,,,,,,,,,,,,Cash and Money Market,
-Cameron Investment,Account Total,,,,,,7212.16,-445.37,-0.0582,10534.27,-4011.77,-0.3808,,,,,,,,,,,,,,,,,,
-Cameron 401k,CRWV,COREWEAVE INC CLASS A,100,145.7,-3.27,-0.022,14570,-327,-0.022,8530,6040,0.7081,,No,,0.3311,,85.3,45719,,,,-28.69,33.515,166.63,16425482,,,Equity,14570
-Cameron 401k,ONON,ON HLDG AG FCLASS A,100,52.2492,-3.4808,-0.0625,5224.92,-348.08,-0.0625,5882,-657.08,-0.1117,,No,,0.1187,,58.82,45790,,,,78.31,34.59,64.05,9331659,,,Equity,5225
-Cameron 401k,RDDT,REDDIT INC CLASS A,100,118,1.8,0.0155,11800,180,0.0155,11830,-30,-0.0025,,No,,0.2681,,118.3,45778,,,,177.09,49.13,230.41,6494517,,,Equity,11800
-Cameron 401k,CRWV 06/20/2025 160.00 C,CALL COREWEAVE INC $160 EXP 06/20/25,-1,2.725,-1.3197,-0.3263,-272.5,131.97,0.3263,-462.34,189.84,0.4106,,,,,45828,4.6234,,,,,,1.08,21.19,5043,-14.32,OTM,Option, -1  Covered Call
-Cameron 401k,ONON 06/13/2025 58.00 C,CALL ON HLDG AG $58 EXP 06/13/25,-1,1.065,0.9887,2.9581,-106.5,-98.87,-12.9581,-55.34,-51.16,-0.9245,,,,,45821,0.5534,,,,,,0.01,3.6,1,-5.7508,OTM,Option, -1  Covered Call
-Cameron 401k,RDDT 06/13/2025 122.00 C,CALL REDDIT INC $122 EXP 06/13/25,-1,0.015,-0.2661,-0.9466,-1.5,26.61,0.9466,-393.34,391.84,0.9962,,,,,45821,3.9334,,,,,,0.01,14.75,250,-4,OTM,Option, -1  Covered Call
-Cameron 401k,Cash & Cash Investments,,,,,,12413.19,0,0,,,,,,,0.2821,,,,,,,,,,,,,Cash and Money Market,
-Cameron 401k,Account Total,,,,,,43627.61,-435.37,-0.0099,25330.98,5883.44,0.2323,,,,,,,,,,,,,,,,,,
+Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,23.4,-0.03,-0.0013,547536.6,-701.97,-0.0013,75514.46,472022.14,6.2508,D,No,,0.9628,,3.227251591948,45777,,,,-23.84,17.79,37.9,5135001,,,Equity,273768
+Sara Investment,Cash & Cash Investments,,,,,,21127.37,0,0,,,,,,,0.0372,,,,,,,,,,,,,Cash and Money Market,
+Sara Investment,Account Total,,,,,,568663.97,-701.97,-0.0012,75514.46,472022.14,6.2508,,,,,,,,,,,,,,,,,,
+Cameron 401k,ASTS,AST SPACEMOBILE INC CLASS A,100,45.6988,0.09,0.002,4569.88,9,0.002,4682,-112.12,-0.0239,F,No,,0.0957,,46.82,45789,,,,-25.19,10.67,54.0499,8221661,,,Equity,4570
+Cameron 401k,CRWV,COREWEAVE INC CLASS A,100,160,-5.5,-0.0332,16000,-550,-0.0332,8530,7470,0.8757,,No,,0.3351,,85.3,45719,,,,-31.82,33.515,187,12665695,,,Equity,16000
+Cameron 401k,MDAI,SPECTRAL AI INC CLASS A,3500,2.72,0.04,0.0149,9520,140,0.0149,9589.65,-69.65,-0.0073,,No,,0.1994,,2.7399,45790,,,,-5.52,0.8239,3.25,621035,,,Equity,9520
+Cameron 401k,RDDT,REDDIT INC CLASS A,100,152.7175,-3.66,-0.0234,15271.75,158.75,0.0105,15113,158.75,0.0105,F,No,,0.3199,,151.13,45778,,,,239.32,49.13,230.41,6308084,,,Equity,15272
+Cameron 401k,VST,VISTRA CORP,1,193.55,1.5,0.0078,193.55,1.5,0.0078,193.53,0.02,0.0001,D,No,,0.0041,,193.53,45784,0.0046826,0.225,45826,30.11,66.5,199.84,4313374,,,Equity,194
+Cameron 401k,ASTS 07/11/2025 46.00 C,CALL AST SPACEMOBILE INC$46 EXP 07/11/25,-1,1.605,-0.3487,-0.1785,-160.5,-42.16,-0.3563,-118.34,-42.16,-0.3563,,,,,45849,1.1834,,,,,,1.12,9.2,1950,-0.3012,OTM,Option, -1  Covered Call
+Cameron 401k,CRWV 07/11/2025 165.00 C,CALL COREWEAVE INC $165 EXP 07/11/25,-1,3,-3.048,-0.504,-300,-28.66,-0.1056,-271.34,-28.66,-0.1056,,,,,45849,2.7134,,,,,,1.65,25.21,3076,-4.8001,OTM,Option, -1  Covered Call
+Cameron 401k,RDDT 07/11/2025 155.00 C,CALL REDDIT INC $155 EXP 07/11/25,-1,4.025,-2.6868,-0.4003,-402.5,-70.16,-0.2111,-332.34,-70.16,-0.2111,,,,,45849,3.3234,,,,,,0.85,12.77,1460,-2.2825,OTM,Option, -1  Covered Call
+Cameron 401k,Cash & Cash Investments,,,,,,2189.83,1109,1.02606330320216,,,,,,,0.0459,,,,,,,,,,,,,Cash and Money Market,
+Cameron 401k,Account Total,,,,,,46882.01,727.27,0.0158,37386.16,7306.02,0.1954,,,,,,,,,,,,,,,,,,

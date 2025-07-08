@@ -1,150 +1,152 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
-    <h2 class="mb-4 text-center">📊 Position Performance</h2>
+  <h2 class="mb-4 text-center">📊 Position Performance</h2>
 
-    {% if charts %}
-    <div class="accordion" id="positionsAccordion">
-        {% for symbol, rows in charts.items() %}
-        <div class="accordion-item">
-            <h2 class="accordion-header" id="heading-{{ loop.index }}">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
-                        data-bs-target="#collapse-{{ loop.index }}" aria-expanded="false"
-                        aria-controls="collapse-{{ loop.index }}">
-                    {{ symbol }}
-                </button>
-            </h2>
-            <div id="collapse-{{ loop.index }}" class="accordion-collapse collapse"
-                 aria-labelledby="heading-{{ loop.index }}" data-bs-parent="#positionsAccordion">
-                <div class="accordion-body">
+  {# --- Account filter form --- #}
+  <form method="get" class="mb-4 d-flex align-items-center g-2">
+    <label for="account" class="me-2 fw-bold">Account:</label>
+    <select name="account" id="account" class="form-select w-auto">
+      <option value="">All Accounts</option>
+      {% for acct in accounts %}
+        <option value="{{ acct }}" {% if acct == selected_account %}selected{% endif %}>{{ acct }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary ms-3">Filter</button>
+  </form>
 
-                    <!-- Trades Table -->
-                    <h5>📄 Trades for {{ symbol }}</h5>
-                    {% if trades[symbol] %}
-                    <div class="table-responsive mb-4">
-                        <table class="table table-bordered table-sm table-striped">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Trade Symbol</th>
-                                    <th>Security Type</th>
-                                    <th>Quantity</th>
-                                    <th>Position Gain/Loss</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in trades[symbol] %}
-                                <tr>
-                                    <td>{{ row.transaction_date }}</td>
-                                    <td>{{ row.trade_symbol }}</td>
-                                    <td>{{ row.security_type }}</td>
-                                    <td>{{ row.quantity }}</td>
-                                    <td>{{ row.position_gain_or_loss }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No trade data available for {{ symbol }}.</p>
-                    {% endif %}
+  {% if charts %}
+  <div class="accordion" id="positionsAccordion">
+    {% for symbol, rows in charts.items() %}
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="heading-{{ loop.index }}">
+        <button class="accordion-button collapsed"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#collapse-{{ loop.index }}"
+                aria-expanded="false"
+                aria-controls="collapse-{{ loop.index }}">
+          {{ symbol }}
+        </button>
+      </h2>
+      <div id="collapse-{{ loop.index }}"
+           class="accordion-collapse collapse"
+           aria-labelledby="heading-{{ loop.index }}"
+           data-bs-parent="#positionsAccordion">
+        <div class="accordion-body">
 
-                    <!-- Chart -->
-                    <h5 class="mt-4">📈 Daily Gain or Loss</h5>
-                    <div style="height: 300px; overflow-x: auto;">
-                        <canvas id="chart-{{ symbol }}" style="min-width: 800px;"></canvas>
-                    </div>
+          <!-- Trades Table -->
+          <h5>📄 Trades for {{ symbol }}</h5>
+          {% if trades[symbol] %}
+          <div class="table-responsive mb-4">
+            <table class="table table-bordered table-sm table-striped">
+              <thead class="table-light">
+                <tr>
+                  <th>Date</th>
+                  <th>Trade Symbol</th>
+                  <th>Security Type</th>
+                  <th>Quantity</th>
+                  <th>Position Gain/Loss</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in trades[symbol]
+                             | sort(attribute='transaction_date', reverse=True) %}
+                <tr>
+                  <td>{{ row.transaction_date }}</td>
+                  <td>{{ row.trade_symbol }}</td>
+                  <td>{{ row.security_type }}</td>
+                  <td>{{ row.quantity }}</td>
+                  <td>{{ row.position_gain_or_loss }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted">No trades for {{ symbol }}.</p>
+          {% endif %}
 
-                    <script>
-                        document.addEventListener("DOMContentLoaded", function () {
-                            const chartData = {{ rows | tojson }};
-                            const labels = [...new Set(chartData.map(d => d.day))];
-                            const types = [...new Set(chartData.map(d => d.security_type))];
+          <!-- Chart -->
+          <h5 class="mt-4">📈 Daily Gain or Loss</h5>
+          <div style="height: 300px; overflow-x: auto;">
+            <canvas id="chart-{{ symbol }}" style="min-width: 800px;"></canvas>
+          </div>
 
-                            const colorMap = {
-                                "Options Sold": "#007bff",
-                                "Stock": "#28a745"
-                            };
+          <script>
+          document.addEventListener("DOMContentLoaded", () => {
+            const rawData = {{ rows | tojson | safe }};
+            const today   = new Date().toISOString().split('T')[0];
+            const chartData = rawData.filter(d => d.day <= today);
 
-                            const datasets = types.map(type => {
-                                return {
-                                    label: type,
-                                    data: labels.map(day => {
-                                        const point = chartData.find(r => r.day === day && r.security_type === type);
-                                        return point ? point.gain_or_loss : null;
-                                    }),
-                                    borderColor: colorMap[type] || "#666",
-                                    backgroundColor: colorMap[type] || "#666",
-                                    tension: 0.3,
-                                    fill: false,
-                                    pointRadius: 4,
-                                    pointHoverRadius: 6
-                                };
-                            });
+            const labels = Array.from(
+              new Set(chartData.map(d => d.day))
+            ).sort();
 
-                            const ctx = document.getElementById("chart-{{ symbol }}").getContext("2d");
-                            new Chart(ctx, {
-                                type: "line",
-                                data: {
-                                    labels: labels,
-                                    datasets: datasets
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                        title: {
-                                            display: false
-                                        },
-                                        legend: {
-                                            position: "bottom"
-                                        },
-                                        tooltip: {
-                                            mode: "index",
-                                            intersect: false
-                                        }
-                                    },
-                                    interaction: {
-                                        mode: "nearest",
-                                        axis: "x",
-                                        intersect: false
-                                    },
-                                    scales: {
-                                        x: {
-                                            title: {
-                                                display: true,
-                                                text: "Date"
-                                            },
-                                            ticks: {
-                                                autoSkip: true,
-                                                maxTicksLimit: 20
-                                            }
-                                        },
-                                        y: {
-                                            title: {
-                                                display: true,
-                                                text: "Gain or Loss ($)"
-                                            },
-                                            grid: {
-                                                drawBorder: false,
-                                                color: function(context) {
-                                                    return context.tick.value === 0 ? "#000" : "#ddd";
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                        });
-                    </script>
-                    <div style="height: 300px;"></div>
-                </div>
-            </div>
+            const types = Array.from(
+              new Set(chartData.map(d => d.security_type))
+            );
+
+            const colorMap = {
+              "Options Sold": "#007bff",
+              "Option":       "#007bff",
+              "Stock":        "#28a745",
+              "Equity":       "#28a745"
+            };
+
+            const datasets = types.map(type => ({
+              label: type,
+              data: labels.map(day => {
+                const pt = chartData.find(r => r.day===day && r.security_type===type);
+                return pt ? pt.gain_or_loss : null;
+              }),
+              borderColor:   colorMap[type] || "#666",
+              backgroundColor: colorMap[type] || "#666",
+              tension: 0.3,
+              fill: false,
+              pointRadius: 3,
+              pointHoverRadius: 6
+            }));
+
+            new Chart(
+              document.getElementById("chart-{{ symbol }}").getContext("2d"),
+              {
+                type: "line",
+                data: { labels, datasets },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { position: "bottom" },
+                    tooltip: { mode: "index", intersect: false }
+                  },
+                  interaction: { mode: "nearest", axis: "x", intersect: false },
+                  scales: {
+                    x: {
+                      title: { display: true, text: "Date" },
+                      ticks: { autoSkip: true, maxTicksLimit: 20 }
+                    },
+                    y: {
+                      title: { display: true, text: "Gain or Loss ($)" },
+                      grid: {
+                        drawBorder: false,
+                        color: ctx => ctx.tick.value===0 ? "#000" : "#ccc"
+                      }
+                    }
+                  }
+                }
+              }
+            );
+          });
+          </script>
+
         </div>
-        {% endfor %}
+      </div>
     </div>
-    {% else %}
-    <div class="alert alert-warning">No data found.</div>
-    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-warning">No data found.</div>
+  {% endif %}
 </div>
 {% endblock %}
