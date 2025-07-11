@@ -3,150 +3,175 @@
 <div class="container mt-4">
   <h2 class="mb-4 text-center">📊 Position Performance</h2>
 
-  {# --- Account filter form --- #}
+  {# — Account Filter — #}
   <form method="get" class="mb-4 d-flex align-items-center g-2">
     <label for="account" class="me-2 fw-bold">Account:</label>
     <select name="account" id="account" class="form-select w-auto">
       <option value="">All Accounts</option>
       {% for acct in accounts %}
-        <option value="{{ acct }}" {% if acct == selected_account %}selected{% endif %}>{{ acct }}</option>
+        <option value="{{ acct }}" {% if acct == selected_account %}selected{% endif %}>
+          {{ acct }}
+        </option>
       {% endfor %}
     </select>
     <button type="submit" class="btn btn-primary ms-3">Filter</button>
   </form>
 
   {% if charts %}
-  <div class="accordion" id="positionsAccordion">
-    {% for symbol, rows in charts.items() %}
-    <div class="accordion-item">
-      <h2 class="accordion-header" id="heading-{{ loop.index }}">
-        <button class="accordion-button collapsed"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#collapse-{{ loop.index }}"
-                aria-expanded="false"
-                aria-controls="collapse-{{ loop.index }}">
-          {{ symbol }}
-        </button>
-      </h2>
-      <div id="collapse-{{ loop.index }}"
-           class="accordion-collapse collapse"
-           aria-labelledby="heading-{{ loop.index }}"
-           data-bs-parent="#positionsAccordion">
-        <div class="accordion-body">
+    <div class="accordion" id="positionsAccordion">
+      {% for symbol, rows in charts.items() %}
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="heading-{{ loop.index }}">
+            <button class="accordion-button collapsed"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#collapse-{{ loop.index }}"
+                    aria-expanded="false"
+                    aria-controls="collapse-{{ loop.index }}">
+              {{ symbol }}
+            </button>
+          </h2>
+          <div id="collapse-{{ loop.index }}"
+               class="accordion-collapse collapse"
+               aria-labelledby="heading-{{ loop.index }}"
+               data-bs-parent="#positionsAccordion">
+            <div class="accordion-body">
 
-          <!-- Trades Table -->
-          <h5>📄 Trades for {{ symbol }}</h5>
-          {% if trades[symbol] %}
-          <div class="table-responsive mb-4">
-            <table class="table table-bordered table-sm table-striped">
-              <thead class="table-light">
-                <tr>
-                  <th>Date</th>
-                  <th>Trade Symbol</th>
-                  <th>Security Type</th>
-                  <th>Quantity</th>
-                  <th>Position Gain/Loss</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in trades[symbol]
-                             | sort(attribute='transaction_date', reverse=True) %}
-                <tr>
-                  <td>{{ row.transaction_date }}</td>
-                  <td>{{ row.trade_symbol }}</td>
-                  <td>{{ row.security_type }}</td>
-                  <td>{{ row.quantity }}</td>
-                  <td>{{ row.position_gain_or_loss }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <p class="text-muted">No trades for {{ symbol }}.</p>
-          {% endif %}
+              {# — Trades Table — #}
+              <h5>📄 Trades for {{ symbol }}</h5>
+              {% if trades[symbol] %}
+                <div class="table-responsive mb-4">
+                  <table class="table table-bordered table-sm table-striped">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Date</th>
+                        <th>Trade Symbol</th>
+                        <th>Security Type</th>
+                        <th>Quantity</th>
+                        <th>Position Gain/Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in trades[symbol] 
+                                   | sort(attribute='transaction_date', reverse=True) %}
+                      <tr>
+                        <td>{{ row.transaction_date }}</td>
+                        <td>{{ row.trade_symbol }}</td>
+                        <td>{{ row.security_type }}</td>
+                        <td>{{ row.quantity }}</td>
+                        <td>{{ row.position_gain_or_loss }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <p class="text-muted">No trades for {{ symbol }}.</p>
+              {% endif %}
 
-          <!-- Chart -->
-          <h5 class="mt-4">📈 Daily Gain or Loss</h5>
-          <div style="height: 300px; overflow-x: auto;">
-            <canvas id="chart-{{ symbol }}" style="min-width: 800px;"></canvas>
-          </div>
+              {# — Chart — #}
+              <h5 class="mt-4">📈 Daily Gain or Loss</h5>
+              <div style="height: 300px; overflow-x: auto;">
+                <canvas id="chart-{{ symbol }}" style="min-width: 800px;"></canvas>
+              </div>
 
-          <script>
-          document.addEventListener("DOMContentLoaded", () => {
-            const rawData = {{ rows | tojson | safe }};
-            const today   = new Date().toISOString().split('T')[0];
-            const chartData = rawData.filter(d => d.day <= today);
+              <script type="text/javascript">
+              (function(){
+                // RAW DATA directly as JS array
+                var rawData = {{ rows | tojson | safe }};
 
-            const labels = Array.from(
-              new Set(chartData.map(d => d.day))
-            ).sort();
+                // drop any future dates
+                var today = new Date().toISOString().slice(0,10);
+                var data  = rawData.filter(function(d){
+                  return d.day <= today;
+                });
 
-            const types = Array.from(
-              new Set(chartData.map(d => d.security_type))
-            );
+                // get sorted unique days and security types
+                var labels = data
+                  .map(function(d){ return d.day; })
+                  .filter(function(v,i,a){ return a.indexOf(v)===i; })
+                  .sort();
 
-            const colorMap = {
-              "Options Sold": "#007bff",
-              "Option":       "#007bff",
-              "Stock":        "#28a745",
-              "Equity":       "#28a745"
-            };
+                var types = data
+                  .map(function(d){ return d.security_type; })
+                  .filter(function(v,i,a){ return a.indexOf(v)===i; });
 
-            const datasets = types.map(type => ({
-              label: type,
-              data: labels.map(day => {
-                const pt = chartData.find(r => r.day===day && r.security_type===type);
-                return pt ? pt.gain_or_loss : null;
-              }),
-              borderColor:   colorMap[type] || "#666",
-              backgroundColor: colorMap[type] || "#666",
-              tension: 0.3,
-              fill: false,
-              pointRadius: 3,
-              pointHoverRadius: 6
-            }));
+                // color map (Total, Dividend Paid, etc.)
+                var colorMap = {
+                  "Stock":         "#28a745",
+                  "Equity":        "#28a745",
+                  "Options Sold":  "#007bff",
+                  "Option":        "#007bff",
+                  "Total":         "#ffc107",
+                  "Dividend Paid": "#6f42c1"
+                };
 
-            new Chart(
-              document.getElementById("chart-{{ symbol }}").getContext("2d"),
-              {
-                type: "line",
-                data: { labels, datasets },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: { position: "bottom" },
-                    tooltip: { mode: "index", intersect: false }
-                  },
-                  interaction: { mode: "nearest", axis: "x", intersect: false },
-                  scales: {
-                    x: {
-                      title: { display: true, text: "Date" },
-                      ticks: { autoSkip: true, maxTicksLimit: 20 }
+                // build one dataset per type
+                var datasets = types.map(function(type){
+                  return {
+                    label:            type,
+                    data:             labels.map(function(day){
+                                         var rec = data.find(function(r){
+                                           return r.day===day && r.security_type===type;
+                                         });
+                                         // null will create a gap
+                                         return rec ? rec.gain_or_loss : null;
+                                       }),
+                    borderColor:      colorMap[type] || "#666666",
+                    backgroundColor:  colorMap[type] || "#666666",
+                    tension:          0.4,    // smooth curves
+                    spanGaps:         true,   // connect over nulls
+                    fill:             false,
+                    pointRadius:      3,
+                    pointHoverRadius: 6
+                  };
+                });
+
+                // render chart
+                var ctx = document.getElementById("chart-{{ symbol }}").getContext("2d");
+                new Chart(ctx, {
+                  type:    "line",
+                  data:    { labels: labels, datasets: datasets },
+                  options: {
+                    responsive:         true,
+                    maintainAspectRatio:false,
+                    plugins: {
+                      legend:  { position: "bottom" },
+                      tooltip: { mode: "index", intersect: false }
                     },
-                    y: {
-                      title: { display: true, text: "Gain or Loss ($)" },
-                      grid: {
-                        drawBorder: false,
-                        color: ctx => ctx.tick.value===0 ? "#000" : "#ccc"
+                    interaction: {
+                      mode:    "nearest",
+                      axis:    "x",
+                      intersect:false
+                    },
+                    scales: {
+                      x: {
+                        title: { display: true, text: "Date" },
+                        ticks: { autoSkip: true, maxTicksLimit: 20 }
+                      },
+                      y: {
+                        title: { display: true, text: "Gain or Loss ($)" },
+                        grid:  {
+                          drawBorder:false,
+                          color: function(ctx){
+                            return ctx.tick.value===0 ? "#000000" : "#cccccc";
+                          }
+                        }
                       }
                     }
                   }
-                }
-              }
-            );
-          });
-          </script>
+                });
+              })();
+              </script>
 
+            </div>
+          </div>
         </div>
-      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
   {% else %}
-  <div class="alert alert-warning">No data found.</div>
+    <div class="alert alert-warning">No data found.</div>
   {% endif %}
+
 </div>
 {% endblock %}

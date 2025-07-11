@@ -1,6 +1,6 @@
 with all_symbols as (
 select distinct account,symbol
-from {{ ref('history')}}
+from {{ ref('current')}}
 )
 , final as (
 select 

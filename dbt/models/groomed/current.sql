@@ -1,14 +1,14 @@
 with fix as (
 select 
-    account,
+    trim(account) as account,
     CASE
       WHEN EXTRACT(DAYOFWEEK FROM CURRENT_DATE()) = 7 THEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)  -- Saturday
       WHEN EXTRACT(DAYOFWEEK FROM CURRENT_DATE()) = 1 THEN DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)  -- Sunday
       ELSE CURRENT_DATE()
     END AS transaction_date,
-    symbol as trade_symbol,
+    trim(symbol) as trade_symbol,
     'holding' as action,
-    split(symbol," ")[0] as symbol,
+    trim(split(symbol," ")[0]) as symbol,
     split(symbol," ")[SAFE_OFFSET(1)] as option_expiration_date,
     split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
     split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,

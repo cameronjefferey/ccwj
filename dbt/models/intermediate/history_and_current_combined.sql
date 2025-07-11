@@ -5,7 +5,7 @@ select
     trade_symbol,
     action,
     symbol,
-    security_type,
+    case when security_type = 'ETFs & Closed End Funds' then 'Equity' else security_type end as security_type,
     option_expiration_date,
     option_expiration_price,
     option_security_type,
@@ -17,7 +17,6 @@ select
     cost_per_share,
 
 from {{ ref('current')}}
-
 
 UNION ALL 
 
@@ -46,6 +45,7 @@ from {{ ref('history')}}
 select 
     account,
     trade_symbol,
+    security_type,
     action,
     transaction_date,
     amount,
@@ -61,27 +61,41 @@ select
     account,
     trade_symbol,
     transaction_date,
-    lead(transaction_date) over (partition by account, trade_symbol order by transaction_date) as next_position_transaction_date,
+    security_type,
+    lead(transaction_date) over (partition by account, trade_symbol, security_type order by transaction_date) as next_position_transaction_date,
     action,
-    lead(action) over (partition by account, trade_symbol order by transaction_date) as next_position_action,
+    lead(action) over (partition by account, trade_symbol, security_type order by transaction_date) as next_position_action,
     position_quantity,
-    lag(position_quantity) over (partition by account, trade_symbol order by transaction_date) as prior_position_quantity,
-    lead(position_quantity) over (partition by account, trade_symbol order by transaction_date) as next_position_quantity,
+    --In order to establish the "first" position establishment, the previous holdings should be 0 and the current position
+    --action should be "holding"
+    coalesce(lag(position_quantity) over (partition by account, trade_symbol, security_type order by transaction_date),0) as prior_position_quantity,
+    lead(position_quantity) over (partition by account, trade_symbol, security_type order by transaction_date) as next_position_quantity,
     amount,
-    lead(amount) over (partition by account, trade_symbol order by transaction_date) as next_position_amount
+    lead(amount) over (partition by account, trade_symbol, security_type order by transaction_date) as next_position_amount
 from position_establishments
 )
 , current_position_establishement as (
 select 
-    *,
+    prior_position_quantities.*,
     case 
-        when next_position_action = 'holding'
+        when prior_position_quantity = 0
+            and prior_position_quantities.security_type = 'Equity'
         then 1
         else 0 
-    end as is_current_position_establishement_1_0
+    end as is_current_position_establishement_1_0,
+    case 
+        when prior_position_quantities.prior_position_quantity > 0 
+            and prior_position_quantities.action = 'buy'
+        then 1 
+        else 0 
+    end as is_buying_more_shares_in_current_position_1_0
 from prior_position_quantities
+    left join combined 
+        on prior_position_quantities.account = combined.account
+            and prior_position_quantities.trade_symbol = combined.trade_symbol
+            and combined.action = 'holding'
+            and combined.security_type = 'Equity'
 )
-
 , final as (
 select 
     combined.*,
@@ -90,11 +104,22 @@ select
     current_position_establishement.position_quantity,
     current_position_establishement.next_position_quantity,
     current_position_establishement.next_position_action,
+    current_position_establishement.next_position_amount,
     current_position_establishement.is_current_position_establishement_1_0,
-    current_position_establishement.next_position_amount
+    CASE
+    WHEN is_current_position_establishement_1_0 = 1
+    THEN
+      SUM(is_current_position_establishement_1_0) 
+        OVER (
+          PARTITION BY account,symbol
+          ORDER BY transaction_date DESC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW  
+        )
+  END AS position_establishment_order,
+  is_buying_more_shares_in_current_position_1_0
 from combined
     left join current_position_establishement using (account, trade_symbol,transaction_date)
 )
 select *
-from final 
+from final  
 where 1=1

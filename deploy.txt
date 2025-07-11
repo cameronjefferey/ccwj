@@ -1,17 +1,28 @@
 Old Updates
 - Launch site on happytrader.me 
+- 6/23: 
+    - Updated code to include the current option position. 
+    - Create a deploy email for updates
 
 New Updates
-- 6/23: Updated code to include the current option position. 
-- 6/23: Create a deploy email for updates
+- 7/8: 
+    - Adding account filter to Positions Page 
+    - Added Sara Investment to data. Some cleanup still required
+    - Added Dummy Account #1 (General)
+    - Added logic to account for multiple buys of equity in same "position"
+    - Added logic to account for historical positions of the same symbol
+    - Cleaned up the positions dashboard chart lines
+    - Added total to the position dashboards chart
 
+    
 Future Updates
 
 Positions Page
 - Add Dividends
 - Add logic for PMCC
-- Add more metadata for positions
+- Add more metadata for positions dashboard
     - Overall G/L 
     - Next Dividend Date
     - Next Earnings Date 
-    - Cost per Share (factoring in Option G/L)
+    - Cost per Share 
+    - Net Cost per Share (factoring in Option G/L)

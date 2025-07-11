@@ -3,7 +3,7 @@ select
     account,
     date as old_date,
     cast(coalesce(SAFE.PARSE_DATE('%m/%d/%y',split(date," ")[0]),SAFE.PARSE_DATE('%m/%d/%Y',split(date," ")[0]))as date) as transaction_date,
-    lower(action) as action,
+    lower(case when lower(action) in ('pr yr cash div','cash dividend','special dividend','special qual div','qualified dividend') then 'dividend' else action end) as action,
     
     symbol as trade_symbol,
     trim(split(symbol," ")[0]) as symbol,
@@ -11,6 +11,7 @@ select
     split(symbol," ")[SAFE_OFFSET(2)] as option_expiration_price,
     split(symbol," ")[SAFE_OFFSET(3)] as option_security_type,
     case 
+        when lower(action) in ('pr yr cash div','cash dividend','special dividend','special qual div','qualified dividend') then 'Dividend'
         when action in ('Buy','Sell') then 'Equity'
         when split(symbol," ")[SAFE_OFFSET(3)]  = 'C' then 'Option'
     end as security_type,
