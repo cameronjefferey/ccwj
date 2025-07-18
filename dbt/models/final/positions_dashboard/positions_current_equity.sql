@@ -9,7 +9,7 @@ with equity_open_date as (
         and position_establishment_order = 1
     group by account, symbol
 )
-
+, final as (
 select 
     history_and_current_combined.account,
     history_and_current_combined.symbol,
@@ -27,3 +27,5 @@ from {{ ref('history_and_current_combined')}}
         and history_and_current_combined.symbol = equity_open_date.symbol
         and history_and_current_combined.transaction_date >= equity_open_date.equity_open_date
 where history_and_current_combined.action in ('buy','buy to open','sell to open','pr yr cash div','cash dividend','special dividend','special qual div','qualified dividend')
+)
+select distinct action from final 

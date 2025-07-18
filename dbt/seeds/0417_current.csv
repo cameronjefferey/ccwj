@@ -1,7 +1,8 @@
 Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,23.4,-0.03,-0.0013,547536.6,-701.97,-0.0013,75514.46,472022.14,6.2508,D,No,,0.9628,,3.227251591948,45777,,,,-23.84,17.79,37.9,5135001,,,Equity,273768
-Sara Investment,Cash & Cash Investments,,,,,,21127.37,0,0,,,,,,,0.0372,,,,,,,,,,,,,Cash and Money Market,
-Sara Investment,Account Total,,,,,,568663.97,-701.97,-0.0012,75514.46,472022.14,6.2508,,,,,,,,,,,,,,,,,,
+Sara Investment,CFLT,CONFLUENT INC CLASS A,23399,25.03,-0.4,-0.0157,585676.97,-9359.6,-0.0157,75514.46,510162.51,6.7558,D,No,,0.9488,,3.227251591948,45777,N/A,N/A,N/A,-26.03,17.79,37.9,1971710,,,Equity,292838
+Sara Investment,CFLT 07/18/2025 26.00 C,CALL CONFLUENT INC $26 EXP 07/18/25,-200,0.025,-0.1,-0.8,-500,2000,0.8,-10467.24,9967.24,0.9522,,N/A,,,45856,0.523362,,,,,,0.02,6.6,52,-0.97,OTM,Option, -200  Covered Call
+Sara Investment,Cash & Cash Investments,,,,,,31595.75,0,0,,,,,,,0.0512,,,,,,,,,,,,,Cash and Money Market,
+Sara Investment,Account Total,,,,,,616772.72,-7359.6,-0.0118,65047.22,520129.75,7.9962,,,,,,,,,,,,,,,,,,
 Cameron 401k,ASTS,AST SPACEMOBILE INC CLASS A,100,45.6988,0.09,0.002,4569.88,9,0.002,4682,-112.12,-0.0239,F,No,,0.0957,,46.82,45789,,,,-25.19,10.67,54.0499,8221661,,,Equity,4570
 Cameron 401k,CRWV,COREWEAVE INC CLASS A,100,160,-5.5,-0.0332,16000,-550,-0.0332,8530,7470,0.8757,,No,,0.3351,,85.3,45719,,,,-31.82,33.515,187,12665695,,,Equity,16000
 Cameron 401k,MDAI,SPECTRAL AI INC CLASS A,3500,2.72,0.04,0.0149,9520,140,0.0149,9589.65,-69.65,-0.0073,,No,,0.1994,,2.7399,45790,,,,-5.52,0.8239,3.25,621035,,,Equity,9520
