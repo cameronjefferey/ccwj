@@ -10,8 +10,7 @@ client = bigquery.Client()
 query = """
     SELECT account, symbol, min(transaction_date) AS position_open_date
     FROM `ccwj-dbt.analytics.history_and_current_combined`
-    WHERE is_current_position_establishement_1_0 = 1
-        and security_type = 'Equity' 
+    WHERE security_type = 'Equity' 
     GROUP BY 1,2
 """
 positions = client.query(query).result()

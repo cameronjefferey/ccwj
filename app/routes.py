@@ -30,7 +30,7 @@ def positions():
     # --- 2) Load current trades ---
     trades_query = read_sql_file("positions_current_position_trades.sql")
     trades_df = client.query(trades_query).to_dataframe()
-    trades_df["transaction_date"] = pd.to_datetime(trades_df["transaction_date"])
+    trades_df["open_equity_date"] = pd.to_datetime(trades_df["open_equity_date"])
 
     # get full list of accounts for dropdown
     accounts = sorted(trades_df["account"].dropna().unique())
@@ -43,10 +43,10 @@ def positions():
     trades_data = {}
     earliest_date = {}
     for symbol, grp in trades_df.groupby("symbol"):
-        grp_sorted = grp.sort_values("transaction_date", ascending=False)
+        grp_sorted = grp.sort_values("open_equity_date", ascending=False)
         trades_data[symbol] = grp_sorted.to_dict(orient="records")
         # record the first (earliest) transaction date as string
-        earliest_date[symbol] = grp["transaction_date"].min().strftime("%Y-%m-%d")
+        earliest_date[symbol] = grp["open_equity_date"].min().strftime("%Y-%m-%d")
 
     # --- 3) Load daily performance data ---
     chart_query = read_sql_file("positions_daily_performance.sql")

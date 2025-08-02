@@ -3,8 +3,6 @@ Old Updates
 - 6/23: 
     - Updated code to include the current option position. 
     - Create a deploy email for updates
-
-New Updates
 - 7/8: 
     - Adding account filter to Positions Page 
     - Added Sara Investment to data. Some cleanup still required
@@ -14,12 +12,19 @@ New Updates
     - Cleaned up the positions dashboard chart lines
     - Added total to the position dashboards chart
 
+New Updates
+8/2
+    - Smoothed out the daily lines 
+    - Fixed the chart to show basic trades
+    - Rewrote underlying logic to classify each buy/sell
+      as a "session". Helps with scalability.
     
 Future Updates
 
 Positions Page
-- Add Dividends
 - Add logic for PMCC
+- Add logic for puts
+- Add logic for "wheel"
 - Add more metadata for positions dashboard
     - Overall G/L 
     - Next Dividend Date

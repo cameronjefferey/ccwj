@@ -2,7 +2,7 @@ with fix as (
 select 
     account,
     date as old_date,
-    cast(coalesce(SAFE.PARSE_DATE('%m/%d/%y',split(date," ")[0]),SAFE.PARSE_DATE('%m/%d/%Y',split(date," ")[0]))as date) as transaction_date,
+    SAFE.PARSE_DATE('%m/%d/%Y',REGEXP_EXTRACT(date, r'(\d{1,2}/\d{1,2}/\d{4})$')) as transaction_date,
     lower(case when lower(action) in ('pr yr cash div','cash dividend','special dividend','special qual div','qualified dividend') then 'dividend' else action end) as action,
     
     symbol as trade_symbol,
@@ -22,7 +22,7 @@ select
     SAFE_CAST(case when action in ('Sell to Open') then quantity*-1 else quantity end as FLOAT64) as quantity,
     price,
     fees_and_comm,
-    SAFE_CAST(case when action = 'Expired' then 0 else amount end as FLOAT64) as amount,
+    SAFE_CAST(case when action in ('Expired','Assigned') then 0 else amount end as FLOAT64) as amount,
     SAFE_CAST(amount as FLOAT64)/nullif(SAFE_CAST(quantity as FLOAT64),0) as cost_per_share,
 from {{ ref('0417_history')}}
 )
