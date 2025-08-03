@@ -13,7 +13,8 @@ select
     case 
         when lower(action) in ('pr yr cash div','cash dividend','special dividend','special qual div','qualified dividend') then 'Dividend'
         when action in ('Buy','Sell') then 'Equity'
-        when split(symbol," ")[SAFE_OFFSET(3)]  = 'C' then 'Option'
+        when split(symbol," ")[SAFE_OFFSET(3)]  = 'C' then 'Call Option'
+        when split(symbol," ")[SAFE_OFFSET(3)]  = 'P' then 'Put Option'
     end as security_type,
     case 
         when action in ('Assigned','Expired','Buy to Close','Sell to Close') then 'Close' 

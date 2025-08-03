@@ -3,8 +3,8 @@ select
     symbol,
     security_type,
     trade_symbol,
-    open_equity_date,
-    close_equity_date
-    equity_quantity,
-    equity_gain_or_loss,
+    open_position_date,
+    close_position_date,
+    cast(position_quantity as int64) as position_quantity,
+    round(position_gain_or_loss,2) as position_gain_or_loss,
 from `ccwj-dbt.analytics.positions_current_equity`
