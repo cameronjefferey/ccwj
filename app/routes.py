@@ -45,7 +45,6 @@ def positions():
     for symbol, grp in trades_df.groupby("symbol"):
         grp_sorted = grp.sort_values("open_position_date", ascending=False)
         trades_data[symbol] = grp_sorted.to_dict(orient="records")
-        # record the first (earliest) transaction date as string
         earliest_date[symbol] = grp["open_position_date"].min().strftime("%Y-%m-%d")
 
     # --- 3) Load daily performance data ---
@@ -53,22 +52,18 @@ def positions():
     chart_df = client.query(chart_query).to_dataframe()
     chart_df["day"] = pd.to_datetime(chart_df["day"])
 
-    # apply account filter on chart_df if provided
     if selected_account:
         chart_df = chart_df[chart_df["account"] == selected_account]
 
-    # --- 4) Build chart_data per symbol, trimming early dates ---
     chart_data = {}
     for symbol, start_str in earliest_date.items():
         df_sym = chart_df[chart_df["symbol"] == symbol].copy()
         if df_sym.empty:
             continue
-        # keep only dates on or after the first trade
         start_dt = pd.to_datetime(start_str)
         df_sym = df_sym[df_sym["day"] >= start_dt]
         df_sym.sort_values("day", inplace=True)
 
-        # serialize for JS
         chart_data[symbol] = [
             {
                 "day": row["day"].strftime("%Y-%m-%d"),
@@ -78,10 +73,16 @@ def positions():
             for _, row in df_sym.iterrows()
         ]
 
+    # --- 4) Load summary equity data ---
+    summary_query = read_sql_file("positions_current_equity_trades.sql")
+    summary_df = client.query(summary_query).to_dataframe()[["symbol", "security_type", "equity_gain_or_loss"]]
+    summary_data = summary_df.to_dict(orient="records")
+
     return render_template(
         "positions.html",
         charts=chart_data,
         trades=trades_data,
+        summary_data=summary_data,
         accounts=accounts,
         selected_account=selected_account
     )

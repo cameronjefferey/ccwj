@@ -37,6 +37,33 @@
                data-bs-parent="#positionsAccordion">
             <div class="accordion-body">
 
+              {# — Summary Table — #}
+              {% set symbol_summary = summary_data | selectattr('symbol', 'equalto', symbol) | list %}
+              {% if symbol_summary %}
+                <h5>📊 Equity Summary for {{ symbol }}</h5>
+                <div class="table-responsive mb-4">
+                  <table class="table table-bordered table-sm table-striped">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Security Type</th>
+                        <th>Equity Gain/Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in symbol_summary %}
+                        <tr>
+                          <td>{{ row.security_type }}</td>
+                          <td class="{% if row.equity_gain_or_loss > 0 %}text-success{% elif row.equity_gain_or_loss < 0 %}text-danger{% endif %}">
+                            {{ "${:,.2f}".format(row.equity_gain_or_loss) }}
+                          </td>
+                          
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% endif %}
+
               {# — Trades Table — #}
               <h5>📄 Trades for {{ symbol }}</h5>
               {% if trades[symbol] %}
@@ -54,13 +81,15 @@
                     <tbody>
                       {% for row in trades[symbol] 
                                    | sort(attribute='open_position_date', reverse=True) %}
-                      <tr>
-                        <td>{{ row.open_position_date }}</td>
-                        <td>{{ row.trade_symbol }}</td>
-                        <td>{{ row.security_type }}</td>
-                        <td>{{ row.position_quantity }}</td>
-                        <td>{{ row.position_gain_or_loss }}</td>
-                      </tr>
+                        <tr>
+                          <td>{{ row.open_position_date }}</td>
+                          <td>{{ row.trade_symbol }}</td>
+                          <td>{{ row.security_type }}</td>
+                          <td>{{ row.position_quantity }}</td>
+                          <td class="{% if row.position_gain_or_loss > 0 %}text-success{% elif row.position_gain_or_loss < 0 %}text-danger{% endif %}">
+                            {{ "${:,.2f}".format(row.position_gain_or_loss) }}
+                          </td>
+                        </tr>
                       {% endfor %}
                     </tbody>
                   </table>
@@ -77,16 +106,12 @@
 
               <script type="text/javascript">
               (function(){
-                // RAW DATA directly as JS array
                 var rawData = {{ rows | tojson | safe }};
-
-                // drop any future dates
                 var today = new Date().toISOString().slice(0,10);
                 var data  = rawData.filter(function(d){
                   return d.day <= today;
                 });
 
-                // get sorted unique days and security types
                 var labels = data
                   .map(function(d){ return d.day; })
                   .filter(function(v,i,a){ return a.indexOf(v)===i; })
@@ -96,7 +121,6 @@
                   .map(function(d){ return d.security_type; })
                   .filter(function(v,i,a){ return a.indexOf(v)===i; });
 
-                // color map (Total, Dividend Paid, etc.)
                 var colorMap = {
                   "Stock":         "#28a745",
                   "Equity":        "#28a745",
@@ -106,7 +130,6 @@
                   "Dividend Paid": "#6f42c1"
                 };
 
-                // build one dataset per type
                 var datasets = types.map(function(type){
                   return {
                     label:            type,
@@ -114,20 +137,18 @@
                                          var rec = data.find(function(r){
                                            return r.day===day && r.security_type===type;
                                          });
-                                         // null will create a gap
                                          return rec ? rec.gain_or_loss : null;
                                        }),
                     borderColor:      colorMap[type] || "#666666",
                     backgroundColor:  colorMap[type] || "#666666",
-                    tension:          0.4,    // smooth curves
-                    spanGaps:         true,   // connect over nulls
+                    tension:          0.4,
+                    spanGaps:         true,
                     fill:             false,
                     pointRadius:      3,
                     pointHoverRadius: 6
                   };
                 });
 
-                // render chart
                 var ctx = document.getElementById("chart-{{ symbol }}").getContext("2d");
                 new Chart(ctx, {
                   type:    "line",

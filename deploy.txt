@@ -1,3 +1,21 @@
+New Updates
+8/3
+    - Added new summary table
+    - Formatted the currency
+    
+Future Updates
+
+Positions Page
+- Add logic for PMCC
+- Add logic for put
+- Add logic for "wheel"
+- Add more metadata for positions dashboard
+    - Overall G/L 
+    - Next Dividend Date
+    - Next Earnings Date 
+    - Cost per Share 
+    - Net Cost per Share (factoring in Option G/L)
+
 Old Updates
 - Launch site on happytrader.me 
 - 6/23: 
@@ -11,23 +29,8 @@ Old Updates
     - Added logic to account for historical positions of the same symbol
     - Cleaned up the positions dashboard chart lines
     - Added total to the position dashboards chart
-
-New Updates
 8/2
     - Smoothed out the daily lines 
     - Fixed the chart to show basic trades
     - Rewrote underlying logic to classify each buy/sell
       as a "session". Helps with scalability.
-    
-Future Updates
-
-Positions Page
-- Add logic for PMCC
-- Add logic for puts
-- Add logic for "wheel"
-- Add more metadata for positions dashboard
-    - Overall G/L 
-    - Next Dividend Date
-    - Next Earnings Date 
-    - Cost per Share 
-    - Net Cost per Share (factoring in Option G/L)
