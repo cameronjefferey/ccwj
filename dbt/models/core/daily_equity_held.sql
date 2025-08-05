@@ -25,8 +25,8 @@ day of trading" would be the open date which feels sus #}
     min(case when action in {{ buy_actions() }} then transaction_date+1 end) as position_open_date,
     max(case when action in {{ sell_actions() }} then transaction_date end) as position_close_date
 from {{ ref('history_and_current_combined') }}
-where security_type = 'Option'
-    and option_security_type = 'C'
+where security_type in ('Call Option','Put Option')
+    and option_security_type in ('C','P')
 group by 1, 2, 3
 )
 , option_calls_sold_position_summary as (

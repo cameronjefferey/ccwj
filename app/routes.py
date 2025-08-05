@@ -1,5 +1,3 @@
-# app/routes.py
-
 from flask import render_template, request
 from app import app
 from app.bigquery_client import get_bigquery_client
@@ -75,8 +73,15 @@ def positions():
 
     # --- 4) Load summary equity data ---
     summary_query = read_sql_file("positions_current_equity_trades.sql")
-    summary_df = client.query(summary_query).to_dataframe()[["symbol", "security_type", "equity_gain_or_loss"]]
-    summary_data = summary_df.to_dict(orient="records")
+    summary_df = client.query(summary_query).to_dataframe()
+
+    # Apply account filter if the summary query includes an account column
+    if "account" in summary_df.columns and selected_account:
+        summary_df = summary_df[summary_df["account"] == selected_account]
+
+    # Keep only required columns
+    cols_to_keep = [c for c in ["symbol", "security_type", "equity_gain_or_loss"] if c in summary_df.columns]
+    summary_data = summary_df[cols_to_keep].to_dict(orient="records")
 
     return render_template(
         "positions.html",
