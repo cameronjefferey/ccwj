@@ -47,12 +47,6 @@ A Flask-based portfolio analytics app integrating BigQuery, Chart.js, and dynami
 * Fully filterable by account
 * Supports joins, filters, and date logic
 
-### 📈 Earnings Model (Optional)
-
-* Uses `yfinance` to fetch upcoming earnings dates
-* Generates: `{ symbol, next_earnings_date }`
-* Output: display, CSV, or join to other models
-
 ---
 
 ## 🔐 Best Practices & Design Patterns
