@@ -6,6 +6,7 @@ venv/
 
 # Flask
 .flaskenv
+instance/
 
 # dbt
 target/

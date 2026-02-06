@@ -1,4 +1,5 @@
 from flask import render_template, request
+from flask_login import login_required
 from app import app
 from app.bigquery_client import get_bigquery_client
 from google.cloud import bigquery
@@ -209,6 +210,7 @@ HOMEPAGE_STRATEGY_BREAKDOWN_QUERY = """
 
 @app.route("/")
 @app.route("/index")
+@login_required
 def index():
     stats = {}
     top_symbols = []
@@ -264,6 +266,7 @@ def ping():
 
 
 @app.route("/positions")
+@login_required
 def positions():
     client = get_bigquery_client()
 
@@ -598,6 +601,7 @@ def _build_chart_data(group, sym_current):
 
 
 @app.route("/symbols")
+@login_required
 def symbols_detail():
     client = get_bigquery_client()
 
@@ -859,6 +863,7 @@ def _build_strategy_time_chart(strat_df):
 
 
 @app.route("/accounts")
+@login_required
 def accounts():
     client = get_bigquery_client()
 
