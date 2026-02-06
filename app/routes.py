@@ -169,10 +169,93 @@ def _parse_date(value):
         return None
 
 
+HOMEPAGE_STATS_QUERY = """
+    SELECT
+        COUNT(DISTINCT account) AS num_accounts,
+        COUNT(DISTINCT symbol) AS num_symbols,
+        COUNT(DISTINCT strategy) AS num_strategies,
+        SUM(total_return) AS total_return,
+        SUM(realized_pnl) AS realized_pnl,
+        SUM(unrealized_pnl) AS unrealized_pnl,
+        SUM(total_premium_received) AS premium_collected,
+        SUM(total_dividend_income) AS dividend_income,
+        SUM(num_individual_trades) AS total_trades,
+        SUM(num_winners) AS total_winners,
+        SUM(num_losers) AS total_losers
+    FROM `ccwj-dbt.analytics.positions_summary`
+"""
+
+HOMEPAGE_TOP_SYMBOLS_QUERY = """
+    SELECT
+        symbol,
+        SUM(total_return) AS total_return,
+        STRING_AGG(DISTINCT strategy, ', ' ORDER BY strategy) AS strategies
+    FROM `ccwj-dbt.analytics.positions_summary`
+    GROUP BY symbol
+    ORDER BY SUM(total_return) DESC
+    LIMIT 5
+"""
+
+HOMEPAGE_STRATEGY_BREAKDOWN_QUERY = """
+    SELECT
+        strategy,
+        SUM(total_return) AS total_return,
+        COUNT(DISTINCT symbol) AS num_symbols
+    FROM `ccwj-dbt.analytics.positions_summary`
+    GROUP BY strategy
+    ORDER BY SUM(total_return) DESC
+"""
+
+
 @app.route("/")
 @app.route("/index")
 def index():
-    return render_template("index.html", title="Home")
+    stats = {}
+    top_symbols = []
+    strategy_breakdown = []
+
+    try:
+        client = get_bigquery_client()
+        stats_df = client.query(HOMEPAGE_STATS_QUERY).to_dataframe()
+        if not stats_df.empty:
+            row = stats_df.iloc[0]
+            total_winners = int(row.get("total_winners", 0))
+            total_losers = int(row.get("total_losers", 0))
+            total_closed = total_winners + total_losers
+            stats = {
+                "num_accounts": int(row.get("num_accounts", 0)),
+                "num_symbols": int(row.get("num_symbols", 0)),
+                "num_strategies": int(row.get("num_strategies", 0)),
+                "total_return": float(row.get("total_return", 0)),
+                "realized_pnl": float(row.get("realized_pnl", 0)),
+                "unrealized_pnl": float(row.get("unrealized_pnl", 0)),
+                "premium_collected": float(row.get("premium_collected", 0)),
+                "dividend_income": float(row.get("dividend_income", 0)),
+                "total_trades": int(row.get("total_trades", 0)),
+                "win_rate": total_winners / total_closed if total_closed else 0,
+            }
+
+        top_df = client.query(HOMEPAGE_TOP_SYMBOLS_QUERY).to_dataframe()
+        if not top_df.empty:
+            for col in ["total_return"]:
+                top_df[col] = pd.to_numeric(top_df[col], errors="coerce").fillna(0)
+            top_symbols = top_df.to_dict(orient="records")
+
+        strat_df = client.query(HOMEPAGE_STRATEGY_BREAKDOWN_QUERY).to_dataframe()
+        if not strat_df.empty:
+            for col in ["total_return", "num_symbols"]:
+                strat_df[col] = pd.to_numeric(strat_df[col], errors="coerce").fillna(0)
+            strategy_breakdown = strat_df.to_dict(orient="records")
+    except Exception:
+        pass  # Gracefully degrade — homepage still renders without data
+
+    return render_template(
+        "index.html",
+        title="Home",
+        stats=stats,
+        top_symbols=top_symbols,
+        strategy_breakdown=strategy_breakdown,
+    )
 
 
 @app.route("/ping")
