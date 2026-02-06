@@ -1,93 +1,127 @@
 from flask import render_template, request
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.utils import read_sql_file
 import pandas as pd
 
-@app.route('/')
-@app.route('/index')
+
+@app.route("/")
+@app.route("/index")
 def index():
-    user = {'username': 'Miguel'}
-    posts = [
-        {"author": {"username": "John"}, "body": "Beautiful day in Portland!"},
-        {"author": {"username": "Susan"}, "body": "The Avengers movie was so cool!"}
-    ]
-    return render_template('index.html', title='Home', user=user, posts=posts)
+    return render_template("index.html", title="Home")
+
 
 @app.route("/ping")
 def ping():
-    return "✅ Flask app is alive"
+    return "Flask app is alive"
+
 
 @app.route("/positions")
 def positions():
     client = get_bigquery_client()
 
-    # --- 1) Read account filter from query params ---
-    selected_account = request.args.get("account")  # None or a string
+    # ------------------------------------------------------------------
+    # 1. Load positions_summary from BigQuery
+    # ------------------------------------------------------------------
+    query = """
+        SELECT *
+        FROM `ccwj-dbt.analytics.positions_summary`
+        ORDER BY account, symbol, strategy
+    """
+    try:
+        df = client.query(query).to_dataframe()
+    except Exception as exc:
+        return render_template(
+            "positions.html",
+            error=str(exc),
+            rows=[],
+            kpis={},
+            strategy_chart=[],
+            accounts=[],
+            strategies=[],
+            selected_account="",
+            selected_strategy="",
+            selected_status="",
+        )
 
-    # --- 2) Load current trades ---
-    trades_query = read_sql_file("positions_current_position_trades.sql")
-    trades_df = client.query(trades_query).to_dataframe()
-    trades_df["open_position_date"] = pd.to_datetime(trades_df["open_position_date"])
+    # ------------------------------------------------------------------
+    # 2. Clean up types
+    # ------------------------------------------------------------------
+    numeric_cols = [
+        "total_pnl", "realized_pnl", "unrealized_pnl",
+        "total_premium_received", "total_premium_paid",
+        "num_trade_groups", "num_individual_trades",
+        "num_winners", "num_losers", "win_rate",
+        "avg_pnl_per_trade", "avg_days_in_trade",
+        "total_dividend_income", "dividend_count", "total_return",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # get full list of accounts for dropdown
-    accounts = sorted(trades_df["account"].dropna().unique())
+    for col in ["first_trade_date", "last_trade_date"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).replace("NaT", "")
 
-    # apply account filter if provided
+    # ------------------------------------------------------------------
+    # 3. Filter options (computed before filtering)
+    # ------------------------------------------------------------------
+    accounts = sorted(df["account"].dropna().unique())
+    strategies = sorted(df["strategy"].dropna().unique())
+
+    selected_account = request.args.get("account", "")
+    selected_strategy = request.args.get("strategy", "")
+    selected_status = request.args.get("status", "")
+
+    filtered = df.copy()
     if selected_account:
-        trades_df = trades_df[trades_df["account"] == selected_account]
+        filtered = filtered[filtered["account"] == selected_account]
+    if selected_strategy:
+        filtered = filtered[filtered["strategy"] == selected_strategy]
+    if selected_status:
+        filtered = filtered[filtered["status"] == selected_status]
 
-    # build trades_data per symbol & record earliest trade date
-    trades_data = {}
-    earliest_date = {}
-    for symbol, grp in trades_df.groupby("symbol"):
-        grp_sorted = grp.sort_values("open_position_date", ascending=False)
-        trades_data[symbol] = grp_sorted.to_dict(orient="records")
-        earliest_date[symbol] = grp["open_position_date"].min().strftime("%Y-%m-%d")
+    # ------------------------------------------------------------------
+    # 4. KPIs
+    # ------------------------------------------------------------------
+    total_winners = int(filtered["num_winners"].sum())
+    total_losers = int(filtered["num_losers"].sum())
+    total_closed = total_winners + total_losers
 
-    # --- 3) Load daily performance data ---
-    chart_query = read_sql_file("positions_daily_performance.sql")
-    chart_df = client.query(chart_query).to_dataframe()
-    chart_df["day"] = pd.to_datetime(chart_df["day"])
+    kpis = {
+        "total_return": float(filtered["total_return"].sum()),
+        "realized_pnl": float(filtered["realized_pnl"].sum()),
+        "unrealized_pnl": float(filtered["unrealized_pnl"].sum()),
+        "premium_collected": float(filtered["total_premium_received"].sum()),
+        "win_rate": total_winners / total_closed if total_closed else 0,
+        "num_positions": len(filtered),
+        "total_trades": int(filtered["num_individual_trades"].sum()),
+    }
 
-    if selected_account:
-        chart_df = chart_df[chart_df["account"] == selected_account]
+    # ------------------------------------------------------------------
+    # 5. Chart data: total P&L by strategy
+    # ------------------------------------------------------------------
+    strategy_chart = (
+        filtered.groupby("strategy")["total_pnl"]
+        .sum()
+        .sort_values(ascending=True)
+        .reset_index()
+        .rename(columns={"total_pnl": "pnl"})
+        .to_dict(orient="records")
+    )
 
-    chart_data = {}
-    for symbol, start_str in earliest_date.items():
-        df_sym = chart_df[chart_df["symbol"] == symbol].copy()
-        if df_sym.empty:
-            continue
-        start_dt = pd.to_datetime(start_str)
-        df_sym = df_sym[df_sym["day"] >= start_dt]
-        df_sym.sort_values("day", inplace=True)
-
-        chart_data[symbol] = [
-            {
-                "day": row["day"].strftime("%Y-%m-%d"),
-                "security_type": row["security_type"],
-                "gain_or_loss": row["gain_or_loss"]
-            }
-            for _, row in df_sym.iterrows()
-        ]
-
-    # --- 4) Load summary equity data ---
-    summary_query = read_sql_file("positions_current_equity_trades.sql")
-    summary_df = client.query(summary_query).to_dataframe()
-
-    # Apply account filter if the summary query includes an account column
-    if "account" in summary_df.columns and selected_account:
-        summary_df = summary_df[summary_df["account"] == selected_account]
-
-    # Keep only required columns
-    cols_to_keep = [c for c in ["symbol", "security_type", "equity_gain_or_loss"] if c in summary_df.columns]
-    summary_data = summary_df[cols_to_keep].to_dict(orient="records")
+    # ------------------------------------------------------------------
+    # 6. Table rows
+    # ------------------------------------------------------------------
+    rows = filtered.to_dict(orient="records")
 
     return render_template(
         "positions.html",
-        charts=chart_data,
-        trades=trades_data,
-        summary_data=summary_data,
+        rows=rows,
+        kpis=kpis,
+        strategy_chart=strategy_chart,
         accounts=accounts,
-        selected_account=selected_account
+        strategies=strategies,
+        selected_account=selected_account,
+        selected_strategy=selected_strategy,
+        selected_status=selected_status,
     )

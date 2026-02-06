@@ -1,198 +1,374 @@
 {% extends "base.html" %}
+
+{% block head %}
+<style>
+    /* Strategy color badges */
+    .badge-strategy {
+        font-size: .75rem;
+        font-weight: 600;
+        padding: .35em .65em;
+        border-radius: 6px;
+        color: #fff;
+    }
+    /* Status badges */
+    .badge-open   { background: #198754; }
+    .badge-closed { background: #6c757d; }
+    .badge-mixed  { background: #ffc107; color: #000; }
+
+    /* Table */
+    #positionsTable th { white-space: nowrap; }
+    #positionsTable td { white-space: nowrap; }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background: #e9ecef; }
+    .sortable::after { content: ' \2195'; opacity: .3; font-size: .75em; }
+    .sortable.asc::after  { content: ' \25B2'; opacity: .7; }
+    .sortable.desc::after { content: ' \25BC'; opacity: .7; }
+
+    .chart-wrapper {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 1.25rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-  <h2 class="mb-4 text-center">📊 Position Performance</h2>
+<h4 class="mb-3 fw-bold">Positions Summary</h4>
 
-  {# — Account Filter — #}
-  <form method="get" class="mb-4 d-flex align-items-center g-2">
-    <label for="account" class="me-2 fw-bold">Account:</label>
-    <select name="account" id="account" class="form-select w-auto">
-      <option value="">All Accounts</option>
-      {% for acct in accounts %}
-        <option value="{{ acct }}" {% if acct == selected_account %}selected{% endif %}>
-          {{ acct }}
-        </option>
-      {% endfor %}
-    </select>
-    <button type="submit" class="btn btn-primary ms-3">Filter</button>
-  </form>
-
-  {% if charts %}
-    <div class="accordion" id="positionsAccordion">
-      {% for symbol, rows in charts.items() %}
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="heading-{{ loop.index }}">
-            <button class="accordion-button collapsed"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#collapse-{{ loop.index }}"
-                    aria-expanded="false"
-                    aria-controls="collapse-{{ loop.index }}">
-              {{ symbol }}
-            </button>
-          </h2>
-          <div id="collapse-{{ loop.index }}"
-               class="accordion-collapse collapse"
-               aria-labelledby="heading-{{ loop.index }}"
-               data-bs-parent="#positionsAccordion">
-            <div class="accordion-body">
-
-              {# — Summary Table — #}
-              {% set symbol_summary = summary_data | selectattr('symbol', 'equalto', symbol) | list %}
-              {% if symbol_summary %}
-                <h5>📊 Equity Summary for {{ symbol }}</h5>
-                <div class="table-responsive mb-4">
-                  <table class="table table-bordered table-sm table-striped">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Security Type</th>
-                        <th>Equity Gain/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for row in symbol_summary %}
-                        <tr>
-                          <td>{{ row.security_type }}</td>
-                          <td class="{% if row.equity_gain_or_loss > 0 %}text-success{% elif row.equity_gain_or_loss < 0 %}text-danger{% endif %}">
-                            {{ "${:,.2f}".format(row.equity_gain_or_loss) }}
-                          </td>
-                          
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              {% endif %}
-
-              {# — Trades Table — #}
-              <h5>📄 Trades for {{ symbol }}</h5>
-              {% if trades[symbol] %}
-                <div class="table-responsive mb-4">
-                  <table class="table table-bordered table-sm table-striped">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Date</th>
-                        <th>Trade Symbol</th>
-                        <th>Security Type</th>
-                        <th>Quantity</th>
-                        <th>Position Gain/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for row in trades[symbol] 
-                                   | sort(attribute='open_position_date', reverse=True) %}
-                        <tr>
-                          <td>{{ row.open_position_date }}</td>
-                          <td>{{ row.trade_symbol }}</td>
-                          <td>{{ row.security_type }}</td>
-                          <td>{{ row.position_quantity }}</td>
-                          <td class="{% if row.position_gain_or_loss > 0 %}text-success{% elif row.position_gain_or_loss < 0 %}text-danger{% endif %}">
-                            {{ "${:,.2f}".format(row.position_gain_or_loss) }}
-                          </td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              {% else %}
-                <p class="text-muted">No trades for {{ symbol }}.</p>
-              {% endif %}
-
-              {# — Chart — #}
-              <h5 class="mt-4">📈 Daily Gain or Loss</h5>
-              <div style="height: 300px; overflow-x: auto;">
-                <canvas id="chart-{{ symbol }}" style="min-width: 800px;"></canvas>
-              </div>
-
-              <script type="text/javascript">
-              (function(){
-                var rawData = {{ rows | tojson | safe }};
-                var today = new Date().toISOString().slice(0,10);
-                var data  = rawData.filter(function(d){
-                  return d.day <= today;
-                });
-
-                var labels = data
-                  .map(function(d){ return d.day; })
-                  .filter(function(v,i,a){ return a.indexOf(v)===i; })
-                  .sort();
-
-                var types = data
-                  .map(function(d){ return d.security_type; })
-                  .filter(function(v,i,a){ return a.indexOf(v)===i; });
-
-                var colorMap = {
-                  "Stock":         "#28a745",
-                  "Equity":        "#28a745",
-                  "Options Sold":  "#007bff",
-                  "Option":        "#007bff",
-                  "Total":         "#ffc107",
-                  "Dividend Paid": "#6f42c1"
-                };
-
-                var datasets = types.map(function(type){
-                  return {
-                    label:            type,
-                    data:             labels.map(function(day){
-                                         var rec = data.find(function(r){
-                                           return r.day===day && r.security_type===type;
-                                         });
-                                         return rec ? rec.gain_or_loss : null;
-                                       }),
-                    borderColor:      colorMap[type] || "#666666",
-                    backgroundColor:  colorMap[type] || "#666666",
-                    tension:          0.4,
-                    spanGaps:         true,
-                    fill:             false,
-                    pointRadius:      3,
-                    pointHoverRadius: 6
-                  };
-                });
-
-                var ctx = document.getElementById("chart-{{ symbol }}").getContext("2d");
-                new Chart(ctx, {
-                  type:    "line",
-                  data:    { labels: labels, datasets: datasets },
-                  options: {
-                    responsive:         true,
-                    maintainAspectRatio:false,
-                    plugins: {
-                      legend:  { position: "bottom" },
-                      tooltip: { mode: "index", intersect: false }
-                    },
-                    interaction: {
-                      mode:    "nearest",
-                      axis:    "x",
-                      intersect:false
-                    },
-                    scales: {
-                      x: {
-                        title: { display: true, text: "Date" },
-                        ticks: { autoSkip: true, maxTicksLimit: 20 }
-                      },
-                      y: {
-                        title: { display: true, text: "Gain or Loss ($)" },
-                        grid:  {
-                          drawBorder:false,
-                          color: function(ctx){
-                            return ctx.tick.value===0 ? "#000000" : "#cccccc";
-                          }
-                        }
-                      }
-                    }
-                  }
-                });
-              })();
-              </script>
-
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <div class="alert alert-warning">No data found.</div>
-  {% endif %}
-
+{% if error is defined and error %}
+<div class="alert alert-danger">
+    <strong>BigQuery Error:</strong> {{ error }}
+    <p class="mb-0 mt-2 small">Make sure you've run <code>dbt seed && dbt build</code> to create the <code>positions_summary</code> table.</p>
 </div>
+{% else %}
+
+{# ── Filters ──────────────────────────────────────────────────────── #}
+<form method="get" class="row g-2 mb-4 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Strategy</label>
+        <select name="strategy" class="form-select form-select-sm">
+            <option value="">All Strategies</option>
+            {% for s in strategies %}
+            <option value="{{ s }}" {{ 'selected' if s == selected_strategy }}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Status</label>
+        <select name="status" class="form-select form-select-sm">
+            <option value="">All</option>
+            <option value="Open"   {{ 'selected' if selected_status == 'Open' }}>Open</option>
+            <option value="Closed" {{ 'selected' if selected_status == 'Closed' }}>Closed</option>
+            <option value="Mixed"  {{ 'selected' if selected_status == 'Mixed' }}>Mixed</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="/positions" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+
+{# ── KPI Cards ────────────────────────────────────────────────────── #}
+{% if kpis %}
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Total Return</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.total_return) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Realized P&amp;L</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.realized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Unrealized P&amp;L</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Win Rate</div>
+            <div class="kpi-value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Premium Collected</div>
+            <div class="kpi-value text-positive">${{ "{:,.0f}".format(kpis.premium_collected) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Positions</div>
+            <div class="kpi-value">{{ kpis.num_positions }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Strategy Chart ───────────────────────────────────────────────── #}
+{% if strategy_chart %}
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="chart-wrapper">
+            <h6 class="fw-bold mb-3">P&amp;L by Strategy</h6>
+            <div style="height: 260px;">
+                <canvas id="strategyChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 d-flex align-items-center">
+        <div class="chart-wrapper w-100">
+            <h6 class="fw-bold mb-3">Quick Stats</h6>
+            <table class="table table-sm table-borderless mb-0">
+                <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ kpis.total_trades }}</td></tr>
+                <tr><td class="text-muted">Winners</td><td class="fw-bold text-end text-positive">{{ "{:,.0f}".format(kpis.win_rate * kpis.total_trades) if kpis.total_trades else 0 }}</td></tr>
+                <tr>
+                    <td class="text-muted">Strategies Used</td>
+                    <td class="fw-bold text-end">{{ strategy_chart | length }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Accounts</td>
+                    <td class="fw-bold text-end">{{ accounts | length }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Data Table ───────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold mb-0">All Positions</h6>
+            <input type="text" id="tableSearch" class="form-control form-control-sm"
+                   style="max-width:240px" placeholder="Search...">
+        </div>
+
+        {% if rows %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0" id="positionsTable">
+                <thead class="table-light">
+                    <tr>
+                        <th class="sortable" data-sort="str">Account</th>
+                        <th class="sortable" data-sort="str">Symbol</th>
+                        <th class="sortable" data-sort="str">Strategy</th>
+                        <th class="sortable" data-sort="str">Status</th>
+                        <th class="sortable" data-sort="num">Total P&amp;L</th>
+                        <th class="sortable" data-sort="num">Realized</th>
+                        <th class="sortable" data-sort="num">Unrealized</th>
+                        <th class="sortable" data-sort="num">Win Rate</th>
+                        <th class="sortable" data-sort="num">Trades</th>
+                        <th class="sortable" data-sort="num">W / L</th>
+                        <th class="sortable" data-sort="num">Avg P&amp;L</th>
+                        <th class="sortable" data-sort="num">Avg Days</th>
+                        <th class="sortable" data-sort="num">Premium</th>
+                        <th class="sortable" data-sort="num">Dividends</th>
+                        <th class="sortable" data-sort="num">Total Return</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {# Strategy badge color map #}
+                    {% set colors = {
+                        'Covered Call':     '#0d6efd',
+                        'Cash-Secured Put': '#6f42c1',
+                        'Wheel':            '#fd7e14',
+                        'Buy and Hold':     '#198754',
+                        'Long Call':        '#20c997',
+                        'Long Put':         '#0dcaf0',
+                        'Call Spread':      '#6610f2',
+                        'Put Spread':       '#d63384',
+                        'Naked Call':       '#dc3545',
+                        'Protective Put':   '#ffc107',
+                        'Other Option':     '#6c757d'
+                    } %}
+
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ row.account }}</td>
+                        <td class="fw-semibold">{{ row.symbol }}</td>
+                        <td>
+                            <span class="badge badge-strategy"
+                                  style="background:{{ colors.get(row.strategy, '#6c757d') }}">
+                                {{ row.strategy }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if row.status == 'Open' %}
+                                <span class="badge badge-open">Open</span>
+                            {% elif row.status == 'Closed' %}
+                                <span class="badge badge-closed">Closed</span>
+                            {% else %}
+                                <span class="badge badge-mixed">Mixed</span>
+                            {% endif %}
+                        </td>
+                        <td data-val="{{ row.total_pnl }}"
+                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            ${{ "{:,.2f}".format(row.total_pnl) }}
+                        </td>
+                        <td data-val="{{ row.realized_pnl }}"
+                            class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.unrealized_pnl }}"
+                            class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.win_rate }}">
+                            {{ "{:.0%}".format(row.win_rate) }}
+                        </td>
+                        <td data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
+                        <td data-val="{{ row.num_winners }}">
+                            <span class="text-positive">{{ row.num_winners | int }}</span>
+                            /
+                            <span class="text-negative">{{ row.num_losers | int }}</span>
+                        </td>
+                        <td data-val="{{ row.avg_pnl_per_trade }}"
+                            class="{{ 'text-positive' if row.avg_pnl_per_trade >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(row.avg_pnl_per_trade) }}
+                        </td>
+                        <td data-val="{{ row.avg_days_in_trade }}">{{ row.avg_days_in_trade }}</td>
+                        <td data-val="{{ row.total_premium_received }}" class="text-positive">
+                            ${{ "{:,.2f}".format(row.total_premium_received) }}
+                        </td>
+                        <td data-val="{{ row.total_dividend_income }}">
+                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
+                        </td>
+                        <td data-val="{{ row.total_return }}"
+                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-bold">
+                            ${{ "{:,.2f}".format(row.total_return) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% endif %} {# end error check #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    /* ── Strategy P&L Chart ────────────────────────────────────── */
+    {% if strategy_chart %}
+    var chartData = {{ strategy_chart | tojson }};
+    var labels = chartData.map(function(d){ return d.strategy; });
+    var values = chartData.map(function(d){ return d.pnl; });
+    var barColors = values.map(function(v){ return v >= 0 ? '#198754' : '#dc3545'; });
+
+    new Chart(document.getElementById('strategyChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Total P&L',
+                data: values,
+                backgroundColor: barColors,
+                borderRadius: 6,
+                barThickness: 28
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return '$' + ctx.parsed.x.toLocaleString(undefined, {minimumFractionDigits:2});
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        callback: function(v) {
+                            return '$' + (v >= 1000 || v <= -1000
+                                ? (v/1000).toFixed(0) + 'k'
+                                : v.toFixed(0));
+                        }
+                    },
+                    grid: {
+                        color: function(ctx) {
+                            return ctx.tick.value === 0 ? '#000' : '#e9ecef';
+                        }
+                    }
+                },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+    {% endif %}
+
+    /* ── Table Search ──────────────────────────────────────────── */
+    var searchInput = document.getElementById('tableSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            var q = this.value.toLowerCase();
+            var rows = document.querySelectorAll('#positionsTable tbody tr');
+            rows.forEach(function (row) {
+                row.style.display = row.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+            });
+        });
+    }
+
+    /* ── Table Sorting ─────────────────────────────────────────── */
+    document.querySelectorAll('.sortable').forEach(function (th) {
+        th.addEventListener('click', function () {
+            var table = th.closest('table');
+            var tbody = table.querySelector('tbody');
+            var rows  = Array.from(tbody.querySelectorAll('tr'));
+            var idx   = th.cellIndex;
+            var isNum = th.dataset.sort === 'num';
+
+            var asc = !th.classList.contains('asc');
+            table.querySelectorAll('.sortable').forEach(function (h) {
+                h.classList.remove('asc', 'desc');
+            });
+            th.classList.add(asc ? 'asc' : 'desc');
+
+            rows.sort(function (a, b) {
+                var va = a.cells[idx].dataset.val || a.cells[idx].textContent.trim();
+                var vb = b.cells[idx].dataset.val || b.cells[idx].textContent.trim();
+                if (isNum) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+                if (va < vb) return asc ? -1 : 1;
+                if (va > vb) return asc ?  1 : -1;
+                return 0;
+            });
+
+            rows.forEach(function (r) { tbody.appendChild(r); });
+        });
+    });
+})();
+</script>
 {% endblock %}

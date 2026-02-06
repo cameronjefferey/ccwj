@@ -1,1 +1,0 @@
-select * from ccwj-dbt.analytics.daily_position_performance

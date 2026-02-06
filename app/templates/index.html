@@ -1,24 +1,49 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container mt-5">
-    <div class="text-center mb-5">
-        <h1 class="display-4">Welcome to Happy Trader</h1>
-        <p class="lead">An analytics dashboard built for serious options traders.</p>
+<div class="row justify-content-center mt-5">
+    <div class="col-lg-7 text-center">
+        <h1 class="display-5 fw-bold mb-3">HappyTrader</h1>
+        <p class="lead text-muted mb-4">
+            Track your options strategies, see what's working, and measure performance
+            across every position, account, and strategy.
+        </p>
+        <a href="/positions" class="btn btn-primary btn-lg px-4">
+            View Positions Dashboard
+        </a>
     </div>
+</div>
 
-    <div class="row justify-content-center mb-4">
-        <div class="col-md-8">
-            <p>
-                Happy Trader helps you analyze your option trading strategies with clarity. 
-                Whether you're running spreads, straddles, or selling premium, this tool lets you track, 
-                compare, and evaluate performance across positions, strategies, accounts, and time.
-            </p>
-            <p>
-                Our goal is to help you answer: “What’s working?” and “What’s not?”
-                Using powerful data models, you’ll see strategy outcomes, position-level details, and 
-                account analytics — all in one place.
-            </p>
+<div class="row justify-content-center mt-5">
+    <div class="col-lg-8">
+        <div class="row g-4 text-center">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm p-4" style="border-radius:12px">
+                    <div class="h4 mb-2">Strategies</div>
+                    <p class="text-muted small mb-0">
+                        Covered Calls, Cash-Secured Puts, Wheels, Spreads, and more —
+                        automatically classified from your trade history.
+                    </p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm p-4" style="border-radius:12px">
+                    <div class="h4 mb-2">Performance</div>
+                    <p class="text-muted small mb-0">
+                        Win rate, average return, P&amp;L breakdown, and duration
+                        for every symbol and strategy combination.
+                    </p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm p-4" style="border-radius:12px">
+                    <div class="h4 mb-2">Multi-Account</div>
+                    <p class="text-muted small mb-0">
+                        Filter and compare across all your brokerage accounts
+                        in a single unified view.
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 </div>

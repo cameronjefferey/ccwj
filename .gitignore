@@ -1,8 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
 
+# Flask
+.flaskenv
+
+# dbt
 target/
 dbt_packages/
+dbt_internal_packages/
 logs/
-app/__pycache__/
 dbt/profiles.yml
-.flaskenv
 profiles.yml
+
+# Environment / secrets
+.env
+*.json
+!dbt/dbt_project.yml
+
+# OS
+.DS_Store

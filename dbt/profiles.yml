@@ -3,11 +3,8 @@ ccwj:
   outputs:
     dev:
       type: bigquery
-      method: service-account
-      project: "{{ env_var('DBT_PROJECT_ID') }}"
+      method: oauth
+      project: ccwj-dbt
       dataset: analytics
       threads: 4
       location: us
-      gcs_bucket: "{{ env_var('DBT_GCS_BUCKET') }}"
-      dataproc_region: "{{ env_var('DBT_DATAPROC_REGION') }}"
-      keyfile: /home/runner/.dbt/keyfile.json
