@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .chart-wrapper {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 1.25rem;
+    }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background: #e9ecef; }
+    .sortable::after { content: ' \2195'; opacity: .3; font-size: .75em; }
+    .sortable.asc::after  { content: ' \25B2'; opacity: .7; }
+    .sortable.desc::after { content: ' \25BC'; opacity: .7; }
+    .badge-strategy {
+        font-size: .7rem;
+        font-weight: 600;
+        padding: .3em .6em;
+        border-radius: 6px;
+        color: #fff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3 fw-bold">Account Performance</h4>
+
+{% if error is defined and error %}
+<div class="alert alert-danger">
+    <strong>BigQuery Error:</strong> {{ error }}
+    <p class="mb-0 mt-2 small">Make sure you've run <code>dbt seed && dbt build</code> including the <code>stg_account_balances</code> model.</p>
+</div>
+{% else %}
+
+{# ── Filters ──────────────────────────────────────────────────────── #}
+<form method="get" class="row g-2 mb-4 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="/accounts" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+
+{# ── KPI Cards ────────────────────────────────────────────────────── #}
+{% if kpis %}
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Account Value</div>
+            <div class="kpi-value">${{ "{:,.0f}".format(kpis.account_value) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Cash Balance</div>
+            <div class="kpi-value">${{ "{:,.0f}".format(kpis.cash_balance) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Invested</div>
+            <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Realized P&amp;L</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.realized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Unrealized P&amp;L</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Total Return</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.total_return) }}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Chart 1: Cumulative P&L (Summary) ───────────────────────────── #}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-wrapper">
+            <h6 class="fw-bold mb-3">Cumulative P&amp;L Over Time</h6>
+            <div style="height: 320px;">
+                <canvas id="summaryChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Chart 2: Strategy P&L Over Time ─────────────────────────────── #}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-wrapper">
+            <h6 class="fw-bold mb-3">P&amp;L by Strategy Over Time</h6>
+            <div style="height: 320px;">
+                <canvas id="strategyTimeChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Strategy Summary Table ──────────────────────────────────────── #}
+{% if strategy_rows %}
+{% set colors = {
+    'Covered Call':     '#0d6efd',
+    'Cash-Secured Put': '#6f42c1',
+    'Wheel':            '#fd7e14',
+    'Buy and Hold':     '#198754',
+    'Long Call':        '#20c997',
+    'Long Put':         '#0dcaf0',
+    'Call Spread':      '#6610f2',
+    'Put Spread':       '#d63384',
+    'Naked Call':       '#dc3545',
+    'Protective Put':   '#ffc107',
+    'Other Option':     '#6c757d'
+} %}
+
+<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-3">Strategy Summary</h6>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0" id="strategyTable">
+                <thead class="table-light">
+                    <tr>
+                        <th>Account</th>
+                        <th>Strategy</th>
+                        <th class="sortable" data-sort="num">Total P&amp;L</th>
+                        <th class="sortable" data-sort="num">Realized</th>
+                        <th class="sortable" data-sort="num">Unrealized</th>
+                        <th class="sortable" data-sort="num">Win Rate</th>
+                        <th class="sortable" data-sort="num">Trades</th>
+                        <th class="sortable" data-sort="num">W / L</th>
+                        <th class="sortable" data-sort="num">Premium</th>
+                        <th class="sortable" data-sort="num">Dividends</th>
+                        <th class="sortable" data-sort="num">Total Return</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in strategy_rows %}
+                    <tr>
+                        <td>{{ row.account }}</td>
+                        <td>
+                            <span class="badge badge-strategy"
+                                  style="background:{{ colors.get(row.strategy, '#6c757d') }}">
+                                {{ row.strategy }}
+                            </span>
+                        </td>
+                        <td data-val="{{ row.total_pnl }}"
+                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            ${{ "{:,.2f}".format(row.total_pnl) }}
+                        </td>
+                        <td data-val="{{ row.realized_pnl }}"
+                            class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.unrealized_pnl }}"
+                            class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.win_rate }}">
+                            {{ "{:.0%}".format(row.win_rate) }}
+                        </td>
+                        <td data-val="{{ row.num_trades }}">{{ row.num_trades | int }}</td>
+                        <td data-val="{{ row.num_winners }}">
+                            <span class="text-positive">{{ row.num_winners | int }}</span>
+                            /
+                            <span class="text-negative">{{ row.num_losers | int }}</span>
+                        </td>
+                        <td data-val="{{ row.premium_received }}" class="text-positive">
+                            ${{ "{:,.2f}".format(row.premium_received) }}
+                        </td>
+                        <td data-val="{{ row.dividend_income }}">
+                            ${{ "{:,.2f}".format(row.dividend_income) }}
+                        </td>
+                        <td data-val="{{ row.total_return }}"
+                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-bold">
+                            ${{ "{:,.2f}".format(row.total_return) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}{# end error check #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    /* ── Strategy color palette ───────────────────────────────── */
+    var stratColors = {
+        'Covered Call':     '#0d6efd',
+        'Cash-Secured Put': '#6f42c1',
+        'Wheel':            '#fd7e14',
+        'Buy and Hold':     '#198754',
+        'Long Call':        '#20c997',
+        'Long Put':         '#0dcaf0',
+        'Call Spread':      '#6610f2',
+        'Put Spread':       '#d63384',
+        'Naked Call':       '#dc3545',
+        'Protective Put':   '#ffc107',
+        'Other Option':     '#6c757d'
+    };
+
+    /* ── Chart 1: Cumulative P&L (Summary) ────────────────────── */
+    var summaryData = {{ summary_chart_json | safe }};
+    if (summaryData && summaryData.dates && summaryData.dates.length) {
+        var hasData = function (arr) { return arr.some(function (v) { return v !== 0; }); };
+        var datasets = [];
+
+        if (hasData(summaryData.equity)) {
+            datasets.push({
+                label: 'Equity', data: summaryData.equity,
+                borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        }
+        if (hasData(summaryData.options)) {
+            datasets.push({
+                label: 'Options', data: summaryData.options,
+                borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        }
+        if (hasData(summaryData.dividends)) {
+            datasets.push({
+                label: 'Dividends', data: summaryData.dividends,
+                borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        }
+        datasets.push({
+            label: 'Total', data: summaryData.total,
+            borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
+            fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
+        });
+
+        new Chart(document.getElementById('summaryChart'), {
+            type: 'line',
+            data: { labels: summaryData.dates, datasets: datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 } },
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45 }, grid: { display: false } },
+                    y: {
+                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
+                    }
+                }
+            }
+        });
+    }
+
+    /* ── Chart 2: Strategy P&L Over Time ──────────────────────── */
+    var stratData = {{ strategy_chart_json | safe }};
+    if (stratData && stratData.dates && stratData.dates.length && stratData.series) {
+        var stratDatasets = [];
+        var strategies = Object.keys(stratData.series).sort();
+        strategies.forEach(function (strat) {
+            var color = stratColors[strat] || '#6c757d';
+            stratDatasets.push({
+                label: strat, data: stratData.series[strat],
+                borderColor: color, backgroundColor: color + '15',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        });
+
+        new Chart(document.getElementById('strategyTimeChart'), {
+            type: 'line',
+            data: { labels: stratData.dates, datasets: stratDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 12, font: { size: 11 } } },
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45 }, grid: { display: false } },
+                    y: {
+                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
+                    }
+                }
+            }
+        });
+    }
+
+    /* ── Table Sorting ─────────────────────────────────────────── */
+    document.querySelectorAll('.sortable').forEach(function (th) {
+        th.addEventListener('click', function () {
+            var table = th.closest('table');
+            var tbody = table.querySelector('tbody');
+            var rows  = Array.from(tbody.querySelectorAll('tr'));
+            var idx   = th.cellIndex;
+            var isNum = th.dataset.sort === 'num';
+
+            var asc = !th.classList.contains('asc');
+            table.querySelectorAll('.sortable').forEach(function (h) { h.classList.remove('asc', 'desc'); });
+            th.classList.add(asc ? 'asc' : 'desc');
+
+            rows.sort(function (a, b) {
+                var va = a.cells[idx].dataset.val || a.cells[idx].textContent.trim();
+                var vb = b.cells[idx].dataset.val || b.cells[idx].textContent.trim();
+                if (isNum) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+                if (va < vb) return asc ? -1 : 1;
+                if (va > vb) return asc ?  1 : -1;
+                return 0;
+            });
+            rows.forEach(function (r) { tbody.appendChild(r); });
+        });
+    });
+})();
+</script>
+{% endblock %}

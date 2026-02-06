@@ -1,0 +1,518 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .accordion-button:not(.collapsed) {
+        background: #f0f4ff;
+        color: #1a1a2e;
+    }
+    .accordion-button { padding: .6rem 1rem; }
+
+    /* ── Accordion header grid ──────────────────────────────────── */
+    .sym-row {
+        display: grid;
+        grid-template-columns: 64px 100px 1fr 80px 170px;
+        align-items: center;
+        gap: .5rem;
+        width: 100%;
+        padding-right: .5rem;
+    }
+    .sym-ticker { font-weight: 700; font-size: .95rem; }
+    .sym-pnl {
+        font-size: .82rem;
+        font-weight: 700;
+        padding: .25em .6em;
+        border-radius: 6px;
+        color: #fff;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .sym-pnl-pos { background: #198754; }
+    .sym-pnl-neg { background: #dc3545; }
+    .sym-pnl-zero { background: #6c757d; }
+    .sym-strategies {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .25rem;
+        overflow: hidden;
+    }
+    .sym-trades {
+        text-align: right;
+        font-size: .78rem;
+        color: #6c757d;
+        white-space: nowrap;
+    }
+    .sym-account {
+        text-align: right;
+        font-size: .72rem;
+        color: #9ca3af;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .badge-strategy {
+        font-size: .6rem;
+        font-weight: 600;
+        padding: .25em .5em;
+        border-radius: 5px;
+        color: #fff;
+        white-space: nowrap;
+    }
+
+    /* ── Sort controls ──────────────────────────────────────────── */
+    .sort-btn { font-size: .8rem; }
+    .sort-btn.active { font-weight: 700; }
+    .sort-btn .arrow { font-size: .65rem; opacity: .6; }
+
+    /* ── Stats ──────────────────────────────────────────────────── */
+    .stat-card { text-align: center; padding: .75rem; }
+    .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: #6c757d; }
+    .stat-value { font-size: 1.1rem; font-weight: 700; }
+
+    .chart-container {
+        background: #fff;
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 1px 6px rgba(0,0,0,.04);
+        margin-bottom: 1rem;
+    }
+
+    .trade-table-wrap {
+        max-height: 420px;
+        overflow-y: auto;
+    }
+    .trade-table-wrap table th { position: sticky; top: 0; z-index: 1; background: #f8f9fa; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3 fw-bold">Daily Position Detail</h4>
+
+{% if error is defined and error %}
+<div class="alert alert-danger">
+    <strong>BigQuery Error:</strong> {{ error }}
+</div>
+{% else %}
+
+{# ── Filters ──────────────────────────────────────────────────────── #}
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="/symbols" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+
+{# ── Search + Sort controls ───────────────────────────────────────── #}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <input type="text" id="symbolFilter" class="form-control form-control-sm"
+           style="max-width:220px" placeholder="Filter symbols...">
+    <div class="d-flex align-items-center gap-1">
+        <span class="text-muted small me-1">Sort:</span>
+        <button class="btn btn-sm btn-outline-secondary sort-btn active" id="sortPnl" data-dir="desc">
+            P&amp;L <span class="arrow">&#9660;</span>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary sort-btn" id="sortSymbol" data-dir="none">
+            Symbol
+        </button>
+        <button class="btn btn-sm btn-outline-secondary sort-btn" id="sortTrades" data-dir="none">
+            Trades
+        </button>
+    </div>
+</div>
+
+<p class="text-muted small mb-3">
+    {{ symbol_data | length }} symbol{{ 's' if symbol_data | length != 1 }} &middot;
+    Chart shows cumulative realized P&amp;L over time. The final point includes unrealized P&amp;L for open positions.
+</p>
+
+{# ── Strategy badge color map ─────────────────────────────────────── #}
+{% set colors = {
+    'Covered Call':     '#0d6efd',
+    'Cash-Secured Put': '#6f42c1',
+    'Wheel':            '#fd7e14',
+    'Buy and Hold':     '#198754',
+    'Long Call':        '#20c997',
+    'Long Put':         '#0dcaf0',
+    'Call Spread':      '#6610f2',
+    'Put Spread':       '#d63384',
+    'Naked Call':       '#dc3545',
+    'Protective Put':   '#ffc107',
+    'Other Option':     '#6c757d'
+} %}
+
+{# ── Accordion ────────────────────────────────────────────────────── #}
+<div class="accordion mb-5" id="symbolAccordion">
+    {% for sym in symbol_data %}
+    <div class="accordion-item symbol-item"
+         data-symbol="{{ sym.symbol }}"
+         data-pnl="{{ sym.total_return }}"
+         data-trades="{{ sym.num_trades }}"
+         data-account="{{ sym.account }}">
+        <h2 class="accordion-header" id="heading-{{ loop.index0 }}">
+            <button class="accordion-button collapsed" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#panel-{{ loop.index0 }}"
+                    aria-expanded="false" aria-controls="panel-{{ loop.index0 }}">
+                <div class="sym-row">
+                    <span class="sym-ticker">{{ sym.symbol }}</span>
+
+                    {% if sym.total_return > 0 %}
+                    <span class="sym-pnl sym-pnl-pos">${{ "{:,.0f}".format(sym.total_return) }}</span>
+                    {% elif sym.total_return < 0 %}
+                    <span class="sym-pnl sym-pnl-neg">${{ "{:,.0f}".format(sym.total_return) }}</span>
+                    {% else %}
+                    <span class="sym-pnl sym-pnl-zero">$0</span>
+                    {% endif %}
+
+                    <div class="sym-strategies">
+                        {% for strat in sym.strategies %}
+                        <span class="badge badge-strategy"
+                              style="background:{{ colors.get(strat, '#6c757d') }}">{{ strat }}</span>
+                        {% endfor %}
+                    </div>
+
+                    <span class="sym-trades">{{ sym.num_trades }} trades</span>
+                    <span class="sym-account">{{ sym.account }}</span>
+                </div>
+            </button>
+        </h2>
+
+        <div id="panel-{{ loop.index0 }}" class="accordion-collapse collapse"
+             aria-labelledby="heading-{{ loop.index0 }}">
+            <div class="accordion-body">
+
+                {# ── Summary Stats Row ────────────────────────────────── #}
+                <div class="row g-2 mb-3">
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">Realized</div>
+                            <div class="stat-value {{ 'text-positive' if sym.total_realized >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(sym.total_realized) }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">Unrealized</div>
+                            <div class="stat-value {{ 'text-positive' if sym.unrealized >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(sym.unrealized) }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Return</div>
+                            <div class="stat-value {{ 'text-positive' if sym.total_return >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(sym.total_return) }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">Trades</div>
+                            <div class="stat-value">{{ sym.num_trades }}</div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">First Trade</div>
+                            <div class="stat-value" style="font-size:.9rem;">{{ sym.first_date }}</div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="stat-card">
+                            <div class="stat-label">Last Trade</div>
+                            <div class="stat-value" style="font-size:.9rem;">{{ sym.last_date }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {# ── Cumulative P&L Chart ─────────────────────────────── #}
+                <div class="chart-container">
+                    <h6 class="fw-bold mb-2">Cumulative P&amp;L</h6>
+                    <div style="height:300px;">
+                        <canvas id="chart-{{ loop.index0 }}" data-idx="{{ loop.index0 }}"></canvas>
+                    </div>
+                </div>
+
+                {# ── Current Open Positions ───────────────────────────── #}
+                {% if sym.current_positions %}
+                <h6 class="fw-bold mt-3 mb-2">Open Positions</h6>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Description</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Mkt Value</th>
+                                <th>Cost Basis</th>
+                                <th>Unrealized</th>
+                                <th>Unrealized %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pos in sym.current_positions %}
+                            <tr>
+                                <td class="fw-semibold">{{ pos.trade_symbol }}</td>
+                                <td class="text-muted small">{{ pos.description }}</td>
+                                <td>{{ pos.quantity }}</td>
+                                <td>${{ "{:,.2f}".format(pos.current_price) }}</td>
+                                <td>${{ "{:,.2f}".format(pos.market_value) }}</td>
+                                <td>${{ "{:,.2f}".format(pos.cost_basis) }}</td>
+                                <td class="{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold">
+                                    ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
+                                </td>
+                                <td class="{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                                    {{ "{:.2f}".format(pos.unrealized_pnl_pct) }}%
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {# ── Trade History ────────────────────────────────────── #}
+                <h6 class="fw-bold mt-3 mb-2">Trade History ({{ sym.trades | length }})</h6>
+                <div class="trade-table-wrap">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Action</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Price</th>
+                                <th class="text-end">Fees</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in sym.trades %}
+                            <tr>
+                                <td>{{ t.trade_date }}</td>
+                                <td>
+                                    <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.7rem;">
+                                        {{ t.action_raw }}
+                                    </span>
+                                </td>
+                                <td class="small">{{ t.trade_symbol }}</td>
+                                <td>
+                                    {% if t.instrument_type == 'Equity' %}
+                                    <span class="badge bg-primary bg-opacity-25 text-primary" style="font-size:.65rem;">Equity</span>
+                                    {% elif t.instrument_type in ('Call', 'Put') %}
+                                    <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem;">{{ t.instrument_type }}</span>
+                                    {% elif t.instrument_type == 'Dividend' %}
+                                    <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Dividend</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary bg-opacity-25 text-secondary" style="font-size:.65rem;">{{ t.instrument_type }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ t.quantity if t.quantity else '' }}</td>
+                                <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
+                                <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
+                                <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
+                                    ${{ "{:,.2f}".format(t.amount) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>{# end accordion-body #}
+        </div>{# end collapse #}
+    </div>{# end accordion-item #}
+    {% endfor %}
+</div>
+
+{% endif %}{# end error check #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    /* ── Chart data (injected from Flask) ─────────────────────── */
+    var allCharts = {{ chart_data_json | safe }};
+    var chartInstances = {};
+
+    /* ── Render chart on accordion open ───────────────────────── */
+    document.querySelectorAll('.accordion-collapse').forEach(function (el) {
+        el.addEventListener('shown.bs.collapse', function () {
+            var canvas = el.querySelector('canvas');
+            if (!canvas) return;
+            var idx = parseInt(canvas.dataset.idx);
+            if (chartInstances[idx]) return;
+
+            var d = allCharts[idx];
+            if (!d || !d.dates.length) return;
+
+            var datasets = [];
+            var hasData = function (arr) { return arr.some(function (v) { return v !== 0; }); };
+
+            if (hasData(d.equity)) {
+                datasets.push({
+                    label: 'Equity', data: d.equity,
+                    borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)',
+                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+                });
+            }
+            if (hasData(d.options)) {
+                datasets.push({
+                    label: 'Options', data: d.options,
+                    borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,.08)',
+                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+                });
+            }
+            if (hasData(d.dividends)) {
+                datasets.push({
+                    label: 'Dividends', data: d.dividends,
+                    borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
+                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+                });
+            }
+            datasets.push({
+                label: 'Total', data: d.total,
+                borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
+                fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
+            });
+
+            chartInstances[idx] = new Chart(canvas, {
+                type: 'line',
+                data: { labels: d.dates, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (ctx) {
+                                    return ctx.dataset.label + ': $' +
+                                        ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            ticks: { maxTicksLimit: 12, maxRotation: 45 },
+                            grid: { display: false }
+                        },
+                        y: {
+                            ticks: {
+                                callback: function (v) {
+                                    return '$' + (Math.abs(v) >= 1000
+                                        ? (v / 1000).toFixed(1) + 'k'
+                                        : v.toFixed(0));
+                                }
+                            },
+                            grid: {
+                                color: function (ctx) {
+                                    return ctx.tick.value === 0 ? '#333' : '#e9ecef';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    });
+
+    /* ── Symbol Search / Filter ───────────────────────────────── */
+    var filterInput = document.getElementById('symbolFilter');
+    if (filterInput) {
+        filterInput.addEventListener('input', function () {
+            var q = this.value.toUpperCase();
+            document.querySelectorAll('.symbol-item').forEach(function (item) {
+                var sym = item.dataset.symbol || '';
+                item.style.display = sym.toUpperCase().indexOf(q) > -1 ? '' : 'none';
+            });
+        });
+    }
+
+    /* ── Sorting ──────────────────────────────────────────────── */
+    var accordion = document.getElementById('symbolAccordion');
+    var sortBtns = document.querySelectorAll('.sort-btn');
+
+    function doSort(key, dir) {
+        var items = Array.from(accordion.querySelectorAll('.symbol-item'));
+        items.sort(function (a, b) {
+            var va, vb;
+            if (key === 'symbol') {
+                va = a.dataset.symbol || '';
+                vb = b.dataset.symbol || '';
+                return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+            } else if (key === 'pnl') {
+                va = parseFloat(a.dataset.pnl) || 0;
+                vb = parseFloat(b.dataset.pnl) || 0;
+            } else if (key === 'trades') {
+                va = parseInt(a.dataset.trades) || 0;
+                vb = parseInt(b.dataset.trades) || 0;
+            }
+            return dir === 'asc' ? va - vb : vb - va;
+        });
+        items.forEach(function (item) { accordion.appendChild(item); });
+    }
+
+    function updateArrow(btn, dir) {
+        var arrow = btn.querySelector('.arrow');
+        if (!arrow) {
+            arrow = document.createElement('span');
+            arrow.className = 'arrow';
+            btn.appendChild(document.createTextNode(' '));
+            btn.appendChild(arrow);
+        }
+        arrow.innerHTML = dir === 'asc' ? '&#9650;' : '&#9660;';
+    }
+
+    sortBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var key = btn.id.replace('sort', '').toLowerCase();
+            var currentDir = btn.dataset.dir;
+            var newDir;
+
+            if (currentDir === 'none' || currentDir === 'asc') {
+                newDir = 'desc';
+            } else {
+                newDir = 'asc';
+            }
+
+            // Reset all buttons
+            sortBtns.forEach(function (b) {
+                b.classList.remove('active');
+                b.dataset.dir = 'none';
+                var a = b.querySelector('.arrow');
+                if (a) a.remove();
+            });
+
+            btn.classList.add('active');
+            btn.dataset.dir = newDir;
+            updateArrow(btn, newDir);
+
+            doSort(key, newDir);
+        });
+    });
+
+    // Initial arrow on P&L button
+    updateArrow(document.getElementById('sortPnl'), 'desc');
+})();
+</script>
+{% endblock %}
