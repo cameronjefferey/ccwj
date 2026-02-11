@@ -5,51 +5,6 @@ from app import app
 from app.models import User
 
 
-@app.route("/auth-debug")
-def auth_debug():
-    """Temporary debug endpoint -- remove after verifying login works."""
-    import os
-    from app.models import _get_db, DB_PATH
-    env_raw = os.environ.get("HAPPYTRADER_USERS", "")
-    conn = _get_db()
-    rows = conn.execute("SELECT id, username FROM users").fetchall()
-    conn.close()
-    users = [{"id": r["id"], "username": r["username"]} for r in rows]
-
-    # Show the env var with passwords partially masked
-    parsed_entries = []
-    for entry in env_raw.split(","):
-        entry = entry.strip()
-        if ":" in entry:
-            u, p = entry.split(":", 1)
-            masked = p[:2] + "***" if len(p) > 2 else "***"
-            parsed_entries.append(f"{u}:{masked} (len={len(p)})")
-
-    # Test password verification for each user
-    pw_tests = []
-    for entry in env_raw.split(","):
-        entry = entry.strip()
-        if ":" in entry:
-            u, p = entry.split(":", 1)
-            user_obj = User.get_by_username(u.strip())
-            if user_obj:
-                pw_tests.append({
-                    "username": u.strip(),
-                    "password_check": user_obj.check_password(p.strip()),
-                    "password_length": len(p.strip()),
-                })
-
-    return {
-        "db_path": DB_PATH,
-        "db_exists": os.path.exists(DB_PATH),
-        "env_var_set": bool(env_raw),
-        "env_parsed": parsed_entries,
-        "user_count": len(users),
-        "users": users,
-        "password_tests": pw_tests,
-    }
-
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
