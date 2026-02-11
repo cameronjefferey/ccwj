@@ -1,4 +1,5 @@
 import os
+import re
 import base64
 import requests
 import pandas as pd
@@ -10,12 +11,64 @@ from app import app
 
 # ------------------------------------------------------------------
 # Expected CSV column headers (lowercase for comparison)
+# The brokerage export uses "Fees & Comm" -- we normalize it to "fees_and_comm"
+# Account is always set from the form (mandatory); any Account column in the
+# CSV is dropped and replaced with the user's selection.
 # ------------------------------------------------------------------
-HISTORY_REQUIRED_COLS = {"account", "date", "action", "symbol", "description",
-                         "quantity", "price", "fees_and_comm", "amount"}
+HISTORY_REQUIRED_COLS = {"date", "action", "symbol", "description",
+                         "quantity", "price", "amount"}
 
-CURRENT_REQUIRED_COLS = {"account", "symbol", "description", "quantity", "price",
+CURRENT_REQUIRED_COLS = {"symbol", "description", "quantity", "price",
                          "security_type"}
+
+# Column renames: brokerage export name (lowercase) → seed file column name
+HISTORY_COL_RENAMES = {
+    "fees & comm": "fees_and_comm",
+    "fees and comm": "fees_and_comm",
+    "fees_&_comm": "fees_and_comm",
+}
+
+CURRENT_COL_RENAMES = {
+    "qty": "Quantity",
+    "cost basis": "cost_bases",
+    "margin req": "margin_requirement",
+    "price chng %": "price_change_percent",
+    "price chng $": "price_change_dollar",
+    "mkt val": "market_value",
+    "day chng %": "day_change_percent",
+    "day chng $": "day_change_dollar",
+    "gain %": "gain_or_loss_percent",
+    "gain $": "gain_or_loss_dollat",            # preserving typo from original seed
+    "ratings": "rating",
+    "reinvest?": "divident_reinvestment",       # preserving typo from original seed
+    "reinvest capital gains?": "is_capital_gain",
+    "% of acct": "percent_of_account",
+    "exp/mat": "expiration_date",
+    "cost/share": "cost_per_share",
+    "last earnings": "last_earnings_date",
+    "div yld": "dividend_yield",
+    "last div": "last_dividend",
+    "ex-div": "ex_dividend_date",
+    "p/e ratio": "pe_ratio",
+    "52 wk low": "annual_week_low",
+    "52 wk high": "annual_week_high",
+    "intr val": "intrinsic_value",
+    "itm": "in_the_money",
+    "security type": "security_type",
+}
+
+# Exact column order for each seed file (Account is prepended separately)
+CURRENT_SEED_COLUMNS = [
+    "Account", "Symbol", "Description", "Quantity", "Price",
+    "price_change_dollar", "price_change_percent", "market_value",
+    "day_change_dollar", "day_change_percent", "cost_bases",
+    "gain_or_loss_dollat", "gain_or_loss_percent", "rating",
+    "divident_reinvestment", "is_capital_gain", "percent_of_account",
+    "expiration_date", "cost_per_share", "last_earnings_date",
+    "dividend_yield", "last_dividend", "ex_dividend_date", "pe_ratio",
+    "annual_week_low", "annual_week_high", "volume", "intrinsic_value",
+    "in_the_money", "security_type", "margin_requirement",
+]
 
 # GitHub config
 GITHUB_REPO = "cameronjefferey/ccwj"
@@ -32,38 +85,104 @@ def _github_headers():
     }
 
 
-def _validate_csv(file_storage, required_cols, label):
+def _find_header_line(content, markers):
+    """
+    Scan raw file lines to find the row that contains column headers.
+    markers: set of lowercase strings that must ALL appear somewhere in the
+             lowercased line.  This is a simple substring check so it is
+             immune to quoting, delimiters, and BOM characters.
+    Returns the 0-based line index, or 0 as fallback.
+    """
+    for i, line in enumerate(content.splitlines()):
+        low = line.lower()
+        if all(m in low for m in markers):
+            return i
+    return 0
+
+
+def _validate_csv(file_storage, required_cols, label, col_renames=None,
+                   header_markers=None):
     """
     Read an uploaded CSV file, validate that required columns are present.
-    Returns (csv_content_string, dataframe, error_message).
-    error_message is None on success.
+    Applies column renames (e.g. "Fees & Comm" → "fees_and_comm").
+    Auto-detects tab vs. comma separator and finds the header row by
+    scanning for `header_markers` (set of lowercase column names).
+    Returns (dataframe, error_message). error_message is None on success.
     """
     if not file_storage or file_storage.filename == "":
-        return None, None, f"No {label} file selected."
+        return None, f"No {label} file selected."
 
     if not file_storage.filename.lower().endswith(".csv"):
-        return None, None, f"{label} file must be a .csv file."
+        return None, f"{label} file must be a .csv file."
 
     try:
         raw_bytes = file_storage.read()
-        content = raw_bytes.decode("utf-8")
-        df = pd.read_csv(StringIO(content))
+
+        # Handle BOM and common encodings from brokerage exports
+        for encoding in ("utf-8-sig", "utf-8", "utf-16", "latin-1"):
+            try:
+                content = raw_bytes.decode(encoding)
+                break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        else:
+            content = raw_bytes.decode("latin-1")   # fallback
+
+        # ---- locate header row in the raw text ----
+        if header_markers:
+            header_idx = _find_header_line(content, header_markers)
+            # Trim everything above the header so pandas always sees
+            # the header as the very first line (avoids skip_blank_lines
+            # counting issues).
+            lines = content.splitlines()
+            content = "\n".join(lines[header_idx:])
+
+        # ---- detect delimiter from the (now-first) header line ----
+        first_line = content.splitlines()[0] if content.splitlines() else ""
+        sep = "\t" if first_line.count("\t") > first_line.count(",") else ","
+
+        df = pd.read_csv(StringIO(content), sep=sep)
     except Exception as exc:
-        return None, None, f"Could not parse {label} CSV: {exc}"
+        return None, f"Could not parse {label} CSV: {exc}"
+
+    # Drop completely empty rows (trailing blank lines in brokerage exports)
+    df = df.dropna(how="all")
+
+    # Drop columns whose header is blank or starts with "Unnamed"
+    # (caused by trailing delimiters in brokerage exports)
+    df = df[[c for c in df.columns
+             if str(c).strip() and not str(c).startswith("Unnamed")]]
+
+    # Strip whitespace from column names
+    df.columns = [c.strip() for c in df.columns]
+
+    # Strip the parenthetical long-name suffixes that Fidelity adds
+    # e.g. "Qty (Quantity)" → "Qty", "Security Type" stays "Security Type"
+    df.columns = [re.sub(r"\s*\(.*\)\s*$", "", c).strip() for c in df.columns]
+
+    # Apply column renames (case-insensitive)
+    if col_renames:
+        rename_map = {}
+        for col in df.columns:
+            lower = col.lower()
+            if lower in col_renames:
+                rename_map[col] = col_renames[lower]
+        if rename_map:
+            df = df.rename(columns=rename_map)
 
     # Normalize column names for comparison
-    actual_cols = {c.strip().lower() for c in df.columns}
+    actual_cols = {c.lower() for c in df.columns}
     missing = required_cols - actual_cols
     if missing:
-        return None, None, (
+        return None, (
             f"{label} CSV is missing required columns: {', '.join(sorted(missing))}. "
             f"Got: {', '.join(sorted(actual_cols))}"
         )
 
     if df.empty:
-        return None, None, f"{label} CSV has no data rows."
+        return None, f"{label} CSV has no data rows."
 
-    return content, df, None
+    return df, None
 
 
 def _get_file_sha(path):
@@ -100,11 +219,30 @@ def _commit_file(path, content, message):
         return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}"
 
 
+EXISTING_ACCOUNTS_QUERY = """
+    SELECT DISTINCT account
+    FROM `ccwj-dbt.analytics.positions_summary`
+    ORDER BY account
+"""
+
+
+def _get_existing_accounts():
+    """Fetch existing account names from BigQuery for the dropdown."""
+    try:
+        from app.bigquery_client import get_bigquery_client
+        client = get_bigquery_client()
+        df = client.query(EXISTING_ACCOUNTS_QUERY).to_dataframe()
+        return sorted(df["account"].dropna().unique().tolist())
+    except Exception:
+        return []
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():
     if request.method == "GET":
-        return render_template("upload.html", title="Upload Data")
+        accounts = _get_existing_accounts()
+        return render_template("upload.html", title="Upload Data", accounts=accounts)
 
     # ------------------------------------------------------------------
     # Check GITHUB_PAT is set
@@ -119,11 +257,15 @@ def upload():
     history_file = request.files.get("history_csv")
     current_file = request.files.get("current_csv")
 
-    history_content, history_df, history_err = _validate_csv(
-        history_file, HISTORY_REQUIRED_COLS, "History"
+    history_df, history_err = _validate_csv(
+        history_file, HISTORY_REQUIRED_COLS, "History",
+        col_renames=HISTORY_COL_RENAMES,
+        header_markers={"date", "action", "symbol", "quantity"},
     )
-    current_content, current_df, current_err = _validate_csv(
-        current_file, CURRENT_REQUIRED_COLS, "Current"
+    current_df, current_err = _validate_csv(
+        current_file, CURRENT_REQUIRED_COLS, "Current",
+        col_renames=CURRENT_COL_RENAMES,
+        header_markers={"symbol", "description", "price"},
     )
 
     if history_err:
@@ -134,14 +276,69 @@ def upload():
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
-    # Summarize what's being uploaded
+    # Account name is mandatory (selected or typed on the form)
     # ------------------------------------------------------------------
-    history_account_col = next(c for c in history_df.columns if c.strip().lower() == "account")
-    current_account_col = next(c for c in current_df.columns if c.strip().lower() == "account")
-    all_accounts = sorted(
-        set(history_df[history_account_col].str.strip().unique())
-        | set(current_df[current_account_col].str.strip().unique())
-    )
+    account_select = request.form.get("account_name", "").strip()
+    account_custom = request.form.get("account_name_custom", "").strip()
+
+    # Use the custom name only when the user chose "+ Create new account..."
+    if account_select == "__new__":
+        account_name = account_custom
+    else:
+        account_name = account_select
+
+    if not account_name:
+        flash("Please select or enter an account name.", "danger")
+        return redirect(url_for("upload"))
+
+    # ------------------------------------------------------------------
+    # Set the Account column on both DataFrames (overwrite if present)
+    # ------------------------------------------------------------------
+    # Drop any existing Account column from CSVs
+    for df in [history_df, current_df]:
+        acct_cols = [c for c in df.columns if c.lower() == "account"]
+        if acct_cols:
+            df.drop(columns=acct_cols, inplace=True)
+
+    history_df.insert(0, "Account", account_name)
+    current_df.insert(0, "Account", account_name)
+
+    # ------------------------------------------------------------------
+    # Normalize column names to match seed file format
+    # ------------------------------------------------------------------
+    # History seed: Account,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
+    history_standard = {
+        "account": "Account", "date": "Date", "action": "Action",
+        "symbol": "Symbol", "description": "Description",
+        "quantity": "Quantity", "price": "Price",
+        "fees_and_comm": "fees_and_comm", "amount": "Amount",
+    }
+    history_col_map = {c: history_standard[c.lower()]
+                       for c in history_df.columns if c.lower() in history_standard}
+    history_df = history_df.rename(columns=history_col_map)
+
+    # Current seed: reorder columns to match the exact seed file layout
+    # First, normalize any remaining case mismatches
+    current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
+    current_col_map = {}
+    for col in current_df.columns:
+        lower = col.lower()
+        if lower in current_norm:
+            current_col_map[col] = current_norm[lower]
+    current_df = current_df.rename(columns=current_col_map)
+
+    # Ensure all seed columns exist (fill missing ones with empty string)
+    for seed_col in CURRENT_SEED_COLUMNS:
+        if seed_col not in current_df.columns:
+            current_df[seed_col] = ""
+
+    # Reorder to match seed file exactly
+    current_df = current_df[CURRENT_SEED_COLUMNS]
+
+    # Generate CSV content strings for committing to GitHub
+    history_content = history_df.to_csv(index=False)
+    current_content = current_df.to_csv(index=False)
+
     history_rows = len(history_df)
     current_rows = len(current_df)
 
@@ -151,7 +348,7 @@ def upload():
     commit_msg = (
         f"Upload by {current_user.username}: "
         f"{history_rows} history rows, {current_rows} current rows "
-        f"({', '.join(all_accounts)})"
+        f"({account_name})"
     )
 
     try:
@@ -173,7 +370,7 @@ def upload():
 
     flash(
         f"Seed files updated: {history_rows:,} history rows and {current_rows:,} current rows "
-        f"for {', '.join(all_accounts)}.",
+        f"for {account_name}.",
         "success",
     )
     flash(

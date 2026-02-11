@@ -34,24 +34,16 @@ jobs:
           cp dbt/profiles.yml ~/.dbt/profiles.yml
           echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
 
-      - name: Run Upstream DBT Models
+      - name: Run DBT seed and build
         run: |
           cd dbt
-          dbt build -s +history_and_current_combined
+          dbt build
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
 
-      - name: Run the update script
+      - name: Fetch daily stock prices
+        continue-on-error: true
         run: python current_position_stock_price.py
-
-      - name: Run Remaining DBT Models
-        run: |
-          cd dbt
-          dbt build --exclude +history_and_current_combined
-        env:
-          DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
-          DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
-          DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
 

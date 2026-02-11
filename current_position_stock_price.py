@@ -6,12 +6,13 @@ from google.cloud import bigquery
 # Step 1: Initialize BigQuery client
 client = bigquery.Client()
 
-# Step 2: Query BigQuery to get current positions
+# Step 2: Query BigQuery to get current equity positions
 query = """
-    SELECT account, symbol, min(transaction_date) AS position_open_date
-    FROM `ccwj-dbt.analytics.history_and_current_combined`
-    WHERE security_type = 'Equity' 
-    GROUP BY 1,2
+    SELECT account, underlying_symbol AS symbol, MIN(trade_date) AS position_open_date
+    FROM `ccwj-dbt.analytics.stg_history`
+    WHERE instrument_type = 'Equity'
+      AND action IN ('equity_buy', 'equity_sell')
+    GROUP BY 1, 2
 """
 positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
