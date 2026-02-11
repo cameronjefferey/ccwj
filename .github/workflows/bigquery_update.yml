@@ -3,6 +3,7 @@ name: Update Daily Position Performance
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   update-performance:

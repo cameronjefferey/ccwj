@@ -31,6 +31,43 @@ def login():
     return render_template("login.html", title="Login")
 
 
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+
+        if not username or not password:
+            flash("Username and password are required.", "danger")
+            return redirect(url_for("signup"))
+
+        if len(username) < 3:
+            flash("Username must be at least 3 characters.", "danger")
+            return redirect(url_for("signup"))
+
+        if len(password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("signup"))
+
+        if password != confirm:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("signup"))
+
+        if User.get_by_username(username):
+            flash("That username is already taken.", "danger")
+            return redirect(url_for("signup"))
+
+        User.create(username, password)
+        flash("Account created! You can now sign in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("signup.html", title="Sign Up")
+
+
 @app.route("/logout")
 def logout():
     logout_user()

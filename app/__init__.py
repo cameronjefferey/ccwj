@@ -26,3 +26,4 @@ seed_users_from_env()
 
 from app import routes
 from app import auth
+from app import upload

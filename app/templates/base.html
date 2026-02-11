@@ -56,6 +56,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/accounts">Account Performance</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/upload">Upload</a>
+                    </li>
                 </ul>
                 {% if current_user.is_authenticated %}
                 <ul class="navbar-nav">
@@ -73,14 +76,14 @@
 
     <!-- Flash messages -->
     <div class="container-fluid px-4">
-        {% with messages = get_flashed_messages() %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    {% for message in messages %}
-                        <div>{{ message }}</div>
-                    {% endfor %}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
             {% endif %}
         {% endwith %}
     </div>
