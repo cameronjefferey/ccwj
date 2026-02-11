@@ -19,9 +19,10 @@ def load_user(user_id):
     return User.get_by_id(int(user_id))
 
 
-# Initialize the database
-from app.models import init_db
+# Initialize the database and seed users from env
+from app.models import init_db, seed_users_from_env
 init_db()
+seed_users_from_env()
 
 from app import routes
 from app import auth
