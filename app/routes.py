@@ -1,11 +1,46 @@
 from flask import render_template, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.models import get_accounts_for_user, is_admin
 from google.cloud import bigquery
 from datetime import datetime, date
 import pandas as pd
 import json
+
+
+def _user_account_list():
+    """
+    Return the list of accounts the current user is allowed to see,
+    or None if the user is an admin (meaning: no filter, show everything).
+    """
+    if is_admin(current_user.username):
+        return None                     # admin → no restriction
+    return get_accounts_for_user(current_user.id)
+
+
+def _account_sql_filter(accounts):
+    """
+    Build a SQL WHERE clause fragment for filtering by account.
+    accounts: list of account names, or None for no filter (admin).
+    Returns a string like "WHERE account IN ('Foo', 'Bar')" or "".
+    """
+    if accounts is None:
+        return ""
+    if not accounts:
+        return "WHERE 1 = 0"            # user has no accounts → return nothing
+    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
+    return f"WHERE account IN ({quoted})"
+
+
+def _filter_df_by_accounts(df, accounts, col="account"):
+    """Filter a DataFrame to only rows matching the user's accounts.
+    accounts=None means admin → return unfiltered."""
+    if accounts is None:
+        return df
+    if not accounts:
+        return df.iloc[0:0]             # empty frame
+    return df[df[col].isin(accounts)]
 
 
 # ------------------------------------------------------------------
@@ -170,7 +205,7 @@ def _parse_date(value):
         return None
 
 
-HOMEPAGE_STATS_QUERY = """
+HOMEPAGE_STATS_QUERY_TPL = """
     SELECT
         COUNT(DISTINCT account) AS num_accounts,
         COUNT(DISTINCT symbol) AS num_symbols,
@@ -184,25 +219,28 @@ HOMEPAGE_STATS_QUERY = """
         SUM(num_winners) AS total_winners,
         SUM(num_losers) AS total_losers
     FROM `ccwj-dbt.analytics.positions_summary`
+    {where}
 """
 
-HOMEPAGE_TOP_SYMBOLS_QUERY = """
+HOMEPAGE_TOP_SYMBOLS_QUERY_TPL = """
     SELECT
         symbol,
         SUM(total_return) AS total_return,
         STRING_AGG(DISTINCT strategy, ', ' ORDER BY strategy) AS strategies
     FROM `ccwj-dbt.analytics.positions_summary`
+    {where}
     GROUP BY symbol
     ORDER BY SUM(total_return) DESC
     LIMIT 5
 """
 
-HOMEPAGE_STRATEGY_BREAKDOWN_QUERY = """
+HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL = """
     SELECT
         strategy,
         SUM(total_return) AS total_return,
         COUNT(DISTINCT symbol) AS num_symbols
     FROM `ccwj-dbt.analytics.positions_summary`
+    {where}
     GROUP BY strategy
     ORDER BY SUM(total_return) DESC
 """
@@ -215,10 +253,12 @@ def index():
     stats = {}
     top_symbols = []
     strategy_breakdown = []
+    user_accounts = _user_account_list()
 
     try:
         client = get_bigquery_client()
-        stats_df = client.query(HOMEPAGE_STATS_QUERY).to_dataframe()
+        where = _account_sql_filter(user_accounts)
+        stats_df = client.query(HOMEPAGE_STATS_QUERY_TPL.format(where=where)).to_dataframe()
         if not stats_df.empty:
             row = stats_df.iloc[0]
             total_winners = int(row.get("total_winners", 0))
@@ -237,13 +277,13 @@ def index():
                 "win_rate": total_winners / total_closed if total_closed else 0,
             }
 
-        top_df = client.query(HOMEPAGE_TOP_SYMBOLS_QUERY).to_dataframe()
+        top_df = client.query(HOMEPAGE_TOP_SYMBOLS_QUERY_TPL.format(where=where)).to_dataframe()
         if not top_df.empty:
             for col in ["total_return"]:
                 top_df[col] = pd.to_numeric(top_df[col], errors="coerce").fillna(0)
             top_symbols = top_df.to_dict(orient="records")
 
-        strat_df = client.query(HOMEPAGE_STRATEGY_BREAKDOWN_QUERY).to_dataframe()
+        strat_df = client.query(HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL.format(where=where)).to_dataframe()
         if not strat_df.empty:
             for col in ["total_return", "num_symbols"]:
                 strat_df[col] = pd.to_numeric(strat_df[col], errors="coerce").fillna(0)
@@ -251,12 +291,16 @@ def index():
     except Exception:
         pass  # Gracefully degrade — homepage still renders without data
 
+    # user_accounts is None for admins, or a list for regular users
+    has_accounts = user_accounts is None or len(user_accounts) > 0
+
     return render_template(
         "index.html",
         title="Home",
         stats=stats,
         top_symbols=top_symbols,
         strategy_breakdown=strategy_breakdown,
+        has_accounts=has_accounts,
     )
 
 
@@ -326,8 +370,11 @@ def positions():
             df[col] = df[col].astype(str).replace("NaT", "")
 
     # ------------------------------------------------------------------
-    # 4. Filter options (computed before client-side filtering)
+    # 4. Filter to user's accounts, then build filter options
     # ------------------------------------------------------------------
+    user_accounts = _user_account_list()
+    df = _filter_df_by_accounts(df, user_accounts)
+
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
@@ -640,8 +687,12 @@ def symbols_detail():
     )
 
     # ------------------------------------------------------------------
-    # Account filter
+    # Restrict to user's accounts, then apply account filter
     # ------------------------------------------------------------------
+    user_accounts = _user_account_list()
+    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
+    current_df = _filter_df_by_accounts(current_df, user_accounts)
+
     accounts = sorted(trades_df["account"].dropna().unique())
     selected_account = request.args.get("account", "")
 
@@ -915,8 +966,15 @@ def accounts():
             strat_summary_df[col] = pd.to_numeric(strat_summary_df[col], errors="coerce").fillna(0)
 
     # ------------------------------------------------------------------
-    # Account filter
+    # Restrict to user's accounts, then apply account filter
     # ------------------------------------------------------------------
+    user_accounts = _user_account_list()
+    balances_df = _filter_df_by_accounts(balances_df, user_accounts)
+    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
+    current_df = _filter_df_by_accounts(current_df, user_accounts)
+    strat_class_df = _filter_df_by_accounts(strat_class_df, user_accounts)
+    strat_summary_df = _filter_df_by_accounts(strat_summary_df, user_accounts)
+
     all_accounts = sorted(trades_df["account"].dropna().unique())
     selected_account = request.args.get("account", "")
 

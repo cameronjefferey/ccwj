@@ -36,6 +36,13 @@
 {% block content %}
 <h4 class="mb-3 fw-bold">Positions Summary</h4>
 
+{% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_status or selected_symbol) %}
+<div class="alert alert-warning">
+    <strong>No accounts linked.</strong>
+    <a href="{{ url_for('upload') }}">Upload data or claim an existing account</a> to see your positions.
+</div>
+{% endif %}
+
 {% if error is defined and error %}
 <div class="alert alert-danger">
     <strong>BigQuery Error:</strong> {{ error }}

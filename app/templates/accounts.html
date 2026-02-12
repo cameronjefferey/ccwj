@@ -26,6 +26,13 @@
 {% block content %}
 <h4 class="mb-3 fw-bold">Account Performance</h4>
 
+{% if accounts is defined and accounts|length == 0 and not selected_account %}
+<div class="alert alert-warning">
+    <strong>No accounts linked.</strong>
+    <a href="{{ url_for('upload') }}">Upload data or claim an existing account</a> to see your account data.
+</div>
+{% endif %}
+
 {% if error is defined and error %}
 <div class="alert alert-danger">
     <strong>BigQuery Error:</strong> {{ error }}

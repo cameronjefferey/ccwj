@@ -15,13 +15,21 @@ def _get_db():
 
 
 def init_db():
-    """Create the users table if it doesn't exist."""
+    """Create the users and user_accounts tables if they don't exist."""
     conn = _get_db()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_accounts (
+            user_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL,
+            PRIMARY KEY (user_id, account_name),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
     conn.commit()
@@ -68,6 +76,56 @@ class User(UserMixin):
         conn.commit()
         conn.close()
 
+
+# ------------------------------------------------------------------
+# User ↔ Account association
+# ------------------------------------------------------------------
+
+def get_accounts_for_user(user_id):
+    """Return a sorted list of account names linked to the given user."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT account_name FROM user_accounts WHERE user_id = ? ORDER BY account_name",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [r["account_name"] for r in rows]
+
+
+def add_account_for_user(user_id, account_name):
+    """Link an account to a user (no-op if already linked)."""
+    conn = _get_db()
+    conn.execute(
+        "INSERT OR IGNORE INTO user_accounts (user_id, account_name) VALUES (?, ?)",
+        (user_id, account_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def remove_account_for_user(user_id, account_name):
+    """Unlink an account from a user."""
+    conn = _get_db()
+    conn.execute(
+        "DELETE FROM user_accounts WHERE user_id = ? AND account_name = ?",
+        (user_id, account_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_admin(username):
+    """Check if a username is in the ADMIN_USERS environment variable."""
+    admin_env = os.environ.get("ADMIN_USERS", "")
+    if not admin_env:
+        return False
+    admins = {u.strip().lower() for u in admin_env.split(",") if u.strip()}
+    return username.lower() in admins
+
+
+# ------------------------------------------------------------------
+# Bootstrap helpers
+# ------------------------------------------------------------------
 
 def seed_users_from_env():
     """

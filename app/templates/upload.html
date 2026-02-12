@@ -171,6 +171,59 @@
                 </p>
             </div>
         </form>
+
+        {# ── My Accounts management ── #}
+        <hr class="my-5">
+        <h4 class="fw-bold mb-3">My Accounts</h4>
+        <p class="text-muted small mb-3">
+            You can only view dashboard data for accounts linked to your profile.
+            Uploading data for an account automatically links it. You can also
+            claim or remove accounts below.
+        </p>
+
+        <div class="row g-4">
+            {# Linked accounts #}
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm p-3" style="border-radius:12px">
+                    <h6 class="fw-bold mb-2">Linked Accounts</h6>
+                    {% if accounts %}
+                    <ul class="list-group list-group-flush">
+                        {% for acct in accounts %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            {{ acct }}
+                            <form method="POST" action="{{ url_for('unclaim_account') }}" class="d-inline">
+                                <input type="hidden" name="unclaim_account_name" value="{{ acct }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted small mb-0">No accounts linked yet. Upload data or claim an account.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# Claim existing account #}
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm p-3" style="border-radius:12px">
+                    <h6 class="fw-bold mb-2">Claim Existing Account</h6>
+                    {% if claimable %}
+                    <form method="POST" action="{{ url_for('claim_account') }}">
+                        <select class="form-select mb-2" name="claim_account_name">
+                            <option value="" selected>-- Select an account to claim --</option>
+                            {% for acct in claimable %}
+                            <option value="{{ acct }}">{{ acct }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Claim Account</button>
+                    </form>
+                    {% else %}
+                    <p class="text-muted small mb-0">No unclaimed accounts available. Upload data to create one.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

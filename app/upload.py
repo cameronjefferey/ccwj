@@ -7,6 +7,10 @@ from io import StringIO
 from flask import render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 from app import app
+from app.models import (
+    get_accounts_for_user, add_account_for_user,
+    remove_account_for_user, is_admin,
+)
 
 
 # ------------------------------------------------------------------
@@ -241,8 +245,21 @@ def _get_existing_accounts():
 @login_required
 def upload():
     if request.method == "GET":
-        accounts = _get_existing_accounts()
-        return render_template("upload.html", title="Upload Data", accounts=accounts)
+        user_accounts = get_accounts_for_user(current_user.id)
+        # Admins see every account in BigQuery; regular users see only
+        # their linked accounts plus any BigQuery accounts they own.
+        if is_admin(current_user.username):
+            all_bq = _get_existing_accounts()
+            accounts = sorted(set(all_bq))
+        else:
+            accounts = sorted(set(user_accounts))
+        # Also pass the full BigQuery account list for claiming
+        bq_accounts = _get_existing_accounts()
+        claimable = sorted(set(bq_accounts) - set(user_accounts))
+        return render_template(
+            "upload.html", title="Upload Data",
+            accounts=accounts, claimable=claimable,
+        )
 
     # ------------------------------------------------------------------
     # Check GITHUB_PAT is set
@@ -368,6 +385,9 @@ def upload():
         flash(f"GitHub commit failed: {exc}", "danger")
         return redirect(url_for("upload"))
 
+    # Auto-link this account to the current user
+    add_account_for_user(current_user.id, account_name)
+
     flash(
         f"Seed files updated: {history_rows:,} history rows and {current_rows:,} current rows "
         f"for {account_name}.",
@@ -379,4 +399,30 @@ def upload():
         "info",
     )
 
+    return redirect(url_for("upload"))
+
+
+@app.route("/claim-account", methods=["POST"])
+@login_required
+def claim_account():
+    """Link an existing BigQuery account to the current user."""
+    account_name = request.form.get("claim_account_name", "").strip()
+    if not account_name:
+        flash("No account selected to claim.", "danger")
+        return redirect(url_for("upload"))
+    add_account_for_user(current_user.id, account_name)
+    flash(f"Account \"{account_name}\" linked to your profile.", "success")
+    return redirect(url_for("upload"))
+
+
+@app.route("/unclaim-account", methods=["POST"])
+@login_required
+def unclaim_account():
+    """Unlink an account from the current user."""
+    account_name = request.form.get("unclaim_account_name", "").strip()
+    if not account_name:
+        flash("No account selected to remove.", "danger")
+        return redirect(url_for("upload"))
+    remove_account_for_user(current_user.id, account_name)
+    flash(f"Account \"{account_name}\" removed from your profile.", "info")
     return redirect(url_for("upload"))
