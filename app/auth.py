@@ -49,8 +49,9 @@ def signup():
             flash("Username must be at least 3 characters.", "danger")
             return redirect(url_for("signup"))
 
-        if len(password) < 6:
-            flash("Password must be at least 6 characters.", "danger")
+        valid, err = _validate_password(password)
+        if not valid:
+            flash(err, "danger")
             return redirect(url_for("signup"))
 
         if password != confirm:
@@ -77,15 +78,31 @@ def logout():
 # ------------------------------------------------------------------
 # CLI command:  flask create-user --username <name> --password <pw>
 # ------------------------------------------------------------------
+def _validate_password(password):
+    """Return (is_valid, error_message)."""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters."
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number."
+    if not any(c.isalpha() for c in password):
+        return False, "Password must contain at least one letter."
+    return True, None
+
+
 @app.cli.command("create-user")
 @click.option("--username", prompt=True, help="Username for the new account")
 @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True,
-              help="Password for the new account")
+              help="Password for the new account (min 8 chars, letter + number)")
 def create_user(username, password):
     """Create a new user account."""
     existing = User.get_by_username(username)
     if existing:
         click.echo(f"Error: User '{username}' already exists.")
+        return
+
+    valid, err = _validate_password(password)
+    if not valid:
+        click.echo(f"Error: {err}")
         return
 
     User.create(username, password)

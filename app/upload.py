@@ -61,7 +61,11 @@ CURRENT_COL_RENAMES = {
     "security type": "security_type",
 }
 
-# Exact column order for each seed file (Account is prepended separately)
+# Exact column order for each seed file
+HISTORY_SEED_COLUMNS = [
+    "Account", "Date", "Action", "Symbol", "Description",
+    "Quantity", "Price", "fees_and_comm", "Amount",
+]
 CURRENT_SEED_COLUMNS = [
     "Account", "Symbol", "Description", "Quantity", "Price",
     "price_change_dollar", "price_change_percent", "market_value",
@@ -198,6 +202,87 @@ def _get_file_sha(path):
     return None  # File doesn't exist yet
 
 
+def _get_file_content(path):
+    """
+    Fetch the raw content of a file from the repo.
+    Returns decoded string, or None if file doesn't exist or fetch fails.
+    """
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    resp = requests.get(url, headers=_github_headers(), timeout=15)
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    if data.get("encoding") == "base64":
+        return base64.b64decode(data["content"]).decode("utf-8")
+    return data.get("content", "")
+
+
+def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
+    """
+    Merge new account data with existing seed data.
+    - Fetches current file from GitHub
+    - Removes all rows for account_name (we're replacing that account's data)
+    - Appends new_df
+    - Returns CSV string ready to commit
+    """
+    existing_content = _get_file_content(path)
+    if not existing_content or not existing_content.strip():
+        # No existing file or empty: use only new data
+        for col in seed_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        merged = new_df[seed_columns]
+        return merged.to_csv(index=False)
+
+    # Parse existing CSV
+    try:
+        existing_df = pd.read_csv(StringIO(existing_content))
+    except Exception:
+        # If parse fails, fall back to overwrite with new data only
+        for col in seed_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        return new_df[seed_columns].to_csv(index=False)
+
+    if existing_df.empty:
+        for col in seed_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        return new_df[seed_columns].to_csv(index=False)
+
+    # Normalize Account column name (may be "Account" or "account" from CSV)
+    acct_col = None
+    for c in existing_df.columns:
+        if c.strip().lower() == "account":
+            acct_col = c
+            break
+    if acct_col is None:
+        # No account column in existing: overwrite with new only
+        for col in seed_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        return new_df[seed_columns].to_csv(index=False)
+
+    # Keep rows from other accounts (exclude account_name)
+    other_mask = existing_df[acct_col].astype(str).str.strip() != account_name
+    other_df = existing_df.loc[other_mask]
+
+    # Ensure new_df has same columns as seed; align columns
+    for col in seed_columns:
+        if col not in new_df.columns:
+            new_df[col] = ""
+    new_df = new_df[seed_columns]
+
+    # Align existing columns (may have different order or extras)
+    for col in seed_columns:
+        if col not in other_df.columns:
+            other_df[col] = ""
+    other_df = other_df[seed_columns]
+
+    merged = pd.concat([other_df, new_df], ignore_index=True)
+    return merged.to_csv(index=False)
+
+
 def _commit_file(path, content, message):
     """
     Create or update a file in the GitHub repo via the Contents API.
@@ -253,12 +338,9 @@ def upload():
             accounts = sorted(set(all_bq))
         else:
             accounts = sorted(set(user_accounts))
-        # Also pass the full BigQuery account list for claiming
-        bq_accounts = _get_existing_accounts()
-        claimable = sorted(set(bq_accounts) - set(user_accounts))
         return render_template(
             "upload.html", title="Upload Data",
-            accounts=accounts, claimable=claimable,
+            accounts=accounts,
         )
 
     # ------------------------------------------------------------------
@@ -333,6 +415,10 @@ def upload():
     history_col_map = {c: history_standard[c.lower()]
                        for c in history_df.columns if c.lower() in history_standard}
     history_df = history_df.rename(columns=history_col_map)
+    for col in HISTORY_SEED_COLUMNS:
+        if col not in history_df.columns:
+            history_df[col] = ""
+    history_df = history_df[HISTORY_SEED_COLUMNS]
 
     # Current seed: reorder columns to match the exact seed file layout
     # First, normalize any remaining case mismatches
@@ -352,9 +438,13 @@ def upload():
     # Reorder to match seed file exactly
     current_df = current_df[CURRENT_SEED_COLUMNS]
 
-    # Generate CSV content strings for committing to GitHub
-    history_content = history_df.to_csv(index=False)
-    current_content = current_df.to_csv(index=False)
+    # Merge with existing seed data (preserve other accounts, replace this account)
+    history_content = _merge_seed_with_existing(
+        HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
+    )
+    current_content = _merge_seed_with_existing(
+        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
+    )
 
     history_rows = len(history_df)
     current_rows = len(current_df)
@@ -399,19 +489,6 @@ def upload():
         "info",
     )
 
-    return redirect(url_for("upload"))
-
-
-@app.route("/claim-account", methods=["POST"])
-@login_required
-def claim_account():
-    """Link an existing BigQuery account to the current user."""
-    account_name = request.form.get("claim_account_name", "").strip()
-    if not account_name:
-        flash("No account selected to claim.", "danger")
-        return redirect(url_for("upload"))
-    add_account_for_user(current_user.id, account_name)
-    flash(f"Account \"{account_name}\" linked to your profile.", "success")
     return redirect(url_for("upload"))
 
 
