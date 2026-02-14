@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .landing-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 4rem 3rem;
+        color: #fff;
+        text-align: center;
+    }
+    .landing-hero h1 { font-size: 2.75rem; font-weight: 700; margin-bottom: 1rem; }
+    .landing-hero .lead { color: rgba(255,255,255,.85); margin-bottom: 2rem; }
+    .landing-hero .btn { padding: .75rem 2rem; font-weight: 600; border-radius: 8px; }
+    .feature-list { list-style: none; padding: 0; }
+    .feature-list li {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: .5rem 0;
+        color: #495057;
+    }
+    .feature-list li::before {
+        content: "✓";
+        color: #198754;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="landing-hero mb-5">
+            <h1>Track Your Options Strategies</h1>
+            <p class="lead">
+                HappyTrader automatically classifies your trades—Covered Calls, Cash-Secured Puts,
+                Wheels, and more—and shows you what's working across every position and account.
+            </p>
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                <a href="{{ url_for('login') }}" class="btn btn-light">Sign In</a>
+                <a href="{{ url_for('signup') }}" class="btn btn-outline-light">Create Account</a>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4" style="border-radius:12px">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-3">What you get</h5>
+                <ul class="feature-list mb-0">
+                    <li><strong>Strategy auto-detection</strong> — Covered Call, CSP, Wheel, Spreads, Buy and Hold</li>
+                    <li><strong>Performance metrics</strong> — Total P&amp;L, win rate, premium collected, dividend income</li>
+                    <li><strong>Schwab integration</strong> — Export from schwab.com, upload here</li>
+                    <li><strong>Multi-account</strong> — Track all your brokerage accounts in one place</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

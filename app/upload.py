@@ -10,6 +10,7 @@ from app import app
 from app.models import (
     get_accounts_for_user, add_account_for_user,
     remove_account_for_user, is_admin,
+    record_upload, get_uploads_for_user,
 )
 
 
@@ -338,9 +339,11 @@ def upload():
             accounts = sorted(set(all_bq))
         else:
             accounts = sorted(set(user_accounts))
+        recent_uploads = get_uploads_for_user(current_user.id)
         return render_template(
             "upload.html", title="Upload Data",
             accounts=accounts,
+            recent_uploads=recent_uploads,
         )
 
     # ------------------------------------------------------------------
@@ -475,8 +478,9 @@ def upload():
         flash(f"GitHub commit failed: {exc}", "danger")
         return redirect(url_for("upload"))
 
-    # Auto-link this account to the current user
+    # Auto-link this account and record the upload
     add_account_for_user(current_user.id, account_name)
+    record_upload(current_user.id, account_name, history_rows, current_rows)
 
     flash(
         f"Seed files updated: {history_rows:,} history rows and {current_rows:,} current rows "
@@ -489,6 +493,10 @@ def upload():
         "info",
     )
 
+    # If the user came from onboarding, send them back there
+    referrer = request.referrer or ""
+    if "get-started" in referrer:
+        return redirect(url_for("get_started"))
     return redirect(url_for("upload"))
 
 

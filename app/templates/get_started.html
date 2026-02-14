@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .get-started-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .get-started-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .step-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .step-number {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+    .step-pending { background: #0d6efd; color: #fff; }
+    .step-done { background: #198754; color: #fff; }
+    .step-waiting { background: #6c757d; color: #fff; }
+    .step-card h6 { margin-bottom: .25rem; }
+    .step-card p { margin-bottom: 0; font-size: .9rem; color: #6c757d; }
+    .step-detail {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-top: .75rem;
+        font-size: .85rem;
+    }
+    .step-detail ol { margin-bottom: .5rem; padding-left: 1.25rem; }
+    .done-banner {
+        background: linear-gradient(135deg, #198754 0%, #157347 100%);
+        border-radius: 12px;
+        padding: 2rem;
+        color: #fff;
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+    .done-banner h4 { font-weight: 700; margin-bottom: .5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+
+        {% if has_uploaded and has_data %}
+        {# ── All done ── #}
+        <div class="done-banner">
+            <h4>You're all set!</h4>
+            <p class="mb-3 opacity-90">Your data has been processed and your dashboard is ready.</p>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-light fw-semibold px-4">Go to Dashboard</a>
+        </div>
+        {% else %}
+        <div class="get-started-hero">
+            <h1>Welcome, {{ current_user.username }}!</h1>
+            <p class="mb-0 opacity-90">Get your portfolio set up in three steps.</p>
+        </div>
+        {% endif %}
+
+        {# ── Step 1: Upload ── #}
+        <div class="step-card">
+            <span class="step-number {% if has_uploaded %}step-done{% else %}step-pending{% endif %}">
+                {% if has_uploaded %}&#10003;{% else %}1{% endif %}
+            </span>
+            <div class="flex-grow-1">
+                <h6 class="fw-bold">
+                    {% if has_uploaded %}
+                    Data uploaded
+                    {% else %}
+                    Upload your Schwab data
+                    {% endif %}
+                </h6>
+
+                {% if has_uploaded %}
+                <p>Your data is being processed. You can re-upload anytime from the
+                    <a href="{{ url_for('upload') }}">Upload page</a>.</p>
+                {% else %}
+                <p>Export two CSV files from schwab.com, then upload them here.</p>
+
+                <div class="step-detail">
+                    <strong>Trade History</strong>
+                    <ol class="mt-1">
+                        <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>History</strong> &rarr; <strong>Transactions</strong></li>
+                        <li>Select your account</li>
+                        <li>Set filter to <strong>All Transactions</strong></li>
+                        <li>Choose a date range, click <strong>Search</strong></li>
+                        <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+                    </ol>
+
+                    <strong>Current Positions</strong>
+                    <ol class="mt-1 mb-2">
+                        <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>Positions</strong></li>
+                        <li>Select your account</li>
+                        <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+                    </ol>
+
+                    <a href="{{ url_for('upload') }}" class="btn btn-primary btn-sm">Upload Files</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# ── Step 2: Processing ── #}
+        <div class="step-card">
+            <span class="step-number {% if has_data %}step-done{% elif has_uploaded %}step-pending{% else %}step-waiting{% endif %}">
+                {% if has_data %}&#10003;{% else %}2{% endif %}
+            </span>
+            <div>
+                <h6 class="fw-bold">
+                    {% if has_data %}
+                    Data processed
+                    {% elif has_uploaded %}
+                    Processing your data...
+                    {% else %}
+                    Wait for processing
+                    {% endif %}
+                </h6>
+
+                {% if has_data %}
+                <p>Your positions and strategies are ready to view.</p>
+                {% elif has_uploaded %}
+                <p>Your data is being loaded into the pipeline. This usually takes 3-5 minutes.
+                    <a href="{{ url_for('get_started') }}">Refresh this page</a> to check.</p>
+                {% else %}
+                <p>After uploading, your data will be processed automatically.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {# ── Step 3: Dashboard ── #}
+        <div class="step-card">
+            <span class="step-number {% if has_data %}step-done{% else %}step-waiting{% endif %}">
+                {% if has_data %}&#10003;{% else %}3{% endif %}
+            </span>
+            <div>
+                <h6 class="fw-bold">
+                    {% if has_data %}
+                    Dashboard ready
+                    {% else %}
+                    View your dashboard
+                    {% endif %}
+                </h6>
+
+                {% if has_data %}
+                <p>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+                </p>
+                {% else %}
+                <p>Once processing is complete, your positions and strategy analytics will be here.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if has_uploaded and not has_data %}
+        <div class="text-center mt-3">
+            <a href="{{ url_for('get_started') }}" class="btn btn-outline-primary btn-sm">
+                Refresh to check status
+            </a>
+            <span class="text-muted small d-block mt-1">Usually ready in 3-5 minutes</span>
+        </div>
+        {% endif %}
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('dashboard') }}" class="text-muted small">Skip to dashboard</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

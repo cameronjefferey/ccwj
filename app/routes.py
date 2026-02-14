@@ -1,4 +1,4 @@
-from flask import render_template, request
+from flask import render_template, request, redirect, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
@@ -248,8 +248,16 @@ HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL = """
 
 @app.route("/")
 @app.route("/index")
-@login_required
 def index():
+    """Public landing page, or redirect to dashboard if logged in."""
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    return render_template("landing.html", title="Home")
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
     stats = {}
     top_symbols = []
     strategy_breakdown = []
@@ -301,6 +309,33 @@ def index():
         top_symbols=top_symbols,
         strategy_breakdown=strategy_breakdown,
         has_accounts=has_accounts,
+    )
+
+
+@app.route("/get-started")
+@login_required
+def get_started():
+    """Onboarding checklist for new users — tracks real progress."""
+    user_accounts = get_accounts_for_user(current_user.id)
+    has_uploaded = len(user_accounts) > 0
+
+    # Check if data is actually available in BigQuery
+    has_data = False
+    if has_uploaded:
+        try:
+            client = get_bigquery_client()
+            where = _account_sql_filter(user_accounts)
+            check_q = f"SELECT COUNT(*) AS cnt FROM `ccwj-dbt.analytics.positions_summary` {where}"
+            result = client.query(check_q).to_dataframe()
+            has_data = int(result.iloc[0]["cnt"]) > 0 if not result.empty else False
+        except Exception:
+            pass
+
+    return render_template(
+        "get_started.html",
+        title="Get Started",
+        has_uploaded=has_uploaded,
+        has_data=has_data,
     )
 
 

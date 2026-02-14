@@ -2,13 +2,13 @@ import click
 from flask import render_template, redirect, url_for, request, flash
 from flask_login import login_user, logout_user, current_user
 from app import app
-from app.models import User
+from app.models import User, get_accounts_for_user
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -25,7 +25,9 @@ def login():
         # Redirect to the page the user originally wanted
         next_page = request.args.get("next")
         if not next_page or not next_page.startswith("/"):
-            next_page = url_for("index")
+            # New users (no accounts) go to onboarding first
+            accounts = get_accounts_for_user(user.id)
+            next_page = url_for("get_started") if not accounts else url_for("dashboard")
         return redirect(next_page)
 
     return render_template("login.html", title="Login")
@@ -34,7 +36,7 @@ def login():
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()

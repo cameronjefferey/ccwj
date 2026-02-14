@@ -197,6 +197,36 @@
             </div>
         </form>
 
+        {# ── Upload History ── #}
+        {% if recent_uploads %}
+        <hr class="my-5">
+        <h4 class="fw-bold mb-3">Upload History</h4>
+        <div class="card border-0 shadow-sm" style="border-radius:12px">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0" style="font-size:.85rem">
+                    <thead>
+                        <tr>
+                            <th class="border-0 ps-3">Account</th>
+                            <th class="border-0">History Rows</th>
+                            <th class="border-0">Position Rows</th>
+                            <th class="border-0 pe-3">Uploaded</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in recent_uploads %}
+                        <tr>
+                            <td class="ps-3">{{ u.account_name }}</td>
+                            <td>{{ "{:,}".format(u.history_rows) }}</td>
+                            <td>{{ "{:,}".format(u.current_rows) }}</td>
+                            <td class="pe-3 text-muted">{{ u.uploaded_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
         {# ── My Accounts management ── #}
         <hr class="my-5">
         <h4 class="fw-bold mb-3">My Accounts</h4>

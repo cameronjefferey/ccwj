@@ -32,6 +32,17 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL,
+            history_rows INTEGER NOT NULL DEFAULT 0,
+            current_rows INTEGER NOT NULL DEFAULT 0,
+            uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -101,6 +112,29 @@ def add_account_for_user(user_id, account_name):
     )
     conn.commit()
     conn.close()
+
+
+def record_upload(user_id, account_name, history_rows, current_rows):
+    """Record a successful upload."""
+    conn = _get_db()
+    conn.execute(
+        "INSERT INTO uploads (user_id, account_name, history_rows, current_rows) VALUES (?, ?, ?, ?)",
+        (user_id, account_name, history_rows, current_rows),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_uploads_for_user(user_id, limit=10):
+    """Return the most recent uploads for a user."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT account_name, history_rows, current_rows, uploaded_at "
+        "FROM uploads WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def remove_account_for_user(user_id, account_name):
