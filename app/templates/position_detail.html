@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .pos-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .pos-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .25rem; }
+    .badge-open   { background: #198754; }
+    .badge-closed { background: #6c757d; }
+    .badge-mixed  { background: #ffc107; color: #000; }
+    .badge-strategy {
+        font-size: .75rem; font-weight: 600;
+        padding: .35em .65em; border-radius: 6px; color: #fff;
+    }
+    .stat-card {
+        border: none; border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    .chart-wrapper {
+        background: #fff; border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 1.25rem;
+    }
+    .kpi-mini { text-align: center; }
+    .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
+    .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
+</div>
+
+{# ── Hero ── #}
+<div class="pos-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <h1>{{ symbol }}</h1>
+            {% if kpis %}
+            <div class="d-flex gap-3 flex-wrap mt-2">
+                {% if overall_status == 'Open' %}
+                    <span class="badge badge-open">Open</span>
+                {% elif overall_status == 'Closed' %}
+                    <span class="badge badge-closed">Closed</span>
+                {% else %}
+                    <span class="badge badge-mixed">Mixed</span>
+                {% endif %}
+                <span class="text-white-50 small">{{ kpis.total_trades }} trades</span>
+                {% if kpis.first_trade and kpis.last_trade %}
+                <span class="text-white-50 small">{{ kpis.first_trade }} &mdash; {{ kpis.last_trade }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% if kpis %}
+        <div class="text-end">
+            <div class="small text-white-50">Total Return</div>
+            <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ "{:,.2f}".format(kpis.total_return) }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if accounts|length > 1 %}
+    <form method="get" class="mt-3">
+        <select name="account" class="form-select form-select-sm d-inline-block" style="max-width:220px; background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2)"
+                onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }} style="color:#000">{{ a }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% endif %}
+</div>
+
+{% if error is defined and error %}
+<div class="alert alert-danger">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% elif kpis %}
+
+{# ── KPI Row ── #}
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Realized P&amp;L</div>
+            <div class="value {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                ${{ "{:,.2f}".format(kpis.realized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Unrealized P&amp;L</div>
+            <div class="value {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                ${{ "{:,.2f}".format(kpis.unrealized_pnl) }}
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Premium Collected</div>
+            <div class="value text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Win Rate</div>
+            <div class="value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Avg Days</div>
+            <div class="value">{{ "{:.0f}".format(kpis.avg_days) }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card p-3 kpi-mini">
+            <div class="label">Dividends</div>
+            <div class="value text-positive">${{ "{:,.2f}".format(kpis.dividend_income) }}</div>
+        </div>
+    </div>
+</div>
+
+{# ── Cumulative P&L Chart ── #}
+<div class="chart-wrapper mb-4">
+    <h6 class="fw-bold mb-3">Cumulative P&amp;L</h6>
+    <div style="height: 300px;">
+        <canvas id="pnlChart"></canvas>
+    </div>
+</div>
+
+{# ── Strategy Breakdown ── #}
+{% if strategy_rows %}
+<div class="card stat-card p-4 mb-4">
+    <h6 class="fw-bold mb-3">Strategy Breakdown</h6>
+    {% set colors = {
+        'Covered Call': '#0d6efd', 'Cash-Secured Put': '#6f42c1',
+        'Wheel': '#fd7e14', 'Buy and Hold': '#198754',
+        'Long Call': '#20c997', 'Long Put': '#0dcaf0',
+        'Call Spread': '#6610f2', 'Put Spread': '#d63384',
+        'Naked Call': '#dc3545', 'Protective Put': '#ffc107',
+        'Other Option': '#6c757d'
+    } %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Account</th>
+                    <th>Strategy</th>
+                    <th>Status</th>
+                    <th>Total P&amp;L</th>
+                    <th>Realized</th>
+                    <th>Unrealized</th>
+                    <th>Win Rate</th>
+                    <th>Trades</th>
+                    <th>Avg P&amp;L</th>
+                    <th>Avg Days</th>
+                    <th>Premium</th>
+                    <th>Total Return</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in strategy_rows %}
+                <tr>
+                    <td>{{ r.account }}</td>
+                    <td>
+                        <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
+                            {{ r.strategy }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
+                        {% elif r.status == 'Closed' %}<span class="badge badge-closed">Closed</span>
+                        {% else %}<span class="badge badge-mixed">Mixed</span>{% endif %}
+                    </td>
+                    <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                        ${{ "{:,.2f}".format(r.total_pnl) }}
+                    </td>
+                    <td class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(r.realized_pnl) }}
+                    </td>
+                    <td class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(r.unrealized_pnl) }}
+                    </td>
+                    <td>{{ "{:.0%}".format(r.win_rate) }}</td>
+                    <td>{{ r.num_individual_trades | int }}</td>
+                    <td class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(r.avg_pnl_per_trade) }}
+                    </td>
+                    <td>{{ r.avg_days_in_trade }}</td>
+                    <td class="text-positive">${{ "{:,.2f}".format(r.total_premium_received) }}</td>
+                    <td class="{{ 'text-positive' if r.total_return >= 0 else 'text-negative' }} fw-bold">
+                        ${{ "{:,.2f}".format(r.total_return) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Current Positions ── #}
+{% if current_positions %}
+<div class="card stat-card p-4 mb-4">
+    <h6 class="fw-bold mb-3">Current Positions</h6>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Account</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Market Value</th>
+                    <th>Cost Basis</th>
+                    <th>Unrealized P&amp;L</th>
+                    <th>%</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in current_positions %}
+                <tr>
+                    <td>{{ p.account }}</td>
+                    <td>{{ p.instrument_type }}</td>
+                    <td class="small">{{ p.description }}</td>
+                    <td>{{ "{:,.0f}".format(p.quantity) }}</td>
+                    <td>${{ "{:,.2f}".format(p.current_price) }}</td>
+                    <td>${{ "{:,.2f}".format(p.market_value) }}</td>
+                    <td>${{ "{:,.2f}".format(p.cost_basis) }}</td>
+                    <td class="{{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold">
+                        ${{ "{:,.2f}".format(p.unrealized_pnl) }}
+                    </td>
+                    <td class="{{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                        {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Trade History ── #}
+{% if trades %}
+<div class="card stat-card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0">Trade History ({{ trades|length }})</h6>
+        <input type="text" id="tradeSearch" class="form-control form-control-sm"
+               style="max-width:240px" placeholder="Search trades...">
+    </div>
+    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        <table class="table table-sm table-hover align-middle mb-0" id="tradeTable">
+            <thead class="table-light" style="position: sticky; top: 0;">
+                <tr>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Action</th>
+                    <th>Instrument</th>
+                    <th>Description</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Fees</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in trades %}
+                <tr>
+                    <td class="text-nowrap">{{ t.trade_date }}</td>
+                    <td>{{ t.account }}</td>
+                    <td>
+                        <span class="badge bg-secondary" style="font-size:.7rem">{{ t.action }}</span>
+                    </td>
+                    <td>{{ t.instrument_type }}</td>
+                    <td class="small">{{ t.description }}</td>
+                    <td>{{ "{:,.0f}".format(t.quantity) }}</td>
+                    <td>${{ "{:,.2f}".format(t.price) }}</td>
+                    <td>${{ "{:,.2f}".format(t.fees) }}</td>
+                    <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
+                        ${{ "{:,.2f}".format(t.amount) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="alert alert-warning">
+    No data found for <strong>{{ symbol }}</strong>. Make sure you've uploaded trading data for this symbol.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var chartData = {{ chart_data_json | safe }};
+    if (chartData.dates && chartData.dates.length > 0) {
+        new Chart(document.getElementById('pnlChart'), {
+            type: 'line',
+            data: {
+                labels: chartData.dates,
+                datasets: [
+                    {
+                        label: 'Total',
+                        data: chartData.total,
+                        borderColor: '#1a1a2e',
+                        backgroundColor: 'rgba(26,26,46,.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 2.5,
+                        order: 0
+                    },
+                    {
+                        label: 'Equity',
+                        data: chartData.equity,
+                        borderColor: '#0d6efd',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 1
+                    },
+                    {
+                        label: 'Options',
+                        data: chartData.options,
+                        borderColor: '#6f42c1',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 2
+                    },
+                    {
+                        label: 'Dividends',
+                        data: chartData.dividends,
+                        borderColor: '#198754',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': $' +
+                                    ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 10 }
+                    },
+                    y: {
+                        ticks: {
+                            callback: function(v) {
+                                return '$' + (Math.abs(v) >= 1000
+                                    ? (v / 1000).toFixed(1) + 'k'
+                                    : v.toFixed(0));
+                            }
+                        },
+                        grid: {
+                            color: function(ctx) {
+                                return ctx.tick.value === 0 ? '#000' : '#e9ecef';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Trade search
+    var input = document.getElementById('tradeSearch');
+    if (input) {
+        input.addEventListener('input', function () {
+            var q = this.value.toLowerCase();
+            document.querySelectorAll('#tradeTable tbody tr').forEach(function (row) {
+                row.style.display = row.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

@@ -245,7 +245,9 @@
                     {% for row in symbol_rows %}
                     <tr>
                         <td>{{ row.account }}</td>
-                        <td class="fw-semibold">{{ row.symbol }}</td>
+                        <td class="fw-semibold">
+                            <a href="{{ url_for('position_detail', symbol=row.symbol) }}" class="text-decoration-none">{{ row.symbol }}</a>
+                        </td>
                         <td>
                             {% for strat in row.strategies.split(', ') %}
                             <span class="badge badge-strategy me-1"
@@ -344,7 +346,9 @@
                     {% for row in rows %}
                     <tr>
                         <td>{{ row.account }}</td>
-                        <td class="fw-semibold">{{ row.symbol }}</td>
+                        <td class="fw-semibold">
+                            <a href="{{ url_for('position_detail', symbol=row.symbol) }}" class="text-decoration-none">{{ row.symbol }}</a>
+                        </td>
                         <td>
                             <span class="badge badge-strategy"
                                   style="background:{{ colors.get(row.strategy, '#6c757d') }}">

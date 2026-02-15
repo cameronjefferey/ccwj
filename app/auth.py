@@ -1,8 +1,8 @@
 import click
 from flask import render_template, redirect, url_for, request, flash
-from flask_login import login_user, logout_user, current_user
+from flask_login import login_required, login_user, logout_user, current_user
 from app import app
-from app.models import User, get_accounts_for_user
+from app.models import User, get_accounts_for_user, get_uploads_for_user
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -75,6 +75,57 @@ def signup():
 def logout():
     logout_user()
     return redirect(url_for("login"))
+
+
+@app.route("/demo/start")
+def demo_start():
+    """Log in as the demo user and redirect to the dashboard. No sign-up required."""
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    demo = User.get_by_username("demo")
+    if demo is None:
+        flash("Demo is not available. Please create an account to get started.", "warning")
+        return redirect(url_for("signup"))
+
+    login_user(demo, remember=False)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        current_pw = request.form.get("current_password", "")
+        new_pw = request.form.get("new_password", "")
+        confirm_pw = request.form.get("confirm_password", "")
+
+        if not current_user.check_password(current_pw):
+            flash("Current password is incorrect.", "danger")
+            return redirect(url_for("settings"))
+
+        valid, err = _validate_password(new_pw)
+        if not valid:
+            flash(err, "danger")
+            return redirect(url_for("settings"))
+
+        if new_pw != confirm_pw:
+            flash("New passwords do not match.", "danger")
+            return redirect(url_for("settings"))
+
+        User.update_password(current_user.id, new_pw)
+        flash("Password updated successfully.", "success")
+        return redirect(url_for("settings"))
+
+    accounts = get_accounts_for_user(current_user.id)
+    recent_uploads = get_uploads_for_user(current_user.id)
+
+    return render_template(
+        "settings.html",
+        title="Settings",
+        accounts=accounts,
+        recent_uploads=recent_uploads,
+    )
 
 
 # ------------------------------------------------------------------

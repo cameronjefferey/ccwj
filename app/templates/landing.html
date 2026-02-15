@@ -4,56 +4,244 @@
 <style>
     .landing-hero {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 20px;
+        padding: 5rem 3rem;
+        color: #fff;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .landing-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -15%;
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(25,135,84,.12) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .landing-hero h1 { font-size: 3rem; font-weight: 800; margin-bottom: 1.25rem; letter-spacing: -0.02em; }
+    .landing-hero .lead {
+        font-size: 1.2rem;
+        color: rgba(255,255,255,.9);
+        margin-bottom: 2rem;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .landing-hero .btn { padding: .85rem 2rem; font-weight: 600; border-radius: 10px; font-size: 1rem; }
+    .landing-hero .btn-light:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.2); }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    .feature-card {
+        border: none;
         border-radius: 16px;
-        padding: 4rem 3rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,.06);
+        padding: 2rem;
+        height: 100%;
+        transition: transform .2s, box-shadow .2s;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .feature-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 30px rgba(0,0,0,.1);
+        color: inherit;
+    }
+    .feature-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .feature-card h6 { font-weight: 700; margin-bottom: .5rem; }
+    .feature-card p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+
+    .how-step {
+        text-align: center;
+        padding: 1.5rem;
+    }
+    .how-step-num {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #fff;
+        font-weight: 700;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+    }
+    .how-step h6 { font-weight: 700; margin-bottom: .5rem; }
+    .how-step p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+
+    .cta-section {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 20px;
+        padding: 3rem;
         color: #fff;
         text-align: center;
     }
-    .landing-hero h1 { font-size: 2.75rem; font-weight: 700; margin-bottom: 1rem; }
-    .landing-hero .lead { color: rgba(255,255,255,.85); margin-bottom: 2rem; }
-    .landing-hero .btn { padding: .75rem 2rem; font-weight: 600; border-radius: 8px; }
-    .feature-list { list-style: none; padding: 0; }
-    .feature-list li {
-        display: flex;
-        align-items: center;
-        gap: .75rem;
-        padding: .5rem 0;
-        color: #495057;
+    .cta-section h3 { font-weight: 700; margin-bottom: .75rem; }
+    .cta-section p { color: rgba(255,255,255,.85); margin-bottom: 1.5rem; }
+
+    .landing-footer {
+        padding: 2.5rem 0;
+        margin-top: 4rem;
+        border-top: 1px solid #e9ecef;
     }
-    .feature-list li::before {
-        content: "✓";
-        color: #198754;
-        font-weight: bold;
-    }
+    .landing-footer a { color: #6c757d; text-decoration: none; font-size: .9rem; }
+    .landing-footer a:hover { color: #1a1a2e; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <div class="landing-hero mb-5">
-            <h1>Track Your Options Strategies</h1>
-            <p class="lead">
-                HappyTrader automatically classifies your trades—Covered Calls, Cash-Secured Puts,
-                Wheels, and more—and shows you what's working across every position and account.
-            </p>
-            <div class="d-flex gap-3 justify-content-center flex-wrap">
-                <a href="{{ url_for('login') }}" class="btn btn-light">Sign In</a>
-                <a href="{{ url_for('signup') }}" class="btn btn-outline-light">Create Account</a>
-            </div>
-        </div>
 
-        <div class="card border-0 shadow-sm mb-4" style="border-radius:12px">
-            <div class="card-body p-4">
-                <h5 class="fw-bold mb-3">What you get</h5>
-                <ul class="feature-list mb-0">
-                    <li><strong>Strategy auto-detection</strong> — Covered Call, CSP, Wheel, Spreads, Buy and Hold</li>
-                    <li><strong>Performance metrics</strong> — Total P&amp;L, win rate, premium collected, dividend income</li>
-                    <li><strong>Schwab integration</strong> — Export from schwab.com, upload here</li>
-                    <li><strong>Multi-account</strong> — Track all your brokerage accounts in one place</li>
-                </ul>
-            </div>
+{# ── Hero ── #}
+<div class="landing-hero mb-5 position-relative">
+    <h1>Know What's Working</h1>
+    <p class="lead">
+        Options traders finally have a clear view. HappyTrader classifies your trades,
+        tracks performance, and surfaces the insights that matter—so you can trade smarter.
+    </p>
+    <div class="d-flex gap-3 justify-content-center flex-wrap">
+        <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
+        <a href="{{ url_for('signup') }}" class="btn btn-outline-light">Create Free Account</a>
+        <a href="{{ url_for('login') }}" class="btn btn-outline-light">Sign In</a>
+    </div>
+</div>
+
+{# ── How it works ── #}
+<h2 class="section-title">How it works</h2>
+<div class="row g-4 mb-5">
+    <div class="col-md-4">
+        <div class="how-step">
+            <div class="how-step-num">1</div>
+            <h6>Export from Schwab</h6>
+            <p>Download your trade history and current positions from schwab.com. Two CSV files, no API keys.</p>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="how-step">
+            <div class="how-step-num">2</div>
+            <h6>Upload to HappyTrader</h6>
+            <p>We classify every position—Covered Calls, CSPs, Wheels, spreads—and link it to your account.</p>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="how-step">
+            <div class="how-step-num">3</div>
+            <h6>Analyze &amp; improve</h6>
+            <p>See what's working, where you're losing, and get AI-powered suggestions. Tax-ready reports included.</p>
         </div>
     </div>
 </div>
+
+{# ── Features ── #}
+<h2 class="section-title">Built for options traders</h2>
+<div class="row g-4 mb-5">
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='strategy-auto-detection') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(13,110,253,.12); color:#0d6efd">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M4 11H2v3h2zm5-4H7v7h2zm5-5h-2v12h2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/>
+                </svg>
+            </div>
+            <h6>Strategy auto-detection</h6>
+            <p>Covered Call, Cash-Secured Put, Wheel, spreads, Buy and Hold—all classified automatically from your trade data.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='ai-trading-insights') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(111,66,193,.12); color:#6f42c1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                </svg>
+            </div>
+            <h6>AI trading insights</h6>
+            <p>Get a personalized analysis of your style, strengths, and weaknesses—with actionable suggestions to improve.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='tax-center') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(25,135,84,.12); color:#198754">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M12.136.326A1.5 1.5 0 0 1 14 1.78V3h.5A1.5 1.5 0 0 1 16 4.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 13.5v-9a1.5 1.5 0 0 1 1.432-1.499zM5.562 3H13V1.78a.5.5 0 0 0-.621-.484zM1.5 4a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5z"/>
+                </svg>
+            </div>
+            <h6>Tax Center</h6>
+            <p>Short-term vs long-term gains, wash sale flags, dividend income, and estimated tax impact—all in one place.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='performance-charts') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(253,126,20,.12); color:#fd7e14">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M0 0h1v15h15v1H0zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07"/>
+                </svg>
+            </div>
+            <h6>Performance charts</h6>
+            <p>Cumulative P&amp;L over time, strategy breakdowns, and symbol-level drill-down so you see the full picture.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='position-detail') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(0,172,193,.12); color:#00acc1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M11 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2zm-5 4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H6zM2 9a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9z"/>
+                </svg>
+            </div>
+            <h6>Position detail</h6>
+            <p>Click any symbol to see full trade history, strategy timeline, current positions, and cumulative P&amp;L charts.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('feature_detail', slug='multi-account') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(108,117,125,.12); color:#6c757d">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M4 10.781c.087 2.664.415 4.223.857 5.418a4.484 4.484 0 0 0 1.508 1.718 8.975 8.975 0 0 1-2.227.992 4.502 4.502 0 0 1-.83-.258 4.25 4.25 0 0 1-1.4-1.053 4.503 4.503 0 0 1-.798-2.272c 0-.328.028-.65.083-.962a4.56 4.56 0 0 1 .208-1.004 2.5 2.5 0 0 1 .578-.914 4.35 4.35 0 0 1 1.28-.618A5.46 5.46 0 0 1 6.323 5.5H5.5v-.812h1.261a1.755 1.755 0 0 1-.38-1.492 4.5 4.5 0 0 1 1.054-1.63 5.5 5.5 0 0 1 2.043-.9V4h.5v1.123a5.5 5.5 0 0 1 2.043.9 4.5 4.5 0 0 1 1.054 1.63 1.755 1.755 0 0 1-.38 1.492h1.261V5.5h-.823a5.46 5.46 0 0 1-1.324.18 4.35 4.35 0 0 1-1.28.618 2.5 2.5 0 0 1-.578.914 4.56 4.56 0 0 1-.208 1.004 4.5 4.5 0 0 1-.083.962z"/>
+                </svg>
+            </div>
+            <h6>Multi-account</h6>
+            <p>Track all your Schwab accounts in one place. Portfolio-wide views plus per-account breakdowns.</p>
+        </a>
+    </div>
+</div>
+
+{# ── CTA ── #}
+<div class="cta-section mb-5">
+    <h3>Ready to see what's really working?</h3>
+    <p class="mb-0">Try the demo with sample data—no signup. Or create a free account to upload your own trades.</p>
+    <div class="d-flex gap-3 justify-content-center flex-wrap">
+        <a href="{{ url_for('demo_start') }}" class="btn btn-light btn-lg px-4 fw-semibold">Try Demo</a>
+        <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">Create Free Account</a>
+    </div>
+</div>
+
+{# ── Footer ── #}
+<footer class="landing-footer">
+    <div class="d-flex flex-wrap justify-content-center gap-4">
+        <a href="{{ url_for('demo_start') }}">Try Demo</a>
+        <a href="{{ url_for('login') }}">Sign In</a>
+        <a href="{{ url_for('signup') }}">Create Account</a>
+        <a href="{{ url_for('pricing') }}">Pricing</a>
+        <a href="{{ url_for('faq') }}">FAQ</a>
+    </div>
+    <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Options strategies made clear.</p>
+</footer>
+
 {% endblock %}

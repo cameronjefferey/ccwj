@@ -14,6 +14,8 @@
 
 with source as (
     select * from {{ ref('0417_current') }}
+    union all
+    select * from {{ ref('demo_current') }}
 ),
 
 cash_rows as (

@@ -123,6 +123,12 @@
         border-radius: 4px;
         transition: width .3s ease;
     }
+    .chart-wrapper {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 1.25rem;
+    }
 </style>
 {% endblock %}
 
@@ -252,6 +258,39 @@
     </div>
 </div>
 
+{# ── Portfolio P&L Chart ── #}
+{% if portfolio_chart_json and portfolio_chart_json != '{}' %}
+{% set pc = portfolio_chart_json | safe %}
+<div class="chart-wrapper mb-4">
+    <h6 class="fw-bold mb-3">Portfolio Performance</h6>
+    <div style="height: 300px;">
+        <canvas id="portfolioChart"></canvas>
+    </div>
+</div>
+{% endif %}
+
+{# ── AI Insights Card ── #}
+{% if insight %}
+<div class="card stat-card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+        <h5 class="fw-bold mb-0">AI Trading Insights</h5>
+        <a href="{{ url_for('insights') }}" class="btn btn-sm btn-outline-primary">View Full Analysis</a>
+    </div>
+    <p class="mb-1">{{ insight.summary }}</p>
+    <span class="text-muted" style="font-size:.75rem">Generated {{ insight.generated_at }}</span>
+</div>
+{% elif has_accounts %}
+<div class="card stat-card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="fw-bold mb-1">AI Trading Insights</h5>
+            <p class="text-muted mb-0 small">Get a personalized analysis of your trading style and performance.</p>
+        </div>
+        <a href="{{ url_for('insights') }}" class="btn btn-primary btn-sm">Generate Insights</a>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4 mb-4">
     {# ── Top Symbols Leaderboard ── #}
     {% if top_symbols %}
@@ -265,7 +304,7 @@
                         {{ loop.index }}
                     </span>
                     <div>
-                        <div class="fw-semibold">{{ sym.symbol }}</div>
+                        <a href="{{ url_for('position_detail', symbol=sym.symbol) }}" class="fw-semibold text-decoration-none">{{ sym.symbol }}</a>
                         <div class="text-muted small">{{ sym.strategies }}</div>
                     </div>
                 </div>
@@ -357,4 +396,99 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var chartData = {{ portfolio_chart_json | safe }};
+    var canvas = document.getElementById('portfolioChart');
+    if (canvas && chartData.dates && chartData.dates.length > 0) {
+        new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: chartData.dates,
+                datasets: [
+                    {
+                        label: 'Total',
+                        data: chartData.total,
+                        borderColor: '#1a1a2e',
+                        backgroundColor: 'rgba(26,26,46,.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 2.5,
+                        order: 0
+                    },
+                    {
+                        label: 'Equity',
+                        data: chartData.equity,
+                        borderColor: '#0d6efd',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 1
+                    },
+                    {
+                        label: 'Options',
+                        data: chartData.options,
+                        borderColor: '#6f42c1',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 2
+                    },
+                    {
+                        label: 'Dividends',
+                        data: chartData.dividends,
+                        borderColor: '#198754',
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': $' +
+                                    ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 10 }
+                    },
+                    y: {
+                        ticks: {
+                            callback: function(v) {
+                                return '$' + (Math.abs(v) >= 1000
+                                    ? (v / 1000).toFixed(1) + 'k'
+                                    : v.toFixed(0));
+                            }
+                        },
+                        grid: {
+                            color: function(ctx) {
+                                return ctx.tick.value === 0 ? '#000' : '#e9ecef';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}

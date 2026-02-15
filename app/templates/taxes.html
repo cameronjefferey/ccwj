@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .tax-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .tax-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .disclaimer {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+        font-size: .85rem;
+        color: #664d03;
+    }
+    .disclaimer strong { color: #664d03; }
+    .stat-card {
+        border: none; border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    .tax-kpi { text-align: center; padding: 1rem; }
+    .tax-kpi .label {
+        font-size: .68rem; text-transform: uppercase;
+        letter-spacing: .7px; color: #6c757d; margin-bottom: .25rem;
+    }
+    .tax-kpi .value { font-size: 1.25rem; font-weight: 700; }
+    .tax-kpi .sub { font-size: .72rem; color: #6c757d; }
+    .badge-st { background: #fd7e14; color: #fff; font-size: .7rem; }
+    .badge-lt { background: #0d6efd; color: #fff; font-size: .7rem; }
+    .badge-equity { background: #198754; color: #fff; font-size: .65rem; }
+    .badge-option { background: #6f42c1; color: #fff; font-size: .65rem; }
+    .wash-card {
+        border-left: 4px solid #dc3545;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        padding: 1rem 1.25rem;
+        margin-bottom: .75rem;
+    }
+    .section-card {
+        border: none; border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        margin-bottom: 1.5rem;
+    }
+    .section-card .card-header {
+        background: transparent; border-bottom: 1px solid #e9ecef;
+        font-weight: 700; padding: 1.25rem 1.5rem .75rem;
+    }
+    .section-card .card-body { padding: 1.25rem 1.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+
+        {# ── Hero ── #}
+        <div class="tax-hero">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                    <h1>Tax Center</h1>
+                    <p class="mb-0 opacity-90">Capital gains classification, wash sale detection, and dividend income summary.</p>
+                </div>
+                <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+                    {% if years %}
+                    <select name="year" class="form-select form-select-sm"
+                            style="background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2); min-width:100px"
+                            onchange="this.form.submit()">
+                        {% for y in years %}
+                        <option value="{{ y }}" {{ 'selected' if y|string == selected_year }} style="color:#000">{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                    <select name="bracket" class="form-select form-select-sm"
+                            style="background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2); min-width:140px"
+                            onchange="this.form.submit()">
+                        {% for b in tax_brackets %}
+                        <option value="{{ b.rate }}" {{ 'selected' if b.rate == selected_bracket }} style="color:#000">
+                            {{ b.label }} bracket
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+        </div>
+
+        {# ── Disclaimer ── #}
+        <div class="disclaimer">
+            <strong>Disclaimer:</strong> This information is provided for educational and informational purposes only
+            and does not constitute tax, legal, or financial advice. Tax calculations shown are estimates based on
+            trade data and may not reflect your actual tax liability. Consult a qualified tax professional for
+            advice specific to your situation.
+        </div>
+
+        {% if error is defined and error %}
+        <div class="alert alert-danger">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% elif summary %}
+
+        {# ── Summary Cards ── #}
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg">
+                <div class="card stat-card tax-kpi">
+                    <div class="label">Short-Term Net</div>
+                    <div class="value {% if summary.net_st >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.2f}".format(summary.net_st) }}
+                    </div>
+                    <div class="sub">Taxed as ordinary income</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg">
+                <div class="card stat-card tax-kpi">
+                    <div class="label">Long-Term Net</div>
+                    <div class="value {% if summary.net_lt >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.2f}".format(summary.net_lt) }}
+                    </div>
+                    <div class="sub">Preferential tax rates</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg">
+                <div class="card stat-card tax-kpi">
+                    <div class="label">Net Capital Gains</div>
+                    <div class="value {% if summary.net_total >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.2f}".format(summary.net_total) }}
+                    </div>
+                    <div class="sub">{{ summary.num_closed_trades }} closed trades</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg">
+                <div class="card stat-card tax-kpi">
+                    <div class="label">Dividend Income</div>
+                    <div class="value text-positive">
+                        ${{ "{:,.2f}".format(summary.total_dividends) }}
+                    </div>
+                    <div class="sub">Ordinary income</div>
+                </div>
+            </div>
+            {% if summary.wash_sale_total > 0 %}
+            <div class="col-sm-6 col-lg">
+                <div class="card stat-card tax-kpi" style="border: 2px solid #dc3545;">
+                    <div class="label">Wash Sale Flags</div>
+                    <div class="value text-negative">
+                        ${{ "{:,.2f}".format(summary.wash_sale_total) }}
+                    </div>
+                    <div class="sub">Losses potentially disallowed</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ── Estimated Tax Impact ── #}
+        <div class="card section-card mb-4">
+            <div class="card-header">
+                Estimated Federal Tax Impact
+                <span class="text-muted small fw-normal ms-2">
+                    ({{ summary.st_rate }}% ordinary / {{ summary.lt_rate }}% long-term capital gains)
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="tax-kpi">
+                            <div class="label">Short-Term Tax</div>
+                            <div class="value text-negative">${{ "{:,.2f}".format(summary.est_st_tax) }}</div>
+                            <div class="sub">at {{ summary.st_rate }}% on ${{ "{:,.0f}".format(summary.net_st) if summary.net_st > 0 else "0" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="tax-kpi">
+                            <div class="label">Long-Term Tax</div>
+                            <div class="value text-negative">${{ "{:,.2f}".format(summary.est_lt_tax) }}</div>
+                            <div class="sub">at {{ summary.lt_rate }}% on ${{ "{:,.0f}".format(summary.net_lt) if summary.net_lt > 0 else "0" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="tax-kpi">
+                            <div class="label">Dividend Tax</div>
+                            <div class="value text-negative">${{ "{:,.2f}".format(summary.est_div_tax) }}</div>
+                            <div class="sub">at {{ summary.st_rate }}% on ${{ "{:,.0f}".format(summary.total_dividends) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="tax-kpi" style="background:#fef3f3; border-radius:10px;">
+                            <div class="label">Estimated Total Tax</div>
+                            <div class="value text-negative">${{ "{:,.2f}".format(summary.est_total_tax) }}</div>
+                            <div class="sub">federal only, before deductions</div>
+                        </div>
+                    </div>
+                </div>
+                {% if summary.net_loss_deduction > 0 %}
+                <div class="alert alert-info mt-3 mb-0 small py-2">
+                    <strong>Net capital loss:</strong> You may deduct up to
+                    <strong>${{ "{:,.0f}".format(summary.net_loss_deduction) }}</strong>
+                    against ordinary income this year.
+                    {% if summary.net_total < -3000 %}
+                    The remaining ${{ "{:,.0f}".format((-summary.net_total) - 3000) }} can be carried forward to future years.
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# ── Gains/Losses Detail ── #}
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card stat-card p-3 tax-kpi">
+                    <div class="label">Short-Term Gains</div>
+                    <div class="value text-positive">${{ "{:,.2f}".format(summary.st_gains) }}</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card stat-card p-3 tax-kpi">
+                    <div class="label">Short-Term Losses</div>
+                    <div class="value text-negative">${{ "{:,.2f}".format(summary.st_losses) }}</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card stat-card p-3 tax-kpi">
+                    <div class="label">Long-Term Gains</div>
+                    <div class="value text-positive">${{ "{:,.2f}".format(summary.lt_gains) }}</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card stat-card p-3 tax-kpi">
+                    <div class="label">Long-Term Losses</div>
+                    <div class="value text-negative">${{ "{:,.2f}".format(summary.lt_losses) }}</div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Wash Sale Alerts ── #}
+        {% if wash_sales %}
+        <div class="card section-card">
+            <div class="card-header">
+                Potential Wash Sales
+                <span class="badge bg-danger ms-2">{{ wash_sales|length }}</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    The IRS disallows losses on sales where you repurchase a "substantially identical"
+                    security within 30 days before or after the sale. The flagged trades below
+                    may be subject to the wash sale rule.
+                </p>
+                {% for w in wash_sales %}
+                <div class="wash-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>{{ w.symbol }}</strong>
+                            <span class="text-muted small ms-2">{{ w.account }}</span>
+                        </div>
+                        <span class="text-negative fw-bold">${{ "{:,.2f}".format(w.loss_pnl) }}</span>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        Loss closed {{ w.loss_close_date }} ({{ w.loss_strategy }})
+                        &rarr; Repurchased {{ w.repurchase_open_date }} ({{ w.repurchase_strategy }}),
+                        {{ w.days_between }} days {{ "after" if w.days_between >= 0 else "before" }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Capital Gains Table ── #}
+        {% if gains_rows %}
+        <div class="card section-card">
+            <div class="card-header">
+                Capital Gains Detail
+                <input type="text" id="gainsSearch" class="form-control form-control-sm float-end"
+                       style="max-width:200px" placeholder="Search...">
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle mb-0" id="gainsTable">
+                        <thead class="table-light" style="position: sticky; top: 0;">
+                            <tr>
+                                <th>Account</th>
+                                <th>Symbol</th>
+                                <th>Strategy</th>
+                                <th>Type</th>
+                                <th>Open</th>
+                                <th>Close</th>
+                                <th>Days</th>
+                                <th>P&amp;L</th>
+                                <th>Classification</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in gains_rows %}
+                            <tr>
+                                <td>{{ r.account }}</td>
+                                <td class="fw-semibold">
+                                    <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="text-decoration-none">{{ r.symbol }}</a>
+                                </td>
+                                <td>{{ r.strategy }}</td>
+                                <td>
+                                    {% if r.trade_group_type == 'equity_session' %}
+                                    <span class="badge badge-equity">Equity</span>
+                                    {% else %}
+                                    <span class="badge badge-option">Option</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-nowrap">{{ r.open_date }}</td>
+                                <td class="text-nowrap">{{ r.close_date }}</td>
+                                <td>{{ r.days_in_trade }}</td>
+                                <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                                    ${{ "{:,.2f}".format(r.total_pnl) }}
+                                </td>
+                                <td>
+                                    {% if r.gain_type == 'Short-Term' %}
+                                    <span class="badge badge-st">Short-Term</span>
+                                    {% else %}
+                                    <span class="badge badge-lt">Long-Term</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Dividend Income ── #}
+        {% if dividend_rows %}
+        <div class="card section-card">
+            <div class="card-header">Dividend Income</div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Dividend income is generally taxed as ordinary income (qualified dividends
+                    may receive preferential rates). Check your 1099-DIV for the exact breakdown.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Account</th>
+                                <th>Symbol</th>
+                                <th>Total</th>
+                                <th>Payments</th>
+                                <th>Last Payment</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in dividend_rows %}
+                            <tr>
+                                <td>{{ d.account }}</td>
+                                <td class="fw-semibold">
+                                    <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="text-decoration-none">{{ d.symbol }}</a>
+                                </td>
+                                <td class="text-positive fw-semibold">${{ "{:,.2f}".format(d.total) }}</td>
+                                <td>{{ d.count }}</td>
+                                <td>{{ d.last_date }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not gains_rows and not dividend_rows %}
+        <div class="alert alert-info">
+            No closed trades or dividend income found for {{ selected_year }}.
+            Upload your trading data to see your tax exposure.
+        </div>
+        {% endif %}
+
+        {% endif %} {# end error check #}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var input = document.getElementById('gainsSearch');
+    if (input) {
+        input.addEventListener('input', function () {
+            var q = this.value.toLowerCase();
+            document.querySelectorAll('#gainsTable tbody tr').forEach(function (row) {
+                row.style.display = row.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

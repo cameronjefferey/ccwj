@@ -92,7 +92,15 @@ dbt build   # Build all models
 python -m flask run
 ```
 
-Open [http://127.0.0.1:5000/positions](http://127.0.0.1:5000/positions)
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
+
+### Demo Environment
+
+Visitors can explore the app with sample data—no sign-up required. Click **Try Demo** on the landing page to log in as the demo user.
+
+- Demo credentials: `demo` / `demo123` (or use **Try Demo** for one-click access)
+- Uses the "Demo Account" data from `dbt/seeds/demo_history.csv` and `demo_current.csv`
+- Ensure `dbt seed` and `dbt build` have been run so BigQuery has the sample data
 
 ## Routes
 

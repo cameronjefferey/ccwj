@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .pricing-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 20px;
+        padding: 3rem;
+        color: #fff;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .pricing-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .5rem; }
+    .pricing-hero .lead { color: rgba(255,255,255,.9); margin-bottom: 0; }
+    .pricing-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,.08);
+        padding: 2.5rem;
+        text-align: center;
+        height: 100%;
+        transition: transform .2s, box-shadow .2s;
+    }
+    .pricing-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 30px rgba(0,0,0,.12);
+    }
+    .pricing-card.featured {
+        border: 2px solid #1a1a2e;
+        position: relative;
+    }
+    .pricing-card .badge-top {
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1a1a2e;
+        color: #fff;
+        padding: .25rem .75rem;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 600;
+    }
+    .pricing-card h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: .5rem; }
+    .pricing-card .price { font-size: 2.5rem; font-weight: 800; margin: 1rem 0; }
+    .pricing-card .price-note { font-size: .85rem; color: #6c757d; margin-bottom: 1.5rem; }
+    .pricing-card ul { list-style: none; padding: 0; margin: 0 0 1.5rem 0; text-align: left; }
+    .pricing-card li { padding: .4rem 0; padding-left: 1.5rem; position: relative; }
+    .pricing-card li::before { content: "✓"; color: #198754; font-weight: bold; position: absolute; left: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="pricing-hero">
+            <h1>Simple, transparent pricing</h1>
+            <p class="lead">Start free. No credit card required.</p>
+        </div>
+
+        <div class="row g-4 justify-content-center mb-5">
+            <div class="col-md-6 col-lg-5">
+                <div class="pricing-card featured">
+                    <span class="badge-top">Current</span>
+                    <h3>Free</h3>
+                    <div class="price">$0</div>
+                    <div class="price-note">Free during beta</div>
+                    <ul>
+                        <li>Unlimited accounts</li>
+                        <li>Strategy auto-detection</li>
+                        <li>Performance charts</li>
+                        <li>Position detail & drill-down</li>
+                        <li>Tax Center (short/long-term, wash sales)</li>
+                        <li>AI trading insights</li>
+                        <li>CSV export from Schwab</li>
+                    </ul>
+                    <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">Create Free Account</a>
+                    <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-5">
+                <div class="pricing-card">
+                    <h3>Pro</h3>
+                    <div class="price text-muted">Coming soon</div>
+                    <div class="price-note">Subscription plans in the works</div>
+                    <ul>
+                        <li>Everything in Free</li>
+                        <li>Priority support</li>
+                        <li>Advanced analytics</li>
+                        <li>Export & reporting</li>
+                        <li>More brokers (planned)</li>
+                    </ul>
+                    <button class="btn btn-outline-secondary btn-lg w-100" disabled>Notify me</button>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-muted small">
+            Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or reach out.
+        </p>
+    </div>
+</div>
+{% endblock %}

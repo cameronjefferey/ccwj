@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .feature-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem 3rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .feature-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .5rem; }
+    .feature-hero .lead { color: rgba(255,255,255,.9); margin-bottom: 0; }
+    .feature-back {
+        color: rgba(255,255,255,.8);
+        text-decoration: none;
+        font-size: .9rem;
+        display: inline-block;
+        margin-bottom: 1rem;
+    }
+    .feature-back:hover { color: #fff; }
+    .demo-section {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,.08);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        overflow: hidden;
+    }
+    .demo-section h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        margin-bottom: 1.25rem;
+    }
+    .value-section h3 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+    .value-section ul {
+        padding-left: 1.25rem;
+        margin-bottom: 0;
+        color: #495057;
+    }
+    .value-section li { margin-bottom: .75rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <nav class="d-flex flex-wrap align-items-center gap-2 mb-4">
+            <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">&larr; Home</a>
+            {% for s, f in all_features.items() %}
+            <a href="{{ url_for('feature_detail', slug=s) }}"
+               class="btn btn-sm {{ 'btn-primary' if s == current_slug else 'btn-outline-secondary' }}">
+                {{ f.title }}
+            </a>
+            {% endfor %}
+        </nav>
+
+        <div class="feature-hero">
+            <h1>{{ feature.title }}</h1>
+            <p class="lead">{{ feature.subtitle }}</p>
+        </div>
+
+        <div class="demo-section">
+            <h3>Preview</h3>
+            {% include feature.demo_partial %}
+        </div>
+
+        <div class="card border-0 shadow-sm value-section" style="border-radius:12px; padding: 2rem;">
+            <h3>Why it matters</h3>
+            <ul>
+                {% for bullet in feature.value_bullets %}
+                <li>{{ bullet }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="text-center mt-4 mb-5 d-flex gap-3 justify-content-center flex-wrap">
+            <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary btn-lg px-4">Try Demo</a>
+            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg px-4">Create Free Account</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

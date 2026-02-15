@@ -20,10 +20,13 @@ def load_user(user_id):
 
 
 # Initialize the database and seed users from env
-from app.models import init_db, seed_users_from_env
+from app.models import init_db, seed_users_from_env, ensure_demo_user
 init_db()
 seed_users_from_env()
+ensure_demo_user()
 
 from app import routes
 from app import auth
 from app import upload
+from app import insights
+from app import taxes

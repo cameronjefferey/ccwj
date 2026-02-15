@@ -43,6 +43,16 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS insights (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            summary TEXT NOT NULL,
+            full_analysis TEXT NOT NULL,
+            generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -83,6 +93,18 @@ class User(UserMixin):
         conn.execute(
             "INSERT INTO users (username, password_hash) VALUES (?, ?)",
             (username, password_hash),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def update_password(user_id, new_password):
+        """Update the password hash for the given user."""
+        conn = _get_db()
+        new_hash = generate_password_hash(new_password)
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (new_hash, user_id),
         )
         conn.commit()
         conn.close()
@@ -137,6 +159,35 @@ def get_uploads_for_user(user_id, limit=10):
     return [dict(r) for r in rows]
 
 
+# ------------------------------------------------------------------
+# Insights (AI analysis cache)
+# ------------------------------------------------------------------
+
+def save_insight(user_id, summary, full_analysis):
+    """Save (or replace) the cached AI insight for a user."""
+    conn = _get_db()
+    # Keep only the latest insight per user
+    conn.execute("DELETE FROM insights WHERE user_id = ?", (user_id,))
+    conn.execute(
+        "INSERT INTO insights (user_id, summary, full_analysis) VALUES (?, ?, ?)",
+        (user_id, summary, full_analysis),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_insight_for_user(user_id):
+    """Return the most recent insight for a user, or None."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT summary, full_analysis, generated_at FROM insights "
+        "WHERE user_id = ? ORDER BY generated_at DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def remove_account_for_user(user_id, account_name):
     """Unlink an account from a user."""
     conn = _get_db()
@@ -186,3 +237,21 @@ def seed_users_from_env():
             continue
         if User.get_by_username(username) is None:
             User.create(username, password)
+
+
+DEMO_ACCOUNT = "Demo Account"
+
+
+def ensure_demo_user():
+    """
+    Create the demo user and link to the Demo Account if not already set up.
+    Demo credentials: demo / demo123
+    Uses data from dbt seeds (demo_history.csv, demo_current.csv) — run dbt seed + dbt build.
+    """
+    demo = User.get_by_username("demo")
+    if demo is None:
+        User.create("demo", "demo123")
+        demo = User.get_by_username("demo")
+    if demo:
+        remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
+        add_account_for_user(demo.id, DEMO_ACCOUNT)

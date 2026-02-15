@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .settings-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .settings-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .settings-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        margin-bottom: 1.5rem;
+    }
+    .settings-card .card-header {
+        background: transparent;
+        border-bottom: 1px solid #e9ecef;
+        font-weight: 700;
+        font-size: 1rem;
+        padding: 1.25rem 1.5rem .75rem;
+    }
+    .settings-card .card-body { padding: 1.25rem 1.5rem; }
+    .account-badge {
+        display: inline-block;
+        background: #e9ecef;
+        border-radius: 8px;
+        padding: .4rem .85rem;
+        font-size: .875rem;
+        font-weight: 500;
+        margin-right: .5rem;
+        margin-bottom: .5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="settings-hero">
+            <h1>Settings</h1>
+            <p class="mb-0 opacity-90">Manage your account and preferences.</p>
+        </div>
+
+        {# ── Account Info ── #}
+        <div class="card settings-card">
+            <div class="card-header">Account Info</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label text-muted small mb-1">Username</label>
+                    <div class="fw-semibold">{{ current_user.username }}</div>
+                </div>
+                <div>
+                    <label class="form-label text-muted small mb-1">Linked Accounts</label>
+                    {% if accounts %}
+                    <div>
+                        {% for acct in accounts %}
+                        <span class="account-badge">{{ acct }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0 small">
+                        No accounts linked yet.
+                        <a href="{{ url_for('upload') }}">Upload data</a> to link an account.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── Change Password ── #}
+        <div class="card settings-card">
+            <div class="card-header">Change Password</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('settings') }}">
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label">Current Password</label>
+                        <input type="password" class="form-control" id="current_password"
+                               name="current_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label">New Password</label>
+                        <input type="password" class="form-control" id="new_password"
+                               name="new_password" required minlength="8">
+                        <div class="form-text">At least 8 characters, with a letter and a number.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirm_password"
+                               name="confirm_password" required minlength="8">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update Password</button>
+                </form>
+            </div>
+        </div>
+
+        {# ── Upload History ── #}
+        <div class="card settings-card">
+            <div class="card-header">Upload History</div>
+            <div class="card-body">
+                {% if recent_uploads %}
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>History Rows</th>
+                                <th>Position Rows</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in recent_uploads %}
+                            <tr>
+                                <td>{{ u.account_name }}</td>
+                                <td>{{ u.history_rows }}</td>
+                                <td>{{ u.current_rows }}</td>
+                                <td class="text-muted small">{{ u.uploaded_at }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0 small">No uploads yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

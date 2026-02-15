@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .insights-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .insights-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .insights-content {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 2rem;
+    }
+    .insights-content h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-top: 1.5rem;
+        margin-bottom: .75rem;
+        padding-bottom: .5rem;
+        border-bottom: 2px solid #e9ecef;
+    }
+    .insights-content h2:first-child { margin-top: 0; }
+    .insights-content ul { padding-left: 1.25rem; }
+    .insights-content li { margin-bottom: .4rem; }
+    .insights-content strong { color: #1a1a2e; }
+    .insights-meta {
+        font-size: .78rem;
+        color: #6c757d;
+    }
+    .generate-card {
+        border: 2px dashed #ced4da;
+        border-radius: 12px;
+        padding: 3rem 2rem;
+        text-align: center;
+    }
+    .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
+    .generate-card p { color: #6c757d; margin-bottom: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="insights-hero">
+            <h1>AI Trading Insights</h1>
+            <p class="mb-0 opacity-90">
+                Personalized analysis of your trading style, strengths, and areas for improvement.
+            </p>
+        </div>
+
+        {% if insight %}
+        {# ── Cached analysis ── #}
+        <div class="card insights-content mb-3">
+            {{ insight.full_analysis_html }}
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <span class="insights-meta">
+                Generated {{ insight.generated_at }}
+            </span>
+            {% if gemini_available %}
+            <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
+                <button type="submit" class="btn btn-outline-primary btn-sm" id="regenBtn">
+                    Regenerate Analysis
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% elif gemini_available %}
+        {# ── No cached analysis, but API key is set ── #}
+        <div class="generate-card">
+            <h5>Generate Your Trading Analysis</h5>
+            <p>
+                Our AI will analyze your portfolio data and provide personalized insights
+                about your trading style, what's working, and where to improve.
+            </p>
+            <form method="POST" action="{{ url_for('generate_insights') }}">
+                <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
+                    Generate Insights
+                </button>
+            </form>
+        </div>
+
+        {% else %}
+        {# ── No API key ── #}
+        <div class="generate-card">
+            <h5>AI Insights Not Configured</h5>
+            <p>
+                To enable AI-powered trading analysis, add a Gemini API key to your environment.<br>
+                Get a free key at <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a>,
+                then add <code>GEMINI_API_KEY=your_key</code> to your <code>.env</code> file.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Show spinner on generate/regenerate
+    document.querySelectorAll('#genBtn, #regenBtn').forEach(btn => {
+        btn.closest('form').addEventListener('submit', () => {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analyzing...';
+        });
+    });
+</script>
+{% endblock %}

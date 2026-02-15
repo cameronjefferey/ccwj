@@ -6,6 +6,8 @@
 
 with source as (
     select * from {{ ref('0417_history') }}
+    union all
+    select * from {{ ref('demo_history') }}
 ),
 
 cleaned as (

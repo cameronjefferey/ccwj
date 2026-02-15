@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .faq-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 20px;
+        padding: 3rem;
+        color: #fff;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .faq-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .5rem; }
+    .faq-hero .lead { color: rgba(255,255,255,.9); margin-bottom: 0; }
+    .faq-item {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        margin-bottom: 1rem;
+        overflow: hidden;
+    }
+    .faq-item .accordion-button {
+        font-weight: 600;
+        background: #fff;
+        box-shadow: none;
+        padding: 1.25rem 1.5rem;
+    }
+    .faq-item .accordion-button:not(.collapsed) { background: #f8f9fa; }
+    .faq-item .accordion-button:focus { box-shadow: none; }
+    .faq-item .faq-answer {
+        padding: 1rem 1.5rem 1.25rem;
+        background: #fff;
+        color: #495057;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="faq-hero">
+            <h1>Frequently asked questions</h1>
+            <p class="lead">Quick answers to common questions.</p>
+        </div>
+
+        <div class="accordion" id="faqAccordion">
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq1" aria-expanded="false" aria-controls="faq1">
+                    How do I export my data from Schwab?
+                </h3>
+                <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        <strong>Trade History:</strong> Log in at schwab.com → Accounts → History → Transactions.
+                        Select your account, set the filter to All Transactions, pick a date range, and click Export to download the CSV.
+                        <br><br>
+                        <strong>Current Positions:</strong> Accounts → Positions → select your account → Export.
+                        <br><br>
+                        Both files are required. We support Schwab's web export format (not thinkorswim).
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">
+                    Is my data secure?
+                </h3>
+                <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Your trade data is processed and stored in Google BigQuery. We do not store brokerage passwords or have API access to your account—you export and upload CSVs manually.
+                        Passwords are hashed. We recommend using a strong, unique password for your HappyTrader account.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3">
+                    What brokers are supported?
+                </h3>
+                <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Right now we support Charles Schwab (schwab.com export, not thinkorswim). Additional brokers are planned for the future.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">
+                    Can I have multiple accounts?
+                </h3>
+                <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Yes. Upload data for each account and we'll track them separately. You can filter by account on Positions, Tax Center, and other views. Portfolio-wide totals are shown on the dashboard.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5">
+                    What strategies does HappyTrader recognize?
+                </h3>
+                <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        We auto-detect Covered Calls, Cash-Secured Puts, Wheels, Call Spreads, Put Spreads, Long Calls, Long Puts, Buy and Hold, and other option strategies. Classification is based on your trade patterns—no manual tagging.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq6" aria-expanded="false" aria-controls="faq6">
+                    Is the Tax Center professional tax advice?
+                </h3>
+                <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        No. The Tax Center is for informational purposes only. It classifies short-term vs long-term gains, flags potential wash sales, and shows estimated tax impact based on your bracket. Always consult a qualified tax professional for advice specific to your situation.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-muted mt-4">
+            <a href="{{ url_for('index') }}">Back to Home</a> &middot;
+            <a href="{{ url_for('pricing') }}">Pricing</a> &middot;
+            <a href="{{ url_for('signup') }}">Create Account</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

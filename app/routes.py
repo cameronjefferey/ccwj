@@ -2,7 +2,7 @@ from flask import render_template, request, redirect, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.models import get_accounts_for_user, is_admin
+from app.models import get_accounts_for_user, is_admin, get_insight_for_user
 from google.cloud import bigquery
 from datetime import datetime, date
 import pandas as pd
@@ -246,6 +246,101 @@ HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL = """
 """
 
 
+# ------------------------------------------------------------------
+# Feature pages for marketing (logged-out)
+# ------------------------------------------------------------------
+FEATURES = {
+    "strategy-auto-detection": {
+        "title": "Strategy auto-detection",
+        "subtitle": "Every position classified automatically—no manual tagging.",
+        "demo_partial": "features/_demo_strategy.html",
+        "value_bullets": [
+            "Covered Calls, Cash-Secured Puts, Wheels, spreads, and Buy and Hold—all identified from your trade data.",
+            "See exactly which strategies drive your returns and which drain performance.",
+            "Stop guessing. Know whether the Wheel is outperforming CSPs for your portfolio.",
+        ],
+    },
+    "ai-trading-insights": {
+        "title": "AI trading insights",
+        "subtitle": "Personalized analysis of your trading style and performance.",
+        "demo_partial": "features/_demo_insights.html",
+        "value_bullets": [
+            "Get a coach-style overview: what you do well, what needs work, and why.",
+            "Actionable suggestions based on your actual data—not generic advice.",
+            "The 'wow' moment when the app shows it truly understands your trading.",
+        ],
+    },
+    "tax-center": {
+        "title": "Tax Center",
+        "subtitle": "Short-term vs long-term, wash sales, and estimated tax impact.",
+        "demo_partial": "features/_demo_tax.html",
+        "value_bullets": [
+            "Most traders ignore taxes until April. See your exposure year-round.",
+            "Wash sale flags help you avoid unpleasant surprises at tax time.",
+            "Choose your bracket and see estimated federal tax on gains—no surprises.",
+        ],
+    },
+    "performance-charts": {
+        "title": "Performance charts",
+        "subtitle": "Cumulative P&L over time, broken down by equity, options, and dividends.",
+        "demo_partial": "features/_demo_charts.html",
+        "value_bullets": [
+            "Visualize your progress. See how each strategy contributes over time.",
+            "Portfolio-wide and per-account charts so nothing stays hidden.",
+            "The full picture—not just today's balance, but the journey.",
+        ],
+    },
+    "position-detail": {
+        "title": "Position detail",
+        "subtitle": "Drill into any symbol: trades, strategies, and cumulative P&L.",
+        "demo_partial": "features/_demo_position.html",
+        "value_bullets": [
+            "Click any symbol to see its full story: every trade, every strategy, every dollar.",
+            "Understand why a position performed the way it did—before your next move.",
+            "Trade history, current positions, and charts in one place.",
+        ],
+    },
+    "multi-account": {
+        "title": "Multi-account",
+        "subtitle": "Track all your Schwab accounts in one place.",
+        "demo_partial": "features/_demo_multiaccount.html",
+        "value_bullets": [
+            "IRA, taxable, joint—see portfolio-wide metrics and per-account breakdowns.",
+            "Filter by account on every view: positions, tax center, performance.",
+            "One dashboard. All your accounts.",
+        ],
+    },
+}
+
+
+@app.route("/features/<slug>")
+def feature_detail(slug):
+    """Feature detail page with demo and value prop."""
+    feature = FEATURES.get(slug)
+    if not feature:
+        from flask import abort
+        abort(404)
+    return render_template(
+        "features/detail.html",
+        title=feature["title"],
+        feature=feature,
+        all_features=FEATURES,
+        current_slug=slug,
+    )
+
+
+@app.route("/pricing")
+def pricing():
+    """Pricing placeholder for marketing."""
+    return render_template("pricing.html", title="Pricing")
+
+
+@app.route("/faq")
+def faq():
+    """FAQ page for marketing."""
+    return render_template("faq.html", title="FAQ")
+
+
 @app.route("/")
 @app.route("/index")
 def index():
@@ -302,6 +397,31 @@ def dashboard():
     # user_accounts is None for admins, or a list for regular users
     has_accounts = user_accounts is None or len(user_accounts) > 0
 
+    # Portfolio cumulative P&L chart
+    portfolio_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
+    if has_accounts:
+        try:
+            trades_df = client.query(TRADES_QUERY).to_dataframe()
+            current_df = client.query(CURRENT_POSITIONS_QUERY).to_dataframe()
+
+            for col in ["amount", "quantity", "price", "fees"]:
+                trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
+            trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
+
+            for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
+                if col in current_df.columns:
+                    current_df[col] = pd.to_numeric(current_df[col], errors="coerce").fillna(0)
+
+            trades_df = _filter_df_by_accounts(trades_df, user_accounts)
+            current_df = _filter_df_by_accounts(current_df, user_accounts)
+
+            portfolio_chart = _build_account_summary_chart(trades_df, current_df)
+        except Exception:
+            pass  # Chart is optional — dashboard still works without it
+
+    # Cached AI insight for the summary card
+    insight = get_insight_for_user(current_user.id)
+
     return render_template(
         "index.html",
         title="Home",
@@ -309,6 +429,8 @@ def dashboard():
         top_symbols=top_symbols,
         strategy_breakdown=strategy_breakdown,
         has_accounts=has_accounts,
+        insight=insight,
+        portfolio_chart_json=json.dumps(portfolio_chart),
     )
 
 
@@ -503,6 +625,200 @@ def positions():
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
         date_filtered=date_filtered,
+    )
+
+
+# ======================================================================
+# Position Detail  (/position/<symbol>)
+# ======================================================================
+
+POSITION_SUMMARY_QUERY = """
+    SELECT *
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE symbol = '{symbol}'
+    ORDER BY account, strategy
+"""
+
+POSITION_TRADES_QUERY = """
+    SELECT
+        account,
+        underlying_symbol AS symbol,
+        trade_date,
+        action,
+        action_raw,
+        trade_symbol,
+        instrument_type,
+        description,
+        quantity,
+        price,
+        fees,
+        amount
+    FROM `ccwj-dbt.analytics.stg_history`
+    WHERE underlying_symbol = '{symbol}'
+      AND trade_date IS NOT NULL
+    ORDER BY trade_date DESC
+"""
+
+POSITION_CURRENT_QUERY = """
+    SELECT
+        account,
+        underlying_symbol AS symbol,
+        instrument_type,
+        trade_symbol,
+        description,
+        quantity,
+        current_price,
+        market_value,
+        cost_basis,
+        unrealized_pnl,
+        unrealized_pnl_pct
+    FROM `ccwj-dbt.analytics.stg_current`
+    WHERE underlying_symbol = '{symbol}'
+"""
+
+
+@app.route("/position/<symbol>")
+@login_required
+def position_detail(symbol):
+    client = get_bigquery_client()
+    user_accounts = _user_account_list()
+
+    # Escape symbol for SQL (prevent injection)
+    safe_symbol = symbol.replace("'", "''")
+
+    try:
+        # Strategy summary from positions_summary
+        summary_df = client.query(
+            POSITION_SUMMARY_QUERY.format(symbol=safe_symbol)
+        ).to_dataframe()
+
+        # Trade history
+        trades_df = client.query(
+            POSITION_TRADES_QUERY.format(symbol=safe_symbol)
+        ).to_dataframe()
+
+        # Current positions
+        current_df = client.query(
+            POSITION_CURRENT_QUERY.format(symbol=safe_symbol)
+        ).to_dataframe()
+    except Exception as exc:
+        return render_template(
+            "position_detail.html",
+            symbol=symbol,
+            error=str(exc),
+            kpis={},
+            strategy_rows=[],
+            trades=[],
+            current_positions=[],
+            chart_data_json="{}",
+        )
+
+    # Clean numeric types for summary
+    num_cols = [
+        "total_pnl", "realized_pnl", "unrealized_pnl",
+        "total_premium_received", "total_premium_paid",
+        "num_trade_groups", "num_individual_trades",
+        "num_winners", "num_losers", "win_rate",
+        "avg_pnl_per_trade", "avg_days_in_trade",
+        "total_dividend_income", "dividend_count", "total_return",
+    ]
+    for col in num_cols:
+        if col in summary_df.columns:
+            summary_df[col] = pd.to_numeric(summary_df[col], errors="coerce").fillna(0)
+
+    # Clean trades
+    for col in ["amount", "quantity", "price", "fees"]:
+        if col in trades_df.columns:
+            trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
+    if "trade_date" in trades_df.columns:
+        trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
+
+    # Clean current positions
+    for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
+        if col in current_df.columns:
+            current_df[col] = pd.to_numeric(current_df[col], errors="coerce").fillna(0)
+    if "unrealized_pnl_pct" in current_df.columns:
+        current_df["unrealized_pnl_pct"] = pd.to_numeric(
+            current_df["unrealized_pnl_pct"], errors="coerce"
+        ).fillna(0)
+
+    # Filter to user's accounts
+    summary_df = _filter_df_by_accounts(summary_df, user_accounts)
+    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
+    current_df = _filter_df_by_accounts(current_df, user_accounts)
+
+    # Optional account filter
+    selected_account = request.args.get("account", "")
+    if selected_account:
+        summary_df = summary_df[summary_df["account"] == selected_account]
+        trades_df = trades_df[trades_df["account"] == selected_account]
+        current_df = current_df[current_df["account"] == selected_account]
+
+    # KPIs (aggregated across strategies)
+    total_winners = int(summary_df["num_winners"].sum())
+    total_losers = int(summary_df["num_losers"].sum())
+    total_closed = total_winners + total_losers
+
+    kpis = {}
+    if not summary_df.empty:
+        kpis = {
+            "total_return": float(summary_df["total_return"].sum()),
+            "realized_pnl": float(summary_df["realized_pnl"].sum()),
+            "unrealized_pnl": float(summary_df["unrealized_pnl"].sum()),
+            "premium_collected": float(summary_df["total_premium_received"].sum()),
+            "premium_paid": float(summary_df["total_premium_paid"].sum()),
+            "dividend_income": float(summary_df["total_dividend_income"].sum()),
+            "win_rate": total_winners / total_closed if total_closed else 0,
+            "avg_days": float(summary_df["avg_days_in_trade"].mean()),
+            "total_trades": int(summary_df["num_individual_trades"].sum()),
+            "num_winners": total_winners,
+            "num_losers": total_losers,
+            "first_trade": str(summary_df["first_trade_date"].min()) if "first_trade_date" in summary_df.columns else "",
+            "last_trade": str(summary_df["last_trade_date"].max()) if "last_trade_date" in summary_df.columns else "",
+        }
+
+    # Status
+    statuses = summary_df["status"].unique().tolist() if not summary_df.empty else []
+    if "Open" in statuses and "Closed" in statuses:
+        overall_status = "Mixed"
+    elif "Open" in statuses:
+        overall_status = "Open"
+    else:
+        overall_status = "Closed"
+
+    # Strategy rows
+    strategy_rows = summary_df.to_dict(orient="records") if not summary_df.empty else []
+
+    # Build chart data (cumulative P&L over time)
+    chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
+    if not trades_df.empty:
+        # Use _build_chart_data for the combined account view
+        trades_for_chart = trades_df.sort_values("trade_date")
+        chart_data = _build_chart_data(trades_for_chart, current_df)
+
+    # Trade history rows
+    trades_for_table = trades_df.copy()
+    if "trade_date" in trades_for_table.columns:
+        trades_for_table["trade_date"] = trades_for_table["trade_date"].astype(str)
+    trades = trades_for_table.to_dict(orient="records") if not trades_for_table.empty else []
+
+    # Current positions
+    current_positions = current_df.to_dict(orient="records") if not current_df.empty else []
+
+    # Available accounts for filter
+    all_accounts = sorted(summary_df["account"].dropna().unique()) if not summary_df.empty else []
+
+    return render_template(
+        "position_detail.html",
+        symbol=symbol,
+        kpis=kpis,
+        overall_status=overall_status,
+        strategy_rows=strategy_rows,
+        trades=trades,
+        current_positions=current_positions,
+        chart_data_json=json.dumps(chart_data),
+        accounts=all_accounts,
+        selected_account=selected_account,
     )
 
 
