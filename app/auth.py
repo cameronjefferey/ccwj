@@ -1,8 +1,9 @@
+import os
 import click
 from flask import render_template, redirect, url_for, request, flash
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
-from app.models import User, get_accounts_for_user, get_uploads_for_user
+from app.models import User, get_accounts_for_user, get_uploads_for_user, get_schwab_connections
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -119,12 +120,16 @@ def settings():
 
     accounts = get_accounts_for_user(current_user.id)
     recent_uploads = get_uploads_for_user(current_user.id)
+    schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
+    schwab_connections = get_schwab_connections(current_user.id) if schwab_enabled else []
 
     return render_template(
         "settings.html",
         title="Settings",
         accounts=accounts,
         recent_uploads=recent_uploads,
+        schwab_enabled=schwab_enabled,
+        schwab_connections=schwab_connections,
     )
 
 

@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block meta_tags %}
+<meta name="description" content="{{ feature.subtitle }} — Learn how HappyTrader helps options traders.">
+<meta property="og:description" content="{{ feature.subtitle }} — Learn how HappyTrader helps options traders.">
+{% endblock %}
+
 {% block head %}
 <style>
     .feature-hero {

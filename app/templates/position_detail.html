@@ -59,10 +59,13 @@
             {% endif %}
         </div>
         {% if kpis %}
-        <div class="text-end">
-            <div class="small text-white-50">Total Return</div>
-            <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
-                ${{ "{:,.2f}".format(kpis.total_return) }}
+        <div class="text-end d-flex flex-column align-items-end gap-2">
+            <a href="{{ url_for('journal_new', symbol=symbol, account=selected_account or (accounts[0] if accounts else ''), strategy=position_rows[0].strategy if position_rows else '') }}" class="btn btn-sm btn-outline-light">📓 Journal this trade</a>
+            <div>
+                <div class="small text-white-50">Total Return</div>
+                <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ "{:,.2f}".format(kpis.total_return) }}
+                </div>
             </div>
         </div>
         {% endif %}
@@ -302,7 +305,7 @@
 
 {% else %}
 <div class="alert alert-warning">
-    No data found for <strong>{{ symbol }}</strong>. Make sure you've uploaded trading data for this symbol.
+    No data found for <strong>{{ symbol }}</strong>. Upload your Schwab trade history, or check that this symbol exists in your data.
 </div>
 {% endif %}
 {% endblock %}
@@ -324,6 +327,7 @@
                         backgroundColor: 'rgba(26,26,46,.08)',
                         fill: true,
                         tension: 0.3,
+                        spanGaps: true,
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 2.5,
@@ -359,6 +363,20 @@
                         borderWidth: 1.5,
                         order: 3
                     }
+                    {% if has_underlying_price %}
+                    ,{
+                        label: '{{ symbol }} Price',
+                        data: chartData.underlying_price,
+                        borderColor: '#fd7e14',
+                        tension: 0.3,
+                        spanGaps: true,
+                        pointRadius: 0,
+                        pointHitRadius: 6,
+                        borderWidth: 1.5,
+                        order: 4,
+                        yAxisID: 'yPrice'
+                    }
+                    {% endif %}
                 ]
             },
             options: {
@@ -368,8 +386,10 @@
                     tooltip: {
                         callbacks: {
                             label: function(ctx) {
+                                var y = ctx.parsed.y;
+                                if (y == null) return null;
                                 return ctx.dataset.label + ': $' +
-                                    ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2});
+                                    y.toLocaleString(undefined, {minimumFractionDigits: 2});
                             }
                         }
                     }
@@ -380,6 +400,9 @@
                         ticks: { maxTicksLimit: 10 }
                     },
                     y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
                         ticks: {
                             callback: function(v) {
                                 return '$' + (Math.abs(v) >= 1000
@@ -387,12 +410,29 @@
                                     : v.toFixed(0));
                             }
                         },
-                        grid: {
-                            color: function(ctx) {
-                                return ctx.tick.value === 0 ? '#000' : '#e9ecef';
-                            }
-                        }
+                        grid: { display: false }
                     }
+                    {% if has_underlying_price %}
+                    ,yPrice: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        min: function(ctx) {
+                            var vals = ctx.chart.data.datasets[4].data.filter(function(v){ return v != null; });
+                            if (vals.length === 0) return 0;
+                            return Math.min.apply(null, vals) * 0.98;
+                        },
+                        max: function(ctx) {
+                            var vals = ctx.chart.data.datasets[4].data.filter(function(v){ return v != null; });
+                            if (vals.length === 0) return 100;
+                            return Math.max.apply(null, vals) * 1.02;
+                        },
+                        ticks: {
+                            callback: function(v) { return '$' + v.toFixed(2); }
+                        },
+                        grid: { display: false }
+                    }
+                    {% endif %}
                 }
             }
         });

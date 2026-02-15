@@ -8,8 +8,14 @@
     {% else %}
         <title>HappyTrader</title>
     {% endif %}
+    <meta property="og:title" content="{{ (title ~ ' - HappyTrader') if title else 'HappyTrader' }}">
+    <meta property="og:type" content="website">
+    {% block meta_tags %}
+    <meta name="description" content="Options portfolio analytics. Classify strategies, track performance, and get AI insights for covered calls, CSPs, wheels, and more.">
+    <meta property="og:description" content="Options portfolio analytics. Classify strategies, track performance, and get AI insights for covered calls, CSPs, wheels, and more.">
+    {% endblock %}
 
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -67,6 +73,12 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('taxes') }}">Tax Center</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('journal') }}">Journal</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('weekly_review') }}">Weekly Review</a>
+                    </li>
                 </ul>
                 <ul class="navbar-nav">
                     <li class="nav-item">
@@ -110,14 +122,16 @@
     </div>
     {% endif %}
 
-    <!-- Flash messages -->
-    <div class="container-fluid px-4">
+    <!-- Flash messages (toast-style) -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    <div class="toast align-items-center text-bg-{{ category }} border-0 show" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">{{ message }}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
                     </div>
                 {% endfor %}
             {% endif %}
@@ -129,8 +143,37 @@
         {% block content %}{% endblock %}
     </div>
 
+    {% block footer %}
+    {% if not current_user.is_authenticated %}
+    <footer class="mt-5 py-4 border-top">
+        <div class="container-fluid px-4">
+            <div class="d-flex flex-wrap justify-content-center gap-4">
+                <a href="{{ url_for('demo_start') }}">Try Demo</a>
+                <a href="{{ url_for('login') }}">Sign In</a>
+                <a href="{{ url_for('signup') }}">Create Account</a>
+                <a href="{{ url_for('pricing') }}">Pricing</a>
+                <a href="{{ url_for('faq') }}">FAQ</a>
+            </div>
+            <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Options strategies made clear.</p>
+        </div>
+    </footer>
+    {% endif %}
+    {% endblock %}
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Close mobile nav when a nav link is clicked (improves UX on small screens)
+        document.querySelectorAll('#navContent .nav-link').forEach(function(link) {
+            link.addEventListener('click', function() {
+                var collapse = document.getElementById('navContent');
+                if (collapse && collapse.classList.contains('show') && typeof bootstrap !== 'undefined') {
+                    var inst = bootstrap.Collapse.getInstance(collapse);
+                    if (inst) inst.hide();
+                }
+            });
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

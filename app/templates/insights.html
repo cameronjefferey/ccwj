@@ -104,11 +104,13 @@
 
 {% block scripts %}
 <script>
-    // Show spinner on generate/regenerate
+    // Show loading state on generate/regenerate (can take 10–20 seconds)
     document.querySelectorAll('#genBtn, #regenBtn').forEach(btn => {
+        if (!btn) return;
         btn.closest('form').addEventListener('submit', () => {
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analyzing...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your portfolio...';
+            btn.closest('.generate-card, .d-flex')?.classList.add('pe-none');  // prevent double submit
         });
     });
 </script>

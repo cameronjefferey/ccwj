@@ -53,7 +53,7 @@
                     <label class="form-label text-muted small mb-1">Username</label>
                     <div class="fw-semibold">{{ current_user.username }}</div>
                 </div>
-                <div>
+                <div class="mb-3">
                     <label class="form-label text-muted small mb-1">Linked Accounts</label>
                     {% if accounts %}
                     <div>
@@ -64,10 +64,24 @@
                     {% else %}
                     <p class="text-muted mb-0 small">
                         No accounts linked yet.
-                        <a href="{{ url_for('upload') }}">Upload data</a> to link an account.
+                        <a href="{{ url_for('upload') }}">Upload your Schwab CSV files</a> to link an account and see your portfolio.
                     </p>
                     {% endif %}
                 </div>
+                {% if schwab_enabled %}
+                <div class="pt-2 border-top">
+                    <label class="form-label text-muted small mb-1">Schwab API</label>
+                    {% if schwab_connections %}
+                    <p class="mb-2 small">Connected: {% for c in schwab_connections %}{{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Sync now</button>
+                    </form>
+                    {% else %}
+                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-sm btn-primary">Connect Schwab</a>
+                    <span class="text-muted small ms-2">Daily sync without CSV uploads</span>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -125,7 +139,7 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted mb-0 small">No uploads yet.</p>
+                <p class="text-muted mb-0 small">No uploads yet. <a href="{{ url_for('upload') }}">Upload your first file</a> to get started.</p>
                 {% endif %}
             </div>
         </div>

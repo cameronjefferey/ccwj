@@ -28,8 +28,8 @@
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-warning">
-    <strong>No accounts linked.</strong>
-    <a href="{{ url_for('upload') }}">Upload data or claim an existing account</a> to see your account data.
+    <strong>No data yet.</strong>
+    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see account performance.
 </div>
 {% endif %}
 

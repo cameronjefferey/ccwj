@@ -38,8 +38,8 @@
 
 {% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_status or selected_symbol) %}
 <div class="alert alert-warning">
-    <strong>No accounts linked.</strong>
-    <a href="{{ url_for('upload') }}">Upload data or claim an existing account</a> to see your positions.
+    <strong>No data yet.</strong>
+    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see your positions here.
 </div>
 {% endif %}
 
@@ -101,6 +101,12 @@
     <div class="col-auto">
         <button type="submit" class="btn btn-sm btn-primary">Apply</button>
         <a href="/positions" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+    <div class="col-12 d-flex flex-wrap gap-1 mt-1">
+        <span class="small text-muted align-self-center me-1">Quick:</span>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">Last 30 days</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=(today.replace(month=1, day=1)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">YTD</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol) }}" class="btn btn-sm btn-outline-secondary py-0">All time</a>
     </div>
 </form>
 
@@ -405,8 +411,22 @@
                 </tbody>
             </table>
         </div>
+        {% if total_pages > 1 %}
+        <nav class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+            <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {{ 'disabled' if page <= 1 }}">
+                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
+                <li class="page-item {{ 'disabled' if page >= total_pages }}">
+                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters.</p>
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a> or <a href="{{ url_for('upload') }}" class="text-decoration-underline">upload data</a> if you haven't yet.</p>
         {% endif %}
     </div>
 </div>

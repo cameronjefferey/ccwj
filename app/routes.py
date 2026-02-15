@@ -1,10 +1,10 @@
-from flask import render_template, request, redirect, url_for
+from flask import render_template, request, redirect, url_for, Response
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.models import get_accounts_for_user, is_admin, get_insight_for_user
 from google.cloud import bigquery
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import pandas as pd
 import json
 
@@ -31,6 +31,16 @@ def _account_sql_filter(accounts):
         return "WHERE 1 = 0"            # user has no accounts → return nothing
     quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
     return f"WHERE account IN ({quoted})"
+
+
+def _account_sql_and(accounts):
+    """Return AND clause for account filter when already in a WHERE. Empty string if no filter."""
+    if accounts is None:
+        return ""
+    if not accounts:
+        return "AND 1 = 0"
+    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
+    return f"AND account IN ({quoted})"
 
 
 def _filter_df_by_accounts(df, accounts, col="account"):
@@ -192,6 +202,12 @@ ERROR_DEFAULTS = dict(
     selected_start_date="",
     selected_end_date="",
     date_filtered=False,
+    page=1,
+    total_pages=1,
+    total_rows=0,
+    per_page=25,
+    today=date.today(),
+    timedelta=timedelta,
 )
 
 
@@ -341,6 +357,34 @@ def faq():
     return render_template("faq.html", title="FAQ")
 
 
+@app.route("/sitemap.xml")
+def sitemap():
+    """Simple sitemap for SEO."""
+    base = request.url_root.rstrip("/")
+    pages = [
+        ("", "daily", "1.0"),
+        ("/pricing", "monthly", "0.8"),
+        ("/faq", "monthly", "0.7"),
+    ]
+    for slug in FEATURES:
+        pages.append((f"/features/{slug}", "monthly", "0.7"))
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    for path, freq, prio in pages:
+        xml += f"  <url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>\n"
+    xml += "</urlset>"
+    return Response(xml, mimetype="application/xml")
+
+
+@app.route("/robots.txt")
+def robots():
+    """Basic robots.txt for crawlers."""
+    base = request.url_root.rstrip("/")
+    return Response(
+        f"User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /positions\nDisallow: /upload\nDisallow: /insights\nDisallow: /taxes\nDisallow: /settings\nDisallow: /accounts\nDisallow: /symbols\nDisallow: /position/\nSitemap: {base}/sitemap.xml\n",
+        mimetype="text/plain",
+    )
+
+
 @app.route("/")
 @app.route("/index")
 def index():
@@ -414,6 +458,7 @@ def dashboard():
 
             trades_df = _filter_df_by_accounts(trades_df, user_accounts)
             current_df = _filter_df_by_accounts(current_df, user_accounts)
+            current_df = _enrich_current_df_with_daily_prices_bulk(client, current_df, user_accounts, None)
 
             portfolio_chart = _build_account_summary_chart(trades_df, current_df)
         except Exception:
@@ -480,6 +525,7 @@ def positions():
     selected_symbol = request.args.get("symbol", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
+    page = max(1, int(request.args.get("page", 1)))
 
     start_date = _parse_date(selected_start_date)
     end_date = _parse_date(selected_end_date)
@@ -605,9 +651,15 @@ def positions():
         symbol_rows = []
 
     # ------------------------------------------------------------------
-    # 8. Strategy detail rows
+    # 8. Strategy detail rows (paginated)
     # ------------------------------------------------------------------
-    rows = filtered.to_dict(orient="records")
+    all_rows = filtered.to_dict(orient="records")
+    per_page = 25
+    total_rows = len(all_rows)
+    total_pages = max(1, (total_rows + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    start_idx = (page - 1) * per_page
+    rows = all_rows[start_idx : start_idx + per_page]
 
     return render_template(
         "positions.html",
@@ -625,6 +677,12 @@ def positions():
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
         date_filtered=date_filtered,
+        page=page,
+        total_pages=total_pages,
+        total_rows=total_rows,
+        per_page=per_page,
+        today=date.today(),
+        timedelta=timedelta,
     )
 
 
@@ -676,6 +734,40 @@ POSITION_CURRENT_QUERY = """
     WHERE underlying_symbol = '{symbol}'
 """
 
+# Latest close price per (account, symbol) from daily_position_performance (yfinance)
+DAILY_PRICE_LATEST_QUERY = """
+    SELECT account, symbol, date, close_price
+    FROM (
+        SELECT account, symbol, date, close_price,
+               ROW_NUMBER() OVER (PARTITION BY account, symbol ORDER BY date DESC) AS rn
+        FROM `ccwj-dbt.analytics.daily_position_performance`
+        WHERE symbol = '{symbol}'
+          {account_filter}
+    )
+    WHERE rn = 1
+"""
+
+# Daily close series for chart (symbol-scoped)
+DAILY_PRICE_SERIES_QUERY = """
+    SELECT date, close_price
+    FROM `ccwj-dbt.analytics.daily_position_performance`
+    WHERE symbol = '{symbol}'
+      {account_filter}
+    ORDER BY date
+"""
+
+# Bulk latest close for multiple symbols (used by symbols page)
+DAILY_PRICE_BULK_QUERY = """
+    SELECT account, symbol, date, close_price
+    FROM (
+        SELECT account, symbol, date, close_price,
+               ROW_NUMBER() OVER (PARTITION BY account, symbol ORDER BY date DESC) AS rn
+        FROM `ccwj-dbt.analytics.daily_position_performance`
+        WHERE 1=1 {account_filter}
+    )
+    WHERE rn = 1
+"""
+
 
 @app.route("/position/<symbol>")
 @login_required
@@ -711,6 +803,7 @@ def position_detail(symbol):
             trades=[],
             current_positions=[],
             chart_data_json="{}",
+            has_underlying_price=False,
         )
 
     # Clean numeric types for summary
@@ -789,12 +882,17 @@ def position_detail(symbol):
     # Strategy rows
     strategy_rows = summary_df.to_dict(orient="records") if not summary_df.empty else []
 
-    # Build chart data (cumulative P&L over time)
+    # Enrich equity positions with actual daily stock prices (from daily_position_performance)
+    current_df = _enrich_current_with_daily_prices(
+        client, current_df, safe_symbol, user_accounts, selected_account
+    )
+
+    # Build chart data (cumulative P&L over time, with daily equity mark-to-market when we have prices)
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
     if not trades_df.empty:
-        # Use _build_chart_data for the combined account view
         trades_for_chart = trades_df.sort_values("trade_date")
-        chart_data = _build_chart_data(trades_for_chart, current_df)
+        daily_prices = _fetch_daily_price_series(client, safe_symbol, user_accounts, selected_account)
+        chart_data = _build_chart_data_with_daily_equity(trades_for_chart, current_df, daily_prices)
 
     # Trade history rows
     trades_for_table = trades_df.copy()
@@ -817,6 +915,7 @@ def position_detail(symbol):
         trades=trades,
         current_positions=current_positions,
         chart_data_json=json.dumps(chart_data),
+        has_underlying_price=chart_data.get("has_underlying_price", False),
         accounts=all_accounts,
         selected_account=selected_account,
     )
@@ -911,6 +1010,290 @@ def _compute_equity_pnl(equity_trades):
             pnl_events.append((trade_date, round(pnl, 2)))
 
     return pnl_events
+
+
+def _enrich_current_with_daily_prices(client, current_df, symbol, user_accounts, selected_account):
+    """
+    For Equity rows in current_df, override current_price and market_value with actual
+    daily close from daily_position_performance. Recompute unrealized_pnl accordingly.
+    """
+    if current_df.empty:
+        return current_df
+    equity_mask = current_df["instrument_type"] == "Equity"
+    if not equity_mask.any():
+        return current_df
+    try:
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        q = DAILY_PRICE_LATEST_QUERY.format(symbol=symbol, account_filter=acct_filter)
+        daily_df = client.query(q).to_dataframe()
+    except Exception:
+        return current_df
+    if daily_df.empty:
+        return current_df
+    # Map (account, symbol) -> close_price
+    price_map = {}
+    for _, r in daily_df.iterrows():
+        price_map[(str(r.get("account", "")), str(r.get("symbol", "")))] = float(r.get("close_price", 0) or 0)
+    # Apply to equity rows
+    current_df = current_df.copy()
+    for idx in current_df.index[equity_mask]:
+        row = current_df.loc[idx]
+        acc = str(row.get("account", ""))
+        sym = str(row.get("underlying_symbol", row.get("symbol", "")))
+        if selected_account:
+            acc = selected_account
+        close_price = price_map.get((acc, sym)) or price_map.get((acc, symbol))
+        if close_price and close_price > 0:
+            qty = float(row.get("quantity", 0) or 0)
+            cost_basis = float(row.get("cost_basis", 0) or 0)
+            if qty:
+                market_value = qty * close_price
+                current_df.at[idx, "current_price"] = close_price
+                current_df.at[idx, "market_value"] = market_value
+                if cost_basis:
+                    current_df.at[idx, "unrealized_pnl"] = market_value - cost_basis
+                    current_df.at[idx, "unrealized_pnl_pct"] = 100 * (market_value - cost_basis) / cost_basis
+    return current_df
+
+
+def _enrich_current_df_with_daily_prices_bulk(client, current_df, user_accounts, selected_account):
+    """
+    Bulk-enrich all Equity rows in current_df with latest daily close.
+    Used by symbols page which has many symbols.
+    """
+    if current_df.empty:
+        return current_df
+    equity_mask = current_df["instrument_type"] == "Equity"
+    if not equity_mask.any():
+        return current_df
+    try:
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        q = DAILY_PRICE_BULK_QUERY.format(account_filter=acct_filter)
+        daily_df = client.query(q).to_dataframe()
+    except Exception:
+        return current_df
+    if daily_df.empty:
+        return current_df
+    price_map = {}
+    for _, r in daily_df.iterrows():
+        price_map[(str(r.get("account", "")), str(r.get("symbol", "")))] = float(r.get("close_price", 0) or 0)
+    current_df = current_df.copy()
+    for idx in current_df.index[equity_mask]:
+        row = current_df.loc[idx]
+        acc = str(row.get("account", ""))
+        sym = str(row.get("symbol", row.get("underlying_symbol", "")))
+        close_price = price_map.get((acc, sym))
+        if close_price and close_price > 0:
+            qty = float(row.get("quantity", 0) or 0)
+            cost_basis = float(row.get("cost_basis", 0) or 0)
+            if qty:
+                market_value = qty * close_price
+                current_df.at[idx, "current_price"] = close_price
+                current_df.at[idx, "market_value"] = market_value
+                if cost_basis:
+                    current_df.at[idx, "unrealized_pnl"] = market_value - cost_basis
+                    current_df.at[idx, "unrealized_pnl_pct"] = 100 * (market_value - cost_basis) / cost_basis
+    return current_df
+
+
+def _fetch_daily_price_series(client, symbol, user_accounts, selected_account):
+    """Fetch daily close prices for symbol. Returns dict {date_key: close_price}."""
+    try:
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        q = DAILY_PRICE_SERIES_QUERY.format(symbol=symbol, account_filter=acct_filter)
+        daily_df = client.query(q).to_dataframe()
+    except Exception:
+        return {}
+    if daily_df.empty:
+        return {}
+    daily_df["date"] = pd.to_datetime(daily_df["date"]).dt.date
+    # One price per date (take first if multiple accounts)
+    out = {}
+    for _, row in daily_df.iterrows():
+        dkey = str(row["date"])[:10]
+        if dkey not in out:
+            out[dkey] = float(row.get("close_price", 0) or 0)
+    return out
+
+
+def _build_chart_data_with_daily_equity(group, sym_current, daily_prices):
+    """
+    Build cumulative P&L chart with daily equity mark-to-market when we have price data.
+    Equity series shows P&L every day (realized + unrealized at each day's close).
+    """
+    equity_trades = group[group["instrument_type"] == "Equity"]
+    option_trades = group[group["instrument_type"].isin(["Call", "Put"])]
+    dividend_trades = group[group["instrument_type"] == "Dividend"]
+    other_trades = group[~group["instrument_type"].isin(["Equity", "Call", "Put", "Dividend"])]
+
+    def _daily_sums(df):
+        if df.empty:
+            return {}
+        return df.groupby("trade_date")["amount"].sum().to_dict()
+
+    option_by_date = _daily_sums(option_trades)
+    dividend_by_date = _daily_sums(dividend_trades)
+    other_by_date = _daily_sums(other_trades)
+
+    # All dates: trade dates + price dates
+    all_dates = set()
+    all_dates.update(option_by_date)
+    all_dates.update(dividend_by_date)
+    all_dates.update(other_by_date)
+    for d in daily_prices:
+        try:
+            all_dates.add(date.fromisoformat(d[:10]))
+        except Exception:
+            pass
+    if not equity_trades.empty:
+        for d in equity_trades["trade_date"].dropna().unique():
+            td = d.date() if hasattr(d, "date") and callable(getattr(d, "date")) else (d if isinstance(d, date) else date.fromisoformat(str(d)[:10]))
+            all_dates.add(td)
+
+    if not all_dates:
+        return {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
+
+    sorted_dates = sorted(all_dates)
+
+    # Position state after each trade date
+    shares_held = 0.0
+    total_cost = 0.0
+    cumulative_realized = 0.0
+    position_by_date = {}
+
+    for _, row in equity_trades.sort_values("trade_date").iterrows():
+        action = row["action"]
+        qty = abs(float(row["quantity"])) if row["quantity"] else 0
+        amount = float(row["amount"])
+        trade_date = row["trade_date"]
+        td = trade_date.date() if hasattr(trade_date, "date") and callable(getattr(trade_date, "date")) else (trade_date if isinstance(trade_date, date) else date.fromisoformat(str(trade_date)[:10]))
+
+        if qty == 0:
+            continue
+        if action == "equity_buy":
+            shares_held += qty
+            total_cost += abs(amount)
+        elif action in ("equity_sell", "equity_sell_short"):
+            if shares_held > 0:
+                avg_cost = total_cost / shares_held
+                shares_sold = min(qty, shares_held)
+                cost_basis = avg_cost * shares_sold
+                pnl = amount - cost_basis
+                cumulative_realized += pnl
+                total_cost = max(0.0, total_cost - cost_basis)
+                shares_held = max(0.0, shares_held - shares_sold)
+            else:
+                cumulative_realized += amount
+        position_by_date[td] = (shares_held, total_cost, cumulative_realized)
+
+    # Build all series in one pass
+    last_shares, last_cost, last_realized = 0.0, 0.0, 0.0
+    equity_series = []
+    options_series = []
+    dividends_series = []
+    total_series = []
+    underlying_price_series = []
+    opt_cum = div_cum = oth_cum = 0.0
+
+    for d in sorted_dates:
+        dkey = str(d)[:10]
+        if d in position_by_date:
+            last_shares, last_cost, last_realized = position_by_date[d]
+        opt_cum += option_by_date.get(d, 0)
+        div_cum += dividend_by_date.get(d, 0)
+        oth_cum += other_by_date.get(d, 0)
+
+        close_price = daily_prices.get(dkey)
+        if close_price and last_shares > 0:
+            unrealized = last_shares * close_price - last_cost
+            eq_val = last_realized + unrealized
+        else:
+            eq_val = last_realized
+        underlying_price_series.append(round(close_price, 2) if close_price else None)
+        equity_series.append(round(eq_val, 2))
+        options_series.append(round(opt_cum, 2))
+        dividends_series.append(round(div_cum, 2))
+        total_series.append(round(eq_val + opt_cum + div_cum + oth_cum, 2))
+
+    # Append today when we have an open position so chart shows current G/L
+    today = date.today()
+    if not sym_current.empty and sorted_dates and sorted_dates[-1] != today:
+        opt_unreal = float(sym_current.loc[sym_current["instrument_type"].isin(["Call", "Put"]), "unrealized_pnl"].sum())
+        # Today's equity value: use enriched current_price from sym_current for open shares
+        eq_row = sym_current[sym_current["instrument_type"] == "Equity"]
+        today_equity = equity_series[-1] if equity_series else 0.0
+        if not eq_row.empty and last_shares > 0:
+            today_price = float(eq_row["current_price"].iloc[0] or 0)
+            if today_price:
+                today_equity = last_realized + (last_shares * today_price - last_cost)
+        today_price_val = None
+        if not eq_row.empty:
+            today_price_val = float(eq_row["current_price"].iloc[0] or 0) or None
+        if today_price_val is None and underlying_price_series:
+            today_price_val = underlying_price_series[-1] if underlying_price_series else None
+
+        sorted_dates.append(today)
+        equity_series.append(round(today_equity, 2))
+        options_series.append(round(options_series[-1] + opt_unreal, 2))
+        dividends_series.append(dividends_series[-1])
+        underlying_price_series.append(round(today_price_val, 2) if today_price_val is not None else None)
+        total_series.append(round(today_equity + options_series[-1] + div_cum + oth_cum, 2))
+    elif not sym_current.empty and sorted_dates and sorted_dates[-1] == today:
+        # Refresh today's values with current data
+        opt_unreal = float(sym_current.loc[sym_current["instrument_type"].isin(["Call", "Put"]), "unrealized_pnl"].sum())
+        eq_row = sym_current[sym_current["instrument_type"] == "Equity"]
+        today_equity = equity_series[-1] if equity_series else 0.0
+        if not eq_row.empty and last_shares > 0:
+            today_price = float(eq_row["current_price"].iloc[0] or 0)
+            if today_price:
+                today_equity = last_realized + (last_shares * today_price - last_cost)
+        equity_series[-1] = round(today_equity, 2)
+        new_opt = round(options_series[-1] + opt_unreal, 2)
+        options_series[-1] = new_opt
+        total_series[-1] = round(today_equity + new_opt + div_cum + oth_cum, 2)
+
+    return {
+        "dates": [str(d) for d in sorted_dates],
+        "equity": equity_series,
+        "options": options_series,
+        "dividends": dividends_series,
+        "total": total_series,
+        "underlying_price": underlying_price_series,
+        "has_underlying_price": any(p is not None for p in underlying_price_series),
+    }
+
+
+def _add_underlying_price_to_chart(client, chart_data, symbol, user_accounts, selected_account):
+    """Add underlying stock price series to chart_data for equity holdings."""
+    chart_data.setdefault("has_underlying_price", False)
+    if not chart_data.get("dates"):
+        return chart_data
+    try:
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        q = DAILY_PRICE_SERIES_QUERY.format(symbol=symbol, account_filter=acct_filter)
+        daily_df = client.query(q).to_dataframe()
+    except Exception:
+        return chart_data
+    if daily_df.empty:
+        chart_data["has_underlying_price"] = False
+        return chart_data
+    daily_df["date"] = pd.to_datetime(daily_df["date"]).dt.date
+    # Build price series aligned to chart dates (forward-fill)
+    price_by_date = {}
+    for _, row in daily_df.iterrows():
+        d = row["date"]
+        key = d.isoformat() if hasattr(d, "isoformat") else str(d)[:10]
+        price_by_date[key] = float(row["close_price"] or 0)
+    prices = []
+    last_price = None
+    for d in chart_data["dates"]:
+        key = d[:10] if isinstance(d, str) else (d.isoformat() if hasattr(d, "isoformat") else str(d)[:10])
+        if key in price_by_date:
+            last_price = price_by_date[key]
+        prices.append(round(last_price, 2) if last_price is not None else None)
+    chart_data["underlying_price"] = prices
+    chart_data["has_underlying_price"] = any(p is not None for p in prices)
+    return chart_data
 
 
 def _build_chart_data(group, sym_current):
@@ -1051,6 +1434,9 @@ def symbols_detail():
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
 
+    # Enrich equity positions with actual daily stock prices
+    current_df = _enrich_current_df_with_daily_prices_bulk(client, current_df, user_accounts, selected_account)
+
     # ------------------------------------------------------------------
     # Build per-symbol data
     # ------------------------------------------------------------------
@@ -1075,6 +1461,7 @@ def symbols_detail():
 
         # Chart data
         chart = _build_chart_data(group, sym_current)
+        chart = _add_underlying_price_to_chart(client, chart, symbol, user_accounts, selected_account)
         chart_data_list.append(chart)
 
         # Trade table rows (convert dates to str for Jinja)
@@ -1335,6 +1722,9 @@ def accounts():
         current_df = current_df[current_df["account"] == selected_account]
         strat_class_df = strat_class_df[strat_class_df["account"] == selected_account]
         strat_summary_df = strat_summary_df[strat_summary_df["account"] == selected_account]
+
+    # Enrich equity positions with actual daily stock prices
+    current_df = _enrich_current_df_with_daily_prices_bulk(client, current_df, user_accounts, selected_account)
 
     # ------------------------------------------------------------------
     # KPIs from balances

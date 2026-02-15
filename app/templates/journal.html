@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .journal-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .journal-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .journal-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        margin-bottom: 1rem;
+        transition: transform .1s;
+    }
+    .journal-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+    .journal-tag { font-size: .7rem; padding: .2rem .5rem; border-radius: 6px; background: #e9ecef; color: #495057; }
+    .journal-mood { font-size: .75rem; color: #6c757d; }
+    .confidence-badge { font-weight: 700; min-width: 2rem; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="journal-hero d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div>
+        <h1>Trade Journal</h1>
+        <p class="mb-0 opacity-90">Log your trades with thesis, tags, confidence & mood. Correlate behavior with outcomes.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('journal_export') }}" class="btn btn-outline-light btn-sm" title="Export your journal — never lose your data">Export</a>
+        <a href="{{ url_for('journal_import') }}" class="btn btn-outline-light btn-sm">Import</a>
+        <a href="{{ url_for('journal_new') }}" class="btn btn-light">+ New Entry</a>
+    </div>
+</div>
+
+<form method="get" class="row g-2 mb-4">
+    <div class="col-auto">
+        <input type="text" name="symbol" class="form-control form-control-sm" placeholder="Symbol" value="{{ symbol_filter }}">
+    </div>
+    <div class="col-auto">
+        <input type="text" name="strategy" class="form-control form-control-sm" placeholder="Strategy" value="{{ strategy_filter }}">
+    </div>
+    <div class="col-auto">
+        <select name="tag" class="form-select form-select-sm">
+            <option value="">All tags</option>
+            {% for t in tag_options %}
+            <option value="{{ t }}" {{ 'selected' if tag_filter == t }}>{{ t | replace('_', ' ') | title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+        <a href="{{ url_for('journal') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </div>
+</form>
+
+{% if entries %}
+<div class="row">
+    {% for e in entries %}
+    <div class="col-12">
+        <a href="{{ url_for('journal_edit', entry_id=e.id) }}" class="text-decoration-none text-dark">
+            <div class="card journal-card">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <span class="fw-bold">{{ e.symbol }}</span>
+                            <span class="text-muted">· {{ e.strategy }}</span>
+                            <span class="text-muted small ms-1">{{ e.account }}</span>
+                            <span class="text-muted small ms-2">{{ e.trade_open_date }}</span>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            {% if e.confidence %}
+                            <span class="badge bg-secondary confidence-badge">{{ e.confidence }}/10</span>
+                            {% endif %}
+                            {% if e.mood %}
+                            <span class="journal-mood">{{ e.mood }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if e.thesis %}
+                    <p class="mb-1 mt-2 small text-muted">{{ e.thesis[:150] }}{% if e.thesis|length > 150 %}…{% endif %}</p>
+                    {% endif %}
+                    {% if e.tags %}
+                    <div class="d-flex flex-wrap gap-1 mt-2">
+                        {% for tag in e.tags %}
+                        <span class="journal-tag">{{ tag | replace('_', ' ') }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">No journal entries yet</h5>
+        <p class="text-muted mb-0">Start logging your trades with thesis, tags, confidence, and mood to build your behavioral dataset.</p>
+        <a href="{{ url_for('journal_new') }}" class="btn btn-primary mt-3">Create your first entry</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

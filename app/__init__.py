@@ -1,9 +1,14 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_login import LoginManager
 from config import Config
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("404.html", title="Page not found"), 404
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -30,3 +35,6 @@ from app import auth
 from app import upload
 from app import insights
 from app import taxes
+from app import journal
+from app import weekly_review
+from app import schwab

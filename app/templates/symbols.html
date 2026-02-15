@@ -91,8 +91,8 @@
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-warning">
-    <strong>No accounts linked.</strong>
-    <a href="{{ url_for('upload') }}">Upload data or claim an existing account</a> to see your positions.
+    <strong>No data yet.</strong>
+    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see daily position detail.
 </div>
 {% endif %}
 
@@ -395,6 +395,47 @@
                 borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
                 fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
             });
+            var hasUnderlyingPrice = d.underlying_price && d.underlying_price.some(function(v) { return v != null; });
+            if (hasUnderlyingPrice) {
+                datasets.push({
+                    label: 'Stock Price', data: d.underlying_price,
+                    borderColor: '#fd7e14', tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5,
+                    yAxisID: 'yPrice'
+                });
+            }
+
+            var scalesConfig = {
+                x: {
+                    type: 'category',
+                    ticks: { maxTicksLimit: 12, maxRotation: 45 },
+                    grid: { display: false }
+                },
+                y: {
+                    ticks: {
+                        callback: function (v) {
+                            return '$' + (Math.abs(v) >= 1000
+                                ? (v / 1000).toFixed(1) + 'k'
+                                : v.toFixed(0));
+                        }
+                    },
+                    grid: {
+                        color: function (ctx) {
+                            return ctx.tick.value === 0 ? '#333' : '#e9ecef';
+                        }
+                    }
+                }
+            };
+            if (hasUnderlyingPrice) {
+                var priceVals = d.underlying_price.filter(function(v) { return v != null; });
+                scalesConfig.yPrice = {
+                    type: 'linear',
+                    position: 'right',
+                    min: priceVals.length ? Math.min.apply(null, priceVals) * 0.98 : 0,
+                    max: priceVals.length ? Math.max.apply(null, priceVals) * 1.02 : 100,
+                    ticks: { callback: function(v) { return '$' + v.toFixed(2); } },
+                    grid: { display: false }
+                };
+            }
 
             chartInstances[idx] = new Chart(canvas, {
                 type: 'line',
@@ -417,27 +458,7 @@
                             }
                         }
                     },
-                    scales: {
-                        x: {
-                            type: 'category',
-                            ticks: { maxTicksLimit: 12, maxRotation: 45 },
-                            grid: { display: false }
-                        },
-                        y: {
-                            ticks: {
-                                callback: function (v) {
-                                    return '$' + (Math.abs(v) >= 1000
-                                        ? (v / 1000).toFixed(1) + 'k'
-                                        : v.toFixed(0));
-                                }
-                            },
-                            grid: {
-                                color: function (ctx) {
-                                    return ctx.tick.value === 0 ? '#333' : '#e9ecef';
-                                }
-                            }
-                        }
-                    }
+                    scales: scalesConfig
                 }
             });
         });

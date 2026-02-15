@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h2 class="mb-1">Weekly Review</h2>
+        <p class="text-muted mb-0 small">Auto-generated every Sunday. Build the routine.</p>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if review and not error %}
+<div class="row">
+    <!-- Week summary -->
+    <div class="col-12 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <span class="badge bg-secondary">{{ week_start }} → {{ week_end }}</span>
+                    <span class="text-muted">{{ review.num_trades }} closed trades</span>
+                    <span class="{% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %} fw-bold">
+                        ${{ "{:,.2f}".format(review.total_pnl or 0) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Best Trade</div>
+            <div class="card-body">
+                {% if review.best_trade %}
+                <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}" class="text-decoration-none">
+                    <strong>{{ review.best_trade.symbol }}</strong> {{ review.best_trade.strategy }}
+                </a>
+                <p class="mb-0 mt-1 text-positive">${{ "{:,.2f}".format(review.best_trade.total_pnl) }}</p>
+                <small class="text-muted">{{ review.best_trade.close_date }}</small>
+                {% else %}
+                <p class="text-muted mb-0">No closed trades this week.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Worst Trade</div>
+            <div class="card-body">
+                {% if review.worst_trade %}
+                <a href="{{ url_for('position_detail', symbol=review.worst_trade.symbol) }}" class="text-decoration-none">
+                    <strong>{{ review.worst_trade.symbol }}</strong> {{ review.worst_trade.strategy }}
+                </a>
+                <p class="mb-0 mt-1 text-negative">${{ "{:,.2f}".format(review.worst_trade.total_pnl) }}</p>
+                <small class="text-muted">{{ review.worst_trade.close_date }}</small>
+                {% else %}
+                <p class="text-muted mb-0">No closed trades this week.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Largest Mistake</div>
+            <div class="card-body">
+                {% if review.largest_mistake %}
+                <a href="{{ url_for('position_detail', symbol=review.largest_mistake.symbol) }}" class="text-decoration-none">
+                    <strong>{{ review.largest_mistake.symbol }}</strong> {{ review.largest_mistake.strategy }}
+                </a>
+                <p class="mb-0 mt-1 text-negative">${{ "{:,.2f}".format(review.largest_mistake.total_pnl) }}</p>
+                <small class="text-muted">{{ review.largest_mistake.close_date }}</small>
+                <p class="mt-2 mb-0"><a href="{{ url_for('journal_new', account=review.largest_mistake.account, symbol=review.largest_mistake.symbol, strategy=review.largest_mistake.strategy) }}" class="btn btn-sm btn-outline-secondary">Journal this trade</a></p>
+                {% else %}
+                <p class="text-muted mb-0">No losers this week. Clean week.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Most Consistent Strategy</div>
+            <div class="card-body">
+                {% if review.most_consistent_strategy %}
+                <p class="mb-0"><strong>{{ review.most_consistent_strategy.strategy }}</strong></p>
+                <p class="mb-0 text-positive">{{ "{:.0f}".format(review.most_consistent_strategy.win_rate * 100) }}% win rate ({{ review.most_consistent_strategy.trades }} trades)</p>
+                <small class="text-muted">${{ "{:,.2f}".format(review.most_consistent_strategy.total_pnl) }} total</small>
+                {% else %}
+                <p class="text-muted mb-0">Need at least 2 closed trades per strategy.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Risk Drift</div>
+            <div class="card-body">
+                <p class="mb-0">New positions opened:</p>
+                <p class="mb-0"><strong>{{ review.risk_drift.this_week_opens }}</strong> this week vs <strong>{{ review.risk_drift.prev_week_opens }}</strong> last week</p>
+                {% if review.risk_drift.diff > 0 %}
+                <small class="text-warning">+{{ review.risk_drift.diff }} more — stepping up?</small>
+                {% elif review.risk_drift.diff < 0 %}
+                <small class="text-muted">{{ review.risk_drift.diff }} — stepping back</small>
+                {% else %}
+                <small class="text-muted">Same pace</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 fw-bold">Emotional Drift</div>
+            <div class="card-body">
+                {% if review.emotional_drift.entries_this_week > 0 or review.emotional_drift.entries_prev_week > 0 %}
+                <p class="mb-1 small">This week: {% for mood, count in review.emotional_drift.this_week.items() %}{{ mood }} ({{ count }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</p>
+                <p class="mb-0 small text-muted">Last week: {% for mood, count in review.emotional_drift.prev_week.items() %}{{ mood }} ({{ count }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</p>
+                {% else %}
+                <p class="text-muted mb-0 small">Log trades in your journal to see mood patterns.</p>
+                <a href="{{ url_for('journal') }}" class="btn btn-sm btn-outline-secondary mt-1">Go to Journal</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 mb-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 fw-bold">Behavioral Anomaly</div>
+            <div class="card-body">
+                {% if review.behavioral_anomaly %}
+                <p class="small text-warning mb-2">Trades tagged FOMO, revenge, or boredom that lost money:</p>
+                {% for a in review.behavioral_anomaly %}
+                <div class="border-start border-warning border-3 ps-2 mb-2">
+                    <a href="{{ url_for('position_detail', symbol=a.symbol) }}"><strong>{{ a.symbol }}</strong></a> {{ a.strategy }}
+                    — {{ a.tags|join(", ") }} → ${{ "{:,.2f}".format(a.total_pnl) }}
+                    {% if a.reflection %}<p class="small text-muted mb-0 mt-1">{{ a.reflection }}</p>{% endif %}
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted mb-0">No risky-tag losses this week. Or no journal entries matched.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% elif not error %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+        <p class="text-muted">No data for this week. Close some trades and check back.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

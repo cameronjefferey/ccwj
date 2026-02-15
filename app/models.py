@@ -53,6 +53,50 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS journal_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            trade_open_date TEXT NOT NULL,
+            trade_close_date TEXT,
+            trade_symbol TEXT,
+            thesis TEXT,
+            notes TEXT,
+            reflection TEXT,
+            confidence INTEGER CHECK (confidence >= 1 AND confidence <= 10),
+            mood TEXT,
+            sleep_quality INTEGER CHECK (sleep_quality IS NULL OR (sleep_quality >= 1 AND sleep_quality <= 10)),
+            entry_time TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS journal_tags (
+            journal_entry_id INTEGER NOT NULL,
+            tag TEXT NOT NULL,
+            PRIMARY KEY (journal_entry_id, tag),
+            FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schwab_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_hash TEXT NOT NULL,
+            account_number TEXT NOT NULL,
+            account_name TEXT,
+            token_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, account_number),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -199,6 +243,253 @@ def remove_account_for_user(user_id, account_name):
     conn.close()
 
 
+# ------------------------------------------------------------------
+# Trade Journal
+# ------------------------------------------------------------------
+
+JOURNAL_TAG_OPTIONS = [
+    "fomo", "earnings_play", "boredom_trade", "revenge_trade", "high_conviction",
+    "scaling_in", "scaling_out", "hedge", "thesis_break", "roll", "assignment_plan",
+]
+JOURNAL_MOOD_OPTIONS = [
+    "calm", "anxious", "euphoric", "frustrated", "neutral", "focused", "tired", "confident",
+]
+
+
+def create_journal_entry(user_id, account, symbol, strategy, trade_open_date, **kwargs):
+    """Create a journal entry. Returns the new entry id."""
+    conn = _get_db()
+    conn.execute(
+        """INSERT INTO journal_entries (
+            user_id, account, symbol, strategy, trade_open_date,
+            trade_close_date, trade_symbol, thesis, notes, reflection,
+            confidence, mood, sleep_quality, entry_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            user_id, account, symbol, strategy, trade_open_date,
+            kwargs.get("trade_close_date"),
+            kwargs.get("trade_symbol"),
+            kwargs.get("thesis") or "",
+            kwargs.get("notes") or "",
+            kwargs.get("reflection") or "",
+            kwargs.get("confidence"),
+            kwargs.get("mood"),
+            kwargs.get("sleep_quality"),
+            kwargs.get("entry_time"),
+        ),
+    )
+    entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for tag in kwargs.get("tags") or []:
+        if tag and str(tag).strip():
+            conn.execute(
+                "INSERT OR IGNORE INTO journal_tags (journal_entry_id, tag) VALUES (?, ?)",
+                (entry_id, str(tag).strip().lower()),
+            )
+    conn.commit()
+    conn.close()
+    return entry_id
+
+
+def update_journal_entry(entry_id, user_id, **kwargs):
+    """Update a journal entry. Returns True if updated."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT id FROM journal_entries WHERE id = ? AND user_id = ?",
+        (entry_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    conn.execute(
+        """UPDATE journal_entries SET
+            trade_close_date = COALESCE(?, trade_close_date),
+            trade_symbol = COALESCE(?, trade_symbol),
+            thesis = COALESCE(?, thesis),
+            notes = COALESCE(?, notes),
+            reflection = COALESCE(?, reflection),
+            confidence = ?,
+            mood = ?,
+            sleep_quality = ?,
+            entry_time = COALESCE(?, entry_time),
+            updated_at = datetime('now')
+        WHERE id = ?""",
+        (
+            kwargs.get("trade_close_date"),
+            kwargs.get("trade_symbol"),
+            kwargs.get("thesis"),
+            kwargs.get("notes"),
+            kwargs.get("reflection"),
+            kwargs.get("confidence"),
+            kwargs.get("mood"),
+            kwargs.get("sleep_quality"),
+            kwargs.get("entry_time"),
+            entry_id,
+        ),
+    )
+
+    if "tags" in kwargs:
+        conn.execute("DELETE FROM journal_tags WHERE journal_entry_id = ?", (entry_id,))
+        for tag in kwargs.get("tags") or []:
+            if tag and str(tag).strip():
+                conn.execute(
+                    "INSERT INTO journal_tags (journal_entry_id, tag) VALUES (?, ?)",
+                    (entry_id, str(tag).strip().lower()),
+                )
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_journal_entry(entry_id, user_id):
+    """Return a journal entry with tags, or None."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM journal_entries WHERE id = ? AND user_id = ?",
+        (entry_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None
+    tags = [r[0] for r in conn.execute(
+        "SELECT tag FROM journal_tags WHERE journal_entry_id = ?", (entry_id,)
+    ).fetchall()]
+    conn.close()
+    d = dict(row)
+    d["tags"] = tags
+    return d
+
+
+def list_journal_entries(user_id, symbol=None, strategy=None, tag=None, start_date=None, end_date=None, limit=100):
+    """List journal entries for a user, optionally filtered by symbol, strategy, tag, date range."""
+    conn = _get_db()
+    q = """
+        SELECT e.*, GROUP_CONCAT(t.tag) as tags_csv
+        FROM journal_entries e
+        LEFT JOIN journal_tags t ON e.id = t.journal_entry_id
+        WHERE e.user_id = ?
+    """
+    params = [user_id]
+    if symbol:
+        q += " AND e.symbol = ?"
+        params.append(symbol)
+    if strategy:
+        q += " AND e.strategy = ?"
+        params.append(strategy)
+    if tag:
+        q += " AND EXISTS (SELECT 1 FROM journal_tags t2 WHERE t2.journal_entry_id = e.id AND t2.tag = ?)"
+        params.append(tag)
+    if start_date:
+        q += " AND e.trade_open_date >= ?"
+        params.append(str(start_date))
+    if end_date:
+        q += " AND e.trade_open_date <= ?"
+        params.append(str(end_date))
+    q += " GROUP BY e.id ORDER BY e.trade_open_date DESC, e.created_at DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["tags"] = [t.strip() for t in (d.get("tags_csv") or "").split(",") if t.strip()]
+        del d["tags_csv"]
+        result.append(d)
+    return result
+
+
+def delete_journal_entry(entry_id, user_id):
+    """Delete a journal entry. Returns True if deleted."""
+    conn = _get_db()
+    cur = conn.execute(
+        "DELETE FROM journal_entries WHERE id = ? AND user_id = ?",
+        (entry_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+# ------------------------------------------------------------------
+# Schwab API connections
+# ------------------------------------------------------------------
+
+
+def save_schwab_connection(user_id, account_hash, account_number, account_name, token_json):
+    """Save or update a Schwab connection. Links account to user."""
+    import json
+    conn = _get_db()
+    conn.execute(
+        """INSERT INTO schwab_connections
+           (user_id, account_hash, account_number, account_name, token_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, account_number) DO UPDATE SET
+           account_hash = excluded.account_hash,
+           account_name = excluded.account_name,
+           token_json = excluded.token_json,
+           updated_at = datetime('now')""",
+        (user_id, account_hash, account_number, account_name or account_number, token_json),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_schwab_token(user_id, account_number, token_json):
+    """Update the stored token for a Schwab connection (e.g. after refresh)."""
+    conn = _get_db()
+    conn.execute(
+        "UPDATE schwab_connections SET token_json = ?, updated_at = datetime('now') "
+        "WHERE user_id = ? AND account_number = ?",
+        (token_json, user_id, account_number),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_schwab_connections(user_id):
+    """Return list of Schwab connections for a user."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT account_number, account_name, created_at FROM schwab_connections WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_schwab_connection(user_id, account_number=None):
+    """Return token_json and account_hash for a user's Schwab connection.
+    If account_number is None, returns the first connection."""
+    conn = _get_db()
+    if account_number:
+        row = conn.execute(
+            "SELECT account_hash, account_number, account_name, token_json FROM schwab_connections "
+            "WHERE user_id = ? AND account_number = ?",
+            (user_id, account_number),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT account_hash, account_number, account_name, token_json FROM schwab_connections "
+            "WHERE user_id = ? LIMIT 1",
+            (user_id,),
+        ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def remove_schwab_connection(user_id, account_number):
+    """Remove a Schwab connection."""
+    conn = _get_db()
+    conn.execute(
+        "DELETE FROM schwab_connections WHERE user_id = ? AND account_number = ?",
+        (user_id, account_number),
+    )
+    conn.commit()
+    conn.close()
+
+
 def is_admin(username):
     """Check if a username is in the ADMIN_USERS environment variable."""
     admin_env = os.environ.get("ADMIN_USERS", "")
@@ -255,3 +546,41 @@ def ensure_demo_user():
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
         add_account_for_user(demo.id, DEMO_ACCOUNT)
+        _ensure_demo_insight(demo.id)
+
+
+def _ensure_demo_insight(demo_user_id):
+    """Seed a pre-generated insight for the demo user so it's ready on first visit."""
+    if get_insight_for_user(demo_user_id):
+        return  # already has one
+    summary = (
+        "You're running a diversified options portfolio with Covered Calls, Cash-Secured Puts, "
+        "and Wheels on popular names like AAPL, NVDA, META, and GOOGL. Strong premium collection "
+        "with room to improve win rate on a few positions."
+    )
+    full_analysis = """## Summary
+
+You're running a solid, diversified options portfolio with Covered Calls, Cash-Secured Puts, and Wheels on popular names like AAPL, NVDA, META, and GOOGL. Premium collection is strong, but a few positions could use tighter management.
+
+## Trading Style Overview
+
+You favor income strategies: Covered Calls, Cash-Secured Puts, and the Wheel. Holdings span tech (AAPL, NVDA, META, GOOGL), consumer (COST), and ETFs (SPY). You hold positions for weeks to months and collect premium consistently. Assignment and expiration are both part of your normal flow.
+
+## What's Working
+
+- **Premium collection** — You're collecting steady premium from short calls and puts across several symbols.
+- **Diversification** — Multiple strategies and sectors reduce single-position risk.
+- **Wheel execution** — Your META wheel (put assignment → covered call) shows good discipline.
+
+## What Needs Attention
+
+- **Win rate on some symbols** — A few positions have seen more rollovers or buybacks than ideal.
+- **Open SPY put** — Monitor the short put; consider rolling or closing if it moves against you.
+- **Position sizing** — Ensure no single position dominates the portfolio.
+
+## Actionable Suggestions
+
+1. **Review open options weekly** — Check theta decay and assignment risk on your short GOOGL call and SPY put.
+2. **Track cost basis on assigned shares** — When puts assign, log your effective cost for better tax reporting.
+3. **Consider adding more symbols** — Spreading premium across more names can smooth returns and reduce concentration risk."""
+    save_insight(demo_user_id, summary, full_analysis)

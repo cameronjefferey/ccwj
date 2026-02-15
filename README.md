@@ -72,6 +72,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Environment
+
+```bash
+cp .env.example .env
+# Edit .env: add SECRET_KEY (required), GEMINI_API_KEY (optional), HAPPYTRADER_USERS (optional)
+```
+
 ### BigQuery Auth
 
 ```bash
@@ -93,6 +100,14 @@ python -m flask run
 ```
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
+
+### Deployment (e.g. Render)
+
+1. Set environment variables: `SECRET_KEY`, `GEMINI_API_KEY` (optional), `HAPPYTRADER_USERS`
+2. For BigQuery: set `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` with base64-encoded service account JSON
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `gunicorn -b 0.0.0.0:$PORT wsgi:app`
+5. Run dbt (e.g. in a separate job or on deploy): `cd dbt && dbt seed && dbt build`
 
 ### Demo Environment
 

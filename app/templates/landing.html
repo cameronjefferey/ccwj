@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block meta_tags %}
+<meta name="description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, AI insights, and tax-ready reports—free.">
+<meta property="og:description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, AI insights, and tax-ready reports—free.">
+{% endblock %}
+
 {% block head %}
 <style>
     .landing-hero {
@@ -232,7 +237,9 @@
     </div>
 </div>
 
-{# ── Footer ── #}
+{% endblock %}
+
+{% block footer %}
 <footer class="landing-footer">
     <div class="d-flex flex-wrap justify-content-center gap-4">
         <a href="{{ url_for('demo_start') }}">Try Demo</a>
@@ -243,5 +250,4 @@
     </div>
     <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Options strategies made clear.</p>
 </footer>
-
 {% endblock %}

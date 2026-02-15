@@ -67,7 +67,7 @@
                     <h1>Tax Center</h1>
                     <p class="mb-0 opacity-90">Capital gains classification, wash sale detection, and dividend income summary.</p>
                 </div>
-                <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+                <form method="get" class="d-flex gap-2 align-items-center flex-wrap" id="taxFiltersForm">
                     {% if years %}
                     <select name="year" class="form-select form-select-sm"
                             style="background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2); min-width:100px"
@@ -390,6 +390,14 @@
             document.querySelectorAll('#gainsTable tbody tr').forEach(function (row) {
                 row.style.display = row.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
             });
+        });
+    }
+    var taxForm = document.getElementById('taxFiltersForm');
+    if (taxForm) {
+        taxForm.addEventListener('submit', function () {
+            var selects = taxForm.querySelectorAll('select');
+            selects.forEach(function (s) { s.disabled = true; });
+            taxForm.insertAdjacentHTML('beforeend', '<span class="ms-2 text-white-50"><span class="spinner-border spinner-border-sm me-1"></span>Loading...</span>');
         });
     }
 })();

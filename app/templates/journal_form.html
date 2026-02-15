@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .journal-form-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .journal-form-hero h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: .25rem; }
+    .form-section { margin-bottom: 1.5rem; }
+    .form-section h6 { font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .75rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="journal-form-hero">
+    <h1>{{ 'Edit' if entry else 'New' }} Journal Entry</h1>
+    <p class="mb-0 opacity-90 small">Thesis, tags, confidence, mood — correlate behavior with outcomes.</p>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <form method="POST" class="card border-0 shadow-sm p-4">
+            <div class="form-section">
+                <h6>Trade</h6>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label small">Account</label>
+                        <select name="account" class="form-select" required {{ 'disabled' if entry }}>
+                            {% for a in accounts %}
+                            <option value="{{ a }}" {{ 'selected' if (entry and entry.account == a) or (prefill and prefill.get('account') == a) }}>{{ a }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if entry %}<input type="hidden" name="account" value="{{ entry.account }}">{% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Symbol</label>
+                        <input type="text" name="symbol" class="form-control" required
+                               value="{{ entry.symbol if entry else (prefill.get('symbol', '') if prefill else '') }}"
+                               {{ 'readonly' if entry }} placeholder="AAPL">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Strategy</label>
+                        <input type="text" name="strategy" class="form-control" required
+                               value="{{ entry.strategy if entry else (prefill.get('strategy', '') if prefill else '') }}"
+                               {{ 'readonly' if entry }} placeholder="Covered Call">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Open Date</label>
+                        <input type="date" name="trade_open_date" class="form-control" required
+                               value="{{ entry.trade_open_date if entry else '' }}"
+                               {{ 'readonly' if entry }}>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label small">Close Date <span class="text-muted">(optional)</span></label>
+                        <input type="date" name="trade_close_date" class="form-control"
+                               value="{{ entry.trade_close_date if entry else '' }}">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small">Trade Symbol <span class="text-muted">(e.g. AAPL 12/20/2025 180 C)</span></label>
+                        <input type="text" name="trade_symbol" class="form-control"
+                               value="{{ entry.trade_symbol if entry else '' }}" placeholder="For option-level granularity">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6>Thesis & Notes</h6>
+                <div class="mb-2">
+                    <label class="form-label small">Thesis — Why are you taking this trade?</label>
+                    <textarea name="thesis" class="form-control" rows="2" placeholder="e.g. Bullish on sector rotation, IV crush play post-earnings">{{ entry.thesis if entry else '' }}</textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Notes</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Any additional notes">{{ entry.notes if entry else '' }}</textarea>
+                </div>
+                <div>
+                    <label class="form-label small">Post-Trade Reflection <span class="text-muted">(add when closed)</span></label>
+                    <textarea name="reflection" class="form-control" rows="2" placeholder="What did you learn?">{{ entry.reflection if entry else '' }}</textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6>Behavioral</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Confidence (1–10)</label>
+                        <select name="confidence" class="form-select">
+                            <option value="">—</option>
+                            {% for i in range(1, 11) %}
+                            <option value="{{ i }}" {{ 'selected' if entry and entry.confidence == i }}>{{ i }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Mood</label>
+                        <select name="mood" class="form-select">
+                            <option value="">—</option>
+                            {% for m in mood_options %}
+                            <option value="{{ m }}" {{ 'selected' if entry and entry.mood == m }}>{{ m | title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Sleep Quality (1–10)</label>
+                        <select name="sleep_quality" class="form-select">
+                            <option value="">—</option>
+                            {% for i in range(1, 11) %}
+                            <option value="{{ i }}" {{ 'selected' if entry and entry.sleep_quality == i }}>{{ i }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label small">Time of Entry</label>
+                        <input type="time" name="entry_time" class="form-control" value="{{ entry.entry_time if entry else '' }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6>Tags</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for t in tag_options %}
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="tags" value="{{ t }}" id="tag-{{ t }}"
+                               {{ 'checked' if entry and t in entry.tags }}>
+                        <label class="form-check-label small" for="tag-{{ t }}">{{ t | replace('_', ' ') | title }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-4">
+                <div>
+                    {% if entry %}
+                    <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    {% else %}
+                    <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Create Entry</button>
+                    {% endif %}
+                </div>
+                {% if entry %}
+                <form method="POST" action="{{ url_for('journal_delete', entry_id=entry.id) }}" class="d-inline" onsubmit="return confirm('Delete this journal entry?');">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                </form>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
