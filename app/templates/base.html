@@ -39,14 +39,8 @@
         .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.1); }
         .kpi-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
         .kpi-value { font-size: 1.5rem; font-weight: 700; }
-        .nav-divider {
-            width: 1px; min-width: 1px; height: 1.25rem; background: rgba(255,255,255,.25);
-            margin: 0 .5rem; align-self: center; border-radius: 1px; flex-shrink: 0;
-            list-style: none; pointer-events: none;
-        }
-        @media (max-width: 991.98px) {
-            .nav-divider { display: none; }
-        }
+        .navbar .dropdown-menu { border: none; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
+        .navbar .dropdown-menu-dark .dropdown-item:hover { background: rgba(255,255,255,.1); }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -62,18 +56,33 @@
             </button>
             <div class="collapse navbar-collapse" id="navContent">
                 {% if current_user.is_authenticated %}
-                <ul class="navbar-nav me-auto align-items-center">
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/positions">Positions</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/symbols">Daily Detail</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/accounts">Account Performance</a></li>
-                    <li class="nav-divider" aria-hidden="true"></li>
-                    <li class="nav-item"><a class="nav-link" href="/upload">Upload</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('insights') }}">Insights</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('taxes') }}">Tax Center</a></li>
-                    <li class="nav-divider" aria-hidden="true"></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('journal') }}">Journal</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('weekly_review') }}">Weekly Review</a></li>
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Portfolio</a>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                            <li><a class="dropdown-item" href="/positions">Positions</a></li>
+                            <li><a class="dropdown-item" href="/symbols">Daily Detail</a></li>
+                            <li><a class="dropdown-item" href="/accounts">Account Performance</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Tools</a>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item" href="/upload">Upload</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('insights') }}">Insights</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('benchmark') }}">If You Did Nothing</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('taxes') }}">Tax Center</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Reflect</a>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item" href="{{ url_for('journal') }}">Journal</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('weekly_review') }}">Weekly Review</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('mirror_score') }}">Mirror Score</a></li>
+                        </ul>
+                    </li>
                 </ul>
                 <ul class="navbar-nav">
                     <li class="nav-item">

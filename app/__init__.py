@@ -38,3 +38,5 @@ from app import taxes
 from app import journal
 from app import weekly_review
 from app import schwab
+from app import benchmark
+from app import mirror_score

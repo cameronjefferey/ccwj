@@ -97,6 +97,23 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS weekly_mirror_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            week_start_date TEXT NOT NULL,
+            discipline_score REAL NOT NULL,
+            intent_score REAL NOT NULL,
+            risk_alignment_score REAL NOT NULL,
+            consistency_score REAL NOT NULL,
+            mirror_score REAL NOT NULL,
+            confidence_level TEXT NOT NULL,
+            diagnostic_sentence TEXT,
+            generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, week_start_date),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -228,6 +245,53 @@ def get_insight_for_user(user_id):
         "WHERE user_id = ? ORDER BY generated_at DESC LIMIT 1",
         (user_id,),
     ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+# ------------------------------------------------------------------
+# Mirror Score (behavioral diagnostic)
+# ------------------------------------------------------------------
+
+def save_mirror_score(
+    user_id, week_start_date,
+    discipline_score, intent_score, risk_alignment_score, consistency_score,
+    mirror_score, confidence_level, diagnostic_sentence=None,
+):
+    """Save or replace weekly mirror score for a user."""
+    conn = _get_db()
+    conn.execute(
+        """INSERT OR REPLACE INTO weekly_mirror_scores
+           (user_id, week_start_date, discipline_score, intent_score, risk_alignment_score,
+            consistency_score, mirror_score, confidence_level, diagnostic_sentence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            user_id, week_start_date,
+            discipline_score, intent_score, risk_alignment_score, consistency_score,
+            mirror_score, confidence_level, diagnostic_sentence,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_mirror_score_for_user(user_id, week_start_date=None):
+    """Return mirror score for user. If week_start_date is None, return latest."""
+    conn = _get_db()
+    if week_start_date:
+        row = conn.execute(
+            """SELECT week_start_date, discipline_score, intent_score, risk_alignment_score,
+                      consistency_score, mirror_score, confidence_level, diagnostic_sentence, generated_at
+               FROM weekly_mirror_scores WHERE user_id = ? AND week_start_date = ?""",
+            (user_id, week_start_date),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """SELECT week_start_date, discipline_score, intent_score, risk_alignment_score,
+                      consistency_score, mirror_score, confidence_level, diagnostic_sentence, generated_at
+               FROM weekly_mirror_scores WHERE user_id = ? ORDER BY week_start_date DESC LIMIT 1""",
+            (user_id,),
+        ).fetchone()
     conn.close()
     return dict(row) if row else None
 

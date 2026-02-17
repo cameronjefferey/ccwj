@@ -89,11 +89,22 @@ def journal_new():
         flash("Journal entry created.", "success")
         return redirect(url_for("journal"))
 
-    # Pre-fill from query params (e.g. from position detail)
+    # Pre-fill from query params (e.g. from position detail / trade history)
     account = request.args.get("account", accounts[0] if accounts else "")
     symbol = request.args.get("symbol", "")
     strategy = request.args.get("strategy", "")
+    trade_open_date = request.args.get("trade_open_date", "")
+    trade_close_date = request.args.get("trade_close_date", "")
+    trade_symbol = request.args.get("trade_symbol", "")
 
+    prefill = {
+        "account": account,
+        "symbol": symbol,
+        "strategy": strategy,
+        "trade_open_date": trade_open_date,
+        "trade_close_date": trade_close_date,
+        "trade_symbol": trade_symbol,
+    }
     return render_template(
         "journal_form.html",
         title="New Journal Entry",
@@ -101,7 +112,7 @@ def journal_new():
         accounts=accounts,
         tag_options=JOURNAL_TAG_OPTIONS,
         mood_options=JOURNAL_MOOD_OPTIONS,
-        prefill={"account": account, "symbol": symbol, "strategy": strategy},
+        prefill=prefill,
     )
 
 

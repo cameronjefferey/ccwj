@@ -277,6 +277,7 @@
                     <th>Price</th>
                     <th>Fees</th>
                     <th>Amount</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -294,6 +295,12 @@
                     <td>${{ "{:,.2f}".format(t.fees) }}</td>
                     <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
                         ${{ "{:,.2f}".format(t.amount) }}
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('journal_new', account=t.account, symbol=symbol, strategy=(strategy_rows[0].strategy if strategy_rows else ''), trade_open_date=kpis.first_trade or '', trade_close_date=(kpis.last_trade if overall_status == 'Closed' else '') or '', trade_symbol=(t.trade_symbol if t.instrument_type in ('Call', 'Put') else '') or '') }}"
+                           class="btn btn-sm btn-outline-secondary py-0 px-1" title="Journal this trade">
+                            Journal
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}

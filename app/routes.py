@@ -1135,20 +1135,28 @@ def _build_chart_data_with_daily_equity(group, sym_current, daily_prices):
     dividend_by_date = _daily_sums(dividend_trades)
     other_by_date = _daily_sums(other_trades)
 
-    # All dates: trade dates + price dates
-    all_dates = set()
-    all_dates.update(option_by_date)
-    all_dates.update(dividend_by_date)
-    all_dates.update(other_by_date)
-    for d in daily_prices:
-        try:
-            all_dates.add(date.fromisoformat(d[:10]))
-        except Exception:
-            pass
+    # Trade-only dates (to determine position close)
+    trade_dates = set()
+    trade_dates.update(option_by_date)
+    trade_dates.update(dividend_by_date)
+    trade_dates.update(other_by_date)
     if not equity_trades.empty:
         for d in equity_trades["trade_date"].dropna().unique():
             td = d.date() if hasattr(d, "date") and callable(getattr(d, "date")) else (d if isinstance(d, date) else date.fromisoformat(str(d)[:10]))
-            all_dates.add(td)
+            trade_dates.add(td)
+    position_close_date = max(trade_dates) if trade_dates else None
+
+    # All dates: trade dates + price dates (capped at close when position is closed)
+    all_dates = set(trade_dates)
+    position_closed = sym_current.empty
+    for d in daily_prices:
+        try:
+            ddate = date.fromisoformat(d[:10])
+            if position_closed and position_close_date and ddate > position_close_date:
+                continue
+            all_dates.add(ddate)
+        except Exception:
+            pass
 
     if not all_dates:
         return {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
@@ -1209,7 +1217,8 @@ def _build_chart_data_with_daily_equity(group, sym_current, daily_prices):
             eq_val = last_realized + unrealized
         else:
             eq_val = last_realized
-        underlying_price_series.append(round(close_price, 2) if close_price else None)
+        # Only show underlying price when position had equity (not after close or during option-only)
+        underlying_price_series.append(round(close_price, 2) if (close_price and last_shares > 0) else None)
         equity_series.append(round(eq_val, 2))
         options_series.append(round(opt_cum, 2))
         dividends_series.append(round(div_cum, 2))

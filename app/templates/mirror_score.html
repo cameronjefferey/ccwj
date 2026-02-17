@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .mirror-hero {
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #ecf0f1;
+        margin-bottom: 2rem;
+    }
+    .mirror-hero h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: .25rem; }
+    .mirror-hero p { opacity: .85; font-size: .95rem; margin-bottom: 0; }
+    .mirror-card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        padding: 2rem;
+    }
+    .mirror-score-value { font-size: 3rem; font-weight: 700; color: #2c3e50; }
+    .mirror-label { font-size: .85rem; color: #7f8c8d; margin-top: .25rem; }
+    .mirror-accordion .accordion-button {
+        padding: .75rem 1rem;
+        font-size: 1rem;
+        background: #fff;
+        color: #2c3e50;
+    }
+    .mirror-accordion .accordion-button:not(.collapsed) {
+        background: #f8f9fa;
+        box-shadow: none;
+    }
+    .mirror-accordion .accordion-button::after {
+        content: "+";
+        background-image: none;
+        font-size: 1.25rem;
+        font-weight: 400;
+        width: auto;
+        height: auto;
+    }
+    .mirror-accordion .accordion-button:not(.collapsed)::after {
+        content: "−";
+    }
+    .mirror-accordion .accordion-item {
+        border: none;
+        border-bottom: 1px solid #ecf0f1;
+    }
+    .mirror-accordion .accordion-item:last-child { border-bottom: none; }
+    .mirror-accordion .accordion-body {
+        padding: 1rem 1rem 1.25rem;
+        font-size: .9rem;
+        color: #495057;
+    }
+    .mirror-breakdown-item {
+        padding: .5rem 0;
+        border-bottom: 1px solid #eee;
+    }
+    .mirror-breakdown-item:last-child { border-bottom: none; }
+    .mirror-breakdown-name { font-weight: 600; color: #2c3e50; }
+    .mirror-breakdown-score { font-size: .85rem; color: #7f8c8d; }
+    .mirror-breakdown-explanation { font-size: .85rem; margin-top: .25rem; }
+    .mirror-diagnostic {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        font-size: .9rem;
+        color: #495057;
+        margin-top: 1.5rem;
+    }
+    .mirror-confidence { font-size: .8rem; color: #95a5a6; margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mirror-hero">
+    <h1>Mirror Score</h1>
+    <p>Measures how closely your behavior aligns with your own historical process. All metrics are relative to your 30-day baseline.</p>
+</div>
+
+{% if error %}
+<div class="alert alert-secondary">
+    {{ error }}
+</div>
+{% elif score %}
+<div class="mirror-card">
+    <div class="mb-4">
+        <div class="mirror-score-value">{{ score.mirror_score | int }}</div>
+        <div class="mirror-label">{{ score.label }}</div>
+    </div>
+
+    <div class="accordion mirror-accordion" id="mirrorAccordion">
+        {% for key, label in [
+            ('discipline', 'Discipline'),
+            ('intent', 'Intent'),
+            ('risk_alignment', 'Risk Alignment'),
+            ('consistency', 'Consistency')
+        ] %}
+        {% set comp = (score.components or {}).get(key) %}
+        {% set comp_score = comp.score if comp else score[key ~ '_score'] %}
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="heading-{{ key }}">
+                <button class="accordion-button collapsed" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#panel-{{ key }}"
+                        aria-expanded="false" aria-controls="panel-{{ key }}">
+                    <span class="me-auto">{{ label }}</span>
+                    <span class="fw-semibold ms-2">{{ comp_score | int }}</span>
+                </button>
+            </h2>
+            <div id="panel-{{ key }}" class="accordion-collapse collapse"
+                 data-bs-parent="#mirrorAccordion" aria-labelledby="heading-{{ key }}">
+                <div class="accordion-body">
+                    {% if comp and comp.breakdown %}
+                    <p class="small text-muted mb-3">Makeup of this section and why the score is what it is:</p>
+                    {% for item in comp.breakdown %}
+                    <div class="mirror-breakdown-item">
+                        <div class="mirror-breakdown-name">{{ item.name }} <span class="mirror-breakdown-score">({{ item.score }})</span></div>
+                        <div class="mirror-breakdown-explanation">{{ item.explanation }}</div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="small text-muted mb-2">{{ {
+                        'discipline': 'Position size deviation, large outlier frequency, and strategy drift relative to your 30-day baseline.',
+                        'intent': 'Trade clustering, post-loss escalation, and holding time deviation vs baseline.',
+                        'risk_alignment': 'Exposure drift, concentration increase, and risk expansion days vs baseline.',
+                        'consistency': 'Position size variance, daily trade count variance, and strategy switching vs baseline.'
+                    }[key] }}</p>
+                    <p class="small text-muted mb-0">Detailed breakdown available when the score is freshly computed.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="mirror-diagnostic">
+        {{ score.diagnostic_sentence }}
+    </div>
+    <div class="mirror-confidence">
+        Confidence: {{ score.confidence_level }} · Based on {{ score.baseline_trades | default('—') }} trades in baseline
+    </div>
+</div>
+<p class="text-muted small mt-3">
+    Week of {{ score.week_start_date }}. Baseline is the 30 days preceding the week. No P/L or returns are used in this score.
+</p>
+{% else %}
+<div class="alert alert-secondary">
+    No Mirror Score available. Ensure you have trade history and at least 5 trades in your baseline period.
+</div>
+{% endif %}
+{% endblock %}
