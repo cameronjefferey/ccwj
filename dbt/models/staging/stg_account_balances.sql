@@ -13,7 +13,7 @@
 */
 
 with source as (
-    select * from {{ ref('0417_current') }}
+    select * from {{ ref('current_positions') }}
     union all
     select * from {{ ref('demo_current') }}
 ),

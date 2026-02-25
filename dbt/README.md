@@ -21,8 +21,11 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 
 | File | Description |
 |------|-------------|
-| `0417_history.csv` | All historical/closed trades |
-| `0417_current.csv` | Current open positions snapshot |
+| `trade_history.csv` | All historical/closed trades (per-account merge on upload) |
+| `current_positions.csv` | Current open positions snapshot (per-account replace on upload) |
+| `demo_history.csv` | Demo user history |
+| `demo_current.csv` | Demo user current positions |
+| `cflt_prices.csv` | Optional price seed |
 
 ## Usage
 

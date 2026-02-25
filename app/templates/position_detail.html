@@ -59,13 +59,10 @@
             {% endif %}
         </div>
         {% if kpis %}
-        <div class="text-end d-flex flex-column align-items-end gap-2">
-            <a href="{{ url_for('journal_new', symbol=symbol, account=selected_account or (accounts[0] if accounts else ''), strategy=position_rows[0].strategy if position_rows else '') }}" class="btn btn-sm btn-outline-light">📓 Journal this trade</a>
-            <div>
-                <div class="small text-white-50">Total Return</div>
-                <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    ${{ "{:,.2f}".format(kpis.total_return) }}
-                </div>
+        <div class="text-end">
+            <div class="small text-white-50">Total Return</div>
+            <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ "{:,.2f}".format(kpis.total_return) }}
             </div>
         </div>
         {% endif %}
@@ -83,6 +80,55 @@
     </form>
     {% endif %}
 </div>
+
+{# ── Position Narrative ── #}
+{% if kpis %}
+<div class="mb-4 p-4" style="background:#fff; border-radius:16px; box-shadow:0 2px 16px rgba(0,0,0,.05);">
+    <p class="narrative mb-0" style="font-size:1.05rem; line-height:1.7;">
+        You've been trading <strong>{{ symbol }}</strong>
+        {% if strategy_rows|length == 1 %}using <strong>{{ strategy_rows[0].strategy }}</strong>{% elif strategy_rows|length > 1 %}across {{ strategy_rows|length }} strategies ({% for s in strategy_rows[:3] %}{{ s.strategy }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade %} since {{ kpis.first_trade }}{% endif %}.
+        {% if kpis.total_trades > 0 %}{{ kpis.total_trades }} individual trade{{ 's' if kpis.total_trades != 1 }}{% if kpis.num_winners + kpis.num_losers > 0 %} — {{ kpis.num_winners }}W / {{ kpis.num_losers }}L{% endif %}.{% endif %}
+        {% if kpis.avg_days > 0 %}Average hold: {{ kpis.avg_days|int }} days.{% endif %}
+        {% if overall_status == 'Open' %}
+            {% if kpis.unrealized_pnl >= 0 %}
+            Currently sitting on <strong class="text-positive">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> in unrealized gains.
+            {% else %}
+            Currently <strong class="text-negative">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> underwater.
+            {% endif %}
+        {% elif overall_status == 'Closed' %}
+            {% if kpis.total_return >= 0 %}
+            This position is closed with a <strong class="text-positive">${{ "{:,.2f}".format(kpis.total_return) }}</strong> total return.
+            {% else %}
+            This position is closed at a <strong class="text-negative">${{ "{:,.2f}".format(kpis.total_return) }}</strong> loss.
+            {% endif %}
+        {% endif %}
+        {% if kpis.premium_collected > 0 %}
+        You've collected <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong> in premium along the way.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{# ── Reflection Prompt ── #}
+{% if kpis %}
+<div class="prompt-card mb-4" style="background:#f8f4ff; border-left:4px solid #6f42c1; border-radius:0 12px 12px 0; padding:1.25rem 1.5rem;">
+    {% if overall_status == 'Open' %}
+    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">What's your thesis on {{ symbol }}?</div>
+    <p class="small text-muted mb-2">Writing down why you entered helps you know when to exit.</p>
+    {% elif overall_status == 'Closed' and kpis.total_return < 0 %}
+    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">{{ symbol }} lost ${{ "{:,.2f}".format(kpis.total_return|abs) }}. What would you do differently?</div>
+    <p class="small text-muted mb-2">The loss already happened. The learning hasn't — unless you write it down.</p>
+    {% elif overall_status == 'Closed' %}
+    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">{{ symbol }} made ${{ "{:,.2f}".format(kpis.total_return) }}. Was it your process or luck?</div>
+    <p class="small text-muted mb-2">Winners feel good. Understanding <em>why</em> they won makes the next one more likely.</p>
+    {% else %}
+    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">How do you feel about {{ symbol }}?</div>
+    <p class="small text-muted mb-2">Capture your thinking while it's fresh.</p>
+    {% endif %}
+    <a href="{{ url_for('journal_new', symbol=symbol, account=selected_account or (accounts[0] if accounts else ''), strategy=strategy_rows[0].strategy if strategy_rows else '') }}"
+       class="btn btn-sm btn-outline-primary">Journal This Trade</a>
+</div>
+{% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">

@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .fl-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .fl-section {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0,0,0,.05);
+        padding: 2rem;
+        margin-bottom: 1.5rem;
+    }
+    .fl-section h3 {
+        font-size: .85rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: #6c757d;
+        margin-bottom: 1.25rem;
+    }
+    .fl-stat {
+        text-align: center;
+        padding: 1rem .5rem;
+    }
+    .fl-stat .val { font-size: 1.6rem; font-weight: 700; }
+    .fl-stat .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: #6c757d; }
+    .strat-card {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        margin-bottom: .75rem;
+    }
+    .insight-box {
+        background: linear-gradient(135deg, #f8f4ff 0%, #ede7f6 100%);
+        border-left: 5px solid var(--color-mirror);
+        border-radius: 0 16px 16px 0;
+        padding: 2rem;
+    }
+    .insight-box h2 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--color-mirror);
+        margin-bottom: .75rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ── #}
+<div class="fl-hero">
+    <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
+    <h1 class="display-5 fw-bold mb-2">Here's what we found.</h1>
+    <p class="lead mb-0" style="color:rgba(255,255,255,.7)">
+        We analyzed your trade history and built a profile of how you trade.
+        Not just the numbers — the patterns behind them.
+    </p>
+</div>
+
+{# ── The headline stats ── #}
+<div class="fl-section">
+    <h3>At a Glance</h3>
+    <p class="narrative mb-4">
+        You've made <strong>{{ profile.total_trades }} trades</strong>
+        across <strong>{{ profile.num_symbols }} symbols</strong>
+        using <strong>{{ profile.num_strategies }} {{ 'strategy' if profile.num_strategies == 1 else 'strategies' }}</strong>{% if profile.months_active > 0 %} over <strong>{{ profile.months_active }} month{{ 's' if profile.months_active != 1 }}</strong>{% endif %}.
+        {% if profile.win_rate > 0 %}Your win rate is <strong>{{ "{:.0%}".format(profile.win_rate) }}</strong>
+        ({{ profile.total_winners }}W / {{ profile.total_losers }}L).{% endif %}
+    </p>
+    <div class="row g-2">
+        <div class="col-6 col-md-3">
+            <div class="fl-stat">
+                <div class="val {{ 'text-positive' if profile.total_return >= 0 else 'text-negative' }}">
+                    ${{ "{:,.0f}".format(profile.total_return) }}
+                </div>
+                <div class="lbl">Total Return</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="fl-stat">
+                <div class="val text-positive">${{ "{:,.0f}".format(profile.premium_collected) }}</div>
+                <div class="lbl">Premium Collected</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="fl-stat">
+                <div class="val">{{ "{:.0%}".format(profile.win_rate) }}</div>
+                <div class="lbl">Win Rate</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="fl-stat">
+                <div class="val">{{ "{:.0f}".format(profile.avg_holding_days) }}d</div>
+                <div class="lbl">Avg Holding Period</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Your strategies ── #}
+{% if profile.strategies %}
+<div class="fl-section">
+    <h3>How You Trade</h3>
+    {% if profile.top_strategy %}
+    <p class="narrative mb-3">
+        Your primary strategy is <strong>{{ profile.top_strategy.strategy }}</strong>
+        ({{ profile.top_strategy.total_trades }} trades, {{ "{:.0%}".format(profile.top_strategy.win_rate) }} win rate,
+        ${{ "{:,.0f}".format(profile.top_strategy.total_return) }} total return).
+        {% if profile.strategies|length > 1 %}
+        You also use
+        {% for s in profile.strategies[1:3] %}{{ s.strategy }}{% if not loop.last %} and {% endif %}{% endfor %}.
+        {% endif %}
+    </p>
+    {% endif %}
+
+    {% for s in profile.strategies %}
+    <div class="strat-card d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <span class="fw-bold">{{ s.strategy }}</span>
+            <span class="text-muted small ms-2">{{ s.num_symbols }} symbols &middot; {{ s.total_trades }} trades &middot; avg {{ s.avg_days|int }}d hold</span>
+        </div>
+        <div class="d-flex gap-3 align-items-center">
+            <span class="small">{{ "{:.0%}".format(s.win_rate) }} win</span>
+            <span class="fw-bold {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(s.total_return) }}
+            </span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# ── Best and Worst ── #}
+{% if profile.best_symbol or profile.worst_symbol %}
+<div class="fl-section">
+    <h3>Your Best and Worst</h3>
+    <div class="row g-3">
+        {% if profile.best_symbol %}
+        <div class="col-md-6">
+            <div class="strat-card" style="border-left: 4px solid var(--color-positive);">
+                <div class="small text-muted mb-1">Best Performing Symbol</div>
+                <a href="{{ url_for('position_detail', symbol=profile.best_symbol.symbol) }}"
+                   class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.best_symbol.symbol }}</a>
+                <div class="small text-muted">{{ profile.best_symbol.strategies }}</div>
+                <div class="h4 fw-bold text-positive mt-2 mb-0">${{ "{:,.2f}".format(profile.best_symbol.total_return) }}</div>
+            </div>
+        </div>
+        {% endif %}
+        {% if profile.worst_symbol %}
+        <div class="col-md-6">
+            <div class="strat-card" style="border-left: 4px solid var(--color-negative);">
+                <div class="small text-muted mb-1">Worst Performing Symbol</div>
+                <a href="{{ url_for('position_detail', symbol=profile.worst_symbol.symbol) }}"
+                   class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.worst_symbol.symbol }}</a>
+                <div class="small text-muted">{{ profile.worst_symbol.strategies }}</div>
+                <div class="h4 fw-bold text-negative mt-2 mb-0">${{ "{:,.2f}".format(profile.worst_symbol.total_return) }}</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── Behavioral observations ── #}
+<div class="fl-section">
+    <h3>What We Notice</h3>
+    <div class="narrative">
+        <ul style="list-style: none; padding: 0;">
+            {% if profile.avg_holding_days < 10 %}
+            <li class="mb-2">You tend to trade <strong>short-duration</strong> — averaging {{ profile.avg_holding_days|int }} days per position.</li>
+            {% elif profile.avg_holding_days > 45 %}
+            <li class="mb-2">You're a <strong>patient holder</strong> — averaging {{ profile.avg_holding_days|int }} days per position.</li>
+            {% else %}
+            <li class="mb-2">Your average holding period is <strong>{{ profile.avg_holding_days|int }} days</strong> — a moderate pace.</li>
+            {% endif %}
+
+            {% if profile.top3_concentration > 70 and profile.num_symbols > 3 %}
+            <li class="mb-2">Your top 3 symbols ({{ profile.top3_symbols|join(', ') }}) account for <strong>{{ profile.top3_concentration|int }}%</strong> of your returns. That's concentrated.</li>
+            {% elif profile.num_symbols > 8 %}
+            <li class="mb-2">You're well diversified across <strong>{{ profile.num_symbols }} symbols</strong>.</li>
+            {% endif %}
+
+            {% if profile.avg_win and profile.avg_loss %}
+            <li class="mb-2">Your average win is <strong>${{ "{:,.0f}".format(profile.avg_win|abs) }}</strong> and your average loss is <strong>${{ "{:,.0f}".format(profile.avg_loss|abs) }}</strong>.
+                {% if profile.profit_factor and profile.profit_factor < 1 %}
+                Your losses are bigger than your wins — this is worth watching.
+                {% elif profile.profit_factor and profile.profit_factor > 2 %}
+                When you win, you win big. Strong edge.
+                {% endif %}
+            </li>
+            {% endif %}
+
+            {% if profile.premium_collected > 0 %}
+            <li class="mb-2">You've collected <strong>${{ "{:,.0f}".format(profile.premium_collected) }}</strong> in option premium. That's your income engine.</li>
+            {% endif %}
+
+            {% if profile.busiest_month %}
+            <li class="mb-2">Your most active period was <strong>{{ profile.busiest_month }}</strong> ({{ profile.busiest_month_trades }} trade groups opened).</li>
+            {% endif %}
+        </ul>
+    </div>
+</div>
+
+<hr class="section-divider">
+
+{# ── THE KEY INSIGHT — the one thing that makes this page worth visiting ── #}
+{% if profile.key_insight %}
+<div class="insight-box mb-4">
+    <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#6c757d;">One thing to think about</div>
+    <h2>{{ profile.key_insight.title }}</h2>
+    <p class="narrative mb-3">{{ profile.key_insight.body }}</p>
+    <div class="prompt-card" style="background:rgba(255,255,255,.6);">
+        <div class="prompt-q">{{ profile.key_insight.action }}</div>
+    </div>
+</div>
+{% endif %}
+
+{# ── What's next ── #}
+<div class="fl-section text-center">
+    <h3>What's Next</h3>
+    <p class="narrative mb-4">
+        Your data is loaded. Your profile is built. Now the real work starts —
+        using this tool to trade more intentionally.
+    </p>
+    <div class="d-flex flex-wrap justify-content-center gap-3">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Go to Dashboard</a>
+        <a href="{{ url_for('journal_new') }}" class="btn btn-outline-primary btn-lg">Write Your First Journal Entry</a>
+    </div>
+    <div class="mt-3">
+        <a href="{{ url_for('mirror_score') }}" class="text-muted small">Check your Mirror Score</a>
+        <span class="text-muted mx-2">&middot;</span>
+        <a href="{{ url_for('weekly_review') }}" class="text-muted small">Weekly Review</a>
+        <span class="text-muted mx-2">&middot;</span>
+        <a href="{{ url_for('insights') }}" class="text-muted small">AI Insights</a>
+    </div>
+</div>
+
+{% endblock %}

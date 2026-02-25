@@ -5,7 +5,7 @@
 }}
 
 with source as (
-    select * from {{ ref('0417_history') }}
+    select * from {{ ref('trade_history') }}
     union all
     select * from {{ ref('demo_history') }}
 ),

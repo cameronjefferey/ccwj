@@ -26,12 +26,9 @@
     }
     .insights-content h2:first-child { margin-top: 0; }
     .insights-content ul { padding-left: 1.25rem; }
-    .insights-content li { margin-bottom: .4rem; }
+    .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
     .insights-content strong { color: #1a1a2e; }
-    .insights-meta {
-        font-size: .78rem;
-        color: #6c757d;
-    }
+    .insights-meta { font-size: .78rem; color: #6c757d; }
     .generate-card {
         border: 2px dashed #ced4da;
         border-radius: 12px;
@@ -47,16 +44,37 @@
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <div class="insights-hero">
-            <h1>AI Trading Insights</h1>
+            <h1>What the AI Sees</h1>
             <p class="mb-0 opacity-90">
-                Personalized analysis of your trading style, strengths, and areas for improvement.
+                Think of this as a second pair of eyes on your process — not your P&L.
+                The AI reviews your portfolio data and reflects back patterns you might not notice yourself.
             </p>
         </div>
 
         {% if insight %}
+        {# ── Prompt card: reflection nudge ── #}
+        <div class="prompt-card mb-4">
+            <div class="prompt-q">Before you read, ask yourself:</div>
+            <p class="mb-0" style="color: #495057;">
+                What do you <em>think</em> the AI will call out? Write it down (even mentally).
+                Then compare. The gap between your self-assessment and the AI's view is where the insight lives.
+            </p>
+        </div>
+
         {# ── Cached analysis ── #}
         <div class="card insights-content mb-3">
             {{ insight.full_analysis_html }}
+        </div>
+
+        {# ── Post-read reflection ── #}
+        <div class="prompt-card mb-4">
+            <div class="prompt-q">Now that you've read it:</div>
+            <p class="mb-2" style="color: #495057;">
+                Did anything surprise you? If not, you already know — so what's stopping you from acting on it?
+            </p>
+            <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">
+                Journal your reaction
+            </a>
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -75,14 +93,19 @@
         {% elif gemini_available %}
         {# ── No cached analysis, but API key is set ── #}
         <div class="generate-card">
-            <h5>Generate Your Trading Analysis</h5>
-            <p>
-                Our AI will analyze your portfolio data and provide personalized insights
-                about your trading style, what's working, and where to improve.
-            </p>
+            <h5>Get a Second Opinion on Your Trading</h5>
+            <div class="narrative mx-auto mb-4" style="max-width: 480px;">
+                <p>
+                    The AI will review your trades — strategies used, win rates, position sizing,
+                    holding periods — and tell you what it sees. No sugarcoating.
+                </p>
+                <p class="small text-muted">
+                    Your data stays between you and the AI. Nothing is stored externally.
+                </p>
+            </div>
             <form method="POST" action="{{ url_for('generate_insights') }}">
                 <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
-                    Generate Insights
+                    Generate My Analysis
                 </button>
             </form>
         </div>
@@ -104,13 +127,11 @@
 
 {% block scripts %}
 <script>
-    // Show loading state on generate/regenerate (can take 10–20 seconds)
     document.querySelectorAll('#genBtn, #regenBtn').forEach(btn => {
         if (!btn) return;
         btn.closest('form').addEventListener('submit', () => {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your portfolio...';
-            btn.closest('.generate-card, .d-flex')?.classList.add('pe-none');  // prevent double submit
         });
     });
 </script>

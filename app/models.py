@@ -3,7 +3,10 @@ import os
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'instance', 'happytrader.db')
+DB_PATH = os.environ.get(
+    "DATABASE_PATH",
+    os.path.join(os.path.dirname(__file__), '..', 'instance', 'happytrader.db'),
+)
 
 
 def _get_db():
@@ -294,6 +297,37 @@ def get_mirror_score_for_user(user_id, week_start_date=None):
         ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_mirror_score_history(user_id, limit=8):
+    """Return the most recent N mirror scores for trend display."""
+    conn = _get_db()
+    rows = conn.execute(
+        """SELECT week_start_date, mirror_score, discipline_score, intent_score,
+                  risk_alignment_score, consistency_score, confidence_level
+           FROM weekly_mirror_scores WHERE user_id = ?
+           ORDER BY week_start_date DESC LIMIT ?""",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in reversed(rows)]
+
+
+def get_journal_stats(user_id):
+    """Return journal activity stats for dashboard nudges."""
+    conn = _get_db()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM journal_entries WHERE user_id = ?", (user_id,)
+    ).fetchone()[0]
+    latest = conn.execute(
+        "SELECT created_at FROM journal_entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return {
+        "total_entries": total,
+        "last_entry_at": latest[0] if latest else None,
+    }
 
 
 def remove_account_for_user(user_id, account_name):

@@ -13,8 +13,8 @@
     .benchmark-hero p { opacity: .9; margin-bottom: 0; }
     .strategy-table { font-size: .95rem; }
     .strategy-table th { font-weight: 600; }
-    .diff-win { color: var(--color-positive, #198754); }
-    .diff-lose { color: var(--color-negative, #dc3545); }
+    .diff-win { color: var(--color-positive, #198754); font-weight: 600; }
+    .diff-lose { color: var(--color-negative, #dc3545); font-weight: 600; }
     .expand-row { cursor: pointer; }
     .expand-row:hover { background: #f8f9fa; }
     .positions-detail { background: #f8f9fa; border-radius: 8px; }
@@ -23,15 +23,26 @@
 
 {% block content %}
 <div class="benchmark-hero">
-    <h1>What if you didn't trade options?</h1>
-    <p>For each strategy, we compare your actual result to simply buying and holding the same stocks over the same period.</p>
+    <h1>What if you did nothing?</h1>
+    <p>
+        For each strategy, this compares your actual result to simply buying and holding the same
+        stocks over the same period. The point isn't to make you feel bad — it's to know whether
+        your activity is adding value.
+    </p>
 </div>
 
 {% if error %}
-<div class="alert alert-warning">
-    {{ error }}
-</div>
+<div class="alert alert-warning">{{ error }}</div>
 {% else %}
+
+{# ── Reflection prompt ── #}
+<div class="prompt-card mb-4">
+    <div class="prompt-q">Before you scroll, ask yourself:</div>
+    <p class="mb-0" style="color: #495057;">
+        Which of your strategies do you <em>believe</em> beats buy-and-hold? The answer matters more
+        than the numbers — it reveals whether your conviction matches your results.
+    </p>
+</div>
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body p-4">
@@ -68,16 +79,16 @@
                         <td class="text-end">
                             {% if s.difference is not none %}
                                 {% if s.difference >= 0 %}
-                                    <span class="diff-win">You beat hold by ${{ "{:,.2f}".format(s.difference) }}</span>
+                                    <span class="diff-win">+${{ "{:,.2f}".format(s.difference) }}</span>
                                 {% else %}
-                                    <span class="diff-lose">Hold beat you by ${{ "{:,.2f}".format(-s.difference) }}</span>
+                                    <span class="diff-lose">${{ "{:,.2f}".format(s.difference) }}</span>
                                 {% endif %}
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td class="text-end">
-                            <span class="badge bg-light text-dark">{{ s.num_positions }} positions</span>
+                            <span class="badge bg-light text-dark">{{ s.num_positions }} pos</span>
                         </td>
                     </tr>
                     <tr id="detail-{{ slug }}" class="d-none">
@@ -138,18 +149,30 @@
     </div>
 </div>
 
+{# ── Post-read reflection ── #}
+{% if strategy_data %}
+<div class="prompt-card mb-4">
+    <div class="prompt-q">What does this tell you?</div>
+    <p class="mb-2" style="color: #495057;">
+        If a strategy consistently beats buy-and-hold, that's your edge — lean into it.
+        If it doesn't, ask why you're still running it. The honest answer is the useful one.
+    </p>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">
+        Journal this reflection
+    </a>
+</div>
+{% endif %}
+
 <p class="text-muted small">
     Buy-and-hold uses the underlying stock price at first trade date and last trade date.
-    Capital is approximated from equity purchases. Option-only strategies (e.g. CSP with no assignment) may show — when hold cannot be computed.
+    Capital is approximated from equity purchases. Option-only strategies (e.g. CSP with no assignment) show — when hold cannot be computed.
 </p>
 {% endif %}
 
 <script>
 function toggleDetail(rowId) {
     var row = document.getElementById(rowId);
-    if (row) {
-        row.classList.toggle('d-none');
-    }
+    if (row) row.classList.toggle('d-none');
 }
 </script>
 {% endblock %}

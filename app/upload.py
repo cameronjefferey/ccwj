@@ -81,8 +81,8 @@ CURRENT_SEED_COLUMNS = [
 
 # GitHub config
 GITHUB_REPO = "cameronjefferey/ccwj"
-HISTORY_PATH = "dbt/seeds/0417_history.csv"
-CURRENT_PATH = "dbt/seeds/0417_current.csv"
+HISTORY_PATH = "dbt/seeds/trade_history.csv"
+CURRENT_PATH = "dbt/seeds/current_positions.csv"
 
 
 def _github_headers():
@@ -222,8 +222,8 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
     """
     Merge new account data with existing seed data.
     - Fetches current file from GitHub
-    - Removes all rows for account_name (we're replacing that account's data)
-    - Appends new_df
+    - For current positions: replace that account's rows (snapshot semantics)
+    - For history: append new rows for that account and de-duplicate
     - Returns CSV string ready to commit
     """
     existing_content = _get_file_content(path)
@@ -264,9 +264,9 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
                 new_df[col] = ""
         return new_df[seed_columns].to_csv(index=False)
 
-    # Keep rows from other accounts (exclude account_name)
-    other_mask = existing_df[acct_col].astype(str).str.strip() != account_name
-    other_df = existing_df.loc[other_mask]
+    # Normalize Account field on both sides for comparison
+    existing_df[acct_col] = existing_df[acct_col].astype(str).str.strip()
+    account_mask = existing_df[acct_col] == account_name
 
     # Ensure new_df has same columns as seed; align columns
     for col in seed_columns:
@@ -276,12 +276,40 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
 
     # Align existing columns (may have different order or extras)
     for col in seed_columns:
-        if col not in other_df.columns:
-            other_df[col] = ""
-    other_df = other_df[seed_columns]
+        if col not in existing_df.columns:
+            existing_df[col] = ""
+    existing_df = existing_df[seed_columns]
 
-    merged = pd.concat([other_df, new_df], ignore_index=True)
-    return merged.to_csv(index=False)
+    # Split existing into this account vs other accounts
+    other_df = existing_df.loc[~account_mask]
+    existing_account_df = existing_df.loc[account_mask]
+
+    if path == HISTORY_PATH:
+        # History: append and de-duplicate within this account.
+        # New rows take precedence when keys collide.
+        if existing_account_df.empty:
+            merged_account = new_df.copy()
+        else:
+            # Mark source to prefer new rows on duplicates
+            existing_account_df = existing_account_df.copy()
+            new_tagged = new_df.copy()
+            existing_account_df["__src"] = "old"
+            new_tagged["__src"] = "new"
+            combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
+
+            # Define a reasonable business key for de-dupe.
+            # Use all standard seed columns except Account so we keep one row
+            # per unique trade for this account.
+            key_cols = [c for c in seed_columns if c != "Account"]
+            combined = combined.sort_values("__src")  # old first, new second
+            combined = combined.drop_duplicates(subset=key_cols, keep="last")
+            merged_account = combined.drop(columns=["__src"])
+    else:
+        # Current positions (snapshot): replace that account entirely
+        merged_account = new_df
+
+    merged = pd.concat([other_df, merged_account], ignore_index=True)
+    return merged[seed_columns].to_csv(index=False)
 
 
 def _commit_file(path, content, message):
@@ -497,7 +525,7 @@ def upload():
     referrer = request.referrer or ""
     if "get-started" in referrer:
         return redirect(url_for("get_started"))
-    return redirect(url_for("upload"))
+    return redirect(url_for("first_look"))
 
 
 @app.route("/unclaim-account", methods=["POST"])

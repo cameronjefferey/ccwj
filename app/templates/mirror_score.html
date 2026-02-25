@@ -9,141 +9,169 @@
         color: #ecf0f1;
         margin-bottom: 2rem;
     }
-    .mirror-hero h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: .25rem; }
-    .mirror-hero p { opacity: .85; font-size: .95rem; margin-bottom: 0; }
-    .mirror-card {
+    .mirror-section {
         background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0,0,0,.05);
         padding: 2rem;
+        margin-bottom: 1.5rem;
     }
-    .mirror-score-value { font-size: 3rem; font-weight: 700; color: #2c3e50; }
-    .mirror-label { font-size: .85rem; color: #7f8c8d; margin-top: .25rem; }
-    .mirror-accordion .accordion-button {
-        padding: .75rem 1rem;
+    .mirror-section h3 {
         font-size: 1rem;
-        background: #fff;
-        color: #2c3e50;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #6c757d;
+        margin-bottom: 1.25rem;
     }
-    .mirror-accordion .accordion-button:not(.collapsed) {
+    .component-card {
+        border-radius: 12px;
+        padding: 1.25rem;
         background: #f8f9fa;
-        box-shadow: none;
+        margin-bottom: 1rem;
     }
-    .mirror-accordion .accordion-button::after {
-        content: "+";
-        background-image: none;
-        font-size: 1.25rem;
-        font-weight: 400;
-        width: auto;
-        height: auto;
+    .component-card.strong { border-left: 4px solid var(--color-positive); }
+    .component-card.moderate { border-left: 4px solid #ffc107; }
+    .component-card.weak { border-left: 4px solid var(--color-negative); }
+    .score-ring {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        flex-shrink: 0;
     }
-    .mirror-accordion .accordion-button:not(.collapsed)::after {
-        content: "−";
-    }
-    .mirror-accordion .accordion-item {
-        border: none;
-        border-bottom: 1px solid #ecf0f1;
-    }
-    .mirror-accordion .accordion-item:last-child { border-bottom: none; }
-    .mirror-accordion .accordion-body {
-        padding: 1rem 1rem 1.25rem;
-        font-size: .9rem;
-        color: #495057;
-    }
-    .mirror-breakdown-item {
-        padding: .5rem 0;
+    .breakdown-item {
+        padding: .6rem 0;
         border-bottom: 1px solid #eee;
     }
-    .mirror-breakdown-item:last-child { border-bottom: none; }
-    .mirror-breakdown-name { font-weight: 600; color: #2c3e50; }
-    .mirror-breakdown-score { font-size: .85rem; color: #7f8c8d; }
-    .mirror-breakdown-explanation { font-size: .85rem; margin-top: .25rem; }
-    .mirror-diagnostic {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
-        font-size: .9rem;
-        color: #495057;
-        margin-top: 1.5rem;
-    }
-    .mirror-confidence { font-size: .8rem; color: #95a5a6; margin-top: 1rem; }
+    .breakdown-item:last-child { border-bottom: none; }
+    .bar-track { height: 6px; border-radius: 3px; background: #e9ecef; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
 </style>
 {% endblock %}
 
 {% block content %}
+
 <div class="mirror-hero">
-    <h1>Mirror Score</h1>
-    <p>Measures how closely your behavior aligns with your own historical process. All metrics are relative to your 30-day baseline.</p>
+    <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
+    {% if score %}
+        {% set s = score.mirror_score|float %}
+        {% if s >= 80 %}
+        <h1 class="display-6 fw-bold mb-2">You're trading like yourself.</h1>
+        <p class="mb-0" style="opacity:.7">Your behavior closely matches your own 30-day baseline. Consistency is your edge.</p>
+        {% elif s >= 60 %}
+        <h1 class="display-6 fw-bold mb-2">Some drift — worth noticing.</h1>
+        <p class="mb-0" style="opacity:.7">Mostly aligned, but a few things changed. Understanding what shifted helps you decide if it was intentional.</p>
+        {% elif s >= 40 %}
+        <h1 class="display-6 fw-bold mb-2">You're trading differently.</h1>
+        <p class="mb-0" style="opacity:.7">This week looks meaningfully different from your norm. That's not always bad — but you should know why.</p>
+        {% else %}
+        <h1 class="display-6 fw-bold mb-2">Major deviation from your baseline.</h1>
+        <p class="mb-0" style="opacity:.7">Your behavior this week is far from your usual pattern. Time to pause and check in with yourself.</p>
+        {% endif %}
+    {% else %}
+    <h1 class="display-6 fw-bold mb-2">Mirror Score</h1>
+    <p class="mb-0" style="opacity:.7">Measures how closely your behavior aligns with your own historical process. No P&L involved.</p>
+    {% endif %}
 </div>
 
 {% if error %}
-<div class="alert alert-secondary">
-    {{ error }}
-</div>
-{% elif score %}
-<div class="mirror-card">
-    <div class="mb-4">
-        <div class="mirror-score-value">{{ score.mirror_score | int }}</div>
-        <div class="mirror-label">{{ score.label }}</div>
-    </div>
+<div class="alert alert-secondary">{{ error }}</div>
 
-    <div class="accordion mirror-accordion" id="mirrorAccordion">
-        {% for key, label in [
-            ('discipline', 'Discipline'),
-            ('intent', 'Intent'),
-            ('risk_alignment', 'Risk Alignment'),
-            ('consistency', 'Consistency')
-        ] %}
-        {% set comp = (score.components or {}).get(key) %}
-        {% set comp_score = comp.score if comp else score[key ~ '_score'] %}
-        <div class="accordion-item">
-            <h2 class="accordion-header" id="heading-{{ key }}">
-                <button class="accordion-button collapsed" type="button"
-                        data-bs-toggle="collapse" data-bs-target="#panel-{{ key }}"
-                        aria-expanded="false" aria-controls="panel-{{ key }}">
-                    <span class="me-auto">{{ label }}</span>
-                    <span class="fw-semibold ms-2">{{ comp_score | int }}</span>
-                </button>
-            </h2>
-            <div id="panel-{{ key }}" class="accordion-collapse collapse"
-                 data-bs-parent="#mirrorAccordion" aria-labelledby="heading-{{ key }}">
-                <div class="accordion-body">
-                    {% if comp and comp.breakdown %}
-                    <p class="small text-muted mb-3">Makeup of this section and why the score is what it is:</p>
-                    {% for item in comp.breakdown %}
-                    <div class="mirror-breakdown-item">
-                        <div class="mirror-breakdown-name">{{ item.name }} <span class="mirror-breakdown-score">({{ item.score }})</span></div>
-                        <div class="mirror-breakdown-explanation">{{ item.explanation }}</div>
-                    </div>
-                    {% endfor %}
-                    {% else %}
-                    <p class="small text-muted mb-2">{{ {
-                        'discipline': 'Position size deviation, large outlier frequency, and strategy drift relative to your 30-day baseline.',
-                        'intent': 'Trade clustering, post-loss escalation, and holding time deviation vs baseline.',
-                        'risk_alignment': 'Exposure drift, concentration increase, and risk expansion days vs baseline.',
-                        'consistency': 'Position size variance, daily trade count variance, and strategy switching vs baseline.'
-                    }[key] }}</p>
-                    <p class="small text-muted mb-0">Detailed breakdown available when the score is freshly computed.</p>
-                    {% endif %}
-                </div>
+{% elif score %}
+
+{# ── The Score ── #}
+<div class="mirror-section">
+    <div class="d-flex align-items-center gap-4 flex-wrap">
+        <div class="score-ring" style="background: conic-gradient(
+            {% if score.mirror_score >= 70 %}var(--color-positive){% elif score.mirror_score >= 50 %}#ffc107{% else %}var(--color-negative){% endif %} {{ score.mirror_score }}%,
+            #e9ecef {{ score.mirror_score }}%
+        );">
+            <div style="width:96px; height:96px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+                <div class="display-6 fw-bold" style="line-height:1">{{ score.mirror_score|int }}</div>
+                <div class="small text-muted">/ 100</div>
             </div>
         </div>
-        {% endfor %}
-    </div>
-
-    <div class="mirror-diagnostic">
-        {{ score.diagnostic_sentence }}
-    </div>
-    <div class="mirror-confidence">
-        Confidence: {{ score.confidence_level }} · Based on {{ score.baseline_trades | default('—') }} trades in baseline
+        <div>
+            <p class="narrative mb-1">{{ score.diagnostic_sentence }}</p>
+            <p class="small text-muted mb-0">
+                Week of {{ score.week_start_date }} &middot;
+                {{ score.confidence_level }} confidence &middot;
+                {{ score.baseline_trades|default('—') }} trades in baseline
+            </p>
+        </div>
     </div>
 </div>
-<p class="text-muted small mt-3">
-    Week of {{ score.week_start_date }}. Baseline is the 30 days preceding the week. No P/L or returns are used in this score.
-</p>
+
+{# ── The Breakdown ── #}
+<div class="mirror-section">
+    <h3>What's Behind the Score</h3>
+    <p class="narrative mb-4">
+        Your Mirror Score is built from four equally weighted components. Each measures a different dimension of your trading behavior against your own 30-day baseline.
+        <strong>This is about your process, not your returns.</strong>
+    </p>
+
+    {% for key, label, desc in [
+        ('discipline', 'Discipline', 'Are you sizing positions and using strategies the way you normally do?'),
+        ('intent', 'Intent', 'Are you trading at your usual pace, or clustering trades reactively?'),
+        ('risk_alignment', 'Risk Alignment', 'Is your exposure level consistent with your baseline?'),
+        ('consistency', 'Consistency', 'How steady is your behavior within the week?')
+    ] %}
+    {% set comp = (score.components or {}).get(key) %}
+    {% set comp_score = comp.score if comp else score[key ~ '_score'] %}
+    {% set strength = 'strong' if comp_score >= 70 else ('moderate' if comp_score >= 50 else 'weak') %}
+
+    <div class="component-card {{ strength }}">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+                <span class="fw-bold">{{ label }}</span>
+                <span class="small text-muted ms-2">{{ comp_score|int }} / 100</span>
+            </div>
+            <span class="small {% if comp_score >= 70 %}text-positive{% elif comp_score >= 50 %}text-warning{% else %}text-negative{% endif %} fw-semibold">
+                {% if comp_score >= 80 %}Aligned{% elif comp_score >= 60 %}Moderate drift{% elif comp_score >= 40 %}Significant drift{% else %}Major deviation{% endif %}
+            </span>
+        </div>
+        <div class="bar-track mb-2">
+            <div class="bar-fill" style="width:{{ comp_score }}%;
+                 background:{% if comp_score >= 70 %}var(--color-positive){% elif comp_score >= 50 %}#ffc107{% else %}var(--color-negative){% endif %};"></div>
+        </div>
+        <p class="small text-muted mb-0">{{ desc }}</p>
+
+        {% if comp and comp.breakdown %}
+        <div class="mt-3">
+            {% for item in comp.breakdown %}
+            <div class="breakdown-item">
+                <div class="d-flex justify-content-between">
+                    <span class="small fw-semibold">{{ item.name }}</span>
+                    <span class="small text-muted">{{ item.score|int }}</span>
+                </div>
+                <p class="small text-muted mb-0">{{ item.explanation }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{# ── What This Means ── #}
+<div class="prompt-card mb-4">
+    <div class="prompt-q">What does this tell you?</div>
+    <p class="small text-muted mb-2">
+        A high score doesn't mean you're trading well — it means you're trading <em>consistently with your own process</em>.
+        A low score isn't necessarily bad, but you should understand why things shifted.
+    </p>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">Write About What Changed</a>
+</div>
+
 {% else %}
-<div class="alert alert-secondary">
-    No Mirror Score available. Ensure you have trade history and at least 5 trades in your baseline period.
+<div class="mirror-section">
+    <p class="narrative text-muted text-center py-3">
+        No Mirror Score available. Upload your trade history and trade for at least a few weeks to build a baseline.
+    </p>
 </div>
 {% endif %}
+
 {% endblock %}

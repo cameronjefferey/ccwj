@@ -1,10 +1,23 @@
-"""Weekly Review — auto-generated Sunday summary: best/worst trade, drift, anomalies."""
+"""
+Weekly Review — temporal hub with three modes:
+
+  Friday Review   → "What happened this week?"
+  Monday Check    → "How am I showing up?"
+  Mid-Week Check  → "Am I deviating?"
+
+Reads pre-aggregated data from mart_weekly_summary where possible.
+Journal-based metrics (emotional drift, behavioral anomaly) still come from SQLite.
+"""
 from datetime import date, timedelta
-from flask import render_template
+from flask import render_template, request
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.models import get_accounts_for_user, is_admin, list_journal_entries
+from app.models import (
+    get_accounts_for_user, is_admin,
+    list_journal_entries, get_mirror_score_for_user, get_mirror_score_history,
+    get_insight_for_user,
+)
 from google.cloud import bigquery
 import pandas as pd
 
@@ -15,216 +28,183 @@ def _user_account_list():
     return get_accounts_for_user(current_user.id)
 
 
-def _account_sql_filter(accounts):
+def _account_sql_and(accounts):
     if accounts is None:
         return ""
     if not accounts:
         return "AND 1 = 0"
     quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND c.account IN ({quoted})"
+    return f"AND account IN ({quoted})"
 
 
-# Trades that closed in the date range (from int_strategy_classification)
-WEEKLY_TRADES_QUERY = """
+# Pre-aggregated weekly summary from dbt
+WEEKLY_SUMMARY_QUERY = """
+SELECT *
+FROM `ccwj-dbt.analytics.mart_weekly_summary`
+WHERE week_start = @week_start
+  {account_filter}
+"""
+
+LATEST_ACTIVE_WEEK_QUERY = """
+SELECT MAX(week_start) AS latest_week
+FROM `ccwj-dbt.analytics.mart_weekly_summary`
+WHERE (trades_closed > 0 OR trades_opened > 0)
+  {account_filter}
+"""
+
+# For behavioral anomaly: need individual losing trades joined with journal
+LOSERS_QUERY = """
 SELECT
-    c.account,
-    c.symbol,
-    c.strategy,
-    c.trade_symbol,
-    c.open_date,
-    c.close_date,
-    c.total_pnl,
-    c.is_winner,
-    c.status,
-    c.num_trades,
-    c.premium_received,
-    c.premium_paid
+    c.account, c.symbol, c.strategy, c.trade_symbol,
+    c.open_date, c.close_date, c.total_pnl
 FROM `ccwj-dbt.analytics.int_strategy_classification` c
-WHERE c.close_date IS NOT NULL
+WHERE c.status = 'Closed'
+  AND c.total_pnl < 0
   AND c.close_date >= @start_date
   AND c.close_date <= @end_date
   {account_filter}
-ORDER BY c.close_date DESC
 """
 
-# Same for previous week (for drift)
-PREV_WEEK_TRADES_QUERY = """
+# Open positions exposure for Monday Risk Check
+EXPOSURE_QUERY = """
 SELECT
-    c.account,
-    c.symbol,
-    c.strategy,
-    c.trade_symbol,
-    c.open_date,
-    c.close_date,
-    c.total_pnl,
-    c.is_winner,
-    c.status
-FROM `ccwj-dbt.analytics.int_strategy_classification` c
-WHERE c.close_date IS NOT NULL
-  AND c.close_date >= @prev_start
-  AND c.close_date <= @prev_end
+    account,
+    underlying_symbol AS symbol,
+    instrument_type,
+    SUM(ABS(CAST(market_value AS FLOAT64))) AS exposure
+FROM `ccwj-dbt.analytics.int_enriched_current`
+WHERE quantity IS NOT NULL AND quantity != 0
   {account_filter}
+GROUP BY 1, 2, 3
+ORDER BY exposure DESC
 """
 
-# Trades opened in the date range (for risk drift - new position count)
-OPENS_QUERY = """
+# Trades opened this week for Mid-Week Check
+OPENS_THIS_WEEK_QUERY = """
 SELECT
-    c.account,
-    c.symbol,
-    c.strategy,
-    c.open_date
+    c.account, c.symbol, c.strategy, c.open_date
 FROM `ccwj-dbt.analytics.int_strategy_classification` c
 WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
   {account_filter}
 """
 
-PREV_OPENS_QUERY = """
-SELECT
-    c.account,
-    c.symbol,
-    c.strategy,
-    c.open_date
-FROM `ccwj-dbt.analytics.int_strategy_classification` c
-WHERE c.open_date >= @prev_start
-  AND c.open_date <= @prev_end
-  {account_filter}
-"""
+
+def _iso_week_start(d):
+    """Return Monday of the ISO week containing d."""
+    return d - timedelta(days=d.weekday())
 
 
-def _get_week_bounds():
-    """Return (start, end) for last 7 days, and (prev_start, prev_end) for the 7 days before that."""
-    end = date.today()
-    start = end - timedelta(days=6)  # 7 days inclusive
-    prev_end = start - timedelta(days=1)
-    prev_start = prev_end - timedelta(days=6)
-    return start, end, prev_start, prev_end
+def _auto_mode():
+    """Auto-detect mode from day of week."""
+    dow = date.today().weekday()
+    if dow == 0:
+        return "monday"
+    if dow >= 4:
+        return "friday"
+    return "midweek"
 
 
-def _compute_review(user_accounts, trades_df, prev_trades_df, opens_df, prev_opens_df, journal_entries):
-    """Build the weekly review dict from BQ and journal data."""
-    review = {
-        "best_trade": None,
-        "worst_trade": None,
-        "largest_mistake": None,
-        "most_consistent_strategy": None,
-        "risk_drift": None,
-        "emotional_drift": None,
-        "behavioral_anomaly": None,
-        "week_start": None,
-        "week_end": None,
-        "total_pnl": 0,
-        "num_trades": 0,
-        "num_winners": 0,
+def _aggregate_weekly_rows(rows):
+    """Aggregate multiple account rows from mart_weekly_summary into one summary."""
+    if not rows:
+        return None
+    summary = {
+        "trades_closed": sum(r.get("trades_closed", 0) for r in rows),
+        "total_pnl": sum(r.get("total_pnl", 0) for r in rows),
+        "num_winners": sum(r.get("num_winners", 0) for r in rows),
+        "num_losers": sum(r.get("num_losers", 0) for r in rows),
+        "premium_received": sum(r.get("premium_received", 0) for r in rows),
+        "premium_paid": sum(r.get("premium_paid", 0) for r in rows),
+        "trades_opened": sum(r.get("trades_opened", 0) for r in rows),
     }
 
-    start, end, prev_start, prev_end = _get_week_bounds()
-    review["week_start"] = start
-    review["week_end"] = end
-
-    # Risk drift & emotional drift — always compute (don't require closed trades)
-    num_opens = len(opens_df) if opens_df is not None and not opens_df.empty else 0
-    num_prev_opens = len(prev_opens_df) if prev_opens_df is not None and not prev_opens_df.empty else 0
-    review["risk_drift"] = {
-        "this_week_opens": num_opens,
-        "prev_week_opens": num_prev_opens,
-        "diff": num_opens - num_prev_opens,
-    }
-    this_week_j = [e for e in journal_entries if _date_in_range(e.get("trade_open_date"), start, end)]
-    prev_week_j = list_journal_entries(
-        current_user.id,
-        start_date=str(prev_start),
-        end_date=str(prev_end),
-        limit=200,
-    )
-    review["emotional_drift"] = {
-        "this_week": _mood_counts(this_week_j),
-        "prev_week": _mood_counts(prev_week_j),
-        "entries_this_week": len(this_week_j),
-        "entries_prev_week": len(prev_week_j),
-    }
-
-    if trades_df.empty:
-        return review
-
-    closed = trades_df[trades_df["status"] == "Closed"]
-    if closed.empty:
-        return review
-
-    closed = closed.copy()
-    closed["total_pnl"] = pd.to_numeric(closed["total_pnl"], errors="coerce").fillna(0)
-
-    review["total_pnl"] = float(closed["total_pnl"].sum())
-    review["num_trades"] = len(closed)
-    review["num_winners"] = int((closed["total_pnl"] > 0).sum())
-
-    # Best trade
-    best_row = closed.loc[closed["total_pnl"].idxmax()]
-    review["best_trade"] = {
-        "account": best_row.get("account", ""),
-        "symbol": best_row.get("symbol", ""),
-        "strategy": best_row.get("strategy", ""),
-        "trade_symbol": best_row.get("trade_symbol", ""),
-        "close_date": str(best_row.get("close_date", "")),
-        "total_pnl": float(best_row["total_pnl"]),
-    }
-
-    # Worst trade
-    worst_row = closed.loc[closed["total_pnl"].idxmin()]
-    review["worst_trade"] = {
-        "account": worst_row.get("account", ""),
-        "symbol": worst_row.get("symbol", ""),
-        "strategy": worst_row.get("strategy", ""),
-        "trade_symbol": worst_row.get("trade_symbol", ""),
-        "close_date": str(worst_row.get("close_date", "")),
-        "total_pnl": float(worst_row["total_pnl"]),
-    }
-
-    # Largest mistake = worst loser (or worst trade if all winners)
-    losers = closed[closed["total_pnl"] < 0]
-    if not losers.empty:
-        mistake_row = losers.loc[losers["total_pnl"].idxmin()]
-        review["largest_mistake"] = {
-            "account": mistake_row.get("account", ""),
-            "symbol": mistake_row.get("symbol", ""),
-            "strategy": mistake_row.get("strategy", ""),
-            "trade_symbol": mistake_row.get("trade_symbol", ""),
-            "close_date": str(mistake_row.get("close_date", "")),
-            "total_pnl": float(mistake_row["total_pnl"]),
+    # Best trade: highest PnL across accounts
+    best_candidates = [r for r in rows if r.get("best_pnl") is not None]
+    if best_candidates:
+        best = max(best_candidates, key=lambda r: float(r.get("best_pnl", 0)))
+        summary["best_trade"] = {
+            "symbol": best.get("best_symbol", ""),
+            "strategy": best.get("best_strategy", ""),
+            "trade_symbol": best.get("best_trade_symbol", ""),
+            "total_pnl": float(best.get("best_pnl", 0)),
+            "close_date": str(best.get("best_close_date", "")),
+            "account": best.get("account", ""),
         }
     else:
-        review["largest_mistake"] = None
+        summary["best_trade"] = None
 
-    # Most consistent strategy (highest win rate, min 2 trades)
-    strat_agg = closed.groupby("strategy").agg(
-        trades=("total_pnl", "count"),
-        winners=("total_pnl", lambda x: (x > 0).sum()),
-        total_pnl=("total_pnl", "sum"),
-    ).reset_index()
-    strat_agg["win_rate"] = strat_agg["winners"] / strat_agg["trades"]
-    strat_agg = strat_agg[strat_agg["trades"] >= 2].sort_values("win_rate", ascending=False)
-    if not strat_agg.empty:
-        top = strat_agg.iloc[0]
-        review["most_consistent_strategy"] = {
-            "strategy": str(top["strategy"]),
-            "win_rate": float(top["win_rate"]),
-            "trades": int(top["trades"]),
-            "total_pnl": float(top["total_pnl"]),
+    # Worst trade: lowest PnL across accounts
+    worst_candidates = [r for r in rows if r.get("worst_pnl") is not None]
+    if worst_candidates:
+        worst = min(worst_candidates, key=lambda r: float(r.get("worst_pnl", 0)))
+        summary["worst_trade"] = {
+            "symbol": worst.get("worst_symbol", ""),
+            "strategy": worst.get("worst_strategy", ""),
+            "trade_symbol": worst.get("worst_trade_symbol", ""),
+            "total_pnl": float(worst.get("worst_pnl", 0)),
+            "close_date": str(worst.get("worst_close_date", "")),
+            "account": worst.get("account", ""),
         }
+    else:
+        summary["worst_trade"] = None
 
-    # Behavioral anomaly: journal entries with risky tags (fomo, revenge_trade, boredom_trade) that lost
+    # Largest mistake (worst loser)
+    if summary["worst_trade"] and summary["worst_trade"]["total_pnl"] < 0:
+        summary["largest_mistake"] = summary["worst_trade"]
+    else:
+        summary["largest_mistake"] = None
+
+    # Top strategy: pick the one with highest win rate across all accounts
+    strat_candidates = [r for r in rows if r.get("top_strategy")]
+    if strat_candidates:
+        top = max(strat_candidates, key=lambda r: float(r.get("top_strategy_win_rate", 0)))
+        summary["most_consistent_strategy"] = {
+            "strategy": top.get("top_strategy", ""),
+            "win_rate": float(top.get("top_strategy_win_rate", 0)),
+            "trades": int(top.get("top_strategy_trades", 0)),
+            "total_pnl": float(top.get("top_strategy_pnl", 0)),
+        }
+    else:
+        summary["most_consistent_strategy"] = None
+
+    return summary
+
+
+def _mood_counts(entries):
+    from collections import Counter
+    moods = [e.get("mood") for e in entries if e.get("mood")]
+    return dict(Counter(moods))
+
+
+def _compute_behavioral_anomaly(losers_df, journal_entries):
+    """Match losing trades with risky journal tags (fomo, revenge, boredom)."""
+    if losers_df is None or losers_df.empty:
+        return None
+
     risky_tags = {"fomo", "revenge_trade", "boredom_trade"}
-    journal_by_key = {
-        _journal_match_key(e): e
-        for e in journal_entries
-    }
+    journal_by_key = {}
+    for e in journal_entries:
+        key = (
+            str(e.get("account", "")),
+            str(e.get("symbol", "")).upper(),
+            str(e.get("strategy", "")),
+            str(e.get("trade_open_date", ""))[:10],
+        )
+        journal_by_key[key] = e
+
     anomalies = []
-    for _, row in losers.iterrows():
-        key = _trade_match_key(row)
+    for _, row in losers_df.iterrows():
+        key = (
+            str(row.get("account", "")),
+            str(row.get("symbol", "")).upper(),
+            str(row.get("strategy", "")),
+            str(row.get("open_date", ""))[:10] if row.get("open_date") else "",
+        )
         j = journal_by_key.get(key)
         if not j:
             continue
-        tags = set((j.get("tags") or []))
+        tags = set(j.get("tags") or [])
         overlap = tags & risky_tags
         if overlap:
             anomalies.append({
@@ -234,125 +214,185 @@ def _compute_review(user_accounts, trades_df, prev_trades_df, opens_df, prev_ope
                 "total_pnl": float(row["total_pnl"]),
                 "reflection": (j.get("reflection") or "")[:200],
             })
-    review["behavioral_anomaly"] = anomalies[:5] if anomalies else None
-
-    return review
-
-
-def _date_in_range(d, start, end):
-    if not d:
-        return False
-    try:
-        if isinstance(d, str):
-            from datetime import datetime
-            parsed = datetime.strptime(d[:10], "%Y-%m-%d").date()
-        else:
-            parsed = d
-        return start <= parsed <= end
-    except Exception:
-        return False
-
-
-def _mood_counts(entries):
-    from collections import Counter
-    moods = [e.get("mood") for e in entries if e.get("mood")]
-    return dict(Counter(moods))
-
-
-def _journal_match_key(e):
-    return (
-        str(e.get("account", "")),
-        str(e.get("symbol", "")).upper(),
-        str(e.get("strategy", "")),
-        str(e.get("trade_open_date", ""))[:10],
-    )
-
-
-def _trade_match_key(row):
-    return (
-        str(row.get("account", "")),
-        str(row.get("symbol", "")).upper(),
-        str(row.get("strategy", "")),
-        str(row.get("open_date", ""))[:10] if row.get("open_date") else "",
-    )
+    return anomalies[:5] if anomalies else None
 
 
 @app.route("/weekly-review")
 @login_required
 def weekly_review():
-    """Auto-generated weekly review: best/worst trade, drift, anomalies."""
+    """Temporal hub: Friday Review / Monday Risk Check / Mid-Week Check-In."""
     user_accounts = _user_account_list()
-    account_filter = _account_sql_filter(user_accounts)
+    account_filter = _account_sql_and(user_accounts)
 
-    start, end, prev_start, prev_end = _get_week_bounds()
+    mode = request.args.get("mode") or _auto_mode()
+    if mode not in ("friday", "monday", "midweek"):
+        mode = _auto_mode()
+
+    today = date.today()
+    this_week = _iso_week_start(today)
+
+    context = {
+        "title": "Weekly Review",
+        "mode": mode,
+        "week_start": this_week,
+        "week_end": this_week + timedelta(days=6),
+        "error": None,
+        "review": None,
+        "prev_review": None,
+        "exposure": None,
+        "mirror_score": None,
+        "mirror_history": None,
+        "opens_this_week": None,
+        "journal_entries": [],
+        "emotional_drift": None,
+        "behavioral_anomaly": None,
+        "ai_insight": None,
+        "is_backfilled": False,
+    }
 
     try:
         client = get_bigquery_client()
-        job_config = bigquery.QueryJobConfig(
+
+        # Check if the current week has data; if not, fall back to most recent active week
+        job_config_check = bigquery.QueryJobConfig(
             query_parameters=[
-                bigquery.ScalarQueryParameter("start_date", "DATE", start),
-                bigquery.ScalarQueryParameter("end_date", "DATE", end),
-                bigquery.ScalarQueryParameter("prev_start", "DATE", prev_start),
-                bigquery.ScalarQueryParameter("prev_end", "DATE", prev_end),
+                bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
             ]
         )
-
-        trades_df = client.query(
-            WEEKLY_TRADES_QUERY.format(account_filter=account_filter),
-            job_config=job_config,
+        check_df = client.query(
+            WEEKLY_SUMMARY_QUERY.format(account_filter=account_filter),
+            job_config=job_config_check,
         ).to_dataframe()
-
-        prev_trades_df = client.query(
-            PREV_WEEK_TRADES_QUERY.format(account_filter=account_filter),
-            job_config=job_config,
-        ).to_dataframe()
-
-        opens_df = client.query(
-            OPENS_QUERY.format(account_filter=account_filter),
-            job_config=job_config,
-        ).to_dataframe()
-
-        prev_opens_df = client.query(
-            PREV_OPENS_QUERY.format(account_filter=account_filter),
-            job_config=job_config,
-        ).to_dataframe()
-
-    except Exception as e:
-        return render_template(
-            "weekly_review.html",
-            title="Weekly Review",
-            error=str(e),
-            review=None,
-            week_start=start,
-            week_end=end,
+        has_current = not check_df.empty and (
+            int(check_df.iloc[0].get("trades_closed", 0) or 0) + int(check_df.iloc[0].get("trades_opened", 0) or 0) > 0
         )
 
-    # Filter BQ results by account if needed (query param filter may not cover all cases)
-    if user_accounts is not None and not user_accounts:
-        trades_df = pd.DataFrame()
-        prev_trades_df = pd.DataFrame()
-        opens_df = pd.DataFrame()
-        prev_opens_df = pd.DataFrame()
-    elif user_accounts:
-        trades_df = trades_df[trades_df["account"].isin(user_accounts)]
-        prev_trades_df = prev_trades_df[prev_trades_df["account"].isin(user_accounts)]
-        opens_df = opens_df[opens_df["account"].isin(user_accounts)]
-        prev_opens_df = prev_opens_df[prev_opens_df["account"].isin(user_accounts)]
+        if not has_current:
+            latest_df = client.query(
+                LATEST_ACTIVE_WEEK_QUERY.format(account_filter=account_filter)
+            ).to_dataframe()
+            if not latest_df.empty and latest_df.iloc[0]["latest_week"] is not None:
+                lw = latest_df.iloc[0]["latest_week"]
+                if hasattr(lw, "date"):
+                    lw = lw.date()
+                elif not isinstance(lw, date):
+                    lw = date.fromisoformat(str(lw)[:10])
+                this_week = lw
+                context["week_start"] = this_week
+                context["week_end"] = this_week + timedelta(days=6)
+                context["is_backfilled"] = True
 
-    journal_entries = list_journal_entries(
-        current_user.id,
-        start_date=str(start),
-        end_date=str(end),
-        limit=500,
-    )
+        prev_week = this_week - timedelta(days=7)
 
-    review = _compute_review(user_accounts, trades_df, prev_trades_df, opens_df, prev_opens_df, journal_entries)
+        # Always fetch this week + prev week from mart_weekly_summary
+        for target_week, key in [(this_week, "review"), (prev_week, "prev_review")]:
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("week_start", "DATE", target_week),
+                ]
+            )
+            df = client.query(
+                WEEKLY_SUMMARY_QUERY.format(account_filter=account_filter),
+                job_config=job_config,
+            ).to_dataframe()
+            if not df.empty:
+                rows = df.to_dict(orient="records")
+                context[key] = _aggregate_weekly_rows(rows)
 
-    return render_template(
-        "weekly_review.html",
-        title="Weekly Review",
-        review=review,
-        error=None,
-        week_start=start,
-        week_end=end,
-    )
+        # Journal data for emotional drift + behavioral anomaly
+        week_end = this_week + timedelta(days=6)
+        journal_entries = list_journal_entries(
+            current_user.id,
+            start_date=str(this_week),
+            end_date=str(week_end),
+            limit=500,
+        )
+        context["journal_entries"] = journal_entries
+
+        prev_journal = list_journal_entries(
+            current_user.id,
+            start_date=str(prev_week),
+            end_date=str(prev_week + timedelta(days=6)),
+            limit=200,
+        )
+        context["emotional_drift"] = {
+            "this_week": _mood_counts(journal_entries),
+            "prev_week": _mood_counts(prev_journal),
+            "entries_this_week": len(journal_entries),
+            "entries_prev_week": len(prev_journal),
+        }
+
+        # Risk drift (from mart data)
+        this_opens = context["review"]["trades_opened"] if context["review"] else 0
+        prev_opens = context["prev_review"]["trades_opened"] if context["prev_review"] else 0
+        if context["review"] is None:
+            context["review"] = {
+                "trades_closed": 0, "total_pnl": 0, "num_winners": 0, "num_losers": 0,
+                "premium_received": 0, "premium_paid": 0, "trades_opened": 0,
+                "best_trade": None, "worst_trade": None, "largest_mistake": None,
+                "most_consistent_strategy": None,
+            }
+        context["review"]["risk_drift"] = {
+            "this_week_opens": this_opens,
+            "prev_week_opens": prev_opens,
+            "diff": this_opens - prev_opens,
+        }
+
+        # Mode-specific data
+        # AI Insight summary (for Friday review)
+        context["ai_insight"] = get_insight_for_user(current_user.id)
+
+        if mode == "friday":
+            # Behavioral anomaly: need individual losers + journal cross-ref
+            losers_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
+                    bigquery.ScalarQueryParameter("end_date", "DATE", week_end),
+                ]
+            )
+            losers_df = client.query(
+                LOSERS_QUERY.format(account_filter=account_filter),
+                job_config=losers_config,
+            ).to_dataframe()
+            context["behavioral_anomaly"] = _compute_behavioral_anomaly(losers_df, journal_entries)
+
+        elif mode == "monday":
+            # Open positions exposure
+            exposure_df = client.query(
+                EXPOSURE_QUERY.format(account_filter=account_filter)
+            ).to_dataframe()
+            if not exposure_df.empty:
+                for col in ["exposure"]:
+                    exposure_df[col] = pd.to_numeric(exposure_df[col], errors="coerce").fillna(0)
+                context["exposure"] = {
+                    "total": float(exposure_df["exposure"].sum()),
+                    "by_symbol": exposure_df.head(10).to_dict(orient="records"),
+                    "num_positions": len(exposure_df),
+                }
+
+            # Mirror Score
+            context["mirror_score"] = get_mirror_score_for_user(current_user.id)
+            context["mirror_history"] = get_mirror_score_history(current_user.id, limit=8)
+
+        elif mode == "midweek":
+            # Trades opened this week so far
+            opens_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
+                    bigquery.ScalarQueryParameter("end_date", "DATE", today),
+                ]
+            )
+            opens_df = client.query(
+                OPENS_THIS_WEEK_QUERY.format(account_filter=account_filter),
+                job_config=opens_config,
+            ).to_dataframe()
+            if not opens_df.empty:
+                context["opens_this_week"] = {
+                    "count": len(opens_df),
+                    "symbols": opens_df["symbol"].unique().tolist()[:15],
+                }
+
+    except Exception as e:
+        context["error"] = str(e)
+
+    return render_template("weekly_review.html", **context)

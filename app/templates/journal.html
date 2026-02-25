@@ -5,7 +5,7 @@
     .journal-hero {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         border-radius: 16px;
-        padding: 2rem 2.5rem;
+        padding: 2.5rem;
         color: #fff;
         margin-bottom: 2rem;
     }
@@ -14,29 +14,59 @@
         border: none;
         border-radius: 12px;
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        margin-bottom: 1rem;
+        margin-bottom: .75rem;
         transition: transform .1s;
     }
     .journal-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,.08); }
-    .journal-tag { font-size: .7rem; padding: .2rem .5rem; border-radius: 6px; background: #e9ecef; color: #495057; }
+    .journal-tag { font-size: .68rem; padding: .15rem .45rem; border-radius: 6px; background: #f8f4ff; color: #6f42c1; }
     .journal-mood { font-size: .75rem; color: #6c757d; }
     .confidence-badge { font-weight: 700; min-width: 2rem; text-align: center; }
+    .journal-stat { text-align: center; }
+    .journal-stat .stat-value { font-size: 1.5rem; font-weight: 700; }
+    .journal-stat .stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: #6c757d; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="journal-hero d-flex justify-content-between align-items-center flex-wrap gap-3">
-    <div>
-        <h1>Trade Journal</h1>
-        <p class="mb-0 opacity-90">Log your trades with thesis, tags, confidence & mood. Correlate behavior with outcomes.</p>
-    </div>
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('journal_export') }}" class="btn btn-outline-light btn-sm" title="Export your journal — never lose your data">Export</a>
-        <a href="{{ url_for('journal_import') }}" class="btn btn-outline-light btn-sm">Import</a>
+<div class="journal-hero">
+    <h1>Your Trade Journal</h1>
+    <p class="mb-3 opacity-90">
+        This is where behavior meets outcome. Every entry is a data point about how you trade —
+        not just what you traded.
+    </p>
+    <div class="d-flex gap-2 flex-wrap">
         <a href="{{ url_for('journal_new') }}" class="btn btn-light">+ New Entry</a>
+        <a href="{{ url_for('journal_export') }}" class="btn btn-outline-light btn-sm" title="Export — your data, always yours">Export</a>
+        <a href="{{ url_for('journal_import') }}" class="btn btn-outline-light btn-sm">Import</a>
     </div>
 </div>
 
+{% if entries %}
+{# ── Stats bar ── #}
+<div class="row g-3 mb-4">
+    <div class="col-4 col-md-2">
+        <div class="journal-stat">
+            <div class="stat-value">{{ entries | length }}</div>
+            <div class="stat-label">Entries</div>
+        </div>
+    </div>
+    <div class="col-4 col-md-2">
+        <div class="journal-stat">
+            <div class="stat-value">{{ entries | map(attribute='symbol') | unique | list | length }}</div>
+            <div class="stat-label">Symbols</div>
+        </div>
+    </div>
+    <div class="col-4 col-md-2">
+        <div class="journal-stat">
+            {% set with_thesis = entries | selectattr('thesis') | list | length %}
+            <div class="stat-value">{{ ((with_thesis / entries|length) * 100) | round(0) | int }}%</div>
+            <div class="stat-label">Have Thesis</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Filters ── #}
 <form method="get" class="row g-2 mb-4">
     <div class="col-auto">
         <input type="text" name="symbol" class="form-control form-control-sm" placeholder="Symbol" value="{{ symbol_filter }}">
@@ -77,7 +107,10 @@
                             <span class="badge bg-secondary confidence-badge">{{ e.confidence }}/10</span>
                             {% endif %}
                             {% if e.mood %}
-                            <span class="journal-mood">{{ e.mood }}</span>
+                            <span class="journal-mood">{{ e.mood | title }}</span>
+                            {% endif %}
+                            {% if not e.thesis %}
+                            <span class="badge bg-warning text-dark" style="font-size: .65rem;">No thesis</span>
                             {% endif %}
                         </div>
                     </div>
@@ -98,11 +131,21 @@
     {% endfor %}
 </div>
 {% else %}
+{# ── Empty state ── #}
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center py-5">
-        <h5 class="text-muted">No journal entries yet</h5>
-        <p class="text-muted mb-0">Start logging your trades with thesis, tags, confidence, and mood to build your behavioral dataset.</p>
-        <a href="{{ url_for('journal_new') }}" class="btn btn-primary mt-3">Create your first entry</a>
+        <h5 class="mb-3">Your journal is empty</h5>
+        <div class="narrative mx-auto" style="max-width: 480px;">
+            <p>
+                The best traders don't just track P&L — they track <em>why</em> they took a trade,
+                how they felt, and what they'd do differently.
+            </p>
+            <p>
+                Start with one entry. Pick your most recent trade and write down your thesis.
+                That's it. One sentence is enough.
+            </p>
+        </div>
+        <a href="{{ url_for('journal_new') }}" class="btn btn-primary mt-3">Write your first entry</a>
     </div>
 </div>
 {% endif %}

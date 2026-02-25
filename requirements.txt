@@ -86,3 +86,5 @@ zipp==3.21.0
 yfinance
 google-genai
 schwab-py
+pytest>=8.0
+sentry-sdk[flask]>=2.0

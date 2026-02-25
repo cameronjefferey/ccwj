@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: external
+    database: ccwj-dbt
+    schema: analytics
+    description: Tables populated outside of dbt (scripts, GitHub Actions, etc.)
+    tables:
+      - name: daily_position_performance
+        description: >
+          Daily stock close prices and dividends fetched via yfinance
+          by current_position_stock_price.py (runs in GitHub Actions).
+        columns:
+          - name: account
+          - name: symbol
+          - name: date
+          - name: close_price
+          - name: dividend

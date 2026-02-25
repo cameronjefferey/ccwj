@@ -11,19 +11,34 @@
     }
     .journal-form-hero h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: .25rem; }
     .form-section { margin-bottom: 1.5rem; }
-    .form-section h6 { font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .75rem; }
+    .form-section h6 {
+        font-weight: 600; color: #6c757d;
+        text-transform: uppercase; letter-spacing: .5px; margin-bottom: .75rem;
+    }
+    .coaching-hint {
+        font-size: .82rem;
+        color: #6f42c1;
+        font-style: italic;
+        margin-bottom: .5rem;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="journal-form-hero">
     <h1>{{ 'Edit' if entry else 'New' }} Journal Entry</h1>
-    <p class="mb-0 opacity-90 small">Thesis, tags, confidence, mood — correlate behavior with outcomes.</p>
+    {% if entry %}
+    <p class="mb-0 opacity-90 small">Revisit what you were thinking and how it played out.</p>
+    {% else %}
+    <p class="mb-0 opacity-90 small">Before you write anything else — what was your thesis?</p>
+    {% endif %}
 </div>
 
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <form method="POST" class="card border-0 shadow-sm p-4">
+
+            {# ── Trade details ── #}
             <div class="form-section">
                 <h6>Trade</h6>
                 <div class="row g-2">
@@ -69,24 +84,28 @@
                 </div>
             </div>
 
+            {# ── Thesis & Notes — the core of the journal ── #}
             <div class="form-section">
-                <h6>Thesis & Notes</h6>
+                <h6>Thesis & Reflection</h6>
+                <p class="coaching-hint">Write the thesis first. Everything else is optional.</p>
                 <div class="mb-2">
                     <label class="form-label small">Thesis — Why are you taking this trade?</label>
-                    <textarea name="thesis" class="form-control" rows="2" placeholder="e.g. Bullish on sector rotation, IV crush play post-earnings">{{ entry.thesis if entry else '' }}</textarea>
+                    <textarea name="thesis" class="form-control" rows="3" placeholder="e.g. Bullish on sector rotation into value names. Selling the 180 call because I think AAPL stays range-bound through earnings.">{{ entry.thesis if entry else '' }}</textarea>
                 </div>
                 <div class="mb-2">
                     <label class="form-label small">Notes</label>
-                    <textarea name="notes" class="form-control" rows="2" placeholder="Any additional notes">{{ entry.notes if entry else '' }}</textarea>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Anything else — market context, what you noticed, what almost stopped you.">{{ entry.notes if entry else '' }}</textarea>
                 </div>
                 <div>
-                    <label class="form-label small">Post-Trade Reflection <span class="text-muted">(add when closed)</span></label>
-                    <textarea name="reflection" class="form-control" rows="2" placeholder="What did you learn?">{{ entry.reflection if entry else '' }}</textarea>
+                    <label class="form-label small">Post-Trade Reflection <span class="text-muted">(come back when it closes)</span></label>
+                    <textarea name="reflection" class="form-control" rows="3" placeholder="Did it play out the way you expected? What would you do differently? Did you follow your process?">{{ entry.reflection if entry else '' }}</textarea>
                 </div>
             </div>
 
+            {# ── Behavioral signals ── #}
             <div class="form-section">
-                <h6>Behavioral</h6>
+                <h6>How You Felt</h6>
+                <p class="coaching-hint">This data helps you spot patterns between your state and your results.</p>
                 <div class="row g-3">
                     <div class="col-md-4">
                         <label class="form-label small">Confidence (1–10)</label>
@@ -124,8 +143,10 @@
                 </div>
             </div>
 
+            {# ── Tags ── #}
             <div class="form-section">
                 <h6>Tags</h6>
+                <p class="coaching-hint">Tag honestly. "FOMO" and "boredom trade" are the most useful tags you'll ever use.</p>
                 <div class="d-flex flex-wrap gap-2">
                     {% for t in tag_options %}
                     <div class="form-check form-check-inline">
@@ -137,13 +158,13 @@
                 </div>
             </div>
 
+            {# ── Actions ── #}
             <div class="d-flex justify-content-between align-items-center mt-4">
                 <div>
-                    {% if entry %}
                     <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary">Cancel</a>
+                    {% if entry %}
                     <button type="submit" class="btn btn-primary">Save</button>
                     {% else %}
-                    <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary">Cancel</a>
                     <button type="submit" class="btn btn-primary">Create Entry</button>
                     {% endif %}
                 </div>

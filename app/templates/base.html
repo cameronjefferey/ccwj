@@ -11,8 +11,8 @@
     <meta property="og:title" content="{{ (title ~ ' - HappyTrader') if title else 'HappyTrader' }}">
     <meta property="og:type" content="website">
     {% block meta_tags %}
-    <meta name="description" content="Options portfolio analytics. Classify strategies, track performance, and get AI insights for covered calls, CSPs, wheels, and more.">
-    <meta property="og:description" content="Options portfolio analytics. Classify strategies, track performance, and get AI insights for covered calls, CSPs, wheels, and more.">
+    <meta name="description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
+    <meta property="og:description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
     {% endblock %}
 
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
@@ -21,15 +21,55 @@
 
     <style>
         :root {
-            --color-positive: #198754;
-            --color-negative: #dc3545;
+            --color-positive: #2d8659;
+            --color-negative: #c0392b;
+            --color-mirror: #6f42c1;
+            --color-reflect: #1a1a2e;
             --nav-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
         }
-        body { background: #f5f6fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+        body {
+            background: #fafafa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            color: #2c3e50;
+        }
         .navbar { background: var(--nav-bg) !important; }
         .navbar-brand { font-weight: 700; letter-spacing: .5px; }
+        .navbar-brand small {
+            font-size: .6rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            opacity: .6;
+            display: block;
+            line-height: 1;
+            margin-top: 1px;
+        }
         .text-positive { color: var(--color-positive) !important; }
         .text-negative { color: var(--color-negative) !important; }
+        .text-mirror { color: var(--color-mirror) !important; }
+
+        .narrative { font-size: 1.05rem; line-height: 1.7; color: #495057; }
+        .narrative strong { color: #2c3e50; }
+
+        .prompt-card {
+            background: #f8f4ff;
+            border-left: 4px solid var(--color-mirror);
+            border-radius: 0 12px 12px 0;
+            padding: 1.25rem 1.5rem;
+        }
+        .prompt-card .prompt-q {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--color-mirror);
+            margin-bottom: .5rem;
+        }
+
+        .section-divider {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #dee2e6, transparent);
+            margin: 2.5rem 0;
+        }
+
         .kpi-card {
             border: none;
             border-radius: 12px;
@@ -37,7 +77,7 @@
             transition: transform .15s;
         }
         .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.1); }
-        .kpi-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
+        .kpi-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
         .kpi-value { font-size: 1.5rem; font-weight: 700; }
         .navbar .dropdown-menu { border: none; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
         .navbar .dropdown-menu-dark .dropdown-item:hover { background: rgba(255,255,255,.1); }
@@ -45,10 +85,12 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('index') }}">HappyTrader</a>
+            <a class="navbar-brand" href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('index') }}">
+                HappyTrader
+                <small>your trading mirror</small>
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
                     data-bs-target="#navContent" aria-controls="navContent"
                     aria-expanded="false" aria-label="Toggle navigation">
@@ -57,30 +99,33 @@
             <div class="collapse navbar-collapse" id="navContent">
                 {% if current_user.is_authenticated %}
                 <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard') }}">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('weekly_review') }}">Review</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('mirror_score') }}">Mirror</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('journal') }}">Journal</a>
+                    </li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Portfolio</a>
+                        <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Analyze</a>
                         <ul class="dropdown-menu dropdown-menu-dark">
-                            <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Dashboard</a></li>
                             <li><a class="dropdown-item" href="/positions">Positions</a></li>
                             <li><a class="dropdown-item" href="/symbols">Daily Detail</a></li>
                             <li><a class="dropdown-item" href="/accounts">Account Performance</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Tools</a>
-                        <ul class="dropdown-menu dropdown-menu-dark">
-                            <li><a class="dropdown-item" href="/upload">Upload</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('insights') }}">Insights</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('benchmark') }}">If You Did Nothing</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('taxes') }}">Tax Center</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Reflect</a>
+                        <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">More</a>
                         <ul class="dropdown-menu dropdown-menu-dark">
-                            <li><a class="dropdown-item" href="{{ url_for('journal') }}">Journal</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('weekly_review') }}">Weekly Review</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('mirror_score') }}">Mirror Score</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('insights') }}">AI Insights</a></li>
+                            <li><a class="dropdown-item" href="/upload">Upload</a></li>
                         </ul>
                     </li>
                 </ul>
@@ -114,7 +159,6 @@
         </div>
     </nav>
 
-    <!-- Demo mode banner -->
     {% if current_user.is_authenticated and current_user.username == 'demo' %}
     <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
          style="background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%); color: #fff;">
@@ -126,7 +170,6 @@
     </div>
     {% endif %}
 
-    <!-- Flash messages (toast-style) -->
     <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -142,7 +185,6 @@
         {% endwith %}
     </div>
 
-    <!-- Page content -->
     <div class="container-fluid px-4">
         {% block content %}{% endblock %}
     </div>
@@ -158,16 +200,14 @@
                 <a href="{{ url_for('pricing') }}">Pricing</a>
                 <a href="{{ url_for('faq') }}">FAQ</a>
             </div>
-            <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Options strategies made clear.</p>
+            <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Your trading mirror.</p>
         </div>
     </footer>
     {% endif %}
     {% endblock %}
 
-    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Close mobile nav when a nav link is clicked (improves UX on small screens)
         document.querySelectorAll('#navContent .nav-link').forEach(function(link) {
             link.addEventListener('click', function() {
                 var collapse = document.getElementById('navContent');
