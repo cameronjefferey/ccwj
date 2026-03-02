@@ -113,6 +113,21 @@
             {% endfor %}
         </select>
     </div>
+    <div class="col-auto d-flex align-items-center pt-2">
+        <div class="form-check me-3">
+            <input type="checkbox" class="form-check-input" name="open_only" id="openOnlyFilter" value="1"
+                   {{ 'checked' if open_only|default(false) }}>
+            <label class="form-check-label small" for="openOnlyFilter">Symbols with open positions</label>
+            {# When unchecked, checkbox is not sent; hidden ensures server receives open_only=0 #}
+            <input type="hidden" name="open_only" value="0">
+        </div>
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input" name="positions_only" id="positionsOnlyFilter" value="1"
+                   {{ 'checked' if positions_only|default(false) }}>
+            <label class="form-check-label small" for="positionsOnlyFilter">Open positions only</label>
+            <input type="hidden" name="positions_only" value="0">
+        </div>
+    </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-sm btn-primary">Apply</button>
         <a href="/symbols" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
@@ -291,6 +306,7 @@
                 {% endif %}
 
                 {# ── Trade History ────────────────────────────────────── #}
+                {% if not positions_only|default(false) %}
                 <h6 class="fw-bold mt-3 mb-2">Trade History ({{ sym.trades | length }})</h6>
                 <div class="trade-table-wrap">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -338,6 +354,7 @@
                         </tbody>
                     </table>
                 </div>
+                {% endif %}
 
             </div>{# end accordion-body #}
         </div>{# end collapse #}

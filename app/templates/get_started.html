@@ -64,8 +64,8 @@
         {# ── All done ── #}
         <div class="done-banner">
             <h4>You're all set!</h4>
-            <p class="mb-3 opacity-90">Your data has been processed and your dashboard is ready.</p>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-light fw-semibold px-4">Go to Dashboard</a>
+            <p class="mb-3 opacity-90">Your data has been processed and your home feed is ready.</p>
+            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Go to Home</a>
         </div>
         {% else %}
         <div class="get-started-hero">
@@ -154,13 +154,13 @@
                     {% if has_data %}
                     Dashboard ready
                     {% else %}
-                    View your dashboard
+                    View your home feed
                     {% endif %}
                 </h6>
 
                 {% if has_data %}
                 <p>
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-sm">Go to Dashboard</a>
+                    <a href="{{ url_for('weekly_review') }}" class="btn btn-primary btn-sm">Go to Home</a>
                 </p>
                 {% else %}
                 <p>Once processing is complete, your positions and strategy analytics will be here.</p>
@@ -178,7 +178,7 @@
         {% endif %}
 
         <div class="text-center mt-4">
-            <a href="{{ url_for('dashboard') }}" class="text-muted small">Skip to dashboard</a>
+            <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to home</a>
         </div>
     </div>
 </div>

@@ -297,10 +297,13 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
             new_tagged["__src"] = "new"
             combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
 
-            # Define a reasonable business key for de-dupe.
-            # Use all standard seed columns except Account so we keep one row
-            # per unique trade for this account.
+            # Normalize key columns so duplicates match: NaN != NaN in pandas,
+            # so fill nulls with a sentinel before dedupe.
             key_cols = [c for c in seed_columns if c != "Account"]
+            for c in key_cols:
+                if c in combined.columns:
+                    combined[c] = combined[c].astype(str).replace("nan", "").replace("None", "").str.strip()
+
             combined = combined.sort_values("__src")  # old first, new second
             combined = combined.drop_duplicates(subset=key_cols, keep="last")
             merged_account = combined.drop(columns=["__src"])
@@ -335,6 +338,82 @@ def _commit_file(path, content, message):
         return True, None
     else:
         return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}"
+
+
+def _commit_two_files(path1, content1, path2, content2, message):
+    """
+    Create a single commit that updates both files (Git Data API).
+    One commit = one push event = one workflow run.
+    Returns (success, error_message).
+    """
+    parts = GITHUB_REPO.split("/", 1)
+    if len(parts) != 2:
+        return False, "Invalid GITHUB_REPO"
+    owner, repo = parts
+    base = f"https://api.github.com/repos/{owner}/{repo}/git"
+
+    headers = _github_headers()
+
+    # 1. Get current commit SHA
+    ref_resp = requests.get(f"{base}/refs/heads/master", headers=headers, timeout=15)
+    if ref_resp.status_code != 200:
+        return False, f"Failed to get ref (HTTP {ref_resp.status_code})"
+    commit_sha = ref_resp.json()["object"]["sha"]
+
+    # 2. Get commit and tree SHA
+    commit_resp = requests.get(f"{base}/commits/{commit_sha}", headers=headers, timeout=15)
+    if commit_resp.status_code != 200:
+        return False, f"Failed to get commit (HTTP {commit_resp.status_code})"
+    tree_sha = commit_resp.json()["tree"]["sha"]
+
+    # 3. Create blobs for both file contents
+    def create_blob(content):
+        blob_resp = requests.post(
+            f"{base}/blobs",
+            headers=headers,
+            json={"content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "encoding": "base64"},
+            timeout=30,
+        )
+        if blob_resp.status_code != 201:
+            raise RuntimeError(f"Blob create failed: {blob_resp.status_code}")
+        return blob_resp.json()["sha"]
+
+    try:
+        blob1_sha = create_blob(content1)
+        blob2_sha = create_blob(content2)
+    except RuntimeError as e:
+        return False, str(e)
+
+    # 4. Create tree with both files (base_tree keeps rest of repo)
+    tree_payload = {
+        "base_tree": tree_sha,
+        "tree": [
+            {"path": path1, "mode": "100644", "type": "blob", "sha": blob1_sha},
+            {"path": path2, "mode": "100644", "type": "blob", "sha": blob2_sha},
+        ],
+    }
+    tree_resp = requests.post(f"{base}/trees", headers=headers, json=tree_payload, timeout=30)
+    if tree_resp.status_code != 201:
+        return False, f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}"
+    new_tree_sha = tree_resp.json()["sha"]
+
+    # 5. Create commit
+    commit_payload = {"tree": new_tree_sha, "parents": [commit_sha], "message": message}
+    commit_resp = requests.post(f"{base}/commits", headers=headers, json=commit_payload, timeout=30)
+    if commit_resp.status_code != 201:
+        return False, f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}"
+    new_commit_sha = commit_resp.json()["sha"]
+
+    # 6. Update ref
+    patch_resp = requests.patch(
+        f"{base}/refs/heads/master",
+        headers=headers,
+        json={"sha": new_commit_sha},
+        timeout=15,
+    )
+    if patch_resp.status_code != 200:
+        return False, f"Failed to update ref (HTTP {patch_resp.status_code})"
+    return True, None
 
 
 EXISTING_ACCOUNTS_QUERY = """
@@ -490,16 +569,14 @@ def upload():
     )
 
     try:
-        # Commit history CSV first
-        ok, err = _commit_file(HISTORY_PATH, history_content, commit_msg)
+        # Single commit for both files so the Actions workflow runs once, not twice
+        ok, err = _commit_two_files(
+            HISTORY_PATH, history_content,
+            CURRENT_PATH, current_content,
+            commit_msg,
+        )
         if not ok:
-            flash(f"Failed to update history seed: {err}", "danger")
-            return redirect(url_for("upload"))
-
-        # Commit current CSV (separate commit so both get saved even if one is unchanged)
-        ok, err = _commit_file(CURRENT_PATH, current_content, commit_msg)
-        if not ok:
-            flash(f"Failed to update current seed: {err}", "danger")
+            flash(f"Failed to update seeds: {err}", "danger")
             return redirect(url_for("upload"))
 
     except Exception as exc:

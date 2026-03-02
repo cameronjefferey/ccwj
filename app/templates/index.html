@@ -347,11 +347,11 @@
     <a href="{{ url_for('weekly_review', mode='midweek') }}" class="btn btn-sm btn-outline-primary">Mid-Week Check</a>
     {% else %}
     <p class="narrative mb-3 text-muted">
-        No recent trading activity found.
+        This week's summary isn't ready yet.
         {% if stats and stats.total_trades > 0 %}
-        Your data covers older periods — explore your
-        <a href="{{ url_for('first_look') }}">trader profile</a> or
-        <a href="{{ url_for('positions') }}">position history</a>.
+        If you just uploaded, the pipeline may still be building — try again in a few minutes.
+        You can explore your <a href="{{ url_for('first_look') }}">trader profile</a> or
+        <a href="{{ url_for('positions') }}">position history</a> in the meantime.
         {% endif %}
     </p>
     {% endif %}

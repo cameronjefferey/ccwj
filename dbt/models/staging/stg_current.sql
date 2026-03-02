@@ -36,10 +36,11 @@ cleaned as (
         trim(description) as description,
         safe_cast(quantity as float64) as quantity,
         safe_cast(price as float64) as current_price,
-        safe_cast(market_value as float64) as market_value,
-        safe_cast(cost_bases as float64) as cost_basis,
-        safe_cast(gain_or_loss_dollat as float64) as unrealized_pnl,       -- note: typo in source column name
-        safe_cast(gain_or_loss_percent as float64) as unrealized_pnl_pct,
+        -- Schwab CSV often has market_value/cost_bases as "$9,220.95"; strip $ and commas
+        safe_cast(trim(replace(replace(replace(coalesce(cast(market_value as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as market_value,
+        safe_cast(trim(replace(replace(replace(coalesce(cast(cost_bases as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as cost_basis,
+        safe_cast(trim(replace(replace(replace(coalesce(cast(gain_or_loss_dollat as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl,  -- typo in source
+        safe_cast(trim(replace(replace(replace(coalesce(cast(gain_or_loss_percent as string), ''), '%', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl_pct,
         trim(security_type) as security_type_raw,
         trim(in_the_money) as in_the_money,
         safe_cast(dividend_yield as float64) as dividend_yield,

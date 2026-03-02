@@ -341,7 +341,7 @@ def first_look():
         profile = _build_profile(client, where, acct_and)
 
         if not profile:
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("weekly_review"))
 
         return render_template(
             "first_look.html",
@@ -349,4 +349,4 @@ def first_look():
             profile=profile,
         )
     except Exception as e:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("weekly_review"))

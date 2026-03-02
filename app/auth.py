@@ -9,7 +9,7 @@ from app.models import User, get_accounts_for_user, get_uploads_for_user, get_sc
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("weekly_review"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -28,7 +28,7 @@ def login():
         if not next_page or not next_page.startswith("/"):
             # New users (no accounts) go to onboarding first
             accounts = get_accounts_for_user(user.id)
-            next_page = url_for("get_started") if not accounts else url_for("dashboard")
+            next_page = url_for("get_started") if not accounts else url_for("weekly_review")
         return redirect(next_page)
 
     return render_template("login.html", title="Login")
@@ -37,7 +37,7 @@ def login():
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("weekly_review"))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -82,7 +82,7 @@ def logout():
 def demo_start():
     """Log in as the demo user and redirect to the dashboard. No sign-up required."""
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("weekly_review"))
 
     demo = User.get_by_username("demo")
     if demo is None:
@@ -90,7 +90,7 @@ def demo_start():
         return redirect(url_for("signup"))
 
     login_user(demo, remember=False)
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("weekly_review"))
 
 
 @app.route("/settings", methods=["GET", "POST"])

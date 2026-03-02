@@ -437,9 +437,9 @@ def robots():
 @app.route("/")
 @app.route("/index")
 def index():
-    """Public landing page, or redirect to dashboard if logged in."""
+    """Public landing page, or redirect to weekly review (home) if logged in."""
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("weekly_review"))
     return render_template("landing.html", title="Home")
 
 
@@ -543,11 +543,14 @@ def dashboard():
                     br = best_df.iloc[0]
                     week_summary["best_symbol"] = br.get("best_symbol", "")
                     week_summary["best_pnl"] = float(br.get("best_pnl", 0) or 0)
-        except Exception:
-            pass
+        except Exception as e:
+            # Week summary comes from mart_weekly_summary; if missing, pipeline may not have run yet
+            if app.debug:
+                app.logger.warning("Dashboard week summary failed: %s", e)
 
-    except Exception:
-        pass
+    except Exception as e:
+        if app.debug:
+            app.logger.warning("Dashboard stats/week summary failed: %s", e)
 
     has_accounts = user_accounts is None or len(user_accounts) > 0
 
@@ -1015,17 +1018,83 @@ def position_detail(symbol):
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
 
+    # For open equity positions: if cost_basis is missing/zero, derive from trade history
+    # so unrealized P&L = market_value - cost_basis (true P/L for open positions)
+    if not current_df.empty and not trades_df.empty and "action" in trades_df.columns:
+        for idx, row in current_df.iterrows():
+            if row.get("instrument_type") != "Equity":
+                continue
+            cost_basis = float(row.get("cost_basis") or 0)
+            market_value = float(row.get("market_value") or 0)
+            if market_value <= 0:
+                continue
+            if cost_basis is None or cost_basis == 0:
+                acct, sym = row.get("account"), row.get("symbol")
+                buys = trades_df[
+                    (trades_df["account"] == acct)
+                    & (trades_df["symbol"] == sym)
+                    & (trades_df["action"].astype(str).str.lower().str.strip() == "buy")
+                ]
+                if not buys.empty:
+                    cost_basis = abs(float(buys["amount"].sum()))
+                    current_df.at[idx, "cost_basis"] = cost_basis
+                    current_df.at[idx, "unrealized_pnl"] = market_value - cost_basis
+                    if cost_basis:
+                        current_df.at[idx, "unrealized_pnl_pct"] = 100.0 * (market_value - cost_basis) / cost_basis
+
+    # Status (needed for open-only realized logic)
+    status_col = None
+    for c in ("status", "Status", "STATUS"):
+        if c in (summary_df.columns if not summary_df.empty else []):
+            status_col = c
+            break
+    statuses = summary_df[status_col].unique().tolist() if status_col and not summary_df.empty else []
+    _has_open = any(str(s).strip().lower() == "open" for s in statuses if s is not None)
+    _has_closed = any(str(s).strip().lower() == "closed" for s in statuses if s is not None)
+    if _has_open and _has_closed:
+        overall_status = "Mixed"
+    elif _has_open:
+        overall_status = "Open"
+    else:
+        overall_status = "Closed"
+
     # KPIs (aggregated across strategies)
     total_winners = int(summary_df["num_winners"].sum())
     total_losers = int(summary_df["num_losers"].sum())
     total_closed = total_winners + total_losers
 
+    # Realized P/L only from closed trades. For open positions there is no realized (cost of buy is not a "realized loss").
+    _sell_actions = ("equity_sell", "option_sell_to_close", "option_buy_to_close")
+    has_sell_trades = (
+        not trades_df.empty
+        and "action" in trades_df.columns
+        and trades_df["action"].astype(str).str.strip().isin(_sell_actions).any()
+    )
+    is_open_only = (
+        overall_status == "Open"
+        or (total_closed == 0 and not current_df.empty)
+        or (not has_sell_trades and not current_df.empty)
+    )
+    if is_open_only:
+        realized_for_display = 0.0
+    else:
+        realized_for_display = float(summary_df["realized_pnl"].sum()) if not summary_df.empty else 0.0
+
+    if app.debug and symbol == "ATZAF":
+        app.logger.warning(
+            "position_detail ATZAF: status_col=%s overall_status=%s total_closed=%s is_open_only=%s realized_for_display=%s",
+            status_col, overall_status, total_closed, is_open_only, realized_for_display,
+        )
+
     kpis = {}
     if not summary_df.empty:
+        unrealized_from_summary = float(summary_df["unrealized_pnl"].sum())
+        if not current_df.empty and "unrealized_pnl" in current_df.columns:
+            unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
         kpis = {
-            "total_return": float(summary_df["total_return"].sum()),
-            "realized_pnl": float(summary_df["realized_pnl"].sum()),
-            "unrealized_pnl": float(summary_df["unrealized_pnl"].sum()),
+            "total_return": realized_for_display + unrealized_from_summary,
+            "realized_pnl": realized_for_display,
+            "unrealized_pnl": unrealized_from_summary,
             "premium_collected": float(summary_df["total_premium_received"].sum()),
             "premium_paid": float(summary_df["total_premium_paid"].sum()),
             "dividend_income": float(summary_df["total_dividend_income"].sum()),
@@ -1037,15 +1106,6 @@ def position_detail(symbol):
             "first_trade": str(summary_df["first_trade_date"].min()) if "first_trade_date" in summary_df.columns else "",
             "last_trade": str(summary_df["last_trade_date"].max()) if "last_trade_date" in summary_df.columns else "",
         }
-
-    # Status
-    statuses = summary_df["status"].unique().tolist() if not summary_df.empty else []
-    if "Open" in statuses and "Closed" in statuses:
-        overall_status = "Mixed"
-    elif "Open" in statuses:
-        overall_status = "Open"
-    else:
-        overall_status = "Closed"
 
     # Strategy rows
     strategy_rows = summary_df.to_dict(orient="records") if not summary_df.empty else []
@@ -1134,6 +1194,11 @@ STRATEGIES_MAP_QUERY = """
     FROM `ccwj-dbt.analytics.positions_summary`
 """
 
+SYMBOLS_PNL_QUERY = """
+    SELECT account, symbol, status, realized_pnl, unrealized_pnl
+    FROM `ccwj-dbt.analytics.positions_summary`
+"""
+
 def _build_chart_from_daily_pnl(daily_df, current_df):
     """
     Build cumulative P&L chart from pre-aggregated mart_daily_pnl data.
@@ -1188,6 +1253,9 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
             cum_realized += sell_proceeds
 
         close = float(row.get("close_price") or 0)
+        # If no close price on a buy day, use avg cost so open position doesn't show full cost as "loss"
+        if close <= 0 and buy_qty > 0 and buy_cost > 0 and shares_held > 0:
+            close = buy_cost / buy_qty
         unrealized = (shares_held * close - total_cost) if close > 0 and shares_held > 0 else 0
         eq_pnl = cum_realized + unrealized
 
@@ -1247,6 +1315,7 @@ def symbols_detail():
         trades_df = client.query(TRADES_QUERY).to_dataframe()
         current_df = client.query(CURRENT_POSITIONS_QUERY).to_dataframe()
         strat_df = client.query(STRATEGIES_MAP_QUERY).to_dataframe()
+        pnl_df = client.query(SYMBOLS_PNL_QUERY).to_dataframe()
     except Exception as exc:
         return render_template(
             "symbols.html",
@@ -1255,6 +1324,7 @@ def symbols_detail():
             chart_data_json="[]",
             accounts=[],
             selected_account="",
+            open_only=False,
         )
 
     # ------------------------------------------------------------------
@@ -1283,13 +1353,23 @@ def symbols_detail():
     user_accounts = _user_account_list()
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
+    pnl_df = _filter_df_by_accounts(pnl_df, user_accounts)
 
     accounts = sorted(trades_df["account"].dropna().unique())
     selected_account = request.args.get("account", "")
+    open_only = request.args.get("open_only") == "1"
+    positions_only = request.args.get("positions_only") == "1"
 
     if selected_account:
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
+        pnl_df = pnl_df[pnl_df["account"] == selected_account]
+
+    # Restrict to symbols that have a current open position (match current_positions / int_enriched_current)
+    if open_only:
+        open_pairs = set(zip(current_df["account"].astype(str), current_df["symbol"].astype(str))) if not current_df.empty else set()
+    else:
+        open_pairs = None
 
     # Fetch pre-aggregated chart data from mart
     try:
@@ -1310,15 +1390,55 @@ def symbols_detail():
     chart_data_list = []
 
     for (account, symbol), group in trades_df.groupby(["account", "symbol"]):
+        if open_pairs is not None and (str(account), str(symbol)) not in open_pairs:
+            continue
         group = group.sort_values("trade_date")
 
         sym_current = current_df[
             (current_df["account"] == account) & (current_df["symbol"] == symbol)
         ]
 
-        total_realized = round(float(group["amount"].sum()), 2)
+        # Realized P&L: use positions_summary when available so mixed
+        # open/closed symbols (e.g. RKLB) show historical realized plus
+        # current unrealized. For symbols that are purely open (only
+        # Open status and no closed trades), treat realized as 0.
+        sym_pnl = pnl_df[
+            (pnl_df["account"] == account) & (pnl_df["symbol"] == symbol)
+        ]
+        if not sym_pnl.empty:
+            statuses = (
+                sym_pnl["status"]
+                .dropna()
+                .astype(str)
+                .str.lower()
+                .str.strip()
+                .unique()
+                .tolist()
+            )
+            has_open = any(s == "open" for s in statuses)
+            has_closed = any(s == "closed" for s in statuses)
+            realized_val = float(sym_pnl["realized_pnl"].sum() or 0.0)
+            # Purely open symbol (no closed legs): no realized yet, even
+            # if the mart currently reports a negative net cash flow.
+            if has_open and not has_closed:
+                realized_val = 0.0
+            total_realized = round(realized_val, 2)
+        else:
+            # Fallback: net cash flow from trades if mart row missing.
+            total_realized = round(float(group["amount"].sum()), 2)
+
+        # Unrealized from current open positions (matches current positions table)
         unrealized = round(float(sym_current["unrealized_pnl"].sum()), 2) if not sym_current.empty else 0.0
-        total_return = round(total_realized + unrealized, 2)
+
+        # Display semantics:
+        # - Default view: total_return = realized (history) + unrealized (current)
+        # - "Open positions only" view: focus on the live leg only — realized = 0,
+        #   total_return = unrealized.
+        display_realized = total_realized
+        display_total = round(total_realized + unrealized, 2)
+        if positions_only:
+            display_realized = 0.0
+            display_total = unrealized
         num_trades = len(group)
         first_date = str(group["trade_date"].min())
         last_date = str(group["trade_date"].max())
@@ -1341,9 +1461,9 @@ def symbols_detail():
         symbol_data.append({
             "account": account,
             "symbol": symbol,
-            "total_realized": total_realized,
+            "total_realized": display_realized,
             "unrealized": unrealized,
-            "total_return": total_return,
+            "total_return": display_total,
             "num_trades": num_trades,
             "first_date": first_date,
             "last_date": last_date,
@@ -1365,6 +1485,8 @@ def symbols_detail():
         chart_data_json=json.dumps(sorted_charts),
         accounts=accounts,
         selected_account=selected_account,
+        open_only=open_only,
+        positions_only=positions_only,
     )
 
 

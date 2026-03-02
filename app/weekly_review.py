@@ -21,6 +21,11 @@ from app.models import (
 from google.cloud import bigquery
 import pandas as pd
 
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
 
 def _user_account_list():
     if is_admin(current_user.username):
@@ -37,6 +42,38 @@ def _account_sql_and(accounts):
     return f"AND account IN ({quoted})"
 
 
+def _get_market_performance(week_start, today):
+    """Fetch SPY and QQQ returns for the week and YTD via yfinance. Returns None on failure."""
+    if yf is None:
+        return None
+    out = {"spy_week_pct": None, "qqq_week_pct": None, "spy_ytd_pct": None, "qqq_ytd_pct": None}
+    try:
+        end = today + timedelta(days=1)
+        ytd_start = date(today.year, 1, 1)
+        for ticker, week_key, ytd_key in [
+            ("SPY", "spy_week_pct", "spy_ytd_pct"),
+            ("QQQ", "qqq_week_pct", "qqq_ytd_pct"),
+        ]:
+            t = yf.Ticker(ticker)
+            hist = t.history(start=week_start, end=end, auto_adjust=True)
+            if hist is not None and len(hist) >= 2:
+                start_p = hist["Close"].iloc[0]
+                end_p = hist["Close"].iloc[-1]
+                if start_p and start_p > 0:
+                    out[week_key] = round((end_p - start_p) / start_p * 100, 2)
+            ytd_hist = t.history(start=ytd_start, end=end, auto_adjust=True)
+            if ytd_hist is not None and len(ytd_hist) >= 2:
+                ytd_start_p = ytd_hist["Close"].iloc[0]
+                ytd_end_p = ytd_hist["Close"].iloc[-1]
+                if ytd_start_p and ytd_start_p > 0:
+                    out[ytd_key] = round((ytd_end_p - ytd_start_p) / ytd_start_p * 100, 2)
+    except Exception as e:
+        if app.debug:
+            app.logger.warning("Market performance fetch failed: %s", e)
+        return None
+    return out
+
+
 # Pre-aggregated weekly summary from dbt
 WEEKLY_SUMMARY_QUERY = """
 SELECT *
@@ -50,6 +87,15 @@ SELECT MAX(week_start) AS latest_week
 FROM `ccwj-dbt.analytics.mart_weekly_summary`
 WHERE (trades_closed > 0 OR trades_opened > 0)
   {account_filter}
+"""
+
+# Total account value (from current positions snapshot) for context and return % vs account
+ACCOUNT_VALUE_QUERY = """
+SELECT
+  COALESCE(SUM(CASE WHEN row_type = 'account_total' THEN market_value ELSE 0 END), 0) AS account_value,
+  COALESCE(SUM(CASE WHEN row_type = 'cash' THEN market_value ELSE 0 END), 0) AS cash_balance
+FROM `ccwj-dbt.analytics.stg_account_balances`
+WHERE 1=1 {account_filter}
 """
 
 # For behavioral anomaly: need individual losing trades joined with journal
@@ -87,6 +133,26 @@ FROM `ccwj-dbt.analytics.int_strategy_classification` c
 WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
   {account_filter}
+"""
+
+# All trades this week (closed or opened) for the detailed list + journal links
+TRADES_THIS_WEEK_QUERY = """
+SELECT
+    account,
+    symbol,
+    strategy,
+    trade_symbol,
+    open_date,
+    close_date,
+    total_pnl,
+    status
+FROM `ccwj-dbt.analytics.int_strategy_classification`
+WHERE (
+    (close_date >= @start_date AND close_date <= @end_date)
+    OR (open_date >= @start_date AND open_date <= @end_date)
+)
+  {account_filter}
+ORDER BY close_date DESC NULLS LAST, open_date DESC
 """
 
 
@@ -248,6 +314,9 @@ def weekly_review():
         "behavioral_anomaly": None,
         "ai_insight": None,
         "is_backfilled": False,
+        "market": None,
+        "equity_snapshot": None,
+        "trades_this_week": [],
     }
 
     try:
@@ -284,6 +353,9 @@ def weekly_review():
 
         prev_week = this_week - timedelta(days=7)
 
+        # Market performance (SPY, QQQ) for comparison
+        context["market"] = _get_market_performance(this_week, today)
+
         # Always fetch this week + prev week from mart_weekly_summary
         for target_week, key in [(this_week, "review"), (prev_week, "prev_review")]:
             job_config = bigquery.QueryJobConfig(
@@ -299,8 +371,91 @@ def weekly_review():
                 rows = df.to_dict(orient="records")
                 context[key] = _aggregate_weekly_rows(rows)
 
-        # Journal data for emotional drift + behavioral anomaly
         week_end = this_week + timedelta(days=6)
+
+        # Current account snapshot (equity context)
+        try:
+            av_df = client.query(
+                ACCOUNT_VALUE_QUERY.format(account_filter=account_filter)
+            ).to_dataframe()
+            if not av_df.empty:
+                row = av_df.iloc[0]
+                account_value = float(row.get("account_value", 0) or 0)
+                cash_balance = float(row.get("cash_balance", 0) or 0)
+                invested_value = account_value - cash_balance
+                pct_invested = None
+                if account_value > 0:
+                    pct_invested = round(invested_value / account_value * 100, 1)
+                context["equity_snapshot"] = {
+                    "account_value": account_value,
+                    "cash_balance": cash_balance,
+                    "invested_value": invested_value,
+                    "pct_invested": pct_invested,
+                }
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Equity snapshot query failed: %s", e)
+
+        # Your week: dollars + return % (based on account value)
+        context["your_week"] = None
+        if context.get("review") and context["review"].get("trades_closed", 0) > 0:
+            total_pnl = float(context["review"].get("total_pnl", 0) or 0)
+            pct = None
+            snapshot = context.get("equity_snapshot") or {}
+            account_value = float(snapshot.get("account_value", 0) or 0)
+            if account_value > 0:
+                pct = round(total_pnl / account_value * 100, 2)
+            context["your_week"] = {
+                "dollars": total_pnl,
+                "pct": pct,
+                "trades_closed": context["review"]["trades_closed"],
+            }
+
+        # Detailed list of trades this week (for list + journal links)
+        try:
+            trades_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
+                    bigquery.ScalarQueryParameter("end_date", "DATE", week_end),
+                ]
+            )
+            trades_df = client.query(
+                TRADES_THIS_WEEK_QUERY.format(account_filter=account_filter),
+                job_config=trades_config,
+            ).to_dataframe()
+            if not trades_df.empty:
+                trades_list = []
+                for _, row in trades_df.iterrows():
+                    open_d = row.get("open_date")
+                    close_d = row.get("close_date")
+                    if hasattr(open_d, "isoformat"):
+                        open_d = open_d.isoformat()
+                    elif open_d is not None:
+                        open_d = str(open_d)[:10]
+                    else:
+                        open_d = ""
+                    if hasattr(close_d, "isoformat"):
+                        close_d = close_d.isoformat()
+                    elif close_d is not None:
+                        close_d = str(close_d)[:10]
+                    else:
+                        close_d = ""
+                    trades_list.append({
+                        "account": str(row.get("account", "")),
+                        "symbol": str(row.get("symbol", "")),
+                        "strategy": str(row.get("strategy", "")),
+                        "trade_symbol": str(row.get("trade_symbol", "")) if row.get("trade_symbol") else "",
+                        "open_date": open_d,
+                        "close_date": close_d,
+                        "total_pnl": float(row.get("total_pnl", 0)) if row.get("total_pnl") is not None else None,
+                        "status": str(row.get("status", "")),
+                    })
+                context["trades_this_week"] = trades_list
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Trades this week query failed: %s", e)
+
+        # Journal data for emotional drift + behavioral anomaly
         journal_entries = list_journal_entries(
             current_user.id,
             start_date=str(this_week),
