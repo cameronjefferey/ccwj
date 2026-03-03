@@ -1,135 +1,118 @@
 {{ config(materialized='table') }}
 
 /*
-    Daily account equity breakdown.
+    Daily account value from snapshots, broken into equity vs options.
 
     One row per (account, date) with:
-      - equity_value   (MTM equity P&L: realized + unrealized)
-      - option_value   (options P&L to date, treated as value change)
-      - cash_value     (approx. starting from 0 + all trade cash flows)
-      - account_value  = equity_value + option_value + cash_value
+      - account_value  (from snapshot_account_balances_daily account_total rows)
+      - cash_value     (from snapshot_account_balances_daily cash rows)
+      - option_value   (from snapshot_options_market_values_daily, summed)
+      - equity_value   (account_value - cash_value - option_value)
 
-    This mirrors the account-level curve used in _build_account_chart_from_daily_pnl,
-    but persisted in BigQuery so we can compute weekly account-change waterfalls.
+    This relies on dbt snapshots so history is based on the actual
+    Schwab exports at (ideally) end-of-day. If there are multiple
+    snapshots for the same (account, row_type, snapshot_date), we keep
+    only the latest by dbt_valid_from for that day.
 */
 
-with daily as (
+with raw as (
     select
         account,
-        symbol,
-        date,
-        options_amount,
-        dividends_amount,
-        equity_buy_cost,
-        equity_buy_qty,
-        equity_sell_proceeds,
-        equity_sell_qty,
-        other_amount,
-        close_price
-    from {{ ref('mart_daily_pnl') }}
+        row_type,
+        market_value,
+        snapshot_date,
+        dbt_valid_from
+    from {{ ref('snapshot_account_balances_daily') }}
 ),
 
--- Reconstruct per-symbol equity state with window functions:
--- running shares, running cost, realized equity P&L to date.
-equity_state as (
+latest_per_day as (
     select
         account,
-        symbol,
-        date,
-        close_price,
-        equity_buy_qty,
-        equity_buy_cost,
-        equity_sell_qty,
-        equity_sell_proceeds,
-
-        sum(equity_buy_qty) over w_sh as shares_before,
-        sum(equity_buy_cost) over w_sh as cost_before
-    from daily
-    window w_sh as (
-        partition by account, symbol
-        order by date
-        rows between unbounded preceding and current row
+        row_type,
+        market_value,
+        snapshot_date,
+        dbt_valid_from
+    from (
+        select
+            account,
+            row_type,
+            market_value,
+            snapshot_date,
+            dbt_valid_from,
+            row_number() over (
+                partition by account, row_type, snapshot_date
+                order by dbt_valid_from desc
+            ) as rn
+        from raw
+        where snapshot_date is not null
     )
+    where rn = 1
 ),
 
-equity_pnl_cumulative as (
+option_raw as (
     select
         account,
-        symbol,
-        date,
-        close_price,
-        shares_before,
-        cost_before,
-        sum(
-            case
-                when equity_sell_qty > 0 and shares_before > 0 then
-                    equity_sell_proceeds
-                    - (cost_before / nullif(shares_before, 0))
-                      * least(equity_sell_qty, shares_before)
-                when equity_sell_qty > 0 then equity_sell_proceeds
-                else 0
-            end
-        ) over (
-            partition by account, symbol
-            order by date
-            rows between unbounded preceding and current row
-        ) as realized_equity_pnl_to_date
-    from equity_state
+        trade_symbol,
+        market_value,
+        snapshot_date,
+        dbt_valid_from
+    from {{ ref('snapshot_options_market_values_daily') }}
 ),
 
-equity_value_by_symbol as (
+option_latest_per_day as (
     select
         account,
-        symbol,
-        date,
-        realized_equity_pnl_to_date,
-        case
-            when close_price > 0 and shares_before > 0 then
-                shares_before * close_price - cost_before
-            else 0
-        end as unrealized_equity_pnl
-    from equity_pnl_cumulative
+        trade_symbol,
+        market_value,
+        snapshot_date,
+        dbt_valid_from
+    from (
+        select
+            account,
+            trade_symbol,
+            market_value,
+            snapshot_date,
+            dbt_valid_from,
+            row_number() over (
+                partition by account, trade_symbol, snapshot_date
+                order by dbt_valid_from desc
+            ) as rn
+        from option_raw
+        where snapshot_date is not null
+    )
+    where rn = 1
 ),
 
-equity_value_by_account as (
+options_by_account_day as (
     select
         account,
-        date,
-        sum(realized_equity_pnl_to_date + unrealized_equity_pnl) as equity_value
-    from equity_value_by_symbol
+        snapshot_date as date,
+        sum(market_value) as option_value
+    from option_latest_per_day
     group by 1, 2
 ),
 
-cash_and_options as (
+by_account_day as (
     select
         account,
-        date,
-        -- Cumulative options P&L acts like option "value"
-        sum(options_amount) over w_acc as option_value,
-        -- Approximate cash balance: cumulative cash flows from trades
-        sum(dividends_amount + other_amount
-            + equity_sell_proceeds
-            - equity_buy_cost) over w_acc as cash_value
-    from daily
-    window w_acc as (
-        partition by account
-        order by date
-        rows between unbounded preceding and current row
-    )
+        snapshot_date as date,
+        sum(case when row_type = 'account_total' then market_value else 0 end) as account_value,
+        sum(case when row_type = 'cash'          then market_value else 0 end) as cash_value
+    from latest_per_day
+    group by 1, 2
 )
 
 select
-    c.account,
-    c.date,
-    coalesce(e.equity_value, 0)       as equity_value,
-    coalesce(c.option_value, 0)       as option_value,
-    coalesce(c.cash_value, 0)         as cash_value,
-    coalesce(e.equity_value, 0)
-      + coalesce(c.option_value, 0)
-      + coalesce(c.cash_value, 0)     as account_value
-from cash_and_options c
-left join equity_value_by_account e
-  on c.account = e.account
- and c.date    = e.date
-order by c.account, c.date
+    b.account,
+    b.date,
+    -- Equity is everything that isn't cash or options
+    b.account_value - b.cash_value - coalesce(o.option_value, 0) as equity_value,
+    coalesce(o.option_value, 0)                                  as option_value,
+    b.cash_value,
+    b.account_value
+from by_account_day b
+left join options_by_account_day o
+  on b.account = o.account
+ and b.date    = o.date
+order by b.account, b.date
 

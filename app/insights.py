@@ -164,12 +164,21 @@ BOTTOM 5 SYMBOLS (by total return)
 SYSTEM_PROMPT = """You are a trading coach analyzing a retail options trader's portfolio data.
 You specialize in options strategies like covered calls, cash-secured puts, wheels, and spreads.
 
+You are **not** a financial advisor. You cannot access the internet or live market data.
+You must work only from the portfolio data text provided to you.
+
 Based on the data provided, write a personalized analysis with these sections:
 
 1. **Trading Style Overview** - Describe how this trader operates (strategies used, frequency, holding periods, etc.)
 2. **What's Working** - Highlight strengths: profitable strategies, good win rates, smart positions
 3. **What Needs Attention** - Identify weaknesses: losing strategies, poor win rates, risky positions
-4. **Actionable Suggestions** - Give 2-3 specific, practical recommendations to improve
+4. **Actionable Suggestions** - Give 2-3 specific, practical recommendations to improve their process and behavior
+
+Rules:
+- Do **not** tell the user to buy, sell, or hold any specific security.
+- Do **not** recommend securities, strikes, expirations, or position sizes.
+- Do **not** make price predictions or refer to outside data sources.
+- Focus on patterns in their own historical trading data, risk, and behavior.
 
 Keep the tone encouraging but honest. Use specific numbers from the data.
 Write in second person ("You...").
@@ -222,6 +231,88 @@ def _call_gemini(data_text):
     except Exception as exc:
         return None, f"Gemini API error: {exc}"
 
+
+QA_SYSTEM_PROMPT = """You are a trading coach analyzing a retail options trader's portfolio.
+
+You are **not** a financial advisor. You cannot browse the internet or access live market data.
+You must base your answers **only** on the portfolio and weekly data text you are given.
+
+You will receive:
+- A compact OVERALL PORTFOLIO summary (all-time).
+- Optionally, a LAST WEEK block with weekly performance metrics.
+
+Your job is to answer the user's question directly in 3–6 short bullets or paragraphs.
+
+Guidelines:
+- If the question mentions time (e.g. "last week", "this week", a specific week), focus first on the LAST WEEK block.
+- Use specific numbers from the data when you reference P&L, win rates, or counts.
+- Do NOT re-write a full multi-section report. Answer the question as clearly and concretely as possible.
+- If something is not in the data, say you can't see it rather than guessing.
+- Do **not** give financial advice: no buy/sell/hold recommendations, no specific trade suggestions,
+  no tickers or strikes to trade, no price targets or forecasts.
+- Focus on what the user's own data suggests about their behavior, risk, and strategy performance.
+- If the question is about the 'best' or 'worst' trade/position for last week, use the BEST/WORST
+  trade information from the LAST WEEK data to name the symbol, strategy, and P&L.
+"""
+
+WEEKLY_QA_QUERY = """
+SELECT
+  week_start,
+  SUM(trades_closed) AS trades_closed,
+  SUM(trades_opened) AS trades_opened,
+  SUM(total_pnl)     AS total_pnl,
+  SUM(num_winners)   AS num_winners,
+  SUM(num_losers)    AS num_losers,
+  SUM(premium_received) AS premium_received,
+  SUM(premium_paid)     AS premium_paid,
+  ANY_VALUE(best_symbol)      AS best_symbol,
+  ANY_VALUE(best_strategy)    AS best_strategy,
+  ANY_VALUE(best_pnl)         AS best_pnl,
+  ANY_VALUE(worst_symbol)     AS worst_symbol,
+  ANY_VALUE(worst_strategy)   AS worst_strategy,
+  ANY_VALUE(worst_pnl)        AS worst_pnl
+FROM `ccwj-dbt.analytics.mart_weekly_summary`
+{where}
+GROUP BY week_start
+ORDER BY week_start DESC
+LIMIT 1
+"""
+
+
+def _call_gemini_question(portfolio_text: str, weekly_text: str | None, question: str):
+    """
+    Call Gemini for a single Q&A turn, grounded in portfolio + optional weekly data.
+    Returns (answer_markdown, error_message).
+    """
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return None, "GEMINI_API_KEY not set. Add it to your .env file."
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        parts = [QA_SYSTEM_PROMPT]
+        if weekly_text:
+            parts.append("LAST WEEK DATA:\n" + weekly_text)
+        parts.append("PORTFOLIO OVERVIEW:\n" + portfolio_text)
+        parts.append(
+            "\nNow answer the user's question below. Be concise (3–6 bullets or short paragraphs), "
+            "grounded strictly in the data above. Do NOT invent numbers you don't see.\n"
+            f"User question: {question}\n"
+        )
+        prompt = "\n\n".join(parts)
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.6,
+                max_output_tokens=800,
+            ),
+        )
+        return response.text.strip(), None
+    except Exception as exc:
+        return None, f"Gemini API error: {exc}"
 
 def _md_to_html(md_text):
     """
@@ -292,6 +383,98 @@ def insights():
         gemini_available=gemini_available,
     )
 
+
+@app.route("/insights/ask", methods=["POST"])
+@login_required
+def insights_ask():
+    """
+    Lightweight Q&A endpoint for "Ask the Coach".
+    Expects JSON: { "question": "..." }, returns JSON: { "answer_html": "...", "error": null }.
+    """
+    from flask import jsonify
+
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("question", "")).strip()
+    if not question:
+        return jsonify({"error": "Question is required."}), 400
+
+    # Limit length a bit to avoid runaway prompts
+    if len(question) > 800:
+        question = question[:800]
+
+    # Get user's accounts
+    if is_admin(current_user.username):
+        user_accounts = None
+    else:
+        user_accounts = get_accounts_for_user(current_user.id)
+
+    # Query positions data
+    try:
+        client = get_bigquery_client()
+        where = _account_sql_filter(user_accounts)
+        df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
+    except Exception as exc:
+        return jsonify({"error": f"Could not load portfolio data: {exc}"}), 500
+
+    if df.empty:
+        return jsonify({"error": "No portfolio data found. Upload your trading data first."}), 400
+
+    portfolio_text = _build_prompt_data(df)
+    if not portfolio_text:
+        return jsonify({"error": "Not enough data to answer questions yet."}), 400
+
+    # Weekly context (most recent active week across the user's accounts)
+    weekly_text = None
+    try:
+        client = get_bigquery_client()
+        where = _account_sql_filter(user_accounts)
+        wdf = client.query(WEEKLY_QA_QUERY.format(where=where)).to_dataframe()
+        if not wdf.empty:
+            row = wdf.iloc[0]
+            trades_closed = int(row.get("trades_closed", 0) or 0)
+            trades_opened = int(row.get("trades_opened", 0) or 0)
+            total_pnl = float(row.get("total_pnl", 0) or 0)
+            num_winners = int(row.get("num_winners", 0) or 0)
+            num_losers = int(row.get("num_losers", 0) or 0)
+            total_closed = num_winners + num_losers
+            win_rate = total_closed and num_winners / total_closed or 0
+            premium_received = float(row.get("premium_received", 0) or 0)
+            premium_paid = float(row.get("premium_paid", 0) or 0)
+            net_premium = premium_received - premium_paid
+            week_start = str(row.get("week_start", ""))
+
+            best_symbol = str(row.get("best_symbol") or "")
+            best_strategy = str(row.get("best_strategy") or "")
+            best_pnl = float(row.get("best_pnl", 0) or 0)
+            worst_symbol = str(row.get("worst_symbol") or "")
+            worst_strategy = str(row.get("worst_strategy") or "")
+            worst_pnl = float(row.get("worst_pnl", 0) or 0)
+
+            weekly_lines = [
+                f"WEEK_START: {week_start}",
+                f"- Trades closed: {trades_closed} (winners={num_winners}, losers={num_losers}, win_rate={win_rate:.1%})",
+                f"- Trades opened: {trades_opened}",
+                f"- Total P&L this week: ${total_pnl:,.2f}",
+                f"- Premium: received=${premium_received:,.2f}, paid=${premium_paid:,.2f}, net=${net_premium:,.2f}",
+            ]
+            if best_symbol:
+                weekly_lines.append(
+                    f"- Best closed trade: {best_symbol} ({best_strategy}), P&L=${best_pnl:,.2f}"
+                )
+            if worst_symbol:
+                weekly_lines.append(
+                    f"- Worst closed trade: {worst_symbol} ({worst_strategy}), P&L=${worst_pnl:,.2f}"
+                )
+            weekly_text = "\n".join(weekly_lines)
+    except Exception:
+        weekly_text = None
+
+    answer_md, error = _call_gemini_question(portfolio_text, weekly_text, question)
+    if error:
+        return jsonify({"error": error}), 500
+
+    answer_html = str(_md_to_html(answer_md))
+    return jsonify({"answer_html": answer_html, "error": None})
 
 @app.route("/insights/generate", methods=["POST"])
 @login_required

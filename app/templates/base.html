@@ -97,47 +97,50 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navContent">
-                {% if current_user.is_authenticated %}
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('weekly_review') }}">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('mirror_score') }}">Mirror</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('journal') }}">Journal</a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Analyze</a>
-                        <ul class="dropdown-menu dropdown-menu-dark">
-                            <li><a class="dropdown-item" href="/positions">Positions</a></li>
-                            <li><a class="dropdown-item" href="/symbols">Daily Detail</a></li>
-                            <li><a class="dropdown-item" href="/accounts">Account Performance</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('benchmark') }}">If You Did Nothing</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('taxes') }}">Tax Center</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">More</a>
-                        <ul class="dropdown-menu dropdown-menu-dark">
-                            <li><a class="dropdown-item" href="{{ url_for('insights') }}">AI Insights</a></li>
-                            <li><a class="dropdown-item" href="/upload">Upload</a></li>
-                        </ul>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link text-white-50" href="{{ url_for('settings') }}">{{ current_user.username }}</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-                    </li>
-                </ul>
-                {% else %}
+            {% if current_user.is_authenticated %}
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('weekly_review') }}">Weekly Review</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('symbols_detail') }}">Daily Detail</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('accounts') }}">Account View</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('positions') }}">Positions</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('insights') }}">AI Coach</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('journal') }}">Journal</a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">More</a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Legacy Dashboard</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('mirror_score') }}">Mirror Score</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('benchmark') }}">If You Did Nothing</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('taxes') }}">Tax Center</a></li>
+                    </ul>
+                </li>
+            </ul>
+            <ul class="navbar-nav align-items-center">
+                <li class="nav-item me-2">
+                    <a class="btn btn-sm btn-outline-light px-3" href="{{ url_for('upload') }}">
+                        Upload &amp; Refresh
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-white-50" href="{{ url_for('settings') }}">{{ current_user.username }}</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                </li>
+            </ul>
+            {% else %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pricing') }}">Pricing</a>

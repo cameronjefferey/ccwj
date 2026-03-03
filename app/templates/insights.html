@@ -90,6 +90,20 @@
             {% endif %}
         </div>
 
+        {# ── Ask the Coach: interactive Q&A ── #}
+        {% if gemini_available %}
+        <div class="card p-3 mb-4">
+            <h6 class="mb-2 text-muted text-uppercase" style="letter-spacing:.6px;">Ask the Coach</h6>
+            <div id="coachThread" class="mb-3" style="max-height:260px; overflow-y:auto; font-size:.9rem;"></div>
+            <form id="coachForm" class="d-flex gap-2">
+                <input type="text" id="coachInput" class="form-control form-control-sm"
+                       placeholder="Ask a question about your trading (e.g. 'Which strategies hurt me most last week?')" required>
+                <button type="submit" class="btn btn-sm btn-primary">Ask</button>
+            </form>
+            <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
+        </div>
+        {% endif %}
+
         {% elif gemini_available %}
         {# ── No cached analysis, but API key is set ── #}
         <div class="generate-card">
@@ -134,5 +148,70 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your portfolio...';
         });
     });
+
+    const coachForm = document.getElementById('coachForm');
+    const coachInput = document.getElementById('coachInput');
+    const coachThread = document.getElementById('coachThread');
+    const coachError = document.getElementById('coachError');
+
+    if (coachForm && coachInput && coachThread) {
+        coachForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const q = coachInput.value.trim();
+            if (!q) return;
+
+            coachError.style.display = 'none';
+
+            // Append user question (plain text to avoid needing an HTML sanitizer)
+            const userBlock = document.createElement('div');
+            userBlock.className = 'mb-2';
+            const userLabel = document.createElement('div');
+            userLabel.className = 'small text-muted';
+            userLabel.textContent = 'You';
+            const userText = document.createElement('div');
+            userText.textContent = q;
+            userBlock.appendChild(userLabel);
+            userBlock.appendChild(userText);
+            coachThread.appendChild(userBlock);
+            coachThread.scrollTop = coachThread.scrollHeight;
+
+            coachInput.value = '';
+
+            const loading = document.createElement('div');
+            loading.className = 'mb-2 small text-muted';
+            loading.textContent = 'Coach is thinking...';
+            coachThread.appendChild(loading);
+            coachThread.scrollTop = coachThread.scrollHeight;
+
+            try {
+                const resp = await fetch('{{ url_for("insights_ask") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ question: q })
+                });
+                const data = await resp.json();
+                loading.remove();
+
+                if (!resp.ok || data.error) {
+                    coachError.textContent = data.error || 'Something went wrong. Please try again.';
+                    coachError.style.display = 'block';
+                    return;
+                }
+
+                const coachBlock = document.createElement('div');
+                coachBlock.className = 'mb-3';
+                coachBlock.innerHTML = '<div class="small text-muted">Coach</div>' + data.answer_html;
+                coachThread.appendChild(coachBlock);
+                coachThread.scrollTop = coachThread.scrollHeight;
+            } catch (err) {
+                loading.remove();
+                coachError.textContent = 'Network error. Please try again.';
+                coachError.style.display = 'block';
+            }
+        });
+    }
 </script>
 {% endblock %}

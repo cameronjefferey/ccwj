@@ -216,7 +216,9 @@
                 <div class="row g-2 mb-3">
                     <div class="col">
                         <div class="stat-card">
-                            <div class="stat-label">Realized</div>
+                            <div class="stat-label">
+                                {% if positions_only|default(false) %}Closed P&amp;L{% else %}Realized{% endif %}
+                            </div>
                             <div class="stat-value {{ 'text-positive' if sym.total_realized >= 0 else 'text-negative' }}">
                                 ${{ "{:,.2f}".format(sym.total_realized) }}
                             </div>
@@ -224,7 +226,9 @@
                     </div>
                     <div class="col">
                         <div class="stat-card">
-                            <div class="stat-label">Unrealized</div>
+                            <div class="stat-label">
+                                {% if positions_only|default(false) %}Open P&amp;L{% else %}Unrealized{% endif %}
+                            </div>
                             <div class="stat-value {{ 'text-positive' if sym.unrealized >= 0 else 'text-negative' }}">
                                 ${{ "{:,.2f}".format(sym.unrealized) }}
                             </div>
@@ -260,43 +264,114 @@
 
                 {# ── Cumulative P&L Chart ─────────────────────────────── #}
                 <div class="chart-container">
-                    <h6 class="fw-bold mb-2">Cumulative P&amp;L</h6>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0">Cumulative P&amp;L</h6>
+                        <div class="text-muted small">
+                            {% if sym.story_days_in_position is not none %}
+                            <span class="me-3">In this position: <strong>{{ sym.story_days_in_position }} days</strong></span>
+                            {% endif %}
+                            {% if sym.story_open_legs or sym.story_closed_legs %}
+                            <span>Legs — Open: <strong>{{ sym.story_open_legs }}</strong>, Closed: <strong>{{ sym.story_closed_legs }}</strong></span>
+                            {% endif %}
+                        </div>
+                    </div>
                     <div style="height:300px;">
                         <canvas id="chart-{{ loop.index0 }}" data-idx="{{ loop.index0 }}"></canvas>
                     </div>
                 </div>
 
-                {# ── Current Open Positions ───────────────────────────── #}
+                {% if sym.story_best_leg or sym.story_worst_leg %}
+                <div class="row g-2 mb-3">
+                    {% if sym.story_best_leg %}
+                    <div class="col-md-6">
+                        <div class="stat-card text-start">
+                            <div class="stat-label">Best leg in this position</div>
+                            <div class="small mt-1">
+                                <strong>{{ sym.story_best_leg.trade_symbol }}</strong>
+                                {% if sym.story_best_leg.strategy %}<span class="text-muted">({{ sym.story_best_leg.strategy }})</span>{% endif %}<br>
+                                Closed {{ sym.story_best_leg.close_date }} for
+                                <span class="{{ 'text-positive' if sym.story_best_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                                    ${{ "{:,.2f}".format(sym.story_best_leg.total_pnl) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if sym.story_worst_leg %}
+                    <div class="col-md-6">
+                        <div class="stat-card text-start">
+                            <div class="stat-label">Toughest leg in this position</div>
+                            <div class="small mt-1">
+                                <strong>{{ sym.story_worst_leg.trade_symbol }}</strong>
+                                {% if sym.story_worst_leg.strategy %}<span class="text-muted">({{ sym.story_worst_leg.strategy }})</span>{% endif %}<br>
+                                Closed {{ sym.story_worst_leg.close_date }} for
+                                <span class="{{ 'text-positive' if sym.story_worst_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                                    ${{ "{:,.2f}".format(sym.story_worst_leg.total_pnl) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {# ── Positions (open + closed legs for this position) ── #}
                 {% if sym.current_positions %}
-                <h6 class="fw-bold mt-3 mb-2">Open Positions</h6>
+                <h6 class="fw-bold mt-3 mb-2">Positions</h6>
                 <div class="table-responsive mb-3">
                     <table class="table table-sm table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
+                                <th>Status</th>
                                 <th>Symbol</th>
                                 <th>Description</th>
                                 <th>Qty</th>
                                 <th>Price</th>
                                 <th>Mkt Value</th>
                                 <th>Cost Basis</th>
-                                <th>Unrealized</th>
+                                <th>P&amp;L</th>
                                 <th>Unrealized %</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for pos in sym.current_positions %}
                             <tr>
-                                <td class="fw-semibold">{{ pos.trade_symbol }}</td>
-                                <td class="text-muted small">{{ pos.description }}</td>
-                                <td>{{ pos.quantity }}</td>
-                                <td>${{ "{:,.2f}".format(pos.current_price) }}</td>
-                                <td>${{ "{:,.2f}".format(pos.market_value) }}</td>
-                                <td>${{ "{:,.2f}".format(pos.cost_basis) }}</td>
-                                <td class="{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold">
-                                    ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
+                                <td>
+                                    {% if pos.status == 'Open' %}
+                                    <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Open</span>
+                                    {% elif pos.status == 'Closed' %}
+                                    <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem;">Closed</span>
+                                    {% else %}
+                                    <span class="badge bg-light text-muted" style="font-size:.65rem;">{{ pos.status }}</span>
+                                    {% endif %}
                                 </td>
-                                <td class="{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                                <td class="fw-semibold small">{{ pos.trade_symbol }}</td>
+                                <td class="text-muted small">{{ pos.description }}</td>
+                                <td>{{ pos.quantity if pos.quantity is not none else '' }}</td>
+                                <td>
+                                    {% if pos.current_price is not none %}
+                                    ${{ "{:,.2f}".format(pos.current_price) }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if pos.market_value is not none %}
+                                    ${{ "{:,.2f}".format(pos.market_value) }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if pos.cost_basis is not none %}
+                                    ${{ "{:,.2f}".format(pos.cost_basis) }}
+                                    {% endif %}
+                                </td>
+                                <td class="{% if pos.unrealized_pnl is not none %}{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold{% endif %}">
+                                    {% if pos.unrealized_pnl is not none %}
+                                    ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
+                                    {% endif %}
+                                </td>
+                                <td class="{% if pos.unrealized_pnl_pct is not none %}{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}{% endif %}">
+                                    {% if pos.unrealized_pnl_pct is not none %}
                                     {{ "{:.2f}".format(pos.unrealized_pnl_pct) }}%
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
