@@ -593,16 +593,32 @@ def upload():
         "success",
     )
     flash(
-        "Pipeline triggered -- dbt seed + build is running. "
-        "Data will refresh in a few minutes.",
+        "Pipeline triggered -- dbt seed + build is running in GitHub Actions. "
+        "This usually takes a few minutes.",
         "info",
     )
 
-    # If the user came from onboarding, send them back there
-    referrer = request.referrer or ""
-    if "get-started" in referrer:
-        return redirect(url_for("get_started"))
-    return redirect(url_for("first_look"))
+    return redirect(url_for("upload_processing"))
+
+
+@app.route("/upload/processing")
+@login_required
+def upload_processing():
+    """Intermediary page shown after upload while CI/dbt runs."""
+    # Rough expectation; purely informational for now.
+    expected_minutes = 3
+    actions_url = f"https://github.com/{GITHUB_REPO}/actions" if GITHUB_REPO else None
+
+    # Mood options for the lightweight daily journal form
+    from app.models import JOURNAL_MOOD_OPTIONS
+
+    return render_template(
+        "upload_processing.html",
+        title="Processing Upload",
+        expected_minutes=expected_minutes,
+        actions_url=actions_url,
+        mood_options=JOURNAL_MOOD_OPTIONS,
+    )
 
 
 @app.route("/unclaim-account", methods=["POST"])

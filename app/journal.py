@@ -208,6 +208,40 @@ def journal_export():
     )
 
 
+@app.route("/journal/daily", methods=["POST"])
+@login_required
+def journal_daily_quick():
+    """Lightweight daily reflection entry (no specific trade required)."""
+    accounts = get_accounts_for_user(current_user.id)
+    if not accounts:
+        flash("Link an account first. Upload your Schwab data to get started.", "warning")
+        return redirect(url_for("upload"))
+
+    account = accounts[0]
+    mood = request.form.get("mood") or None
+    notes = request.form.get("notes") or None
+
+    today = datetime.utcnow().date().isoformat()
+
+    create_journal_entry(
+        current_user.id,
+        account=account,
+        symbol="DAILY",
+        strategy="Daily Reflection",
+        trade_open_date=today,
+        thesis=None,
+        notes=notes,
+        reflection=None,
+        confidence=None,
+        mood=mood,
+        sleep_quality=None,
+        entry_time=today + " daily",
+        tags=["daily_reflection"],
+    )
+    flash("Saved your daily reflection.", "success")
+    return redirect(url_for("upload_processing"))
+
+
 @app.route("/journal/import", methods=["GET", "POST"])
 @login_required
 def journal_import():

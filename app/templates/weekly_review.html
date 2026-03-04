@@ -95,41 +95,106 @@
 <div class="alert alert-danger">{{ error }}</div>
 {% endif %}
 
-{# ══════════════════════════════════════════════════════
-   THE NARRATIVE — flows differently by mode
-   ══════════════════════════════════════════════════════ #}
-
-{# ── Week Summary (always shown) ── #}
-<div class="review-section">
-    <h3>{% if mode == 'monday' %}Last Week at a Glance{% else %}The Week So Far{% endif %}</h3>
-    {% if review and review.trades_closed > 0 %}
-    <p class="narrative">
-        On <strong>{{ review.trades_closed }} closed trade{{ 's' if review.trades_closed != 1 }}</strong> you realized
-        <strong class="{% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            ${{ "{:,.2f}".format(review.total_pnl) }}</strong> in P&amp;L.
-        {% if review.num_winners %}{{ review.num_winners }} winner{{ 's' if review.num_winners != 1 }}{% if review.num_losers %}, {{ review.num_losers }} loser{{ 's' if review.num_losers != 1 }}{% endif %}.{% endif %}
-        {% if review.trades_opened %}You opened {{ review.trades_opened }} new position{{ 's' if review.trades_opened != 1 }}.{% endif %}
-    </p>
-    <p class="narrative small text-muted mb-0">
-        This section shows <strong>realized P&amp;L on closed trades only</strong> — it does not include mark-to-market moves on open positions or equity drift.
-    </p>
-    {% elif review and review.trades_opened %}
-    <p class="narrative">
-        No closed trades yet, but you opened <strong>{{ review.trades_opened }}</strong> new position{{ 's' if review.trades_opened != 1 }}.
-    </p>
-    {% else %}
-    <p class="narrative text-muted">Quiet week. No trades opened or closed.</p>
-    {% endif %}
-
-    {% if equity_snapshot %}
-    <p class="narrative small text-muted mt-2 mb-0">
-        Account value (latest snapshot): <strong>${{ "{:,.0f}".format(equity_snapshot.account_value) }}</strong>
-        — invested <strong>${{ "{:,.0f}".format(equity_snapshot.invested_value) }}</strong>,
-        cash <strong>${{ "{:,.0f}".format(equity_snapshot.cash_balance) }}</strong>
-        {% if equity_snapshot.pct_invested is not none %}({{ "%.1f" % equity_snapshot.pct_invested }}% invested){% endif %}.
-    </p>
+{% if from_upload %}
+<div class="alert alert-info small mb-3">
+    Your latest upload is still processing in GitHub Actions. Data on this page may lag by a few minutes.
+    {% if not is_backfilled %}
+    When the pipeline finishes, your daily snapshots and weekly metrics will update automatically.
     {% endif %}
 </div>
+{% endif %}
+
+{% if today_snapshot %}
+{# ── Today’s Snapshot (4 cards with time comparisons) ── #}
+<div class="review-section mb-3">
+    <h3>Today’s Snapshot</h3>
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">Account Value</div>
+                    <div class="kpi-value">
+                        ${{ "{:,.0f}".format(today_snapshot.today_value) }}
+                    </div>
+                    <div class="small text-muted">{{ today_snapshot.today_date }}</div>
+                </div>
+            </div>
+        </div>
+        {% set day_comp = today_snapshot.comparisons.day if today_snapshot.comparisons is defined else None %}
+        <div class="col-md-3">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">vs 1 Day Ago</div>
+                    {% if day_comp and day_comp.has_data and day_comp.delta is not none %}
+                    <div class="kpi-value {% if day_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.0f}".format(day_comp.delta) }}
+                    </div>
+                    <div class="small text-muted">
+                        {% if day_comp.delta_pct is not none %}
+                        {{ "+" if day_comp.delta_pct >= 0 else "" }}{{ "%.2f" % day_comp.delta_pct }}%
+                        {% else %}—{% endif %}
+                    </div>
+                    <div class="small text-muted">
+                        vs {{ day_comp.base_date }}
+                    </div>
+                    {% else %}
+                    <div class="kpi-value text-muted">—</div>
+                    <div class="small text-muted">Need more daily history</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% set week_comp = today_snapshot.comparisons.week if today_snapshot.comparisons is defined else None %}
+        <div class="col-md-3">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">vs 1 Week Ago</div>
+                    {% if week_comp and week_comp.has_data and week_comp.delta is not none %}
+                    <div class="kpi-value {% if week_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.0f}".format(week_comp.delta) }}
+                    </div>
+                    <div class="small text-muted">
+                        {% if week_comp.delta_pct is not none %}
+                        {{ "+" if week_comp.delta_pct >= 0 else "" }}{{ "%.2f" % week_comp.delta_pct }}%
+                        {% else %}—{% endif %}
+                    </div>
+                    <div class="small text-muted">
+                        vs {{ week_comp.base_date }}
+                    </div>
+                    {% else %}
+                    <div class="kpi-value text-muted">—</div>
+                    <div class="small text-muted">Need more daily history</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% set month_comp = today_snapshot.comparisons.month if today_snapshot.comparisons is defined else None %}
+        <div class="col-md-3">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">vs 1 Month Ago</div>
+                    {% if month_comp and month_comp.has_data and month_comp.delta is not none %}
+                    <div class="kpi-value {% if month_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.0f}".format(month_comp.delta) }}
+                    </div>
+                    <div class="small text-muted">
+                        {% if month_comp.delta_pct is not none %}
+                        {{ "+" if month_comp.delta_pct >= 0 else "" }}{{ "%.2f" % month_comp.delta_pct }}%
+                        {% else %}—{% endif %}
+                    </div>
+                    <div class="small text-muted">
+                        vs {{ month_comp.base_date }}
+                    </div>
+                    {% else %}
+                    <div class="kpi-value text-muted">—</div>
+                    <div class="small text-muted">Need more daily history</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {# ── Weekly account value waterfall (Monday focus) — disabled for now ── #}
 {% if false %}
@@ -259,12 +324,14 @@
         {% if your_week %}
         <div class="col-md-4">
             <div class="trade-highlight strategy">
-                <div class="small text-muted mb-1">Your trades — This week</div>
-                {% if your_week.pct is not none %}
-                <div class="h4 fw-bold mb-0 {% if your_week.pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {% if your_week.pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.pct }}%
+                <div class="small text-muted mb-1">Your account — This week</div>
+                {% if your_week.acct_pct is not none %}
+                <div class="h4 fw-bold mb-0 {% if your_week.acct_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {% if your_week.acct_pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.acct_pct }}%
                 </div>
-                <div class="small text-muted mt-1">${{ "{:,.2f}".format(your_week.dollars) }}</div>
+                <div class="small text-muted mt-1">
+                    Based on change in total account value this week.
+                </div>
                 {% else %}
                 <div class="h4 fw-bold mb-0 {% if your_week.dollars >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     ${{ "{:,.2f}".format(your_week.dollars) }}
@@ -290,7 +357,9 @@
                     <th>Symbol</th>
                     <th>Strategy</th>
                     <th>Date</th>
-                    <th class="text-end">P&L</th>
+                    <th class="text-end">Cost</th>
+                    <th class="text-end">Mkt Value</th>
+                    <th class="text-end">Current P&L</th>
                     <th class="text-end">Action</th>
                 </tr>
             </thead>
@@ -303,8 +372,14 @@
                     </td>
                     <td>{{ t.strategy }}</td>
                     <td>{{ t.close_date if t.close_date else t.open_date }}{% if t.status == 'Closed' %} <span class="badge bg-secondary">closed</span>{% else %} <span class="badge bg-primary">opened</span>{% endif %}</td>
-                    <td class="text-end {% if t.total_pnl is not none %}{% if t.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
-                        {% if t.total_pnl is not none %}${{ "{:,.2f}".format(t.total_pnl) }}{% else %}—{% endif %}
+                    <td class="text-end">
+                        {% if t.cost_basis is not none %}${{ "{:,.2f}".format(t.cost_basis) }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if t.market_value is not none %}${{ "{:,.2f}".format(t.market_value) }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-end {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
+                        {% if t.current_pnl is not none %}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
                     </td>
                     <td class="text-end">
                         <a href="{{ url_for('journal_new', account=t.account, symbol=t.symbol, strategy=t.strategy, trade_open_date=t.open_date or '', trade_close_date=t.close_date or '', trade_symbol=t.trade_symbol or '') }}" class="btn btn-sm btn-outline-primary">Journal</a>

@@ -98,6 +98,42 @@ FROM `ccwj-dbt.analytics.stg_account_balances`
 WHERE 1=1 {account_filter}
 """
 
+# Weekly account return from dbt mart (replaces inline WEEKLY_ACCOUNT_CHANGE_QUERY)
+WEEKLY_RETURNS_QUERY = """
+SELECT account, start_value, end_value, weekly_return_pct
+FROM `ccwj-dbt.analytics.mart_account_weekly_returns`
+WHERE week_start = @week_start
+  {account_filter}
+"""
+
+# Today's snapshot with 1d/1w/1m comparisons from dbt mart (replaces TODAY_SNAPSHOT + Python deltas)
+TODAY_SNAPSHOT_ENRICHED_QUERY = """
+SELECT *
+FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
+ORDER BY date DESC
+LIMIT 1
+"""
+
+# Trades this week from dbt mart (replaces TRADES_THIS_WEEK_QUERY + Python cost/value calc)
+WEEKLY_TRADES_MART_QUERY = """
+SELECT
+  account,
+  symbol,
+  strategy,
+  trade_symbol,
+  open_date,
+  close_date,
+  status,
+  trade_cost,
+  current_market_value,
+  current_unrealized_pnl,
+  total_pnl
+FROM `ccwj-dbt.analytics.mart_weekly_trades`
+WHERE week_start = @week_start
+  {account_filter}
+ORDER BY close_date DESC NULLS LAST, open_date DESC
+"""
+
 # For behavioral anomaly: need individual losing trades joined with journal
 LOSERS_QUERY = """
 SELECT
@@ -134,27 +170,6 @@ WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
   {account_filter}
 """
-
-# All trades this week (closed or opened) for the detailed list + journal links
-TRADES_THIS_WEEK_QUERY = """
-SELECT
-    account,
-    symbol,
-    strategy,
-    trade_symbol,
-    open_date,
-    close_date,
-    total_pnl,
-    status
-FROM `ccwj-dbt.analytics.int_strategy_classification`
-WHERE (
-    (close_date >= @start_date AND close_date <= @end_date)
-    OR (open_date >= @start_date AND open_date <= @end_date)
-)
-  {account_filter}
-ORDER BY close_date DESC NULLS LAST, open_date DESC
-"""
-
 
 def _iso_week_start(d):
     """Return Monday of the ISO week containing d."""
@@ -294,6 +309,8 @@ def weekly_review():
     if mode not in ("friday", "monday", "midweek"):
         mode = _auto_mode()
 
+    from_upload = request.args.get("from_upload") == "1"
+
     today = date.today()
     this_week = _iso_week_start(today)
 
@@ -317,6 +334,7 @@ def weekly_review():
         "market": None,
         "equity_snapshot": None,
         "trades_this_week": [],
+        "from_upload": from_upload,
     }
 
     try:
@@ -396,31 +414,110 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Equity snapshot query failed: %s", e)
 
-        # Your week: dollars + return % (based on account value)
-        context["your_week"] = None
-        if context.get("review") and context["review"].get("trades_closed", 0) > 0:
-            total_pnl = float(context["review"].get("total_pnl", 0) or 0)
-            pct = None
-            snapshot = context.get("equity_snapshot") or {}
-            account_value = float(snapshot.get("account_value", 0) or 0)
-            if account_value > 0:
-                pct = round(total_pnl / account_value * 100, 2)
-            context["your_week"] = {
-                "dollars": total_pnl,
-                "pct": pct,
-                "trades_closed": context["review"]["trades_closed"],
-            }
+        # Today's snapshot with 1d/1w/1m comparisons from mart_account_snapshots_enriched
+        context["today_snapshot"] = None
+        try:
+            snap_df = client.query(TODAY_SNAPSHOT_ENRICHED_QUERY).to_dataframe()
+            if not snap_df.empty:
+                row = snap_df.iloc[0]
+                if "date" in row and row["date"] is not None:
+                    d = row["date"]
+                    today_date = d.date() if hasattr(d, "date") else (d if isinstance(d, date) else date.fromisoformat(str(d)[:10]))
+                else:
+                    today_date = None
+                today_value = float(row.get("account_value", 0) or 0)
+                prev_value = float(row.get("base_1d_value", 0) or 0) if row.get("base_1d_value") is not None else None
+                prev_date = row.get("base_1d_date")
+                if prev_date is not None and hasattr(prev_date, "date"):
+                    prev_date = prev_date.date()
+                elif prev_date is not None and not isinstance(prev_date, date):
+                    prev_date = date.fromisoformat(str(prev_date)[:10])
 
-        # Detailed list of trades this week (for list + journal links)
+                def _round_opt(val):
+                    if val is None or (hasattr(val, "__float__") and pd.isna(val)):
+                        return None
+                    return round(float(val), 2)
+
+                delta = _round_opt(row.get("delta_1d"))
+                delta_pct = _round_opt(row.get("delta_1d_pct"))
+
+                def _base_date(b):
+                    if b is None:
+                        return None
+                    return b.date() if hasattr(b, "date") else (b if isinstance(b, date) else date.fromisoformat(str(b)[:10]))
+
+                comps = {
+                    "day": {
+                        "label": "vs 1 day ago",
+                        "base_date": prev_date,
+                        "delta": delta,
+                        "delta_pct": delta_pct,
+                        "has_data": prev_value is not None,
+                    },
+                    "week": {
+                        "label": "vs 1 week ago",
+                        "base_date": _base_date(row.get("base_1w_date")),
+                        "delta": _round_opt(row.get("delta_1w")),
+                        "delta_pct": _round_opt(row.get("delta_1w_pct")),
+                        "has_data": row.get("base_1w_value") is not None,
+                    },
+                    "month": {
+                        "label": "vs 1 month ago",
+                        "base_date": _base_date(row.get("base_1m_date")),
+                        "delta": _round_opt(row.get("delta_1m")),
+                        "delta_pct": _round_opt(row.get("delta_1m_pct")),
+                        "has_data": row.get("base_1m_value") is not None,
+                    },
+                }
+                context["today_snapshot"] = {
+                    "today_value": today_value,
+                    "today_date": today_date,
+                    "prev_value": prev_value,
+                    "prev_date": prev_date,
+                    "delta": delta,
+                    "delta_pct": delta_pct,
+                    "comparisons": comps,
+                }
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Today snapshot (enriched) query failed: %s", e)
+
+        # Your week: closed P&L plus % account change this week (from mart_account_weekly_returns)
+        context["your_week"] = None
+        total_pnl = float(context.get("review", {}).get("total_pnl", 0) or 0)
+        trades_closed = int(context.get("review", {}).get("trades_closed", 0) or 0)
+
+        acct_pct = None
+        try:
+            ret_cfg = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
+            )
+            ret_df = client.query(
+                WEEKLY_RETURNS_QUERY.format(account_filter=account_filter),
+                job_config=ret_cfg,
+            ).to_dataframe()
+            if not ret_df.empty:
+                total_start = float(ret_df["start_value"].sum() or 0)
+                total_end = float(ret_df["end_value"].sum() or 0)
+                if total_start > 0:
+                    acct_pct = round((total_end - total_start) / total_start * 100, 2)
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Weekly returns query failed: %s", e)
+
+        context["your_week"] = {
+            "dollars": total_pnl,
+            "acct_pct": acct_pct,
+            "trades_closed": trades_closed,
+        }
+
+        # Detailed list of trades this week from mart_weekly_trades
         try:
             trades_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
-                    bigquery.ScalarQueryParameter("end_date", "DATE", week_end),
-                ]
+                query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
             )
             trades_df = client.query(
-                TRADES_THIS_WEEK_QUERY.format(account_filter=account_filter),
+                WEEKLY_TRADES_MART_QUERY.format(account_filter=account_filter),
                 job_config=trades_config,
             ).to_dataframe()
             if not trades_df.empty:
@@ -428,18 +525,10 @@ def weekly_review():
                 for _, row in trades_df.iterrows():
                     open_d = row.get("open_date")
                     close_d = row.get("close_date")
-                    if hasattr(open_d, "isoformat"):
-                        open_d = open_d.isoformat()
-                    elif open_d is not None:
-                        open_d = str(open_d)[:10]
-                    else:
-                        open_d = ""
-                    if hasattr(close_d, "isoformat"):
-                        close_d = close_d.isoformat()
-                    elif close_d is not None:
-                        close_d = str(close_d)[:10]
-                    else:
-                        close_d = ""
+                    open_d = open_d.isoformat() if hasattr(open_d, "isoformat") else (str(open_d)[:10] if open_d is not None else "")
+                    close_d = close_d.isoformat() if hasattr(close_d, "isoformat") else (str(close_d)[:10] if close_d is not None else "")
+                    total_pnl = row.get("total_pnl")
+                    total_pnl = float(total_pnl) if total_pnl is not None else None
                     trades_list.append({
                         "account": str(row.get("account", "")),
                         "symbol": str(row.get("symbol", "")),
@@ -447,13 +536,16 @@ def weekly_review():
                         "trade_symbol": str(row.get("trade_symbol", "")) if row.get("trade_symbol") else "",
                         "open_date": open_d,
                         "close_date": close_d,
-                        "total_pnl": float(row.get("total_pnl", 0)) if row.get("total_pnl") is not None else None,
+                        "total_pnl": total_pnl,
                         "status": str(row.get("status", "")),
+                        "cost_basis": float(row["trade_cost"]) if row.get("trade_cost") is not None else None,
+                        "market_value": float(row["current_market_value"]) if row.get("current_market_value") is not None else None,
+                        "current_pnl": float(row["current_unrealized_pnl"]) if row.get("current_unrealized_pnl") is not None else None,
                     })
                 context["trades_this_week"] = trades_list
         except Exception as e:
             if app.debug:
-                app.logger.warning("Trades this week query failed: %s", e)
+                app.logger.warning("Weekly trades mart query failed: %s", e)
 
         # Journal data for emotional drift + behavioral anomaly
         journal_entries = list_journal_entries(
