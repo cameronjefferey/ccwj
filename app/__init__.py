@@ -100,3 +100,5 @@ from app import schwab
 from app import benchmark
 from app import mirror_score
 from app import first_look
+from app import strategies
+from app import trade_kinds

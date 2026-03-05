@@ -346,6 +346,7 @@ def compute_mirror_score(user_id, user_accounts, week_start, client):
             "mirror_score": 50.0,
             "confidence_level": "Low" if n_baseline_days < 10 else ("Medium" if n_baseline_days < 20 else "High"),
             "diagnostic_sentence": "No trades this week; score reflects baseline stability.",
+            "baseline_summary": None,
             "baseline_trades": int(baseline["num_trades"].sum()),
         }
 
@@ -360,17 +361,39 @@ def compute_mirror_score(user_id, user_accounts, week_start, client):
     consistency_score = round(min(100, max(0, c_score)), 1)
     mirror_score_val = round(0.25 * (discipline_score + intent_score + risk_alignment_score + consistency_score), 1)
 
-    def _first_deviation(breakdown):
-        for b in breakdown:
-            if b.get("score", 100) < 80 and "explanation" in b:
-                return b["explanation"]
+    # Single most actionable deviation: pick the component with the lowest score
+    def _lowest_deviation_explanation(breakdown):
+        if not breakdown:
+            return None
+        worst = min(breakdown, key=lambda b: b.get("score", 100))
+        if worst.get("score", 100) < 80 and worst.get("explanation"):
+            return worst["explanation"]
         return None
-    all_diag = []
-    for b in [d_breakdown, i_breakdown, r_breakdown, c_breakdown]:
-        fd = _first_deviation(b) if b else None
-        if fd:
-            all_diag.append(fd)
-    diagnostic_sentence = all_diag[0] if all_diag else "Behavior aligned with your 30-day baseline."
+    component_diag = [
+        ("Discipline", d_score, _lowest_deviation_explanation(d_breakdown)),
+        ("Intent", i_score, _lowest_deviation_explanation(i_breakdown)),
+        ("Risk alignment", r_score, _lowest_deviation_explanation(r_breakdown)),
+        ("Consistency", c_score, _lowest_deviation_explanation(c_breakdown)),
+    ]
+    lowest = min(component_diag, key=lambda x: x[1])
+    diagnostic_sentence = lowest[2] if lowest[2] else "Behavior aligned with your 30-day baseline."
+
+    # Baseline summary: what "good" looks like for this trader (evidence-based, one line)
+    baseline_summary_parts = []
+    base_tpd = baseline["num_trades"].mean() if len(baseline) else 0
+    if base_tpd > 0:
+        baseline_summary_parts.append(f"you trade ~{base_tpd:.1f} times per day on average")
+    base_strats = set()
+    for s in baseline["strategies_used"].dropna():
+        base_strats.update(str(s).split(","))
+    base_strats.discard("")
+    top2 = sorted(base_strats)[:2]
+    if top2:
+        baseline_summary_parts.append(f"you stick to {', '.join(top2)}")
+    base_med = baseline["avg_position_size"].median() if len(baseline) else 0
+    if base_med > 0:
+        baseline_summary_parts.append(f"position sizes around ${base_med:,.0f} median")
+    baseline_summary = "When you're aligned, " + "; ".join(baseline_summary_parts) + "." if baseline_summary_parts else None
 
     n_baseline_trades = int(baseline["num_trades"].sum())
     if n_baseline_trades < 30:
@@ -390,6 +413,7 @@ def compute_mirror_score(user_id, user_accounts, week_start, client):
         "confidence_level": confidence,
         "diagnostic_sentence": diagnostic_sentence,
         "baseline_trades": n_baseline_trades,
+        "baseline_summary": baseline_summary,
         "components": {
             "discipline": {"score": discipline_score, "breakdown": d_breakdown},
             "intent": {"score": intent_score, "breakdown": i_breakdown},
@@ -416,6 +440,14 @@ def _score_label(score):
 def mirror_score():
     """Display Mirror Score for the current user."""
     user_accounts = get_accounts_for_user(current_user.id)
+    selected_account = request.args.get("account", "")
+
+    # Focus on a single account if selected; otherwise use all of the user's accounts
+    effective_accounts = user_accounts
+    if selected_account and user_accounts:
+        effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
+
+    accounts = user_accounts or []
     cached = get_mirror_score_for_user(current_user.id)
 
     is_demo = getattr(current_user, "username", None) == "demo"
@@ -432,10 +464,10 @@ def mirror_score():
         ws = _week_start(date.today()) - timedelta(days=7)
 
     # Bootstrap: if default week has no data, find the most recent week that does
-    if not week_start and user_accounts:
+    if not week_start and effective_accounts:
         try:
             client_check = get_bigquery_client()
-            acct_filter = _account_sql_and(user_accounts) if user_accounts else ""
+            acct_filter = _account_sql_and(effective_accounts) if effective_accounts else ""
             latest_df = client_check.query(
                 LATEST_ACTIVE_WEEK_QUERY.format(account_filter=acct_filter)
             ).to_dataframe()
@@ -457,16 +489,25 @@ def mirror_score():
             title="Mirror Score",
             score=None,
             error="Upload your trade history to compute Mirror Score.",
+            accounts=accounts,
+            selected_account=selected_account,
         )
 
     if cached and cached["week_start_date"] == ws.isoformat():
         score = cached
         score["label"] = _score_label(float(score["mirror_score"]))
-        return render_template("mirror_score.html", title="Mirror Score", score=score, error=None)
+        return render_template(
+            "mirror_score.html",
+            title="Mirror Score",
+            score=score,
+            error=None,
+            accounts=accounts,
+            selected_account=selected_account,
+        )
 
     try:
         client = get_bigquery_client()
-        result = compute_mirror_score(current_user.id, user_accounts, ws, client)
+        result = compute_mirror_score(current_user.id, effective_accounts, ws, client)
         if result:
             result["label"] = _score_label(result["mirror_score"])
             from app.models import save_mirror_score
@@ -477,7 +518,14 @@ def mirror_score():
                 result["mirror_score"], result["confidence_level"],
                 result["diagnostic_sentence"],
             )
-            return render_template("mirror_score.html", title="Mirror Score", score=result, error=None)
+            return render_template(
+                "mirror_score.html",
+                title="Mirror Score",
+                score=result,
+                error=None,
+                accounts=accounts,
+                selected_account=selected_account,
+            )
         elif is_demo:
             demo_score = {
                 "week_start_date": ws.isoformat(),
@@ -488,7 +536,8 @@ def mirror_score():
                 "risk_alignment_score": 76,
                 "consistency_score": 80,
                 "confidence_level": "Medium",
-                "diagnostic_sentence": "Sample score for demo. With your own data, this reflects alignment with your 30-day baseline.",
+                "diagnostic_sentence": "Position sizes this week were within your usual range; trade frequency and strategy mix matched your baseline.",
+                "baseline_summary": "When you're aligned, you trade ~2–3 times per day on average; you stick to Covered Call, Cash-Secured Put; position sizes around $2,500 median.",
                 "baseline_trades": 24,
                 "components": {
                     "discipline": {"score": 82, "breakdown": [
@@ -520,6 +569,8 @@ def mirror_score():
                 title="Mirror Score",
                 score=None,
                 error="Insufficient data (need at least 3 trading days in baseline period).",
+                accounts=accounts,
+                selected_account=selected_account,
             )
     except Exception as e:
         return render_template(
@@ -527,4 +578,6 @@ def mirror_score():
             title="Mirror Score",
             score=None,
             error=f"Could not compute Mirror Score: {str(e)}",
+            accounts=accounts,
+            selected_account=selected_account,
         )

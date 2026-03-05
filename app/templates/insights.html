@@ -51,6 +51,24 @@
             </p>
         </div>
 
+        {% if accounts %}
+        <form method="get" class="row g-2 mb-4 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small fw-bold mb-1">Account</label>
+                <select name="account" class="form-select form-select-sm">
+                    <option value="">All Accounts</option>
+                    {% for a in accounts %}
+                    <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                <a href="{{ url_for('insights') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+            </div>
+        </form>
+        {% endif %}
+
         {% if insight %}
         {# ── Prompt card: reflection nudge ── #}
         <div class="prompt-card mb-4">
@@ -155,6 +173,7 @@
     const coachError = document.getElementById('coachError');
 
     if (coachForm && coachInput && coachThread) {
+        const coachUrl = '{{ url_for("insights_ask", account=selected_account) if selected_account else url_for("insights_ask") }}';
         coachForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const q = coachInput.value.trim();
@@ -184,7 +203,7 @@
             coachThread.scrollTop = coachThread.scrollHeight;
 
             try {
-                const resp = await fetch('{{ url_for("insights_ask") }}', {
+                const resp = await fetch(coachUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

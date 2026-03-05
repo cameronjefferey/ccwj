@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .strategies-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: #fff;
+        margin-bottom: 2rem;
+    }
+    .strategies-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .strategy-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+        transition: transform .1s;
+    }
+    .strategy-card.selected {
+        border: 2px solid var(--color-mirror);
+        box-shadow: 0 3px 18px rgba(111,66,193,.2);
+    }
+    .strategy-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+    .strategy-card-link:hover .strategy-card { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+    .strategy-name { font-weight: 700; font-size: 1.1rem; }
+    .strategy-stat { font-size: .85rem; color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="strategies-hero">
+    <h1>What Works for You</h1>
+    <p class="mb-0 opacity-90">
+        Your trading is a mix of strategies. Here's how each one has performed — no judgment,
+        just evidence. Use this to see where you're consistent and where you might tighten up.
+    </p>
+    {% if selected_account or selected_strategy %}
+    <p class="mt-2 small" style="opacity:.75;">
+        View scoped to
+        {% if selected_account %}<strong>{{ selected_account }}</strong>{% else %}all accounts{% endif %}
+        {% if selected_strategy %} &middot; strategy <strong>{{ selected_strategy }}</strong>{% endif %}.
+    </p>
+    {% endif %}
+</div>
+
+{% if accounts %}
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if selected_strategy %}
+    <input type="hidden" name="strategy" value="{{ selected_strategy }}">
+    {% endif %}
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="{{ url_for('strategies') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if strategies %}
+{% if summary %}
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Strategies</div>
+            <div class="kpi-value">{{ summary.strategies_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Total Trades</div>
+            <div class="kpi-value">{{ summary.total_trades }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Overall Win Rate</div>
+            <div class="kpi-value">
+                {% if summary.overall_win_rate is not none %}
+                {{ "%.0f" % summary.overall_win_rate }}%
+                {% else %}—{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Net Premium</div>
+            <div class="kpi-value {{ 'text-positive' if summary.net_premium >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(summary.net_premium) }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card kpi-card p-3">
+            <div class="kpi-label">Best Strategy (Total Return)</div>
+            <div class="h6 mb-1">{{ summary.best.strategy }}</div>
+            <div class="{{ 'text-positive' if summary.best.total_return >= 0 else 'text-negative' }}">
+                ${{ "{:,.2f}".format(summary.best.total_return) }}
+            </div>
+            <div class="small text-muted">{{ summary.best.num_trades }} trades</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-card p-3">
+            <div class="kpi-label">Toughest Strategy</div>
+            <div class="h6 mb-1">{{ summary.worst.strategy }}</div>
+            <div class="{{ 'text-positive' if summary.worst.total_return >= 0 else 'text-negative' }}">
+                ${{ "{:,.2f}".format(summary.worst.total_return) }}
+            </div>
+            <div class="small text-muted">{{ summary.worst.num_trades }} trades</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card kpi-card p-3">
+            <div class="kpi-label">Most Used Strategy</div>
+            <div class="h6 mb-1">{{ summary.most_used.strategy }}</div>
+            <div class="small text-muted">{{ summary.most_used.num_trades }} trades</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if focus_strategy %}
+<div class="mb-2">
+    <a href="{{ url_for('strategies', account=selected_account if selected_account else none) }}" class="small">← Show all strategies</a>
+</div>
+<div class="card strategy-card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <span class="strategy-name">{{ focus_strategy.strategy }}</span>
+            <span class="fw-bold {% if focus_strategy.total_return >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                ${{ "{:,.2f}".format(focus_strategy.total_return) }}
+            </span>
+        </div>
+        <div class="strategy-stat mb-1">
+            {{ focus_strategy.num_trades }} trades
+            {% if focus_strategy.win_rate is not none %}
+            &middot; {{ "%.0f" % focus_strategy.win_rate }}% win rate
+            ({{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L)
+            {% endif %}
+        </div>
+        {% if focus_strategy.premium_received or focus_strategy.premium_paid %}
+        <div class="strategy-stat mb-1">
+            Premium: ${{ "{:,.0f}".format(focus_strategy.premium_received) }} in /
+            ${{ "{:,.0f}".format(focus_strategy.premium_paid) }} out
+        </div>
+        {% endif %}
+        {% if focus_strategy.num_symbols %}
+        <div class="strategy-stat">
+            {{ focus_strategy.num_symbols }} symbol{{ 's' if focus_strategy.num_symbols != 1 else '' }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if focus_accounts or focus_symbols %}
+<div class="row g-3 mb-4">
+    {% if focus_accounts %}
+    <div class="col-lg-4">
+        <div class="card kpi-card p-3 h-100">
+            <h6 class="fw-bold mb-3">By Account ({{ focus_strategy.strategy }})</h6>
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th class="text-end">Trades</th>
+                        <th class="text-end">Win %</th>
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in focus_accounts %}
+                    <tr>
+                        <td>{{ a.account }}</td>
+                        <td class="text-end">{{ a.num_trades }}</td>
+                        <td class="text-end">
+                            {% if a.win_rate is not none %}
+                            {{ "%.0f" % a.win_rate }}%
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="text-end {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}">
+                            ${{ "{:,.2f}".format(a.total_return) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if focus_symbols %}
+    <div class="col-lg-8">
+        <div class="card kpi-card p-3 h-100">
+            <h6 class="fw-bold mb-3">By Symbol ({{ focus_strategy.strategy }})</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Symbol</th>
+                            <th>Status</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-end">Realized</th>
+                            <th class="text-end">Unrealized</th>
+                            <th class="text-end">Trades</th>
+                            <th class="text-end">Win %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in focus_symbols %}
+                        <tr>
+                            <td>{{ r.account }}</td>
+                            <td>{{ r.symbol }}</td>
+                            <td>
+                                {% if r.status == 'Open' %}
+                                <span class="badge badge-open">Open</span>
+                                {% else %}
+                                <span class="badge badge-closed">Closed</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end {{ 'text-positive' if r.total_return >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(r.total_return) }}
+                            </td>
+                            <td class="text-end {{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(r.realized_pnl) }}
+                            </td>
+                            <td class="text-end {{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
+                                ${{ "{:,.2f}".format(r.unrealized_pnl) }}
+                            </td>
+                            <td class="text-end">{{ r.num_trades }}</td>
+                            <td class="text-end">
+                                {% if r.win_rate is not none %}
+                                {{ "{:.0%}".format(r.win_rate) }}
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+    {% for s in strategies %}
+    <div class="col-md-6 col-lg-4">
+        <a href="{{ url_for('strategies', strategy=s.strategy, account=selected_account if selected_account else none) }}"
+           class="strategy-card-link text-decoration-none text-dark d-block h-100" style="cursor: pointer;">
+            <div class="card strategy-card h-100 {% if s.is_selected %}selected{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="strategy-name">{{ s.strategy or 'Unclassified' }}</span>
+                        <span class="fw-bold {% if s.total_return >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            ${{ "{:,.2f}".format(s.total_return) }}
+                        </span>
+                    </div>
+                    <div class="strategy-stat">
+                        {{ s.num_trades }} trades
+                        {% if s.win_rate is not none %}
+                        &middot; {{ "%.0f" % s.win_rate }}% win rate
+                        ({{ s.num_winners }}W / {{ s.num_losers }}L)
+                        {% endif %}
+                    </div>
+                    {% if s.premium_received or s.premium_paid %}
+                    <div class="strategy-stat mt-1">
+                        Premium: ${{ "{:,.0f}".format(s.premium_received) }} in / ${{ "{:,.0f}".format(s.premium_paid) }} out
+                    </div>
+                    {% endif %}
+                    {% if s.num_symbols %}
+                    <div class="strategy-stat">{{ s.num_symbols }} symbol{{ 's' if s.num_symbols != 1 else '' }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="mt-4 small text-muted">
+    This view is based on your full history. For this week's strategy breakdown, see
+    <a href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Weekly Review</a>.
+</p>
+{% else %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+        <h5 class="mb-3">No strategy data yet</h5>
+        <p class="text-muted">
+            Upload your positions and trade history. Once we've classified your trades by strategy,
+            you'll see which strategies work for you here.
+        </p>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload &amp; Refresh</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

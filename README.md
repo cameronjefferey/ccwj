@@ -137,3 +137,4 @@ Visitors can explore the app with sample data—no sign-up required. Click **Try
 | Long Call/Put | Bought option standalone |
 | Protective Put | Bought put while holding equity |
 | Naked Call | Sold call without equity |
+| Poor Man Covered Call | Sold call covered by long call (e.g. LEAPS) on same underlying |

@@ -79,14 +79,32 @@
             {% endfor %}
         </select>
     </div>
+    {% set status_label = 'All' if not selected_statuses or selected_statuses|length == 3 else selected_statuses|join(', ') %}
     <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Status</label>
-        <select name="status" class="form-select form-select-sm">
-            <option value="">All</option>
-            <option value="Open"   {{ 'selected' if selected_status == 'Open' }}>Open</option>
-            <option value="Closed" {{ 'selected' if selected_status == 'Closed' }}>Closed</option>
-            <option value="Mixed"  {{ 'selected' if selected_status == 'Mixed' }}>Mixed</option>
-        </select>
+        <label class="form-label small fw-bold mb-1 d-block">Status</label>
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start"
+                    type="button" id="statusDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                {{ status_label }}
+            </button>
+            <div class="dropdown-menu p-2" aria-labelledby="statusDropdown" style="min-width: 10rem;">
+                <div class="form-check small">
+                    <input class="form-check-input" type="checkbox" name="status" id="status-open"
+                           value="Open" {% if 'Open' in selected_statuses %}checked{% endif %}>
+                    <label class="form-check-label" for="status-open">Open</label>
+                </div>
+                <div class="form-check small">
+                    <input class="form-check-input" type="checkbox" name="status" id="status-closed"
+                           value="Closed" {% if 'Closed' in selected_statuses %}checked{% endif %}>
+                    <label class="form-check-label" for="status-closed">Closed</label>
+                </div>
+                <div class="form-check small">
+                    <input class="form-check-input" type="checkbox" name="status" id="status-mixed"
+                           value="Mixed" {% if 'Mixed' in selected_statuses %}checked{% endif %}>
+                    <label class="form-check-label" for="status-mixed">Mixed</label>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="col-auto">
         <label class="form-label small fw-bold mb-1">From</label>
@@ -104,9 +122,9 @@
     </div>
     <div class="col-12 d-flex flex-wrap gap-1 mt-1">
         <span class="small text-muted align-self-center me-1">Quick:</span>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">Last 30 days</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=(today.replace(month=1, day=1)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">YTD</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol) }}" class="btn btn-sm btn-outline-secondary py-0">All time</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">Last 30 days</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today.replace(month=1, day=1)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">YTD</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol) }}" class="btn btn-sm btn-outline-secondary py-0">All time</a>
     </div>
 </form>
 
@@ -189,7 +207,7 @@
             <h6 class="fw-bold mb-3">Quick Stats</h6>
             <table class="table table-sm table-borderless mb-0">
                 <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ kpis.total_trades }}</td></tr>
-                <tr><td class="text-muted">Winners</td><td class="fw-bold text-end text-positive">{{ "{:,.0f}".format(kpis.win_rate * kpis.total_trades) if kpis.total_trades else 0 }}</td></tr>
+                <tr><td class="text-muted">Winners</td><td class="fw-bold text-end text-positive">{{ "{:,.0f}".format(kpis.total_trades * kpis.win_rate) if kpis.total_trades else 0 }}</td></tr>
                 <tr>
                     <td class="text-muted">Strategies Used</td>
                     <td class="fw-bold text-end">{{ strategy_chart | length }}</td>
@@ -225,6 +243,7 @@
             'Call Spread':      '#6610f2',
             'Put Spread':       '#d63384',
             'Naked Call':       '#dc3545',
+            'Poor Man Covered Call': '#6f42c1',
             'Protective Put':   '#ffc107',
             'Other Option':     '#6c757d'
         } %}
@@ -252,7 +271,9 @@
                     <tr>
                         <td>{{ row.account }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ url_for('position_detail', symbol=row.symbol) }}" class="text-decoration-none">{{ row.symbol }}</a>
+                            <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                                {{ row.symbol }}
+                            </a>
                         </td>
                         <td>
                             {% for strat in row.strategies.split(', ') %}
@@ -317,7 +338,6 @@
                 <thead class="table-light">
                     <tr>
                         <th class="sortable" data-sort="str">Account</th>
-                        <th class="sortable" data-sort="str">Symbol</th>
                         <th class="sortable" data-sort="str">Strategy</th>
                         <th class="sortable" data-sort="str">Status</th>
                         <th class="sortable" data-sort="num">Total P&amp;L</th>
@@ -352,14 +372,19 @@
                     {% for row in rows %}
                     <tr>
                         <td>{{ row.account }}</td>
-                        <td class="fw-semibold">
-                            <a href="{{ url_for('position_detail', symbol=row.symbol) }}" class="text-decoration-none">{{ row.symbol }}</a>
-                        </td>
                         <td>
-                            <span class="badge badge-strategy"
-                                  style="background:{{ colors.get(row.strategy, '#6c757d') }}">
-                                {{ row.strategy }}
-                            </span>
+                            <a href="{{ url_for('strategies',
+                                                account=row.account,
+                                                strategy=row.strategy,
+                                                status=selected_statuses,
+                                                start_date=selected_start_date,
+                                                end_date=selected_end_date) }}"
+                               class="text-decoration-none">
+                                <span class="badge badge-strategy"
+                                      style="background:{{ colors.get(row.strategy, '#6c757d') }}">
+                                    {{ row.strategy }}
+                                </span>
+                            </a>
                         </td>
                         <td>
                             {% if row.status == 'Open' %}
@@ -416,11 +441,11 @@
             <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_status, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>
@@ -533,6 +558,26 @@
             rows.forEach(function (r) { tbody.appendChild(r); });
         });
     });
+
+    // Status dropdown label update
+    var statusDropdown = document.getElementById('statusDropdown');
+    if (statusDropdown) {
+        var checkboxes = document.querySelectorAll('input[name="status"]');
+        function updateStatusLabel() {
+            var selected = [];
+            checkboxes.forEach(function (cb) {
+                if (cb.checked) selected.push(cb.value);
+            });
+            if (!selected.length || selected.length === 3) {
+                statusDropdown.textContent = 'All';
+            } else {
+                statusDropdown.textContent = selected.join(', ');
+            }
+        }
+        checkboxes.forEach(function (cb) {
+            cb.addEventListener('change', updateStatusLabel);
+        });
+    }
 })();
 </script>
 {% endblock %}

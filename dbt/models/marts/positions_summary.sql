@@ -26,9 +26,9 @@ strategy_summary as (
         symbol,
         strategy,
 
-        -- Status
+        -- Status: treat any symbol/strategy with at least one open trade group as Open.
+        -- Mixed (both open and closed) is folded into Open to keep the UX simple.
         case
-            when countif(status = 'Open') > 0 and countif(status = 'Closed') > 0 then 'Mixed'
             when countif(status = 'Open') > 0 then 'Open'
             else 'Closed'
         end as status,

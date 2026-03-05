@@ -369,6 +369,15 @@ def _md_to_html(md_text):
 @login_required
 def insights():
     """Show cached AI analysis, or prompt to generate one."""
+    # Optional account scoping (multi-account support)
+    selected_account = request.args.get("account", "")
+    if is_admin(current_user.username):
+        user_accounts = None
+        accounts = []
+    else:
+        user_accounts = get_accounts_for_user(current_user.id)
+        accounts = user_accounts or []
+
     cached = get_insight_for_user(current_user.id)
     gemini_available = bool(os.environ.get("GEMINI_API_KEY"))
 
@@ -381,6 +390,8 @@ def insights():
         title="AI Insights",
         insight=cached,
         gemini_available=gemini_available,
+        accounts=accounts,
+        selected_account=selected_account,
     )
 
 
@@ -402,11 +413,20 @@ def insights_ask():
     if len(question) > 800:
         question = question[:800]
 
-    # Get user's accounts
+    # Get user's accounts (optionally focused on a single account)
+    selected_account = request.args.get("account", "")
     if is_admin(current_user.username):
-        user_accounts = None
+        base_accounts = None
     else:
-        user_accounts = get_accounts_for_user(current_user.id)
+        base_accounts = get_accounts_for_user(current_user.id)
+
+    if selected_account:
+        if base_accounts is None:
+            user_accounts = [selected_account]
+        else:
+            user_accounts = [a for a in base_accounts if a == selected_account] or base_accounts
+    else:
+        user_accounts = base_accounts
 
     # Query positions data
     try:
@@ -480,11 +500,20 @@ def insights_ask():
 @login_required
 def generate_insights():
     """Query BigQuery data, call Gemini, cache the result."""
-    # Get user's accounts
+    # Get user's accounts (optionally focused on a single account)
+    selected_account = request.args.get("account", "")
     if is_admin(current_user.username):
-        user_accounts = None
+        base_accounts = None
     else:
-        user_accounts = get_accounts_for_user(current_user.id)
+        base_accounts = get_accounts_for_user(current_user.id)
+
+    if selected_account:
+        if base_accounts is None:
+            user_accounts = [selected_account]
+        else:
+            user_accounts = [a for a in base_accounts if a == selected_account] or base_accounts
+    else:
+        user_accounts = base_accounts
 
     # Query positions data
     try:
@@ -493,23 +522,23 @@ def generate_insights():
         df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
     except Exception as exc:
         flash(f"Could not load portfolio data: {exc}", "danger")
-        return redirect(url_for("insights"))
+        return redirect(url_for("insights", account=selected_account) if selected_account else url_for("insights"))
 
     if df.empty:
         flash("No portfolio data found. Upload your trading data first.", "warning")
-        return redirect(url_for("insights"))
+        return redirect(url_for("insights", account=selected_account) if selected_account else url_for("insights"))
 
     # Build prompt data
     data_text = _build_prompt_data(df)
     if not data_text:
         flash("Not enough data to generate insights.", "warning")
-        return redirect(url_for("insights"))
+        return redirect(url_for("insights", account=selected_account) if selected_account else url_for("insights"))
 
     # Call Gemini
     result, error = _call_gemini(data_text)
     if error:
         flash(error, "danger")
-        return redirect(url_for("insights"))
+        return redirect(url_for("insights", account=selected_account) if selected_account else url_for("insights"))
 
     summary, full_analysis = result
 
@@ -517,4 +546,4 @@ def generate_insights():
     save_insight(current_user.id, summary, full_analysis)
 
     flash("AI insights generated successfully!", "success")
-    return redirect(url_for("insights"))
+    return redirect(url_for("insights", account=selected_account) if selected_account else url_for("insights"))

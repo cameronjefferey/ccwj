@@ -13,6 +13,7 @@
       - Long Put           (bought put,  standalone, no equity)
       - Protective Put     (bought put while holding equity)
       - Naked Call         (sold call without equity)
+      - Poor Man Covered Call (sold call covered by long call on same underlying, e.g. diagonal)
       - Buy and Hold       (equity only, no associated options)
 */
 
@@ -108,6 +109,18 @@ spread_legs as (
 ),
 
 ---------------------------------------------------------------------
+-- 3b. Poor Man Covered Call: short legs of matched pairs from int_pmcc_pairs.
+--    PMCC = long call (expiry >= 180d, deep ITM proxy), short call (expiry <= 60d),
+--    short strike > long strike, short qty <= long qty, long open when short written.
+---------------------------------------------------------------------
+pmcc_short_calls as (
+    select distinct
+        account,
+        short_trade_symbol as trade_symbol
+    from {{ ref('int_pmcc_pairs') }}
+),
+
+---------------------------------------------------------------------
 -- 4. Classify option contracts
 ---------------------------------------------------------------------
 options_classified as (
@@ -141,7 +154,11 @@ options_classified as (
             when oc.direction = 'Sold' and oc.option_type = 'C' and e.session_id is not null
                 then 'Covered Call'
 
-            -- Sold call without equity → Naked Call
+            -- Sold call covered by long call (same underlying) → Poor Man Covered Call
+            when oc.direction = 'Sold' and oc.option_type = 'C' and pmcc.trade_symbol is not null
+                then 'Poor Man Covered Call'
+
+            -- Sold call without equity or long cover → Naked Call
             when oc.direction = 'Sold' and oc.option_type = 'C'
                 then 'Naked Call'
 
@@ -171,6 +188,10 @@ options_classified as (
     left join spread_legs sl
         on oc.account = sl.account
         and oc.trade_symbol = sl.trade_symbol
+    -- Check for PMCC (short call covered by long call on same underlying)
+    left join pmcc_short_calls pmcc
+        on oc.account = pmcc.account
+        and oc.trade_symbol = pmcc.trade_symbol
     -- Check for overlapping equity session (Covered Call / Protective Put detection)
     left join equity_sessions e
         on oc.account = e.account

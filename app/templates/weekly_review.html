@@ -62,11 +62,11 @@
 {# ── Hero with mode selector ── #}
 <div class="review-hero">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <a href="{{ url_for('weekly_review', mode='friday') }}"
+        <a href="{{ url_for('weekly_review', mode='friday', account=selected_account) if selected_account else url_for('weekly_review', mode='friday') }}"
            class="mode-pill {% if mode == 'friday' %}active{% endif %}">Friday Review</a>
-        <a href="{{ url_for('weekly_review', mode='monday') }}"
+        <a href="{{ url_for('weekly_review', mode='monday', account=selected_account) if selected_account else url_for('weekly_review', mode='monday') }}"
            class="mode-pill {% if mode == 'monday' %}active{% endif %}">Monday Check</a>
-        <a href="{{ url_for('weekly_review', mode='midweek') }}"
+        <a href="{{ url_for('weekly_review', mode='midweek', account=selected_account) if selected_account else url_for('weekly_review', mode='midweek') }}"
            class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Mid-Week</a>
     </div>
     {% if mode == 'friday' %}
@@ -91,6 +91,28 @@
     </div>
 </div>
 
+{# Global account filter for this page (multi-account support) #}
+{% if accounts %}
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if mode %}
+    <input type="hidden" name="mode" value="{{ mode }}">
+    {% endif %}
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="{{ url_for('weekly_review') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+{% endif %}
+
 {% if error %}
 <div class="alert alert-danger">{{ error }}</div>
 {% endif %}
@@ -104,95 +126,243 @@
 </div>
 {% endif %}
 
-{% if today_snapshot %}
-{# ── Today’s Snapshot (4 cards with time comparisons) ── #}
+{% if today_snapshots_by_account %}
+{# ── Today’s Snapshot: one row per account ── #}
 <div class="review-section mb-3">
     <h3>Today’s Snapshot</h3>
-    <div class="row g-3">
-        <div class="col-md-3">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">Account Value</div>
-                    <div class="kpi-value">
-                        ${{ "{:,.0f}".format(today_snapshot.today_value) }}
+    <p class="narrative small text-muted mb-3">Latest account value and change vs 1 day, 1 week, and 1 month ago — one row per account.</p>
+    {% for snap in today_snapshots_by_account %}
+    <div class="border-bottom mb-3 pb-3 {% if not loop.last %}border-light{% endif %}">
+        <div class="d-flex align-items-center mb-2">
+            <span class="fw-bold me-2">{{ snap.account }}</span>
+            {% if snap.today_date %}
+            <span class="small text-muted">{{ snap.today_date }}</span>
+            {% endif %}
+        </div>
+        <div class="row g-3">
+            <div class="col-6 col-md">
+                <div class="card kpi-card">
+                    <div class="card-body text-center">
+                        <div class="kpi-label">Account Value</div>
+                        {% if snap.today_value is not none %}
+                        <div class="kpi-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
+                        <div class="small text-muted">{{ snap.today_date }}</div>
+                        {% else %}
+                        <div class="kpi-value text-muted">—</div>
+                        <div class="small text-muted">No snapshot yet</div>
+                        {% endif %}
                     </div>
-                    <div class="small text-muted">{{ today_snapshot.today_date }}</div>
                 </div>
             </div>
-        </div>
-        {% set day_comp = today_snapshot.comparisons.day if today_snapshot.comparisons is defined else None %}
-        <div class="col-md-3">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">vs 1 Day Ago</div>
-                    {% if day_comp and day_comp.has_data and day_comp.delta is not none %}
-                    <div class="kpi-value {% if day_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        ${{ "{:,.0f}".format(day_comp.delta) }}
+            {% set day_comp = snap.comparisons.day if snap.comparisons is defined else None %}
+            <div class="col-6 col-md">
+                <div class="card kpi-card">
+                    <div class="card-body text-center">
+                        <div class="kpi-label">vs 1 Day Ago</div>
+                        {% if day_comp and day_comp.has_data and day_comp.delta is not none %}
+                        <div class="kpi-value {% if day_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            ${{ "{:,.0f}".format(day_comp.delta) }}
+                        </div>
+                        <div class="small text-muted">
+                            {% if day_comp.delta_pct is not none %}
+                            {{ "+" if day_comp.delta_pct >= 0 else "" }}{{ "%.2f" % day_comp.delta_pct }}%
+                            {% else %}—{% endif %}
+                        </div>
+                        {% if day_comp.base_date %}
+                        <div class="small text-muted">vs {{ day_comp.base_date }}</div>
+                        {% endif %}
+                        {% else %}
+                        <div class="kpi-value text-muted">—</div>
+                        <div class="small text-muted">Need more daily history</div>
+                        {% endif %}
                     </div>
-                    <div class="small text-muted">
-                        {% if day_comp.delta_pct is not none %}
-                        {{ "+" if day_comp.delta_pct >= 0 else "" }}{{ "%.2f" % day_comp.delta_pct }}%
-                        {% else %}—{% endif %}
-                    </div>
-                    <div class="small text-muted">
-                        vs {{ day_comp.base_date }}
-                    </div>
-                    {% else %}
-                    <div class="kpi-value text-muted">—</div>
-                    <div class="small text-muted">Need more daily history</div>
-                    {% endif %}
                 </div>
             </div>
-        </div>
-        {% set week_comp = today_snapshot.comparisons.week if today_snapshot.comparisons is defined else None %}
-        <div class="col-md-3">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">vs 1 Week Ago</div>
-                    {% if week_comp and week_comp.has_data and week_comp.delta is not none %}
-                    <div class="kpi-value {% if week_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        ${{ "{:,.0f}".format(week_comp.delta) }}
+            {# Compared to Start of Week: same week’s start_value from mart_account_weekly_returns #}
+            {% set wstart = snap.vs_week_start if snap.vs_week_start is defined else None %}
+            <div class="col-6 col-md">
+                <div class="card kpi-card">
+                    <div class="card-body text-center">
+                        <div class="kpi-label">Compared to Start of Week</div>
+                        {% if wstart and wstart.has_data and wstart.delta is not none %}
+                        <div class="kpi-value {% if wstart.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            ${{ "{:,.0f}".format(wstart.delta) }}
+                        </div>
+                        <div class="small text-muted">
+                            {% if wstart.delta_pct is not none %}
+                            {{ "+" if wstart.delta_pct >= 0 else "" }}{{ "%.2f" % wstart.delta_pct }}%
+                            {% else %}—{% endif %}
+                        </div>
+                        {% if wstart.base_date %}
+                        <div class="small text-muted">vs {{ wstart.base_date }}</div>
+                        {% endif %}
+                        {% else %}
+                        <div class="kpi-value text-muted">—</div>
+                        <div class="small text-muted">Need weekly snapshot</div>
+                        {% endif %}
                     </div>
-                    <div class="small text-muted">
-                        {% if week_comp.delta_pct is not none %}
-                        {{ "+" if week_comp.delta_pct >= 0 else "" }}{{ "%.2f" % week_comp.delta_pct }}%
-                        {% else %}—{% endif %}
-                    </div>
-                    <div class="small text-muted">
-                        vs {{ week_comp.base_date }}
-                    </div>
-                    {% else %}
-                    <div class="kpi-value text-muted">—</div>
-                    <div class="small text-muted">Need more daily history</div>
-                    {% endif %}
                 </div>
             </div>
-        </div>
-        {% set month_comp = today_snapshot.comparisons.month if today_snapshot.comparisons is defined else None %}
-        <div class="col-md-3">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">vs 1 Month Ago</div>
-                    {% if month_comp and month_comp.has_data and month_comp.delta is not none %}
-                    <div class="kpi-value {% if month_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        ${{ "{:,.0f}".format(month_comp.delta) }}
+            {% set week_comp = snap.comparisons.week if snap.comparisons is defined else None %}
+            <div class="col-6 col-md">
+                <div class="card kpi-card">
+                    <div class="card-body text-center">
+                        <div class="kpi-label">vs 1 Week Ago</div>
+                        {% if week_comp and week_comp.has_data and week_comp.delta is not none %}
+                        <div class="kpi-value {% if week_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            ${{ "{:,.0f}".format(week_comp.delta) }}
+                        </div>
+                        <div class="small text-muted">
+                            {% if week_comp.delta_pct is not none %}
+                            {{ "+" if week_comp.delta_pct >= 0 else "" }}{{ "%.2f" % week_comp.delta_pct }}%
+                            {% else %}—{% endif %}
+                        </div>
+                        {% if week_comp.base_date %}
+                        <div class="small text-muted">vs {{ week_comp.base_date }}</div>
+                        {% endif %}
+                        {% else %}
+                        <div class="kpi-value text-muted">—</div>
+                        <div class="small text-muted">Need more daily history</div>
+                        {% endif %}
                     </div>
-                    <div class="small text-muted">
-                        {% if month_comp.delta_pct is not none %}
-                        {{ "+" if month_comp.delta_pct >= 0 else "" }}{{ "%.2f" % month_comp.delta_pct }}%
-                        {% else %}—{% endif %}
+                </div>
+            </div>
+            {% set month_comp = snap.comparisons.month if snap.comparisons is defined else None %}
+            <div class="col-6 col-md">
+                <div class="card kpi-card">
+                    <div class="card-body text-center">
+                        <div class="kpi-label">vs 1 Month Ago</div>
+                        {% if month_comp and month_comp.has_data and month_comp.delta is not none %}
+                        <div class="kpi-value {% if month_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            ${{ "{:,.0f}".format(month_comp.delta) }}
+                        </div>
+                        <div class="small text-muted">
+                            {% if month_comp.delta_pct is not none %}
+                            {{ "+" if month_comp.delta_pct >= 0 else "" }}{{ "%.2f" % month_comp.delta_pct }}%
+                            {% else %}—{% endif %}
+                        </div>
+                        {% if month_comp.base_date %}
+                        <div class="small text-muted">vs {{ month_comp.base_date }}</div>
+                        {% endif %}
+                        {% else %}
+                        <div class="kpi-value text-muted">—</div>
+                        <div class="small text-muted">Need more daily history</div>
+                        {% endif %}
                     </div>
-                    <div class="small text-muted">
-                        vs {{ month_comp.base_date }}
-                    </div>
-                    {% else %}
-                    <div class="kpi-value text-muted">—</div>
-                    <div class="small text-muted">Need more daily history</div>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# ── How this week compares to your normal ── #}
+{% if behavior_mirror %}
+<div class="review-section mb-3">
+    <h3>How This Week Compares to Your Normal</h3>
+    <p class="narrative mb-3">
+        Ground yourself in context: this looks at your trade volume, win rate, and P&amp;L this week
+        against your recent 8-week baseline for the same accounts.
+    </p>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">Trade Volume</div>
+                    {% set v = behavior_mirror.volume %}
+                    <div class="kpi-value">
+                        {{ v.value or 0 }} trades
+                    </div>
+                    <div class="small text-muted">
+                        {% if behavior_mirror.has_baseline and v.baseline %}
+                        Avg {{ "%.1f" % v.baseline }} / week<br>
+                        {% if v.diff is not none %}
+                        {{ "+" if v.diff >= 0 else "" }}{{ "%.1f" % v.diff }} vs baseline
+                        {% endif %}
+                        {% else %}
+                        Building your baseline&hellip;
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">Win Rate</div>
+                    {% set w = behavior_mirror.win_rate %}
+                    <div class="kpi-value {% if w.value is not none and w.baseline is not none and w.value >= w.baseline %}text-positive{% elif w.value is not none and w.baseline is not none %}text-negative{% endif %}">
+                        {% if w.value is not none %}
+                        {{ "%.1f" % w.value }}%
+                        {% else %}
+                        — 
+                        {% endif %}
+                    </div>
+                    <div class="small text-muted">
+                        {% if behavior_mirror.has_baseline and w.baseline is not none %}
+                        Avg {{ "%.1f" % w.baseline }}%
+                        {% if w.diff is not none %}
+                        &middot; {{ "+" if w.diff >= 0 else "" }}{{ "%.1f" % w.diff }} pts
+                        {% endif %}
+                        {% else %}
+                        Need more weeks to establish a pattern
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body text-center">
+                    <div class="kpi-label">Weekly P&amp;L vs Normal</div>
+                    {% set p = behavior_mirror.pnl %}
+                    <div class="kpi-value {% if p.value >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.0f}".format(p.value or 0) }}
+                    </div>
+                    <div class="small text-muted">
+                        {% if behavior_mirror.has_baseline and p.baseline %}
+                        Avg ${{ "{:,.0f}".format(p.baseline) }} / week
+                        {% if p.diff is not none %}
+                        &middot; {{ "+" if p.diff >= 0 else "" }}${{ "{:,.0f}".format(p.diff) }} vs baseline
+                        {% endif %}
+                        {% else %}
+                        Baseline building — this will get smarter as you trade
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── What works for you — This week by strategy ── #}
+{% if strategy_breakdown_week %}
+<div class="review-section mb-3">
+    <h3>What Works for You — This Week by Strategy</h3>
+    <p class="narrative mb-3">
+        Closed P&amp;L this week broken down by strategy. No judgment — just which strategies contributed.
+    </p>
+    <div class="row g-2 mb-2">
+        {% for s in strategy_breakdown_week %}
+        <div class="col-md-4 col-lg-3">
+            <div class="trade-highlight strategy py-2 px-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">{{ s.strategy }}</span>
+                    <span class="{% if s.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(s.total_pnl) }}</span>
+                </div>
+                <div class="small text-muted">
+                    {{ s.trades }} trade{{ 's' if s.trades != 1 else '' }}
+                    {% if s.win_rate_pct is not none %}
+                    &middot; {{ "%.0f" % s.win_rate_pct }}% win rate
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <a href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}" class="small">View full strategy performance &rarr;</a>
 </div>
 {% endif %}
 
@@ -506,7 +676,7 @@
     <h3>What the AI Sees</h3>
     <p class="narrative">{{ ai_insight.summary }}</p>
     <div class="d-flex align-items-center gap-3 mt-2">
-        <a href="{{ url_for('insights') }}" class="btn btn-sm btn-outline-primary">Read Full Analysis</a>
+        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Read Full Analysis</a>
         <span class="small text-muted">Last generated {{ ai_insight.generated_at }}</span>
     </div>
 </div>
@@ -516,7 +686,7 @@
     <p class="narrative text-muted">
         No AI analysis yet. Generate one to get a second opinion on your trading patterns.
     </p>
-    <a href="{{ url_for('insights') }}" class="btn btn-sm btn-outline-primary">Generate AI Insights</a>
+    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Generate AI Insights</a>
 </div>
 {% endif %}
 
@@ -564,7 +734,7 @@
         {% endfor %}
     </div>
     {% endif %}
-    <a href="{{ url_for('mirror_score') }}" class="btn btn-sm btn-outline-primary mt-3">See Full Breakdown</a>
+    <a href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}" class="btn btn-sm btn-outline-primary mt-3">See Full Breakdown</a>
     {% else %}
     <p class="narrative text-muted">No Mirror Score yet. Trade for a few weeks to build a baseline.</p>
     {% endif %}

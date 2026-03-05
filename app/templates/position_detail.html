@@ -46,10 +46,8 @@
             <div class="d-flex gap-3 flex-wrap mt-2">
                 {% if overall_status == 'Open' %}
                     <span class="badge badge-open">Open</span>
-                {% elif overall_status == 'Closed' %}
-                    <span class="badge badge-closed">Closed</span>
                 {% else %}
-                    <span class="badge badge-mixed">Mixed</span>
+                    <span class="badge badge-closed">Closed</span>
                 {% endif %}
                 <span class="text-white-50 small">{{ kpis.total_trades }} trades</span>
                 {% if kpis.first_trade and kpis.last_trade %}
@@ -197,7 +195,7 @@
         'Wheel': '#fd7e14', 'Buy and Hold': '#198754',
         'Long Call': '#20c997', 'Long Put': '#0dcaf0',
         'Call Spread': '#6610f2', 'Put Spread': '#d63384',
-        'Naked Call': '#dc3545', 'Protective Put': '#ffc107',
+        'Naked Call': '#dc3545', 'Poor Man Covered Call': '#6f42c1', 'Protective Put': '#ffc107',
         'Other Option': '#6c757d'
     } %}
     <div class="table-responsive">
@@ -229,8 +227,7 @@
                     </td>
                     <td>
                         {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
-                        {% elif r.status == 'Closed' %}<span class="badge badge-closed">Closed</span>
-                        {% else %}<span class="badge badge-mixed">Mixed</span>{% endif %}
+                        {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
                     </td>
                     <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-semibold">
                         ${{ "{:,.2f}".format(r.total_pnl) }}

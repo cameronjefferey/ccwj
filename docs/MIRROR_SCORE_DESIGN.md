@@ -171,3 +171,12 @@ Displayed but does not affect score.
 - No confetti, no red/green flashing
 - Neutral gray/blue palette
 - Analytical, reflective tone
+
+---
+
+## Redesign: Your Trading Fingerprint (product differentiator)
+
+- **Framing:** "Your Trading Fingerprint" — you can't get this anywhere else. Your behavior vs your own baseline; no P/L, no leaderboards.
+- **Diagnostic selection:** The single sentence is now taken from the *lowest-scoring* component (biggest deviation), not the first sub-80. More actionable.
+- **Baseline summary:** When we compute the score, we also produce a one-line "What good looks like for you" from baseline metrics (e.g. "When you're aligned, you trade ~X times per day; you stick to [top 2 strategies]; position sizes around $Y median."). Displayed under the diagnostic when available.
+- **UI:** Hero clarifies unique value; diagnostic is more prominent; baseline summary gives context.

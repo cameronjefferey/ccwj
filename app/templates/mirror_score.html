@@ -55,7 +55,8 @@
 {% block content %}
 
 <div class="mirror-hero">
-    <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
+    <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Fingerprint</p>
+    <p class="small mb-2" style="opacity:.8">You can't get this anywhere else — your behavior compared to your own baseline. No P&amp;L. No leaderboards. Just you vs you.</p>
     {% if score %}
         {% set s = score.mirror_score|float %}
         {% if s >= 80 %}
@@ -74,6 +75,23 @@
     {% else %}
     <h1 class="display-6 fw-bold mb-2">Mirror Score</h1>
     <p class="mb-0" style="opacity:.7">Measures how closely your behavior aligns with your own historical process. No P&L involved.</p>
+    {% endif %}
+    {% if accounts %}
+    <form method="get" class="row g-2 mt-3 align-items-end">
+        <div class="col-auto">
+            <label class="form-label small fw-bold mb-1 text-light">Account</label>
+            <select name="account" class="form-select form-select-sm">
+                <option value="">All Accounts</option>
+                {% for a in accounts %}
+                <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-light">Apply</button>
+            <a href="{{ url_for('mirror_score') }}" class="btn btn-sm btn-outline-light ms-1">Reset</a>
+        </div>
+    </form>
     {% endif %}
 </div>
 
@@ -94,8 +112,11 @@
                 <div class="small text-muted">/ 100</div>
             </div>
         </div>
-        <div>
-            <p class="narrative mb-1">{{ score.diagnostic_sentence }}</p>
+        <div class="flex-grow-1">
+            <p class="narrative mb-2 fw-semibold">{{ score.diagnostic_sentence }}</p>
+            {% if score.baseline_summary %}
+            <p class="small text-muted mb-1"><strong>What good looks like for you:</strong> {{ score.baseline_summary }}</p>
+            {% endif %}
             <p class="small text-muted mb-0">
                 Week of {{ score.week_start_date }} &middot;
                 {{ score.confidence_level }} confidence &middot;

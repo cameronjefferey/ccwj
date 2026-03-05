@@ -709,7 +709,10 @@ def positions():
     # ------------------------------------------------------------------
     selected_account = request.args.get("account", "")
     selected_strategy = request.args.get("strategy", "")
-    selected_status = request.args.get("status", "")
+    # Allow multi-select status; default to Open when no explicit filter
+    selected_statuses = request.args.getlist("status")
+    if not selected_statuses:
+        selected_statuses = ["Open"]
     selected_symbol = request.args.get("symbol", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
@@ -775,8 +778,8 @@ def positions():
         filtered = filtered[filtered["account"] == selected_account]
     if selected_strategy:
         filtered = filtered[filtered["strategy"] == selected_strategy]
-    if selected_status:
-        filtered = filtered[filtered["status"] == selected_status]
+    if selected_statuses:
+        filtered = filtered[filtered["status"].isin(selected_statuses)]
     if selected_symbol:
         filtered = filtered[filtered["symbol"] == selected_symbol]
 
@@ -839,9 +842,35 @@ def positions():
         symbol_rows = []
 
     # ------------------------------------------------------------------
-    # 8. Strategy detail rows (paginated)
+    # 8. Strategy detail rows (aggregated by account × strategy, paginated)
     # ------------------------------------------------------------------
-    all_rows = filtered.to_dict(orient="records")
+    if not filtered.empty:
+        strat_agg = (
+            filtered.groupby(["account", "strategy"])
+            .agg(
+                status=("status", lambda xs: "Open" if (xs == "Open").any() else "Closed"),
+                total_pnl=("total_pnl", "sum"),
+                realized_pnl=("realized_pnl", "sum"),
+                unrealized_pnl=("unrealized_pnl", "sum"),
+                total_premium_received=("total_premium_received", "sum"),
+                total_dividend_income=("total_dividend_income", "sum"),
+                total_return=("total_return", "sum"),
+                num_individual_trades=("num_individual_trades", "sum"),
+                num_winners=("num_winners", "sum"),
+                num_losers=("num_losers", "sum"),
+                avg_pnl_per_trade=("avg_pnl_per_trade", "mean"),
+                avg_days_in_trade=("avg_days_in_trade", "mean"),
+            )
+            .reset_index()
+        )
+        closed_ct = strat_agg["num_winners"] + strat_agg["num_losers"]
+        strat_agg["win_rate"] = strat_agg["num_winners"] / closed_ct.replace(0, pd.NA)
+        strat_agg["win_rate"] = strat_agg["win_rate"].fillna(0)
+        strat_agg = strat_agg.sort_values("total_return", ascending=False)
+        all_rows = strat_agg.to_dict(orient="records")
+    else:
+        all_rows = []
+
     per_page = 25
     total_rows = len(all_rows)
     total_pages = max(1, (total_rows + per_page - 1) // per_page)
@@ -860,7 +889,7 @@ def positions():
         symbols=symbols,
         selected_account=selected_account,
         selected_strategy=selected_strategy,
-        selected_status=selected_status,
+        selected_statuses=selected_statuses,
         selected_symbol=selected_symbol,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
@@ -1011,12 +1040,31 @@ def position_detail(symbol):
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
 
-    # Optional account filter
+    # Optional filters carried from Positions page
     selected_account = request.args.get("account", "")
+    selected_strategy = request.args.get("strategy", "")
+    selected_statuses = request.args.getlist("status")
+    selected_start_date = request.args.get("start_date", "")
+    selected_end_date = request.args.get("end_date", "")
+
+    start_date = _parse_date(selected_start_date)
+    end_date = _parse_date(selected_end_date)
+
     if selected_account:
         summary_df = summary_df[summary_df["account"] == selected_account]
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
+    if selected_strategy:
+        if "strategy" in summary_df.columns:
+            summary_df = summary_df[summary_df["strategy"] == selected_strategy]
+        if "strategy" in trades_df.columns:
+            trades_df = trades_df[trades_df["strategy"] == selected_strategy]
+    if selected_statuses and "status" in summary_df.columns:
+        summary_df = summary_df[summary_df["status"].isin(selected_statuses)]
+    if start_date is not None and "trade_date" in trades_df.columns:
+        trades_df = trades_df[trades_df["trade_date"] >= start_date]
+    if end_date is not None and "trade_date" in trades_df.columns:
+        trades_df = trades_df[trades_df["trade_date"] <= end_date]
 
     # For open equity positions: if cost_basis is missing/zero, derive from trade history
     # so unrealized P&L = market_value - cost_basis (true P/L for open positions)
@@ -1051,9 +1099,7 @@ def position_detail(symbol):
     statuses = summary_df[status_col].unique().tolist() if status_col and not summary_df.empty else []
     _has_open = any(str(s).strip().lower() == "open" for s in statuses if s is not None)
     _has_closed = any(str(s).strip().lower() == "closed" for s in statuses if s is not None)
-    if _has_open and _has_closed:
-        overall_status = "Mixed"
-    elif _has_open:
+    if _has_open:
         overall_status = "Open"
     else:
         overall_status = "Closed"
@@ -1283,7 +1329,13 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         unrealized = (shares_held * close - total_cost) if close > 0 and shares_held > 0 else 0
         eq_pnl = cum_realized + unrealized
 
-        opt_pnl = float(row.get("cumulative_options_pnl") or 0)
+        # Use daily option mark-to-market when available (from snapshots); else trade-based cumulative
+        opt_mv = row.get("option_market_value")
+        opt_cb = row.get("option_cost_basis")
+        if opt_mv is not None and opt_cb is not None and not (pd.isna(opt_mv) or pd.isna(opt_cb)):
+            opt_pnl = float(opt_mv) - float(opt_cb)
+        else:
+            opt_pnl = float(row.get("cumulative_options_pnl") or 0)
         div_pnl = float(row.get("cumulative_dividends_pnl") or 0)
         oth_pnl = float(row.get("cumulative_other_pnl") or 0)
 

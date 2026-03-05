@@ -4,15 +4,14 @@
     One row per (account, symbol, date).  Covers every date that has either
     a trade or a daily close price from the yfinance pipeline.
 
-    Options, dividends, and "other" components include running cumulative
-    sums (trivial — just the cumulative amount).
+    Options: when daily snapshots exist (int_daily_option_value), we expose
+    option_market_value and option_cost_basis so the chart can show
+    mark-to-market option P&L every day (like equity). When absent, the
+    app uses cumulative_options_pnl from trade flows.
 
     Equity columns provide the daily buy/sell events so the presentation
-    layer can compute running average-cost P&L (which is inherently
-    stateful and not practical in pure SQL without recursive CTEs).
-
-    close_price comes from stg_daily_prices, enabling daily mark-to-market
-    for equity positions.
+    layer can compute running average-cost P&L. close_price from
+    stg_daily_prices enables daily mark-to-market for equity.
 */
 
 with trade_daily as (
@@ -60,7 +59,14 @@ all_dates as (
         select account, symbol, date from trade_daily
         union distinct
         select account, symbol, date from prices
+        union distinct
+        select account, symbol, date from {{ ref('int_daily_option_value') }}
     )
+),
+
+daily_option as (
+    select account, symbol, date, option_market_value, option_cost_basis
+    from {{ ref('int_daily_option_value') }}
 ),
 
 joined as (
@@ -76,6 +82,8 @@ joined as (
         coalesce(td.equity_sell_qty, 0)       as equity_sell_qty,
         coalesce(td.other_amount, 0)          as other_amount,
         p.close_price,
+        o.option_market_value,
+        o.option_cost_basis,
 
         -- Flag rows that have at least one trade (vs price-only rows)
         case when td.date is not null then true else false end as has_trade
@@ -89,6 +97,10 @@ joined as (
         on ad.account = p.account
         and ad.symbol = p.symbol
         and ad.date = p.date
+    left join daily_option o
+        on ad.account = o.account
+        and ad.symbol = o.symbol
+        and ad.date = o.date
 )
 
 select
@@ -104,6 +116,8 @@ select
     other_amount,
     close_price,
     has_trade,
+    option_market_value,
+    option_cost_basis,
 
     sum(options_amount) over w    as cumulative_options_pnl,
     sum(dividends_amount) over w as cumulative_dividends_pnl,

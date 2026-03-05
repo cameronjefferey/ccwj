@@ -106,12 +106,15 @@ WHERE week_start = @week_start
   {account_filter}
 """
 
-# Today's snapshot with 1d/1w/1m comparisons from dbt mart (replaces TODAY_SNAPSHOT + Python deltas)
+# Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
 TODAY_SNAPSHOT_ENRICHED_QUERY = """
-SELECT *
+SELECT account, date, account_value,
+  base_1d_date, base_1d_value, delta_1d, delta_1d_pct,
+  base_1w_date, base_1w_value, delta_1w, delta_1w_pct,
+  base_1m_date, base_1m_value, delta_1m, delta_1m_pct
 FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
+WHERE 1=1 {account_filter}
 ORDER BY date DESC
-LIMIT 1
 """
 
 # Trades this week from dbt mart (replaces TRADES_THIS_WEEK_QUERY + Python cost/value calc)
@@ -132,6 +135,25 @@ FROM `ccwj-dbt.analytics.mart_weekly_trades`
 WHERE week_start = @week_start
   {account_filter}
 ORDER BY close_date DESC NULLS LAST, open_date DESC
+"""
+
+# Weekly behavior baseline — compare this week to recent 8-week norm
+WEEKLY_BEHAVIOR_QUERY = """
+SELECT
+  account,
+  week_start,
+  trades_closed,
+  total_pnl,
+  num_winners,
+  num_losers,
+  win_rate_week,
+  avg_trades_closed_8w,
+  avg_total_pnl_8w,
+  avg_win_rate_8w,
+  baseline_weeks_8w
+FROM `ccwj-dbt.analytics.mart_weekly_behavior_enriched`
+WHERE week_start = @week_start
+  {account_filter}
 """
 
 # For behavioral anomaly: need individual losing trades joined with journal
@@ -169,6 +191,23 @@ FROM `ccwj-dbt.analytics.int_strategy_classification` c
 WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
   {account_filter}
+"""
+
+# This week's P&L and counts by strategy (for "What works for you" section)
+WEEKLY_STRATEGY_BREAKDOWN_QUERY = """
+SELECT
+  strategy,
+  SUM(total_pnl) AS total_pnl,
+  COUNT(*)       AS trades,
+  SUM(CASE WHEN is_winner THEN 1 ELSE 0 END) AS winners,
+  SUM(CASE WHEN NOT is_winner THEN 1 ELSE 0 END) AS losers
+FROM `ccwj-dbt.analytics.int_strategy_classification`
+WHERE status = 'Closed'
+  AND close_date >= @start_date
+  AND close_date <= @end_date
+  {account_filter}
+GROUP BY strategy
+ORDER BY total_pnl DESC
 """
 
 def _iso_week_start(d):
@@ -303,7 +342,19 @@ def _compute_behavioral_anomaly(losers_df, journal_entries):
 def weekly_review():
     """Temporal hub: Friday Review / Monday Risk Check / Mid-Week Check-In."""
     user_accounts = _user_account_list()
-    account_filter = _account_sql_and(user_accounts)
+
+    # Optional: focus on a single account (multi-account support)
+    selected_account = request.args.get("account", "")
+    effective_accounts = user_accounts
+    if selected_account:
+        if user_accounts is None:
+            # Admin: allow ad-hoc focus on a single account
+            effective_accounts = [selected_account]
+        else:
+            # Regular user: only allow accounts they actually own
+            effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
+
+    account_filter = _account_sql_and(effective_accounts)
 
     mode = request.args.get("mode") or _auto_mode()
     if mode not in ("friday", "monday", "midweek"):
@@ -319,6 +370,8 @@ def weekly_review():
         "mode": mode,
         "week_start": this_week,
         "week_end": this_week + timedelta(days=6),
+        "accounts": user_accounts or [],
+        "selected_account": selected_account,
         "error": None,
         "review": None,
         "prev_review": None,
@@ -335,6 +388,7 @@ def weekly_review():
         "equity_snapshot": None,
         "trades_this_week": [],
         "from_upload": from_upload,
+        "strategy_breakdown_week": [],
     }
 
     try:
@@ -414,80 +468,9 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Equity snapshot query failed: %s", e)
 
-        # Today's snapshot with 1d/1w/1m comparisons from mart_account_snapshots_enriched
-        context["today_snapshot"] = None
-        try:
-            snap_df = client.query(TODAY_SNAPSHOT_ENRICHED_QUERY).to_dataframe()
-            if not snap_df.empty:
-                row = snap_df.iloc[0]
-                if "date" in row and row["date"] is not None:
-                    d = row["date"]
-                    today_date = d.date() if hasattr(d, "date") else (d if isinstance(d, date) else date.fromisoformat(str(d)[:10]))
-                else:
-                    today_date = None
-                today_value = float(row.get("account_value", 0) or 0)
-                prev_value = float(row.get("base_1d_value", 0) or 0) if row.get("base_1d_value") is not None else None
-                prev_date = row.get("base_1d_date")
-                if prev_date is not None and hasattr(prev_date, "date"):
-                    prev_date = prev_date.date()
-                elif prev_date is not None and not isinstance(prev_date, date):
-                    prev_date = date.fromisoformat(str(prev_date)[:10])
-
-                def _round_opt(val):
-                    if val is None or (hasattr(val, "__float__") and pd.isna(val)):
-                        return None
-                    return round(float(val), 2)
-
-                delta = _round_opt(row.get("delta_1d"))
-                delta_pct = _round_opt(row.get("delta_1d_pct"))
-
-                def _base_date(b):
-                    if b is None:
-                        return None
-                    return b.date() if hasattr(b, "date") else (b if isinstance(b, date) else date.fromisoformat(str(b)[:10]))
-
-                comps = {
-                    "day": {
-                        "label": "vs 1 day ago",
-                        "base_date": prev_date,
-                        "delta": delta,
-                        "delta_pct": delta_pct,
-                        "has_data": prev_value is not None,
-                    },
-                    "week": {
-                        "label": "vs 1 week ago",
-                        "base_date": _base_date(row.get("base_1w_date")),
-                        "delta": _round_opt(row.get("delta_1w")),
-                        "delta_pct": _round_opt(row.get("delta_1w_pct")),
-                        "has_data": row.get("base_1w_value") is not None,
-                    },
-                    "month": {
-                        "label": "vs 1 month ago",
-                        "base_date": _base_date(row.get("base_1m_date")),
-                        "delta": _round_opt(row.get("delta_1m")),
-                        "delta_pct": _round_opt(row.get("delta_1m_pct")),
-                        "has_data": row.get("base_1m_value") is not None,
-                    },
-                }
-                context["today_snapshot"] = {
-                    "today_value": today_value,
-                    "today_date": today_date,
-                    "prev_value": prev_value,
-                    "prev_date": prev_date,
-                    "delta": delta,
-                    "delta_pct": delta_pct,
-                    "comparisons": comps,
-                }
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Today snapshot (enriched) query failed: %s", e)
-
-        # Your week: closed P&L plus % account change this week (from mart_account_weekly_returns)
-        context["your_week"] = None
-        total_pnl = float(context.get("review", {}).get("total_pnl", 0) or 0)
-        trades_closed = int(context.get("review", {}).get("trades_closed", 0) or 0)
-
-        acct_pct = None
+        # Weekly returns: start/end value per account (for "Compared to Start of Week" tile and "Your week" %)
+        start_value_by_account = {}
+        ret_df = pd.DataFrame()
         try:
             ret_cfg = bigquery.QueryJobConfig(
                 query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
@@ -496,20 +479,242 @@ def weekly_review():
                 WEEKLY_RETURNS_QUERY.format(account_filter=account_filter),
                 job_config=ret_cfg,
             ).to_dataframe()
-            if not ret_df.empty:
-                total_start = float(ret_df["start_value"].sum() or 0)
-                total_end = float(ret_df["end_value"].sum() or 0)
-                if total_start > 0:
-                    acct_pct = round((total_end - total_start) / total_start * 100, 2)
+            if not ret_df.empty and "account" in ret_df.columns and "start_value" in ret_df.columns:
+                for _, r in ret_df.iterrows():
+                    start_value_by_account[str(r["account"])] = float(r.get("start_value") or 0)
         except Exception as e:
             if app.debug:
-                app.logger.warning("Weekly returns query failed: %s", e)
+                app.logger.warning("Weekly returns (start value) query failed: %s", e)
+
+        # Today's snapshot: one row per account (latest snapshot per account from mart)
+        context["today_snapshots_by_account"] = []
+        try:
+            snap_df = client.query(
+                TODAY_SNAPSHOT_ENRICHED_QUERY.format(account_filter=account_filter)
+            ).to_dataframe()
+            if not snap_df.empty and "date" in snap_df.columns and "account" in snap_df.columns:
+                if hasattr(snap_df["date"].iloc[0], "date"):
+                    snap_df["date"] = snap_df["date"].dt.date
+                elif snap_df["date"].dtype == object:
+                    snap_df["date"] = pd.to_datetime(snap_df["date"]).dt.date
+
+                def _round_opt(val):
+                    if val is None or (hasattr(val, "__float__") and pd.isna(val)):
+                        return None
+                    try:
+                        return round(float(val), 2)
+                    except (TypeError, ValueError):
+                        return None
+
+                # Latest row per account (query is ORDER BY date DESC, so first row per account is latest)
+                latest_per_account = snap_df.sort_values("date", ascending=False).groupby("account").first().reset_index()
+                seen_accounts = set()
+                for _, row in latest_per_account.iterrows():
+                    acct = row["account"]
+                    seen_accounts.add(acct)
+                    today_date = row["date"]
+                    today_value = float(row.get("account_value") or 0)
+                    comps = {
+                        "day": {
+                            "label": "vs 1 day ago",
+                            "base_date": row.get("base_1d_date"),
+                            "delta": _round_opt(row.get("delta_1d")),
+                            "delta_pct": _round_opt(row.get("delta_1d_pct")),
+                            "has_data": row.get("base_1d_value") is not None and pd.notna(row.get("base_1d_value")),
+                        },
+                        "week": {
+                            "label": "vs 1 week ago",
+                            "base_date": row.get("base_1w_date"),
+                            "delta": _round_opt(row.get("delta_1w")),
+                            "delta_pct": _round_opt(row.get("delta_1w_pct")),
+                            "has_data": row.get("base_1w_value") is not None and pd.notna(row.get("base_1w_value")),
+                        },
+                        "month": {
+                            "label": "vs 1 month ago",
+                            "base_date": row.get("base_1m_date"),
+                            "delta": _round_opt(row.get("delta_1m")),
+                            "delta_pct": _round_opt(row.get("delta_1m_pct")),
+                            "has_data": row.get("base_1m_value") is not None and pd.notna(row.get("base_1m_value")),
+                        },
+                    }
+                    # Compared to start of week (same week as mart_account_weekly_returns; $ and %)
+                    vs_week_start = None
+                    start_val = start_value_by_account.get(str(acct))
+                    if start_val is not None and start_val > 0 and today_value is not None:
+                        delta_week = round(today_value - start_val, 2)
+                        delta_week_pct = round((today_value - start_val) / start_val * 100, 2)
+                        vs_week_start = {
+                            "delta": delta_week,
+                            "delta_pct": delta_week_pct,
+                            "has_data": True,
+                            "base_date": this_week,
+                        }
+                    elif start_val is not None and start_val == 0 and today_value is not None:
+                        vs_week_start = {
+                            "delta": round(today_value, 2),
+                            "delta_pct": None,
+                            "has_data": True,
+                            "base_date": this_week,
+                        }
+                    if vs_week_start is None:
+                        vs_week_start = {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week}
+
+                    context["today_snapshots_by_account"].append({
+                        "account": acct,
+                        "today_value": today_value,
+                        "today_date": today_date,
+                        "comparisons": comps,
+                        "vs_week_start": vs_week_start,
+                    })
+
+                # One row per account: add placeholder rows for any account with no snapshot yet
+                if effective_accounts:
+                    for acct in effective_accounts:
+                        if acct not in seen_accounts:
+                            context["today_snapshots_by_account"].append({
+                                "account": acct,
+                                "today_value": None,
+                                "today_date": None,
+                                "comparisons": {
+                                    "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                                    "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                                    "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                                },
+                                "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
+                            })
+                    # Keep row order consistent with account list
+                    acct_order = {a: i for i, a in enumerate(effective_accounts)}
+                    context["today_snapshots_by_account"].sort(
+                        key=lambda s: acct_order.get(s["account"], 999)
+                    )
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Today snapshot (enriched) query failed: %s", e)
+            if effective_accounts:
+                for acct in effective_accounts:
+                    context["today_snapshots_by_account"].append({
+                        "account": acct,
+                        "today_value": None,
+                        "today_date": None,
+                        "comparisons": {
+                            "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                            "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                            "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                        },
+                        "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
+                    })
+
+        # Your week: closed P&L plus % account change this week (reuse weekly returns if we have it)
+        context["your_week"] = None
+        total_pnl = float(context.get("review", {}).get("total_pnl", 0) or 0)
+        trades_closed = int(context.get("review", {}).get("trades_closed", 0) or 0)
+
+        acct_pct = None
+        if not ret_df.empty:
+            total_start = float(ret_df["start_value"].sum() or 0)
+            total_end = float(ret_df["end_value"].sum() or 0)
+            if total_start > 0:
+                acct_pct = round((total_end - total_start) / total_start * 100, 2)
 
         context["your_week"] = {
             "dollars": total_pnl,
             "acct_pct": acct_pct,
             "trades_closed": trades_closed,
         }
+
+        # Behavior baseline: how this week compares to recent 8-week norm
+        context["behavior_mirror"] = None
+        try:
+            beh_cfg = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
+            )
+            beh_df = client.query(
+                WEEKLY_BEHAVIOR_QUERY.format(account_filter=account_filter),
+                job_config=beh_cfg,
+            ).to_dataframe()
+            if not beh_df.empty:
+                # Aggregate across accounts for this user scope
+                for col in [
+                    "trades_closed",
+                    "total_pnl",
+                    "num_winners",
+                    "num_losers",
+                    "avg_trades_closed_8w",
+                    "avg_total_pnl_8w",
+                    "avg_win_rate_8w",
+                    "baseline_weeks_8w",
+                ]:
+                    if col in beh_df.columns:
+                        beh_df[col] = pd.to_numeric(beh_df[col], errors="coerce").fillna(0)
+
+                total_trades = int(beh_df["trades_closed"].sum() or 0)
+                total_winners = int(beh_df["num_winners"].sum() or 0)
+                total_losers = int(beh_df["num_losers"].sum() or 0)
+                closed_trades = total_winners + total_losers
+                win_rate_week = None
+                if closed_trades > 0:
+                    win_rate_week = round(total_winners / closed_trades * 100, 1)
+
+                # Baseline: simple average of per-account 8-week baselines
+                baseline_trades = float(beh_df["avg_trades_closed_8w"].mean() or 0)
+                baseline_pnl = float(beh_df["avg_total_pnl_8w"].mean() or 0)
+                baseline_win_rate = None
+                if "avg_win_rate_8w" in beh_df.columns:
+                    baseline_win_rate = float(beh_df["avg_win_rate_8w"].mean() or 0) * 100
+
+                context["behavior_mirror"] = {
+                    "has_baseline": bool(beh_df["baseline_weeks_8w"].sum() > 0),
+                    "volume": {
+                        "value": total_trades,
+                        "baseline": baseline_trades,
+                        "diff": total_trades - baseline_trades if baseline_trades else None,
+                    },
+                    "win_rate": {
+                        "value": win_rate_week,
+                        "baseline": baseline_win_rate,
+                        "diff": (win_rate_week - baseline_win_rate) if (win_rate_week is not None and baseline_win_rate is not None) else None,
+                    },
+                    "pnl": {
+                        "value": float(beh_df["total_pnl"].sum() or 0),
+                        "baseline": baseline_pnl,
+                        "diff": float(beh_df["total_pnl"].sum() or 0) - baseline_pnl if baseline_pnl else None,
+                    },
+                }
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Weekly behavior baseline query failed: %s", e)
+
+        # This week's P&L by strategy (for "What works for you" section)
+        try:
+            strat_cfg = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
+                    bigquery.ScalarQueryParameter("end_date", "DATE", week_end),
+                ]
+            )
+            strat_df = client.query(
+                WEEKLY_STRATEGY_BREAKDOWN_QUERY.format(account_filter=account_filter),
+                job_config=strat_cfg,
+            ).to_dataframe()
+            if not strat_df.empty:
+                w_total = lambda r: int(r.get("winners", 0) or 0) + int(r.get("losers", 0) or 0)
+                context["strategy_breakdown_week"] = [
+                    {
+                        "strategy": row.get("strategy") or "Unclassified",
+                        "total_pnl": round(float(row.get("total_pnl") or 0), 2),
+                        "trades": int(row.get("trades") or 0),
+                        "winners": int(row.get("winners") or 0),
+                        "losers": int(row.get("losers") or 0),
+                        "win_rate_pct": round(
+                            int(row.get("winners", 0) or 0) / w_total(row) * 100,
+                            1,
+                        ) if w_total(row) > 0 else None,
+                    }
+                    for _, row in strat_df.iterrows()
+                ]
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Weekly strategy breakdown query failed: %s", e)
 
         # Detailed list of trades this week from mart_weekly_trades
         try:
