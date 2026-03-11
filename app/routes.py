@@ -1158,6 +1158,7 @@ def position_detail(symbol):
 
     # Build chart data from pre-aggregated mart_daily_pnl
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
+    prices_through_date = None
     try:
         acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
         chart_df = client.query(
@@ -1165,6 +1166,9 @@ def position_detail(symbol):
         ).to_dataframe()
         if not chart_df.empty:
             chart_data = _build_chart_from_daily_pnl(chart_df, current_df)
+            # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
+            if "date" in chart_df.columns:
+                prices_through_date = str(chart_df["date"].max())[:10]
     except Exception:
         pass
 
@@ -1190,6 +1194,7 @@ def position_detail(symbol):
         current_positions=current_positions,
         chart_data_json=json.dumps(chart_data),
         has_underlying_price=chart_data.get("has_underlying_price", False),
+        prices_through_date=prices_through_date,
         accounts=all_accounts,
         selected_account=selected_account,
     )
@@ -1227,6 +1232,13 @@ OPEN_SESSION_START_QUERY = """
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE status = 'Open'
     GROUP BY account, symbol
+"""
+
+# Which strategies are currently open per (account, symbol) — used to filter closed legs when "Open positions only"
+OPEN_STRATEGIES_QUERY = """
+    SELECT account, symbol, strategy
+    FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE status = 'Open'
 """
 
 CLOSED_LEGS_QUERY = """
@@ -1295,6 +1307,7 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     dates, equity_s, options_s, dividends_s, total_s, price_s = (
         [], [], [], [], [], [],
     )
+    last_cumulative_options_pnl = 0.0
 
     for _, row in daily_df.iterrows():
         buy_qty = float(row.get("equity_buy_qty") or 0)
@@ -1338,6 +1351,7 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
             opt_pnl = float(row.get("cumulative_options_pnl") or 0)
         div_pnl = float(row.get("cumulative_dividends_pnl") or 0)
         oth_pnl = float(row.get("cumulative_other_pnl") or 0)
+        last_cumulative_options_pnl = float(row.get("cumulative_options_pnl") or 0)
 
         dates.append(str(row["date"])[:10])
         equity_s.append(round(eq_pnl, 2))
@@ -1354,6 +1368,8 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         opt_unreal = float(current_df.loc[
             current_df["instrument_type"].isin(["Call", "Put"]), "unrealized_pnl"
         ].sum())
+        # Today's option P&L = realized (from closed trades) + current unrealized
+        today_option_pnl = last_cumulative_options_pnl + opt_unreal
         eq_row = current_df[current_df["instrument_type"] == "Equity"]
         today_eq = equity_s[-1]
         if not eq_row.empty and shares_held > 0:
@@ -1366,10 +1382,10 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
 
         dates.append(today_str)
         equity_s.append(round(today_eq, 2))
-        options_s.append(round(options_s[-1] + opt_unreal, 2))
+        options_s.append(round(today_option_pnl, 2))
         dividends_s.append(dividends_s[-1])
         price_s.append(round(today_price, 2) if today_price else None)
-        total_s.append(round(today_eq + options_s[-1] + dividends_s[-1], 2))
+        total_s.append(round(today_eq + today_option_pnl + dividends_s[-1], 2))
 
     return {
         "dates": dates,
@@ -1393,6 +1409,7 @@ def symbols_detail():
         strat_df = client.query(STRATEGIES_MAP_QUERY).to_dataframe()
         pnl_df = client.query(SYMBOLS_PNL_QUERY).to_dataframe()
         open_start_df = client.query(OPEN_SESSION_START_QUERY).to_dataframe()
+        open_strategies_df = client.query(OPEN_STRATEGIES_QUERY).to_dataframe()
         closed_legs_df = client.query(CLOSED_LEGS_QUERY).to_dataframe()
     except Exception as exc:
         return render_template(
@@ -1450,8 +1467,20 @@ def symbols_detail():
 
     accounts = sorted(trades_df["account"].dropna().unique())
     selected_account = request.args.get("account", "")
-    open_only = request.args.get("open_only") == "1"
-    positions_only = request.args.get("positions_only") == "1"
+    # Use getlist so duplicate params (e.g. open_only=1&open_only=0 from checkbox+hidden) don't break the filter
+    open_only = "1" in request.args.getlist("open_only")
+    positions_only = "1" in request.args.getlist("positions_only")
+
+    # Redirect to canonical URL if duplicate params present (cleans bookmarks/cached URLs)
+    open_list = request.args.getlist("open_only")
+    pos_list = request.args.getlist("positions_only")
+    if len(open_list) > 1 or len(pos_list) > 1:
+        q = {"account": selected_account} if selected_account else {}
+        if open_only:
+            q["open_only"] = "1"
+        if positions_only:
+            q["positions_only"] = "1"
+        return redirect(url_for("symbols_detail", **q))
 
     # "Open positions only" implies "symbols with open positions" filter.
     # If the user checks the second box but not the first, we still want
@@ -1465,6 +1494,18 @@ def symbols_detail():
         pnl_df = pnl_df[pnl_df["account"] == selected_account]
         if not closed_legs_df.empty:
             closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
+
+    # Open strategies per (account, symbol) — when "Open positions only", table shows only legs for these strategies
+    open_strategies_set = {}
+    if "open_strategies_df" in locals() and not open_strategies_df.empty:
+        ost = _filter_df_by_accounts(open_strategies_df, user_accounts)
+        if selected_account:
+            ost = ost[ost["account"] == selected_account]
+        for _, row in ost.iterrows():
+            key = (str(row["account"]), str(row["symbol"]))
+            if key not in open_strategies_set:
+                open_strategies_set[key] = set()
+            open_strategies_set[key].add(str(row["strategy"]).strip())
 
     # Restrict to symbols that have a current open position (match current_positions / int_enriched_current)
     if open_only:
@@ -1537,8 +1578,14 @@ def symbols_detail():
             float(sym_current.loc[sym_current["instrument_type"].isin(["Call", "Put"]), "unrealized_pnl"].sum()), 2
         ) if not sym_current.empty else 0.0
 
-        # Closed legs that belong to this position (closed on or after open_start)
-        open_start_val = open_start_map.get((str(account), str(symbol))) if positions_only else None
+        # Closed legs that belong to this position (closed on or after open_start).
+        # For \"open positions only\", prefer the precomputed open_start_map; if it's
+        # missing, fall back to the first trade date so we anchor to the current run.
+        open_key = (str(account), str(symbol))
+        open_start_val = open_start_map.get(open_key) if positions_only else None
+        if positions_only and open_start_val is None and not group.empty:
+            open_start_val = group["trade_date"].min()
+
         if not closed_legs_df.empty and open_start_val is not None:
             open_start_date = pd.to_datetime(open_start_val).date()
             legs = closed_legs_df[
@@ -1546,6 +1593,11 @@ def symbols_detail():
                 & (closed_legs_df["symbol"] == symbol)
                 & (closed_legs_df["close_date"] >= open_start_date)
             ]
+            # When "Open positions only", show only closed legs for strategies that are still open (e.g. Covered Call, not Long Call)
+            if positions_only and open_strategies_set:
+                open_strats = open_strategies_set.get(open_key, set())
+                if open_strats:
+                    legs = legs[legs["strategy"].astype(str).str.strip().isin(open_strats)]
             closed_legs_list = legs.sort_values("close_date").to_dict(orient="records")
             for r in closed_legs_list:
                 r["open_date"] = str(r["open_date"]) if pd.notna(r.get("open_date")) else ""
@@ -1577,13 +1629,10 @@ def symbols_detail():
         # For "Open positions only", clip the daily P&L series to the open
         # session start so the chart focuses on the live leg while still using
         # true end-of-day prices from mart_daily_pnl.
-        if positions_only:
-            key = (str(account), str(symbol))
-            open_start = open_start_map.get(key)
-            if open_start is not None and not sym_chart_df.empty and "date" in sym_chart_df.columns:
-                sym_chart_df = sym_chart_df[sym_chart_df["date"] >= pd.to_datetime(open_start)]
-                if not sym_chart_df.empty:
-                    first_date = str(min(group["trade_date"].max(), sym_chart_df["date"].min()))
+        if positions_only and open_start_val is not None and not sym_chart_df.empty and "date" in sym_chart_df.columns:
+            sym_chart_df = sym_chart_df[sym_chart_df["date"] >= pd.to_datetime(open_start_val)]
+            if not sym_chart_df.empty:
+                first_date = str(min(group["trade_date"].max(), sym_chart_df["date"].min()))
 
         chart = _build_chart_from_daily_pnl(sym_chart_df, sym_current)
 
@@ -1624,11 +1673,22 @@ def symbols_detail():
         # with closed legs for this position, and add a status column.
         current_list = sym_current.to_dict(orient="records") if not sym_current.empty else []
         combined_positions = []
+        # Position-level open date (for open legs) — reuse open_start_val
+        open_start_str = None
+        if open_start_val is not None:
+            try:
+                open_start_str = str(pd.to_datetime(open_start_val).date())
+            except Exception:
+                open_start_str = None
         for row in current_list:
             r = dict(row)
             r["status"] = "Open"
+            r["open_date"] = open_start_str
+            r["close_date"] = ""
             combined_positions.append(r)
 
+        # Closed legs within the current open session always show in the
+        # Positions table so you can see the full story of the live position.
         for leg in closed_legs_list:
             combined_positions.append({
                 "status": "Closed",
@@ -1640,6 +1700,8 @@ def symbols_detail():
                 "cost_basis": None,
                 "unrealized_pnl": leg.get("total_pnl"),
                 "unrealized_pnl_pct": None,
+                "open_date": leg.get("open_date") or "",
+                "close_date": leg.get("close_date") or "",
             })
 
         # Quick story stats for this symbol/position

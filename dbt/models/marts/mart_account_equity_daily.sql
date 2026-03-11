@@ -23,6 +23,7 @@ with raw as (
         snapshot_date,
         dbt_valid_from
     from {{ ref('snapshot_account_balances_daily') }}
+    where account != 'Demo Account'
 ),
 
 latest_per_day as (
@@ -57,6 +58,7 @@ option_raw as (
         snapshot_date,
         dbt_valid_from
     from {{ ref('snapshot_options_market_values_daily') }}
+    where account != 'Demo Account'
 ),
 
 option_latest_per_day as (
@@ -100,19 +102,25 @@ by_account_day as (
         sum(case when row_type = 'cash'          then market_value else 0 end) as cash_value
     from latest_per_day
     group by 1, 2
+),
+
+snapshot_result as (
+    select
+        b.account,
+        b.date,
+        b.account_value - b.cash_value - coalesce(o.option_value, 0) as equity_value,
+        coalesce(o.option_value, 0)                                  as option_value,
+        b.cash_value,
+        b.account_value
+    from by_account_day b
+    left join options_by_account_day o
+      on b.account = o.account
+     and b.date    = o.date
 )
 
-select
-    b.account,
-    b.date,
-    -- Equity is everything that isn't cash or options
-    b.account_value - b.cash_value - coalesce(o.option_value, 0) as equity_value,
-    coalesce(o.option_value, 0)                                  as option_value,
-    b.cash_value,
-    b.account_value
-from by_account_day b
-left join options_by_account_day o
-  on b.account = o.account
- and b.date    = o.date
-order by b.account, b.date
+select * from snapshot_result
+union all
+select account, date, equity_value, option_value, cash_value, account_value
+from {{ ref('int_demo_equity_daily') }}
+order by account, date
 

@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Generate demo_history.csv with years of diverse trades for Demo Account."""
+import csv
+import io
+from datetime import date, timedelta
+import random
+
+random.seed(42)
+OUT = io.StringIO()
+W = csv.writer(OUT)
+
+ACCOUNT = "Demo Account"
+FEE = "$0.66"
+
+def row(d, action, symbol, desc, qty, price, fee, amount):
+    W.writerow([ACCOUNT, d, action, symbol, desc, qty or "", price or "", fee if fee else "", amount or ""])
+
+# Header
+W.writerow(["Account", "Date", "Action", "Symbol", "Description", "Quantity", "Price", "fees_and_comm", "Amount"])
+
+# ---- 2022: Building base - equity buys, some CSPs and covered calls ----
+symbols_2022 = [
+    ("AAPL", "APPLE INC", 150),
+    ("MSFT", "MICROSOFT CORP", 280),
+    ("GOOGL", "ALPHABET INC CLASS A", 105),
+    ("AMZN", "AMAZON.COM INC", 115),
+]
+for sym, desc, base in symbols_2022:
+    d = f"01/{random.randint(10,28):02d}/2022"
+    row(d, "Buy", sym, desc, 30, f"${base}.00", "", f"-${30*base}.00")
+# Some 2022 options
+row("02/14/2022", "Sell to Open", "AAPL 03/18/2022 165.00 C", f"CALL APPLE INC $165 EXP 03/18/22", 1, "$2.50", FEE, "$249.34")
+row("03/18/2022 as of 03/18/2022", "Expired", "AAPL 03/18/2022 165.00 C", "CALL APPLE INC $165 EXP 03/18/22", 1, "", "", "")
+row("04/01/2022", "Sell to Open", "MSFT 04/14/2022 290.00 P", "PUT MICROSOFT CORP $290 EXP 04/14/22", 1, "$3.00", FEE, "$299.34")
+row("04/14/2022 as of 04/14/2022", "Expired", "MSFT 04/14/2022 290.00 P", "PUT MICROSOFT CORP $290 EXP 04/14/22", 1, "", "", "")
+row("05/15/2022", "Cash Dividend", "AAPL", "APPLE INC", "", "", "", "$12.00")
+row("06/01/2022", "Buy", "NVDA", "NVIDIA CORP", 50, "$185.00", "", "-$9250.00")
+row("06/10/2022", "Sell to Open", "NVDA 07/15/2022 190.00 C", "CALL NVIDIA CORP $190 EXP 07/15/22", 1, "$4.00", FEE, "$399.34")
+row("07/15/2022 as of 07/15/2022", "Assigned", "NVDA 07/15/2022 190.00 C", "CALL NVIDIA CORP $190 EXP 07/15/22", 1, "", "", "")
+row("07/18/2022", "Sell", "NVDA", "NVIDIA CORP", 50, "$190.00", "$0.02", "$9499.98")
+row("08/01/2022", "Sell to Open", "AMZN 08/19/2022 120.00 P", "PUT AMAZON.COM INC $120 EXP 08/19/22", 1, "$2.80", FEE, "$279.34")
+row("08/19/2022 as of 08/19/2022", "Expired", "AMZN 08/19/2022 120.00 P", "PUT AMAZON.COM INC $120 EXP 08/19/22", 1, "", "", "")
+row("09/12/2022", "Buy", "META", "META PLATFORMS INC", 40, "$165.00", "", "-$6600.00")
+row("09/12/2022", "Sell to Open", "META 10/21/2022 170.00 C", "CALL META PLATFORMS INC $170 EXP 10/21/22", 1, "$2.20", FEE, "$219.34")
+row("10/21/2022 as of 10/21/2022", "Expired", "META 10/21/2022 170.00 C", "CALL META PLATFORMS INC $170 EXP 10/21/22", 1, "", "", "")
+row("11/01/2022", "Buy to Open", "SPY 11/18/2022 380.00 P", "PUT SPDR S&P 500 ETF $380 EXP 11/18/22", 1, "$5.50", FEE, "-$550.66")
+row("11/15/2022", "Buy to Close", "SPY 11/18/2022 380.00 P", "PUT SPDR S&P 500 ETF $380 EXP 11/18/22", 1, "$2.00", FEE, "-$200.66")
+row("12/01/2022 as of 11/30/2022", "Bank Interest", "", "BANK INT SCHWAB BANK", "", "", "", "$0.15")
+
+# ---- 2023: More strategies ----
+row("01/10/2023", "Sell to Open", "GOOGL 02/17/2023 95.00 P", "PUT ALPHABET INC $95 EXP 02/17/23", 1, "$2.40", FEE, "$239.34")
+row("02/17/2023 as of 02/17/2023", "Assigned", "GOOGL 02/17/2023 95.00 P", "PUT ALPHABET INC $95 EXP 02/17/23", 1, "", "", "")
+row("02/20/2023", "Buy", "GOOGL", "ALPHABET INC CLASS A", 100, "$95.00", "", "-$9500.00")
+row("02/20/2023", "Sell to Open", "GOOGL 03/17/2023 98.00 C", "CALL ALPHABET INC $98 EXP 03/17/23", 1, "$1.90", FEE, "$189.34")
+row("03/17/2023 as of 03/17/2023", "Expired", "GOOGL 03/17/2023 98.00 C", "CALL ALPHABET INC $98 EXP 03/17/23", 1, "", "", "")
+row("04/05/2023", "Sell", "GOOGL", "ALPHABET INC CLASS A", 100, "$102.00", "$0.02", "$10199.98")
+row("04/10/2023", "Buy", "TSLA", "TESLA INC", 25, "$185.00", "", "-$4625.00")
+row("04/10/2023", "Sell to Open", "TSLA 05/19/2023 195.00 C", "CALL TESLA INC $195 EXP 05/19/23", 1, "$5.00", FEE, "$499.34")
+row("05/19/2023 as of 05/19/2023", "Assigned", "TSLA 05/19/2023 195.00 C", "CALL TESLA INC $195 EXP 05/19/23", 1, "", "", "")
+row("05/22/2023", "Sell", "TSLA", "TESLA INC", 25, "$195.00", "$0.02", "$4874.98")
+row("06/01/2023", "Sell to Open", "COST 06/16/2023 520.00 P", "PUT COSTCO WHOLESALE CORP $520 EXP 06/16/23", 1, "$4.00", FEE, "$399.34")
+row("06/16/2023 as of 06/16/2023", "Expired", "COST 06/16/2023 520.00 P", "PUT COSTCO WHOLESALE CORP $520 EXP 06/16/23", 1, "", "", "")
+row("07/01/2023", "Buy", "COST", "COSTCO WHOLESALE CORP", 15, "$525.00", "", "-$7875.00")
+row("07/05/2023", "Sell to Open", "COST 08/18/2023 535.00 C", "CALL COSTCO WHOLESALE CORP $535 EXP 08/18/23", 1, "$3.50", FEE, "$349.34")
+row("08/18/2023 as of 08/18/2023", "Expired", "COST 08/18/2023 535.00 C", "CALL COSTCO WHOLESALE CORP $535 EXP 08/18/23", 1, "", "", "")
+row("09/01/2023", "Sell to Open", "AMD 09/15/2023 105.00 P", "PUT ADVANCED MICRO DEVICES $105 EXP 09/15/23", 2, "$2.20", "$1.32", "$438.68")
+row("09/15/2023 as of 09/15/2023", "Expired", "AMD 09/15/2023 105.00 P", "PUT ADVANCED MICRO DEVICES $105 EXP 09/15/23", 2, "", "", "")
+row("10/01/2023", "Buy to Open", "QQQ 10/20/2023 365.00 C", "CALL INVESCO QQQ TR $365 EXP 10/20/23", 1, "$6.00", FEE, "-$600.66")
+row("10/10/2023", "Sell to Close", "QQQ 10/20/2023 365.00 C", "CALL INVESCO QQQ TR $365 EXP 10/20/23", 1, "$9.50", FEE, "$949.34")
+row("11/01/2023", "Cash Dividend", "AAPL", "APPLE INC", "", "", "", "$15.00")
+row("11/01/2023", "Cash Dividend", "COST", "COSTCO WHOLESALE CORP", "", "", "", "$45.00")
+row("12/15/2023 as of 12/14/2023", "Bank Interest", "", "BANK INT SCHWAB BANK", "", "", "", "$0.22")
+
+# ---- 2024: Wheel, more names ----
+row("01/08/2024", "Sell to Open", "JPM 01/19/2024 165.00 P", "PUT JPMORGAN CHASE & CO $165 EXP 01/19/24", 1, "$2.50", FEE, "$249.34")
+row("01/19/2024 as of 01/19/2024", "Expired", "JPM 01/19/2024 165.00 P", "PUT JPMORGAN CHASE & CO $165 EXP 01/19/24", 1, "", "", "")
+row("02/01/2024", "Sell to Open", "PLTR 02/16/2024 18.00 P", "PUT PALANTIR TECHNOLOGI $18 EXP 02/16/24", 2, "$0.80", "$1.32", "$158.68")
+row("02/16/2024 as of 02/16/2024", "Expired", "PLTR 02/16/2024 18.00 P", "PUT PALANTIR TECHNOLOGI $18 EXP 02/16/24", 2, "", "", "")
+row("03/01/2024", "Buy", "PLTR", "PALANTIR TECHNOLOGIES", 100, "$22.00", "", "-$2200.00")
+row("03/01/2024", "Sell to Open", "PLTR 04/19/2024 24.00 C", "CALL PALANTIR TECHNOLOGI $24 EXP 04/19/24", 1, "$1.20", FEE, "$119.34")
+row("04/19/2024 as of 04/19/2024", "Assigned", "PLTR 04/19/2024 24.00 C", "CALL PALANTIR TECHNOLOGI $24 EXP 04/19/24", 1, "", "", "")
+row("04/22/2024", "Sell", "PLTR", "PALANTIR TECHNOLOGIES", 100, "$24.00", "$0.02", "$2399.98")
+row("05/01/2024", "Sell to Open", "META 05/17/2024 480.00 P", "PUT META PLATFORMS INC $480 EXP 05/17/24", 1, "$5.20", FEE, "$519.34")
+row("05/17/2024 as of 05/17/2024", "Assigned", "META 05/17/2024 480.00 P", "PUT META PLATFORMS INC $480 EXP 05/17/24", 1, "", "", "")
+row("05/20/2024", "Buy", "META", "META PLATFORMS INC", 50, "$480.00", "", "-$24000.00")
+row("05/20/2024", "Sell to Open", "META 06/21/2024 500.00 C", "CALL META PLATFORMS INC $500 EXP 06/21/24", 1, "$4.00", FEE, "$399.34")
+row("06/21/2024 as of 06/21/2024", "Expired", "META 06/21/2024 500.00 C", "CALL META PLATFORMS INC $500 EXP 06/21/24", 1, "", "", "")
+row("07/01/2024", "Sell to Open", "NVDA 07/19/2024 125.00 P", "PUT NVIDIA CORP $125 EXP 07/19/24", 1, "$4.50", FEE, "$449.34")
+row("07/19/2024 as of 07/19/2024", "Expired", "NVDA 07/19/2024 125.00 P", "PUT NVIDIA CORP $125 EXP 07/19/24", 1, "", "", "")
+row("08/01/2024", "Buy to Open", "SPY 08/16/2024 555.00 P", "PUT SPDR S&P 500 ETF $555 EXP 08/16/24", 1, "$3.80", FEE, "-$380.66")
+row("08/10/2024", "Sell to Close", "SPY 08/16/2024 555.00 P", "PUT SPDR S&P 500 ETF $555 EXP 08/16/24", 1, "$1.20", FEE, "$119.34")
+row("09/01/2024", "Sell to Open", "AAPL 09/20/2024 220.00 C", "CALL APPLE INC $220 EXP 09/20/24", 1, "$2.60", FEE, "$259.34")
+row("09/20/2024 as of 09/20/2024", "Expired", "AAPL 09/20/2024 220.00 C", "CALL APPLE INC $220 EXP 09/20/24", 1, "", "", "")
+row("10/01/2024", "Cash Dividend", "AAPL", "APPLE INC", "", "", "", "$12.50")
+row("10/01/2024", "Cash Dividend", "META", "META PLATFORMS INC", "", "", "", "$52.50")
+row("11/01/2024", "Sell to Open", "AMZN 11/15/2024 175.00 P", "PUT AMAZON.COM INC $175 EXP 11/15/24", 1, "$3.20", FEE, "$319.34")
+row("11/15/2024 as of 11/15/2024", "Expired", "AMZN 11/15/2024 175.00 P", "PUT AMAZON.COM INC $175 EXP 11/15/24", 1, "", "", "")
+row("12/01/2024 as of 11/30/2024", "Bank Interest", "", "BANK INT SCHWAB BANK", "", "", "", "$0.28")
+
+# ---- 2025: Lead into current positions (keep existing from 06/2025) ----
+row("01/06/2025", "Sell to Open", "MSFT 01/17/2025 400.00 P", "PUT MICROSOFT CORP $400 EXP 01/17/25", 1, "$3.50", FEE, "$349.34")
+row("01/17/2025 as of 01/17/2025", "Expired", "MSFT 01/17/2025 400.00 P", "PUT MICROSOFT CORP $400 EXP 01/17/25", 1, "", "", "")
+row("02/01/2025", "Sell to Open", "GOOGL 02/21/2025 168.00 P", "PUT ALPHABET INC $168 EXP 02/21/25", 1, "$2.60", FEE, "$259.34")
+row("02/21/2025 as of 02/21/2025", "Expired", "GOOGL 02/21/2025 168.00 P", "PUT ALPHABET INC $168 EXP 02/21/25", 1, "", "", "")
+row("03/01/2025", "Buy to Open", "AMD 03/21/2025 135.00 C", "CALL ADVANCED MICRO DEVICES $135 EXP 03/21/25", 2, "$3.00", "$1.32", "-$601.32")
+row("03/15/2025", "Sell to Close", "AMD 03/21/2025 135.00 C", "CALL ADVANCED MICRO DEVICES $135 EXP 03/21/25", 2, "$5.20", "$1.32", "$1038.68")
+row("04/01/2025", "Sell to Open", "JPM 04/18/2025 190.00 P", "PUT JPMORGAN CHASE & CO $190 EXP 04/18/25", 1, "$2.90", FEE, "$289.34")
+row("04/18/2025 as of 04/18/2025", "Expired", "JPM 04/18/2025 190.00 P", "PUT JPMORGAN CHASE & CO $190 EXP 04/18/25", 1, "", "", "")
+row("05/01/2025", "Cash Dividend", "AAPL", "APPLE INC", "", "", "", "$25.00")
+row("05/01/2025", "Cash Dividend", "COST", "COSTCO WHOLESALE CORP", "", "", "", "$68.00")
+
+# Existing 2025-2026 trades (from June 2025 onward - path to current open positions)
+existing = """Demo Account,06/02/2025,Buy,AAPL,APPLE INC,50,$225.50,,-$11277.50
+Demo Account,06/10/2025,Buy,MSFT,MICROSOFT CORP,30,$425.00,,-$12750.00
+Demo Account,06/10/2025,Sell to Open,MSFT 07/18/2025 430.00 C,CALL MICROSOFT CORP $430 EXP 07/18/25,1,$2.85,$0.66,$284.34
+Demo Account,06/16/2025 as of 06/15/2025,Bank Interest,,BANK INT ...525 SCHWAB BANK,,,,$0.12
+Demo Account,07/01/2025,Sell to Open,NVDA 07/18/2025 120.00 P,PUT NVIDIA CORP $120 EXP 07/18/25,1,$4.50,$0.66,$449.34
+Demo Account,07/15/2025,Buy,TSLA,TESLA INC,50,$265.00,,-$13250.00
+Demo Account,07/15/2025,Sell to Open,TSLA 08/15/2025 270.00 C,CALL TESLA INC $270 EXP 08/15/25,1,$3.80,$0.66,$379.34
+Demo Account,07/18/2025 as of 07/18/2025,Assigned,NVDA 07/18/2025 120.00 P,PUT NVIDIA CORP $120 EXP 07/18/25,1,,,
+Demo Account,07/18/2025 as of 07/18/2025,Expired,MSFT 07/18/2025 430.00 C,CALL MICROSOFT CORP $430 EXP 07/18/25,1,,,
+Demo Account,07/22/2025,Sell,MSFT,MICROSOFT CORP,30,$438.50,$0.02,$13154.98
+Demo Account,08/01/2025,Buy,COST,COSTCO WHOLESALE CORP,20,$815.00,,-$16300.00
+Demo Account,08/05/2025,Sell to Open,AMZN 08/22/2025 175.00 P,PUT AMAZON.COM INC $175 EXP 08/22/25,1,$3.20,$0.66,$319.34
+Demo Account,08/10/2025,Buy to Open,SPY 09/18/2025 550.00 P,PUT SPDR S&P 500 ETF $550 EXP 09/18/25,1,$5.00,$0.66,-$500.66
+Demo Account,08/18/2025 as of 08/15/2025,Assigned,TSLA 08/15/2025 270.00 C,CALL TESLA INC $270 EXP 08/15/25,1,,,
+Demo Account,08/18/2025 as of 08/15/2025,Sell,TSLA,TESLA INC,50,$270.00,$0.02,$13499.98
+Demo Account,08/25/2025 as of 08/22/2025,Expired,AMZN 08/22/2025 175.00 P,PUT AMAZON.COM INC $175 EXP 08/22/25,1,,,
+Demo Account,09/01/2025,Sell to Open,META 09/19/2025 550.00 P,PUT META PLATFORMS INC $550 EXP 09/19/25,1,$5.20,$0.66,$519.34
+Demo Account,09/01/2025,Buy to Open,QQQ 10/16/2025 550.00 C,CALL INVESCO QQQ TR $550 EXP 10/16/25,1,$8.00,$0.66,-$800.66
+Demo Account,09/01/2025,Sell to Open,QQQ 10/16/2025 570.00 C,CALL INVESCO QQQ TR $570 EXP 10/16/25,1,$4.00,$0.66,$399.34
+Demo Account,09/10/2025,Buy to Open,PLTR 01/15/2027 80.00 C,CALL PALANTIR TECHNOLOGI$80 EXP 01/15/27,2,$40.00,$1.32,-$8001.32
+Demo Account,09/19/2025 as of 09/18/2025,Expired,SPY 09/18/2025 550.00 P,PUT SPDR S&P 500 ETF $550 EXP 09/18/25,1,,,
+Demo Account,09/22/2025 as of 09/19/2025,Assigned,META 09/19/2025 550.00 P,PUT META PLATFORMS INC $550 EXP 09/19/25,1,,,
+Demo Account,09/22/2025,Buy,META,META PLATFORMS INC,100,$550.00,,-$55000.00
+Demo Account,09/22/2025,Sell to Open,META 10/17/2025 560.00 C,CALL META PLATFORMS INC $560 EXP 10/17/25,1,$4.10,$0.66,$409.34
+Demo Account,10/01/2025,Buy to Open,AMD 11/21/2025 140.00 C,CALL ADVANCED MICRO DEVICES $140 EXP 11/21/25,2,$2.60,$1.32,-$521.32
+Demo Account,10/10/2025,Sell to Close,QQQ 10/16/2025 550.00 C,CALL INVESCO QQQ TR $550 EXP 10/16/25,1,$12.00,$0.66,$1199.34
+Demo Account,10/10/2025,Buy to Close,QQQ 10/16/2025 570.00 C,CALL INVESCO QQQ TR $570 EXP 10/16/25,1,$1.00,$0.66,-$100.66
+Demo Account,10/15/2025,Sell to Close,AMD 11/21/2025 140.00 C,CALL ADVANCED MICRO DEVICES $140 EXP 11/21/25,2,$3.40,$1.32,$678.68
+Demo Account,10/20/2025 as of 10/17/2025,Expired,META 10/17/2025 560.00 C,CALL META PLATFORMS INC $560 EXP 10/17/25,1,,,
+Demo Account,10/20/2025,Sell to Open,JPM 11/21/2025 195.00 P,PUT JPMORGAN CHASE & CO $195 EXP 11/21/25,1,$2.80,$0.66,$279.34
+Demo Account,11/01/2025,Buy,GOOGL,ALPHABET INC CLASS A,100,$175.00,,-$17500.00
+Demo Account,11/01/2025,Sell to Open,GOOGL 12/20/2025 180.00 C,CALL ALPHABET INC $180 EXP 12/20/25,1,$1.85,$0.66,$184.34
+Demo Account,11/05/2025,Sell to Open,PLTR 12/19/2025 95.00 C,CALL PALANTIR TECHNOLOGI$95 EXP 12/19/25,2,$3.50,$1.32,$698.68
+Demo Account,11/15/2025,Cash Dividend,AAPL,APPLE INC,,,,$25.00
+Demo Account,11/15/2025,Cash Dividend,COST,COSTCO WHOLESALE CORP,,,,$91.00
+Demo Account,11/16/2025 as of 11/15/2025,Bank Interest,,BANK INT ...525 SCHWAB BANK,,,,$0.18
+Demo Account,11/24/2025 as of 11/21/2025,Expired,JPM 11/21/2025 195.00 P,PUT JPMORGAN CHASE & CO $195 EXP 11/21/25,1,,,
+Demo Account,12/01/2025,Sell to Open,SPY 12/20/2025 580.00 P,PUT SPDR S&P 500 ETF $580 EXP 12/20/25,1,$2.45,$0.66,$244.34
+Demo Account,12/05/2025,Sell to Open,AAPL 12/20/2025 235.00 C,CALL APPLE INC $235 EXP 12/20/25,1,$3.00,$0.66,$299.34
+Demo Account,12/20/2025 as of 12/20/2025,Expired,AAPL 12/20/2025 235.00 C,CALL APPLE INC $235 EXP 12/20/25,1,,,
+Demo Account,12/20/2025 as of 12/20/2025,Expired,GOOGL 12/20/2025 180.00 C,CALL ALPHABET INC $180 EXP 12/20/25,1,,,
+Demo Account,12/21/2025 as of 12/19/2025,Expired,PLTR 12/19/2025 95.00 C,CALL PALANTIR TECHNOLOGI$95 EXP 12/19/25,2,,,
+Demo Account,12/21/2025 as of 12/20/2025,Expired,SPY 12/20/2025 580.00 P,PUT SPDR S&P 500 ETF $580 EXP 12/20/25,1,,,"""
+
+# Write generated rows to string, then append existing (without duplicate header)
+content = OUT.getvalue()
+# Append existing lines (skip header)
+for line in existing.strip().split("\n"):
+    content += line + "\n"
+
+print(content)

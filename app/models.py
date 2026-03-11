@@ -645,6 +645,8 @@ def ensure_demo_user():
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
         add_account_for_user(demo.id, DEMO_ACCOUNT)
         _ensure_demo_insight(demo.id)
+        _seed_demo_journal(demo.id)
+        _seed_demo_mirror_scores(demo.id)
 
 
 def _ensure_demo_insight(demo_user_id):
@@ -652,33 +654,102 @@ def _ensure_demo_insight(demo_user_id):
     if get_insight_for_user(demo_user_id):
         return  # already has one
     summary = (
-        "You're running a diversified options portfolio with Covered Calls, Cash-Secured Puts, "
-        "and Wheels on popular names like AAPL, NVDA, META, and GOOGL. Strong premium collection "
-        "with room to improve win rate on a few positions."
+        "Years of consistent options trading across Covered Calls, CSPs, Wheels, and PMCC. "
+        "Account growth, strong win rates, and disciplined journaling. Your Mirror Score trend "
+        "shows real progress—this is what a mature, intentional options trader looks like."
     )
     full_analysis = """## Summary
 
-You're running a solid, diversified options portfolio with Covered Calls, Cash-Secured Puts, and Wheels on popular names like AAPL, NVDA, META, and GOOGL. Premium collection is strong, but a few positions could use tighter management.
+You've built a track record over multiple years: diversified options strategies, steady premium income, and clear improvement in discipline and alignment with your plan. Your data shows wins and losses, assignments and expirations, and a portfolio that has grown while you've refined your approach.
 
 ## Trading Style Overview
 
-You favor income strategies: Covered Calls, Cash-Secured Puts, and the Wheel. Holdings span tech (AAPL, NVDA, META, GOOGL), consumer (COST), and ETFs (SPY). You hold positions for weeks to months and collect premium consistently. Assignment and expiration are both part of your normal flow.
+You trade like someone who's been at this for years. Covered Calls and Cash-Secured Puts on quality names (AAPL, NVDA, META, GOOGL, COST, SPY). You run the Wheel when assignment makes sense, and you've added Poor Man's Covered Call (PMCC) on names like PLTR. You mix income with occasional directional plays (long calls/puts) and keep position sizing and journaling in the picture.
 
 ## What's Working
 
-- **Premium collection** — You're collecting steady premium from short calls and puts across several symbols.
-- **Diversification** — Multiple strategies and sectors reduce single-position risk.
-- **Wheel execution** — Your META wheel (put assignment → covered call) shows good discipline.
+- **Strategy variety** — CSPs, Covered Calls, Wheels, PMCC, and selective directional trades. You're not stuck in one playbook.
+- **Consistent journaling** — Entries across symbols and strategies; mood and tags show you're reflecting on what works.
+- **Mirror Score trend** — Your discipline and intent scores have trended up over time. That's the kind of progress that separates long-term traders from one-off gamblers.
+- **Premium and assignments** — You collect premium, take assignment when it fits the plan, and close or roll with intention.
 
-## What Needs Attention
+## What This Demo Shows
 
-- **Win rate on some symbols** — A few positions have seen more rollovers or buybacks than ideal.
-- **Open SPY put** — Monitor the short put; consider rolling or closing if it moves against you.
-- **Position sizing** — Ensure no single position dominates the portfolio.
+This profile is built to show what the platform looks like when it's full: weekly review with real numbers, journal entries that tie to trades, Mirror Score history, strategy breakdowns, and trade-by-kind insights. Every section is populated so you can see the full experience.
 
-## Actionable Suggestions
+## Next Steps for You
 
-1. **Review open options weekly** — Check theta decay and assignment risk on your short GOOGL call and SPY put.
-2. **Track cost basis on assigned shares** — When puts assign, log your effective cost for better tax reporting.
-3. **Consider adding more symbols** — Spreading premium across more names can smooth returns and reduce concentration risk."""
+1. **Upload your own data** — Replace this demo with your real accounts and watch your own trends.
+2. **Use the Coach** — Ask questions about your trades; the AI uses only your data.
+3. **Track over time** — The more you upload and journal, the more accurate your snapshots and Mirror Score become."""
     save_insight(demo_user_id, summary, full_analysis)
+
+
+def _seed_demo_journal(demo_user_id):
+    """Seed demo user with many journal entries so Journal and Weekly Review feel full."""
+    if list_journal_entries(demo_user_id, limit=1):
+        return  # already has entries
+    account = DEMO_ACCOUNT
+    entries = [
+        ("AAPL", "Covered Call", "2022-02-14", "Selling OTM calls on core holding.", "calm", ["income", "plan"]),
+        ("MSFT", "Cash-Secured Put", "2022-04-01", "Wanted to own at 290; put expired worthless.", "focused", ["csp", "win"]),
+        ("NVDA", "Covered Call", "2022-06-10", "Assigned on NVDA; took profit and redeployed.", "satisfied", ["assignment", "win"]),
+        ("META", "Covered Call", "2022-09-12", "Collecting premium while holding long.", "neutral", ["theta"]),
+        ("GOOGL", "Wheel", "2023-02-17", "Put assigned; sold covered call. Wheel in motion.", "disciplined", ["wheel", "plan"]),
+        ("TSLA", "Covered Call", "2023-04-10", "High premium on TSLA; assigned and closed.", "good", ["income"]),
+        ("COST", "Cash-Secured Put", "2023-06-01", "Quality name; put expired. Would sell again.", "calm", ["csp"]),
+        ("AMD", "Cash-Secured Put", "2023-09-01", "Two contracts; both expired OTM.", "focused", ["csp", "win"]),
+        ("QQQ", "Long Call", "2023-10-01", "Bullish bet; closed for solid gain.", "excited", ["directional", "win"]),
+        ("PLTR", "Covered Call", "2024-03-01", "Selling calls on PLTR; managed well.", "calm", ["income"]),
+        ("META", "Wheel", "2024-05-17", "Assigned on puts; sold CC. Classic wheel.", "disciplined", ["wheel"]),
+        ("NVDA", "Cash-Secured Put", "2024-07-01", "Put expired. Strong premium.", "satisfied", ["csp", "win"]),
+        ("SPY", "Long Put", "2024-08-01", "Hedge; closed for small profit.", "neutral", ["hedge"]),
+        ("AAPL", "Covered Call", "2024-09-01", "Another round of CCs; expired worthless.", "good", ["income", "win"]),
+        ("AMZN", "Cash-Secured Put", "2024-11-01", "Put expired. Adding to income.", "focused", ["csp"]),
+        ("MSFT", "Cash-Secured Put", "2025-01-06", "Sold put; expired. Clean.", "calm", ["csp", "win"]),
+        ("GOOGL", "Cash-Secured Put", "2025-02-01", "Expired OTM. Happy with the premium.", "satisfied", ["csp"]),
+        ("AMD", "Long Call", "2025-03-01", "Took profit on the call; nice win.", "excited", ["directional", "win"]),
+        ("JPM", "Cash-Secured Put", "2025-04-01", "Bank name; put expired.", "neutral", ["csp"]),
+        ("NVDA", "Cash-Secured Put", "2025-07-01", "Assigned; now holding 100 shares. Plan was to own.", "disciplined", ["csp", "assignment"]),
+        ("TSLA", "Covered Call", "2025-07-15", "Sold call; assigned. Closed position for gain.", "good", ["income", "assignment"]),
+        ("META", "Wheel", "2025-09-22", "Put assigned; sold CC. Running the wheel.", "focused", ["wheel", "plan"]),
+        ("QQQ", "Spread", "2025-09-01", "Debit spread; closed for profit. Good risk/reward.", "satisfied", ["spread", "win"]),
+        ("PLTR", "Poor Man Covered Call", "2025-09-10", "LEAPS + short call. PMCC working as intended.", "calm", ["pmcc", "income"]),
+        ("GOOGL", "Covered Call", "2025-11-01", "Sold call on GOOGL; expired.", "good", ["income", "win"]),
+        ("PLTR", "Poor Man Covered Call", "2025-11-05", "Rolling short call; managing delta.", "focused", ["pmcc"]),
+        ("AAPL", "Covered Call", "2025-12-05", "Year-end CC; expired OTM.", "satisfied", ["income"]),
+        ("SPY", "Cash-Secured Put", "2025-12-01", "Selling put on SPY; small position.", "neutral", ["csp"]),
+    ]
+    for symbol, strategy, open_date, thesis, mood, tags in entries:
+        create_journal_entry(
+            demo_user_id, account, symbol, strategy, open_date,
+            thesis=thesis, mood=mood, tags=tags, confidence=7,
+        )
+
+
+def _seed_demo_mirror_scores(demo_user_id):
+    """Seed demo user with many weeks of Mirror Score history (improving trend)."""
+    if get_mirror_score_history(demo_user_id, limit=1):
+        return  # already has scores
+    # 24 weeks of improving scores (Mondays from 2024-06 through 2026-02)
+    from datetime import datetime, timedelta
+    start = datetime(2024, 6, 3).date()
+    weeks = []
+    for i in range(24):
+        week_start = start + timedelta(weeks=i)
+        weeks.append(week_start.strftime("%Y-%m-%d"))
+    # Scores improve over time: 62 -> 88
+    for i, ws in enumerate(weeks):
+        t = i / max(len(weeks) - 1, 1)
+        mirror = round(62 + 26 * t + (i % 3) * 0.5, 1)
+        discipline = round(60 + 25 * t, 1)
+        intent_ = round(65 + 20 * t, 1)
+        risk_ = round(64 + 22 * t, 1)
+        consistency_ = round(58 + 28 * t, 1)
+        level = "High" if mirror >= 80 else "Medium" if mirror >= 70 else "Building"
+        sentence = "Strong alignment with plan; journaling and sizing consistent." if mirror >= 78 else "Good week; keep tracking and sizing positions."
+        save_mirror_score(
+            demo_user_id, ws,
+            discipline, intent_, risk_, consistency_, mirror,
+            level, sentence,
+        )

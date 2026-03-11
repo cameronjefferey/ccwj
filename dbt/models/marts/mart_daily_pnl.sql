@@ -101,6 +101,36 @@ joined as (
         on ad.account = o.account
         and ad.symbol = o.symbol
         and ad.date = o.date
+),
+
+-- Carry forward latest snapshot option values so every date (on or after first snapshot) has option P&L from snapshots
+filled as (
+    select
+        account,
+        symbol,
+        date,
+        options_amount,
+        dividends_amount,
+        equity_buy_cost,
+        equity_buy_qty,
+        equity_sell_proceeds,
+        equity_sell_qty,
+        other_amount,
+        close_price,
+        has_trade,
+        last_value(option_market_value ignore nulls) over (
+            partition by account, symbol order by date
+            rows between unbounded preceding and current row
+        ) as option_market_value,
+        last_value(option_cost_basis ignore nulls) over (
+            partition by account, symbol order by date
+            rows between unbounded preceding and current row
+        ) as option_cost_basis,
+        sum(options_amount) over w    as cumulative_options_pnl,
+        sum(dividends_amount) over w  as cumulative_dividends_pnl,
+        sum(other_amount) over w      as cumulative_other_pnl
+    from joined
+    window w as (partition by account, symbol order by date)
 )
 
 select
@@ -118,11 +148,8 @@ select
     has_trade,
     option_market_value,
     option_cost_basis,
-
-    sum(options_amount) over w    as cumulative_options_pnl,
-    sum(dividends_amount) over w as cumulative_dividends_pnl,
-    sum(other_amount) over w     as cumulative_other_pnl
-
-from joined
-window w as (partition by account, symbol order by date)
+    cumulative_options_pnl,
+    cumulative_dividends_pnl,
+    cumulative_other_pnl
+from filled
 order by account, symbol, date

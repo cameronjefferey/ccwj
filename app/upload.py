@@ -60,6 +60,7 @@ CURRENT_COL_RENAMES = {
     "intr val": "intrinsic_value",
     "itm": "in_the_money",
     "security type": "security_type",
+    "asset type": "security_type",   # Schwab export uses "Asset Type"
 }
 
 # Exact column order for each seed file

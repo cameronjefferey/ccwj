@@ -734,6 +734,13 @@ def weekly_review():
                     close_d = close_d.isoformat() if hasattr(close_d, "isoformat") else (str(close_d)[:10] if close_d is not None else "")
                     total_pnl = row.get("total_pnl")
                     total_pnl = float(total_pnl) if total_pnl is not None else None
+                    status = str(row.get("status", ""))
+                    # Open: show unrealized P/L; Closed: show realized P/L (total_pnl)
+                    is_closed = status == "Closed"
+                    if is_closed:
+                        display_pnl = total_pnl
+                    else:
+                        display_pnl = float(row["current_unrealized_pnl"]) if row.get("current_unrealized_pnl") is not None else None
                     trades_list.append({
                         "account": str(row.get("account", "")),
                         "symbol": str(row.get("symbol", "")),
@@ -742,10 +749,10 @@ def weekly_review():
                         "open_date": open_d,
                         "close_date": close_d,
                         "total_pnl": total_pnl,
-                        "status": str(row.get("status", "")),
+                        "status": status,
                         "cost_basis": float(row["trade_cost"]) if row.get("trade_cost") is not None else None,
                         "market_value": float(row["current_market_value"]) if row.get("current_market_value") is not None else None,
-                        "current_pnl": float(row["current_unrealized_pnl"]) if row.get("current_unrealized_pnl") is not None else None,
+                        "current_pnl": display_pnl,
                     })
                 context["trades_this_week"] = trades_list
         except Exception as e:

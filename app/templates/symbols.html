@@ -118,14 +118,11 @@
             <input type="checkbox" class="form-check-input" name="open_only" id="openOnlyFilter" value="1"
                    {{ 'checked' if open_only|default(false) }}>
             <label class="form-check-label small" for="openOnlyFilter">Symbols with open positions</label>
-            {# When unchecked, checkbox is not sent; hidden ensures server receives open_only=0 #}
-            <input type="hidden" name="open_only" value="0">
         </div>
         <div class="form-check">
             <input type="checkbox" class="form-check-input" name="positions_only" id="positionsOnlyFilter" value="1"
                    {{ 'checked' if positions_only|default(false) }}>
             <label class="form-check-label small" for="positionsOnlyFilter">Open positions only</label>
-            <input type="hidden" name="positions_only" value="0">
         </div>
     </div>
     <div class="col-auto">
@@ -326,6 +323,8 @@
                                 <th>Status</th>
                                 <th>Symbol</th>
                                 <th>Description</th>
+                                <th>Open Date</th>
+                                <th>Close Date</th>
                                 <th>Qty</th>
                                 <th>Price</th>
                                 <th>Mkt Value</th>
@@ -348,6 +347,12 @@
                                 </td>
                                 <td class="fw-semibold small">{{ pos.trade_symbol }}</td>
                                 <td class="text-muted small">{{ pos.description }}</td>
+                                <td class="text-nowrap">
+                                    {{ pos.open_date if pos.open_date is defined and pos.open_date }}
+                                </td>
+                                <td class="text-nowrap">
+                                    {{ pos.close_date if pos.close_date is defined and pos.close_date }}
+                                </td>
                                 <td>{{ pos.quantity if pos.quantity is not none else '' }}</td>
                                 <td>
                                     {% if pos.current_price is not none %}

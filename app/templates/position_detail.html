@@ -181,6 +181,9 @@
 {# ── Cumulative P&L Chart ── #}
 <div class="chart-wrapper mb-4">
     <h6 class="fw-bold mb-3">Cumulative P&amp;L</h6>
+    {% if prices_through_date and has_underlying_price %}
+    <p class="text-muted small mb-2">Stock prices through {{ prices_through_date }}. Run <code>python current_position_stock_price.py</code> (or your scheduled job) to refresh.</p>
+    {% endif %}
     <div style="height: 300px;">
         <canvas id="pnlChart"></canvas>
     </div>
