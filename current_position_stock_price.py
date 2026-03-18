@@ -1,6 +1,6 @@
 import pandas as pd
 import yfinance as yf
-from datetime import date
+from datetime import date, timedelta
 from google.cloud import bigquery
 
 # Step 1: Initialize BigQuery client
@@ -18,7 +18,9 @@ positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
 
 # Step 3: Collect daily price & dividend data
-today = date.today().isoformat()
+today = date.today()
+# yfinance's end is exclusive, so use tomorrow to include today's close price
+end_date = (today + timedelta(days=1)).isoformat()
 all_data = []
 
 for _, row in positions_df.iterrows():
@@ -28,7 +30,7 @@ for _, row in positions_df.iterrows():
 
     try:
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(start=start_date, end=today)
+        hist = ticker.history(start=start_date, end=end_date)
         hist = hist[["Close", "Dividends"]].reset_index()
         hist["account"] = account
         hist["symbol"] = symbol

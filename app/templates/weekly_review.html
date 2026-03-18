@@ -2,64 +2,236 @@
 
 {% block head %}
 <style>
+    /* ── Hero ── */
     .review-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         border-radius: 16px;
         padding: 2.5rem 2rem;
         color: #fff;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
     .mode-pill {
-        padding: .4rem 1rem;
+        padding: .35rem .9rem;
         border-radius: 20px;
         text-decoration: none;
         font-weight: 600;
-        font-size: .8rem;
+        font-size: .75rem;
+        letter-spacing: .3px;
         transition: all .15s;
-        border: 1px solid rgba(255,255,255,.2);
-        color: rgba(255,255,255,.6);
+        border: 1px solid rgba(255,255,255,.18);
+        color: rgba(255,255,255,.5);
     }
     .mode-pill.active {
-        background: rgba(255,255,255,.15);
+        background: rgba(255,255,255,.12);
         color: #fff;
-        border-color: rgba(255,255,255,.4);
+        border-color: rgba(255,255,255,.35);
     }
     .mode-pill:not(.active):hover {
         border-color: rgba(255,255,255,.3);
         color: rgba(255,255,255,.8);
     }
+    .hero-headline {
+        font-size: 1.65rem;
+        font-weight: 700;
+        line-height: 1.25;
+        margin: 0 0 .5rem;
+    }
+    .hero-subtitle {
+        font-size: .93rem;
+        color: rgba(255,255,255,.6);
+        margin: 0;
+        max-width: 560px;
+    }
+    .hero-meta {
+        margin-top: .75rem;
+        font-size: .78rem;
+        color: rgba(255,255,255,.35);
+    }
+
+    /* ── Today pulse ── */
+    .today-pulse {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: .85rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+        border: 1px solid #e9ecef;
+    }
+    .today-pulse .pulse-label { font-size: .78rem; color: #6c757d; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+    .today-pulse .pulse-value { font-size: 1.35rem; font-weight: 700; }
+    .today-pulse .pulse-context { font-size: .82rem; color: #6c757d; }
+
+    /* ── Key observation ── */
+    .obs-card {
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        display: flex;
+        align-items: flex-start;
+        gap: .85rem;
+        margin-bottom: 1.25rem;
+        font-size: .93rem;
+        font-weight: 500;
+        line-height: 1.45;
+    }
+    .obs-card .obs-icon {
+        font-size: 1.1rem;
+        line-height: 1.45;
+        flex-shrink: 0;
+        opacity: .85;
+    }
+    .obs-card.positive { background: rgba(25,135,84,.07); border: 1px solid rgba(25,135,84,.2); color: #166534; }
+    .obs-card.negative { background: rgba(220,53,69,.07); border: 1px solid rgba(220,53,69,.2); color: #7f1d1d; }
+    .obs-card.warning  { background: rgba(234,179,8,.1);  border: 1px solid rgba(234,179,8,.3);  color: #713f12; }
+    .obs-card.neutral  { background: rgba(13,110,253,.06); border: 1px solid rgba(13,110,253,.15); color: #1e3a5f; }
+
+    /* ── Section cards ── */
     .review-section {
         background: #fff;
         border-radius: 16px;
-        box-shadow: 0 2px 16px rgba(0,0,0,.05);
-        padding: 2rem;
-        margin-bottom: 1.5rem;
-    }
-    .review-section h3 {
-        font-size: 1rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #6c757d;
+        box-shadow: 0 1px 8px rgba(0,0,0,.05);
+        padding: 1.75rem;
         margin-bottom: 1.25rem;
     }
+    .section-label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: 1.1px;
+        color: #9ca3af;
+        font-weight: 600;
+        margin-bottom: 1.1rem;
+    }
+
+    /* ── Week stats bar ── */
+    .week-stats {
+        display: flex;
+        gap: 0;
+    }
+    .week-stat {
+        flex: 1;
+        text-align: center;
+        padding: .5rem;
+        border-right: 1px solid #f0f0f0;
+    }
+    .week-stat:last-child { border-right: none; }
+    .week-stat-value { font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
+    .week-stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .2rem; }
+
+    /* ── Trade highlights ── */
     .trade-highlight {
         padding: 1rem 1.25rem;
         border-radius: 12px;
         background: #f8f9fa;
     }
-    .trade-highlight.best { border-left: 4px solid var(--color-positive); }
+    .trade-highlight.best  { border-left: 4px solid var(--color-positive); }
     .trade-highlight.worst { border-left: 4px solid var(--color-negative); }
-    .trade-highlight.strategy { border-left: 4px solid #0d6efd; }
-    .exposure-bar {
-        height: 6px; border-radius: 3px; background: #e9ecef; overflow: hidden;
+    .trade-highlight.strategy { border-left: 4px solid #3b82f6; }
+
+    /* ── Exposure bars ── */
+    .exposure-bar { height: 5px; border-radius: 3px; background: #e9ecef; overflow: hidden; }
+    .exposure-bar-fill { height: 100%; border-radius: 3px; background: #3b82f6; }
+
+    /* ── Mirror score mini-bars ── */
+    .mirror-bar-wrap {
+        display: flex;
+        align-items: flex-end;
+        gap: 4px;
+        height: 36px;
     }
-    .exposure-bar-fill { height: 100%; border-radius: 3px; background: #0d6efd; }
+    .mirror-bar-item {
+        flex: 1;
+        border-radius: 3px 3px 0 0;
+        min-height: 4px;
+    }
+
+    /* ── Pace track ── */
+    .pace-track {
+        background: #f0f4ff;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        border: 1px solid #dbeafe;
+    }
+
+    /* ── Prompt card ── */
+    .prompt-card {
+        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.25rem;
+    }
+    .prompt-q {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: .35rem;
+    }
+
+    /* ── Strategy pills ── */
+    .strat-pill {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .6rem 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 3px solid #3b82f6;
+    }
+    .strat-pill .strat-meta { font-size: .78rem; color: #6c757d; margin-top: .1rem; }
+
+    /* ── Market context ── */
+    .market-chip {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .65rem 1rem;
+        border-radius: 10px;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+    }
+    .market-chip .ticker { font-size: .72rem; font-weight: 600; color: #6c757d; text-transform: uppercase; }
+    .market-chip .pct { font-size: 1rem; font-weight: 700; }
+
+    /* ── Trades table ── */
+    .trades-table th { font-size: .75rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
+    .trades-table td { font-size: .88rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 
-{# ── Hero with mode selector ── #}
+{# ── Account filter ── #}
+{% if accounts %}
+<form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+    <div>
+        <label class="form-label small fw-semibold mb-1">Account</label>
+        <select name="account" class="form-select form-select-sm">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if mode %}<input type="hidden" name="mode" value="{{ mode }}">{% endif %}
+    <div>
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+        <a href="{{ url_for('weekly_review') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+    </div>
+</form>
+{% endif %}
+
+{% if error %}<div class="alert alert-danger small">{{ error }}</div>{% endif %}
+
+{% if from_upload %}
+<div class="alert alert-info small mb-3">
+    Your latest upload is still processing. Data may lag by a few minutes.
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
+   HERO
+   ════════════════════════════════════ #}
 <div class="review-hero">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <a href="{{ url_for('weekly_review', mode='friday', account=selected_account) if selected_account else url_for('weekly_review', mode='friday') }}"
@@ -69,445 +241,128 @@
         <a href="{{ url_for('weekly_review', mode='midweek', account=selected_account) if selected_account else url_for('weekly_review', mode='midweek') }}"
            class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Mid-Week</a>
     </div>
-    {% if mode == 'friday' %}
-    <h1 class="display-6 fw-bold mb-2">What happened this week?</h1>
-    <p class="mb-0" style="color:rgba(255,255,255,.6)">
-        Look back before you look forward. Review what closed, what worked, what didn't — and why.
-    </p>
-    {% elif mode == 'monday' %}
-    <h1 class="display-6 fw-bold mb-2">How are you showing up?</h1>
-    <p class="mb-0" style="color:rgba(255,255,255,.6)">
-        Before you trade this week, check your exposure, review your score, and set an intention.
-    </p>
+
+    {% if narrative %}
+    <p class="hero-headline">{{ narrative.headline }}</p>
+    {% if narrative.subtitle %}
+    <p class="hero-subtitle">{{ narrative.subtitle }}</p>
+    {% endif %}
     {% else %}
-    <h1 class="display-6 fw-bold mb-2">Are you on track?</h1>
-    <p class="mb-0" style="color:rgba(255,255,255,.6)">
-        Halfway through the week. Are you following your plan, or has something shifted?
-    </p>
+    <p class="hero-headline">Weekly Review</p>
     {% endif %}
-    <div class="mt-2 small" style="color:rgba(255,255,255,.4)">
-        Week of {{ week_start }} — {{ week_end }}
-        {% if is_backfilled %}<span class="badge bg-secondary ms-2">Most recent active week</span>{% endif %}
+
+    <div class="hero-meta">
+        Week of {{ week_start }} &mdash; {{ week_end }}
+        {% if is_backfilled %}<span class="badge bg-secondary ms-2" style="font-size:.7rem">Most recent active week</span>{% endif %}
     </div>
 </div>
 
-{# Global account filter for this page (multi-account support) #}
-{% if accounts %}
-<form method="get" class="row g-2 mb-3 align-items-end">
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
-            <option value="">All Accounts</option>
-            {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
-            {% endfor %}
-        </select>
+{# ════════════════════════════════════
+   TODAY'S PULSE (daily hook)
+   ════════════════════════════════════ #}
+{% if today_pulse %}
+<div class="today-pulse">
+    <div class="pulse-label">Today</div>
+    <div class="pulse-value {% if today_pulse.positive %}text-positive{% else %}text-negative{% endif %}">
+        {{ "+" if today_pulse.positive else "" }}${{ "{:,.0f}".format(today_pulse.delta if today_pulse.positive else -today_pulse.delta) }}
     </div>
-    {% if mode %}
-    <input type="hidden" name="mode" value="{{ mode }}">
-    {% endif %}
-    <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="{{ url_for('weekly_review') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
-</form>
-{% endif %}
-
-{% if error %}
-<div class="alert alert-danger">{{ error }}</div>
-{% endif %}
-
-{% if from_upload %}
-<div class="alert alert-info small mb-3">
-    Your latest upload is still processing in GitHub Actions. Data on this page may lag by a few minutes.
-    {% if not is_backfilled %}
-    When the pipeline finishes, your daily snapshots and weekly metrics will update automatically.
+    <div class="pulse-context">vs yesterday&rsquo;s close</div>
+    {% if today_pulse.date %}
+    <div class="pulse-context ms-auto" style="font-size:.72rem">{{ today_pulse.date }}</div>
     {% endif %}
 </div>
 {% endif %}
 
-{% if today_snapshots_by_account %}
-{# ── Today’s Snapshot: one row per account ── #}
-<div class="review-section mb-3">
-    <h3>Today’s Snapshot</h3>
-    <p class="narrative small text-muted mb-3">Latest account value and change vs 1 day, 1 week, and 1 month ago — one row per account.</p>
-    {% for snap in today_snapshots_by_account %}
-    <div class="border-bottom mb-3 pb-3 {% if not loop.last %}border-light{% endif %}">
-        <div class="d-flex align-items-center mb-2">
-            <span class="fw-bold me-2">{{ snap.account }}</span>
-            {% if snap.today_date %}
-            <span class="small text-muted">{{ snap.today_date }}</span>
+{# ════════════════════════════════════
+   KEY OBSERVATION (the aha moment)
+   ════════════════════════════════════ #}
+{% if key_observation %}
+<div class="obs-card {{ key_observation.type }}">
+    <span class="obs-icon">{{ key_observation.icon }}</span>
+    <span>{{ key_observation.text }}</span>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
+   WEEK AT A GLANCE — compact 3-stat bar
+   ════════════════════════════════════ #}
+{% if review and review.trades_closed > 0 %}
+<div class="review-section mb-3 py-3 px-0">
+    <div class="week-stats">
+        {# P&L #}
+        <div class="week-stat">
+            <div class="week-stat-value {% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(review.total_pnl) }}
+            </div>
+            <div class="week-stat-label">Week P&amp;L</div>
+        </div>
+        {# Win rate #}
+        {% set wr_val = (review.num_winners / review.trades_closed * 100) if review.trades_closed > 0 else none %}
+        <div class="week-stat">
+            <div class="week-stat-value">{{ "%.0f%%"|format(wr_val) if wr_val is not none else "—" }}</div>
+            <div class="week-stat-label">Win Rate</div>
+        </div>
+        {# vs baseline #}
+        <div class="week-stat">
+            {% if behavior_mirror and behavior_mirror.has_baseline and behavior_mirror.pnl.diff is not none %}
+            {% set bm_diff = behavior_mirror.pnl.diff %}
+            <div class="week-stat-value {% if bm_diff >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if bm_diff >= 0 else "" }}${{ "{:,.0f}".format(bm_diff) }}
+            </div>
+            <div class="week-stat-label">vs Your Avg</div>
+            {% else %}
+            <div class="week-stat-value text-muted">—</div>
+            <div class="week-stat-label">vs Your Avg</div>
             {% endif %}
         </div>
-        <div class="row g-3">
-            <div class="col-6 col-md">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <div class="kpi-label">Account Value</div>
-                        {% if snap.today_value is not none %}
-                        <div class="kpi-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
-                        <div class="small text-muted">{{ snap.today_date }}</div>
-                        {% else %}
-                        <div class="kpi-value text-muted">—</div>
-                        <div class="small text-muted">No snapshot yet</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% set day_comp = snap.comparisons.day if snap.comparisons is defined else None %}
-            <div class="col-6 col-md">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <div class="kpi-label">vs 1 Day Ago</div>
-                        {% if day_comp and day_comp.has_data and day_comp.delta is not none %}
-                        <div class="kpi-value {% if day_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                            ${{ "{:,.0f}".format(day_comp.delta) }}
-                        </div>
-                        <div class="small text-muted">
-                            {% if day_comp.delta_pct is not none %}
-                            {{ "+" if day_comp.delta_pct >= 0 else "" }}{{ "%.2f" % day_comp.delta_pct }}%
-                            {% else %}—{% endif %}
-                        </div>
-                        {% if day_comp.base_date %}
-                        <div class="small text-muted">vs {{ day_comp.base_date }}</div>
-                        {% endif %}
-                        {% else %}
-                        <div class="kpi-value text-muted">—</div>
-                        <div class="small text-muted">Need more daily history</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {# Compared to Start of Week: same week’s start_value from mart_account_weekly_returns #}
-            {% set wstart = snap.vs_week_start if snap.vs_week_start is defined else None %}
-            <div class="col-6 col-md">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <div class="kpi-label">Compared to Start of Week</div>
-                        {% if wstart and wstart.has_data and wstart.delta is not none %}
-                        <div class="kpi-value {% if wstart.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                            ${{ "{:,.0f}".format(wstart.delta) }}
-                        </div>
-                        <div class="small text-muted">
-                            {% if wstart.delta_pct is not none %}
-                            {{ "+" if wstart.delta_pct >= 0 else "" }}{{ "%.2f" % wstart.delta_pct }}%
-                            {% else %}—{% endif %}
-                        </div>
-                        {% if wstart.base_date %}
-                        <div class="small text-muted">vs {{ wstart.base_date }}</div>
-                        {% endif %}
-                        {% else %}
-                        <div class="kpi-value text-muted">—</div>
-                        <div class="small text-muted">Need weekly snapshot</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% set week_comp = snap.comparisons.week if snap.comparisons is defined else None %}
-            <div class="col-6 col-md">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <div class="kpi-label">vs 1 Week Ago</div>
-                        {% if week_comp and week_comp.has_data and week_comp.delta is not none %}
-                        <div class="kpi-value {% if week_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                            ${{ "{:,.0f}".format(week_comp.delta) }}
-                        </div>
-                        <div class="small text-muted">
-                            {% if week_comp.delta_pct is not none %}
-                            {{ "+" if week_comp.delta_pct >= 0 else "" }}{{ "%.2f" % week_comp.delta_pct }}%
-                            {% else %}—{% endif %}
-                        </div>
-                        {% if week_comp.base_date %}
-                        <div class="small text-muted">vs {{ week_comp.base_date }}</div>
-                        {% endif %}
-                        {% else %}
-                        <div class="kpi-value text-muted">—</div>
-                        <div class="small text-muted">Need more daily history</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% set month_comp = snap.comparisons.month if snap.comparisons is defined else None %}
-            <div class="col-6 col-md">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <div class="kpi-label">vs 1 Month Ago</div>
-                        {% if month_comp and month_comp.has_data and month_comp.delta is not none %}
-                        <div class="kpi-value {% if month_comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                            ${{ "{:,.0f}".format(month_comp.delta) }}
-                        </div>
-                        <div class="small text-muted">
-                            {% if month_comp.delta_pct is not none %}
-                            {{ "+" if month_comp.delta_pct >= 0 else "" }}{{ "%.2f" % month_comp.delta_pct }}%
-                            {% else %}—{% endif %}
-                        </div>
-                        {% if month_comp.base_date %}
-                        <div class="small text-muted">vs {{ month_comp.base_date }}</div>
-                        {% endif %}
-                        {% else %}
-                        <div class="kpi-value text-muted">—</div>
-                        <div class="small text-muted">Need more daily history</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# ── How this week compares to your normal ── #}
-{% if behavior_mirror %}
-<div class="review-section mb-3">
-    <h3>How This Week Compares to Your Normal</h3>
-    <p class="narrative mb-3">
-        Ground yourself in context: this looks at your trade volume, win rate, and P&amp;L this week
-        against your recent 8-week baseline for the same accounts.
-    </p>
-    <div class="row g-3">
-        <div class="col-md-4">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">Trade Volume</div>
-                    {% set v = behavior_mirror.volume %}
-                    <div class="kpi-value">
-                        {{ v.value or 0 }} trades
-                    </div>
-                    <div class="small text-muted">
-                        {% if behavior_mirror.has_baseline and v.baseline %}
-                        Avg {{ "%.1f" % v.baseline }} / week<br>
-                        {% if v.diff is not none %}
-                        {{ "+" if v.diff >= 0 else "" }}{{ "%.1f" % v.diff }} vs baseline
-                        {% endif %}
-                        {% else %}
-                        Building your baseline&hellip;
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">Win Rate</div>
-                    {% set w = behavior_mirror.win_rate %}
-                    <div class="kpi-value {% if w.value is not none and w.baseline is not none and w.value >= w.baseline %}text-positive{% elif w.value is not none and w.baseline is not none %}text-negative{% endif %}">
-                        {% if w.value is not none %}
-                        {{ "%.1f" % w.value }}%
-                        {% else %}
-                        — 
-                        {% endif %}
-                    </div>
-                    <div class="small text-muted">
-                        {% if behavior_mirror.has_baseline and w.baseline is not none %}
-                        Avg {{ "%.1f" % w.baseline }}%
-                        {% if w.diff is not none %}
-                        &middot; {{ "+" if w.diff >= 0 else "" }}{{ "%.1f" % w.diff }} pts
-                        {% endif %}
-                        {% else %}
-                        Need more weeks to establish a pattern
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card kpi-card">
-                <div class="card-body text-center">
-                    <div class="kpi-label">Weekly P&amp;L vs Normal</div>
-                    {% set p = behavior_mirror.pnl %}
-                    <div class="kpi-value {% if p.value >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        ${{ "{:,.0f}".format(p.value or 0) }}
-                    </div>
-                    <div class="small text-muted">
-                        {% if behavior_mirror.has_baseline and p.baseline %}
-                        Avg ${{ "{:,.0f}".format(p.baseline) }} / week
-                        {% if p.diff is not none %}
-                        &middot; {{ "+" if p.diff >= 0 else "" }}${{ "{:,.0f}".format(p.diff) }} vs baseline
-                        {% endif %}
-                        {% else %}
-                        Baseline building — this will get smarter as you trade
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
+        {# Trades count #}
+        <div class="week-stat">
+            <div class="week-stat-value">{{ review.trades_closed }}</div>
+            <div class="week-stat-label">Closed</div>
         </div>
     </div>
 </div>
 {% endif %}
 
-{# ── What works for you — This week by strategy ── #}
-{% if strategy_breakdown_week %}
-<div class="review-section mb-3">
-    <h3>What Works for You — This Week by Strategy</h3>
-    <p class="narrative mb-3">
-        Closed P&amp;L this week broken down by strategy. No judgment — just which strategies contributed.
-    </p>
-    <div class="row g-2 mb-2">
-        {% for s in strategy_breakdown_week %}
-        <div class="col-md-4 col-lg-3">
-            <div class="trade-highlight strategy py-2 px-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold">{{ s.strategy }}</span>
-                    <span class="{% if s.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(s.total_pnl) }}</span>
-                </div>
-                <div class="small text-muted">
-                    {{ s.trades }} trade{{ 's' if s.trades != 1 else '' }}
-                    {% if s.win_rate_pct is not none %}
-                    &middot; {{ "%.0f" % s.win_rate_pct }}% win rate
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    <a href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}" class="small">View full strategy performance &rarr;</a>
-</div>
-{% endif %}
 
-{# ── Weekly account value waterfall (Monday focus) — disabled for now ── #}
-{% if false %}
-<div class="review-section mt-3">
-    <h3>How Your Account Moved</h3>
-    <p class="narrative mb-3">
-        Start of week &rarr; end of week account value, broken into closed trades, open-position drift, and dividends/other.
-    </p>
-    <div class="d-flex align-items-end gap-3" style="height:140px;">
-        {% set wf = equity_waterfall %}
-        {% set abs_closed = wf.closed | abs %}
-        {% set abs_open = wf.open_drift | abs %}
-        {% set abs_div = wf.dividends_other | abs %}
-        {% set scale = (abs_closed + abs_open + abs_div) or 1 %}
+{# ════════════════════════════════════════════════════════
+   FRIDAY MODE
+   ════════════════════════════════════════════════════════ #}
+{% if mode == 'friday' %}
 
-        {# Start value #}
-        <div class="text-center flex-fill">
-            <div class="mx-auto" style="width:36px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:60%; background:#e9ecef; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2">Start</div>
-            <div class="small text-muted">${{ "{:,.0f}".format(wf.start) }}</div>
-        </div>
-
-        {# Closed trades #}
-        <div class="text-center flex-fill">
-            {% set h = (abs_closed / scale * 100) | round(0) %}
-            <div class="mx-auto" style="width:36px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:{{ h }}%; background:{% if wf.closed >= 0 %}var(--color-positive){% else %}var(--color-negative){% endif %}; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2">Closed trades</div>
-            <div class="small {% if wf.closed >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(wf.closed) }}</div>
-        </div>
-
-        {# Open drift #}
-        <div class="text-center flex-fill">
-            {% set h = (abs_open / scale * 100) | round(0) %}
-            <div class="mx-auto" style="width:36px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:{{ h }}%; background:{% if wf.open_drift >= 0 %}var(--color-positive){% else %}var(--color-negative{% endif %}; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2">Open positions</div>
-            <div class="small {% if wf.open_drift >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(wf.open_drift) }}</div>
-        </div>
-
-        {# Dividends / other #}
-        <div class="text-center flex-fill">
-            {% set h = (abs_div / scale * 100) | round(0) %}
-            <div class="mx-auto" style="width:36px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:{{ h }}%; background:{% if wf.dividends_other >= 0 %}#0d6efd{% else %}var(--color-negative){% endif %}; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2">Dividends / other</div>
-            <div class="small {% if wf.dividends_other >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(wf.dividends_other) }}</div>
-        </div>
-
-        {# End value #}
-        <div class="text-center flex-fill">
-            <div class="mx-auto" style="width:36px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:60%; background:#e9ecef; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2">End</div>
-            <div class="small text-muted">${{ "{:,.0f}".format(wf.end) }}</div>
-        </div>
-    </div>
-    <p class="narrative small text-muted mt-3 mb-0">
-        Total change: <strong class="{% if wf.total_change >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(wf.total_change) }}</strong>.
-        Closed + open + dividends/other reconcile this change.
-    </p>
-</div>
-{% endif %}
-
-{# ── Weekly strategy contributions (Monday) — disabled for now ── #}
-{% if false %}
-<div class="review-section mt-3">
-    <h3>Which Strategies Drove Last Week</h3>
-    <p class="narrative mb-3">
-        Realized P&amp;L from closed trade groups, broken down by strategy.
-    </p>
-    {% set max_abs = (strategy_waterfall | map(attribute='pnl') | map('abs') | max) or 1 %}
-    <div class="d-flex align-items-end gap-3" style="height:140px; overflow-x:auto;">
-        {% for s in strategy_waterfall %}
-        {% set h = ((s.pnl | abs) / max_abs * 100) | round(0) %}
-        <div class="text-center" style="min-width:80px;">
-            <div class="mx-auto" style="width:32px; height:100%; display:flex; align-items:flex-end; justify-content:center;">
-                <div style="width:100%; height:{{ h }}%; background:{% if s.pnl >= 0 %}var(--color-positive){% else %}var(--color-negative){% endif %}; border-radius:6px;"></div>
-            </div>
-            <div class="small fw-semibold mt-2 text-truncate" title="{{ s.strategy }}">{{ s.strategy or 'Unclassified' }}</div>
-            <div class="small {% if s.pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(s.pnl) }}</div>
-            <div class="small text-muted">{{ s.trade_groups }} trade{{ 's' if s.trade_groups != 1 }}</div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{# ── Market comparison: you vs the market ── #}
-{% if your_week or (market and (market.spy_week_pct is not none or market.qqq_week_pct is not none)) %}
+{# ── Best & Worst ── #}
+{% if review and review.trades_closed > 0 %}
+{% if review.best_trade or review.worst_trade %}
 <div class="review-section">
-    <h3>How the Market Did</h3>
-    <p class="narrative mb-3">Compare your week to the broad market so you can see whether you added alpha or lagged.</p>
+    <div class="section-label">Best &amp; Worst</div>
     <div class="row g-3">
-        {% if market and market.spy_week_pct is not none %}
-        <div class="col-md-4">
-            <div class="trade-highlight strategy">
-                <div class="small text-muted mb-1">S&P 500 (SPY) — This week</div>
-                <div class="h4 fw-bold mb-0 {% if market.spy_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {% if market.spy_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.spy_week_pct }}%
-                </div>
-                {% if market.spy_ytd_pct is not none %}
-                <div class="small text-muted mt-1">YTD {{ "%.2f" % market.spy_ytd_pct }}%</div>
-                {% endif %}
+        {% if review.best_trade %}
+        <div class="col-md-6">
+            <div class="trade-highlight best">
+                <div class="small text-muted mb-1">Best Trade</div>
+                <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}"
+                   class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
+                    {{ review.best_trade.symbol }}
+                </a>
+                <div class="small text-muted mb-2">{{ review.best_trade.strategy }} &middot; Closed {{ review.best_trade.close_date }}</div>
+                <div class="h4 fw-bold text-positive mb-2">${{ "{:,.2f}".format(review.best_trade.total_pnl) }}</div>
+                <a href="{{ url_for('journal_new', account=review.best_trade.account, symbol=review.best_trade.symbol, strategy=review.best_trade.strategy) }}"
+                   class="btn btn-sm btn-outline-success">Journal this &rarr;</a>
             </div>
         </div>
         {% endif %}
-        {% if market and market.qqq_week_pct is not none %}
-        <div class="col-md-4">
-            <div class="trade-highlight strategy">
-                <div class="small text-muted mb-1">Nasdaq (QQQ) — This week</div>
-                <div class="h4 fw-bold mb-0 {% if market.qqq_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {% if market.qqq_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.qqq_week_pct }}%
-                </div>
-                {% if market.qqq_ytd_pct is not none %}
-                <div class="small text-muted mt-1">YTD {{ "%.2f" % market.qqq_ytd_pct }}%</div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-        {% if your_week %}
-        <div class="col-md-4">
-            <div class="trade-highlight strategy">
-                <div class="small text-muted mb-1">Your account — This week</div>
-                {% if your_week.acct_pct is not none %}
-                <div class="h4 fw-bold mb-0 {% if your_week.acct_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {% if your_week.acct_pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.acct_pct }}%
-                </div>
-                <div class="small text-muted mt-1">
-                    Based on change in total account value this week.
-                </div>
-                {% else %}
-                <div class="h4 fw-bold mb-0 {% if your_week.dollars >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    ${{ "{:,.2f}".format(your_week.dollars) }}
-                </div>
-                {% endif %}
-                <div class="small text-muted mt-1">{{ your_week.trades_closed }} closed trade{{ 's' if your_week.trades_closed != 1 }}</div>
+        {% if review.worst_trade and review.worst_trade.total_pnl < 0 %}
+        <div class="col-md-6">
+            <div class="trade-highlight worst">
+                <div class="small text-muted mb-1">Worst Trade</div>
+                <a href="{{ url_for('position_detail', symbol=review.worst_trade.symbol) }}"
+                   class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
+                    {{ review.worst_trade.symbol }}
+                </a>
+                <div class="small text-muted mb-2">{{ review.worst_trade.strategy }} &middot; Closed {{ review.worst_trade.close_date }}</div>
+                <div class="h4 fw-bold text-negative mb-2">${{ "{:,.2f}".format(review.worst_trade.total_pnl) }}</div>
+                <a href="{{ url_for('journal_new', account=review.worst_trade.account, symbol=review.worst_trade.symbol, strategy=review.worst_trade.strategy) }}"
+                   class="btn btn-sm btn-outline-warning">Reflect on this &rarr;</a>
             </div>
         </div>
         {% endif %}
@@ -515,22 +370,19 @@
 </div>
 {% endif %}
 
-{# ── Trades this week: detailed list + journal links ── #}
-{% if trades_this_week and mode != 'monday' %}
+{# ── Trades this week ── #}
+{% if trades_this_week %}
 <div class="review-section">
-    <h3>Trades This Week</h3>
-    <p class="narrative mb-3">Every trade you opened or closed this week. Click <strong>Journal</strong> to reflect on it — we’ll pre-fill the details so you only add your thoughts.</p>
+    <div class="section-label">All Trades This Week</div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 trades-table">
             <thead class="table-light">
                 <tr>
                     <th>Symbol</th>
                     <th>Strategy</th>
                     <th>Date</th>
-                    <th class="text-end">Cost</th>
-                    <th class="text-end">Mkt Value</th>
-                    <th class="text-end">Current P&L</th>
-                    <th class="text-end">Action</th>
+                    <th class="text-end">P&amp;L</th>
+                    <th class="text-end"></th>
                 </tr>
             </thead>
             <tbody>
@@ -538,21 +390,23 @@
                 <tr>
                     <td>
                         <a href="{{ url_for('position_detail', symbol=t.symbol) }}" class="fw-semibold text-decoration-none">{{ t.symbol }}</a>
-                        {% if t.trade_symbol %}<span class="small text-muted d-block">{{ t.trade_symbol }}</span>{% endif %}
+                        {% if t.trade_symbol %}<span class="d-block small text-muted" style="font-size:.75rem">{{ t.trade_symbol }}</span>{% endif %}
                     </td>
-                    <td>{{ t.strategy }}</td>
-                    <td>{{ t.close_date if t.close_date else t.open_date }}{% if t.status == 'Closed' %} <span class="badge bg-secondary">closed</span>{% else %} <span class="badge bg-primary">opened</span>{% endif %}</td>
+                    <td class="text-muted small">{{ t.strategy }}</td>
+                    <td class="small">
+                        {{ t.close_date if t.close_date else t.open_date }}
+                        {% if t.status == 'Closed' %}
+                        <span class="badge bg-light text-muted ms-1" style="font-size:.68rem">closed</span>
+                        {% else %}
+                        <span class="badge bg-primary bg-opacity-10 text-primary ms-1" style="font-size:.68rem">open</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
+                        {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
+                    </td>
                     <td class="text-end">
-                        {% if t.cost_basis is not none %}${{ "{:,.2f}".format(t.cost_basis) }}{% else %}—{% endif %}
-                    </td>
-                    <td class="text-end">
-                        {% if t.market_value is not none %}${{ "{:,.2f}".format(t.market_value) }}{% else %}—{% endif %}
-                    </td>
-                    <td class="text-end {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
-                        {% if t.current_pnl is not none %}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
-                    </td>
-                    <td class="text-end">
-                        <a href="{{ url_for('journal_new', account=t.account, symbol=t.symbol, strategy=t.strategy, trade_open_date=t.open_date or '', trade_close_date=t.close_date or '', trade_symbol=t.trade_symbol or '') }}" class="btn btn-sm btn-outline-primary">Journal</a>
+                        <a href="{{ url_for('journal_new', account=t.account, symbol=t.symbol, strategy=t.strategy, trade_open_date=t.open_date or '', trade_close_date=t.close_date or '', trade_symbol=t.trade_symbol or '') }}"
+                           class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.75rem">Journal</a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -562,308 +416,464 @@
 </div>
 {% endif %}
 
-{# ══════════════════════════════════════════════════════
-   FRIDAY: What happened?
-   ══════════════════════════════════════════════════════ #}
-{% if mode == 'friday' and review and review.trades_closed > 0 %}
-
-{# Best & Worst #}
+{# ── Strategy breakdown ── #}
+{% if strategy_breakdown_week %}
 <div class="review-section">
-    <h3>Your Best and Worst</h3>
-    <div class="row g-3">
-        {% if review.best_trade %}
-        <div class="col-md-6">
-            <div class="trade-highlight best">
-                <div class="small text-muted mb-1">Best Trade</div>
-                <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}" class="h5 text-decoration-none fw-bold d-block mb-1">{{ review.best_trade.symbol }}</a>
-                <div class="small text-muted">{{ review.best_trade.strategy }} &middot; Closed {{ review.best_trade.close_date }}</div>
-                <div class="h4 fw-bold text-positive mt-2 mb-2">${{ "{:,.2f}".format(review.best_trade.total_pnl) }}</div>
-                <p class="small text-muted mb-2">Was this conviction, or just good timing?</p>
-                <a href="{{ url_for('journal_new', account=review.best_trade.account, symbol=review.best_trade.symbol, strategy=review.best_trade.strategy) }}"
-                   class="btn btn-sm btn-outline-success">Journal this trade</a>
+    <div class="section-label">This Week by Strategy</div>
+    <div class="d-flex flex-column gap-2">
+        {% for s in strategy_breakdown_week %}
+        <div class="strat-pill">
+            <div>
+                <div class="fw-semibold">{{ s.strategy }}</div>
+                <div class="strat-meta">
+                    {{ s.trades }} trade{{ 's' if s.trades != 1 else '' }}
+                    {% if s.win_rate_pct is not none %}&middot; {{ "%.0f" % s.win_rate_pct }}% win rate{% endif %}
+                </div>
+            </div>
+            <div class="fw-bold {% if s.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if s.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(s.total_pnl) }}
             </div>
         </div>
-        {% endif %}
-        {% if review.worst_trade %}
-        <div class="col-md-6">
-            <div class="trade-highlight worst">
-                <div class="small text-muted mb-1">Worst Trade</div>
-                <a href="{{ url_for('position_detail', symbol=review.worst_trade.symbol) }}" class="h5 text-decoration-none fw-bold d-block mb-1">{{ review.worst_trade.symbol }}</a>
-                <div class="small text-muted">{{ review.worst_trade.strategy }} &middot; Closed {{ review.worst_trade.close_date }}</div>
-                <div class="h4 fw-bold text-negative mt-2 mb-2">${{ "{:,.2f}".format(review.worst_trade.total_pnl) }}</div>
-                <p class="small text-muted mb-2">What would you do differently?</p>
-                <a href="{{ url_for('journal_new', account=review.worst_trade.account, symbol=review.worst_trade.symbol, strategy=review.worst_trade.strategy) }}"
-                   class="btn btn-sm btn-outline-warning">Reflect on this</a>
-            </div>
-        </div>
-        {% endif %}
+        {% endfor %}
     </div>
+    <a href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}" class="small d-block mt-2">Full strategy history &rarr;</a>
 </div>
+{% endif %}
 
-{# Pattern #}
-{% if review.most_consistent_strategy %}
+{# ── Behavioral mirror: this week vs baseline ── #}
+{% if behavior_mirror %}
 <div class="review-section">
-    <h3>Your Pattern</h3>
-    <div class="trade-highlight strategy">
-        <p class="narrative mb-0">
-            Your most consistent strategy was <strong>{{ review.most_consistent_strategy.strategy }}</strong> —
-            {{ "{:.0f}".format(review.most_consistent_strategy.win_rate * 100) }}% win rate on {{ review.most_consistent_strategy.trades }} trades
-            (${{ "{:,.2f}".format(review.most_consistent_strategy.total_pnl) }}).
-            {% if review.most_consistent_strategy.win_rate >= 0.7 %}You stuck to what works.{% else %}Room to tighten up.{% endif %}
-        </p>
+    <div class="section-label">How This Week Compares to Your Normal</div>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="week-stat-label mb-1">Trade Volume</div>
+            <div class="fw-bold" style="font-size:1.1rem">{{ behavior_mirror.volume.value or 0 }} trades</div>
+            {% if behavior_mirror.has_baseline and behavior_mirror.volume.baseline %}
+            <div class="small text-muted">
+                Avg {{ "%.1f" % behavior_mirror.volume.baseline }}/week
+                {% if behavior_mirror.volume.diff is not none %}
+                &middot;
+                <span class="{% if behavior_mirror.volume.diff > 0 %}text-warning{% elif behavior_mirror.volume.diff < 0 %}text-muted{% else %}text-muted{% endif %}">
+                    {{ "+" if behavior_mirror.volume.diff >= 0 else "" }}{{ "%.1f" % behavior_mirror.volume.diff }}
+                </span>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="small text-muted">Building baseline&hellip;</div>
+            {% endif %}
+        </div>
+        <div class="col-md-4">
+            <div class="week-stat-label mb-1">Win Rate</div>
+            {% set w = behavior_mirror.win_rate %}
+            <div class="fw-bold {% if w.value is not none and w.baseline is not none and w.value >= w.baseline %}text-positive{% elif w.value is not none and w.baseline is not none %}text-negative{% endif %}" style="font-size:1.1rem">
+                {% if w.value is not none %}{{ "%.1f" % w.value }}%{% else %}—{% endif %}
+            </div>
+            {% if behavior_mirror.has_baseline and w.baseline is not none %}
+            <div class="small text-muted">Avg {{ "%.1f" % w.baseline }}%{% if w.diff is not none %} &middot; {{ "+" if w.diff >= 0 else "" }}{{ "%.1f" % w.diff }} pts{% endif %}</div>
+            {% else %}
+            <div class="small text-muted">Need more weeks</div>
+            {% endif %}
+        </div>
+        <div class="col-md-4">
+            <div class="week-stat-label mb-1">P&amp;L vs Normal</div>
+            {% set p = behavior_mirror.pnl %}
+            <div class="fw-bold {% if p.value >= 0 %}text-positive{% else %}text-negative{% endif %}" style="font-size:1.1rem">
+                {{ "+" if p.value >= 0 else "" }}${{ "{:,.0f}".format(p.value or 0) }}
+            </div>
+            {% if behavior_mirror.has_baseline and p.baseline %}
+            <div class="small text-muted">Avg ${{ "{:,.0f}".format(p.baseline) }}/week{% if p.diff is not none %} &middot; {{ "+" if p.diff >= 0 else "" }}${{ "{:,.0f}".format(p.diff) }}{% endif %}</div>
+            {% else %}
+            <div class="small text-muted">Baseline building&hellip;</div>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endif %}
 
-{# Risk & Drift #}
+{# ── Market context ── #}
+{% if market and (market.spy_week_pct is not none or market.qqq_week_pct is not none) %}
 <div class="review-section">
-    <h3>Risk Check</h3>
-    {% if review.risk_drift %}
-    <p class="narrative">
-        You opened <strong>{{ review.risk_drift.this_week_opens }}</strong> new positions this week
+    <div class="section-label">Market This Week</div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% if market.spy_week_pct is not none %}
+        <div class="market-chip">
+            <div>
+                <div class="ticker">SPY</div>
+                <div class="pct {% if market.spy_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {% if market.spy_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.spy_week_pct }}%
+                </div>
+            </div>
+            {% if market.spy_ytd_pct is not none %}
+            <div class="small text-muted ms-2">YTD {{ "%.2f" % market.spy_ytd_pct }}%</div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if market.qqq_week_pct is not none %}
+        <div class="market-chip">
+            <div>
+                <div class="ticker">QQQ</div>
+                <div class="pct {% if market.qqq_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {% if market.qqq_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.qqq_week_pct }}%
+                </div>
+            </div>
+            {% if market.qqq_ytd_pct is not none %}
+            <div class="small text-muted ms-2">YTD {{ "%.2f" % market.qqq_ytd_pct }}%</div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if your_week and your_week.acct_pct is not none %}
+        <div class="market-chip">
+            <div>
+                <div class="ticker">You</div>
+                <div class="pct {% if your_week.acct_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {% if your_week.acct_pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.acct_pct }}%
+                </div>
+            </div>
+            <div class="small text-muted ms-2">account</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── Pattern: most consistent strategy ── #}
+{% if review.most_consistent_strategy %}
+<div class="review-section">
+    <div class="section-label">Your Pattern</div>
+    <p class="mb-0" style="font-size:.95rem; color:#334155; line-height:1.6">
+        Your most consistent strategy this week was <strong>{{ review.most_consistent_strategy.strategy }}</strong> &mdash;
+        {{ "{:.0f}".format(review.most_consistent_strategy.win_rate * 100) }}% win rate on {{ review.most_consistent_strategy.trades }} trade{{ 's' if review.most_consistent_strategy.trades != 1 else '' }}
+        (${{ "{:,.2f}".format(review.most_consistent_strategy.total_pnl) }}).
+        {% if review.most_consistent_strategy.win_rate >= 0.7 %}You stuck to what works.{% else %}Some room to tighten up.{% endif %}
+    </p>
+</div>
+{% endif %}
+
+{# ── Risk: position count change ── #}
+{% if review and review.risk_drift %}
+<div class="review-section">
+    <div class="section-label">Activity Check</div>
+    <p class="mb-0" style="font-size:.95rem; color:#334155">
+        You opened <strong>{{ review.risk_drift.this_week_opens }}</strong> new position{{ 's' if review.risk_drift.this_week_opens != 1 else '' }} this week
         vs <strong>{{ review.risk_drift.prev_week_opens }}</strong> last week.
-        {% if review.risk_drift.diff > 0 %}
-        That's {{ review.risk_drift.diff }} more. <strong>Was that planned, or reactive?</strong>
-        {% elif review.risk_drift.diff < 0 %}
-        Pulling back by {{ review.risk_drift.diff|abs }}. Disciplined or hesitant?
+        {% if review.risk_drift.diff > 2 %}
+        <strong>That&rsquo;s noticeably more. Was it planned?</strong>
+        {% elif review.risk_drift.diff < -2 %}
+        Pulling back. Disciplined or hesitant?
         {% else %}
-        Same pace. Consistent.
+        Consistent pace.
         {% endif %}
     </p>
-    {% endif %}
 </div>
+{% endif %}
 
-{# Behavioral Anomaly #}
+{# ── Behavioral anomaly (journal-tagged losers) ── #}
 {% if behavioral_anomaly %}
 <div class="review-section">
-    <h3>Behavioral Flag</h3>
-    <p class="narrative small text-muted mb-3">Trades you tagged as FOMO, revenge, or boredom that lost money:</p>
+    <div class="section-label">Flagged Trades</div>
+    <p class="small text-muted mb-3">Losing trades you tagged as FOMO, revenge, or boredom:</p>
     {% for a in behavioral_anomaly %}
     <div class="trade-highlight worst mb-2">
         <a href="{{ url_for('position_detail', symbol=a.symbol) }}" class="fw-bold text-decoration-none">{{ a.symbol }}</a>
-        {{ a.strategy }} &mdash; {{ a.tags|join(", ") }}
-        &rarr; <span class="text-negative">${{ "{:,.2f}".format(a.total_pnl) }}</span>
-        {% if a.reflection %}<p class="small text-muted mb-0 mt-1">"{{ a.reflection }}"</p>{% endif %}
+        <span class="text-muted small ms-1">{{ a.strategy }}</span> &mdash; {{ a.tags|join(", ") }}
+        &rarr; <span class="text-negative fw-semibold">${{ "{:,.2f}".format(a.total_pnl) }}</span>
+        {% if a.reflection %}<p class="small text-muted mb-0 mt-1">&ldquo;{{ a.reflection }}&rdquo;</p>{% endif %}
     </div>
     {% endfor %}
 </div>
 {% endif %}
 
-{# Emotional Check #}
-<div class="review-section">
-    <h3>Emotional Check</h3>
-    {% if emotional_drift and (emotional_drift.entries_this_week > 0 or emotional_drift.entries_prev_week > 0) %}
-    <p class="narrative">
-        You logged <strong>{{ emotional_drift.entries_this_week }}</strong> journal entries this week.
-        {% if emotional_drift.this_week %}
-        Moods: {% for mood, count in emotional_drift.this_week.items() %}<strong>{{ mood }}</strong> ({{ count }}){% if not loop.last %}, {% endif %}{% endfor %}.
-        {% endif %}
-        {% if emotional_drift.entries_prev_week > 0 %}
-        <span class="text-muted">Last week: {{ emotional_drift.entries_prev_week }} entries.</span>
-        {% endif %}
-    </p>
-    {% else %}
-    <p class="narrative text-muted">
-        No journal entries this week. You're flying blind on the emotional side.
-    </p>
-    <a href="{{ url_for('journal') }}" class="btn btn-sm btn-outline-secondary">Start Journaling</a>
-    {% endif %}
-</div>
-
-{# AI Perspective #}
+{# ── AI insight ── #}
 {% if ai_insight %}
 <div class="review-section">
-    <h3>What the AI Sees</h3>
-    <p class="narrative">{{ ai_insight.summary }}</p>
-    <div class="d-flex align-items-center gap-3 mt-2">
-        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Read Full Analysis</a>
-        <span class="small text-muted">Last generated {{ ai_insight.generated_at }}</span>
+    <div class="section-label">AI Observation</div>
+    <p style="font-size:.95rem; color:#334155; line-height:1.6; margin:0 0 .75rem">{{ ai_insight.summary }}</p>
+    <div class="d-flex align-items-center gap-3">
+        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Full Analysis &rarr;</a>
+        <span class="small text-muted">{{ ai_insight.generated_at }}</span>
     </div>
 </div>
 {% else %}
 <div class="review-section">
-    <h3>What the AI Sees</h3>
-    <p class="narrative text-muted">
-        No AI analysis yet. Generate one to get a second opinion on your trading patterns.
-    </p>
-    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Generate AI Insights</a>
+    <div class="section-label">AI Observation</div>
+    <p class="text-muted mb-2" style="font-size:.9rem">No AI analysis generated yet.</p>
+    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-secondary">Generate Insights</a>
 </div>
 {% endif %}
 
-{# Closing Prompt #}
-<div class="prompt-card mb-4">
-    <div class="prompt-q">What's one thing you learned this week that you want to remember next week?</div>
-    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary mt-1">Write a Reflection</a>
-</div>
-
-{% elif mode == 'friday' %}
+{# ── Emotional check ── #}
 <div class="review-section">
-    <p class="narrative text-muted text-center py-3">No closed trades this week. Check back after some positions close.</p>
+    <div class="section-label">Emotional Check</div>
+    {% if emotional_drift and emotional_drift.entries_this_week > 0 %}
+    <p style="font-size:.95rem; color:#334155; margin:0">
+        You logged <strong>{{ emotional_drift.entries_this_week }}</strong> journal entr{{ 'ies' if emotional_drift.entries_this_week != 1 else 'y' }} this week.
+        {% if emotional_drift.this_week %}
+        Moods: {% for mood, count in emotional_drift.this_week.items() %}<strong>{{ mood }}</strong> ({{ count }}){% if not loop.last %}, {% endif %}{% endfor %}.
+        {% endif %}
+    </p>
+    {% else %}
+    <p class="text-muted mb-2" style="font-size:.9rem">No journal entries this week. You&rsquo;re trading without a paper trail.</p>
+    <a href="{{ url_for('journal') }}" class="btn btn-sm btn-outline-secondary">Start Journaling</a>
+    {% endif %}
 </div>
-{% endif %}
 
-{# ══════════════════════════════════════════════════════
-   MONDAY: How are you showing up?
-   ══════════════════════════════════════════════════════ #}
+{# ── Closing prompt ── #}
+<div class="prompt-card">
+    <div class="prompt-q">What&rsquo;s one thing you learned this week that you want to remember next week?</div>
+    <p class="small text-muted mb-2">Write it down before the feeling fades.</p>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-primary">Write a Reflection &rarr;</a>
+</div>
+
+{% else %}{# review has no closed trades #}
+<div class="review-section text-center py-4">
+    <p class="text-muted mb-0">No closed trades this week yet. Come back when something closes.</p>
+</div>
+{% endif %}{# end review.trades_closed > 0 #}
+
+{% endif %}{# end mode == friday #}
+
+
+{# ════════════════════════════════════════════════════════
+   MONDAY MODE
+   ════════════════════════════════════════════════════════ #}
 {% if mode == 'monday' %}
 
-{# Mirror Score #}
+{# ── Mirror Score — lead with the behavioral signal ── #}
 <div class="review-section">
-    <h3>Your Mirror Score</h3>
+    <div class="section-label">Your Mirror Score</div>
     {% if mirror_score %}
     <div class="d-flex align-items-start gap-4 mb-3">
-        <div class="display-3 fw-bold text-mirror">{{ mirror_score.mirror_score|int }}</div>
+        <div style="font-size:3rem; font-weight:800; line-height:1; color:var(--color-mirror)">{{ mirror_score.mirror_score|int }}</div>
         <div>
             {% if mirror_score.mirror_score >= 70 %}
-            <p class="narrative mb-1"><strong>You're trading like yourself.</strong> Behavior aligned with your 30-day baseline.</p>
+            <p class="fw-semibold mb-1" style="color:#166534">You&rsquo;re trading like yourself.</p>
+            <p class="small text-muted mb-0">Behavior aligned with your 30-day baseline.</p>
             {% elif mirror_score.mirror_score >= 50 %}
-            <p class="narrative mb-1"><strong>Some drift.</strong> A few signals suggest your behavior shifted last week.</p>
+            <p class="fw-semibold mb-1" style="color:#713f12">Some drift.</p>
+            <p class="small text-muted mb-0">A few signals suggest your behavior shifted last week.</p>
             {% else %}
-            <p class="narrative mb-1"><strong>Significant deviation.</strong> Last week looked different from your norm. Worth understanding why.</p>
+            <p class="fw-semibold mb-1 text-negative">Significant deviation.</p>
+            <p class="small text-muted mb-0">Last week looked different from your norm. Worth understanding why before trading this week.</p>
             {% endif %}
-            <p class="small text-muted mb-0">{{ mirror_score.diagnostic_sentence }}</p>
+            {% if mirror_score.diagnostic_sentence %}
+            <p class="small text-muted mt-1 mb-0">{{ mirror_score.diagnostic_sentence }}</p>
+            {% endif %}
         </div>
     </div>
     {% if mirror_history and mirror_history|length > 1 %}
-    <div class="d-flex align-items-end gap-3" style="height:44px">
+    <div class="mirror-bar-wrap mb-3">
         {% for s in mirror_history %}
-        <div style="flex:1; border-radius:3px 3px 0 0; min-height:4px;
-                    height:{{ (s.mirror_score / 100 * 100)|round(0) }}%;
-                    background:{% if s.mirror_score >= 70 %}var(--color-positive){% elif s.mirror_score >= 50 %}#ffc107{% else %}var(--color-negative){% endif %};">
-        </div>
+        <div class="mirror-bar-item" style="height:{{ (s.mirror_score / 100 * 100)|round(0) }}%;
+             background:{% if s.mirror_score >= 70 %}var(--color-positive){% elif s.mirror_score >= 50 %}#fbbf24{% else %}var(--color-negative){% endif %};"></div>
         {% endfor %}
     </div>
+    <div class="small text-muted mb-2">Last {{ mirror_history|length }} weeks</div>
     {% endif %}
-    <a href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}" class="btn btn-sm btn-outline-primary mt-3">See Full Breakdown</a>
+    <a href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}" class="btn btn-sm btn-outline-primary">Full Breakdown &rarr;</a>
     {% else %}
-    <p class="narrative text-muted">No Mirror Score yet. Trade for a few weeks to build a baseline.</p>
+    <p class="text-muted small mb-0">No Mirror Score yet. Trade for a few weeks to build your baseline.</p>
     {% endif %}
 </div>
 
-{# Open Exposure #}
+{# ── Open exposure ── #}
 <div class="review-section">
-    <h3>What You're Carrying</h3>
+    <div class="section-label">What You&rsquo;re Carrying</div>
     {% if exposure %}
-    <p class="narrative mb-3">
-        You have <strong>{{ exposure.num_positions }} open positions</strong> totaling
-        <strong>${{ "{:,.0f}".format(exposure.total) }}</strong> in exposure.
+    <p class="mb-3" style="font-size:.93rem; color:#334155">
+        <strong>{{ exposure.num_positions }} open position{{ 's' if exposure.num_positions != 1 else '' }}</strong> &mdash;
+        ${{ "{:,.0f}".format(exposure.total) }} in exposure.
     </p>
     {% if exposure.by_symbol %}
     {% set max_exp = exposure.by_symbol[0].exposure if exposure.by_symbol else 1 %}
-    {% for pos in exposure.by_symbol[:7] %}
+    {% for pos in exposure.by_symbol[:8] %}
     <div class="d-flex align-items-center gap-2 mb-2">
-        <a href="{{ url_for('position_detail', symbol=pos.symbol) }}" class="fw-semibold text-decoration-none" style="min-width:60px">{{ pos.symbol }}</a>
+        <a href="{{ url_for('position_detail', symbol=pos.symbol) }}" class="fw-semibold text-decoration-none" style="min-width:64px; font-size:.88rem">{{ pos.symbol }}</a>
         <div class="exposure-bar flex-grow-1">
             <div class="exposure-bar-fill" style="width:{{ (pos.exposure / max_exp * 100)|round(0) }}%"></div>
         </div>
-        <span class="small text-muted" style="min-width:70px; text-align:right">${{ "{:,.0f}".format(pos.exposure) }}</span>
+        <span class="small text-muted" style="min-width:72px; text-align:right">${{ "{:,.0f}".format(pos.exposure) }}</span>
     </div>
     {% endfor %}
     {% endif %}
     {% else %}
-    <p class="narrative text-muted">No open positions found.</p>
+    <p class="text-muted small mb-0">No open positions found.</p>
     {% endif %}
 </div>
 
-{# Last Week Recap #}
+{# ── Last week recap ── #}
 {% if prev_review %}
 <div class="review-section">
-    <h3>Last Week Recap</h3>
-    <p class="narrative">
+    <div class="section-label">Last Week Recap</div>
+    <p style="font-size:.95rem; color:#334155; margin:0">
         {% if prev_review.trades_closed > 0 %}
-        You closed <strong>{{ prev_review.trades_closed }}</strong> trades for
+        You closed <strong>{{ prev_review.trades_closed }}</strong> trade{{ 's' if prev_review.trades_closed != 1 else '' }} for
         <strong class="{% if prev_review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            ${{ "{:,.2f}".format(prev_review.total_pnl) }}</strong>.
+            {{ "+" if prev_review.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(prev_review.total_pnl) }}</strong>.
         {% if prev_review.best_trade %}
-        Best was <a href="{{ url_for('position_detail', symbol=prev_review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ prev_review.best_trade.symbol }}</a>
+        Best: <a href="{{ url_for('position_detail', symbol=prev_review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ prev_review.best_trade.symbol }}</a>
         (+${{ "{:,.2f}".format(prev_review.best_trade.total_pnl) }}).
         {% endif %}
         {% else %}
         No closed trades last week.
         {% endif %}
-        {% if prev_review.trades_opened %}Opened {{ prev_review.trades_opened }} new positions.{% endif %}
+        {% if prev_review.trades_opened %}Opened {{ prev_review.trades_opened }} new position{{ 's' if prev_review.trades_opened != 1 else '' }}.{% endif %}
     </p>
 </div>
 {% endif %}
 
-{# Intention Setting #}
-<div class="prompt-card mb-4">
-    <div class="prompt-q">What's your plan for this week?</div>
-    <p class="small text-muted mb-2">Before the market opens, write down what you intend to do — and what you intend NOT to do.</p>
-    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">Set Your Intention</a>
+{# ── Market context (brief) ── #}
+{% if market and (market.spy_week_pct is not none or market.qqq_week_pct is not none) %}
+<div class="review-section">
+    <div class="section-label">Last Week&rsquo;s Market</div>
+    <div class="d-flex flex-wrap gap-2">
+        {% if market.spy_week_pct is not none %}
+        <div class="market-chip">
+            <div class="ticker">SPY</div>
+            <div class="pct {% if market.spy_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {% if market.spy_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.spy_week_pct }}%
+            </div>
+        </div>
+        {% endif %}
+        {% if market.qqq_week_pct is not none %}
+        <div class="market-chip">
+            <div class="ticker">QQQ</div>
+            <div class="pct {% if market.qqq_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {% if market.qqq_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.qqq_week_pct }}%
+            </div>
+        </div>
+        {% endif %}
+    </div>
 </div>
-
 {% endif %}
 
-{# ══════════════════════════════════════════════════════
-   MID-WEEK: Am I deviating?
-   ══════════════════════════════════════════════════════ #}
+{# ── Intention prompt ── #}
+<div class="prompt-card">
+    <div class="prompt-q">What&rsquo;s your plan for this week?</div>
+    <p class="small text-muted mb-2">Write down what you intend to do — and what you intend <em>not</em> to do.</p>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-primary">Set Your Intention &rarr;</a>
+</div>
+
+{% endif %}{# end monday #}
+
+
+{# ════════════════════════════════════════════════════════
+   MID-WEEK MODE
+   ════════════════════════════════════════════════════════ #}
 {% if mode == 'midweek' %}
 
-{# Pace Check #}
+{# ── Pace check ── #}
 <div class="review-section">
-    <h3>Pace Check</h3>
+    <div class="section-label">Pace Check</div>
     {% if opens_this_week %}
-    <p class="narrative">
-        You've opened <strong>{{ opens_this_week.count }}</strong> new position{{ 's' if opens_this_week.count != 1 }} so far this week.
+    {% set pace_baseline = behavior_mirror.volume.baseline if behavior_mirror else none %}
+    <div class="pace-track mb-3">
+        <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <span class="fw-semibold">{{ opens_this_week.count }} opened so far</span>
+            {% if pace_baseline %}
+            <span class="small text-muted">baseline: {{ "%.1f"|format(pace_baseline) }}/week</span>
+            {% endif %}
+        </div>
+        {% if pace_baseline and pace_baseline > 0 %}
+        <div class="exposure-bar mt-1">
+            <div class="exposure-bar-fill" style="width:{{ [((opens_this_week.count / pace_baseline) * 100)|round(0), 100]|min }}%"></div>
+        </div>
+        {% endif %}
+    </div>
+    <p class="mb-0" style="font-size:.93rem; color:#334155">
         {% if review and review.risk_drift %}
-        Last week's total was {{ review.risk_drift.prev_week_opens }}.
         {% if opens_this_week.count > (review.risk_drift.prev_week_opens or 0) %}
-        <strong>You're already above last week's pace.</strong> Is this intentional?
+        Already above last week&rsquo;s pace ({{ review.risk_drift.prev_week_opens }} total). <strong>Intentional?</strong>
         {% elif opens_this_week.count == 0 %}
-        Holding steady.
+        No new positions yet. Patience or hesitation?
         {% else %}
         On track with your usual rhythm.
         {% endif %}
         {% endif %}
     </p>
     {% if opens_this_week.symbols %}
-    <p class="small text-muted">Symbols: {{ opens_this_week.symbols|join(", ") }}</p>
+    <p class="small text-muted mt-2 mb-0">{{ opens_this_week.symbols|join(", ") }}</p>
     {% endif %}
     {% else %}
-    <p class="narrative text-muted">No new positions opened this week.</p>
+    <p class="text-muted mb-0 small">No new positions opened yet this week.</p>
     {% endif %}
 </div>
 
-{# Week-to-Date Results #}
+{# ── Results so far ── #}
 {% if review and review.trades_closed > 0 %}
 <div class="review-section">
-    <h3>Results So Far</h3>
-    <p class="narrative">
-        <strong>{{ review.trades_closed }}</strong> trades closed for
+    <div class="section-label">Results So Far</div>
+    <p style="font-size:.95rem; color:#334155; margin:0">
+        <strong>{{ review.trades_closed }}</strong> trade{{ 's' if review.trades_closed != 1 else '' }} closed for
         <strong class="{% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            ${{ "{:,.2f}".format(review.total_pnl) }}</strong>.
+            {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(review.total_pnl) }}</strong>.
         {% if review.best_trade %}
-        Best so far:
-        <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ review.best_trade.symbol }}</a>
+        Best so far: <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ review.best_trade.symbol }}</a>
         (+${{ "{:,.2f}".format(review.best_trade.total_pnl) }}).
         {% endif %}
     </p>
 </div>
 {% endif %}
 
-{# Emotional Pulse #}
+{# ── Trades this week (mid-week view) ── #}
+{% if trades_this_week %}
 <div class="review-section">
-    <h3>How Are You Feeling?</h3>
+    <div class="section-label">Trades This Week</div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 trades-table">
+            <thead class="table-light">
+                <tr>
+                    <th>Symbol</th>
+                    <th>Strategy</th>
+                    <th>Status</th>
+                    <th class="text-end">P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in trades_this_week %}
+                <tr>
+                    <td><a href="{{ url_for('position_detail', symbol=t.symbol) }}" class="fw-semibold text-decoration-none">{{ t.symbol }}</a></td>
+                    <td class="text-muted small">{{ t.strategy }}</td>
+                    <td>
+                        {% if t.status == 'Closed' %}
+                        <span class="badge bg-secondary" style="font-size:.7rem">closed</span>
+                        {% else %}
+                        <span class="badge bg-primary bg-opacity-75" style="font-size:.7rem">open</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
+                        {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Emotional pulse ── #}
+<div class="review-section">
+    <div class="section-label">How Are You Feeling?</div>
     {% if emotional_drift and emotional_drift.entries_this_week > 0 %}
-    <p class="narrative">
-        {{ emotional_drift.entries_this_week }} journal entries so far.
+    <p style="font-size:.95rem; color:#334155; margin:0">
+        {{ emotional_drift.entries_this_week }} journal entr{{ 'ies' if emotional_drift.entries_this_week != 1 else 'y' }} so far.
         {% if emotional_drift.this_week %}
         Moods: {% for mood, count in emotional_drift.this_week.items() %}<strong>{{ mood }}</strong> ({{ count }}){% if not loop.last %}, {% endif %}{% endfor %}.
         {% endif %}
     </p>
     {% else %}
-    <p class="narrative text-muted">No journal entries yet this week.</p>
+    <p class="text-muted small mb-2">No journal entries yet this week.</p>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-secondary">Log a Quick Entry</a>
     {% endif %}
 </div>
 
-{# Mid-Week Prompt #}
-<div class="prompt-card mb-4">
+{# ── Mid-week prompt ── #}
+<div class="prompt-card">
     <div class="prompt-q">Quick check: are you trading with intent, or reacting?</div>
     <p class="small text-muted mb-2">If you feel yourself drifting from your plan, write it down. Naming it reduces its power.</p>
-    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">Log a Quick Entry</a>
+    <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-primary">Log a Quick Entry &rarr;</a>
 </div>
 
-{% endif %}
+{% endif %}{# end midweek #}
 
 {% endblock %}

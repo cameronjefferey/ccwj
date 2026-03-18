@@ -210,6 +210,213 @@ GROUP BY strategy
 ORDER BY total_pnl DESC
 """
 
+def _build_narrative(mode, review, prev_review, behavior_mirror, market, today, week_start):
+    """Generate a dynamic hero headline + subtitle from actual data."""
+    review = review or {}
+    bm = behavior_mirror or {}
+
+    total_pnl = float(review.get("total_pnl", 0) or 0)
+    trades_closed = int(review.get("trades_closed", 0) or 0)
+    num_winners = int(review.get("num_winners", 0) or 0)
+
+    bm_has_baseline = bm.get("has_baseline", False)
+    pnl_baseline = bm.get("pnl", {}).get("baseline")
+
+    if mode == "friday":
+        if trades_closed == 0:
+            return {
+                "headline": "No closed trades this week.",
+                "subtitle": "Your open positions are still in play. Come back when something closes.",
+            }
+        sign = "+" if total_pnl >= 0 else ""
+        headline = (
+            f"{trades_closed} trade{'s' if trades_closed != 1 else ''} closed \u00b7 "
+            f"{sign}${abs(total_pnl):,.0f} realized"
+        )
+        parts = []
+        if num_winners == trades_closed:
+            parts.append("Every closed trade finished as a winner.")
+        elif num_winners == 0:
+            parts.append("No winners in closed trades — all positions went against you.")
+        else:
+            losers = trades_closed - num_winners
+            parts.append(
+                f"{num_winners} winner{'s' if num_winners != 1 else ''}, "
+                f"{losers} loser{'s' if losers != 1 else ''}."
+            )
+        if bm_has_baseline and pnl_baseline is not None:
+            diff = total_pnl - pnl_baseline
+            if diff > 200:
+                parts.append(f"Better than your ${abs(pnl_baseline):,.0f}/week average.")
+            elif diff < -200:
+                parts.append(f"Below your ${abs(pnl_baseline):,.0f}/week average.")
+            else:
+                parts.append("Right in line with your recent average.")
+        if market:
+            spy = market.get("spy_week_pct")
+            if spy is not None:
+                if total_pnl > 0 and spy < -1:
+                    parts.append(f"SPY was down {abs(spy):.1f}% — you went against the market.")
+                elif total_pnl < 0 and spy > 1:
+                    parts.append(f"SPY was up {spy:.1f}% — a tough week relative to conditions.")
+        return {"headline": headline, "subtitle": " ".join(parts)}
+
+    elif mode == "monday":
+        prev = prev_review or {}
+        prev_pnl = float(prev.get("total_pnl", 0) or 0)
+        prev_trades = int(prev.get("trades_closed", 0) or 0)
+        if prev_trades > 0:
+            sign = "+" if prev_pnl >= 0 else ""
+            headline = (
+                f"Last week: {prev_trades} trade{'s' if prev_trades != 1 else ''} \u00b7 "
+                f"{sign}${abs(prev_pnl):,.0f}"
+            )
+            subtitle = "Before you trade anything this week, check what you're carrying and whether last week's behavior is worth repeating."
+        else:
+            headline = "New week, clean slate."
+            subtitle = "Set your intention before the market sets it for you."
+        return {"headline": headline, "subtitle": subtitle}
+
+    elif mode == "midweek":
+        days_in = max(1, (today - week_start).days + 1)
+        if trades_closed > 0:
+            sign = "+" if total_pnl >= 0 else ""
+            headline = (
+                f"Day {days_in} \u00b7 {trades_closed} closed \u00b7 "
+                f"{sign}${abs(total_pnl):,.0f} so far"
+            )
+        else:
+            headline = f"Day {days_in} of the week \u00b7 No closed trades yet"
+        return {
+            "headline": headline,
+            "subtitle": "Mid-week check. Are you trading your plan, or reacting to the market?",
+        }
+
+    return {"headline": "Weekly Review", "subtitle": ""}
+
+
+def _key_observation(review, behavior_mirror, strategy_breakdown):
+    """Return the single most notable behavioral signal for the week."""
+    review = review or {}
+    bm = behavior_mirror or {}
+
+    trades_closed = int(review.get("trades_closed", 0) or 0)
+    num_winners = int(review.get("num_winners", 0) or 0)
+    total_pnl = float(review.get("total_pnl", 0) or 0)
+
+    if trades_closed == 0:
+        return None
+
+    vol = bm.get("volume", {})
+    baseline_vol = float(vol.get("baseline") or 0)
+    actual_vol = float(vol.get("value") or 0)
+    if baseline_vol > 0 and actual_vol > 0:
+        ratio = actual_vol / baseline_vol
+        if ratio >= 2.0:
+            return {
+                "type": "warning",
+                "icon": "⚡",
+                "text": (
+                    f"You traded {ratio:.1f}\u00d7 your normal volume "
+                    f"({int(actual_vol)} trades vs your {baseline_vol:.1f}/week average). "
+                    "Higher activity doesn't always mean better results — worth checking."
+                ),
+            }
+        if ratio <= 0.4:
+            return {
+                "type": "neutral",
+                "icon": "\u2014",
+                "text": (
+                    f"Quieter than usual — {int(actual_vol)} trade{'s' if actual_vol != 1 else ''} "
+                    f"vs your {baseline_vol:.1f}/week average. Patient, or cautious?"
+                ),
+            }
+
+    wr = bm.get("win_rate", {})
+    wr_val = wr.get("value")
+    wr_base = wr.get("baseline")
+    wr_diff = wr.get("diff")
+    if wr_val is not None and wr_base is not None and wr_diff is not None:
+        if wr_diff >= 20:
+            return {
+                "type": "positive",
+                "icon": "\u2191",
+                "text": (
+                    f"Win rate: {wr_val:.0f}% \u2014 {wr_diff:.0f} points above your "
+                    f"{wr_base:.0f}% baseline. You were selective, and it paid off."
+                ),
+            }
+        if wr_diff <= -20:
+            return {
+                "type": "negative",
+                "icon": "\u2193",
+                "text": (
+                    f"Win rate: {wr_val:.0f}% \u2014 {abs(wr_diff):.0f} points below your "
+                    f"{wr_base:.0f}% average. More losers than usual. Worth reviewing the pattern."
+                ),
+            }
+
+    if strategy_breakdown and len(strategy_breakdown) >= 2:
+        total_abs = sum(abs(s.get("total_pnl", 0)) for s in strategy_breakdown)
+        if total_abs > 100:
+            top = max(strategy_breakdown, key=lambda s: abs(s.get("total_pnl", 0)))
+            top_share = abs(top.get("total_pnl", 0)) / total_abs
+            if top_share > 0.80:
+                direction = "profit" if top.get("total_pnl", 0) >= 0 else "loss"
+                return {
+                    "type": "neutral",
+                    "icon": "\u2192",
+                    "text": (
+                        f"This week\u2019s {direction} was {top_share:.0%} driven by one strategy: "
+                        f"{top['strategy']}. Everything else barely moved the needle."
+                    ),
+                }
+
+    if trades_closed >= 2 and num_winners == trades_closed:
+        return {
+            "type": "positive",
+            "icon": "\u2713",
+            "text": f"Swept the week \u2014 all {trades_closed} closed trades were winners. Note what you did differently.",
+        }
+
+    pnl_data = bm.get("pnl", {})
+    pnl_diff = pnl_data.get("diff")
+    pnl_baseline = pnl_data.get("baseline")
+    if pnl_diff is not None and pnl_baseline and abs(pnl_diff) > max(200, abs(pnl_baseline) * 0.4):
+        if pnl_diff > 0:
+            return {
+                "type": "positive",
+                "icon": "\u2191",
+                "text": f"${pnl_diff:,.0f} above your typical week. Solid execution relative to your own baseline.",
+            }
+        return {
+            "type": "negative",
+            "icon": "\u2193",
+            "text": f"${abs(pnl_diff):,.0f} below your typical week. What was different this week?",
+        }
+
+    return None
+
+
+def _today_pulse(today_snapshots_by_account):
+    """Distill today's account movement into a single number."""
+    if not today_snapshots_by_account:
+        return None
+    total_delta = 0.0
+    has_data = False
+    date_label = None
+    for snap in today_snapshots_by_account:
+        day_comp = snap.get("comparisons", {}).get("day", {})
+        if day_comp.get("has_data") and day_comp.get("delta") is not None:
+            total_delta += float(day_comp["delta"])
+            has_data = True
+            if date_label is None and snap.get("today_date"):
+                date_label = str(snap["today_date"])
+    if not has_data:
+        return None
+    return {"delta": round(total_delta, 0), "positive": total_delta >= 0, "date": date_label}
+
+
 def _iso_week_start(d):
     """Return Monday of the ISO week containing d."""
     return d - timedelta(days=d.weekday())
@@ -853,5 +1060,21 @@ def weekly_review():
 
     except Exception as e:
         context["error"] = str(e)
+
+    context["narrative"] = _build_narrative(
+        mode=mode,
+        review=context.get("review"),
+        prev_review=context.get("prev_review"),
+        behavior_mirror=context.get("behavior_mirror"),
+        market=context.get("market"),
+        today=today,
+        week_start=this_week,
+    )
+    context["key_observation"] = _key_observation(
+        review=context.get("review"),
+        behavior_mirror=context.get("behavior_mirror"),
+        strategy_breakdown=context.get("strategy_breakdown_week", []),
+    )
+    context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
 
     return render_template("weekly_review.html", **context)
