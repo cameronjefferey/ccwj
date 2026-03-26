@@ -150,8 +150,9 @@ options_classified as (
             when sl.trade_symbol is not null then
                 case when oc.option_type = 'C' then 'Call Spread' else 'Put Spread' end
 
-            -- Sold call with underlying equity → Covered Call
+            -- Sold call with underlying equity (>= 100 shares) → Covered Call
             when oc.direction = 'Sold' and oc.option_type = 'C' and e.session_id is not null
+                 and e.max_quantity_held >= 100
                 then 'Covered Call'
 
             -- Sold call covered by long call (same underlying) → Poor Man Covered Call
@@ -170,8 +171,9 @@ options_classified as (
             when oc.direction = 'Bought' and oc.option_type = 'C'
                 then 'Long Call'
 
-            -- Bought put with equity → Protective Put
+            -- Bought put with equity (>= 100 shares) → Protective Put
             when oc.direction = 'Bought' and oc.option_type = 'P' and e.session_id is not null
+                 and e.max_quantity_held >= 100
                 then 'Protective Put'
 
             -- Bought put standalone → Long Put
@@ -232,7 +234,7 @@ equity_classified as (
                 then 'Wheel'
             when efa.session_id is not null
                 then 'Wheel'
-            when eos.num_sold_calls > 0
+            when eos.num_sold_calls > 0 and e.max_quantity_held >= 100
                 then 'Covered Call'
             else 'Buy and Hold'
         end as strategy,

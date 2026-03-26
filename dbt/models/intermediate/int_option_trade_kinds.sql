@@ -113,5 +113,22 @@ select
                 else 'ATM'
             end
         else 'Unknown'
-    end as moneyness_at_open
+    end as moneyness_at_open,
+
+    -- $ distance from strike to underlying price at open (positive = OTM for calls, ITM for puts)
+    case
+        when underlying_price_at_open is not null
+        then round(option_strike - underlying_price_at_open, 2)
+        else null
+    end as strike_distance,
+
+    -- P&L as % of cost basis (premium paid for bought, cost to close for sold)
+    case
+        when direction = 'Bought' and abs(premium_paid) > 0
+        then round(total_pnl / abs(premium_paid) * 100, 1)
+        when direction = 'Sold' and abs(premium_received) > 0
+        then round(total_pnl / abs(premium_received) * 100, 1)
+        else null
+    end as pnl_pct
+
 from enriched

@@ -462,28 +462,31 @@ def upload():
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
-    # Parse and validate both CSVs
+    # Parse and validate CSVs
     # ------------------------------------------------------------------
-    history_file = request.files.get("history_csv")
-    current_file = request.files.get("current_csv")
+    skip_history = request.form.get("no_trades_today") == "1"
 
-    history_df, history_err = _validate_csv(
-        history_file, HISTORY_REQUIRED_COLS, "History",
-        col_renames=HISTORY_COL_RENAMES,
-        header_markers={"date", "action", "symbol", "quantity"},
-    )
+    current_file = request.files.get("current_csv")
     current_df, current_err = _validate_csv(
         current_file, CURRENT_REQUIRED_COLS, "Current",
         col_renames=CURRENT_COL_RENAMES,
         header_markers={"symbol", "description", "price"},
     )
-
-    if history_err:
-        flash(history_err, "danger")
-        return redirect(url_for("upload"))
     if current_err:
         flash(current_err, "danger")
         return redirect(url_for("upload"))
+
+    history_df = None
+    if not skip_history:
+        history_file = request.files.get("history_csv")
+        history_df, history_err = _validate_csv(
+            history_file, HISTORY_REQUIRED_COLS, "History",
+            col_renames=HISTORY_COL_RENAMES,
+            header_markers={"date", "action", "symbol", "quantity"},
+        )
+        if history_err:
+            flash(history_err, "danger")
+            return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
     # Account name is mandatory (selected or typed on the form)
@@ -502,37 +505,34 @@ def upload():
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
-    # Set the Account column on both DataFrames (overwrite if present)
+    # Set the Account column on DataFrames (overwrite if present)
     # ------------------------------------------------------------------
-    # Drop any existing Account column from CSVs
     for df in [history_df, current_df]:
+        if df is None:
+            continue
         acct_cols = [c for c in df.columns if c.lower() == "account"]
         if acct_cols:
             df.drop(columns=acct_cols, inplace=True)
-
-    history_df.insert(0, "Account", account_name)
-    current_df.insert(0, "Account", account_name)
+        df.insert(0, "Account", account_name)
 
     # ------------------------------------------------------------------
     # Normalize column names to match seed file format
     # ------------------------------------------------------------------
-    # History seed: Account,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
-    history_standard = {
-        "account": "Account", "date": "Date", "action": "Action",
-        "symbol": "Symbol", "description": "Description",
-        "quantity": "Quantity", "price": "Price",
-        "fees_and_comm": "fees_and_comm", "amount": "Amount",
-    }
-    history_col_map = {c: history_standard[c.lower()]
-                       for c in history_df.columns if c.lower() in history_standard}
-    history_df = history_df.rename(columns=history_col_map)
-    for col in HISTORY_SEED_COLUMNS:
-        if col not in history_df.columns:
-            history_df[col] = ""
-    history_df = history_df[HISTORY_SEED_COLUMNS]
+    if history_df is not None:
+        history_standard = {
+            "account": "Account", "date": "Date", "action": "Action",
+            "symbol": "Symbol", "description": "Description",
+            "quantity": "Quantity", "price": "Price",
+            "fees_and_comm": "fees_and_comm", "amount": "Amount",
+        }
+        history_col_map = {c: history_standard[c.lower()]
+                           for c in history_df.columns if c.lower() in history_standard}
+        history_df = history_df.rename(columns=history_col_map)
+        for col in HISTORY_SEED_COLUMNS:
+            if col not in history_df.columns:
+                history_df[col] = ""
+        history_df = history_df[HISTORY_SEED_COLUMNS]
 
-    # Current seed: reorder columns to match the exact seed file layout
-    # First, normalize any remaining case mismatches
     current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
     current_col_map = {}
     for col in current_df.columns:
@@ -540,42 +540,47 @@ def upload():
         if lower in current_norm:
             current_col_map[col] = current_norm[lower]
     current_df = current_df.rename(columns=current_col_map)
-
-    # Ensure all seed columns exist (fill missing ones with empty string)
     for seed_col in CURRENT_SEED_COLUMNS:
         if seed_col not in current_df.columns:
             current_df[seed_col] = ""
-
-    # Reorder to match seed file exactly
     current_df = current_df[CURRENT_SEED_COLUMNS]
 
     # Merge with existing seed data (preserve other accounts, replace this account)
-    history_content = _merge_seed_with_existing(
-        HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
-    )
+    if history_df is not None:
+        history_content = _merge_seed_with_existing(
+            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
+        )
     current_content = _merge_seed_with_existing(
         CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
     )
 
-    history_rows = len(history_df)
+    history_rows = len(history_df) if history_df is not None else 0
     current_rows = len(current_df)
 
     # ------------------------------------------------------------------
-    # Commit both files to GitHub (this triggers the Actions pipeline)
+    # Commit to GitHub (this triggers the Actions pipeline)
     # ------------------------------------------------------------------
-    commit_msg = (
-        f"Upload by {current_user.username}: "
-        f"{history_rows} history rows, {current_rows} current rows "
-        f"({account_name})"
-    )
+    if skip_history:
+        commit_msg = (
+            f"Upload by {current_user.username}: "
+            f"positions only, {current_rows} current rows ({account_name})"
+        )
+    else:
+        commit_msg = (
+            f"Upload by {current_user.username}: "
+            f"{history_rows} history rows, {current_rows} current rows "
+            f"({account_name})"
+        )
 
     try:
-        # Single commit for both files so the Actions workflow runs once, not twice
-        ok, err = _commit_two_files(
-            HISTORY_PATH, history_content,
-            CURRENT_PATH, current_content,
-            commit_msg,
-        )
+        if skip_history:
+            ok, err = _commit_file(CURRENT_PATH, current_content, commit_msg)
+        else:
+            ok, err = _commit_two_files(
+                HISTORY_PATH, history_content,
+                CURRENT_PATH, current_content,
+                commit_msg,
+            )
         if not ok:
             flash(f"Failed to update seeds: {err}", "danger")
             return redirect(url_for("upload"))
@@ -588,11 +593,17 @@ def upload():
     add_account_for_user(current_user.id, account_name)
     record_upload(current_user.id, account_name, history_rows, current_rows)
 
-    flash(
-        f"Seed files updated: {history_rows:,} history rows and {current_rows:,} current rows "
-        f"for {account_name}.",
-        "success",
-    )
+    if skip_history:
+        flash(
+            f"Positions updated: {current_rows:,} current rows for {account_name}.",
+            "success",
+        )
+    else:
+        flash(
+            f"Seed files updated: {history_rows:,} history rows and "
+            f"{current_rows:,} current rows for {account_name}.",
+            "success",
+        )
     flash(
         "Pipeline triggered -- dbt seed + build is running in GitHub Actions. "
         "This usually takes a few minutes.",
@@ -610,15 +621,11 @@ def upload_processing():
     expected_minutes = 3
     actions_url = f"https://github.com/{GITHUB_REPO}/actions" if GITHUB_REPO else None
 
-    # Mood options for the lightweight daily journal form
-    from app.models import JOURNAL_MOOD_OPTIONS
-
     return render_template(
         "upload_processing.html",
         title="Processing Upload",
         expected_minutes=expected_minutes,
         actions_url=actions_url,
-        mood_options=JOURNAL_MOOD_OPTIONS,
     )
 
 

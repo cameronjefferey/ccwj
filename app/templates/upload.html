@@ -31,6 +31,12 @@
         margin-bottom: .5rem;
     }
     .upload-zone.has-file .upload-icon { color: #198754; }
+    .upload-zone.disabled {
+        opacity: .45;
+        pointer-events: none;
+        border-color: #dee2e6;
+        background: #f8f9fa;
+    }
     .file-name {
         font-weight: 600;
         color: #198754;
@@ -88,6 +94,12 @@
                     <div class="card border-0 shadow-sm" style="border-radius:12px">
                         <div class="card-body">
                             <h5 class="fw-bold mb-3">Trade History <span class="badge bg-secondary small">Schwab</span></h5>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="noTradesToday" name="no_trades_today" value="1">
+                                <label class="form-check-label text-muted" for="noTradesToday">
+                                    No trades today &mdash; skip history upload
+                                </label>
+                            </div>
                             <div class="upload-zone" id="historyZone">
                                 <input type="file" name="history_csv" id="historyFile" accept=".csv">
                                 <div class="upload-icon">
@@ -191,8 +203,8 @@
                     Upload &amp; Trigger Pipeline
                 </button>
                 <p class="text-muted small mt-2">
-                    Both files are required. Data for the selected account will be updated;
-                    other accounts are preserved.
+                    Current positions are always required. Check "No trades today" to skip history.
+                    Data for the selected account will be updated; other accounts are preserved.
                 </p>
             </div>
         </form>
@@ -293,7 +305,8 @@
     }
 
     function checkReady() {
-        const h = document.getElementById('historyFile').files.length > 0;
+        const skip = document.getElementById('noTradesToday').checked;
+        const h = skip || document.getElementById('historyFile').files.length > 0;
         const c = document.getElementById('currentFile').files.length > 0;
         const sel = document.getElementById('accountSelect');
         const custom = document.getElementById('accountCustom');
@@ -316,6 +329,24 @@
         checkReady();
     });
     accountCustom.addEventListener('input', checkReady);
+
+    // "No trades today" toggle: dim history zone and clear any selected file
+    const noTradesCheck = document.getElementById('noTradesToday');
+    noTradesCheck.addEventListener('change', () => {
+        const zone = document.getElementById('historyZone');
+        const input = document.getElementById('historyFile');
+        const nameEl = document.getElementById('historyFileName');
+        if (noTradesCheck.checked) {
+            zone.classList.add('disabled');
+            zone.classList.remove('has-file');
+            input.value = '';
+            nameEl.style.display = 'none';
+            zone.querySelector('.upload-text').style.display = '';
+        } else {
+            zone.classList.remove('disabled');
+        }
+        checkReady();
+    });
 
     setupZone('historyZone', 'historyFile', 'historyFileName');
     setupZone('currentZone', 'currentFile', 'currentFileName');

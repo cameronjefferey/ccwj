@@ -4,12 +4,36 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.models import (
     get_accounts_for_user, is_admin, get_insight_for_user,
-    get_mirror_score_history, get_journal_stats, list_journal_entries,
+    get_mirror_score_history,
 )
 from google.cloud import bigquery
 from datetime import datetime, date, timedelta
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import json
+
+
+def _bq_parallel(client, queries):
+    """Run multiple BigQuery queries in parallel and return results dict.
+
+    queries: dict of {name: sql_string} or {name: (sql_string, job_config)}
+    Returns: dict of {name: DataFrame}
+    """
+    results = {}
+
+    def _run(name, spec):
+        if isinstance(spec, tuple):
+            sql, cfg = spec
+            return name, client.query(sql, job_config=cfg).to_dataframe()
+        return name, client.query(spec).to_dataframe()
+
+    with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
+        futures = [pool.submit(_run, n, s) for n, s in queries.items()]
+        for f in futures:
+            name, df = f.result()
+            results[name] = df
+
+    return results
 
 
 def _user_account_list():
@@ -36,14 +60,14 @@ def _account_sql_filter(accounts):
     return f"WHERE account IN ({quoted})"
 
 
-def _account_sql_and(accounts):
+def _account_sql_and(accounts, col="account"):
     """Return AND clause for account filter when already in a WHERE. Empty string if no filter."""
     if accounts is None:
         return ""
     if not accounts:
         return "AND 1 = 0"
     quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND account IN ({quoted})"
+    return f"AND {col} IN ({quoted})"
 
 
 def _filter_df_by_accounts(df, accounts, col="account"):
@@ -68,6 +92,7 @@ WITH classified AS (
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE open_date <= @end_date
       AND COALESCE(close_date, CURRENT_DATE()) >= @start_date
+      {account_filter}
 ),
 
 dividends AS (
@@ -80,6 +105,7 @@ dividends AS (
     WHERE action = 'dividend'
       AND trade_date >= @start_date
       AND trade_date <= @end_date
+      {account_filter}
     GROUP BY 1, 2
 ),
 
@@ -189,6 +215,7 @@ ORDER BY account, symbol, strategy
 DEFAULT_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1 {account_filter}
     ORDER BY account, symbol, strategy
 """
 
@@ -227,87 +254,26 @@ def _parse_date(value):
         return None
 
 
-HOMEPAGE_STATS_QUERY_TPL = """
+DASHBOARD_POSITIONS_QUERY = """
     SELECT
-        COUNT(DISTINCT account) AS num_accounts,
-        COUNT(DISTINCT symbol) AS num_symbols,
-        COUNT(DISTINCT strategy) AS num_strategies,
-        SUM(total_return) AS total_return,
-        SUM(realized_pnl) AS realized_pnl,
-        SUM(unrealized_pnl) AS unrealized_pnl,
-        SUM(total_premium_received) AS premium_collected,
-        SUM(total_dividend_income) AS dividend_income,
-        SUM(num_individual_trades) AS total_trades,
-        SUM(num_winners) AS total_winners,
-        SUM(num_losers) AS total_losers
+        account, symbol, strategy,
+        total_return, realized_pnl, unrealized_pnl,
+        total_premium_received, total_dividend_income,
+        num_individual_trades, num_winners, num_losers,
+        avg_days_in_trade, first_trade_date
     FROM `ccwj-dbt.analytics.positions_summary`
     {where}
 """
 
-HOMEPAGE_TOP_SYMBOLS_QUERY_TPL = """
+DASHBOARD_WEEK_DATA_QUERY = """
     SELECT
-        symbol,
-        SUM(total_return) AS total_return,
-        STRING_AGG(DISTINCT strategy, ', ' ORDER BY strategy) AS strategies
-    FROM `ccwj-dbt.analytics.positions_summary`
-    {where}
-    GROUP BY symbol
-    ORDER BY SUM(total_return) DESC
-    LIMIT 5
-"""
-
-HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL = """
-    SELECT
-        strategy,
-        SUM(total_return) AS total_return,
-        COUNT(DISTINCT symbol) AS num_symbols
-    FROM `ccwj-dbt.analytics.positions_summary`
-    {where}
-    GROUP BY strategy
-    ORDER BY SUM(total_return) DESC
-"""
-
-DASHBOARD_WEEK_SUMMARY_QUERY = """
-    SELECT
-        SUM(trades_closed) AS trades_closed,
-        SUM(total_pnl) AS total_pnl,
-        SUM(num_winners) AS num_winners,
-        SUM(num_losers) AS num_losers,
-        SUM(trades_opened) AS trades_opened,
-        MAX(best_pnl) AS max_best_pnl
+        week_start, account,
+        trades_closed, total_pnl, num_winners, num_losers,
+        trades_opened, best_pnl, best_symbol, best_strategy
     FROM `ccwj-dbt.analytics.mart_weekly_summary`
-    WHERE week_start = @week_start
+    WHERE week_start >= DATE_SUB(@this_week, INTERVAL 8 WEEK)
       {account_filter}
-"""
-
-DASHBOARD_BEST_TRADE_QUERY = """
-    SELECT best_symbol, best_strategy, best_pnl
-    FROM `ccwj-dbt.analytics.mart_weekly_summary`
-    WHERE week_start = @week_start
-      AND best_pnl IS NOT NULL
-      {account_filter}
-    ORDER BY best_pnl DESC
-    LIMIT 1
-"""
-
-LATEST_WEEK_QUERY = """
-    SELECT MAX(week_start) AS latest_week
-    FROM `ccwj-dbt.analytics.mart_weekly_summary`
-    WHERE (trades_closed > 0 OR trades_opened > 0)
-      {account_filter}
-"""
-
-TRADER_PROFILE_QUERY = """
-    SELECT
-        STRING_AGG(DISTINCT strategy, ', ' ORDER BY strategy) AS strategies,
-        SUM(num_individual_trades) AS total_trades,
-        COUNT(DISTINCT symbol) AS num_symbols,
-        SUM(num_winners) AS total_winners,
-        SUM(num_losers) AS total_losers,
-        ROUND(AVG(avg_days_in_trade), 0) AS avg_days,
-        MIN(first_trade_date) AS first_trade
-    FROM `ccwj-dbt.analytics.positions_summary`
-    {where}
+    ORDER BY week_start DESC
 """
 
 
@@ -452,118 +418,130 @@ def dashboard():
     user_accounts = _user_account_list()
     week_summary = None
     mirror_history = []
-    journal_stats = {"total_entries": 0, "last_entry_at": None}
+    pos_df = pd.DataFrame()
 
+    client = None
     try:
         client = get_bigquery_client()
         where = _account_sql_filter(user_accounts)
-        acct_and = _account_sql_and(user_accounts) if user_accounts else ""
+        acct_and = _account_sql_and(user_accounts)
 
-        stats_df = client.query(HOMEPAGE_STATS_QUERY_TPL.format(where=where)).to_dataframe()
-        if not stats_df.empty:
-            row = stats_df.iloc[0]
-            total_winners = int(row.get("total_winners", 0))
-            total_losers = int(row.get("total_losers", 0))
+        # Single query replaces 3 homepage queries + trader profile query
+        pos_df = client.query(DASHBOARD_POSITIONS_QUERY.format(where=where)).to_dataframe()
+        if not pos_df.empty:
+            for col in ["total_return", "realized_pnl", "unrealized_pnl",
+                         "total_premium_received", "total_dividend_income",
+                         "num_individual_trades", "num_winners", "num_losers",
+                         "avg_days_in_trade"]:
+                pos_df[col] = pd.to_numeric(pos_df[col], errors="coerce").fillna(0)
+
+            total_winners = int(pos_df["num_winners"].sum())
+            total_losers = int(pos_df["num_losers"].sum())
             total_closed = total_winners + total_losers
             stats = {
-                "num_accounts": int(row.get("num_accounts", 0)),
-                "num_symbols": int(row.get("num_symbols", 0)),
-                "num_strategies": int(row.get("num_strategies", 0)),
-                "total_return": float(row.get("total_return", 0)),
-                "realized_pnl": float(row.get("realized_pnl", 0)),
-                "unrealized_pnl": float(row.get("unrealized_pnl", 0)),
-                "premium_collected": float(row.get("premium_collected", 0)),
-                "dividend_income": float(row.get("dividend_income", 0)),
-                "total_trades": int(row.get("total_trades", 0)),
+                "num_accounts": int(pos_df["account"].nunique()),
+                "num_symbols": int(pos_df["symbol"].nunique()),
+                "num_strategies": int(pos_df["strategy"].nunique()),
+                "total_return": float(pos_df["total_return"].sum()),
+                "realized_pnl": float(pos_df["realized_pnl"].sum()),
+                "unrealized_pnl": float(pos_df["unrealized_pnl"].sum()),
+                "premium_collected": float(pos_df["total_premium_received"].sum()),
+                "dividend_income": float(pos_df["total_dividend_income"].sum()),
+                "total_trades": int(pos_df["num_individual_trades"].sum()),
                 "win_rate": total_winners / total_closed if total_closed else 0,
             }
 
-        top_df = client.query(HOMEPAGE_TOP_SYMBOLS_QUERY_TPL.format(where=where)).to_dataframe()
-        if not top_df.empty:
-            for col in ["total_return"]:
-                top_df[col] = pd.to_numeric(top_df[col], errors="coerce").fillna(0)
-            top_symbols = top_df.to_dict(orient="records")
+            sym_agg = (
+                pos_df.groupby("symbol")
+                .agg(total_return=("total_return", "sum"),
+                     strategies=("strategy", lambda x: ", ".join(sorted(x.unique()))))
+                .reset_index()
+                .nlargest(5, "total_return")
+            )
+            top_symbols = sym_agg.to_dict(orient="records")
 
-        strat_df = client.query(HOMEPAGE_STRATEGY_BREAKDOWN_QUERY_TPL.format(where=where)).to_dataframe()
-        if not strat_df.empty:
-            for col in ["total_return", "num_symbols"]:
-                strat_df[col] = pd.to_numeric(strat_df[col], errors="coerce").fillna(0)
-            strategy_breakdown = strat_df.to_dict(orient="records")
+            strat_agg = (
+                pos_df.groupby("strategy")
+                .agg(total_return=("total_return", "sum"),
+                     num_symbols=("symbol", "nunique"))
+                .reset_index()
+                .sort_values("total_return", ascending=False)
+            )
+            strategy_breakdown = strat_agg.to_dict(orient="records")
 
-        # Weekly summary: try this week, fall back to most recent active week
+        # Single query replaces week summary + fallback + best trade (was up to 4 queries)
         this_week_start = date.today() - timedelta(days=date.today().weekday())
         target_week = this_week_start
         try:
-            week_config = bigquery.QueryJobConfig(
+            week_cfg = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter("week_start", "DATE", target_week),
+                    bigquery.ScalarQueryParameter("this_week", "DATE", this_week_start),
                 ]
             )
-            week_df = client.query(
-                DASHBOARD_WEEK_SUMMARY_QUERY.format(account_filter=acct_and),
-                job_config=week_config,
+            week_all_df = client.query(
+                DASHBOARD_WEEK_DATA_QUERY.format(account_filter=acct_and),
+                job_config=week_cfg,
             ).to_dataframe()
-            has_data = not week_df.empty and int(week_df.iloc[0].get("trades_closed", 0) or 0) + int(week_df.iloc[0].get("trades_opened", 0) or 0) > 0
-            if not has_data:
-                latest_df = client.query(
-                    LATEST_WEEK_QUERY.format(account_filter=acct_and)
-                ).to_dataframe()
-                if not latest_df.empty and latest_df.iloc[0]["latest_week"] is not None:
-                    lw = latest_df.iloc[0]["latest_week"]
-                    if hasattr(lw, "date"):
-                        lw = lw.date()
-                    elif not isinstance(lw, date):
-                        lw = date.fromisoformat(str(lw)[:10])
-                    target_week = lw
-                    week_config = bigquery.QueryJobConfig(
-                        query_parameters=[
-                            bigquery.ScalarQueryParameter("week_start", "DATE", target_week),
-                        ]
-                    )
-                    week_df = client.query(
-                        DASHBOARD_WEEK_SUMMARY_QUERY.format(account_filter=acct_and),
-                        job_config=week_config,
-                    ).to_dataframe()
 
-            if not week_df.empty:
-                wr = week_df.iloc[0]
-                week_summary = {
-                    "trades_closed": int(wr.get("trades_closed", 0) or 0),
-                    "total_pnl": float(wr.get("total_pnl", 0) or 0),
-                    "num_winners": int(wr.get("num_winners", 0) or 0),
-                    "trades_opened": int(wr.get("trades_opened", 0) or 0),
-                    "week_start": target_week.isoformat(),
-                    "is_backfilled": target_week != this_week_start,
-                }
-                best_df = client.query(
-                    DASHBOARD_BEST_TRADE_QUERY.format(account_filter=acct_and),
-                    job_config=week_config,
-                ).to_dataframe()
-                if not best_df.empty:
-                    br = best_df.iloc[0]
-                    week_summary["best_symbol"] = br.get("best_symbol", "")
-                    week_summary["best_pnl"] = float(br.get("best_pnl", 0) or 0)
+            if not week_all_df.empty:
+                week_all_df["week_start"] = pd.to_datetime(week_all_df["week_start"]).dt.date
+                for col in ["trades_closed", "total_pnl", "num_winners", "num_losers",
+                             "trades_opened", "best_pnl"]:
+                    week_all_df[col] = pd.to_numeric(week_all_df[col], errors="coerce").fillna(0)
+
+                this_rows = week_all_df[week_all_df["week_start"] == this_week_start]
+                has_current = (
+                    not this_rows.empty
+                    and (this_rows["trades_closed"].sum() + this_rows["trades_opened"].sum()) > 0
+                )
+                if has_current:
+                    target_rows = this_rows
+                else:
+                    active = week_all_df[
+                        (week_all_df["trades_closed"] + week_all_df["trades_opened"]) > 0
+                    ]
+                    if not active.empty:
+                        target_week = active["week_start"].max()
+                        target_rows = week_all_df[week_all_df["week_start"] == target_week]
+                    else:
+                        target_rows = pd.DataFrame()
+
+                if not target_rows.empty:
+                    week_summary = {
+                        "trades_closed": int(target_rows["trades_closed"].sum()),
+                        "total_pnl": float(target_rows["total_pnl"].sum()),
+                        "num_winners": int(target_rows["num_winners"].sum()),
+                        "trades_opened": int(target_rows["trades_opened"].sum()),
+                        "week_start": target_week.isoformat(),
+                        "is_backfilled": target_week != this_week_start,
+                    }
+                    best_candidates = target_rows.dropna(subset=["best_symbol"])
+                    best_candidates = best_candidates[best_candidates["best_pnl"] > 0]
+                    if not best_candidates.empty:
+                        br = best_candidates.nlargest(1, "best_pnl").iloc[0]
+                        week_summary["best_symbol"] = str(br.get("best_symbol", ""))
+                        week_summary["best_pnl"] = float(br["best_pnl"])
         except Exception as e:
-            # Week summary comes from mart_weekly_summary; if missing, pipeline may not have run yet
             if app.debug:
-                app.logger.warning("Dashboard week summary failed: %s", e)
+                app.logger.warning("Dashboard week data failed: %s", e)
 
     except Exception as e:
         if app.debug:
-            app.logger.warning("Dashboard stats/week summary failed: %s", e)
+            app.logger.warning("Dashboard stats/week data failed: %s", e)
 
     has_accounts = user_accounts is None or len(user_accounts) > 0
 
-    # Portfolio cumulative P&L chart
+    # Portfolio cumulative P&L chart (2 queries in parallel)
     portfolio_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
-    if has_accounts:
+    if has_accounts and client is not None:
         try:
-            acct_filter = _account_sql_and(user_accounts) if user_accounts else ""
-            chart_df = client.query(
-                CHART_DATA_ALL_QUERY.format(account_filter=acct_filter)
-            ).to_dataframe()
-            chart_df = _filter_df_by_accounts(chart_df, user_accounts)
-            current_df = client.query(CURRENT_POSITIONS_QUERY).to_dataframe()
+            acct_filter = _account_sql_and(user_accounts)
+            chart_dfs = _bq_parallel(client, {
+                "chart": CHART_DATA_ALL_QUERY.format(account_filter=acct_filter),
+                "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
+            })
+            chart_df = _filter_df_by_accounts(chart_dfs["chart"], user_accounts)
+            current_df = chart_dfs["current"]
             for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
                 if col in current_df.columns:
                     current_df[col] = pd.to_numeric(current_df[col], errors="coerce").fillna(0)
@@ -572,76 +550,35 @@ def dashboard():
         except Exception:
             pass
 
-    # Process-first data: Mirror Score trend + journal nudge
+    # Process-first data: Mirror Score trend
     try:
         mirror_history = get_mirror_score_history(current_user.id, limit=8)
     except Exception:
         pass
-    try:
-        journal_stats = get_journal_stats(current_user.id)
-    except Exception:
-        pass
-
-    # Unjournaled open positions — find positions without a journal entry
-    unjournaled = []
-    if has_accounts:
-        try:
-            acct_filter2 = _account_sql_and(user_accounts) if user_accounts else ""
-            uj_df = client.query(f"""
-                SELECT account, underlying_symbol AS symbol,
-                       SUM(ABS(CAST(market_value AS FLOAT64))) AS exposure
-                FROM `ccwj-dbt.analytics.int_enriched_current`
-                WHERE quantity IS NOT NULL AND quantity != 0 {acct_filter2}
-                GROUP BY 1, 2
-                ORDER BY exposure DESC
-            """).to_dataframe()
-            if not uj_df.empty:
-                journal_entries = list_journal_entries(current_user.id, limit=500)
-                journaled_symbols = {
-                    (e.get("account", ""), e.get("symbol", "").upper())
-                    for e in journal_entries
-                }
-                for _, row in uj_df.iterrows():
-                    key = (row["account"], str(row["symbol"]).upper())
-                    if key not in journaled_symbols:
-                        unjournaled.append({
-                            "account": row["account"],
-                            "symbol": row["symbol"],
-                            "exposure": float(row.get("exposure", 0) or 0),
-                        })
-                    if len(unjournaled) >= 5:
-                        break
-        except Exception:
-            pass
-
     insight = get_insight_for_user(current_user.id)
 
-    # Trader profile for the hero section — used when no mirror history
+    # Trader profile from positions data (no extra query needed)
     trader_profile = None
-    if has_accounts and not mirror_history:
+    if has_accounts and not mirror_history and not pos_df.empty:
         try:
-            where = _account_sql_filter(user_accounts)
-            tp_df = client.query(TRADER_PROFILE_QUERY.format(where=where)).to_dataframe()
-            if not tp_df.empty:
-                tpr = tp_df.iloc[0]
-                tw = int(tpr.get("total_winners", 0) or 0)
-                tl = int(tpr.get("total_losers", 0) or 0)
-                tc = tw + tl
-                strats = str(tpr.get("strategies", "")).split(", ")
-                top_strat = strats[0] if strats else ""
-                trader_profile = {
-                    "top_strategy": top_strat,
-                    "num_strategies": len(strats),
-                    "total_trades": int(tpr.get("total_trades", 0) or 0),
-                    "num_symbols": int(tpr.get("num_symbols", 0) or 0),
-                    "win_rate": tw / tc if tc else 0,
-                    "avg_days": float(tpr.get("avg_days", 0) or 0),
-                    "first_trade": str(tpr.get("first_trade", ""))[:10],
-                }
+            tw = int(pos_df["num_winners"].sum())
+            tl = int(pos_df["num_losers"].sum())
+            tc = tw + tl
+            strats = sorted(pos_df["strategy"].dropna().unique().tolist())
+            top_strat = strats[0] if strats else ""
+            trader_profile = {
+                "top_strategy": top_strat,
+                "num_strategies": len(strats),
+                "total_trades": int(pos_df["num_individual_trades"].sum()),
+                "num_symbols": int(pos_df["symbol"].nunique()),
+                "win_rate": tw / tc if tc else 0,
+                "avg_days": float(pos_df["avg_days_in_trade"].mean() or 0),
+                "first_trade": str(pos_df["first_trade_date"].min())[:10] if "first_trade_date" in pos_df.columns else "",
+            }
         except Exception:
             pass
 
-    is_first_visit = has_accounts and not mirror_history and journal_stats["total_entries"] == 0
+    is_first_visit = has_accounts and not mirror_history
 
     return render_template(
         "index.html",
@@ -654,8 +591,6 @@ def dashboard():
         portfolio_chart_json=json.dumps(portfolio_chart),
         week_summary=week_summary,
         mirror_history=mirror_history,
-        journal_stats=journal_stats,
-        unjournaled_positions=unjournaled,
         trader_profile=trader_profile,
         is_first_visit=is_first_visit,
     )
@@ -703,6 +638,8 @@ def sentry_debug():
 @login_required
 def positions():
     client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    acct_filter = _account_sql_and(user_accounts)
 
     # ------------------------------------------------------------------
     # 1. Read filter params
@@ -736,9 +673,9 @@ def positions():
                     bigquery.ScalarQueryParameter("end_date", "DATE", effective_end),
                 ]
             )
-            df = client.query(DATE_FILTERED_QUERY, job_config=job_config).to_dataframe()
+            df = client.query(DATE_FILTERED_QUERY.format(account_filter=acct_filter), job_config=job_config).to_dataframe()
         else:
-            df = client.query(DEFAULT_QUERY).to_dataframe()
+            df = client.query(DEFAULT_QUERY.format(account_filter=acct_filter)).to_dataframe()
     except Exception as exc:
         ctx = dict(ERROR_DEFAULTS)
         ctx["error"] = str(exc)
@@ -764,9 +701,8 @@ def positions():
             df[col] = df[col].astype(str).replace("NaT", "")
 
     # ------------------------------------------------------------------
-    # 4. Filter to user's accounts, then build filter options
+    # 4. Safety-belt filter (SQL already filtered by account)
     # ------------------------------------------------------------------
-    user_accounts = _user_account_list()
     df = _filter_df_by_accounts(df, user_accounts)
 
     accounts = sorted(df["account"].dropna().unique())
@@ -951,6 +887,87 @@ POSITION_CURRENT_QUERY = """
     WHERE underlying_symbol = '{symbol}'
 """
 
+POSITION_CLOSED_LEGS_QUERY = """
+    SELECT
+        sc.account,
+        sc.symbol,
+        sc.strategy,
+        sc.trade_symbol,
+        sc.open_date,
+        sc.close_date,
+        sc.total_pnl,
+        sc.status,
+        oc.contracts_sold_to_open + oc.contracts_bought_to_open AS quantity,
+        oc.premium_received,
+        oc.premium_paid,
+        oc.cost_to_close,
+        oc.proceeds_from_close,
+        oc.direction,
+        oc.close_type,
+        oc.days_in_trade
+    FROM `ccwj-dbt.analytics.int_strategy_classification` sc
+    JOIN `ccwj-dbt.analytics.int_option_contracts` oc
+      ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
+    WHERE sc.status = 'Closed'
+      AND sc.trade_group_type = 'option_contract'
+      AND sc.symbol = '{symbol}'
+"""
+
+POSITION_CLOSED_EQUITY_QUERY = """
+    SELECT
+        account,
+        symbol,
+        trade_symbol,
+        session_id,
+        open_date,
+        close_date,
+        quantity,
+        sale_price_per_share,
+        sell_proceeds,
+        cost_basis,
+        realized_pnl,
+        description
+    FROM `ccwj-dbt.analytics.int_closed_equity_legs`
+    WHERE symbol = '{symbol}'
+"""
+
+POSITION_SESSIONS_QUERY = """
+    SELECT
+        account,
+        symbol,
+        session_id,
+        open_date,
+        last_trade_date,
+        status,
+        total_pnl,
+        days_held,
+        max_quantity_held,
+        num_trades
+    FROM `ccwj-dbt.analytics.int_equity_sessions`
+    WHERE symbol = '{symbol}'
+    ORDER BY account, session_id
+"""
+
+POSITION_MATRIX_QUERY = """
+    SELECT
+        account,
+        underlying_symbol,
+        strategy,
+        trade_symbol,
+        dte_at_open,
+        dte_bucket,
+        strike_distance,
+        pnl_pct,
+        total_pnl,
+        direction,
+        option_type,
+        outcome
+    FROM `ccwj-dbt.analytics.int_option_trade_kinds`
+    WHERE status = 'Closed'
+      AND strike_distance IS NOT NULL
+      AND underlying_symbol = '{symbol}'
+"""
+
 # Pre-aggregated daily P&L data for chart rendering (single symbol)
 CHART_DATA_QUERY = """
     SELECT *
@@ -979,20 +996,22 @@ def position_detail(symbol):
     safe_symbol = symbol.replace("'", "''")
 
     try:
-        # Strategy summary from positions_summary
-        summary_df = client.query(
-            POSITION_SUMMARY_QUERY.format(symbol=safe_symbol)
-        ).to_dataframe()
-
-        # Trade history
-        trades_df = client.query(
-            POSITION_TRADES_QUERY.format(symbol=safe_symbol)
-        ).to_dataframe()
-
-        # Current positions
-        current_df = client.query(
-            POSITION_CURRENT_QUERY.format(symbol=safe_symbol)
-        ).to_dataframe()
+        dfs = _bq_parallel(client, {
+            "summary": POSITION_SUMMARY_QUERY.format(symbol=safe_symbol),
+            "trades": POSITION_TRADES_QUERY.format(symbol=safe_symbol),
+            "current": POSITION_CURRENT_QUERY.format(symbol=safe_symbol),
+            "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(symbol=safe_symbol),
+            "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(symbol=safe_symbol),
+            "matrix": POSITION_MATRIX_QUERY.format(symbol=safe_symbol),
+            "sessions": POSITION_SESSIONS_QUERY.format(symbol=safe_symbol),
+        })
+        summary_df = dfs["summary"]
+        trades_df = dfs["trades"]
+        current_df = dfs["current"]
+        closed_legs_df = dfs["closed_legs"]
+        closed_equity_df = dfs["closed_equity"]
+        matrix_df = dfs["matrix"]
+        sessions_df = dfs["sessions"]
     except Exception as exc:
         return render_template(
             "position_detail.html",
@@ -1001,7 +1020,12 @@ def position_detail(symbol):
             kpis={},
             strategy_rows=[],
             trades=[],
+            trade_outcomes=[],
             current_positions=[],
+            option_matrices=[],
+            sessions=[],
+            selected_legs=[],
+            leg_param="",
             chart_data_json="{}",
             has_underlying_price=False,
         )
@@ -1066,6 +1090,167 @@ def position_detail(symbol):
     if end_date is not None and "trade_date" in trades_df.columns:
         trades_df = trades_df[trades_df["trade_date"] <= end_date]
 
+    # ── Session / leg filtering ──
+    sessions_df = _filter_df_by_accounts(sessions_df, user_accounts)
+    if selected_account and not sessions_df.empty:
+        sessions_df = sessions_df[sessions_df["account"] == selected_account]
+    for col in ["total_pnl"]:
+        if col in sessions_df.columns:
+            sessions_df[col] = pd.to_numeric(sessions_df[col], errors="coerce").fillna(0)
+    if "open_date" in sessions_df.columns:
+        sessions_df["open_date"] = pd.to_datetime(sessions_df["open_date"]).dt.date
+    if "last_trade_date" in sessions_df.columns:
+        sessions_df["last_trade_date"] = pd.to_datetime(sessions_df["last_trade_date"]).dt.date
+
+    sessions_list = sessions_df.to_dict(orient="records") if not sessions_df.empty else []
+    for s in sessions_list:
+        s["open_date"] = str(s["open_date"]) if s.get("open_date") else ""
+        s["last_trade_date"] = str(s["last_trade_date"]) if s.get("last_trade_date") else ""
+
+    # Enrich sessions with option P&L that overlaps each session's date range
+    if sessions_list and not closed_legs_df.empty and "open_date" in closed_legs_df.columns and "total_pnl" in closed_legs_df.columns:
+        _cl = closed_legs_df.copy()
+        if selected_account:
+            _cl = _cl[_cl["account"] == selected_account] if "account" in _cl.columns else _cl
+        _cl["_opt_od"] = pd.to_datetime(_cl["open_date"]).dt.date
+        _cl["_opt_pnl"] = pd.to_numeric(_cl["total_pnl"], errors="coerce").fillna(0)
+
+        _assigned_option_indices = set()
+        for s in sessions_list:
+            s_od = pd.to_datetime(s["open_date"]).date() if s["open_date"] else None
+            s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s["last_trade_date"] else None
+            s_open = str(s.get("status", "")).strip().lower() == "open"
+            s_end = s_ltd if not s_open else date.today()
+            if s_od and s_end:
+                mask = (_cl["_opt_od"] >= s_od) & (_cl["_opt_od"] <= s_end)
+                matching = _cl[mask]
+                s["options_pnl"] = round(float(matching["_opt_pnl"].sum()), 2)
+                s["options_count"] = len(matching)
+                _assigned_option_indices.update(matching.index.tolist())
+            else:
+                s["options_pnl"] = 0.0
+                s["options_count"] = 0
+            s["equity_pnl"] = round(float(s.get("total_pnl") or 0), 2)
+            s["combined_pnl"] = round(s["equity_pnl"] + s["options_pnl"], 2)
+
+        # Orphan options: split into non-overlapping groups around equity sessions
+        orphan_mask = ~_cl.index.isin(_assigned_option_indices)
+        orphan_df = _cl[orphan_mask]
+        if not orphan_df.empty:
+            # Build sorted list of equity session boundaries to split orphans around
+            eq_boundaries = []
+            for s in sessions_list:
+                s_od = pd.to_datetime(s["open_date"]).date() if s.get("open_date") else None
+                s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s.get("last_trade_date") else None
+                s_open = str(s.get("status", "")).strip().lower() == "open"
+                s_end = s_ltd if not s_open else date.today()
+                if s_od and s_end:
+                    eq_boundaries.append((s_od, s_end))
+            eq_boundaries.sort()
+
+            # Group orphan options into clusters separated by equity sessions
+            orphan_dates_series = orphan_df["_opt_od"].dropna().sort_values()
+            orphan_groups = []
+            current_group = []
+            _orphan_sid_counter = 0
+
+            for idx in orphan_dates_series.index:
+                od = orphan_df.loc[idx, "_opt_od"]
+                # Check which gap this orphan falls in (before, between, or after sessions)
+                gap_id = 0
+                for i, (eq_start, eq_end) in enumerate(eq_boundaries):
+                    if od >= eq_start:
+                        gap_id = i + 1
+                if not current_group or current_group[0]["gap"] == gap_id:
+                    current_group.append({"idx": idx, "gap": gap_id})
+                else:
+                    orphan_groups.append(current_group)
+                    current_group = [{"idx": idx, "gap": gap_id}]
+            if current_group:
+                orphan_groups.append(current_group)
+
+            # Deduplicate groups by gap_id
+            gap_groups = {}
+            for grp in orphan_groups:
+                gid = grp[0]["gap"]
+                gap_groups.setdefault(gid, []).extend(grp)
+
+            for gid, grp in sorted(gap_groups.items()):
+                indices = [g["idx"] for g in grp]
+                grp_df = orphan_df.loc[indices]
+                grp_pnl = round(float(grp_df["_opt_pnl"].sum()), 2)
+                grp_dates = grp_df["_opt_od"].dropna()
+                _orphan_sid_counter -= 1
+                sessions_list.append({
+                    "session_id": _orphan_sid_counter,
+                    "open_date": str(grp_dates.min()) if not grp_dates.empty else "",
+                    "last_trade_date": str(grp_dates.max()) if not grp_dates.empty else "",
+                    "status": "Closed",
+                    "total_pnl": grp_pnl,
+                    "equity_pnl": 0.0,
+                    "options_pnl": grp_pnl,
+                    "options_count": len(grp),
+                    "combined_pnl": grp_pnl,
+                    "days_held": 0,
+                    "max_quantity_held": 0,
+                    "num_trades": len(grp),
+                    "options_only": True,
+                })
+            sessions_list.sort(key=lambda x: x.get("open_date") or "")
+    else:
+        for s in sessions_list:
+            s["equity_pnl"] = round(float(s.get("total_pnl") or 0), 2)
+            s["options_pnl"] = 0.0
+            s["options_count"] = 0
+            s["combined_pnl"] = s["equity_pnl"]
+
+    # Assign sequential display leg numbers (1, 2, 3...) by chronological order
+    for i, s in enumerate(sessions_list, start=1):
+        s["display_leg"] = i
+
+    leg_param = request.args.get("leg", "")
+    if leg_param:
+        selected_legs = []
+        for x in leg_param.split(","):
+            x = x.strip()
+            try:
+                selected_legs.append(int(x))
+            except ValueError:
+                pass
+    else:
+        selected_legs = [s["session_id"] for s in sessions_list]
+
+    # Build date ranges for selected sessions
+    _leg_ranges = []
+    _has_open_leg = False
+    for s in sessions_list:
+        if s["session_id"] in selected_legs:
+            od = pd.to_datetime(s["open_date"]).date() if s["open_date"] else None
+            ltd = pd.to_datetime(s["last_trade_date"]).date() if s["last_trade_date"] else None
+            is_open = str(s.get("status", "")).strip().lower() == "open"
+            if is_open:
+                _has_open_leg = True
+            _leg_ranges.append((od, ltd if not is_open else date.today()))
+
+    def _in_leg_range(d):
+        """Return True if date d falls within any selected leg's date range."""
+        if not _leg_ranges:
+            return True
+        for lo, hi in _leg_ranges:
+            if lo and hi and lo <= d <= hi:
+                return True
+            if lo and not hi and d >= lo:
+                return True
+        return False
+
+    # Apply leg filter to trades
+    if leg_param and "trade_date" in trades_df.columns and _leg_ranges:
+        trades_df = trades_df[trades_df["trade_date"].apply(_in_leg_range)]
+
+    # Apply leg filter to current positions (only show if an open leg is selected)
+    if leg_param and not _has_open_leg:
+        current_df = current_df.iloc[0:0]
+
     # For open equity positions: if cost_basis is missing/zero, derive from trade history
     # so unrealized P&L = market_value - cost_basis (true P/L for open positions)
     if not current_df.empty and not trades_df.empty and "action" in trades_df.columns:
@@ -1090,6 +1275,20 @@ def position_detail(symbol):
                     if cost_basis:
                         current_df.at[idx, "unrealized_pnl_pct"] = 100.0 * (market_value - cost_basis) / cost_basis
 
+    # ── Filter closed legs early so KPIs can use them ──
+    if selected_account:
+        if not closed_legs_df.empty:
+            closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
+        if not closed_equity_df.empty:
+            closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
+    if leg_param and _leg_ranges:
+        if not closed_legs_df.empty and "open_date" in closed_legs_df.columns:
+            closed_legs_df["_od"] = pd.to_datetime(closed_legs_df["open_date"]).dt.date
+            closed_legs_df = closed_legs_df[closed_legs_df["_od"].apply(_in_leg_range)]
+            closed_legs_df = closed_legs_df.drop(columns=["_od"])
+        if not closed_equity_df.empty and "session_id" in closed_equity_df.columns:
+            closed_equity_df = closed_equity_df[closed_equity_df["session_id"].isin(selected_legs)]
+
     # Status (needed for open-only realized logic)
     status_col = None
     for c in ("status", "Status", "STATUS"):
@@ -1104,9 +1303,21 @@ def position_detail(symbol):
     else:
         overall_status = "Closed"
 
-    # KPIs (aggregated across strategies)
-    total_winners = int(summary_df["num_winners"].sum())
-    total_losers = int(summary_df["num_losers"].sum())
+    # When leg filter is active, override overall_status based on selected sessions
+    if leg_param:
+        overall_status = "Open" if _has_open_leg else "Closed"
+
+    # ── KPIs and Strategy Rows ──
+    # When leg filter is active, recompute from filtered trade data instead of summary_df
+    if leg_param and _leg_ranges:
+        # Filter summary_df by date overlap with selected leg ranges
+        if not summary_df.empty and "first_trade_date" in summary_df.columns:
+            summary_df["_ftd"] = pd.to_datetime(summary_df["first_trade_date"]).dt.date
+            summary_df = summary_df[summary_df["_ftd"].apply(_in_leg_range)]
+            summary_df = summary_df.drop(columns=["_ftd"])
+
+    total_winners = int(summary_df["num_winners"].sum()) if not summary_df.empty else 0
+    total_losers = int(summary_df["num_losers"].sum()) if not summary_df.empty else 0
     total_closed = total_winners + total_losers
 
     # Realized P/L only from closed trades. For open positions there is no realized (cost of buy is not a "realized loss").
@@ -1121,10 +1332,18 @@ def position_detail(symbol):
         or (total_closed == 0 and not current_df.empty)
         or (not has_sell_trades and not current_df.empty)
     )
-    if is_open_only:
+
+    if leg_param and _leg_ranges:
         realized_for_display = 0.0
+        if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns:
+            realized_for_display += float(closed_legs_df["total_pnl"].sum())
+        if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns:
+            realized_for_display += float(closed_equity_df["realized_pnl"].sum())
     else:
-        realized_for_display = float(summary_df["realized_pnl"].sum()) if not summary_df.empty else 0.0
+        if is_open_only:
+            realized_for_display = 0.0
+        else:
+            realized_for_display = float(summary_df["realized_pnl"].sum()) if not summary_df.empty else 0.0
 
     if app.debug and symbol == "ATZAF":
         app.logger.warning(
@@ -1133,37 +1352,83 @@ def position_detail(symbol):
         )
 
     kpis = {}
-    if not summary_df.empty:
-        unrealized_from_summary = float(summary_df["unrealized_pnl"].sum())
+    if not summary_df.empty or leg_param:
+        unrealized_from_summary = float(summary_df["unrealized_pnl"].sum()) if not summary_df.empty else 0.0
         if not current_df.empty and "unrealized_pnl" in current_df.columns:
             unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
+
+        # When leg-filtered, premium collected = sum from filtered closed option legs
+        if leg_param and _leg_ranges and not closed_legs_df.empty:
+            premium_collected = float(closed_legs_df["premium_received"].sum()) if "premium_received" in closed_legs_df.columns else 0.0
+            premium_paid = float(closed_legs_df["premium_paid"].sum()) if "premium_paid" in closed_legs_df.columns else 0.0
+        else:
+            premium_collected = float(summary_df["total_premium_received"].sum()) if not summary_df.empty else 0.0
+            premium_paid = float(summary_df["total_premium_paid"].sum()) if not summary_df.empty else 0.0
+
+        # Trade count from filtered trades
+        trade_count = len(trades_df) if leg_param else (int(summary_df["num_individual_trades"].sum()) if not summary_df.empty else 0)
+
+        # Date range from filtered trades
+        if leg_param and not trades_df.empty and "trade_date" in trades_df.columns:
+            first_trade = str(trades_df["trade_date"].min())
+            last_trade = str(trades_df["trade_date"].max())
+        else:
+            first_trade = str(summary_df["first_trade_date"].min()) if not summary_df.empty and "first_trade_date" in summary_df.columns else ""
+            last_trade = str(summary_df["last_trade_date"].max()) if not summary_df.empty and "last_trade_date" in summary_df.columns else ""
+
+        # Win/loss from filtered closed legs when leg-filtered
+        if leg_param and _leg_ranges:
+            opt_wins = int((closed_legs_df["total_pnl"] > 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
+            opt_losses = int((closed_legs_df["total_pnl"] <= 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
+            eq_wins = int((closed_equity_df["realized_pnl"] > 0).sum()) if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns else 0
+            eq_losses = int((closed_equity_df["realized_pnl"] <= 0).sum()) if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns else 0
+            total_winners = opt_wins + eq_wins
+            total_losers = opt_losses + eq_losses
+            total_closed = total_winners + total_losers
+
         kpis = {
             "total_return": realized_for_display + unrealized_from_summary,
             "realized_pnl": realized_for_display,
             "unrealized_pnl": unrealized_from_summary,
-            "premium_collected": float(summary_df["total_premium_received"].sum()),
-            "premium_paid": float(summary_df["total_premium_paid"].sum()),
-            "dividend_income": float(summary_df["total_dividend_income"].sum()),
+            "premium_collected": premium_collected,
+            "premium_paid": premium_paid,
+            "dividend_income": float(summary_df["total_dividend_income"].sum()) if not summary_df.empty else 0.0,
             "win_rate": total_winners / total_closed if total_closed else 0,
-            "avg_days": float(summary_df["avg_days_in_trade"].mean()),
-            "total_trades": int(summary_df["num_individual_trades"].sum()),
+            "avg_days": float(summary_df["avg_days_in_trade"].mean()) if not summary_df.empty else 0,
+            "total_trades": trade_count,
             "num_winners": total_winners,
             "num_losers": total_losers,
-            "first_trade": str(summary_df["first_trade_date"].min()) if "first_trade_date" in summary_df.columns else "",
-            "last_trade": str(summary_df["last_trade_date"].max()) if "last_trade_date" in summary_df.columns else "",
+            "first_trade": first_trade,
+            "last_trade": last_trade,
         }
 
-    # Strategy rows
+    # Strategy rows — filter by leg date range when active
     strategy_rows = summary_df.to_dict(orient="records") if not summary_df.empty else []
 
     # Build chart data from pre-aggregated mart_daily_pnl
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
     prices_through_date = None
     try:
-        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts)
         chart_df = client.query(
             CHART_DATA_QUERY.format(symbol=safe_symbol, account_filter=acct_filter)
         ).to_dataframe()
+        # Filter chart data by selected session date ranges and re-zero cumulative columns
+        if leg_param and _leg_ranges and not chart_df.empty and "date" in chart_df.columns:
+            chart_df["_d"] = pd.to_datetime(chart_df["date"]).dt.date
+            chart_df = chart_df[chart_df["_d"].apply(_in_leg_range)].copy()
+            chart_df = chart_df.drop(columns=["_d"])
+            if not chart_df.empty:
+                for cum_col in ("cumulative_options_pnl", "cumulative_dividends_pnl", "cumulative_other_pnl"):
+                    if cum_col in chart_df.columns:
+                        baseline = float(chart_df[cum_col].iloc[0] or 0)
+                        chart_df[cum_col] = chart_df[cum_col].astype(float) - baseline
+                # Snapshot market value / cost basis covers ALL open options for the
+                # symbol, not just those in the selected leg. Null them out so the
+                # chart uses only the re-zeroed cash flows for this leg's P&L.
+                for snap_col in ("option_market_value", "option_cost_basis"):
+                    if snap_col in chart_df.columns:
+                        chart_df[snap_col] = None
         if not chart_df.empty:
             chart_data = _build_chart_from_daily_pnl(chart_df, current_df)
             # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
@@ -1181,6 +1446,187 @@ def position_detail(symbol):
     # Current positions
     current_positions = current_df.to_dict(orient="records") if not current_df.empty else []
 
+    # ── Closed option legs (with cost/proceeds) ──
+    closed_legs_list = []
+    if not closed_legs_df.empty:
+        closed_legs_list = closed_legs_df.sort_values("close_date").to_dict(orient="records")
+        for r in closed_legs_list:
+            r["open_date"] = str(r["open_date"]) if pd.notna(r.get("open_date")) else ""
+            r["close_date"] = str(r["close_date"]) if pd.notna(r.get("close_date")) else ""
+            r["total_pnl"] = round(float(r.get("total_pnl") or 0), 2)
+
+    # ── Closed equity legs ──
+    closed_equity_list = []
+    if not closed_equity_df.empty:
+        closed_equity_list = closed_equity_df.sort_values("close_date").to_dict(orient="records")
+        for r in closed_equity_list:
+            r["open_date"] = str(r["open_date"]) if pd.notna(r.get("open_date")) else ""
+            r["close_date"] = str(r["close_date"]) if pd.notna(r.get("close_date")) else ""
+            r["realized_pnl"] = round(float(r.get("realized_pnl") or 0), 2)
+
+    # ── Trade Outcomes ──
+    trade_outcomes = []
+    for leg in closed_legs_list:
+        direction = str(leg.get("direction") or "")
+        prem_recv = float(leg.get("premium_received") or 0)
+        prem_paid = float(leg.get("premium_paid") or 0)
+        cost_close = float(leg.get("cost_to_close") or 0)
+        proceeds_close = float(leg.get("proceeds_from_close") or 0)
+        if direction == "Sold":
+            o_cost = abs(cost_close)
+            o_proceeds = abs(prem_recv)
+        else:
+            o_cost = abs(prem_paid)
+            o_proceeds = abs(proceeds_close)
+        o_pnl = float(leg.get("total_pnl") or 0)
+        o_return = round(o_pnl / o_cost * 100, 1) if o_cost else None
+        trade_outcomes.append({
+            "trade_symbol": leg.get("trade_symbol"),
+            "strategy": leg.get("strategy") or "",
+            "direction": direction,
+            "close_type": str(leg.get("close_type") or ""),
+            "open_date": leg.get("open_date") or "",
+            "close_date": leg.get("close_date") or "",
+            "days_held": leg.get("days_in_trade"),
+            "quantity": leg.get("quantity"),
+            "cost": round(o_cost, 2),
+            "proceeds": round(o_proceeds, 2),
+            "pnl": round(o_pnl, 2),
+            "return_pct": o_return,
+            "is_winner": o_pnl > 0,
+            "type": "option",
+        })
+    for leg in closed_equity_list:
+        eq_proceeds = float(leg.get("sell_proceeds") or 0)
+        eq_cost = float(leg.get("cost_basis") or 0)
+        eq_pnl = float(leg.get("realized_pnl") or 0)
+        eq_return = round(eq_pnl / eq_cost * 100, 1) if eq_cost else None
+        od = leg.get("open_date") or ""
+        cd = leg.get("close_date") or ""
+        try:
+            days = (pd.to_datetime(cd) - pd.to_datetime(od)).days if od and cd else None
+        except Exception:
+            days = None
+        trade_outcomes.append({
+            "trade_symbol": leg.get("trade_symbol") or symbol,
+            "strategy": leg.get("description") or "Equity Sold",
+            "direction": "Sold",
+            "close_type": "Sold",
+            "open_date": od,
+            "close_date": cd,
+            "days_held": days,
+            "quantity": leg.get("quantity"),
+            "cost": round(eq_cost, 2),
+            "proceeds": round(eq_proceeds, 2),
+            "pnl": round(eq_pnl, 2),
+            "return_pct": eq_return,
+            "is_winner": eq_pnl > 0,
+            "type": "equity",
+            "session_id": leg.get("session_id"),
+        })
+    trade_outcomes.sort(key=lambda x: x.get("close_date") or "", reverse=True)
+
+    # Attach raw transactions to each outcome for drill-down
+    # Build session date range lookup for scoping equity trades
+    _session_ranges = {}
+    for s in sessions_list:
+        sid = s.get("session_id")
+        if sid is not None:
+            s_od = pd.to_datetime(s["open_date"]).date() if s.get("open_date") else None
+            s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s.get("last_trade_date") else None
+            s_open = str(s.get("status", "")).strip().lower() == "open"
+            _session_ranges[sid] = (s_od, s_ltd if not s_open else date.today())
+
+    trades_by_symbol = {}
+    for t in trades:
+        ts = str(t.get("trade_symbol") or "")
+        trades_by_symbol.setdefault(ts, []).append(t)
+    for o in trade_outcomes:
+        ts = str(o.get("trade_symbol") or "")
+        if o["type"] == "option":
+            matching = trades_by_symbol.get(ts, [])
+        else:
+            # Scope equity raw trades to this outcome's session date range
+            sid = o.get("session_id")
+            s_range = _session_ranges.get(sid)
+            eq_trades = [
+                t for t in trades
+                if str(t.get("instrument_type") or "") == "Equity"
+                and str(t.get("trade_symbol") or "") == ts
+            ]
+            if s_range and s_range[0]:
+                matching = []
+                for t in eq_trades:
+                    try:
+                        td = pd.to_datetime(t.get("trade_date")).date()
+                    except Exception:
+                        continue
+                    if s_range[0] <= td <= (s_range[1] or date.today()):
+                        matching.append(t)
+            else:
+                matching = eq_trades
+        o["raw_trades"] = sorted(matching, key=lambda t: str(t.get("trade_date") or ""))
+
+    # Assign leg numbers to trade outcomes and open positions
+    def _date_to_leg(d_str):
+        """Return display_leg number for a date string, or None.
+        Prefers equity sessions over orphan (options-only) sessions to avoid
+        the orphan's wide date range swallowing trades that belong to a real session."""
+        if not d_str or not sessions_list:
+            return None
+        try:
+            d = pd.to_datetime(d_str).date()
+        except Exception:
+            return None
+        # First pass: check equity sessions (non-orphan)
+        for s in sessions_list:
+            if s.get("options_only"):
+                continue
+            s_od = pd.to_datetime(s["open_date"]).date() if s.get("open_date") else None
+            s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s.get("last_trade_date") else None
+            s_open = str(s.get("status", "")).strip().lower() == "open"
+            s_end = s_ltd if not s_open else date.today()
+            if s_od and s_end and s_od <= d <= s_end:
+                return s["display_leg"]
+        # Second pass: fall back to orphan (options-only) sessions
+        for s in sessions_list:
+            if not s.get("options_only"):
+                continue
+            s_od = pd.to_datetime(s["open_date"]).date() if s.get("open_date") else None
+            s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s.get("last_trade_date") else None
+            s_end = s_ltd or date.today()
+            if s_od and s_end and s_od <= d <= s_end:
+                return s["display_leg"]
+        return None
+
+    for o in trade_outcomes:
+        o["leg_num"] = _date_to_leg(o.get("open_date") or o.get("close_date"))
+    for p in current_positions:
+        # Open positions belong to the latest open session
+        open_sessions = [s for s in sessions_list if str(s.get("status", "")).strip().lower() == "open"]
+        p["leg_num"] = open_sessions[-1]["display_leg"] if open_sessions else (sessions_list[-1]["display_leg"] if sessions_list else None)
+
+    # ── Option matrices (DTE × Strike Distance heatmap) ──
+    if selected_account:
+        matrix_df = matrix_df[matrix_df["account"] == selected_account] if not matrix_df.empty else matrix_df
+    # Filter matrix by selected legs (date range overlap via trade_symbol matching closed legs)
+    if leg_param and _leg_ranges and not matrix_df.empty:
+        filtered_trade_syms = set(r.get("trade_symbol") for r in closed_legs_list)
+        if "trade_symbol" in matrix_df.columns:
+            matrix_df = matrix_df[matrix_df["trade_symbol"].isin(filtered_trade_syms)]
+    option_matrices = _build_option_matrices(
+        matrix_df, selected_account or (user_accounts[0] if len(user_accounts) == 1 else ""), symbol
+    ) if not matrix_df.empty else []
+    if not option_matrices and not matrix_df.empty:
+        all_mats = []
+        for acct in matrix_df["account"].unique():
+            all_mats.extend(_build_option_matrices(matrix_df, acct, symbol))
+        seen = set()
+        for m in all_mats:
+            if m["strategy"] not in seen:
+                seen.add(m["strategy"])
+                option_matrices.append(m)
+
     # Available accounts for filter
     all_accounts = sorted(summary_df["account"].dropna().unique()) if not summary_df.empty else []
 
@@ -1191,7 +1637,12 @@ def position_detail(symbol):
         overall_status=overall_status,
         strategy_rows=strategy_rows,
         trades=trades,
+        trade_outcomes=trade_outcomes,
         current_positions=current_positions,
+        option_matrices=option_matrices,
+        sessions=sessions_list,
+        selected_legs=selected_legs,
+        leg_param=leg_param,
         chart_data_json=json.dumps(chart_data),
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
@@ -1221,6 +1672,7 @@ TRADES_QUERY = """
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE underlying_symbol IS NOT NULL
       AND trade_date IS NOT NULL
+      {account_filter}
     ORDER BY underlying_symbol, trade_date
 """
 
@@ -1231,28 +1683,35 @@ OPEN_SESSION_START_QUERY = """
         MIN(open_date) AS open_start
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE status = 'Open'
+      {account_filter}
     GROUP BY account, symbol
 """
 
-OPEN_STRATEGIES_QUERY = """
-    SELECT account, symbol, strategy
-    FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE status = 'Open'
-"""
 
 CLOSED_LEGS_QUERY = """
     SELECT
-        account,
-        symbol,
-        strategy,
-        trade_symbol,
-        open_date,
-        close_date,
-        total_pnl,
-        status
-    FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE status = 'Closed'
-      AND trade_group_type = 'option_contract'
+        sc.account,
+        sc.symbol,
+        sc.strategy,
+        sc.trade_symbol,
+        sc.open_date,
+        sc.close_date,
+        sc.total_pnl,
+        sc.status,
+        oc.contracts_sold_to_open + oc.contracts_bought_to_open AS quantity,
+        oc.premium_received,
+        oc.premium_paid,
+        oc.cost_to_close,
+        oc.proceeds_from_close,
+        oc.direction,
+        oc.close_type,
+        oc.days_in_trade
+    FROM `ccwj-dbt.analytics.int_strategy_classification` sc
+    JOIN `ccwj-dbt.analytics.int_option_contracts` oc
+      ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
+    WHERE sc.status = 'Closed'
+      AND sc.trade_group_type = 'option_contract'
+      {closed_legs_account_filter}
 """
 
 CLOSED_EQUITY_LEGS_QUERY = """
@@ -1264,10 +1723,12 @@ CLOSED_EQUITY_LEGS_QUERY = """
         close_date,
         quantity,
         sale_price_per_share,
+        sell_proceeds,
         cost_basis,
         realized_pnl,
         description
     FROM `ccwj-dbt.analytics.int_closed_equity_legs`
+    WHERE 1=1 {account_filter}
 """
 
 CURRENT_POSITIONS_QUERY = """
@@ -1284,17 +1745,92 @@ CURRENT_POSITIONS_QUERY = """
         unrealized_pnl,
         unrealized_pnl_pct
     FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE 1=1 {account_filter}
 """
 
 STRATEGIES_MAP_QUERY = """
     SELECT account, symbol, strategy
     FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1 {account_filter}
 """
 
 SYMBOLS_PNL_QUERY = """
     SELECT account, symbol, status, realized_pnl, unrealized_pnl
     FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1 {account_filter}
 """
+
+def _build_option_matrices(matrix_df, account, symbol):
+    """Build per-strategy DTE × Strike-Distance heatmap matrices for one position."""
+    import math
+
+    df = matrix_df[
+        (matrix_df["account"] == account)
+        & (matrix_df["underlying_symbol"] == symbol)
+    ].copy()
+    if df.empty:
+        return []
+
+    DTE_BINS = [
+        (0, 7, "0–7"),
+        (8, 14, "8–14"),
+        (15, 30, "15–30"),
+        (31, 60, "31–60"),
+        (61, 999, "61+"),
+    ]
+
+    def dte_label(dte):
+        for lo, hi, lbl in DTE_BINS:
+            if lo <= dte <= hi:
+                return lbl
+        return "61+"
+
+    def strike_bucket(dist):
+        """Round strike distance to nearest integer for column headers."""
+        return int(round(dist))
+
+    matrices = []
+    for strategy, grp in df.groupby("strategy"):
+        grp = grp.copy()
+        grp["dte_label"] = grp["dte_at_open"].apply(dte_label)
+        grp["strike_col"] = grp["strike_distance"].apply(strike_bucket)
+
+        min_col = grp["strike_col"].min()
+        max_col = grp["strike_col"].max()
+        col_range = list(range(min_col, max_col + 1))
+
+        dte_order = [lbl for _, _, lbl in DTE_BINS if lbl in grp["dte_label"].values]
+
+        rows = []
+        for dte_lbl in dte_order:
+            cells = []
+            for col_val in col_range:
+                bucket = grp[
+                    (grp["dte_label"] == dte_lbl) & (grp["strike_col"] == col_val)
+                ]
+                if bucket.empty:
+                    cells.append({"count": 0, "avg_pnl": None, "win_rate": None})
+                else:
+                    wins = int((bucket["total_pnl"] > 0).sum())
+                    total = len(bucket)
+                    avg_pnl_dollar = bucket["total_pnl"].mean()
+                    cells.append({
+                        "count": total,
+                        "avg_pnl": round(float(avg_pnl_dollar), 0) if not math.isnan(avg_pnl_dollar) else None,
+                        "win_rate": round(wins / total * 100, 0),
+                        "wins": wins,
+                    })
+            rows.append({"dte_label": dte_lbl, "cells": cells})
+
+        matrices.append({
+            "strategy": strategy,
+            "trade_count": len(grp),
+            "col_headers": col_range,
+            "rows": rows,
+        })
+
+    return matrices
+
 
 def _build_chart_from_daily_pnl(daily_df, current_df):
     """
@@ -1316,6 +1852,8 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     shares_held = 0.0
     total_cost = 0.0
     cum_realized = 0.0
+    short_shares = 0.0
+    short_cost_basis = 0.0
     position_is_closed = current_df.empty
     last_trade_date = None
 
@@ -1323,17 +1861,6 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         [], [], [], [], [], [],
     )
     last_cumulative_options_pnl = 0.0
-
-    # Pre-scan: find the earliest option_cost_basis from snapshot data.
-    # The mart carries forward snapshot values, so option_cost_basis is only
-    # NULL for days *before* the first snapshot.  On those pre-snapshot days
-    # we use this cost basis as a proxy for market value (at inception,
-    # market ≈ cost → unrealized ≈ 0 → opt_pnl ≈ realized-only).
-    fallback_opt_cb = None
-    if "option_cost_basis" in daily_df.columns:
-        first_cb = daily_df["option_cost_basis"].dropna()
-        if not first_cb.empty:
-            fallback_opt_cb = float(first_cb.iloc[0])
 
     for _, row in daily_df.iterrows():
         buy_qty = float(row.get("equity_buy_qty") or 0)
@@ -1345,39 +1872,65 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         if has_trade:
             last_trade_date = row["date"]
 
-        if position_is_closed and shares_held == 0 and not has_trade:
+        if position_is_closed and shares_held == 0 and short_shares == 0 and not has_trade:
             continue
 
-        if buy_qty > 0:
-            shares_held += buy_qty
-            total_cost += buy_cost
+        # Process sells first (may create short position)
+        if sell_qty > 0:
+            remaining_sell = sell_qty
+            remaining_proceeds = sell_proceeds
+            if shares_held > 0:
+                sold_long = min(remaining_sell, shares_held)
+                avg = total_cost / shares_held if shares_held > 0 else 0
+                frac = sold_long / sell_qty if sell_qty > 0 else 1
+                sold_long_proceeds = sell_proceeds * frac
+                cum_realized += sold_long_proceeds - avg * sold_long
+                total_cost = max(0, total_cost - avg * sold_long)
+                shares_held = max(0, shares_held - sold_long)
+                remaining_sell -= sold_long
+                remaining_proceeds -= sold_long_proceeds
+            if remaining_sell > 0:
+                short_shares += remaining_sell
+                short_cost_basis += remaining_proceeds
 
-        if sell_qty > 0 and shares_held > 0:
-            avg = total_cost / shares_held
-            sold = min(sell_qty, shares_held)
-            cum_realized += sell_proceeds - avg * sold
-            total_cost = max(0, total_cost - avg * sold)
-            shares_held = max(0, shares_held - sold)
-        elif sell_qty > 0:
-            cum_realized += sell_proceeds
+        # Process buys (may cover short position)
+        if buy_qty > 0:
+            remaining_buy = buy_qty
+            remaining_cost = buy_cost
+            if short_shares > 0:
+                covered = min(remaining_buy, short_shares)
+                frac = covered / buy_qty if buy_qty > 0 else 1
+                cover_cost = buy_cost * frac
+                avg_short = short_cost_basis / short_shares if short_shares > 0 else 0
+                cum_realized += avg_short * covered - cover_cost
+                short_cost_basis = max(0, short_cost_basis - avg_short * covered)
+                short_shares = max(0, short_shares - covered)
+                remaining_buy -= covered
+                remaining_cost -= cover_cost
+            if remaining_buy > 0:
+                shares_held += remaining_buy
+                total_cost += remaining_cost
 
         close = float(row.get("close_price") or 0)
         # If no close price on a buy day, use avg cost so open position doesn't show full cost as "loss"
         if close <= 0 and buy_qty > 0 and buy_cost > 0 and shares_held > 0:
             close = buy_cost / buy_qty
-        unrealized = (shares_held * close - total_cost) if close > 0 and shares_held > 0 else 0
+        unrealized = 0
+        if close > 0:
+            if shares_held > 0:
+                unrealized = shares_held * close - total_cost
+            if short_shares > 0:
+                unrealized -= (short_shares * close - short_cost_basis)
         eq_pnl = cum_realized + unrealized
 
         # Options P&L = cumulative cash flows + current option market value.
         # After the first snapshot, the mart carries forward option_market_value
         # via LAST_VALUE IGNORE NULLS, so it's only NULL pre-first-snapshot.
-        # For those early days, substitute cost_basis (market ≈ cost at open).
+        # Pre-snapshot days show cash flows only (realized premiums / costs).
         cum_opt = float(row.get("cumulative_options_pnl") or 0)
         opt_mv = row.get("option_market_value")
         if opt_mv is not None and not pd.isna(opt_mv):
             opt_pnl = cum_opt + float(opt_mv)
-        elif fallback_opt_cb is not None:
-            opt_pnl = cum_opt + fallback_opt_cb
         else:
             opt_pnl = cum_opt
         div_pnl = float(row.get("cumulative_dividends_pnl") or 0)
@@ -1389,7 +1942,7 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         options_s.append(round(opt_pnl, 2))
         dividends_s.append(round(div_pnl, 2))
         total_s.append(round(eq_pnl + opt_pnl + div_pnl + oth_pnl, 2))
-        price_s.append(round(close, 2) if close > 0 and shares_held > 0 else None)
+        price_s.append(round(close, 2) if close > 0 and (shares_held > 0 or short_shares > 0) else None)
 
     if not dates:
         return empty
@@ -1405,10 +1958,15 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         today_option_pnl = last_cumulative_options_pnl + opt_mv_today
         eq_row = current_df[current_df["instrument_type"] == "Equity"]
         today_eq = equity_s[-1]
-        if not eq_row.empty and shares_held > 0:
+        if not eq_row.empty and (shares_held > 0 or short_shares > 0):
             p = float(eq_row["current_price"].iloc[0] or 0)
             if p:
-                today_eq = cum_realized + (shares_held * p - total_cost)
+                unreal = 0
+                if shares_held > 0:
+                    unreal = shares_held * p - total_cost
+                if short_shares > 0:
+                    unreal -= (short_shares * p - short_cost_basis)
+                today_eq = cum_realized + unreal
         today_price = None
         if not eq_row.empty:
             today_price = float(eq_row["current_price"].iloc[0] or 0) or None
@@ -1435,15 +1993,27 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
 @login_required
 def symbols_detail():
     client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    acct_filter = _account_sql_and(user_accounts)
 
     try:
-        trades_df = client.query(TRADES_QUERY).to_dataframe()
-        current_df = client.query(CURRENT_POSITIONS_QUERY).to_dataframe()
-        strat_df = client.query(STRATEGIES_MAP_QUERY).to_dataframe()
-        pnl_df = client.query(SYMBOLS_PNL_QUERY).to_dataframe()
-        open_start_df = client.query(OPEN_SESSION_START_QUERY).to_dataframe()
-        closed_legs_df = client.query(CLOSED_LEGS_QUERY).to_dataframe()
-        closed_equity_df = client.query(CLOSED_EQUITY_LEGS_QUERY).to_dataframe()
+        dfs = _bq_parallel(client, {
+            "trades": TRADES_QUERY.format(account_filter=acct_filter),
+            "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
+            "strat": STRATEGIES_MAP_QUERY.format(account_filter=acct_filter),
+            "pnl": SYMBOLS_PNL_QUERY.format(account_filter=acct_filter),
+            "open_start": OPEN_SESSION_START_QUERY.format(account_filter=acct_filter),
+            "closed_legs": CLOSED_LEGS_QUERY.format(
+                closed_legs_account_filter=_account_sql_and(user_accounts, col="sc.account")),
+            "closed_equity": CLOSED_EQUITY_LEGS_QUERY.format(account_filter=acct_filter),
+        })
+        trades_df = dfs["trades"]
+        current_df = dfs["current"]
+        strat_df = dfs["strat"]
+        pnl_df = dfs["pnl"]
+        open_start_df = dfs["open_start"]
+        closed_legs_df = dfs["closed_legs"]
+        closed_equity_df = dfs["closed_equity"]
     except Exception as exc:
         return render_template(
             "symbols.html",
@@ -1489,9 +2059,8 @@ def symbols_detail():
         closed_legs_df = pd.DataFrame()
 
     # ------------------------------------------------------------------
-    # Restrict to user's accounts, then apply account filter
+    # Safety-belt: re-filter in Python (SQL already filtered by account)
     # ------------------------------------------------------------------
-    user_accounts = _user_account_list()
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
     pnl_df = _filter_df_by_accounts(pnl_df, user_accounts)
@@ -1536,7 +2105,7 @@ def symbols_detail():
 
     # Fetch pre-aggregated chart data from mart
     try:
-        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts)
         all_chart_df = client.query(
             CHART_DATA_ALL_QUERY.format(account_filter=acct_filter)
         ).to_dataframe()
@@ -1760,32 +2329,49 @@ def symbols_detail():
         # Closed legs within the current open session always show in the
         # Positions table so you can see the full story of the live position.
         for leg in closed_legs_list:
+            direction = str(leg.get("direction") or "")
+            prem_recv = float(leg.get("premium_received") or 0)
+            prem_paid = float(leg.get("premium_paid") or 0)
+            cost_close = float(leg.get("cost_to_close") or 0)
+            proceeds_close = float(leg.get("proceeds_from_close") or 0)
+            if direction == "Sold":
+                leg_cost = abs(cost_close)
+                leg_proceeds = abs(prem_recv)
+            else:
+                leg_cost = abs(prem_paid)
+                leg_proceeds = abs(proceeds_close)
+            opt_pnl = float(leg.get("total_pnl") or 0)
+            opt_return_pct = round(opt_pnl / leg_cost * 100, 2) if leg_cost else None
             combined_positions.append({
                 "status": "Closed",
                 "trade_symbol": leg.get("trade_symbol"),
                 "description": leg.get("strategy") or "",
-                "quantity": None,
+                "quantity": leg.get("quantity"),
                 "current_price": None,
-                "market_value": None,
-                "cost_basis": None,
-                "unrealized_pnl": leg.get("total_pnl"),
-                "unrealized_pnl_pct": None,
+                "market_value": round(leg_proceeds, 2) if leg_proceeds else None,
+                "cost_basis": round(leg_cost, 2) if leg_cost else None,
+                "unrealized_pnl": opt_pnl,
+                "unrealized_pnl_pct": opt_return_pct,
                 "open_date": leg.get("open_date") or "",
                 "close_date": leg.get("close_date") or "",
             })
 
         # Closed equity legs (shares sold / called away).
         for leg in closed_equity_list:
+            eq_proceeds = float(leg.get("sell_proceeds") or 0)
+            eq_cost = float(leg.get("cost_basis") or 0)
+            eq_pnl = float(leg.get("realized_pnl") or 0)
+            eq_return_pct = round(eq_pnl / eq_cost * 100, 2) if eq_cost else None
             combined_positions.append({
                 "status": "Closed",
                 "trade_symbol": leg.get("trade_symbol") or symbol,
                 "description": leg.get("description") or "Equity Sold",
                 "quantity": leg.get("quantity"),
                 "current_price": leg.get("sale_price_per_share"),
-                "market_value": None,
-                "cost_basis": leg.get("cost_basis"),
-                "unrealized_pnl": leg.get("realized_pnl"),
-                "unrealized_pnl_pct": None,
+                "market_value": round(eq_proceeds, 2) if eq_proceeds else None,
+                "cost_basis": round(eq_cost, 2) if eq_cost else None,
+                "unrealized_pnl": eq_pnl,
+                "unrealized_pnl_pct": eq_return_pct,
                 "open_date": leg.get("open_date") or "",
                 "close_date": leg.get("close_date") or "",
             })
@@ -1862,12 +2448,14 @@ ACCOUNT_BALANCES_QUERY = """
     SELECT account, row_type, market_value, cost_basis,
            unrealized_pnl, unrealized_pnl_pct, percent_of_account
     FROM `ccwj-dbt.analytics.stg_account_balances`
+    WHERE 1=1 {account_filter}
 """
 
 STRATEGY_CLASSIFICATION_QUERY = """
     SELECT account, symbol, strategy, status, open_date, close_date,
            total_pnl, num_trades
     FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE 1=1 {account_filter}
 """
 
 ACCOUNT_POSITIONS_SUMMARY_QUERY = """
@@ -1883,6 +2471,7 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
            SUM(total_dividend_income) AS dividend_income,
            SUM(total_return) AS total_return
     FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1 {account_filter}
     GROUP BY account, strategy
     ORDER BY account, strategy
 """
@@ -2014,13 +2603,22 @@ def _build_strategy_time_chart(strat_df):
 @login_required
 def accounts():
     client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    acct_filter = _account_sql_and(user_accounts)
 
     try:
-        balances_df = client.query(ACCOUNT_BALANCES_QUERY).to_dataframe()
-        trades_df = client.query(TRADES_QUERY).to_dataframe()
-        current_df = client.query(CURRENT_POSITIONS_QUERY).to_dataframe()
-        strat_class_df = client.query(STRATEGY_CLASSIFICATION_QUERY).to_dataframe()
-        strat_summary_df = client.query(ACCOUNT_POSITIONS_SUMMARY_QUERY).to_dataframe()
+        dfs = _bq_parallel(client, {
+            "balances": ACCOUNT_BALANCES_QUERY.format(account_filter=acct_filter),
+            "trades": TRADES_QUERY.format(account_filter=acct_filter),
+            "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
+            "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(account_filter=acct_filter),
+            "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(account_filter=acct_filter),
+        })
+        balances_df = dfs["balances"]
+        trades_df = dfs["trades"]
+        current_df = dfs["current"]
+        strat_class_df = dfs["strat_class"]
+        strat_summary_df = dfs["strat_summary"]
     except Exception as exc:
         return render_template(
             "accounts.html",
@@ -2063,9 +2661,8 @@ def accounts():
             strat_summary_df[col] = pd.to_numeric(strat_summary_df[col], errors="coerce").fillna(0)
 
     # ------------------------------------------------------------------
-    # Restrict to user's accounts, then apply account filter
+    # Safety-belt: re-filter in Python (SQL already filtered by account)
     # ------------------------------------------------------------------
-    user_accounts = _user_account_list()
     balances_df = _filter_df_by_accounts(balances_df, user_accounts)
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
@@ -2111,7 +2708,7 @@ def accounts():
     # Chart 1: Cumulative P&L over time (summary) — from mart_daily_pnl
     # ------------------------------------------------------------------
     try:
-        acct_filter_sql = _account_sql_and([selected_account] if selected_account else user_accounts) if (selected_account or user_accounts) else ""
+        acct_filter_sql = _account_sql_and([selected_account] if selected_account else user_accounts)
         chart_df = client.query(
             CHART_DATA_ALL_QUERY.format(account_filter=acct_filter_sql)
         ).to_dataframe()

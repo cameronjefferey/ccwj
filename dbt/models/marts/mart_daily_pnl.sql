@@ -116,7 +116,10 @@ filled as (
         equity_sell_proceeds,
         equity_sell_qty,
         other_amount,
-        close_price,
+        last_value(close_price ignore nulls) over (
+            partition by account, symbol order by date
+            rows between unbounded preceding and current row
+        ) as close_price,
         has_trade,
         last_value(option_market_value ignore nulls) over (
             partition by account, symbol order by date

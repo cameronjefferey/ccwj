@@ -6,16 +6,37 @@ from google.cloud import bigquery
 # Step 1: Initialize BigQuery client
 client = bigquery.Client()
 
-# Step 2: Query BigQuery to get current equity positions
+# Step 2: Query BigQuery to get all traded underlyings (equity AND option positions)
+# so we also have stock prices for symbols held only as options.
 query = """
     SELECT account, underlying_symbol AS symbol, MIN(trade_date) AS position_open_date
     FROM `ccwj-dbt.analytics.stg_history`
-    WHERE instrument_type = 'Equity'
-      AND action IN ('equity_buy', 'equity_sell')
+    WHERE underlying_symbol IS NOT NULL
     GROUP BY 1, 2
 """
 positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
+
+# Step 2b: Add benchmark tickers (SPY, QQQ) so weekly review can skip live yfinance
+BENCHMARK_TICKERS = ["SPY", "QQQ"]
+benchmark_start = date(date.today().year, 1, 1)
+benchmark_rows = []
+accounts_seen = set(positions_df["account"].unique()) if not positions_df.empty else set()
+benchmark_account = list(accounts_seen)[0] if accounts_seen else "_benchmark"
+for sym in BENCHMARK_TICKERS:
+    already_present = not positions_df.empty and (
+        (positions_df["symbol"] == sym) & (positions_df["account"] == benchmark_account)
+    ).any()
+    if not already_present:
+        benchmark_rows.append({
+            "account": benchmark_account,
+            "symbol": sym,
+            "position_open_date": benchmark_start,
+        })
+if benchmark_rows:
+    positions_df = pd.concat(
+        [positions_df, pd.DataFrame(benchmark_rows)], ignore_index=True
+    )
 
 # Step 3: Collect daily price & dividend data
 today = date.today()

@@ -142,7 +142,7 @@
 
                 {# Coach & reflection tools #}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if ep in ['insights', 'journal', 'mirror_score'] %}active{% endif %}"
+                    <a class="nav-link dropdown-toggle {% if ep in ['insights', 'mirror_score'] %}active{% endif %}"
                        href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Coach
                     </a>
@@ -154,10 +154,6 @@
                         <li>
                             <a class="dropdown-item {% if ep == 'mirror_score' %}active{% endif %}"
                                href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}">Mirror Score</a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if ep.startswith('journal') %}active{% endif %}"
-                               href="{{ url_for('journal', account=selected_account) if selected_account else url_for('journal') }}">Journal</a>
                         </li>
                     </ul>
                 </li>

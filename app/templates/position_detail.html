@@ -29,6 +29,31 @@
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
+    .leg-toggle { cursor: pointer; user-select: none; }
+    .leg-toggle:hover { opacity: .7; }
+    .leg-detail-row { display: none; }
+    .leg-detail-row.open { display: table-row; }
+    .leg-detail-cell { padding: 0 !important; }
+    .leg-detail-table { margin: 0; font-size: .72rem; background: #fafbfc; }
+    .leg-detail-table td { padding: .25rem .5rem; border: none; }
+    .leg-detail-table th { padding: .25rem .5rem; font-size: .65rem; text-transform: uppercase; letter-spacing: .3px; color: #6c757d; border: none; }
+    .session-pills { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .session-pill {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .4rem .85rem; border-radius: 20px; font-size: .78rem; font-weight: 600;
+        cursor: pointer; user-select: none; transition: all .15s;
+        border: 2px solid #dee2e6; background: #fff; color: #495057;
+    }
+    .session-pill:hover { border-color: #6c757d; }
+    .session-pill.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
+    .session-pill.active.session-open { border-color: #198754; background: #d1e7dd; color: #0f5132; }
+    .session-pill.active.session-closed { border-color: #6c757d; background: #e9ecef; color: #495057; }
+    .session-pill .pill-dot {
+        width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    }
+    .session-pill .pill-dot.open  { background: #198754; }
+    .session-pill .pill-dot.closed { background: #6c757d; }
+    .session-pill .pill-pnl { font-size: .7rem; opacity: .8; }
 </style>
 {% endblock %}
 
@@ -107,26 +132,6 @@
 </div>
 {% endif %}
 
-{# ── Reflection Prompt ── #}
-{% if kpis %}
-<div class="prompt-card mb-4" style="background:#f8f4ff; border-left:4px solid #6f42c1; border-radius:0 12px 12px 0; padding:1.25rem 1.5rem;">
-    {% if overall_status == 'Open' %}
-    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">What's your thesis on {{ symbol }}?</div>
-    <p class="small text-muted mb-2">Writing down why you entered helps you know when to exit.</p>
-    {% elif overall_status == 'Closed' and kpis.total_return < 0 %}
-    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">{{ symbol }} lost ${{ "{:,.2f}".format(kpis.total_return|abs) }}. What would you do differently?</div>
-    <p class="small text-muted mb-2">The loss already happened. The learning hasn't — unless you write it down.</p>
-    {% elif overall_status == 'Closed' %}
-    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">{{ symbol }} made ${{ "{:,.2f}".format(kpis.total_return) }}. Was it your process or luck?</div>
-    <p class="small text-muted mb-2">Winners feel good. Understanding <em>why</em> they won makes the next one more likely.</p>
-    {% else %}
-    <div style="font-size:1.05rem; font-weight:600; color:#6f42c1; margin-bottom:.25rem;">How do you feel about {{ symbol }}?</div>
-    <p class="small text-muted mb-2">Capture your thinking while it's fresh.</p>
-    {% endif %}
-    <a href="{{ url_for('journal_new', symbol=symbol, account=selected_account or (accounts[0] if accounts else ''), strategy=strategy_rows[0].strategy if strategy_rows else '') }}"
-       class="btn btn-sm btn-outline-primary">Journal This Trade</a>
-</div>
-{% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
@@ -177,6 +182,59 @@
         </div>
     </div>
 </div>
+
+{# ── Session / Leg Filter ── #}
+{% if sessions and sessions|length > 1 %}
+<div class="card stat-card p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0">Position Legs</h6>
+        {% if leg_param %}
+        <a href="{{ url_for('position_detail', symbol=symbol, account=selected_account) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
+        {% endif %}
+    </div>
+    <p class="text-muted small mb-2">Filter the entire page by leg. Click to toggle.</p>
+    <div class="session-pills" id="sessionPills">
+        {% for s in sessions %}
+        <div class="session-pill {{ 'active' if s.session_id in selected_legs }} {{ 'session-open' if s.status == 'Open' else 'session-closed' }}"
+             data-session-id="{{ s.session_id }}">
+            <span class="pill-dot {{ 'open' if s.status == 'Open' else 'closed' }}"></span>
+            <span>Leg {{ s.display_leg }}</span>
+            <span class="pill-pnl">
+                {{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}
+            </span>
+            <span class="pill-pnl {% if s.combined_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                ${{ "{:,.0f}".format(s.combined_pnl) }}
+            </span>
+            {% if s.options_only is defined and s.options_only %}
+            <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(options only)</span>
+            {% elif s.options_count > 0 and s.equity_pnl != 0 %}
+            <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq ${{ "{:,.0f}".format(s.equity_pnl) }} + {{ s.options_count }} opt)</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<script>
+(function() {
+    const pills = document.querySelectorAll('.session-pill');
+    pills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            pill.classList.toggle('active');
+            const active = document.querySelectorAll('.session-pill.active');
+            const ids = Array.from(active).map(p => p.dataset.sessionId);
+            const allIds = Array.from(pills).map(p => p.dataset.sessionId);
+            const url = new URL(window.location);
+            if (ids.length === 0 || ids.length === allIds.length) {
+                url.searchParams.delete('leg');
+            } else {
+                url.searchParams.set('leg', ids.join(','));
+            }
+            window.location = url.toString();
+        });
+    });
+})();
+</script>
+{% endif %}
 
 {# ── Cumulative P&L Chart ── #}
 <div class="chart-wrapper mb-4">
@@ -259,100 +317,277 @@
 </div>
 {% endif %}
 
-{# ── Current Positions ── #}
-{% if current_positions %}
+{# ── Strategy Heatmap Matrix ── #}
+{% if option_matrices %}
 <div class="card stat-card p-4 mb-4">
-    <h6 class="fw-bold mb-3">Current Positions</h6>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
+    <h6 class="fw-bold mb-3">Win/Loss Matrix — DTE vs Strike Distance</h6>
+    <p class="text-muted small mb-3" style="font-size:.75rem;">
+        Each cell shows <strong>avg P&amp;L</strong>, trade count, and win rate.
+        Color = win rate (red = mostly losers, green = mostly winners).
+    </p>
+    {% for mat in option_matrices %}
+    <div class="{% if not loop.first %}mt-4{% endif %}">
+        <h6 class="fw-semibold mb-1" style="font-size:.85rem;">
+            {{ mat.strategy }}
+            <span class="text-muted fw-normal" style="font-size:.75rem;">({{ mat.trade_count }} trades)</span>
+        </h6>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0" style="font-size:.72rem;">
+                <thead>
+                    <tr>
+                        <th class="bg-light" style="min-width:60px;">DTE</th>
+                        {% for col in mat.col_headers %}
+                        <th class="text-center bg-light" style="min-width:72px;">{{ "%+d"|format(col) if col != 0 else "ATM" }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in mat.rows %}
+                    <tr>
+                        <td class="fw-semibold bg-light text-nowrap">{{ row.dte_label }}</td>
+                        {% for cell in row.cells %}
+                        {% if cell.count == 0 %}
+                        <td class="text-center" style="background:#f8f9fa;color:#ccc;">&mdash;</td>
+                        {% else %}
+                        {% set wr = cell.win_rate %}
+                        {% if wr >= 75 %}
+                            {% set bg = "#1b7a3d" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
+                        {% elif wr >= 50 %}
+                            {% set bg = "#5cb85c" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
+                        {% elif wr >= 25 %}
+                            {% set bg = "#e8a838" %}{% set fg = "#333" %}{% set fg2 = "rgba(0,0,0,.5)" %}
+                        {% else %}
+                            {% set bg = "#c9302c" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
+                        {% endif %}
+                        <td class="text-center" style="background:{{ bg }};color:{{ fg }};padding:.4rem .3rem;line-height:1.3;">
+                            <div style="font-weight:700;font-size:.8rem;">
+                                {% if cell.avg_pnl is not none %}${{ "{:,.0f}".format(cell.avg_pnl) }}{% else %}&mdash;{% endif %}
+                            </div>
+                            <div style="font-size:.6rem;color:{{ fg2 }};">
+                                {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
+                            </div>
+                        </td>
+                        {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+    <div class="d-flex gap-3 mt-2" style="font-size:.65rem;">
+        <span><span style="display:inline-block;width:12px;height:12px;background:#c9302c;border-radius:2px;vertical-align:middle;"></span> 0–24% wins</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:#e8a838;border-radius:2px;vertical-align:middle;"></span> 25–49%</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:#5cb85c;border-radius:2px;vertical-align:middle;"></span> 50–74%</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:#1b7a3d;border-radius:2px;vertical-align:middle;"></span> 75–100%</span>
+    </div>
+</div>
+{% endif %}
+
+{# ── All Legs (Open + Closed) ── #}
+{% if current_positions or trade_outcomes %}
+<div class="card stat-card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0">
+            Position Legs
+            <span class="text-muted fw-normal" style="font-size:.75rem;">
+                {% if current_positions %}{{ current_positions|length }} open{% endif %}{% if current_positions and trade_outcomes %}, {% endif %}{% if trade_outcomes %}{{ trade_outcomes|length }} closed{% endif %}
+                {% if trade_outcomes %}
+                {% set winners = trade_outcomes | selectattr('is_winner') | list | length %}
+                &middot; {{ winners }}/{{ trade_outcomes|length }} winners ({{ (winners / trade_outcomes|length * 100) | round(0) | int }}%)
+                {% endif %}
+            </span>
+        </h6>
+    </div>
+    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.8rem;">
+            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                 <tr>
-                    <th>Account</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Market Value</th>
-                    <th>Cost Basis</th>
-                    <th>Unrealized P&amp;L</th>
-                    <th>%</th>
+                    <th></th>
+                    <th class="text-center" style="width:3rem;">Leg</th>
+                    <th>Contract / Leg</th>
+                    <th>Strategy</th>
+                    <th class="text-end">Qty</th>
+                    <th>Opened</th>
+                    <th>Closed</th>
+                    <th class="text-end">Days</th>
+                    <th class="text-end">Cost</th>
+                    <th class="text-end">Value / Proceeds</th>
+                    <th class="text-end">P&amp;L</th>
+                    <th class="text-end">Return</th>
                 </tr>
             </thead>
             <tbody>
+                {# ── Open legs ── #}
+                {% if current_positions %}
                 {% for p in current_positions %}
-                <tr>
-                    <td>{{ p.account }}</td>
-                    <td>{{ p.instrument_type }}</td>
-                    <td class="small">{{ p.description }}</td>
-                    <td>{{ "{:,.0f}".format(p.quantity) }}</td>
-                    <td>${{ "{:,.2f}".format(p.current_price) }}</td>
-                    <td>${{ "{:,.2f}".format(p.market_value) }}</td>
-                    <td>${{ "{:,.2f}".format(p.cost_basis) }}</td>
-                    <td class="{{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold">
+                <tr style="background:rgba(25,135,84,.04);">
+                    <td><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
+                    <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
+                    <td class="fw-semibold small">{{ p.trade_symbol if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
+                    <td class="text-muted small">{{ p.instrument_type }}</td>
+                    <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
+                    <td class="text-nowrap"></td>
+                    <td class="text-nowrap"></td>
+                    <td class="text-end text-muted"></td>
+                    <td class="text-end">${{ "{:,.2f}".format(p.cost_basis) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(p.market_value) }}</td>
+                    <td class="text-end fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(p.unrealized_pnl) }}
                     </td>
-                    <td class="{{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                    <td class="text-end {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
                         {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
                     </td>
                 </tr>
                 {% endfor %}
+                {% endif %}
+
+                {# ── Separator ── #}
+                {% if current_positions and trade_outcomes %}
+                <tr>
+                    <td colspan="12" class="text-center text-muted py-1" style="font-size:.65rem; background:#f0f0f0; letter-spacing:.5px;">
+                        CLOSED TRADES
+                    </td>
+                </tr>
+                {% endif %}
+
+                {# ── Closed legs (expandable) ── #}
+                {% if trade_outcomes %}
+                {% for o in trade_outcomes %}
+                <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
+                    <td>
+                        {% if o.is_winner %}
+                        <span class="leg-arrow" style="color:#1b7a3d;font-size:.7rem;">&#9654;</span>
+                        {% else %}
+                        <span class="leg-arrow" style="color:#c9302c;font-size:.7rem;">&#9654;</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center text-muted small">{{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}</td>
+                    <td class="fw-semibold small">
+                        {{ o.trade_symbol }}
+                        {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
+                        <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ o.strategy }}</td>
+                    <td class="text-end">{{ o.quantity | int if o.quantity is defined and o.quantity else '' }}</td>
+                    <td class="text-nowrap">{{ o.open_date }}</td>
+                    <td class="text-nowrap">{{ o.close_date }}</td>
+                    <td class="text-end text-muted">{{ o.days_held if o.days_held is not none else '' }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(o.cost) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(o.proceeds) }}</td>
+                    <td class="text-end fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(o.pnl) }}
+                    </td>
+                    <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
+                        {% if o.return_pct is not none %}{{ o.return_pct }}%{% endif %}
+                    </td>
+                </tr>
+                {% if o.raw_trades %}
+                <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
+                    <td colspan="12" class="leg-detail-cell">
+                        <table class="table leg-detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Qty</th>
+                                    <th class="text-end">Price</th>
+                                    <th class="text-end">Fees</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in o.raw_trades %}
+                                <tr>
+                                    <td class="text-nowrap">{{ t.trade_date }}</td>
+                                    <td>
+                                        <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.6rem;">{{ t.action }}</span>
+                                    </td>
+                                    <td>{{ "{:,.0f}".format(t.quantity) if t.quantity else '' }}</td>
+                                    <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
+                                    <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
+                                    <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
+                                        ${{ "{:,.2f}".format(t.amount) }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
             </tbody>
+            {% if trade_outcomes %}
+            <tfoot class="table-light">
+                <tr class="fw-semibold" style="font-size:.8rem;">
+                    <td colspan="8">Closed Total</td>
+                    <td class="text-end">${{ "{:,.2f}".format(trade_outcomes | map(attribute='cost') | sum) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(trade_outcomes | map(attribute='proceeds') | sum) }}</td>
+                    {% set total_pnl = trade_outcomes | map(attribute='pnl') | sum %}
+                    <td class="text-end {{ 'text-positive' if total_pnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(total_pnl) }}
+                    </td>
+                    <td></td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
     </div>
 </div>
 {% endif %}
 
-{# ── Trade History ── #}
+{# ── Raw Trade History (collapsed) ── #}
 {% if trades %}
 <div class="card stat-card p-4 mb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="fw-bold mb-0">Trade History ({{ trades|length }})</h6>
-        <input type="text" id="tradeSearch" class="form-control form-control-sm"
-               style="max-width:240px" placeholder="Search trades...">
-    </div>
-    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-        <table class="table table-sm table-hover align-middle mb-0" id="tradeTable">
-            <thead class="table-light" style="position: sticky; top: 0;">
-                <tr>
-                    <th>Date</th>
-                    <th>Account</th>
-                    <th>Action</th>
-                    <th>Instrument</th>
-                    <th>Description</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Fees</th>
-                    <th>Amount</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for t in trades %}
-                <tr>
-                    <td class="text-nowrap">{{ t.trade_date }}</td>
-                    <td>{{ t.account }}</td>
-                    <td>
-                        <span class="badge bg-secondary" style="font-size:.7rem">{{ t.action }}</span>
-                    </td>
-                    <td>{{ t.instrument_type }}</td>
-                    <td class="small">{{ t.description }}</td>
-                    <td>{{ "{:,.0f}".format(t.quantity) }}</td>
-                    <td>${{ "{:,.2f}".format(t.price) }}</td>
-                    <td>${{ "{:,.2f}".format(t.fees) }}</td>
-                    <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
-                        ${{ "{:,.2f}".format(t.amount) }}
-                    </td>
-                    <td class="text-end">
-                        <a href="{{ url_for('journal_new', account=t.account, symbol=symbol, strategy=(strategy_rows[0].strategy if strategy_rows else ''), trade_open_date=kpis.first_trade or '', trade_close_date=(kpis.last_trade if overall_status == 'Closed' else '') or '', trade_symbol=(t.trade_symbol if t.instrument_type in ('Call', 'Put') else '') or '') }}"
-                           class="btn btn-sm btn-outline-secondary py-0 px-1" title="Journal this trade">
-                            Journal
-                        </a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <details>
+        <summary class="fw-bold" style="cursor:pointer; font-size:.9rem;">
+            Raw Transaction Log ({{ trades|length }} entries)
+        </summary>
+        <div class="mt-2">
+            <input type="text" id="tradeSearch" class="form-control form-control-sm mb-2"
+                   style="max-width:240px" placeholder="Search trades...">
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm table-hover align-middle mb-0" style="font-size:.75rem;" id="tradeTable">
+                    <thead class="table-light" style="position: sticky; top: 0;">
+                        <tr>
+                            <th>Date</th>
+                            <th>Account</th>
+                            <th>Action</th>
+                            <th>Instrument</th>
+                            <th>Description</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Fees</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in trades %}
+                        <tr>
+                            <td class="text-nowrap">{{ t.trade_date }}</td>
+                            <td>{{ t.account }}</td>
+                            <td>
+                                <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem">{{ t.action }}</span>
+                            </td>
+                            <td>{{ t.instrument_type }}</td>
+                            <td class="small">{{ t.description }}</td>
+                            <td>{{ "{:,.0f}".format(t.quantity) }}</td>
+                            <td>${{ "{:,.2f}".format(t.price) }}</td>
+                            <td>${{ "{:,.2f}".format(t.fees) }}</td>
+                            <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
+                                ${{ "{:,.2f}".format(t.amount) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
 </div>
 {% endif %}
 
@@ -501,6 +736,23 @@
             });
         });
     }
+
+    // Leg drill-down toggle
+    document.querySelectorAll('.leg-toggle').forEach(function (row) {
+        row.addEventListener('click', function () {
+            var targetId = this.getAttribute('data-target');
+            var detail = document.getElementById(targetId);
+            if (!detail) return;
+            var arrow = this.querySelector('.leg-arrow');
+            if (detail.classList.contains('open')) {
+                detail.classList.remove('open');
+                if (arrow) arrow.innerHTML = '&#9654;';
+            } else {
+                detail.classList.add('open');
+                if (arrow) arrow.innerHTML = '&#9660;';
+            }
+        });
+    });
 })();
 </script>
 {% endblock %}

@@ -10,6 +10,58 @@
         margin-bottom: 2rem;
     }
     .insights-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+
+    .coaching-section {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 8px rgba(0,0,0,.05);
+        padding: 1.75rem;
+        margin-bottom: 1.25rem;
+    }
+    .section-label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: 1.1px;
+        color: #9ca3af;
+        font-weight: 600;
+        margin-bottom: 1.1rem;
+    }
+
+    /* Signal cards */
+    .signal-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+    .signal-card {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+    }
+    .signal-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-bottom: .3rem; }
+    .signal-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+    .signal-meta { font-size: .75rem; color: #6c757d; margin-top: .2rem; }
+
+    /* Strategy rows */
+    .strat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .65rem 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: .5rem;
+    }
+    .strat-row .strat-name { font-weight: 600; font-size: .9rem; }
+    .strat-row .strat-stats { font-size: .82rem; color: #6c757d; }
+    .strat-giveback { font-weight: 700; font-size: .9rem; }
+
+    /* Exit table */
+    .exit-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
+    .exit-table td { font-size: .85rem; }
+
+    /* AI content */
     .insights-content {
         border: none;
         border-radius: 12px;
@@ -29,25 +81,31 @@
     .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
     .insights-content strong { color: #1a1a2e; }
     .insights-meta { font-size: .78rem; color: #6c757d; }
+
     .generate-card {
         border: 2px dashed #ced4da;
         border-radius: 12px;
-        padding: 3rem 2rem;
+        padding: 2.5rem 2rem;
         text-align: center;
     }
     .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
     .generate-card p { color: #6c757d; margin-bottom: 1.5rem; }
+
+    .roll-stat { text-align: center; padding: .5rem; }
+    .roll-stat-val { font-size: 1.3rem; font-weight: 700; }
+    .roll-stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .15rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-lg-9">
         <div class="insights-hero">
-            <h1>What the AI Sees</h1>
+            <h1>AI Coach</h1>
             <p class="mb-0 opacity-90">
-                Think of this as a second pair of eyes on your process — not your P&L.
-                The AI reviews your portfolio data and reflects back patterns you might not notice yourself.
+                Your trading behavior analyzed through data no other tool tracks —
+                daily option mark-to-market, exit timing, and roll patterns.
+                The numbers below are computed directly from your data. The AI narrates what they mean.
             </p>
         </div>
 
@@ -69,53 +127,202 @@
         </form>
         {% endif %}
 
+
+        {# ════════════════════════════════════
+           DETERMINISTIC COACHING DATA
+           ════════════════════════════════════ #}
+
+        {% if coaching and coaching.has_data %}
+
+        {# ── Exit Timing Profile ── #}
+        {% if coaching.signals %}
+        <div class="coaching-section">
+            <div class="section-label">Exit Timing Profile</div>
+            <p class="mb-3" style="font-size:.9rem; color:#475569; line-height:1.5">
+                How much profit you leave on the table by holding past the optimal exit point.
+                Computed from daily option mark-to-market snapshots.
+            </p>
+
+            {% set total_given_back = coaching.signals|map(attribute='pnl_given_back')|sum %}
+            {% set avg_giveback = coaching.signals|map(attribute='giveback_pct')|sum / coaching.signals|length %}
+            {% set avg_days = coaching.signals|map(attribute='days_past_peak')|sum / coaching.signals|length %}
+
+            <div class="signal-grid">
+                <div class="signal-card">
+                    <div class="signal-label">Total Left on Table</div>
+                    <div class="signal-value text-warning">${{ "{:,.0f}".format(total_given_back) }}</div>
+                    <div class="signal-meta">across all strategies</div>
+                </div>
+                <div class="signal-card">
+                    <div class="signal-label">Avg Giveback</div>
+                    <div class="signal-value">{{ "{:.0f}".format(avg_giveback) }}%</div>
+                    <div class="signal-meta">of peak profit surrendered</div>
+                </div>
+                <div class="signal-card">
+                    <div class="signal-label">Avg Days Past Peak</div>
+                    <div class="signal-value">{{ "{:.0f}".format(avg_days) }}</div>
+                    <div class="signal-meta">held after optimal exit</div>
+                </div>
+                <div class="signal-card">
+                    <div class="signal-label">Data Coverage</div>
+                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#6c757d"> / {{ coaching.total_closed }}</span></div>
+                    <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts have reliable data</div>
+                </div>
+            </div>
+
+            <div class="section-label mt-3" style="margin-bottom:.75rem">By Strategy</div>
+            {% for s in coaching.signals %}
+            <div class="strat-row">
+                <div>
+                    <div class="strat-name">{{ s.strategy }}</div>
+                    <div class="strat-stats">
+                        {{ s.trades }} of {{ s.total_closed }} trades with data &middot;
+                        {{ "{:.0f}".format(s.days_past_peak) }}d past peak
+                        {% if s.pct_premium_captured > 0 %}&middot; {{ "{:.0f}".format(s.pct_premium_captured) }}% premium captured{% endif %}
+                    </div>
+                </div>
+                <div class="text-end">
+                    <div class="strat-giveback text-warning">${{ "{:,.0f}".format(s.pnl_given_back) }}</div>
+                    <div class="strat-stats">{{ "{:.0f}".format(s.giveback_pct) }}% giveback</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# ── Recent Exits ── #}
+        {% if coaching.recent_exits %}
+        <div class="coaching-section">
+            <div class="section-label">Recent Exit Examples (Last 90 Days)</div>
+            <p class="mb-3" style="font-size:.9rem; color:#475569">
+                Specific trades where you held past the peak — the gap between what you made and what you could have made.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 exit-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Strategy</th>
+                            <th>Closed</th>
+                            <th class="text-end">Actual</th>
+                            <th class="text-end">Peak</th>
+                            <th class="text-end">Given Back</th>
+                            <th class="text-center">Days Late</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in coaching.recent_exits %}
+                        {% if e.given_back > 10 %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
+                            </td>
+                            <td class="text-muted">{{ e.strategy }}</td>
+                            <td class="small">{{ e.close_date }}</td>
+                            <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                                {{ "+" if e.actual_pnl >= 0 else "" }}${{ "{:,.0f}".format(e.actual_pnl) }}
+                            </td>
+                            <td class="text-end text-positive">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
+                            <td class="text-end text-warning fw-semibold">${{ "{:,.0f}".format(e.given_back) }}</td>
+                            <td class="text-center">{{ e.days_past_peak }}d</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Roll Behavior ── #}
+        {% if coaching.rolls and coaching.rolls|length >= 2 %}
+        <div class="coaching-section">
+            <div class="section-label">Roll Behavior</div>
+            <p class="mb-3" style="font-size:.9rem; color:#475569">
+                Detected rolls: when you closed one option and opened another on the same underlying within 3 days.
+            </p>
+            <div class="d-flex gap-4 flex-wrap mb-3">
+                <div class="roll-stat">
+                    <div class="roll-stat-val">{{ coaching.rolls|length }}</div>
+                    <div class="roll-stat-label">Rolls Detected</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 exit-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Date</th>
+                            <th class="text-end">Old Strike</th>
+                            <th class="text-end">New Strike</th>
+                            <th class="text-center">DTE at Roll</th>
+                            <th class="text-center">Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in coaching.rolls %}
+                        <tr>
+                            <td class="fw-semibold">{{ r.symbol }}</td>
+                            <td class="text-muted">{{ r.type }}</td>
+                            <td class="small">{{ r.date }}</td>
+                            <td class="text-end">${{ "{:,.0f}".format(r.old_strike) }}</td>
+                            <td class="text-end">${{ "{:,.0f}".format(r.new_strike) }}</td>
+                            <td class="text-center">{{ r.dte_at_roll }}d</td>
+                            <td class="text-center">
+                                {% if r.outcome == 'Winner' %}
+                                <span class="badge bg-success bg-opacity-10 text-success">Win</span>
+                                {% elif r.outcome == 'Loser' %}
+                                <span class="badge bg-danger bg-opacity-10 text-danger">Loss</span>
+                                {% else %}
+                                <span class="badge bg-secondary bg-opacity-10 text-secondary">Open</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% endif %}{# end coaching.has_data #}
+
+
+        {# ════════════════════════════════════
+           AI ANALYSIS
+           ════════════════════════════════════ #}
+
         {% if insight %}
-        {# ── Prompt card: reflection nudge ── #}
-        <div class="prompt-card mb-4">
-            <div class="prompt-q">Before you read, ask yourself:</div>
-            <p class="mb-0" style="color: #495057;">
-                What do you <em>think</em> the AI will call out? Write it down (even mentally).
-                Then compare. The gap between your self-assessment and the AI's view is where the insight lives.
-            </p>
+        <div class="coaching-section" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0;">
+            <div class="section-label">AI Analysis</div>
+            <div class="insights-content" style="box-shadow:none; padding:0; background:transparent;">
+                {{ insight.full_analysis_html }}
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <span class="insights-meta">Generated {{ insight.generated_at }}</span>
+                {% if gemini_available %}
+                <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
+                    <button type="submit" class="btn btn-outline-primary btn-sm" id="regenBtn">
+                        Regenerate
+                    </button>
+                </form>
+                {% endif %}
+            </div>
         </div>
 
-        {# ── Cached analysis ── #}
-        <div class="card insights-content mb-3">
-            {{ insight.full_analysis_html }}
-        </div>
-
-        {# ── Post-read reflection ── #}
-        <div class="prompt-card mb-4">
-            <div class="prompt-q">Now that you've read it:</div>
-            <p class="mb-2" style="color: #495057;">
-                Did anything surprise you? If not, you already know — so what's stopping you from acting on it?
-            </p>
-            <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">
-                Journal your reaction
-            </a>
-        </div>
-
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <span class="insights-meta">
-                Generated {{ insight.generated_at }}
-            </span>
-            {% if gemini_available %}
-            <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
-                <button type="submit" class="btn btn-outline-primary btn-sm" id="regenBtn">
-                    Regenerate Analysis
-                </button>
-            </form>
-            {% endif %}
-        </div>
-
-        {# ── Ask the Coach: interactive Q&A ── #}
+        {# ── Ask the Coach ── #}
         {% if gemini_available %}
-        <div class="card p-3 mb-4">
-            <h6 class="mb-2 text-muted text-uppercase" style="letter-spacing:.6px;">Ask the Coach</h6>
-            <div id="coachThread" class="mb-3" style="max-height:260px; overflow-y:auto; font-size:.9rem;"></div>
+        <div class="coaching-section">
+            <div class="section-label">Ask the Coach</div>
+            <p class="small text-muted mb-3">
+                Ask about your exit timing, roll patterns, DTE preferences, or any behavioral pattern.
+                Grounded in your actual trading data.
+            </p>
+            <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;"></div>
             <form id="coachForm" class="d-flex gap-2">
                 <input type="text" id="coachInput" class="form-control form-control-sm"
-                       placeholder="Ask a question about your trading (e.g. 'Which strategies hurt me most last week?')" required>
+                       placeholder="e.g. 'Should I be rolling my covered calls earlier?'" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
             </form>
             <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
@@ -123,34 +330,39 @@
         {% endif %}
 
         {% elif gemini_available %}
-        {# ── No cached analysis, but API key is set ── #}
         <div class="generate-card">
-            <h5>Get a Second Opinion on Your Trading</h5>
-            <div class="narrative mx-auto mb-4" style="max-width: 480px;">
+            <h5>Get Your Behavioral Coaching Report</h5>
+            <div class="mx-auto mb-4" style="max-width: 480px;">
                 <p>
-                    The AI will review your trades — strategies used, win rates, position sizing,
-                    holding periods — and tell you what it sees. No sugarcoating.
+                    The AI will analyze your exit timing, roll patterns, and DTE preferences —
+                    behavioral signals that no other retail tool can see.
                 </p>
+                {% if coaching and coaching.has_data %}
                 <p class="small text-muted">
-                    Your data stays between you and the AI. Nothing is stored externally.
+                    The data above is already computed. Generating will add AI narration on top.
                 </p>
+                {% endif %}
             </div>
             <form method="POST" action="{{ url_for('generate_insights') }}">
                 <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
-                    Generate My Analysis
+                    Generate Coaching Report
                 </button>
             </form>
         </div>
 
         {% else %}
-        {# ── No API key ── #}
         <div class="generate-card">
-            <h5>AI Insights Not Configured</h5>
+            <h5>AI Coach Not Configured</h5>
             <p>
-                To enable AI-powered trading analysis, add a Gemini API key to your environment.<br>
+                To enable AI-powered coaching, add a Gemini API key to your environment.<br>
                 Get a free key at <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a>,
                 then add <code>GEMINI_API_KEY=your_key</code> to your <code>.env</code> file.
             </p>
+            {% if coaching and coaching.has_data %}
+            <p class="small text-muted">
+                The deterministic coaching data above works without an API key.
+            </p>
+            {% endif %}
         </div>
         {% endif %}
     </div>
@@ -163,7 +375,7 @@
         if (!btn) return;
         btn.closest('form').addEventListener('submit', () => {
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your portfolio...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your behavior...';
         });
     });
 
@@ -181,19 +393,12 @@
 
             coachError.style.display = 'none';
 
-            // Append user question (plain text to avoid needing an HTML sanitizer)
             const userBlock = document.createElement('div');
             userBlock.className = 'mb-2';
-            const userLabel = document.createElement('div');
-            userLabel.className = 'small text-muted';
-            userLabel.textContent = 'You';
-            const userText = document.createElement('div');
-            userText.textContent = q;
-            userBlock.appendChild(userLabel);
-            userBlock.appendChild(userText);
+            userBlock.innerHTML = '<div class="small text-muted">You</div><div>' +
+                q.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>';
             coachThread.appendChild(userBlock);
             coachThread.scrollTop = coachThread.scrollHeight;
-
             coachInput.value = '';
 
             const loading = document.createElement('div');
@@ -215,7 +420,7 @@
                 loading.remove();
 
                 if (!resp.ok || data.error) {
-                    coachError.textContent = data.error || 'Something went wrong. Please try again.';
+                    coachError.textContent = data.error || 'Something went wrong.';
                     coachError.style.display = 'block';
                     return;
                 }

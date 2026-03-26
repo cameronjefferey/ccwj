@@ -291,7 +291,7 @@ def _pick_key_insight(p):
                 f"This is a valid approach — but it requires patience and confidence in "
                 f"your thesis during losing streaks."
             ),
-            "action": "Journal your biggest winners. What did they have in common?",
+            "action": "Review your biggest winners. What did they have in common?",
         })
 
     # Only one strategy
@@ -318,7 +318,7 @@ def _pick_key_insight(p):
                 f"{p.get('num_symbols', 0)} symbols. The data is here. "
                 f"The question is: what patterns are hiding in it?"
             ),
-            "action": "Start a journal entry for your most recent trade. Just write the thesis — one sentence is enough.",
+            "action": "Check your Weekly Review for patterns in your most recent trades.",
         })
 
     return max(insights, key=lambda i: i["priority"])

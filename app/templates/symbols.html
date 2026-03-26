@@ -327,10 +327,10 @@
                                 <th>Close Date</th>
                                 <th>Qty</th>
                                 <th>Price</th>
-                                <th>Mkt Value</th>
+                                <th>Value / Proceeds</th>
                                 <th>Cost Basis</th>
                                 <th>P&amp;L</th>
-                                <th>Unrealized %</th>
+                                <th>Return %</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -386,56 +386,13 @@
                 </div>
                 {% endif %}
 
-                {# ── Trade History ────────────────────────────────────── #}
-                {% if not positions_only|default(false) %}
-                <h6 class="fw-bold mt-3 mb-2">Trade History ({{ sym.trades | length }})</h6>
-                <div class="trade-table-wrap">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date</th>
-                                <th>Action</th>
-                                <th>Symbol</th>
-                                <th>Type</th>
-                                <th class="text-end">Qty</th>
-                                <th class="text-end">Price</th>
-                                <th class="text-end">Fees</th>
-                                <th class="text-end">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for t in sym.trades %}
-                            <tr>
-                                <td>{{ t.trade_date }}</td>
-                                <td>
-                                    <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.7rem;">
-                                        {{ t.action_raw }}
-                                    </span>
-                                </td>
-                                <td class="small">{{ t.trade_symbol }}</td>
-                                <td>
-                                    {% if t.instrument_type == 'Equity' %}
-                                    <span class="badge bg-primary bg-opacity-25 text-primary" style="font-size:.65rem;">Equity</span>
-                                    {% elif t.instrument_type in ('Call', 'Put') %}
-                                    <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem;">{{ t.instrument_type }}</span>
-                                    {% elif t.instrument_type == 'Dividend' %}
-                                    <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Dividend</span>
-                                    {% else %}
-                                    <span class="badge bg-secondary bg-opacity-25 text-secondary" style="font-size:.65rem;">{{ t.instrument_type }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">{{ t.quantity if t.quantity else '' }}</td>
-                                <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
-                                <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
-                                <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
-                                    ${{ "{:,.2f}".format(t.amount) }}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                {# ── Link to Full Position Detail ──────────────────── #}
+                <div class="text-center mt-3 mb-1">
+                    <a href="/position/{{ sym.symbol }}{% if selected_account %}?account={{ selected_account }}{% endif %}"
+                       class="btn btn-sm btn-outline-primary">
+                        View full position detail &rarr;
+                    </a>
                 </div>
-                {% endif %}
 
             </div>{# end accordion-body #}
         </div>{# end collapse #}

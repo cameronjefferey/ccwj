@@ -174,8 +174,8 @@
             <p class="action-desc">A personalized coaching analysis that finds patterns you might not see.</p>
         </div>
         <div class="action-card">
-            <div class="action-title">Trading Journal</div>
-            <p class="action-desc">Document your thesis before each trade. Review it after. Learn from the gap.</p>
+            <div class="action-title">Weekly Review</div>
+            <p class="action-desc">A daily ritual that compares your week to your own baseline behavior.</p>
         </div>
     </div>
 </div>
@@ -299,10 +299,6 @@
             <div class="action-title">3. AI Analysis</div>
             <p class="action-desc">Get a personalized coaching analysis of your trading style.</p>
         </a>
-        <a href="{{ url_for('journal_new') }}" class="action-card">
-            <div class="action-title">4. Journal Your Next Trade</div>
-            <p class="action-desc">Write the thesis before you trade. Review it after.</p>
-        </a>
     </div>
 </div>
 {% endif %}
@@ -354,42 +350,6 @@
         <a href="{{ url_for('positions') }}">position history</a> in the meantime.
         {% endif %}
     </p>
-    {% endif %}
-</div>
-
-{# ══════════════════════════════════════════════════════
-   JOURNAL NUDGE — prompted, not passive
-   ══════════════════════════════════════════════════════ #}
-<div class="story-section mb-4">
-    <h3>Your Journal</h3>
-    {% if journal_stats.total_entries > 0 %}
-    <p class="narrative mb-2">
-        You have <strong>{{ journal_stats.total_entries }} journal entries</strong>.
-        {% if journal_stats.last_entry_at %}
-        Your last one was on {{ journal_stats.last_entry_at[:10] }}.
-        {% endif %}
-    </p>
-    {% if unjournaled_positions and unjournaled_positions|length > 0 %}
-    <div class="prompt-card mb-3">
-        <div class="prompt-q">You have {{ unjournaled_positions|length }} open position{{ 's' if unjournaled_positions|length != 1 }} without a journal entry.</div>
-        <p class="mb-2 small text-muted">
-            The biggest is <strong>{{ unjournaled_positions[0].symbol }}</strong>
-            (${{ "{:,.0f}".format(unjournaled_positions[0].exposure) }} exposure).
-            What was your thesis going in?
-        </p>
-        <a href="{{ url_for('journal_new', symbol=unjournaled_positions[0].symbol, account=unjournaled_positions[0].account) }}"
-           class="btn btn-sm btn-outline-primary">Write about {{ unjournaled_positions[0].symbol }}</a>
-    </div>
-    {% endif %}
-    {% else %}
-    <div class="prompt-card mb-3">
-        <div class="prompt-q">Start your journal.</div>
-        <p class="mb-2 small text-muted">
-            Journaling is optional — but traders who reflect on their decisions make better ones.
-            Start with your most recent trade: what was the thesis? How do you feel about it?
-        </p>
-        <a href="{{ url_for('journal_new') }}" class="btn btn-sm btn-outline-primary">Write Your First Entry</a>
-    </div>
     {% endif %}
 </div>
 

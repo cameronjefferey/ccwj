@@ -61,37 +61,6 @@
     </p>
 </div>
 
-<div class="daily-card">
-    <h5 class="fw-bold mb-2">Log How Today Felt</h5>
-    <p class="processing-sub mb-3">
-        While your data is processing, capture a quick reflection on how today felt.
-        This creates a lightweight journal entry ("Daily Reflection") you can revisit later.
-    </p>
-    <form method="POST" action="{{ url_for('journal_daily_quick') }}" class="text-start">
-        <div class="row g-3 align-items-center mb-3">
-            <div class="col-auto">
-                <label for="dailyMood" class="col-form-label small fw-semibold">Mood</label>
-            </div>
-            <div class="col-md-4">
-                <select id="dailyMood" name="mood" class="form-select form-select-sm">
-                    <option value="">(Optional)</option>
-                    {% for m in mood_options or [] %}
-                    <option value="{{ m }}">{{ m|capitalize }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-        <div class="mb-3">
-            <label for="dailyNotes" class="form-label small fw-semibold">How did today feel?</label>
-            <textarea id="dailyNotes" name="notes" rows="3" class="form-control"
-                      placeholder="A few sentences about your energy, discipline, or anything notable from today."></textarea>
-        </div>
-        <button type="submit" class="btn btn-sm btn-primary">
-            Save Daily Reflection
-        </button>
-        <span class="processing-sub small ms-2">You can see this later in your Trade Journal.</span>
-    </form>
-</div>
 {% endblock %}
 
 {% block scripts %}
