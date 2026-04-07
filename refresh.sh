@@ -25,9 +25,9 @@ if [[ "${1:-}" != "--prices" ]]; then
   cd "$SCRIPT_DIR"
   git pull
 
-  echo "==> Step 2: dbt build (trade history + current positions downstream)"
+  echo "==> Step 2: dbt build (seeds + trade history + current positions downstream)"
   cd "$DBT_DIR"
-  dbt build --select "stg_history+ stg_current+ stg_account_balances"
+  dbt build --select "+stg_history+" "+stg_current+" "+stg_account_balances+"
   cd "$SCRIPT_DIR"
 fi
 

@@ -89,27 +89,27 @@ select
     account_value,
 
     base_1d_date,
-    base_1d_value,
-    case when base_1d_value is not null then account_value - base_1d_value end as delta_1d,
-    case
-        when base_1d_value is not null and base_1d_value != 0
-            then safe_divide(account_value - base_1d_value, base_1d_value) * 100
+    case when base_1d_value > 0 then base_1d_value end as base_1d_value,
+    case when base_1d_value > 0 and account_value > 0
+         then account_value - base_1d_value end as delta_1d,
+    case when base_1d_value > 0 and account_value > 0
+         then safe_divide(account_value - base_1d_value, base_1d_value) * 100
     end as delta_1d_pct,
 
     base_1w_date,
-    base_1w_value,
-    case when base_1w_value is not null then account_value - base_1w_value end as delta_1w,
-    case
-        when base_1w_value is not null and base_1w_value != 0
-            then safe_divide(account_value - base_1w_value, base_1w_value) * 100
+    case when base_1w_value > 0 then base_1w_value end as base_1w_value,
+    case when base_1w_value > 0 and account_value > 0
+         then account_value - base_1w_value end as delta_1w,
+    case when base_1w_value > 0 and account_value > 0
+         then safe_divide(account_value - base_1w_value, base_1w_value) * 100
     end as delta_1w_pct,
 
     base_1m_date,
-    base_1m_value,
-    case when base_1m_value is not null then account_value - base_1m_value end as delta_1m,
-    case
-        when base_1m_value is not null and base_1m_value != 0
-            then safe_divide(account_value - base_1m_value, base_1m_value) * 100
+    case when base_1m_value > 0 then base_1m_value end as base_1m_value,
+    case when base_1m_value > 0 and account_value > 0
+         then account_value - base_1m_value end as delta_1m,
+    case when base_1m_value > 0 and account_value > 0
+         then safe_divide(account_value - base_1m_value, base_1m_value) * 100
     end as delta_1m_pct
 
 from joined

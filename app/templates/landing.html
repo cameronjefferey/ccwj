@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block meta_tags %}
-<meta name="description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, AI insights, and tax-ready reports—free.">
-<meta property="og:description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, AI insights, and tax-ready reports—free.">
+<meta name="description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, and AI insights—free.">
+<meta property="og:description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, and AI insights—free.">
 {% endblock %}
 
 {% block head %}
@@ -150,7 +150,7 @@
         <div class="how-step">
             <div class="how-step-num">3</div>
             <h6>Analyze &amp; improve</h6>
-            <p>See what's working, where you're losing, and get AI-powered suggestions. Tax-ready reports included.</p>
+            <p>See what's working, where you're losing, and get AI-powered suggestions to improve your process.</p>
         </div>
     </div>
 </div>
@@ -181,17 +181,7 @@
             <p>Get a personalized analysis of your style, strengths, and weaknesses—with actionable suggestions to improve.</p>
         </a>
     </div>
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='tax-center') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(25,135,84,.12); color:#198754">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M12.136.326A1.5 1.5 0 0 1 14 1.78V3h.5A1.5 1.5 0 0 1 16 4.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 13.5v-9a1.5 1.5 0 0 1 1.432-1.499zM5.562 3H13V1.78a.5.5 0 0 0-.621-.484zM1.5 4a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5z"/>
-                </svg>
-            </div>
-            <h6>Tax Center</h6>
-            <p>Short-term vs long-term gains, wash sale flags, dividend income, and estimated tax impact—all in one place.</p>
-        </a>
-    </div>
+    
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='performance-charts') }}" class="card feature-card">
             <div class="feature-icon" style="background:rgba(253,126,20,.12); color:#fd7e14">

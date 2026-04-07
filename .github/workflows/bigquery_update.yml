@@ -37,7 +37,7 @@ jobs:
           cp dbt/profiles.yml ~/.dbt/profiles.yml
           echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
 
-      - name: Run DBT seed and build
+      - name: Run DBT build (seeds + all models)
         run: |
           cd dbt
           dbt build

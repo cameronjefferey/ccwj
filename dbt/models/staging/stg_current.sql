@@ -49,7 +49,7 @@ cleaned as (
 
     from source
     where lower(trim(coalesce(security_type, ''))) not in ('cash and money market', '')
-      and lower(trim(coalesce(symbol, ''))) not like '%account total%'
+      and lower(trim(coalesce(symbol, ''))) not in ('account total', 'positions total')
 )
 
 select * from cleaned

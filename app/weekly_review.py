@@ -261,6 +261,32 @@ WHERE e.quantity IS NOT NULL AND e.quantity != 0
 ORDER BY e.underlying_symbol, e.instrument_type
 """
 
+WEEKLY_STOCK_MOVEMENT_QUERY = """
+WITH boundary AS (
+    SELECT account, symbol,
+        FIRST_VALUE(close_price) OVER (PARTITION BY account, symbol ORDER BY date) AS start_price,
+        FIRST_VALUE(date)        OVER (PARTITION BY account, symbol ORDER BY date) AS start_date,
+        FIRST_VALUE(close_price) OVER (PARTITION BY account, symbol ORDER BY date DESC) AS end_price,
+        FIRST_VALUE(date)        OVER (PARTITION BY account, symbol ORDER BY date DESC) AS end_date
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE date BETWEEN @start_date AND @end_date
+      AND close_price IS NOT NULL AND close_price > 0
+      {account_filter}
+)
+SELECT DISTINCT account, symbol, start_price, start_date, end_price, end_date
+FROM boundary
+"""
+
+TRADING_DAYS_QUERY = """
+SELECT
+    COUNT(DISTINCT date) AS trading_days,
+    MAX(date) AS last_trading_date
+FROM `ccwj-dbt.analytics.stg_daily_prices`
+WHERE date BETWEEN @start_date AND @end_date
+  AND close_price IS NOT NULL
+  AND close_price > 0
+"""
+
 # Daily P&L calendar: account value changes for the current month
 DAILY_CALENDAR_QUERY = """
 SELECT
@@ -508,7 +534,8 @@ def _detect_patterns(client, account_filter, week_start, week_end):
     return patterns
 
 
-def _build_narrative(mode, review, prev_review, behavior_mirror, market, today, week_start):
+def _build_narrative(mode, review, prev_review, behavior_mirror, market,
+                     today, week_start, trading_days=0, market_open_today=True):
     """Generate a dynamic hero headline + subtitle from actual data."""
     review = review or {}
     bm = behavior_mirror or {}
@@ -569,6 +596,8 @@ def _build_narrative(mode, review, prev_review, behavior_mirror, market, today, 
             opening_parts.append(f"A quiet week — just {trades_closed} trade{'s' if trades_closed != 1 else ''} closed.")
         else:
             opening_parts.append(f"A typical week with {trades_closed} closed trades.")
+        if trading_days and trading_days < 5:
+            opening_parts.append(f"({trading_days} trading day{'s' if trading_days != 1 else ''} this week.)")
         if market:
             spy_pct = market.get("spy_week_pct")
             qqq_pct = market.get("qqq_week_pct")
@@ -629,17 +658,21 @@ def _build_narrative(mode, review, prev_review, behavior_mirror, market, today, 
 
     elif mode == "midweek":
         days_in = max(1, (today - week_start).days + 1)
+        td_label = f"{trading_days} trading day{'s' if trading_days != 1 else ''}" if trading_days else f"Day {days_in}"
         if trades_closed > 0:
             sign = "+" if total_pnl >= 0 else ""
             headline = (
-                f"Day {days_in} \u00b7 {trades_closed} closed \u00b7 "
+                f"{td_label} \u00b7 {trades_closed} closed \u00b7 "
                 f"{sign}${abs(total_pnl):,.0f} so far"
             )
         else:
-            headline = f"Day {days_in} of the week \u00b7 No closed trades yet"
+            headline = f"{td_label} \u00b7 No closed trades yet"
+        subtitle = "Mid-week check. Are you trading your plan, or reacting to the market?"
+        if not market_open_today:
+            subtitle = "Market closed today. " + subtitle
         return {
             "headline": headline,
-            "subtitle": "Mid-week check. Are you trading your plan, or reacting to the market?",
+            "subtitle": subtitle,
         }
 
     return {"headline": "Weekly Review", "subtitle": ""}
@@ -1000,7 +1033,9 @@ def weekly_review():
                            bigquery.QueryJobConfig(query_parameters=[
                                bigquery.ScalarQueryParameter("week_start", "DATE", this_week)])),
                 "positions": OPEN_POSITIONS_QUERY.format(account_filter=account_filter),
+                "stock_moves": (WEEKLY_STOCK_MOVEMENT_QUERY.format(account_filter=account_filter), week_range_cfg),
                 "calendar": (DAILY_CALENDAR_QUERY.format(account_filter=account_filter), cal_cfg),
+                "trading_days": (TRADING_DAYS_QUERY, week_range_cfg),
             })
         except Exception as e:
             if app.debug:
@@ -1009,6 +1044,23 @@ def weekly_review():
 
         # Market performance (SPY, QQQ) for comparison
         context["market"] = _get_market_performance(this_week, today)
+
+        # ── Process: Trading days & market status ──
+        try:
+            td_df = batch.get("trading_days", pd.DataFrame())
+            if not td_df.empty:
+                row = td_df.iloc[0]
+                context["trading_days"] = int(row.get("trading_days", 0) or 0)
+                last_td = row.get("last_trading_date")
+                if last_td is not None and not isinstance(last_td, date):
+                    last_td = date.fromisoformat(str(last_td)[:10])
+                context["market_open_today"] = (last_td == today) if last_td else False
+            else:
+                context["trading_days"] = 0
+                context["market_open_today"] = False
+        except Exception:
+            context["trading_days"] = 0
+            context["market_open_today"] = True
 
         # ── Process: Account value ──
         try:
@@ -1395,6 +1447,97 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Open positions query failed: %s", e)
 
+        # ── Process: Position Impact (stock movement vs option P&L) ──
+        context["position_impact"] = []
+        context["position_impact_summary"] = None
+        try:
+            stock_df = batch.get("stock_moves", pd.DataFrame())
+            trades_list = context.get("trades_this_week", [])
+            all_pos_df_impact = batch.get("positions", pd.DataFrame())
+
+            if not stock_df.empty and trades_list:
+                for col in ["start_price", "end_price"]:
+                    stock_df[col] = pd.to_numeric(stock_df[col], errors="coerce")
+
+                # Aggregate stock prices across accounts (weighted avg not needed — use first account's prices as proxy)
+                stock_by_sym = (
+                    stock_df.groupby("symbol")
+                    .agg(start_price=("start_price", "first"), end_price=("end_price", "first"))
+                    .reset_index()
+                )
+                price_map = {
+                    row["symbol"]: {"start": float(row["start_price"]), "end": float(row["end_price"])}
+                    for _, row in stock_by_sym.iterrows()
+                    if pd.notna(row["start_price"]) and row["start_price"] > 0
+                }
+
+                # Equity share counts from current positions
+                shares_map = {}
+                if not all_pos_df_impact.empty and "instrument_type" in all_pos_df_impact.columns:
+                    eq = all_pos_df_impact[all_pos_df_impact["instrument_type"] == "Equity"].copy()
+                    if not eq.empty:
+                        eq["quantity"] = pd.to_numeric(eq["quantity"], errors="coerce").fillna(0)
+                        shares_map = dict(eq.groupby("symbol")["quantity"].sum())
+
+                # Option P&L by symbol from closed trades
+                option_pnl_map = {}
+                for t in trades_list:
+                    if t.get("status") == "Closed" and t.get("current_pnl") is not None:
+                        sym = t["symbol"]
+                        option_pnl_map[sym] = option_pnl_map.get(sym, 0) + float(t["current_pnl"])
+
+                # Symbols that had option trades this week
+                traded_symbols = set(option_pnl_map.keys())
+                total_option_pnl = 0.0
+                total_equity_impact = 0.0
+                impacts = []
+
+                for sym in sorted(traded_symbols):
+                    prices = price_map.get(sym)
+                    if not prices:
+                        continue
+                    start_p = prices["start"]
+                    end_p = prices["end"]
+                    price_change = end_p - start_p
+                    price_change_pct = (price_change / start_p) * 100 if start_p else 0
+
+                    shares = shares_map.get(sym, 0)
+                    equity_impact = shares * price_change if shares else None
+                    opt_pnl = option_pnl_map.get(sym, 0)
+                    net = (equity_impact or 0) + opt_pnl
+
+                    total_option_pnl += opt_pnl
+                    if equity_impact is not None:
+                        total_equity_impact += equity_impact
+
+                    impacts.append({
+                        "symbol": sym,
+                        "start_price": round(start_p, 2),
+                        "end_price": round(end_p, 2),
+                        "price_change": round(price_change, 2),
+                        "price_change_pct": round(price_change_pct, 1),
+                        "shares": int(shares) if shares else 0,
+                        "equity_impact": round(equity_impact, 2) if equity_impact is not None else None,
+                        "option_pnl": round(opt_pnl, 2),
+                        "net_impact": round(net, 2),
+                    })
+
+                impacts.sort(key=lambda x: abs(x["net_impact"]), reverse=True)
+                context["position_impact"] = impacts
+
+                has_equity = any(i["equity_impact"] is not None and i["shares"] > 0 for i in impacts)
+                if impacts:
+                    context["position_impact_summary"] = {
+                        "total_option_pnl": round(total_option_pnl, 2),
+                        "total_equity_impact": round(total_equity_impact, 2) if has_equity else None,
+                        "total_net": round(total_equity_impact + total_option_pnl, 2) if has_equity else None,
+                        "num_symbols": len(impacts),
+                        "has_equity": has_equity,
+                    }
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Position impact processing failed: %s", e)
+
         # ── Process: Daily P&L Calendar Heatmap ──
         context["daily_calendar"] = []
         context["calendar_month_label"] = today.strftime("%B %Y")
@@ -1479,6 +1622,8 @@ def weekly_review():
         market=context.get("market"),
         today=today,
         week_start=this_week,
+        trading_days=context.get("trading_days", 0),
+        market_open_today=context.get("market_open_today", True),
     )
     context["key_observation"] = _key_observation(
         review=context.get("review"),

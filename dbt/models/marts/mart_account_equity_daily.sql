@@ -119,6 +119,7 @@ snapshot_result as (
 )
 
 select * from snapshot_result
+where account_value > 0
 union all
 select account, date, equity_value, option_value, cash_value, account_value
 from {{ ref('int_demo_equity_daily') }}

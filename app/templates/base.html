@@ -101,73 +101,29 @@
             {% set ep = request.endpoint or '' %}
             {% set selected_account = request.args.get('account', '') %}
             <ul class="navbar-nav me-auto">
-                {# Review hub: weekly, daily, account #}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if ep == 'weekly_review' or ep == 'symbols_detail' or ep == 'accounts' %}active{% endif %}"
-                       href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Review
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item {% if ep == 'weekly_review' %}active{% endif %}"
-                               href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Weekly Review</a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'symbols_detail' %}active{% endif %}"
-                               href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily Detail</a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
-                               href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Account View</a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'strategies' %}active{% endif %}"
-                               href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'trade_kinds' %}active{% endif %}"
-                               href="{{ url_for('trade_kinds', account=selected_account) if selected_account else url_for('trade_kinds') }}">Option Trades by Kind</a>
-                        </li>
-                    </ul>
-                </li>
-
-                {# Positions & symbols #}
                 <li class="nav-item">
-                    <a class="nav-link {% if ep == 'positions' %}active{% endif %}" href="{{ url_for('positions', account=selected_account) if selected_account else url_for('positions') }}">
-                        Positions
-                    </a>
+                    <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
+                       href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Review</a>
                 </li>
-
-                {# Coach & reflection tools #}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if ep in ['insights', 'mirror_score'] %}active{% endif %}"
-                       href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Coach
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item {% if ep == 'insights' %}active{% endif %}"
-                               href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">AI Coach</a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'mirror_score' %}active{% endif %}"
-                               href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}">Mirror Score</a>
-                        </li>
-                    </ul>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'symbols_detail' %}active{% endif %}"
+                       href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily Detail</a>
                 </li>
-
-                {# Secondary tools #}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle text-white-50" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        More
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li><a class="dropdown-item" href="{{ url_for('dashboard', account=selected_account) if selected_account else url_for('dashboard') }}">Legacy Dashboard</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('benchmark', account=selected_account) if selected_account else url_for('benchmark') }}">If You Did Nothing</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('taxes', account=selected_account) if selected_account else url_for('taxes') }}">Tax Center</a></li>
-                    </ul>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'positions' %}active{% endif %}"
+                       href="{{ url_for('positions', account=selected_account) if selected_account else url_for('positions') }}">Positions</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'strategies' %}active{% endif %}"
+                       href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'accounts' %}active{% endif %}"
+                       href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
+                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">Coach</a>
                 </li>
             </ul>
             <ul class="navbar-nav align-items-center">

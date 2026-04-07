@@ -93,11 +93,7 @@ from app import routes
 from app import auth
 from app import upload
 from app import insights
-from app import taxes
 from app import weekly_review
 from app import schwab
-from app import benchmark
-from app import mirror_score
 from app import first_look
 from app import strategies
-from app import trade_kinds

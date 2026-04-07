@@ -382,6 +382,8 @@
 
     <div class="hero-meta">
         Week of {{ week_start }} &mdash; {{ week_end }}
+        {% if trading_days %}<span class="badge bg-dark ms-2" style="font-size:.7rem">{{ trading_days }} trading day{{ 's' if trading_days != 1 else '' }}</span>{% endif %}
+        {% if not market_open_today %}<span class="badge bg-warning text-dark ms-2" style="font-size:.7rem">Market closed today</span>{% endif %}
         {% if is_backfilled %}<span class="badge bg-secondary ms-2" style="font-size:.7rem">Most recent active week</span>{% endif %}
     </div>
 </div>
@@ -809,6 +811,71 @@
 </div>
 {% endif %}
 
+{# ── Position Impact: stock movement vs option P&L ── #}
+{% if position_impact %}
+<div class="review-section">
+    <div class="section-label">Position Impact</div>
+    {% if position_impact_summary %}
+    <div class="narrative mb-3">
+        Your closed options earned
+        <strong class="{% if position_impact_summary.total_option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+            {{ "+" if position_impact_summary.total_option_pnl >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_option_pnl) }}
+        </strong>
+        across {{ position_impact_summary.num_symbols }} symbol{{ "s" if position_impact_summary.num_symbols != 1 else "" }} this week.
+        {% if position_impact_summary.has_equity and position_impact_summary.total_equity_impact is not none %}
+        The underlying shares moved
+        <strong class="{% if position_impact_summary.total_equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">
+            {{ "+" if position_impact_summary.total_equity_impact >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_equity_impact) }}
+        </strong>.
+        Net position impact:
+        <strong class="{% if position_impact_summary.total_net >= 0 %}text-positive{% else %}text-negative{% endif %}">
+            {{ "+" if position_impact_summary.total_net >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_net) }}
+        </strong>.
+        {% endif %}
+    </div>
+    {% endif %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Symbol</th>
+                    <th class="text-end">Stock Move</th>
+                    <th class="text-end">Shares</th>
+                    <th class="text-end">Equity Impact</th>
+                    <th class="text-end">Option P&amp;L</th>
+                    <th class="text-end">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in position_impact %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('position_detail', symbol=p.symbol) }}" class="fw-semibold text-decoration-none">{{ p.symbol }}</a>
+                        <span class="d-block small text-muted" style="font-size:.72rem">${{ "{:,.2f}".format(p.start_price) }} → ${{ "{:,.2f}".format(p.end_price) }}</span>
+                    </td>
+                    <td class="text-end {% if p.price_change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {{ "+" if p.price_change_pct >= 0 else "" }}{{ p.price_change_pct }}%
+                    </td>
+                    <td class="text-end text-muted">
+                        {% if p.shares %}{{ p.shares }}{% else %}<span class="small">—</span>{% endif %}
+                    </td>
+                    <td class="text-end {% if p.equity_impact is not none and p.equity_impact != 0 %}{% if p.equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}{% else %}text-muted{% endif %}">
+                        {% if p.equity_impact is not none and p.shares %}{{ "+" if p.equity_impact >= 0 else "" }}${{ "{:,.2f}".format(p.equity_impact) }}{% else %}<span class="small">No shares</span>{% endif %}
+                    </td>
+                    <td class="text-end fw-semibold {% if p.option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {{ "+" if p.option_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.option_pnl) }}
+                    </td>
+                    <td class="text-end fw-bold {% if p.net_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {{ "+" if p.net_impact >= 0 else "" }}${{ "{:,.2f}".format(p.net_impact) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# ── Trades this week ── #}
 {% if trades_this_week %}
 <div class="review-section">
@@ -1097,7 +1164,7 @@
     </div>
     <div class="small text-muted mb-2">Last {{ mirror_history|length }} weeks</div>
     {% endif %}
-    <a href="{{ url_for('mirror_score', account=selected_account) if selected_account else url_for('mirror_score') }}" class="btn btn-sm btn-outline-primary">Full Breakdown &rarr;</a>
+    
     {% else %}
     <p class="text-muted small mb-0">No Mirror Score yet. Trade for a few weeks to build your baseline.</p>
     {% endif %}
@@ -1210,6 +1277,37 @@
         (+${{ "{:,.2f}".format(review.best_trade.total_pnl) }}).
         {% endif %}
     </p>
+</div>
+{% endif %}
+
+{# ── Position Impact (mid-week) ── #}
+{% if position_impact %}
+<div class="review-section">
+    <div class="section-label">Position Impact So Far</div>
+    {% if position_impact_summary and position_impact_summary.has_equity and position_impact_summary.total_equity_impact is not none %}
+    <p class="narrative small mb-2">
+        Options: <strong class="{% if position_impact_summary.total_option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_option_pnl >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_option_pnl) }}</strong>
+        &middot; Underlying shares: <strong class="{% if position_impact_summary.total_equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_equity_impact >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_equity_impact) }}</strong>
+        &middot; Net: <strong class="{% if position_impact_summary.total_net >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_net >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_net) }}</strong>
+    </p>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2">
+        {% for p in position_impact[:6] %}
+        <div class="card border-0 shadow-sm px-3 py-2" style="border-radius:10px; min-width:140px">
+            <div class="fw-semibold small">{{ p.symbol }}</div>
+            <div class="small {% if p.price_change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                Stock {{ "+" if p.price_change_pct >= 0 else "" }}{{ p.price_change_pct }}%
+            </div>
+            {% if p.shares %}
+            <div class="small text-muted">{{ p.shares }} shares &middot;
+                <span class="{% if p.net_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">Net {{ "+" if p.net_impact >= 0 else "" }}${{ "{:,.0f}".format(p.net_impact) }}</span>
+            </div>
+            {% else %}
+            <div class="small text-muted">No shares held</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 

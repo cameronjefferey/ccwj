@@ -2,10 +2,7 @@ from flask import render_template, request, redirect, url_for, Response
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.models import (
-    get_accounts_for_user, is_admin, get_insight_for_user,
-    get_mirror_score_history,
-)
+from app.models import get_accounts_for_user, is_admin
 from google.cloud import bigquery
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -254,28 +251,6 @@ def _parse_date(value):
         return None
 
 
-DASHBOARD_POSITIONS_QUERY = """
-    SELECT
-        account, symbol, strategy,
-        total_return, realized_pnl, unrealized_pnl,
-        total_premium_received, total_dividend_income,
-        num_individual_trades, num_winners, num_losers,
-        avg_days_in_trade, first_trade_date
-    FROM `ccwj-dbt.analytics.positions_summary`
-    {where}
-"""
-
-DASHBOARD_WEEK_DATA_QUERY = """
-    SELECT
-        week_start, account,
-        trades_closed, total_pnl, num_winners, num_losers,
-        trades_opened, best_pnl, best_symbol, best_strategy
-    FROM `ccwj-dbt.analytics.mart_weekly_summary`
-    WHERE week_start >= DATE_SUB(@this_week, INTERVAL 8 WEEK)
-      {account_filter}
-    ORDER BY week_start DESC
-"""
-
 
 # ------------------------------------------------------------------
 # Feature pages for marketing (logged-out)
@@ -299,16 +274,6 @@ FEATURES = {
             "Get a coach-style overview: what you do well, what needs work, and why.",
             "Actionable suggestions based on your actual data—not generic advice.",
             "The 'wow' moment when the app shows it truly understands your trading.",
-        ],
-    },
-    "tax-center": {
-        "title": "Tax Center",
-        "subtitle": "Short-term vs long-term, wash sales, and estimated tax impact.",
-        "demo_partial": "features/_demo_tax.html",
-        "value_bullets": [
-            "Most traders ignore taxes until April. See your exposure year-round.",
-            "Wash sale flags help you avoid unpleasant surprises at tax time.",
-            "Choose your bracket and see estimated federal tax on gains—no surprises.",
         ],
     },
     "performance-charts": {
@@ -395,7 +360,7 @@ def robots():
     """Basic robots.txt for crawlers."""
     base = request.url_root.rstrip("/")
     return Response(
-        f"User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /positions\nDisallow: /upload\nDisallow: /insights\nDisallow: /taxes\nDisallow: /settings\nDisallow: /accounts\nDisallow: /symbols\nDisallow: /position/\nSitemap: {base}/sitemap.xml\n",
+        f"User-agent: *\nAllow: /\nDisallow: /positions\nDisallow: /upload\nDisallow: /insights\nDisallow: /settings\nDisallow: /accounts\nDisallow: /symbols\nDisallow: /position/\nSitemap: {base}/sitemap.xml\n",
         mimetype="text/plain",
     )
 
@@ -408,192 +373,6 @@ def index():
         return redirect(url_for("weekly_review"))
     return render_template("landing.html", title="Home")
 
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    stats = {}
-    top_symbols = []
-    strategy_breakdown = []
-    user_accounts = _user_account_list()
-    week_summary = None
-    mirror_history = []
-    pos_df = pd.DataFrame()
-
-    client = None
-    try:
-        client = get_bigquery_client()
-        where = _account_sql_filter(user_accounts)
-        acct_and = _account_sql_and(user_accounts)
-
-        # Single query replaces 3 homepage queries + trader profile query
-        pos_df = client.query(DASHBOARD_POSITIONS_QUERY.format(where=where)).to_dataframe()
-        if not pos_df.empty:
-            for col in ["total_return", "realized_pnl", "unrealized_pnl",
-                         "total_premium_received", "total_dividend_income",
-                         "num_individual_trades", "num_winners", "num_losers",
-                         "avg_days_in_trade"]:
-                pos_df[col] = pd.to_numeric(pos_df[col], errors="coerce").fillna(0)
-
-            total_winners = int(pos_df["num_winners"].sum())
-            total_losers = int(pos_df["num_losers"].sum())
-            total_closed = total_winners + total_losers
-            stats = {
-                "num_accounts": int(pos_df["account"].nunique()),
-                "num_symbols": int(pos_df["symbol"].nunique()),
-                "num_strategies": int(pos_df["strategy"].nunique()),
-                "total_return": float(pos_df["total_return"].sum()),
-                "realized_pnl": float(pos_df["realized_pnl"].sum()),
-                "unrealized_pnl": float(pos_df["unrealized_pnl"].sum()),
-                "premium_collected": float(pos_df["total_premium_received"].sum()),
-                "dividend_income": float(pos_df["total_dividend_income"].sum()),
-                "total_trades": int(pos_df["num_individual_trades"].sum()),
-                "win_rate": total_winners / total_closed if total_closed else 0,
-            }
-
-            sym_agg = (
-                pos_df.groupby("symbol")
-                .agg(total_return=("total_return", "sum"),
-                     strategies=("strategy", lambda x: ", ".join(sorted(x.unique()))))
-                .reset_index()
-                .nlargest(5, "total_return")
-            )
-            top_symbols = sym_agg.to_dict(orient="records")
-
-            strat_agg = (
-                pos_df.groupby("strategy")
-                .agg(total_return=("total_return", "sum"),
-                     num_symbols=("symbol", "nunique"))
-                .reset_index()
-                .sort_values("total_return", ascending=False)
-            )
-            strategy_breakdown = strat_agg.to_dict(orient="records")
-
-        # Single query replaces week summary + fallback + best trade (was up to 4 queries)
-        this_week_start = date.today() - timedelta(days=date.today().weekday())
-        target_week = this_week_start
-        try:
-            week_cfg = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("this_week", "DATE", this_week_start),
-                ]
-            )
-            week_all_df = client.query(
-                DASHBOARD_WEEK_DATA_QUERY.format(account_filter=acct_and),
-                job_config=week_cfg,
-            ).to_dataframe()
-
-            if not week_all_df.empty:
-                week_all_df["week_start"] = pd.to_datetime(week_all_df["week_start"]).dt.date
-                for col in ["trades_closed", "total_pnl", "num_winners", "num_losers",
-                             "trades_opened", "best_pnl"]:
-                    week_all_df[col] = pd.to_numeric(week_all_df[col], errors="coerce").fillna(0)
-
-                this_rows = week_all_df[week_all_df["week_start"] == this_week_start]
-                has_current = (
-                    not this_rows.empty
-                    and (this_rows["trades_closed"].sum() + this_rows["trades_opened"].sum()) > 0
-                )
-                if has_current:
-                    target_rows = this_rows
-                else:
-                    active = week_all_df[
-                        (week_all_df["trades_closed"] + week_all_df["trades_opened"]) > 0
-                    ]
-                    if not active.empty:
-                        target_week = active["week_start"].max()
-                        target_rows = week_all_df[week_all_df["week_start"] == target_week]
-                    else:
-                        target_rows = pd.DataFrame()
-
-                if not target_rows.empty:
-                    week_summary = {
-                        "trades_closed": int(target_rows["trades_closed"].sum()),
-                        "total_pnl": float(target_rows["total_pnl"].sum()),
-                        "num_winners": int(target_rows["num_winners"].sum()),
-                        "trades_opened": int(target_rows["trades_opened"].sum()),
-                        "week_start": target_week.isoformat(),
-                        "is_backfilled": target_week != this_week_start,
-                    }
-                    best_candidates = target_rows.dropna(subset=["best_symbol"])
-                    best_candidates = best_candidates[best_candidates["best_pnl"] > 0]
-                    if not best_candidates.empty:
-                        br = best_candidates.nlargest(1, "best_pnl").iloc[0]
-                        week_summary["best_symbol"] = str(br.get("best_symbol", ""))
-                        week_summary["best_pnl"] = float(br["best_pnl"])
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Dashboard week data failed: %s", e)
-
-    except Exception as e:
-        if app.debug:
-            app.logger.warning("Dashboard stats/week data failed: %s", e)
-
-    has_accounts = user_accounts is None or len(user_accounts) > 0
-
-    # Portfolio cumulative P&L chart (2 queries in parallel)
-    portfolio_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
-    if has_accounts and client is not None:
-        try:
-            acct_filter = _account_sql_and(user_accounts)
-            chart_dfs = _bq_parallel(client, {
-                "chart": CHART_DATA_ALL_QUERY.format(account_filter=acct_filter),
-                "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
-            })
-            chart_df = _filter_df_by_accounts(chart_dfs["chart"], user_accounts)
-            current_df = chart_dfs["current"]
-            for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
-                if col in current_df.columns:
-                    current_df[col] = pd.to_numeric(current_df[col], errors="coerce").fillna(0)
-            current_df = _filter_df_by_accounts(current_df, user_accounts)
-            portfolio_chart = _build_account_chart_from_daily_pnl(chart_df, current_df)
-        except Exception:
-            pass
-
-    # Process-first data: Mirror Score trend
-    try:
-        mirror_history = get_mirror_score_history(current_user.id, limit=8)
-    except Exception:
-        pass
-    insight = get_insight_for_user(current_user.id)
-
-    # Trader profile from positions data (no extra query needed)
-    trader_profile = None
-    if has_accounts and not mirror_history and not pos_df.empty:
-        try:
-            tw = int(pos_df["num_winners"].sum())
-            tl = int(pos_df["num_losers"].sum())
-            tc = tw + tl
-            strats = sorted(pos_df["strategy"].dropna().unique().tolist())
-            top_strat = strats[0] if strats else ""
-            trader_profile = {
-                "top_strategy": top_strat,
-                "num_strategies": len(strats),
-                "total_trades": int(pos_df["num_individual_trades"].sum()),
-                "num_symbols": int(pos_df["symbol"].nunique()),
-                "win_rate": tw / tc if tc else 0,
-                "avg_days": float(pos_df["avg_days_in_trade"].mean() or 0),
-                "first_trade": str(pos_df["first_trade_date"].min())[:10] if "first_trade_date" in pos_df.columns else "",
-            }
-        except Exception:
-            pass
-
-    is_first_visit = has_accounts and not mirror_history
-
-    return render_template(
-        "index.html",
-        title="Home",
-        stats=stats,
-        top_symbols=top_symbols,
-        strategy_breakdown=strategy_breakdown,
-        has_accounts=has_accounts,
-        insight=insight,
-        portfolio_chart_json=json.dumps(portfolio_chart),
-        week_summary=week_summary,
-        mirror_history=mirror_history,
-        trader_profile=trader_profile,
-        is_first_visit=is_first_visit,
-    )
 
 
 @app.route("/get-started")

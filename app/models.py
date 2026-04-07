@@ -57,36 +57,6 @@ def init_db():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS journal_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            account TEXT NOT NULL,
-            symbol TEXT NOT NULL,
-            strategy TEXT NOT NULL,
-            trade_open_date TEXT NOT NULL,
-            trade_close_date TEXT,
-            trade_symbol TEXT,
-            thesis TEXT,
-            notes TEXT,
-            reflection TEXT,
-            confidence INTEGER CHECK (confidence >= 1 AND confidence <= 10),
-            mood TEXT,
-            sleep_quality INTEGER CHECK (sleep_quality IS NULL OR (sleep_quality >= 1 AND sleep_quality <= 10)),
-            entry_time TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS journal_tags (
-            journal_entry_id INTEGER NOT NULL,
-            tag TEXT NOT NULL,
-            PRIMARY KEY (journal_entry_id, tag),
-            FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE
-        )
-    """)
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS schwab_connections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -313,23 +283,6 @@ def get_mirror_score_history(user_id, limit=8):
     return [dict(r) for r in reversed(rows)]
 
 
-def get_journal_stats(user_id):
-    """Return journal activity stats for dashboard nudges."""
-    conn = _get_db()
-    total = conn.execute(
-        "SELECT COUNT(*) FROM journal_entries WHERE user_id = ?", (user_id,)
-    ).fetchone()[0]
-    latest = conn.execute(
-        "SELECT created_at FROM journal_entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
-        (user_id,),
-    ).fetchone()
-    conn.close()
-    return {
-        "total_entries": total,
-        "last_entry_at": latest[0] if latest else None,
-    }
-
-
 def remove_account_for_user(user_id, account_name):
     """Unlink an account from a user."""
     conn = _get_db()
@@ -339,175 +292,6 @@ def remove_account_for_user(user_id, account_name):
     )
     conn.commit()
     conn.close()
-
-
-# ------------------------------------------------------------------
-# Trade Journal
-# ------------------------------------------------------------------
-
-JOURNAL_TAG_OPTIONS = [
-    "fomo", "earnings_play", "boredom_trade", "revenge_trade", "high_conviction",
-    "scaling_in", "scaling_out", "hedge", "thesis_break", "roll", "assignment_plan",
-]
-JOURNAL_MOOD_OPTIONS = [
-    "calm", "anxious", "euphoric", "frustrated", "neutral", "focused", "tired", "confident",
-]
-
-
-def create_journal_entry(user_id, account, symbol, strategy, trade_open_date, **kwargs):
-    """Create a journal entry. Returns the new entry id."""
-    conn = _get_db()
-    conn.execute(
-        """INSERT INTO journal_entries (
-            user_id, account, symbol, strategy, trade_open_date,
-            trade_close_date, trade_symbol, thesis, notes, reflection,
-            confidence, mood, sleep_quality, entry_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            user_id, account, symbol, strategy, trade_open_date,
-            kwargs.get("trade_close_date"),
-            kwargs.get("trade_symbol"),
-            kwargs.get("thesis") or "",
-            kwargs.get("notes") or "",
-            kwargs.get("reflection") or "",
-            kwargs.get("confidence"),
-            kwargs.get("mood"),
-            kwargs.get("sleep_quality"),
-            kwargs.get("entry_time"),
-        ),
-    )
-    entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    for tag in kwargs.get("tags") or []:
-        if tag and str(tag).strip():
-            conn.execute(
-                "INSERT OR IGNORE INTO journal_tags (journal_entry_id, tag) VALUES (?, ?)",
-                (entry_id, str(tag).strip().lower()),
-            )
-    conn.commit()
-    conn.close()
-    return entry_id
-
-
-def update_journal_entry(entry_id, user_id, **kwargs):
-    """Update a journal entry. Returns True if updated."""
-    conn = _get_db()
-    row = conn.execute(
-        "SELECT id FROM journal_entries WHERE id = ? AND user_id = ?",
-        (entry_id, user_id),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return False
-
-    conn.execute(
-        """UPDATE journal_entries SET
-            trade_close_date = COALESCE(?, trade_close_date),
-            trade_symbol = COALESCE(?, trade_symbol),
-            thesis = COALESCE(?, thesis),
-            notes = COALESCE(?, notes),
-            reflection = COALESCE(?, reflection),
-            confidence = ?,
-            mood = ?,
-            sleep_quality = ?,
-            entry_time = COALESCE(?, entry_time),
-            updated_at = datetime('now')
-        WHERE id = ?""",
-        (
-            kwargs.get("trade_close_date"),
-            kwargs.get("trade_symbol"),
-            kwargs.get("thesis"),
-            kwargs.get("notes"),
-            kwargs.get("reflection"),
-            kwargs.get("confidence"),
-            kwargs.get("mood"),
-            kwargs.get("sleep_quality"),
-            kwargs.get("entry_time"),
-            entry_id,
-        ),
-    )
-
-    if "tags" in kwargs:
-        conn.execute("DELETE FROM journal_tags WHERE journal_entry_id = ?", (entry_id,))
-        for tag in kwargs.get("tags") or []:
-            if tag and str(tag).strip():
-                conn.execute(
-                    "INSERT INTO journal_tags (journal_entry_id, tag) VALUES (?, ?)",
-                    (entry_id, str(tag).strip().lower()),
-                )
-
-    conn.commit()
-    conn.close()
-    return True
-
-
-def get_journal_entry(entry_id, user_id):
-    """Return a journal entry with tags, or None."""
-    conn = _get_db()
-    row = conn.execute(
-        "SELECT * FROM journal_entries WHERE id = ? AND user_id = ?",
-        (entry_id, user_id),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return None
-    tags = [r[0] for r in conn.execute(
-        "SELECT tag FROM journal_tags WHERE journal_entry_id = ?", (entry_id,)
-    ).fetchall()]
-    conn.close()
-    d = dict(row)
-    d["tags"] = tags
-    return d
-
-
-def list_journal_entries(user_id, symbol=None, strategy=None, tag=None, start_date=None, end_date=None, limit=100):
-    """List journal entries for a user, optionally filtered by symbol, strategy, tag, date range."""
-    conn = _get_db()
-    q = """
-        SELECT e.*, GROUP_CONCAT(t.tag) as tags_csv
-        FROM journal_entries e
-        LEFT JOIN journal_tags t ON e.id = t.journal_entry_id
-        WHERE e.user_id = ?
-    """
-    params = [user_id]
-    if symbol:
-        q += " AND e.symbol = ?"
-        params.append(symbol)
-    if strategy:
-        q += " AND e.strategy = ?"
-        params.append(strategy)
-    if tag:
-        q += " AND EXISTS (SELECT 1 FROM journal_tags t2 WHERE t2.journal_entry_id = e.id AND t2.tag = ?)"
-        params.append(tag)
-    if start_date:
-        q += " AND e.trade_open_date >= ?"
-        params.append(str(start_date))
-    if end_date:
-        q += " AND e.trade_open_date <= ?"
-        params.append(str(end_date))
-    q += " GROUP BY e.id ORDER BY e.trade_open_date DESC, e.created_at DESC LIMIT ?"
-    params.append(limit)
-
-    rows = conn.execute(q, params).fetchall()
-    conn.close()
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["tags"] = [t.strip() for t in (d.get("tags_csv") or "").split(",") if t.strip()]
-        del d["tags_csv"]
-        result.append(d)
-    return result
-
-
-def delete_journal_entry(entry_id, user_id):
-    """Delete a journal entry. Returns True if deleted."""
-    conn = _get_db()
-    cur = conn.execute(
-        "DELETE FROM journal_entries WHERE id = ? AND user_id = ?",
-        (entry_id, user_id),
-    )
-    conn.commit()
-    conn.close()
-    return cur.rowcount > 0
 
 
 # ------------------------------------------------------------------
@@ -645,7 +429,6 @@ def ensure_demo_user():
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
         add_account_for_user(demo.id, DEMO_ACCOUNT)
         _ensure_demo_insight(demo.id)
-        _seed_demo_journal(demo.id)
         _seed_demo_mirror_scores(demo.id)
 
 
@@ -655,7 +438,7 @@ def _ensure_demo_insight(demo_user_id):
         return  # already has one
     summary = (
         "Years of consistent options trading across Covered Calls, CSPs, Wheels, and PMCC. "
-        "Account growth, strong win rates, and disciplined journaling. Your Mirror Score trend "
+        "Account growth, strong win rates, and disciplined execution. Your Mirror Score trend "
         "shows real progress—this is what a mature, intentional options trader looks like."
     )
     full_analysis = """## Summary
@@ -664,67 +447,24 @@ You've built a track record over multiple years: diversified options strategies,
 
 ## Trading Style Overview
 
-You trade like someone who's been at this for years. Covered Calls and Cash-Secured Puts on quality names (AAPL, NVDA, META, GOOGL, COST, SPY). You run the Wheel when assignment makes sense, and you've added Poor Man's Covered Call (PMCC) on names like PLTR. You mix income with occasional directional plays (long calls/puts) and keep position sizing and journaling in the picture.
+You trade like someone who's been at this for years. Covered Calls and Cash-Secured Puts on quality names (AAPL, NVDA, META, GOOGL, COST, SPY). You run the Wheel when assignment makes sense, and you've added Poor Man's Covered Call (PMCC) on names like PLTR. You mix income with occasional directional plays (long calls/puts) and keep position sizing in the picture.
 
 ## What's Working
 
 - **Strategy variety** — CSPs, Covered Calls, Wheels, PMCC, and selective directional trades. You're not stuck in one playbook.
-- **Consistent journaling** — Entries across symbols and strategies; mood and tags show you're reflecting on what works.
 - **Mirror Score trend** — Your discipline and intent scores have trended up over time. That's the kind of progress that separates long-term traders from one-off gamblers.
 - **Premium and assignments** — You collect premium, take assignment when it fits the plan, and close or roll with intention.
 
 ## What This Demo Shows
 
-This profile is built to show what the platform looks like when it's full: weekly review with real numbers, journal entries that tie to trades, Mirror Score history, strategy breakdowns, and trade-by-kind insights. Every section is populated so you can see the full experience.
+This profile is built to show what the platform looks like when it's full: weekly review with real numbers, Mirror Score history, strategy breakdowns, and AI coaching. Every section is populated so you can see the full experience.
 
 ## Next Steps for You
 
 1. **Upload your own data** — Replace this demo with your real accounts and watch your own trends.
 2. **Use the Coach** — Ask questions about your trades; the AI uses only your data.
-3. **Track over time** — The more you upload and journal, the more accurate your snapshots and Mirror Score become."""
+3. **Track over time** — The more you upload, the more accurate your snapshots and Mirror Score become."""
     save_insight(demo_user_id, summary, full_analysis)
-
-
-def _seed_demo_journal(demo_user_id):
-    """Seed demo user with many journal entries so Journal and Weekly Review feel full."""
-    if list_journal_entries(demo_user_id, limit=1):
-        return  # already has entries
-    account = DEMO_ACCOUNT
-    entries = [
-        ("AAPL", "Covered Call", "2022-02-14", "Selling OTM calls on core holding.", "calm", ["income", "plan"]),
-        ("MSFT", "Cash-Secured Put", "2022-04-01", "Wanted to own at 290; put expired worthless.", "focused", ["csp", "win"]),
-        ("NVDA", "Covered Call", "2022-06-10", "Assigned on NVDA; took profit and redeployed.", "satisfied", ["assignment", "win"]),
-        ("META", "Covered Call", "2022-09-12", "Collecting premium while holding long.", "neutral", ["theta"]),
-        ("GOOGL", "Wheel", "2023-02-17", "Put assigned; sold covered call. Wheel in motion.", "disciplined", ["wheel", "plan"]),
-        ("TSLA", "Covered Call", "2023-04-10", "High premium on TSLA; assigned and closed.", "good", ["income"]),
-        ("COST", "Cash-Secured Put", "2023-06-01", "Quality name; put expired. Would sell again.", "calm", ["csp"]),
-        ("AMD", "Cash-Secured Put", "2023-09-01", "Two contracts; both expired OTM.", "focused", ["csp", "win"]),
-        ("QQQ", "Long Call", "2023-10-01", "Bullish bet; closed for solid gain.", "excited", ["directional", "win"]),
-        ("PLTR", "Covered Call", "2024-03-01", "Selling calls on PLTR; managed well.", "calm", ["income"]),
-        ("META", "Wheel", "2024-05-17", "Assigned on puts; sold CC. Classic wheel.", "disciplined", ["wheel"]),
-        ("NVDA", "Cash-Secured Put", "2024-07-01", "Put expired. Strong premium.", "satisfied", ["csp", "win"]),
-        ("SPY", "Long Put", "2024-08-01", "Hedge; closed for small profit.", "neutral", ["hedge"]),
-        ("AAPL", "Covered Call", "2024-09-01", "Another round of CCs; expired worthless.", "good", ["income", "win"]),
-        ("AMZN", "Cash-Secured Put", "2024-11-01", "Put expired. Adding to income.", "focused", ["csp"]),
-        ("MSFT", "Cash-Secured Put", "2025-01-06", "Sold put; expired. Clean.", "calm", ["csp", "win"]),
-        ("GOOGL", "Cash-Secured Put", "2025-02-01", "Expired OTM. Happy with the premium.", "satisfied", ["csp"]),
-        ("AMD", "Long Call", "2025-03-01", "Took profit on the call; nice win.", "excited", ["directional", "win"]),
-        ("JPM", "Cash-Secured Put", "2025-04-01", "Bank name; put expired.", "neutral", ["csp"]),
-        ("NVDA", "Cash-Secured Put", "2025-07-01", "Assigned; now holding 100 shares. Plan was to own.", "disciplined", ["csp", "assignment"]),
-        ("TSLA", "Covered Call", "2025-07-15", "Sold call; assigned. Closed position for gain.", "good", ["income", "assignment"]),
-        ("META", "Wheel", "2025-09-22", "Put assigned; sold CC. Running the wheel.", "focused", ["wheel", "plan"]),
-        ("QQQ", "Spread", "2025-09-01", "Debit spread; closed for profit. Good risk/reward.", "satisfied", ["spread", "win"]),
-        ("PLTR", "Poor Man Covered Call", "2025-09-10", "LEAPS + short call. PMCC working as intended.", "calm", ["pmcc", "income"]),
-        ("GOOGL", "Covered Call", "2025-11-01", "Sold call on GOOGL; expired.", "good", ["income", "win"]),
-        ("PLTR", "Poor Man Covered Call", "2025-11-05", "Rolling short call; managing delta.", "focused", ["pmcc"]),
-        ("AAPL", "Covered Call", "2025-12-05", "Year-end CC; expired OTM.", "satisfied", ["income"]),
-        ("SPY", "Cash-Secured Put", "2025-12-01", "Selling put on SPY; small position.", "neutral", ["csp"]),
-    ]
-    for symbol, strategy, open_date, thesis, mood, tags in entries:
-        create_journal_entry(
-            demo_user_id, account, symbol, strategy, open_date,
-            thesis=thesis, mood=mood, tags=tags, confidence=7,
-        )
 
 
 def _seed_demo_mirror_scores(demo_user_id):
@@ -747,7 +487,7 @@ def _seed_demo_mirror_scores(demo_user_id):
         risk_ = round(64 + 22 * t, 1)
         consistency_ = round(58 + 28 * t, 1)
         level = "High" if mirror >= 80 else "Medium" if mirror >= 70 else "Building"
-        sentence = "Strong alignment with plan; journaling and sizing consistent." if mirror >= 78 else "Good week; keep tracking and sizing positions."
+        sentence = "Strong alignment with plan; sizing and execution consistent." if mirror >= 78 else "Good week; keep tracking and sizing positions."
         save_mirror_score(
             demo_user_id, ws,
             discipline, intent_, risk_, consistency_, mirror,

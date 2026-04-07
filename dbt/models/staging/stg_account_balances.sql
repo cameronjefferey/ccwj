@@ -41,7 +41,7 @@ account_total_rows as (
         safe_cast(gain_or_loss_percent as float64) as unrealized_pnl_pct,
         cast(null as float64) as percent_of_account
     from source
-    where lower(trim(coalesce(symbol, ''))) = 'account total'
+    where lower(trim(coalesce(symbol, ''))) in ('account total', 'positions total')
 )
 
 select * from cash_rows
