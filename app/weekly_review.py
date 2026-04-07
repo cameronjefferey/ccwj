@@ -657,7 +657,10 @@ def _build_narrative(mode, review, prev_review, behavior_mirror, market,
         return {"headline": headline, "subtitle": subtitle}
 
     elif mode == "midweek":
-        days_in = max(1, (today - week_start).days + 1)
+        try:
+            days_in = max(1, (today - week_start).days + 1)
+        except TypeError:
+            days_in = 1
         td_label = f"{trading_days} trading day{'s' if trading_days != 1 else ''}" if trading_days else f"Day {days_in}"
         if trades_closed > 0:
             sign = "+" if total_pnl >= 0 else ""
@@ -963,7 +966,7 @@ def weekly_review():
             latest_df = client.query(
                 LATEST_ACTIVE_WEEK_QUERY.format(account_filter=account_filter)
             ).to_dataframe()
-            if not latest_df.empty and latest_df.iloc[0]["latest_week"] is not None:
+            if not latest_df.empty and pd.notna(latest_df.iloc[0]["latest_week"]):
                 lw = latest_df.iloc[0]["latest_week"]
                 if hasattr(lw, "date"):
                     lw = lw.date()
