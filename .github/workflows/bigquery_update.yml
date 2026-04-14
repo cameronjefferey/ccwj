@@ -37,10 +37,10 @@ jobs:
           cp dbt/profiles.yml ~/.dbt/profiles.yml
           echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
 
-      - name: Run DBT build (seeds + all models)
+      - name: Run DBT build (seeds + models, excluding price-dependent)
         run: |
           cd dbt
-          dbt build
+          dbt build --exclude "stg_daily_prices+"
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
@@ -49,10 +49,10 @@ jobs:
       - name: Fetch daily stock prices
         run: python current_position_stock_price.py
 
-      - name: Re-run DBT build (refresh marts with new prices)
+      - name: Run DBT build (price-dependent models)
         run: |
           cd dbt
-          dbt build
+          dbt build --select "stg_daily_prices+"
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
