@@ -1215,8 +1215,9 @@ def weekly_review():
 
         # Your week: closed P&L plus % account change this week (reuse weekly returns if we have it)
         context["your_week"] = None
-        total_pnl = float(context.get("review", {}).get("total_pnl", 0) or 0)
-        trades_closed = int(context.get("review", {}).get("trades_closed", 0) or 0)
+        review_ctx = context.get("review") or {}
+        total_pnl = float(review_ctx.get("total_pnl", 0) or 0)
+        trades_closed = int(review_ctx.get("trades_closed", 0) or 0)
 
         acct_pct = None
         if not ret_df.empty:
