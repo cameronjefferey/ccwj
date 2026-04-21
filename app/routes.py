@@ -4,7 +4,12 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
-from app.models import get_accounts_for_user, is_admin
+from app.models import (
+    add_account_for_user,
+    get_accounts_for_user,
+    get_schwab_connections,
+    is_admin,
+)
 from google.cloud import bigquery
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -39,10 +44,27 @@ def _user_account_list():
     """
     Return the list of accounts the current user is allowed to see,
     or None if the user is an admin (meaning: no filter, show everything).
+
+    Includes labels from user_accounts (upload / sync) and from Schwab OAuth
+    rows so BigQuery filters match the Account column in seeds. If Schwab is
+    connected but user_accounts was never populated, we add the Schwab labels
+    here (idempotent) so queries are not forced to AND 1=0.
     """
     if is_admin(current_user.username):
         return None                     # admin → no restriction
-    return get_accounts_for_user(current_user.id)
+    names = list(get_accounts_for_user(current_user.id))
+    have = set(names)
+    for row in get_schwab_connections(current_user.id):
+        label = (row.get("account_name") or "").strip() or str(
+            row.get("account_number") or ""
+        ).strip()
+        if not label:
+            continue
+        if label not in have:
+            add_account_for_user(current_user.id, label)
+            have.add(label)
+            names.append(label)
+    return sorted(names)
 
 
 def _account_sql_filter(accounts):

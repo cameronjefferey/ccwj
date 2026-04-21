@@ -91,8 +91,8 @@
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-warning">
-    <strong>No data yet.</strong>
-    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see daily position detail.
+    <strong>No portfolio data for this login yet.</strong>
+    After you <a href="{{ url_for('upload') }}">upload CSVs</a> or run <strong>Schwab → Sync now</strong> in Settings, wait for GitHub Actions / dbt to finish (usually a few minutes), then refresh this page.
 </div>
 {% endif %}
 
