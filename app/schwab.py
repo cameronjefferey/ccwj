@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 import tempfile
+import time
 from datetime import datetime, date, timedelta
 from urllib.parse import urlencode
 
@@ -24,6 +25,29 @@ from app.models import (
 SCHWAB_AUTH_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 SCHWAB_API_BASE = "https://api.schwabapi.com"
+
+
+def _wrap_schwab_token_for_py(raw):
+    """
+    schwab-py TokenMetadata.from_loaded_token() requires:
+        {"creation_timestamp": int, "token": { access_token, refresh_token, ... }}
+
+    Older HappyTrader builds stored a flat dict with created_at instead.
+    """
+    if not raw or not isinstance(raw, dict):
+        return raw
+    if "creation_timestamp" in raw and "token" in raw:
+        return raw
+    if "access_token" in raw and "token" not in raw:
+        inner = {}
+        for k in ("access_token", "refresh_token", "token_type", "expires_in", "expires_at", "scope"):
+            if k in raw and raw[k] is not None:
+                inner[k] = raw[k]
+        if "token_type" not in inner:
+            inner["token_type"] = "Bearer"
+        ts = int(raw.get("created_at") or time.time())
+        return {"creation_timestamp": ts, "token": inner}
+    return raw
 
 
 def _schwab_config():
@@ -53,9 +77,18 @@ def _get_schwab_client(user_id, account_number=None):
 
     def token_read():
         c = get_schwab_connection(user_id, conn_data["account_number"])
-        return json.loads(c["token_json"]) if c else None
+        if not c:
+            return None
+        raw = json.loads(c["token_json"])
+        wrapped = _wrap_schwab_token_for_py(raw)
+        if wrapped is not raw:
+            update_schwab_token(
+                user_id, conn_data["account_number"], json.dumps(wrapped)
+            )
+        return wrapped
 
     def token_write(token):
+        # schwab-py passes the wrapped {creation_timestamp, token} dict on refresh
         update_schwab_token(user_id, conn_data["account_number"], json.dumps(token))
 
     try:
@@ -155,14 +188,20 @@ def schwab_callback():
         flash("Schwab did not return tokens. Please try again.", "danger")
         return redirect(url_for("settings"))
 
-    # Build token in schwab-py format (they expect a specific structure)
-    token_json = json.dumps({
+    # schwab-py TokenMetadata expects { creation_timestamp, token: { oauth fields } }
+    inner = {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": token_data.get("token_type", "Bearer"),
         "expires_in": token_data.get("expires_in", 1800),
-        "created_at": int(datetime.utcnow().timestamp()),
-    })
+    }
+    if token_data.get("scope"):
+        inner["scope"] = token_data["scope"]
+    wrapped = {
+        "creation_timestamp": int(datetime.utcnow().timestamp()),
+        "token": inner,
+    }
+    token_json = json.dumps(wrapped)
 
     # Get account info (Schwab API returns accountNumbers with hashValue)
     headers = {"Authorization": f"Bearer {access_token}"}
