@@ -16,6 +16,7 @@ from app.models import (
     get_schwab_connection,
     get_schwab_connections,
     save_schwab_connection,
+    update_schwab_account_hash,
     update_schwab_token,
     add_account_for_user,
 )
@@ -25,6 +26,46 @@ from app.models import (
 SCHWAB_AUTH_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 SCHWAB_API_BASE = "https://api.schwabapi.com"
+
+
+def _schwab_resp_with_refresh(client, request_fn):
+    """
+    Run a schwab-py call that returns httpx.Response. On 401, refresh OAuth
+    tokens and retry once (access token can be rejected before local expiry).
+    """
+    resp = request_fn()
+    if resp.status_code == 401:
+        sess = client.session
+        token = getattr(sess, "token", None)
+        rt = token.get("refresh_token") if token else None
+        if rt:
+            sess.refresh_token(SCHWAB_TOKEN_URL, refresh_token=rt)
+        resp = request_fn()
+    resp.raise_for_status()
+    return resp
+
+
+def _sync_account_hash_from_numbers(client, user_id, account_number, current_hash):
+    """
+    Fetch hashValue from GET /accounts/accountNumbers and persist if it changed.
+    Stale hashes produce 401 on /accounts/{hash}.
+    """
+    resp = _schwab_resp_with_refresh(client, client.get_account_numbers)
+    data = resp.json()
+    if not isinstance(data, list) or not data:
+        return current_hash
+    want = str(account_number or "").strip()
+    new_hash = None
+    for row in data:
+        if str(row.get("accountNumber", "")).strip() == want:
+            new_hash = row.get("hashValue") or ""
+            break
+    if not new_hash and len(data) == 1:
+        new_hash = data[0].get("hashValue") or ""
+    if new_hash and new_hash != current_hash:
+        update_schwab_account_hash(user_id, account_number, new_hash)
+        return new_hash
+    return current_hash
 
 
 def _wrap_schwab_token_for_py(raw):
@@ -310,7 +351,15 @@ def schwab_sync():
             else:
                 flash(msg, "success")
     except Exception as e:
-        flash(f"Sync failed: {e}", "danger")
+        msg = str(e)
+        if "401" in msg or "Unauthorized" in msg:
+            flash(
+                "Schwab returned 401 (session expired or account key out of date). "
+                "Try Sync now again; if it persists, use Connect Schwab in Settings to re-authorize.",
+                "danger",
+            )
+        else:
+            flash(f"Sync failed: {e}", "danger")
 
     return redirect(url_for("settings"))
 
@@ -328,6 +377,12 @@ def _run_sync(user_id, client):
 
     account_hash = conn_data["account_hash"]
     account_name = conn_data.get("account_name") or conn_data["account_number"]
+    account_number = conn_data["account_number"]
+
+    # Stale hashValue in DB → 401 on /accounts/{hash}. Refresh from accountNumbers first.
+    account_hash = _sync_account_hash_from_numbers(
+        client, user_id, account_number, account_hash
+    )
 
     # Fetch account with positions (Account.Fields.POSITIONS = 'positions')
     try:
@@ -335,9 +390,11 @@ def _run_sync(user_id, client):
         fields = [Client.Account.Fields.POSITIONS]
     except Exception:
         fields = ["positions"]
-    resp = client.get_account(account_hash, fields=fields)
-    resp.raise_for_status()
-    acct_data = resp.json()
+    acct_resp = _schwab_resp_with_refresh(
+        client,
+        lambda: client.get_account(account_hash, fields=fields),
+    )
+    acct_data = acct_resp.json()
 
     # Parse positions
     positions = []
@@ -363,12 +420,14 @@ def _run_sync(user_id, client):
     # Fetch transactions (last 60 days)
     end_date = date.today()
     start_date = end_date - timedelta(days=60)
-    tx_resp = client.get_transactions(
-        account_hash,
-        start_date=start_date,
-        end_date=end_date,
+    tx_resp = _schwab_resp_with_refresh(
+        client,
+        lambda: client.get_transactions(
+            account_hash,
+            start_date=start_date,
+            end_date=end_date,
+        ),
     )
-    tx_resp.raise_for_status()
     tx_data = tx_resp.json()
 
     tx_list = tx_data if isinstance(tx_data, list) else (tx_data.get("transaction") or tx_data.get("transactions") or [])

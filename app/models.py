@@ -299,6 +299,15 @@ def update_schwab_token(user_id, account_number, token_json):
     )
 
 
+def update_schwab_account_hash(user_id, account_number, account_hash):
+    """Update account hash when Schwab rotates hashValue (avoids 401 on trader API)."""
+    execute(
+        "UPDATE schwab_connections SET account_hash = %s, updated_at = NOW() "
+        "WHERE user_id = %s AND account_number = %s",
+        (account_hash, user_id, account_number),
+    )
+
+
 def get_schwab_connections(user_id):
     return fetch_all(
         "SELECT account_number, account_name, created_at FROM schwab_connections "
