@@ -11,6 +11,7 @@ from flask_login import login_required, current_user
 
 from app import app
 from app.models import (
+    User,
     get_schwab_connection,
     get_schwab_connections,
     save_schwab_connection,
@@ -67,6 +68,11 @@ def _get_schwab_client(user_id, account_number=None):
             token_write_func=token_write,
         )
     except Exception:
+        app.logger.exception(
+            "Schwab client init failed (user_id=%s, account_number=%s)",
+            user_id,
+            conn_data.get("account_number"),
+        )
         return None
 
 
@@ -223,19 +229,47 @@ def schwab_sync():
         flash("Schwab API is not configured.", "danger")
         return redirect(url_for("settings"))
 
+    conn_row = get_schwab_connection(current_user.id)
+    if not conn_row:
+        flash("No Schwab connection. Connect your account first.", "warning")
+        return redirect(url_for("settings"))
+
     client = _get_schwab_client(current_user.id)
     if not client:
-        flash("No Schwab connection. Connect your account first.", "warning")
+        flash(
+            "Could not open your Schwab session (invalid token or app credentials). "
+            "Click Connect Schwab again to re-authorize. If it keeps failing, check Render logs.",
+            "warning",
+        )
         return redirect(url_for("settings"))
 
     try:
         result = _run_sync(current_user.id, client)
-        flash(
-            f"Synced {result.get('history_rows', 0)} history rows, "
-            f"{result.get('current_rows', 0)} positions. "
-            "Run 'dbt seed && dbt build' to refresh the dashboard, or use automated sync.",
-            "success",
-        )
+        hr = result.get("history_rows", 0)
+        cr = result.get("current_rows", 0)
+        if result.get("github_pushed"):
+            flash(
+                f"Synced {hr} history rows, {cr} positions. "
+                "GitHub seeds were updated; your Actions / dbt pipeline should refresh the dashboard.",
+                "success",
+            )
+        else:
+            msg = (
+                f"Synced {hr} history rows, {cr} positions. "
+                "Run 'dbt seed && dbt build' locally if you rely on CSV files only."
+            )
+            if result.get("github_error"):
+                flash(
+                    f"{msg} Could not update GitHub seeds: {result['github_error']}",
+                    "warning",
+                )
+            elif result.get("github_seed_push_skipped"):
+                flash(
+                    f"{msg} Set GITHUB_PAT (+ GITHUB_REPO) to push the same data path as manual upload.",
+                    "info",
+                )
+            else:
+                flash(msg, "success")
     except Exception as e:
         flash(f"Sync failed: {e}", "danger")
 
@@ -332,21 +366,60 @@ def _run_sync(user_id, client):
             "amount": amount,
         })
 
-    # For now: write to a file the user can use. Full BigQuery integration next.
-    out_dir = os.path.join(os.path.dirname(__file__), "..", "data", "schwab_sync")
-    os.makedirs(out_dir, exist_ok=True)
-    safe_name = "".join(c if c.isalnum() else "_" for c in account_name)[:50]
-
     import pandas as pd
 
     if transactions:
         hist_df = pd.DataFrame(transactions)
         hist_df = hist_df[HISTORY_COLUMNS] if all(c in hist_df.columns for c in HISTORY_COLUMNS) else hist_df
+    else:
+        hist_df = None
+
+    curr_df = pd.DataFrame(positions) if positions else pd.DataFrame()
+    skip_hist = hist_df is None or hist_df.empty
+
+    github_pushed = False
+    github_error = None
+    ok_cfg = False
+    from app.upload import merge_and_push_seeds, _upload_github_config_ok
+
+    ok_cfg, _cfg_err = _upload_github_config_ok()
+    if ok_cfg:
+        uname = "user"
+        u = User.get_by_id(user_id)
+        if u:
+            uname = u.username
+        if skip_hist:
+            commit_msg = (
+                f"Schwab sync ({uname}): positions only, {len(curr_df)} rows ({account_name})"
+            )
+        else:
+            commit_msg = (
+                f"Schwab sync ({uname}): {len(transactions)} history, "
+                f"{len(curr_df)} positions ({account_name})"
+            )
+        ok, err, _hr, _cr = merge_and_push_seeds(
+            account_name,
+            hist_df,
+            curr_df,
+            commit_message=commit_msg,
+            user_id=user_id,
+            skip_history=skip_hist,
+        )
+        github_pushed = ok
+        github_error = err if not ok else None
+    else:
+        github_error = None
+
+    # Local CSV fallback / debugging (ephemeral on Render unless you mount storage)
+    out_dir = os.path.join(os.path.dirname(__file__), "..", "data", "schwab_sync")
+    os.makedirs(out_dir, exist_ok=True)
+    safe_name = "".join(c if c.isalnum() else "_" for c in account_name)[:50]
+
+    if hist_df is not None and not hist_df.empty:
         hist_path = os.path.join(out_dir, f"{safe_name}_history.csv")
         hist_df.to_csv(hist_path, index=False)
 
-    if positions:
-        curr_df = pd.DataFrame(positions)
+    if not curr_df.empty:
         curr_path = os.path.join(out_dir, f"{safe_name}_current.csv")
         curr_df.to_csv(curr_path, index=False)
 
@@ -354,6 +427,9 @@ def _run_sync(user_id, client):
         "history_rows": len(transactions),
         "current_rows": len(positions),
         "output_dir": out_dir,
+        "github_pushed": github_pushed,
+        "github_error": github_error,
+        "github_seed_push_skipped": not ok_cfg,
     }
 
 

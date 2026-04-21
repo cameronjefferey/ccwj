@@ -67,16 +67,20 @@ To run sync automatically every day:
 ### Option A: Cron (Linux/macOS)
 
 ```bash
-# Sync at 6 PM ET after market close
-0 18 * * * cd /path/to/ccwj && .venv/bin/python -m app.schwab_sync
+# Example: 6 PM ET after market close (cron uses server local time — set TZ or convert to UTC)
+0 18 * * * cd /path/to/ccwj && .venv/bin/python -m app.schwab_sync_cli
 ```
 
 ### Option B: Render Cron Job
 
-If deployed on Render, add a cron job that runs:
+Render’s schedule is **UTC only** (see [Render cron jobs](https://render.com/docs/cronjobs)). **1:01 PM Pacific** moves between **20:01 UTC** (during PDT) and **21:01 UTC** (during PST); pick one UTC time and accept the one-hour shift, or run two jobs if you need exact local time.
+
+**Weekdays after close (simple default):** `1 21 * * 1-5` → 21:01 UTC Mon–Fri (≈ 1:01 PM **PST** / 2:01 PM **PDT** — still after the 1:00 PM PT close).
+
+Create a **Cron Job** service in Render with the same **env group** as your web app (at minimum `DATABASE_URL`, `SCHWAB_APP_KEY`, `SCHWAB_APP_SECRET`). Start command:
 
 ```bash
-python -m app.schwab_sync
+python -m app.schwab_sync_cli
 ```
 
 ### Option C: GitHub Actions
@@ -88,16 +92,14 @@ Create `.github/workflows/schwab-sync.yml` to run the sync on a schedule.
 ```
 Schwab API
   → positions + transactions (last 60 days)
-  → mapped to our CSV schema
-  → written to data/schwab_sync/{account}_history.csv and _current.csv
-  → (optional) merge into dbt seeds or load to BigQuery
-  → dbt build → positions_summary
+  → mapped to the same schema as manual CSV upload
+  → if GITHUB_PAT (+ GITHUB_REPO) is set: merge into dbt/seeds on GitHub (same as Upload page) → Actions → BigQuery / dbt
+  → always: also writes data/schwab_sync/{account}_*.csv on the server (local/debug; ephemeral on Render)
 ```
 
-Sync output is written to `data/schwab_sync/`. To use it:
+**Unified pipeline with manual upload:** Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. Schwab sync then updates `trade_history.csv` and `current_positions.csv` the same way the Upload page does. If GitHub is not configured, sync still runs but only writes under `data/schwab_sync/` (copy into seeds yourself if needed).
 
-1. **Manual**: Copy the CSVs into `dbt/seeds/` (or merge with existing seeds), then run `dbt seed && dbt build`.
-2. **Automated**: Extend the sync to push to GitHub (like the upload flow) or write directly to BigQuery.
+**Account names:** The linked Schwab account name from the API should match how you want that account labeled in seeds/BigQuery. If you previously used manual upload under a different label, align the name or merge carefully.
 
 ## Limits and Notes
 

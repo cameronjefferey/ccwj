@@ -470,6 +470,103 @@ def _upload_github_config_ok():
     return True, None
 
 
+def merge_and_push_seeds(
+    account_name,
+    history_df,
+    current_df,
+    *,
+    commit_message,
+    user_id=None,
+    skip_history=False,
+):
+    """
+    Normalize DataFrames, merge with existing GitHub seed files, and commit.
+    When skip_history is True, history_df may be None (positions-only commit).
+
+    Caller must verify _upload_github_config_ok() first.
+
+    On success, links account and records an uploads row when user_id is set.
+
+    Returns (ok, err_message, history_rows, current_rows).
+    """
+    if current_df is None:
+        return False, "current_df is required.", 0, 0
+
+    if history_df is not None:
+        history_df = history_df.copy()
+    current_df = current_df.copy()
+
+    for df in [history_df, current_df]:
+        if df is None:
+            continue
+        acct_cols = [c for c in df.columns if c.lower() == "account"]
+        if acct_cols:
+            df.drop(columns=acct_cols, inplace=True)
+        df.insert(0, "Account", account_name)
+
+    if history_df is not None:
+        history_standard = {
+            "account": "Account", "date": "Date", "action": "Action",
+            "symbol": "Symbol", "description": "Description",
+            "quantity": "Quantity", "price": "Price",
+            "fees_and_comm": "fees_and_comm", "amount": "Amount",
+        }
+        history_col_map = {c: history_standard[c.lower()]
+                           for c in history_df.columns if c.lower() in history_standard}
+        history_df = history_df.rename(columns=history_col_map)
+        for col in HISTORY_SEED_COLUMNS:
+            if col not in history_df.columns:
+                history_df[col] = ""
+        history_df = history_df[HISTORY_SEED_COLUMNS]
+
+    # Schwab API uses cost_basis; seed column is cost_bases
+    if "cost_basis" in current_df.columns and "cost_bases" not in current_df.columns:
+        current_df = current_df.rename(columns={"cost_basis": "cost_bases"})
+
+    current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
+    current_col_map = {}
+    for col in current_df.columns:
+        lower = col.lower()
+        if lower in current_norm:
+            current_col_map[col] = current_norm[lower]
+    current_df = current_df.rename(columns=current_col_map)
+    for seed_col in CURRENT_SEED_COLUMNS:
+        if seed_col not in current_df.columns:
+            current_df[seed_col] = ""
+    current_df = current_df[CURRENT_SEED_COLUMNS]
+
+    if not skip_history and history_df is not None:
+        history_content = _merge_seed_with_existing(
+            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
+        )
+    current_content = _merge_seed_with_existing(
+        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
+    )
+
+    history_rows = len(history_df) if history_df is not None else 0
+    current_rows = len(current_df)
+
+    try:
+        if skip_history:
+            ok, err = _commit_file(CURRENT_PATH, current_content, commit_message)
+        else:
+            ok, err = _commit_two_files(
+                HISTORY_PATH, history_content,
+                CURRENT_PATH, current_content,
+                commit_message,
+            )
+        if not ok:
+            return False, err or "GitHub commit failed.", history_rows, current_rows
+    except Exception as exc:
+        return False, str(exc), history_rows, current_rows
+
+    if user_id is not None:
+        add_account_for_user(user_id, account_name)
+        record_upload(user_id, account_name, history_rows, current_rows)
+
+    return True, None, history_rows, current_rows
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 @limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
@@ -545,93 +642,31 @@ def upload():
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
-    # Set the Account column on DataFrames (overwrite if present)
-    # ------------------------------------------------------------------
-    for df in [history_df, current_df]:
-        if df is None:
-            continue
-        acct_cols = [c for c in df.columns if c.lower() == "account"]
-        if acct_cols:
-            df.drop(columns=acct_cols, inplace=True)
-        df.insert(0, "Account", account_name)
-
-    # ------------------------------------------------------------------
-    # Normalize column names to match seed file format
-    # ------------------------------------------------------------------
-    if history_df is not None:
-        history_standard = {
-            "account": "Account", "date": "Date", "action": "Action",
-            "symbol": "Symbol", "description": "Description",
-            "quantity": "Quantity", "price": "Price",
-            "fees_and_comm": "fees_and_comm", "amount": "Amount",
-        }
-        history_col_map = {c: history_standard[c.lower()]
-                           for c in history_df.columns if c.lower() in history_standard}
-        history_df = history_df.rename(columns=history_col_map)
-        for col in HISTORY_SEED_COLUMNS:
-            if col not in history_df.columns:
-                history_df[col] = ""
-        history_df = history_df[HISTORY_SEED_COLUMNS]
-
-    current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
-    current_col_map = {}
-    for col in current_df.columns:
-        lower = col.lower()
-        if lower in current_norm:
-            current_col_map[col] = current_norm[lower]
-    current_df = current_df.rename(columns=current_col_map)
-    for seed_col in CURRENT_SEED_COLUMNS:
-        if seed_col not in current_df.columns:
-            current_df[seed_col] = ""
-    current_df = current_df[CURRENT_SEED_COLUMNS]
-
-    # Merge with existing seed data (preserve other accounts, replace this account)
-    if history_df is not None:
-        history_content = _merge_seed_with_existing(
-            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
-        )
-    current_content = _merge_seed_with_existing(
-        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
-    )
-
-    history_rows = len(history_df) if history_df is not None else 0
-    current_rows = len(current_df)
-
-    # ------------------------------------------------------------------
-    # Commit to GitHub (this triggers the Actions pipeline)
+    # Merge into GitHub seeds (same path as Schwab sync)
     # ------------------------------------------------------------------
     if skip_history:
         commit_msg = (
             f"Upload by {current_user.username}: "
-            f"positions only, {current_rows} current rows ({account_name})"
+            f"positions only, {len(current_df)} current rows ({account_name})"
         )
     else:
         commit_msg = (
             f"Upload by {current_user.username}: "
-            f"{history_rows} history rows, {current_rows} current rows "
+            f"{len(history_df)} history rows, {len(current_df)} current rows "
             f"({account_name})"
         )
 
-    try:
-        if skip_history:
-            ok, err = _commit_file(CURRENT_PATH, current_content, commit_msg)
-        else:
-            ok, err = _commit_two_files(
-                HISTORY_PATH, history_content,
-                CURRENT_PATH, current_content,
-                commit_msg,
-            )
-        if not ok:
-            flash(f"Failed to update seeds: {err}", "danger")
-            return redirect(url_for("upload"))
-
-    except Exception as exc:
-        flash(f"GitHub commit failed: {exc}", "danger")
+    ok, err, history_rows, current_rows = merge_and_push_seeds(
+        account_name,
+        history_df,
+        current_df,
+        commit_message=commit_msg,
+        user_id=current_user.id,
+        skip_history=skip_history,
+    )
+    if not ok:
+        flash(f"Failed to update seeds: {err}", "danger")
         return redirect(url_for("upload"))
-
-    # Auto-link this account and record the upload
-    add_account_for_user(current_user.id, account_name)
-    record_upload(current_user.id, account_name, history_rows, current_rows)
 
     if skip_history:
         flash(
