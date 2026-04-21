@@ -303,6 +303,7 @@
                 <span class="insights-meta">Generated {{ insight.generated_at }}</span>
                 {% if gemini_available %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-primary btn-sm" id="regenBtn">
                         Regenerate
                     </button>
@@ -344,6 +345,7 @@
                 {% endif %}
             </div>
             <form method="POST" action="{{ url_for('generate_insights') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
                     Generate Coaching Report
                 </button>
@@ -408,11 +410,13 @@
             coachThread.scrollTop = coachThread.scrollHeight;
 
             try {
+                const csrf = document.querySelector('meta[name="csrf-token"]');
                 const resp = await fetch(coachUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': csrf ? csrf.getAttribute('content') : ''
                     },
                     body: JSON.stringify({ question: q })
                 });

@@ -1,12 +1,14 @@
 import os
 import click
-from flask import render_template, redirect, url_for, request, flash
+from flask import render_template, redirect, url_for, request, flash, abort
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
+from app.extensions import limiter
 from app.models import User, get_accounts_for_user, get_uploads_for_user, get_schwab_connections
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("20 per minute")
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
@@ -36,6 +38,9 @@ def login():
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
+    if not app.config.get("SIGNUP_ENABLED", True):
+        abort(404)
+
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
 
@@ -72,7 +77,7 @@ def signup():
     return render_template("signup.html", title="Sign Up")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
     logout_user()
     return redirect(url_for("index"))
@@ -87,7 +92,8 @@ def demo_start():
     demo = User.get_by_username("demo")
     if demo is None:
         flash("Demo is not available. Please create an account to get started.", "warning")
-        return redirect(url_for("signup"))
+        target = "login" if not app.config.get("SIGNUP_ENABLED", True) else "signup"
+        return redirect(url_for(target))
 
     login_user(demo, remember=False)
     return redirect(url_for("weekly_review"))
@@ -165,3 +171,23 @@ def create_user(username, password):
 
     User.create(username, password)
     click.echo(f"User '{username}' created successfully.")
+
+
+@app.cli.command("reset-password")
+@click.option("--username", required=True, help="Username whose password to change")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True,
+              help="New password (min 8 chars, letter + number)")
+def reset_password(username, password):
+    """Set a new password for an existing user (e.g. lockout recovery)."""
+    user = User.get_by_username(username)
+    if user is None:
+        click.echo(f"Error: No user named '{username}'.")
+        return
+
+    valid, err = _validate_password(password)
+    if not valid:
+        click.echo(f"Error: {err}")
+        return
+
+    User.update_password(user.id, password)
+    click.echo(f"Password updated for '{username}'.")

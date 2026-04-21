@@ -19,6 +19,8 @@ dbt-semantic-interfaces==0.7.4
 deepdiff==7.0.1
 Flask>=3.1.1
 flask-login
+Flask-WTF>=1.2
+Flask-Limiter>=3.8
 google-api-core==2.24.2
 google-auth==2.38.0
 google-auth-oauthlib==1.2.1
@@ -88,3 +90,5 @@ google-genai
 schwab-py
 pytest>=8.0
 sentry-sdk[flask]>=2.0
+psycopg[binary]>=3.2,<4
+psycopg_pool>=3.2,<4

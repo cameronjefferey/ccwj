@@ -62,6 +62,12 @@ Seeds (CSV)
 - Python 3.11+
 - Google Cloud account with BigQuery enabled
 - `gcloud` CLI
+- PostgreSQL 14+ (local dev). On macOS:
+  ```bash
+  brew install postgresql@16
+  brew services start postgresql@16
+  createdb happytrader
+  ```
 
 ### Install
 
@@ -76,7 +82,9 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env: add SECRET_KEY (required), GEMINI_API_KEY (optional), HAPPYTRADER_USERS (optional)
+# Edit .env: add SECRET_KEY (required), DATABASE_URL (required, e.g.
+# postgresql://localhost:5432/happytrader), GEMINI_API_KEY (optional),
+# HAPPYTRADER_USERS (optional).
 ```
 
 ### BigQuery Auth
@@ -103,11 +111,41 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
 ### Deployment (e.g. Render)
 
-1. Set environment variables: `SECRET_KEY`, `GEMINI_API_KEY` (optional), `HAPPYTRADER_USERS`
-2. For BigQuery: set `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` with base64-encoded service account JSON
+1. Create a Render Postgres database and link it to the web service. Render
+   will inject `DATABASE_URL` automatically.
+2. Set environment variables on the web service:
+   - `SECRET_KEY` (required)
+   - `GEMINI_API_KEY` (optional)
+   - `SENTRY_DSN` (optional — no default in code; add only if you want error reporting)
+   - `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` (BigQuery service account, base64-encoded)
+   - `SIGNUP_ENABLED=false` (optional — invite-only; `/signup` returns 404)
+   Render sets `RENDER=true`; the app uses that to enable secure session cookies over HTTPS.
 3. Build command: `pip install -r requirements.txt`
 4. Start command: `gunicorn -b 0.0.0.0:$PORT wsgi:app`
 5. Run dbt (e.g. in a separate job or on deploy): `cd dbt && dbt seed && dbt build`
+6. Create users via the Render shell: `python -m flask create-user --username <name> --password <pw>`  
+   Lockout recovery: `python -m flask reset-password --username <name>`
+
+#### Manual CSV upload (Schwab → GitHub → BigQuery)
+
+Uploads commit `dbt/seeds/trade_history.csv` and `current_positions.csv` in the
+linked GitHub repo and trigger `.github/workflows/bigquery_update.yml`.
+
+1. On the **web service**, set **`GITHUB_PAT`** to a token with permission to
+   push to that repo (classic: **`repo`** scope; fine-grained: **Contents**
+   read/write on the repository).
+2. Optionally set **`GITHUB_REPO`** (`owner/repo`) and **`GITHUB_BRANCH`**
+   if they differ from the defaults (`cameronjefferey/ccwj`, `master`).
+3. The workflow must run on pushes to the branch you use (see
+   `on.push.branches` in `bigquery_update.yml`).
+4. Optional: **`MAX_UPLOAD_MB`** (default 32) caps CSV size.
+
+Without `GITHUB_PAT`, the upload page explains that manual upload is disabled.
+
+#### Migrating from SQLite
+
+If you previously ran on SQLite, use `scripts/migrate_sqlite_to_postgres.py`
+to copy a single user's data over. See the script docstring for usage.
 
 ### Demo Environment
 

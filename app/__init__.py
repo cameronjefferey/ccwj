@@ -4,13 +4,13 @@ import os
 import sentry_sdk
 from flask import Flask, render_template
 from flask_login import LoginManager
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from sentry_sdk.integrations.flask import FlaskIntegration
 
-_sentry_dsn = os.environ.get(
-    "SENTRY_DSN",
-    "https://37b6cabf26d662ccf4012f3c3c906314@o4510899339329536.ingest.us.sentry.io/4510899340967936",
-)
+# Set SENTRY_DSN in the environment to enable (no default — avoids sending
+# production errors to a shared project by mistake).
+_sentry_dsn = os.environ.get("SENTRY_DSN", "").strip() or None
 
 
 def _scrub_sentry_event(event, hint):
@@ -50,6 +50,10 @@ if _sentry_dsn:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
+# request.scheme / url_for(..., _external=True) match the public URL.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 
 @app.errorhandler(404)
 def not_found(e):
@@ -82,6 +86,11 @@ def _before_request_sentry_user():
     if _sentry_dsn:
         _set_sentry_user()
 
+
+from app.extensions import csrf, limiter
+
+csrf.init_app(app)
+limiter.init_app(app)
 
 # Initialize the database and seed users from env
 from app.models import init_db, seed_users_from_env, ensure_demo_user

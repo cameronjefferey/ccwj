@@ -1,6 +1,8 @@
-from flask import render_template, request, redirect, url_for, Response
+from flask import render_template, request, redirect, url_for, Response, flash
+from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import login_required, current_user
 from app import app
+from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
 from app.models import get_accounts_for_user, is_admin
 from google.cloud import bigquery
@@ -403,6 +405,7 @@ def get_started():
 
 
 @app.route("/ping")
+@limiter.exempt
 def ping():
     return "Flask app is alive"
 
@@ -2525,3 +2528,15 @@ def accounts():
         accounts=all_accounts,
         selected_account=selected_account,
     )
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def request_entity_too_large(_e):
+    """CSV uploads exceed MAX_CONTENT_LENGTH (see config MAX_UPLOAD_MB)."""
+    flash(
+        "Upload too large. Try a shorter date range in your export, or raise MAX_UPLOAD_MB.",
+        "danger",
+    )
+    if current_user.is_authenticated:
+        return redirect(url_for("upload"))
+    return redirect(url_for("index"))

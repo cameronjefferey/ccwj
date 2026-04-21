@@ -74,6 +74,7 @@
                     {% if schwab_connections %}
                     <p class="mb-2 small">Connected: {% for c in schwab_connections %}{{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-outline-primary">Sync now</button>
                     </form>
                     {% else %}
@@ -90,6 +91,7 @@
             <div class="card-header">Change Password</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="current_password" class="form-label">Current Password</label>
                         <input type="password" class="form-control" id="current_password"

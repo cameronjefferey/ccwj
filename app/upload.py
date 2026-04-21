@@ -7,6 +7,7 @@ from io import StringIO
 from flask import render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 from app import app
+from app.extensions import limiter
 from app.models import (
     get_accounts_for_user, add_account_for_user,
     remove_account_for_user, is_admin,
@@ -80,10 +81,19 @@ CURRENT_SEED_COLUMNS = [
     "in_the_money", "security_type", "margin_requirement",
 ]
 
-# GitHub config
-GITHUB_REPO = "cameronjefferey/ccwj"
+# Seed paths inside the repo (same layout as dbt/)
 HISTORY_PATH = "dbt/seeds/trade_history.csv"
 CURRENT_PATH = "dbt/seeds/current_positions.csv"
+
+
+def _github_repo() -> str:
+    """owner/repo for the GitHub API (override with GITHUB_REPO)."""
+    return os.environ.get("GITHUB_REPO", "cameronjefferey/ccwj").strip()
+
+
+def _github_branch() -> str:
+    """Branch to read/write seed files (override with GITHUB_BRANCH)."""
+    return os.environ.get("GITHUB_BRANCH", "master").strip()
 
 
 def _github_headers():
@@ -197,8 +207,12 @@ def _validate_csv(file_storage, required_cols, label, col_renames=None,
 
 def _get_file_sha(path):
     """Get the current SHA of a file in the repo (needed to update it)."""
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    resp = requests.get(url, headers=_github_headers(), timeout=15)
+    repo = _github_repo()
+    branch = _github_branch()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    resp = requests.get(
+        url, headers=_github_headers(), params={"ref": branch}, timeout=15
+    )
     if resp.status_code == 200:
         return resp.json().get("sha")
     return None  # File doesn't exist yet
@@ -209,8 +223,12 @@ def _get_file_content(path):
     Fetch the raw content of a file from the repo.
     Returns decoded string, or None if file doesn't exist or fetch fails.
     """
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    resp = requests.get(url, headers=_github_headers(), timeout=15)
+    repo = _github_repo()
+    branch = _github_branch()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    resp = requests.get(
+        url, headers=_github_headers(), params={"ref": branch}, timeout=15
+    )
     if resp.status_code != 200:
         return None
     data = resp.json()
@@ -321,12 +339,14 @@ def _commit_file(path, content, message):
     Create or update a file in the GitHub repo via the Contents API.
     Returns (success, error_message).
     """
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    repo = _github_repo()
+    branch = _github_branch()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
 
     payload = {
         "message": message,
         "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": "master",
+        "branch": branch,
     }
 
     # If file exists, include its SHA (required for updates)
@@ -347,16 +367,20 @@ def _commit_two_files(path1, content1, path2, content2, message):
     One commit = one push event = one workflow run.
     Returns (success, error_message).
     """
-    parts = GITHUB_REPO.split("/", 1)
+    repo_full = _github_repo()
+    branch = _github_branch()
+    parts = repo_full.split("/", 1)
     if len(parts) != 2:
-        return False, "Invalid GITHUB_REPO"
+        return False, "Invalid GITHUB_REPO (expected owner/repo)"
     owner, repo = parts
     base = f"https://api.github.com/repos/{owner}/{repo}/git"
 
     headers = _github_headers()
 
     # 1. Get current commit SHA
-    ref_resp = requests.get(f"{base}/refs/heads/master", headers=headers, timeout=15)
+    ref_resp = requests.get(
+        f"{base}/refs/heads/{branch}", headers=headers, timeout=15
+    )
     if ref_resp.status_code != 200:
         return False, f"Failed to get ref (HTTP {ref_resp.status_code})"
     commit_sha = ref_resp.json()["object"]["sha"]
@@ -407,7 +431,7 @@ def _commit_two_files(path1, content1, path2, content2, message):
 
     # 6. Update ref
     patch_resp = requests.patch(
-        f"{base}/refs/heads/master",
+        f"{base}/refs/heads/{branch}",
         headers=headers,
         json={"sha": new_commit_sha},
         timeout=15,
@@ -435,9 +459,23 @@ def _get_existing_accounts():
         return []
 
 
+def _upload_github_config_ok():
+    """Return (ok, error_message). PAT + owner/repo shape."""
+    pat = os.environ.get("GITHUB_PAT", "").strip()
+    if not pat:
+        return False, "GITHUB_PAT is not set. Manual upload is disabled."
+    repo = _github_repo()
+    if not repo or repo.count("/") != 1 or ".." in repo or repo.startswith("/"):
+        return False, "GITHUB_REPO must be set to owner/repo (e.g. myorg/ccwj)."
+    return True, None
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
+@limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
 def upload():
+    pat_configured = bool(os.environ.get("GITHUB_PAT", "").strip())
+
     if request.method == "GET":
         user_accounts = get_accounts_for_user(current_user.id)
         # Admins see every account in BigQuery; regular users see only
@@ -452,13 +490,17 @@ def upload():
             "upload.html", title="Upload Data",
             accounts=accounts,
             recent_uploads=recent_uploads,
+            github_upload_enabled=pat_configured,
+            github_repo=_github_repo(),
+            github_branch=_github_branch(),
         )
 
     # ------------------------------------------------------------------
-    # Check GITHUB_PAT is set
+    # GitHub PAT + repo config
     # ------------------------------------------------------------------
-    if not os.environ.get("GITHUB_PAT"):
-        flash("GITHUB_PAT environment variable not set. Upload is disabled.", "danger")
+    ok_cfg, cfg_err = _upload_github_config_ok()
+    if not ok_cfg:
+        flash(cfg_err, "danger")
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
@@ -619,7 +661,8 @@ def upload_processing():
     """Intermediary page shown after upload while CI/dbt runs."""
     # Rough expectation; purely informational for now.
     expected_minutes = 3
-    actions_url = f"https://github.com/{GITHUB_REPO}/actions" if GITHUB_REPO else None
+    repo = _github_repo()
+    actions_url = f"https://github.com/{repo}/actions" if repo else None
 
     return render_template(
         "upload_processing.html",

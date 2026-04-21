@@ -1,0 +1,117 @@
+"""
+Postgres connection helpers.
+
+The application uses a single global ``psycopg_pool.ConnectionPool`` so each
+HTTP request can grab a connection cheaply. Connections are configured to
+return rows as ``dict`` (via ``psycopg.rows.dict_row``) so callers can use
+column-name access — matching the previous ``sqlite3.Row`` ergonomics.
+
+Usage:
+
+    from app.db import get_conn, fetch_all, fetch_one, execute
+
+    rows = fetch_all("SELECT id FROM users WHERE username = %s", (name,))
+    row  = fetch_one("SELECT * FROM users WHERE id = %s", (uid,))
+    execute("UPDATE users SET password_hash = %s WHERE id = %s", (h, uid))
+
+The pool is opened lazily on first use so importing this module is cheap and
+won't fail at import time if ``DATABASE_URL`` isn't set yet (e.g. during
+``flask --help`` or test collection).
+"""
+from __future__ import annotations
+
+import atexit
+import os
+import threading
+from contextlib import contextmanager
+from typing import Any, Iterable, Optional
+
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
+
+
+_pool: Optional[ConnectionPool] = None
+_pool_lock = threading.Lock()
+
+
+def _close_pool_at_exit() -> None:
+    global _pool
+    if _pool is not None:
+        try:
+            _pool.close()
+        except Exception:
+            pass
+        _pool = None
+
+
+atexit.register(_close_pool_at_exit)
+
+
+def _normalize_url(url: str) -> str:
+    """Render and Heroku still hand out ``postgres://`` URLs which newer
+    libraries reject. Normalize to ``postgresql://``."""
+    if url.startswith("postgres://"):
+        return "postgresql://" + url[len("postgres://"):]
+    return url
+
+
+def _build_pool() -> ConnectionPool:
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Add it to .env, e.g.\n"
+            "  DATABASE_URL=postgresql://user:pass@localhost:5432/happytrader"
+        )
+    return ConnectionPool(
+        conninfo=_normalize_url(url),
+        min_size=1,
+        max_size=int(os.environ.get("DATABASE_POOL_MAX", "10")),
+        kwargs={"row_factory": dict_row},
+        open=True,
+    )
+
+
+def get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = _build_pool()
+    return _pool
+
+
+@contextmanager
+def get_conn():
+    """Yield a pooled connection. The pool's context manager commits on
+    success and rolls back on exception."""
+    pool = get_pool()
+    with pool.connection() as conn:
+        yield conn
+
+
+def fetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            return cur.fetchall()
+
+
+def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            return cur.fetchone()
+
+
+def execute(sql: str, params: Iterable[Any] = ()) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+
+
+def execute_returning(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
+    """Run an INSERT/UPDATE/DELETE ... RETURNING and return the first row."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            return cur.fetchone()

@@ -17,7 +17,8 @@ from datetime import date, timedelta
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import _get_db, get_accounts_for_user, save_mirror_score
+from app.db import fetch_all
+from app.models import get_accounts_for_user, save_mirror_score
 from app.mirror_score import compute_mirror_score, _week_start
 from app.routes import get_bigquery_client
 
@@ -39,13 +40,12 @@ def main():
         today = date.today()
         week_start = _week_start(today) - timedelta(days=7)
 
-    conn = _get_db()
-    users = conn.execute("SELECT id FROM users").fetchall()
-    conn.close()
+    users = fetch_all("SELECT id FROM users")
 
     client = get_bigquery_client()
     count = 0
-    for (user_id,) in users:
+    for row in users:
+        user_id = row["id"]
         accounts = get_accounts_for_user(user_id)
         if not accounts:
             continue

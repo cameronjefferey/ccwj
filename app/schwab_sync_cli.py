@@ -15,14 +15,11 @@ os.environ.setdefault("FLASK_APP", "app:app")
 
 
 def main():
-    from app.models import _get_db, init_db
+    from app.db import fetch_all
+    from app.models import init_db
 
     init_db()
-    conn = _get_db()
-    rows = conn.execute(
-        "SELECT user_id, account_number FROM schwab_connections"
-    ).fetchall()
-    conn.close()
+    rows = fetch_all("SELECT user_id, account_number FROM schwab_connections")
 
     if not rows:
         print("No Schwab connections to sync.")
@@ -30,7 +27,9 @@ def main():
 
     from app.schwab import _get_schwab_client, _run_sync
 
-    for user_id, account_number in rows:
+    for row in rows:
+        user_id = row["user_id"]
+        account_number = row["account_number"]
         try:
             client = _get_schwab_client(user_id, account_number)
             if client:
