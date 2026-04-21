@@ -37,23 +37,18 @@
     </div>
     <h2 class="fw-bold mb-2">Processing Your Upload</h2>
     <p class="processing-sub mb-3">
-        Your CSV files have been committed and the BigQuery pipeline is running
-        in GitHub Actions. This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
+        Your files were received and your data is updating in the background.
+        This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
     </p>
     <p class="processing-sub mb-4">
-        When it finishes, your <strong>Weekly Review</strong> and <strong>Daily Detail</strong>
-        pages will reflect the new data.
+        When it’s ready, your <strong>Weekly Review</strong> and <strong>Daily Detail</strong>
+        pages will show the latest numbers.
     </p>
 
     <div class="mb-3">
-        <a href="{{ url_for('weekly_review', from_upload=1) }}" class="btn btn-outline-primary me-2">
+        <a href="{{ url_for('weekly_review', from_upload=1) }}" class="btn btn-outline-primary">
             Go to Weekly Review now
         </a>
-        {% if actions_url %}
-        <a href="{{ actions_url }}" target="_blank" class="btn btn-link btn-sm text-muted">
-            View GitHub Actions status
-        </a>
-        {% endif %}
     </div>
 
     <p class="processing-sub small mb-0">

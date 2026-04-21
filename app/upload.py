@@ -491,8 +491,6 @@ def upload():
             accounts=accounts,
             recent_uploads=recent_uploads,
             github_upload_enabled=pat_configured,
-            github_repo=_github_repo(),
-            github_branch=_github_branch(),
         )
 
     # ------------------------------------------------------------------
@@ -637,20 +635,16 @@ def upload():
 
     if skip_history:
         flash(
-            f"Positions updated: {current_rows:,} current rows for {account_name}.",
+            f"Upload saved for {account_name} ({current_rows:,} positions). "
+            "Your data is updating in the background.",
             "success",
         )
     else:
         flash(
-            f"Seed files updated: {history_rows:,} history rows and "
-            f"{current_rows:,} current rows for {account_name}.",
+            f"Upload saved for {account_name} ({history_rows:,} trades, {current_rows:,} positions). "
+            "Your data is updating in the background.",
             "success",
         )
-    flash(
-        "Pipeline triggered -- dbt seed + build is running in GitHub Actions. "
-        "This usually takes a few minutes.",
-        "info",
-    )
 
     return redirect(url_for("upload_processing"))
 
@@ -658,17 +652,13 @@ def upload():
 @app.route("/upload/processing")
 @login_required
 def upload_processing():
-    """Intermediary page shown after upload while CI/dbt runs."""
-    # Rough expectation; purely informational for now.
+    """Intermediary page shown after upload while data refreshes."""
     expected_minutes = 3
-    repo = _github_repo()
-    actions_url = f"https://github.com/{repo}/actions" if repo else None
 
     return render_template(
         "upload_processing.html",
         title="Processing Upload",
         expected_minutes=expected_minutes,
-        actions_url=actions_url,
     )
 
 

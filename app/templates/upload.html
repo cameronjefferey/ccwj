@@ -75,11 +75,6 @@
             <strong>Contents: Read and write</strong> on the repo that holds your dbt seeds), then redeploy.
             See README → Deployment for details.
         </div>
-        {% else %}
-        <p class="text-muted small mb-4">
-            Commits update seeds in <code>{{ github_repo|default('') }}</code> on branch <code>{{ github_branch|default('master') }}</code>
-            and trigger your GitHub Actions pipeline.
-        </p>
         {% endif %}
 
         <details class="mb-4">

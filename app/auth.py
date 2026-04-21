@@ -71,8 +71,12 @@ def signup():
             return redirect(url_for("signup"))
 
         User.create(username, password)
-        flash("Account created! You can now sign in.", "success")
-        return redirect(url_for("login"))
+        user = User.get_by_username(username)
+        login_user(user, remember=False)
+        flash("Welcome! You're signed in.", "success")
+        accounts = get_accounts_for_user(user.id)
+        next_page = url_for("get_started") if not accounts else url_for("weekly_review")
+        return redirect(next_page)
 
     return render_template("signup.html", title="Sign Up")
 

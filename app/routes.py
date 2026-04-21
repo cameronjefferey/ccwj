@@ -1724,7 +1724,10 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         options_s.append(round(opt_pnl, 2))
         dividends_s.append(round(div_pnl, 2))
         total_s.append(round(eq_pnl + opt_pnl + div_pnl + oth_pnl, 2))
-        price_s.append(round(close, 2) if close > 0 and (shares_held > 0 or short_shares > 0) else None)
+        # Underlying close for the chart: use whenever the mart has a price.
+        # Do not require shares_held > 0 here — that failed when the chart date range
+        # starts after the equity open (leg filter) or carry-forward is missing rows.
+        price_s.append(round(close, 2) if close > 0 else None)
 
     if not dates:
         return empty

@@ -706,12 +706,16 @@
                         display: true,
                         position: 'right',
                         min: function(ctx) {
-                            var vals = ctx.chart.data.datasets[4].data.filter(function(v){ return v != null; });
+                            var ds = ctx.chart.data.datasets.filter(function(d) { return d.yAxisID === 'yPrice'; })[0];
+                            if (!ds || !ds.data) return 0;
+                            var vals = ds.data.filter(function(v){ return v != null && !isNaN(v); });
                             if (vals.length === 0) return 0;
                             return Math.min.apply(null, vals) * 0.98;
                         },
                         max: function(ctx) {
-                            var vals = ctx.chart.data.datasets[4].data.filter(function(v){ return v != null; });
+                            var ds = ctx.chart.data.datasets.filter(function(d) { return d.yAxisID === 'yPrice'; })[0];
+                            if (!ds || !ds.data) return 100;
+                            var vals = ds.data.filter(function(v){ return v != null && !isNaN(v); });
                             if (vals.length === 0) return 100;
                             return Math.max.apply(null, vals) * 1.02;
                         },
