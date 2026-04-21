@@ -83,8 +83,8 @@ investment1,PLTR 01/15/2027 120.00 C,CALL PALANTIR TECHNOLOGI$120 EXP 01/15/27,2
 investment1,RDDT 12/18/2026 135.00 C,CALL REDDIT INC $135 EXP 12/18/26,1,49.425,-5.925,-10.7%,"$4,942.50",-$592.50,-10.7%,"$3,858.66","$1,083.84",28.09%,-,,,14.52%,12/18/2026,$38.59,,--,--,,,$31.24,$90.00,,$23.91,ITM,Option,-
 investment1,Cash & Cash Investments,--,--,--,--,--,"$4,545.21",$0.00,0%,--,--,--,--,--,--,13.35%,--,--,--,--,--,--,--,--,--,--,--,--,Cash and Money Market,--
 investment1,Positions Total,,--,--,--,--,"$34,038.43",-$522.79,-1.54%,"$28,427.05","$1,066.17",3.75%,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--,--
-Schwab Account,QTUM,Defiance Quantum ETF,100.0,128.04,,,12804.0,,,9590.0,,,,,,,,,,,,,,,,,,,Option,
-Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,4280.0,,,8560.0,,,111.5532,,,,,,,,,,,,,,,,,,,Option,
-Schwab Account,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,4887.5,,,4887.5,,,38.5866,,,,,,,,,,,,,,,,,,,Option,
-Schwab Account,QBTS,QBTS,100.0,20.42,,,2042.0,,,2831.1699999999996,,,,,,,,,,,,,,,,,,,Equity,
-Schwab Account,ASTS,ASTS,11.0,79.84,,,878.24,,,991.8999999997,,,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,QTUM,Defiance Quantum ETF,100.0,128.03,,,12803.0,,,9590.0,,,,,,,,,,,,,,,,,,,Option,
+Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,4275.0,,,8550.0,,,111.5532,,,,,,,,,,,,,,,,,,,Option,
+Schwab Account,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,4775.0,,,4775.0,,,38.5866,,,,,,,,,,,,,,,,,,,Option,
+Schwab Account,QBTS,QBTS,100.0,20.26,,,2026.0,,,2831.1699999999996,,,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,ASTS,ASTS,11.0,79.85000000000001,,,878.35,,,991.8999999997,,,,,,,,,,,,,,,,,,,Equity,
