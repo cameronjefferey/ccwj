@@ -26,12 +26,53 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Iterable, Optional
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 
 _pool: Optional[ConnectionPool] = None
 _pool_lock = threading.Lock()
+
+
+def _pool_check_connection(conn):
+    """Verify the connection is alive before use (drops stale TLS sessions)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
+
+
+def _transient_conn_error(exc: BaseException) -> bool:
+    """True for flaky network / SSL issues where a retry often succeeds."""
+    if not isinstance(exc, psycopg.OperationalError):
+        return False
+    msg = str(exc).lower()
+    needles = (
+        "ssl",
+        "tls",
+        "bad record",
+        "consuming input failed",
+        "connection reset",
+        "server closed the connection",
+        "could not receive data",
+        "eof detected",
+        "broken pipe",
+    )
+    return any(n in msg for n in needles)
+
+
+def _run_db_twice(fn):
+    """Run fn(); on transient OperationalError retry once with a new connection."""
+    last: Optional[BaseException] = None
+    for attempt in range(2):
+        try:
+            return fn()
+        except psycopg.OperationalError as e:
+            last = e
+            if attempt == 0 and _transient_conn_error(e):
+                continue
+            raise
+    assert last is not None
+    raise last
 
 
 def _close_pool_at_exit() -> None:
@@ -62,11 +103,18 @@ def _build_pool() -> ConnectionPool:
             "DATABASE_URL is not set. Add it to .env, e.g.\n"
             "  DATABASE_URL=postgresql://user:pass@localhost:5432/happytrader"
         )
+    # Managed Postgres (e.g. Render) often closes idle TLS sessions; shorter
+    # max_idle / max_lifetime plus check= pre-ping reduces ssl/tls alert errors.
+    max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300"))
+    max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
         min_size=1,
         max_size=int(os.environ.get("DATABASE_POOL_MAX", "10")),
         kwargs={"row_factory": dict_row},
+        check=_pool_check_connection,
+        max_idle=max_idle,
+        max_lifetime=max_lifetime,
         open=True,
     )
 
@@ -90,28 +138,41 @@ def get_conn():
 
 
 def fetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict]:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            return cur.fetchall()
+    def _go():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                return cur.fetchall()
+
+    return _run_db_twice(_go)
 
 
 def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            return cur.fetchone()
+    def _go():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                return cur.fetchone()
+
+    return _run_db_twice(_go)
 
 
 def execute(sql: str, params: Iterable[Any] = ()) -> None:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
+    def _go():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+
+    _run_db_twice(_go)
 
 
 def execute_returning(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
     """Run an INSERT/UPDATE/DELETE ... RETURNING and return the first row."""
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            return cur.fetchone()
+
+    def _go():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                return cur.fetchone()
+
+    return _run_db_twice(_go)
