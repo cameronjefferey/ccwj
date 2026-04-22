@@ -19,8 +19,44 @@ mv_num as (
     select
         *,
         safe_cast(trim(replace(replace(replace(cast(market_value as string), '$', ''), ',', ''), ' ', '')) as float64) as mv_f,
-        safe_cast(trim(replace(replace(replace(cast(cost_basis as string), '$', ''), ',', ''), ' ', '')) as float64) as cb_f
+        safe_cast(trim(replace(replace(replace(cast(cost_basis as string), '$', ''), ',', ''), ' ', '')) as float64) as cb_f,
+        abs(safe_cast(quantity as float64)) as qty_abs,
+        safe_cast(average_price as float64) as ap_f
     from src
+),
+
+-- Schwab sometimes stores option cost as premium per share (×1) instead of position cost (×100 × contracts).
+-- Align with app/schwab.py: prefer API when already ~avg×qty×100; if stored ~avg×|qty| only, scale to ×100.
+corrected as (
+    select
+        *,
+        ap_f * qty_abs * 100.0 as wcb_option_total,
+        ap_f * qty_abs as wcb_mistake_shares
+    from mv_num
+),
+
+with_cb as (
+    select
+        *,
+        case
+            when upper(trim(coalesce(cast(asset_type as string), ''))) = 'OPTION'
+                 and ap_f is not null
+                 and qty_abs is not null
+            then
+                case
+                    when cb_f is not null
+                         and wcb_option_total != 0
+                         and abs(cb_f - wcb_option_total) / abs(wcb_option_total) <= 0.20
+                    then cb_f
+                    when cb_f is not null
+                         and wcb_mistake_shares != 0
+                         and abs(cb_f - wcb_mistake_shares) / abs(wcb_mistake_shares) <= 0.20
+                    then wcb_option_total
+                    else coalesce(cb_f, wcb_option_total)
+                end
+            else cb_f
+        end as cb_f_final
+    from corrected
 )
 
 select
@@ -34,12 +70,12 @@ select
     cast(mv_f as string) as market_value,
     cast(null as string) as day_change_dollar,
     cast(null as string) as day_change_percent,
-    cast(cb_f as string) as cost_bases,
-    cast(safe_subtract(mv_f, cb_f) as string) as gain_or_loss_dollat,
+    cast(cb_f_final as string) as cost_bases,
+    cast(safe_subtract(mv_f, cb_f_final) as string) as gain_or_loss_dollat,
     cast(
         case
-            when cb_f is not null and cb_f != 0
-                then round(safe_divide(safe_subtract(mv_f, cb_f), abs(cb_f)) * 100, 4)
+            when cb_f_final is not null and cb_f_final != 0
+                then round(safe_divide(safe_subtract(mv_f, cb_f_final), abs(cb_f_final)) * 100, 4)
         end as string
     ) as gain_or_loss_percent,
     cast(null as string) as rating,
@@ -65,4 +101,4 @@ select
         else trim(coalesce(cast(asset_type as string), ''))
     end as security_type,
     cast(null as string) as margin_requirement
-from mv_num
+from with_cb
