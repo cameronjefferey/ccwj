@@ -1259,8 +1259,15 @@ def position_detail(symbol):
             # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
             if "date" in chart_df.columns:
                 prices_through_date = str(chart_df["date"].max())[:10]
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.exception(
+            "position_detail chart query or build failed for %s: %s", safe_symbol, exc
+        )
+
+    if not chart_data.get("dates") and kpis:
+        chart_data = _synthetic_cumulative_pnl_for_position(
+            kpis, sessions_list, leg_param, selected_legs, current_df
+        )
 
     # Trade history rows
     trades_for_table = trades_df.copy()
@@ -1660,6 +1667,87 @@ def _build_option_matrices(matrix_df, account, symbol):
         })
 
     return matrices
+
+
+def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selected_legs, current_df):
+    """
+    When mart_daily_pnl has no rows in-range (new leg, pipeline lag, leg filter) or
+    the chart query failed, draw a 2-point cumulative P&L line consistent with KPIs.
+    """
+    empty = {
+        "dates": [], "equity": [], "options": [], "dividends": [],
+        "total": [], "underlying_price": [], "has_underlying_price": False,
+    }
+    if not kpis:
+        return empty
+
+    realized = float(kpis.get("realized_pnl") or 0)
+    unreal = float(kpis.get("unrealized_pnl") or 0)
+    tot_end = round(float(kpis.get("total_return") or 0), 2)
+
+    eq_unreal = 0.0
+    opt_unreal = 0.0
+    if (
+        not current_df.empty
+        and "instrument_type" in current_df.columns
+        and "unrealized_pnl" in current_df.columns
+    ):
+        eq_df = current_df[current_df["instrument_type"] == "Equity"]
+        op_df = current_df[current_df["instrument_type"].isin(["Call", "Put"])]
+        if not eq_df.empty:
+            eq_unreal = float(eq_df["unrealized_pnl"].sum())
+        if not op_df.empty:
+            opt_unreal = float(op_df["unrealized_pnl"].sum())
+    if abs(eq_unreal + opt_unreal - unreal) > 0.02:
+        eq_unreal, opt_unreal = unreal, 0.0
+
+    eq_end = round(realized + eq_unreal, 2)
+    opt_end = round(opt_unreal, 2)
+
+    start_d = None
+    if leg_param and sessions_list and selected_legs:
+        ods = []
+        for s in sessions_list:
+            if s.get("session_id") in selected_legs and s.get("open_date"):
+                try:
+                    ods.append(pd.to_datetime(s["open_date"]).date())
+                except Exception:
+                    pass
+        if ods:
+            start_d = min(ods)
+    if start_d is None and kpis.get("first_trade"):
+        try:
+            start_d = pd.to_datetime(kpis["first_trade"]).date()
+        except Exception:
+            start_d = None
+
+    end_d = date.today()
+    if start_d is None:
+        start_d = end_d - timedelta(days=1) if end_d > date(2000, 1, 2) else end_d
+    if start_d > end_d:
+        start_d = end_d
+    if start_d == end_d:
+        start_d = end_d - timedelta(days=1) if end_d > date(2000, 1, 2) else end_d
+
+    d0, d1 = str(start_d), str(end_d)
+
+    p0, p1 = None, None
+    if not current_df.empty and "instrument_type" in current_df.columns and "current_price" in current_df.columns:
+        eqp = current_df[current_df["instrument_type"] == "Equity"]
+        if not eqp.empty:
+            c = float(eqp["current_price"].iloc[0] or 0)
+            if c > 0:
+                p1 = round(c, 2)
+
+    return {
+        "dates": [d0, d1],
+        "equity": [0.0, eq_end],
+        "options": [0.0, opt_end],
+        "dividends": [0.0, 0.0],
+        "total": [0.0, tot_end],
+        "underlying_price": [p0, p1],
+        "has_underlying_price": p1 is not None,
+    }
 
 
 def _build_chart_from_daily_pnl(daily_df, current_df):
