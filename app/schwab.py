@@ -60,13 +60,11 @@ def _schwab_float(bal, *keys, default=0.0):
     return default
 
 
-def _schwab_balance_summary_rows(account_name, acct_data, positions):
+def _schwab_build_balance_seed_rows(acct_data, open_position_rows):
     """
-    Append seed rows required by dbt/stg_account_balances (and thus Daily P&L).
-
-    Schwab's positions array alone does not include Schwab-export-style
-    \"Cash & Cash Investments\" / \"Account Total\" rows. Without those,
-    mart_account_equity_daily is empty even after dbt build.
+    Two rows for schwab_account_balances.csv (cash + account_total), derived
+    from Schwab currentBalances. open_position_rows: API positions only (no
+    summary rows). Account column is added by merge_and_push_schwab_seeds.
     """
     if not isinstance(acct_data, dict):
         return []
@@ -86,39 +84,42 @@ def _schwab_balance_summary_rows(account_name, acct_data, positions):
         "netLiquidationValue",
         "longMarginValue",
     )
-    pos_mv = sum(float(p.get("market_value") or 0) for p in positions)
+    pos_mv = sum(float(p.get("market_value") or 0) for p in open_position_rows)
+    pos_cb = sum(float(p.get("cost_basis") or 0) for p in open_position_rows)
     if total <= 0 and (cash != 0 or long_mv > 0 or pos_mv > 0):
         total = long_mv + cash if (long_mv or cash) else pos_mv + cash
-    if total <= 0 and cash == 0 and not positions:
+    if total <= 0 and cash == 0 and not open_position_rows:
         return []
 
     pct_cash = ""
     if total > 0:
         pct_cash = str(round(100.0 * cash / total, 6))
 
-    cash_row = {
-        "account": account_name,
-        "symbol": "Cash & Cash Investments",
-        "description": "--",
-        "quantity": "--",
-        "price": "--",
-        "market_value": cash,
-        "cost_basis": "",
-        "security_type": "Cash and Money Market",
-        "percent_of_account": pct_cash,
-    }
-    total_row = {
-        "account": account_name,
-        "symbol": "Account Total",
-        "description": "--",
-        "quantity": "--",
-        "price": "--",
-        "market_value": total,
-        "cost_basis": "",
-        "security_type": "",
-        "percent_of_account": "",
-    }
-    return [cash_row, total_row]
+    unreal = None
+    if total and pos_cb:
+        unreal = total - pos_cb
+    unreal_pct = None
+    if unreal is not None and pos_cb:
+        unreal_pct = round(100.0 * unreal / abs(pos_cb), 6) if pos_cb != 0 else None
+
+    return [
+        {
+            "row_type": "cash",
+            "market_value": cash,
+            "cost_basis": "",
+            "unrealized_pnl": "",
+            "unrealized_pnl_pct": "",
+            "percent_of_account": pct_cash,
+        },
+        {
+            "row_type": "account_total",
+            "market_value": total,
+            "cost_basis": pos_cb if pos_cb else "",
+            "unrealized_pnl": unreal if unreal is not None else "",
+            "unrealized_pnl_pct": unreal_pct if unreal_pct is not None else "",
+            "percent_of_account": "",
+        },
+    ]
 
 
 def _sync_account_hash_from_numbers(client, user_id, account_number, current_hash):
@@ -406,13 +407,13 @@ def schwab_sync():
         cr = result.get("current_rows", 0)
         if result.get("github_pushed"):
             flash(
-                f"Synced {hr} history rows, {cr} positions. "
-                "GitHub seeds were updated; your Actions / dbt pipeline should refresh the dashboard.",
+                f"Synced {hr} Schwab transaction rows, {cr} open position lines into schwab_*.csv seeds. "
+                "GitHub / dbt should refresh the dashboard.",
                 "success",
             )
         else:
             msg = (
-                f"Synced {hr} history rows, {cr} positions. "
+                f"Synced {hr} Schwab transaction rows, {cr} open position lines. "
                 "Run 'dbt seed && dbt build' locally if you rely on CSV files only."
             )
             if result.get("github_error"):
@@ -473,8 +474,8 @@ def _run_sync(user_id, client):
     )
     acct_data = acct_resp.json()
 
-    # Parse positions
-    positions = []
+    # Open positions — native Schwab columns (see schwab_open_positions.csv)
+    open_positions = []
     for sec in acct_data.get("securitiesAccount", {}).get("positions", []):
         inst = sec.get("instrument", {}) or {}
         sym = inst.get("symbol", "")
@@ -483,18 +484,16 @@ def _run_sync(user_id, client):
         avg = sec.get("averagePrice", 0) or 0
         mv = sec.get("marketValue", 0) or 0
         inst_type = inst.get("assetType", "EQUITY")
-        positions.append({
-            "account": account_name,
+        cb = avg * qty if qty else 0
+        open_positions.append({
             "symbol": sym,
             "description": desc,
             "quantity": qty,
-            "price": mv / qty if qty else avg,
+            "average_price": avg,
             "market_value": mv,
-            "cost_basis": avg * qty if qty else 0,
-            "security_type": "Equity" if inst_type == "EQUITY" else "Option",
+            "cost_basis": cb,
+            "asset_type": str(inst_type),
         })
-
-    positions.extend(_schwab_balance_summary_rows(account_name, acct_data, positions))
 
     # Fetch transactions (last 60 days)
     end_date = date.today()
@@ -532,32 +531,42 @@ def _run_sync(user_id, client):
         action = _map_schwab_action(instruction, item)
         amount = tx.get("netAmount", 0) or (qty * price)
         transactions.append({
-            "account": account_name,
-            "date": _format_date(dt),
+            "transaction_date": _format_date(dt),
             "action": action,
             "symbol": sym,
             "description": desc,
             "quantity": abs(qty),
             "price": abs(price) if price else "",
-            "fees_and_comm": "",
+            "fees": "",
             "amount": amount,
         })
 
     import pandas as pd
 
-    if transactions:
-        hist_df = pd.DataFrame(transactions)
-        hist_df = hist_df[HISTORY_COLUMNS] if all(c in hist_df.columns for c in HISTORY_COLUMNS) else hist_df
-    else:
-        hist_df = None
+    tx_df = pd.DataFrame(transactions) if transactions else None
+    skip_tx = tx_df is None or tx_df.empty
 
-    curr_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-    skip_hist = hist_df is None or hist_df.empty
+    open_df = pd.DataFrame(open_positions) if open_positions else None
+    bal_seed = _schwab_build_balance_seed_rows(acct_data, open_positions)
+    balances_df = (
+        pd.DataFrame(bal_seed)
+        if bal_seed
+        else pd.DataFrame(
+            columns=[
+                "row_type",
+                "market_value",
+                "cost_basis",
+                "unrealized_pnl",
+                "unrealized_pnl_pct",
+                "percent_of_account",
+            ]
+        )
+    )
 
     github_pushed = False
     github_error = None
     ok_cfg = False
-    from app.upload import merge_and_push_seeds, _upload_github_config_ok
+    from app.upload import merge_and_push_schwab_seeds, _upload_github_config_ok
 
     ok_cfg, _cfg_err = _upload_github_config_ok()
     if ok_cfg:
@@ -565,22 +574,24 @@ def _run_sync(user_id, client):
         u = User.get_by_id(user_id)
         if u:
             uname = u.username
-        if skip_hist:
+        if skip_tx:
             commit_msg = (
-                f"Schwab sync ({uname}): positions only, {len(curr_df)} rows ({account_name})"
+                f"Schwab sync ({uname}): open positions + balances only "
+                f"({len(open_positions)} lines) ({account_name})"
             )
         else:
             commit_msg = (
-                f"Schwab sync ({uname}): {len(transactions)} history, "
-                f"{len(curr_df)} positions ({account_name})"
+                f"Schwab sync ({uname}): {len(transactions)} tx, "
+                f"{len(open_positions)} open lines ({account_name})"
             )
-        ok, err, _hr, _cr = merge_and_push_seeds(
+        ok, err, _open_n, _tx_n, _bal_n = merge_and_push_schwab_seeds(
             account_name,
-            hist_df,
-            curr_df,
+            open_df,
+            balances_df,
+            tx_df,
             commit_message=commit_msg,
             user_id=user_id,
-            skip_history=skip_hist,
+            skip_transactions=skip_tx,
         )
         github_pushed = ok
         github_error = err if not ok else None
@@ -592,25 +603,26 @@ def _run_sync(user_id, client):
     os.makedirs(out_dir, exist_ok=True)
     safe_name = "".join(c if c.isalnum() else "_" for c in account_name)[:50]
 
-    if hist_df is not None and not hist_df.empty:
-        hist_path = os.path.join(out_dir, f"{safe_name}_history.csv")
-        hist_df.to_csv(hist_path, index=False)
+    if tx_df is not None and not tx_df.empty:
+        tx_path = os.path.join(out_dir, f"{safe_name}_schwab_transactions.csv")
+        tx_df.to_csv(tx_path, index=False)
 
-    if not curr_df.empty:
-        curr_path = os.path.join(out_dir, f"{safe_name}_current.csv")
-        curr_df.to_csv(curr_path, index=False)
+    if open_df is not None and not open_df.empty:
+        op_path = os.path.join(out_dir, f"{safe_name}_schwab_open_positions.csv")
+        open_df.to_csv(op_path, index=False)
+
+    if balances_df is not None and not balances_df.empty:
+        bal_path = os.path.join(out_dir, f"{safe_name}_schwab_account_balances.csv")
+        balances_df.to_csv(bal_path, index=False)
 
     return {
         "history_rows": len(transactions),
-        "current_rows": len(positions),
+        "current_rows": len(open_positions),
         "output_dir": out_dir,
         "github_pushed": github_pushed,
         "github_error": github_error,
         "github_seed_push_skipped": not ok_cfg,
     }
-
-
-HISTORY_COLUMNS = ["account", "date", "action", "symbol", "description", "quantity", "price", "fees_and_comm", "amount"]
 
 
 def _map_schwab_action(instruction, item):

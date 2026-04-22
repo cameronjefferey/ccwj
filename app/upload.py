@@ -85,6 +85,42 @@ CURRENT_SEED_COLUMNS = [
 HISTORY_PATH = "dbt/seeds/trade_history.csv"
 CURRENT_PATH = "dbt/seeds/current_positions.csv"
 
+# Schwab API sync — native columns, separate from manual brokerage export seeds
+SCHWAB_OPEN_POSITIONS_PATH = "dbt/seeds/schwab_open_positions.csv"
+SCHWAB_ACCOUNT_BALANCES_PATH = "dbt/seeds/schwab_account_balances.csv"
+SCHWAB_TRANSACTIONS_PATH = "dbt/seeds/schwab_transactions.csv"
+
+SCHWAB_OPEN_COLUMNS = [
+    "account",
+    "symbol",
+    "description",
+    "quantity",
+    "average_price",
+    "market_value",
+    "cost_basis",
+    "asset_type",
+]
+SCHWAB_BALANCE_COLUMNS = [
+    "account",
+    "row_type",
+    "market_value",
+    "cost_basis",
+    "unrealized_pnl",
+    "unrealized_pnl_pct",
+    "percent_of_account",
+]
+SCHWAB_TX_COLUMNS = [
+    "account",
+    "transaction_date",
+    "action",
+    "symbol",
+    "description",
+    "quantity",
+    "price",
+    "fees",
+    "amount",
+]
+
 
 def _github_repo() -> str:
     """owner/repo for the GitHub API (override with GITHUB_REPO)."""
@@ -303,7 +339,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
     other_df = existing_df.loc[~account_mask]
     existing_account_df = existing_df.loc[account_mask]
 
-    if path == HISTORY_PATH:
+    if path in (HISTORY_PATH, SCHWAB_TRANSACTIONS_PATH):
         # History: append and de-duplicate within this account.
         # New rows take precedence when keys collide.
         if existing_account_df.empty:
@@ -318,7 +354,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
 
             # Normalize key columns so duplicates match: NaN != NaN in pandas,
             # so fill nulls with a sentinel before dedupe.
-            key_cols = [c for c in seed_columns if c != "Account"]
+            key_cols = [c for c in seed_columns if str(c).lower() != "account"]
             for c in key_cols:
                 if c in combined.columns:
                     combined[c] = combined[c].astype(str).replace("nan", "").replace("None", "").str.strip()
@@ -361,12 +397,19 @@ def _commit_file(path, content, message):
         return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}"
 
 
-def _commit_two_files(path1, content1, path2, content2, message):
+def _commit_git_paths(path_contents, message):
     """
-    Create a single commit that updates both files (Git Data API).
+    Create a single commit updating one or more files (Git Data API).
+    path_contents: list of (repo_path, utf-8 content).
     One commit = one push event = one workflow run.
     Returns (success, error_message).
     """
+    if not path_contents:
+        return True, None
+    if len(path_contents) == 1:
+        p, c = path_contents[0]
+        return _commit_file(p, c, message)
+
     repo_full = _github_repo()
     branch = _github_branch()
     parts = repo_full.split("/", 1)
@@ -377,7 +420,6 @@ def _commit_two_files(path1, content1, path2, content2, message):
 
     headers = _github_headers()
 
-    # 1. Get current commit SHA
     ref_resp = requests.get(
         f"{base}/refs/heads/{branch}", headers=headers, timeout=15
     )
@@ -385,13 +427,11 @@ def _commit_two_files(path1, content1, path2, content2, message):
         return False, f"Failed to get ref (HTTP {ref_resp.status_code})"
     commit_sha = ref_resp.json()["object"]["sha"]
 
-    # 2. Get commit and tree SHA
     commit_resp = requests.get(f"{base}/commits/{commit_sha}", headers=headers, timeout=15)
     if commit_resp.status_code != 200:
         return False, f"Failed to get commit (HTTP {commit_resp.status_code})"
     tree_sha = commit_resp.json()["tree"]["sha"]
 
-    # 3. Create blobs for both file contents
     def create_blob(content):
         blob_resp = requests.post(
             f"{base}/blobs",
@@ -404,32 +444,25 @@ def _commit_two_files(path1, content1, path2, content2, message):
         return blob_resp.json()["sha"]
 
     try:
-        blob1_sha = create_blob(content1)
-        blob2_sha = create_blob(content2)
+        tree_entries = []
+        for path, content in path_contents:
+            sha = create_blob(content)
+            tree_entries.append({"path": path, "mode": "100644", "type": "blob", "sha": sha})
     except RuntimeError as e:
         return False, str(e)
 
-    # 4. Create tree with both files (base_tree keeps rest of repo)
-    tree_payload = {
-        "base_tree": tree_sha,
-        "tree": [
-            {"path": path1, "mode": "100644", "type": "blob", "sha": blob1_sha},
-            {"path": path2, "mode": "100644", "type": "blob", "sha": blob2_sha},
-        ],
-    }
+    tree_payload = {"base_tree": tree_sha, "tree": tree_entries}
     tree_resp = requests.post(f"{base}/trees", headers=headers, json=tree_payload, timeout=30)
     if tree_resp.status_code != 201:
         return False, f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}"
     new_tree_sha = tree_resp.json()["sha"]
 
-    # 5. Create commit
     commit_payload = {"tree": new_tree_sha, "parents": [commit_sha], "message": message}
     commit_resp = requests.post(f"{base}/commits", headers=headers, json=commit_payload, timeout=30)
     if commit_resp.status_code != 201:
         return False, f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}"
     new_commit_sha = commit_resp.json()["sha"]
 
-    # 6. Update ref
     patch_resp = requests.patch(
         f"{base}/refs/heads/{branch}",
         headers=headers,
@@ -439,6 +472,11 @@ def _commit_two_files(path1, content1, path2, content2, message):
     if patch_resp.status_code != 200:
         return False, f"Failed to update ref (HTTP {patch_resp.status_code})"
     return True, None
+
+
+def _commit_two_files(path1, content1, path2, content2, message):
+    """Create a single commit that updates two files (Git Data API)."""
+    return _commit_git_paths([(path1, content1), (path2, content2)], message)
 
 
 EXISTING_ACCOUNTS_QUERY = """
@@ -565,6 +603,91 @@ def merge_and_push_seeds(
         record_upload(user_id, account_name, history_rows, current_rows)
 
     return True, None, history_rows, current_rows
+
+
+def _schwab_seed_prepare_df(df, account_name, columns):
+    """Align a Schwab-native DataFrame to seed columns; set account from form."""
+    if df is None or (isinstance(df, pd.DataFrame) and len(df) == 0):
+        return pd.DataFrame(columns=columns)
+    out = df.copy()
+    acct_cols = [c for c in out.columns if str(c).lower() == "account"]
+    for c in acct_cols:
+        out.drop(columns=[c], inplace=True)
+    out.insert(0, "account", account_name)
+    for col in columns:
+        if col not in out.columns:
+            out[col] = ""
+    return out[columns]
+
+
+def merge_and_push_schwab_seeds(
+    account_name,
+    open_positions_df,
+    balances_df,
+    transactions_df,
+    *,
+    commit_message,
+    user_id=None,
+    skip_transactions=False,
+):
+    """
+    Merge Schwab API-shaped rows into schwab_*.csv seeds (separate from
+    manual brokerage export CSVs). dbt unions these via stg_*_seed_union.
+    Returns (ok, err, open_rows, tx_rows, balance_rows).
+    """
+    open_positions_df = _schwab_seed_prepare_df(
+        open_positions_df, account_name, SCHWAB_OPEN_COLUMNS
+    )
+    balances_df = _schwab_seed_prepare_df(
+        balances_df, account_name, SCHWAB_BALANCE_COLUMNS
+    )
+
+    open_content = _merge_seed_with_existing(
+        SCHWAB_OPEN_POSITIONS_PATH,
+        account_name,
+        open_positions_df,
+        SCHWAB_OPEN_COLUMNS,
+    )
+    bal_content = _merge_seed_with_existing(
+        SCHWAB_ACCOUNT_BALANCES_PATH,
+        account_name,
+        balances_df,
+        SCHWAB_BALANCE_COLUMNS,
+    )
+    path_pairs = [
+        (SCHWAB_OPEN_POSITIONS_PATH, open_content),
+        (SCHWAB_ACCOUNT_BALANCES_PATH, bal_content),
+    ]
+
+    tx_rows = 0
+    if not skip_transactions:
+        tx_df = _schwab_seed_prepare_df(
+            transactions_df, account_name, SCHWAB_TX_COLUMNS
+        )
+        tx_content = _merge_seed_with_existing(
+            SCHWAB_TRANSACTIONS_PATH,
+            account_name,
+            tx_df,
+            SCHWAB_TX_COLUMNS,
+        )
+        path_pairs.append((SCHWAB_TRANSACTIONS_PATH, tx_content))
+        tx_rows = len(tx_df)
+
+    open_rows = len(open_positions_df)
+    bal_rows = len(balances_df)
+
+    try:
+        ok, err = _commit_git_paths(path_pairs, commit_message)
+        if not ok:
+            return False, err or "GitHub commit failed.", open_rows, tx_rows, bal_rows
+    except Exception as exc:
+        return False, str(exc), open_rows, tx_rows, bal_rows
+
+    if user_id is not None:
+        add_account_for_user(user_id, account_name)
+        record_upload(user_id, account_name, tx_rows, open_rows)
+
+    return True, None, open_rows, tx_rows, bal_rows
 
 
 @app.route("/upload", methods=["GET", "POST"])

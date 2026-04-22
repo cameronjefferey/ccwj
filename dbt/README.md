@@ -5,8 +5,8 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 ## Model Layers
 
 ### Staging (views)
-- `stg_history` — Normalizes 7,500+ historical trades. Parses dates, actions, option symbols, instrument types.
-- `stg_current` — Cleans current positions snapshot. Filters cash/totals, parses option symbols, casts numerics.
+- `stg_history` — Normalizes historical trades (manual `trade_history` ∪ Schwab `schwab_transactions` via `stg_trade_history_seed_union`). Parses dates, actions, option symbols, instrument types.
+- `stg_current` — Cleans current positions (`current_positions` ∪ Schwab via `stg_positions_seed_union`). Filters cash/totals, parses option symbols, casts numerics.
 
 ### Intermediate (tables)
 - `int_equity_sessions` — Detects equity position lifecycles using running share count. Session = one continuous holding period.
@@ -26,6 +26,9 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 | `demo_history.csv` | Demo user history |
 | `demo_current.csv` | Demo user current positions |
 | `cflt_prices.csv` | Optional price seed |
+| `schwab_open_positions.csv` | Schwab API open positions (native columns; merged in dbt) |
+| `schwab_account_balances.csv` | Schwab cash + account_total rows for equity snapshots |
+| `schwab_transactions.csv` | Schwab API trades (last sync window; native columns) |
 
 ## Usage
 

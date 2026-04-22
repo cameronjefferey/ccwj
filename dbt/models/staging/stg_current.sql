@@ -5,7 +5,7 @@
 }}
 
 with source as (
-    select * from {{ ref('current_positions') }}
+    select * from {{ ref('stg_positions_seed_union') }}
     union all
     select * from {{ ref('demo_current') }}
 ),

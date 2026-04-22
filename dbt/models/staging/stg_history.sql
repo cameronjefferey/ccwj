@@ -5,7 +5,7 @@
 }}
 
 with source as (
-    select * from {{ ref('trade_history') }}
+    select * from {{ ref('stg_trade_history_seed_union') }}
     union all
     select * from {{ ref('demo_history') }}
 ),
