@@ -1048,6 +1048,10 @@ def position_detail(symbol):
                 return True
         return False
 
+    # Snapshot before leg filter so hero + chart can use full symbol history
+    # when the selected leg has no trade rows in-range (common for new option legs).
+    trades_pre_leg = trades_df.copy()
+
     # Apply leg filter to trades
     if leg_param and "trade_date" in trades_df.columns and _leg_ranges:
         trades_df = trades_df[trades_df["trade_date"].apply(_in_leg_range)]
@@ -1086,6 +1090,9 @@ def position_detail(symbol):
             closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
         if not closed_equity_df.empty:
             closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
+    # Before leg scoping, keep copies for "first/last activity" on the page
+    closed_legs_pre_leg = closed_legs_df.copy()
+    closed_equity_pre_leg = closed_equity_df.copy()
     if leg_param and _leg_ranges:
         if not closed_legs_df.empty and "open_date" in closed_legs_df.columns:
             closed_legs_df["_od"] = pd.to_datetime(closed_legs_df["open_date"]).dt.date
@@ -1093,6 +1100,13 @@ def position_detail(symbol):
             closed_legs_df = closed_legs_df.drop(columns=["_od"])
         if not closed_equity_df.empty and "session_id" in closed_equity_df.columns:
             closed_equity_df = closed_equity_df[closed_equity_df["session_id"].isin(selected_legs)]
+
+    # Min/max activity for hero + chart when summary/leg filter hides dates (e.g. open option leg).
+    _activity_all_dates = _collect_activity_candidate_dates(
+        trades_pre_leg, closed_legs_pre_leg, closed_equity_pre_leg, sessions_list
+    )
+    _activity_date_min = min(_activity_all_dates) if _activity_all_dates else None
+    _activity_date_max = max(_activity_all_dates) if _activity_all_dates else None
 
     # Status (needed for open-only realized logic)
     status_col = None
@@ -1181,11 +1195,12 @@ def position_detail(symbol):
             premium_paid = float(summary_df["total_premium_paid"].sum()) if not summary_df.empty else 0.0
 
         # Trade count: use row count when summary is empty (e.g. Schwab positions-only path)
-        trade_count = (
-            len(trades_df)
-            if leg_param or summary_df.empty
-            else int(summary_df["num_individual_trades"].sum())
-        )
+        if leg_param or summary_df.empty:
+            trade_count = len(trades_df)
+            if trade_count == 0 and not trades_pre_leg.empty:
+                trade_count = len(trades_pre_leg)
+        else:
+            trade_count = int(summary_df["num_individual_trades"].sum())
 
         # Date range from filtered trades
         if leg_param and not trades_df.empty and "trade_date" in trades_df.columns:
@@ -1201,6 +1216,10 @@ def position_detail(symbol):
             else:
                 first_trade = ""
                 last_trade = ""
+        if (not first_trade) and _activity_date_min is not None:
+            first_trade = str(_activity_date_min)
+        if (not last_trade) and _activity_date_max is not None:
+            last_trade = str(_activity_date_max)
 
         # Win/loss from filtered closed legs when leg-filtered
         if leg_param and _leg_ranges:
@@ -1690,6 +1709,54 @@ def _chart_data_for_json(obj):
     if not math.isfinite(f):
         return None
     return f
+
+
+def _collect_activity_candidate_dates(
+    trades_pre_leg, closed_legs_pre_leg, closed_equity_pre_leg, sessions_list
+):
+    """
+    Dates that represent when the user first/last touched this symbol, using
+    trades and strategy metadata before leg scoping. Used when summary/stg rows
+    are missing or leg-filtered to empty.
+    """
+    out = []
+    if (
+        trades_pre_leg is not None
+        and not trades_pre_leg.empty
+        and "trade_date" in trades_pre_leg.columns
+    ):
+        td = pd.to_datetime(trades_pre_leg["trade_date"], errors="coerce")
+        out.extend([x for x in td.dropna().dt.date.tolist() if x is not None])
+    for df, cols in (
+        (closed_legs_pre_leg, ("open_date", "close_date")),
+        (closed_equity_pre_leg, ("open_date", "close_date")),
+    ):
+        if df is None or df.empty:
+            continue
+        for c in cols:
+            if c not in df.columns:
+                continue
+            for v in df[c].dropna():
+                ts = pd.to_datetime(v, errors="coerce")
+                if pd.isna(ts):
+                    continue
+                try:
+                    out.append(ts.date())
+                except Exception:
+                    pass
+    for s in sessions_list or []:
+        for key in ("open_date", "last_trade_date"):
+            v = s.get(key)
+            if not v:
+                continue
+            ts = pd.to_datetime(v, errors="coerce")
+            if pd.isna(ts):
+                continue
+            try:
+                out.append(ts.date())
+            except Exception:
+                pass
+    return [d for d in out if d is not None]
 
 
 def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selected_legs, current_df):
