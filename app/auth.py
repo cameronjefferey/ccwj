@@ -4,7 +4,7 @@ from flask import render_template, redirect, url_for, request, flash, abort
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.extensions import limiter
-from app.models import User, get_accounts_for_user, get_uploads_for_user, get_schwab_connections
+from app.models import User, get_accounts_for_user, get_user_profile
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -28,9 +28,21 @@ def login():
         # Redirect to the page the user originally wanted
         next_page = request.args.get("next")
         if not next_page or not next_page.startswith("/"):
-            # New users (no accounts) go to onboarding first
             accounts = get_accounts_for_user(user.id)
-            next_page = url_for("get_started") if not accounts else url_for("weekly_review")
+            if not accounts:
+                next_page = url_for("get_started")
+            else:
+                prof = get_user_profile(user.id) or {}
+                dr = (prof.get("default_route") or "weekly_review").strip()
+                landing = {
+                    "weekly_review": "weekly_review",
+                    "positions": "positions",
+                    "strategies": "strategies",
+                    "insights": "insights",
+                    "accounts": "accounts",
+                    "symbols": "symbols_detail",
+                }.get(dr, "weekly_review")
+                next_page = url_for(landing)
         return redirect(next_page)
 
     return render_template("login.html", title="Login")
@@ -75,7 +87,20 @@ def signup():
         login_user(user, remember=False)
         flash("Welcome! You're signed in.", "success")
         accounts = get_accounts_for_user(user.id)
-        next_page = url_for("get_started") if not accounts else url_for("weekly_review")
+        if not accounts:
+            next_page = url_for("get_started")
+        else:
+            prof = get_user_profile(user.id) or {}
+            dr = (prof.get("default_route") or "weekly_review").strip()
+            landing = {
+                "weekly_review": "weekly_review",
+                "positions": "positions",
+                "strategies": "strategies",
+                "insights": "insights",
+                "accounts": "accounts",
+                "symbols": "symbols_detail",
+            }.get(dr, "weekly_review")
+            next_page = url_for(landing)
         return redirect(next_page)
 
     return render_template("signup.html", title="Sign Up")
@@ -106,6 +131,9 @@ def demo_start():
 @app.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
+    if request.method == "GET":
+        return redirect(url_for("profile", tab="account"))
+
     if request.method == "POST":
         current_pw = request.form.get("current_password", "")
         new_pw = request.form.get("new_password", "")
@@ -113,34 +141,20 @@ def settings():
 
         if not current_user.check_password(current_pw):
             flash("Current password is incorrect.", "danger")
-            return redirect(url_for("settings"))
+            return redirect(url_for("profile", tab="account"))
 
         valid, err = _validate_password(new_pw)
         if not valid:
             flash(err, "danger")
-            return redirect(url_for("settings"))
+            return redirect(url_for("profile", tab="account"))
 
         if new_pw != confirm_pw:
             flash("New passwords do not match.", "danger")
-            return redirect(url_for("settings"))
+            return redirect(url_for("profile", tab="account"))
 
         User.update_password(current_user.id, new_pw)
         flash("Password updated successfully.", "success")
-        return redirect(url_for("settings"))
-
-    accounts = get_accounts_for_user(current_user.id)
-    recent_uploads = get_uploads_for_user(current_user.id)
-    schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
-    schwab_connections = get_schwab_connections(current_user.id) if schwab_enabled else []
-
-    return render_template(
-        "settings.html",
-        title="Settings",
-        accounts=accounts,
-        recent_uploads=recent_uploads,
-        schwab_enabled=schwab_enabled,
-        schwab_connections=schwab_connections,
-    )
+        return redirect(url_for("profile", tab="account"))
 
 
 # ------------------------------------------------------------------

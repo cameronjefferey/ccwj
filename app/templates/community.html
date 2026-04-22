@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,400&display=swap" rel="stylesheet">
+<style>
+    .wall-page { font-family: "DM Sans", system-ui, sans-serif; background: #080c14; min-height: 72vh; margin: -1rem -1.5rem 0; padding: 2rem 1.5rem 4rem; }
+    @media (min-width: 992px) { .wall-page { margin: -1rem -1.5rem 0; padding-left: 2.5rem; padding-right: 2.5rem; } }
+    .wall-hero {
+        max-width: 1100px; margin: 0 auto 2.5rem;
+        padding: 2.5rem 2rem 2.25rem;
+        border-radius: 24px;
+        background: radial-gradient(ellipse 90% 120% at 10% -20%, rgba(251,191,36,.18), transparent 55%),
+                    linear-gradient(145deg, #111827 0%, #0f172a 40%, #172554 100%);
+        border: 1px solid rgba(148,163,184,.2);
+        color: #f8fafc;
+    }
+    .wall-hero h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 700;
+        font-size: clamp(1.85rem, 4vw, 2.45rem);
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin: 0 0 .75rem;
+    }
+    .wall-hero .lead { font-size: 1.05rem; opacity: .88; max-width: 38rem; line-height: 1.65; margin: 0; }
+    .wall-hero .cta-row { margin-top: 1.5rem; }
+    .wall-btn-primary {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        border: none;
+        color: #1c1917 !important;
+        font-weight: 700;
+        padding: .65rem 1.35rem;
+        border-radius: 999px;
+        box-shadow: 0 4px 24px rgba(251,191,36,.35);
+    }
+    .wall-btn-primary:hover { filter: brightness(1.06); color: #1c1917 !important; }
+    .wall-btn-ghost {
+        border: 1px solid rgba(248,250,252,.35);
+        color: #f8fafc !important;
+        background: transparent;
+        font-weight: 600;
+        padding: .6rem 1.2rem;
+        border-radius: 999px;
+    }
+    .wall-btn-ghost:hover { background: rgba(255,255,255,.08); color: #fff !important; }
+    .wall-stat { font-size: .8rem; opacity: .75; }
+    .wall-shell { max-width: 1100px; margin: 0 auto; }
+    .wall-feed-title {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 1.15rem;
+        color: #e2e8f0;
+        margin-bottom: 1rem;
+    }
+    .wall-card {
+        background: rgba(15,23,42,.65);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(148,163,184,.15);
+        border-radius: 18px;
+        padding: 1.35rem 1.5rem;
+        margin-bottom: 1rem;
+        transition: border-color .2s, transform .15s;
+    }
+    .wall-card:hover { border-color: rgba(251,191,36,.35); transform: translateY(-2px); }
+    .wall-author { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 1.05rem; }
+    .wall-author a { color: #fef3c7 !important; text-decoration: none; }
+    .wall-author a:hover { text-decoration: underline; }
+    .wall-time { font-size: .72rem; color: #94a3b8; }
+    .wall-symbol {
+        font-weight: 800;
+        letter-spacing: .04em;
+        font-size: .75rem;
+        padding: .25rem .65rem;
+        border-radius: 8px;
+        background: rgba(251,191,36,.12);
+        color: #fcd34d;
+        border: 1px solid rgba(251,191,36,.25);
+    }
+    .wall-strat { color: #94a3b8; font-size: .88rem; margin-top: .35rem; }
+    .wall-caption { color: #e2e8f0; font-size: .95rem; line-height: 1.55; margin: .75rem 0 0; font-style: italic; }
+    .wall-empty {
+        text-align: center;
+        padding: 3rem 1.5rem;
+        border-radius: 20px;
+        border: 1px dashed rgba(148,163,184,.3);
+        color: #94a3b8;
+    }
+    .wall-empty h3 { font-family: "Fraunces", Georgia, serif; color: #f1f5f9; font-size: 1.25rem; margin-bottom: .75rem; }
+    .wall-side { background: rgba(15,23,42,.5); border: 1px solid rgba(148,163,184,.12); border-radius: 18px; padding: 1.35rem; }
+    .wall-side h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: #94a3b8; font-weight: 700; margin: 0 0 1rem; }
+    .wall-discover-row { border-bottom: 1px solid rgba(51,65,85,.5); padding: .65rem 0; }
+    .wall-discover-row:last-child { border-bottom: none; }
+    .wall-foot { max-width: 1100px; margin: 2rem auto 0; font-size: .78rem; color: #64748b; text-align: center; line-height: 1.6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wall-page">
+    <div class="wall-hero">
+        <div class="row align-items-start g-4">
+            <div class="col-lg-8">
+                <p class="text-uppercase small fw-bold mb-2" style="letter-spacing:.2em;color:#fbbf24;opacity:.9">The mirror wall</p>
+                <h1>Traders who prove they were in the room.</h1>
+                <p class="lead">
+                    No leaderboard. No hot takes. Only receipts people chose to hang — so you remember
+                    what it felt like to execute when nobody was clapping.
+                </p>
+                <div class="cta-row d-flex flex-wrap gap-2 align-items-center">
+                    <a href="{{ url_for('weekly_review') }}" class="btn wall-btn-primary">Go to Weekly Review</a>
+                    <a href="{{ url_for('profile', tab='community') }}" class="btn wall-btn-ghost">Who can see me</a>
+                    {% if published_count == 0 %}
+                    <span class="wall-stat ms-lg-2">You have <strong class="text-warning">0</strong> receipts up — this week, change that.</span>
+                    {% else %}
+                    <span class="wall-stat ms-lg-2"><strong class="text-warning">{{ published_count }}</strong> receipt{{ 's' if published_count != 1 else '' }} on the wall from you</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-lg-4 text-lg-end">
+                <div class="wall-stat mb-1"><strong class="text-white">{{ following_count }}</strong> you follow · <strong class="text-white">{{ follower_count }}</strong> follow you</div>
+                <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="small text-warning text-decoration-none">Preview your wall →</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="wall-shell row g-4">
+        <div class="col-lg-8">
+            <div class="wall-feed-title">From people you follow</div>
+            {% if feed %}
+                {% for row in feed %}
+                <article class="wall-card">
+                    <div class="d-flex justify-content-between flex-wrap gap-2 align-items-start">
+                        <div>
+                            <span class="wall-author"><a href="{{ url_for('public_trader_profile', username=row.username) }}">{{ row.author_display }}</a></span>
+                            <span class="wall-time d-block d-sm-inline ms-sm-2">{{ row.published_at }}</span>
+                        </div>
+                        <span class="wall-symbol">{{ row.symbol }}</span>
+                    </div>
+                    <div class="wall-strat">{{ row.strategy }}{% if row.trade_symbol %} · {{ row.trade_symbol }}{% endif %} · <span style="opacity:.75">{{ row.status }}</span></div>
+                    {% if row.caption %}
+                    <p class="wall-caption">{{ row.caption }}</p>
+                    {% endif %}
+                    {% if row.display_pnl is not none %}
+                    <div class="mt-2 small">
+                        <span class="{% if row.display_pnl >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
+                            {{ "+" if row.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(row.display_pnl) }}
+                        </span>
+                        <span class="text-muted"> — number they chose to show. Not a score.</span>
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            {% else %}
+            <div class="wall-empty">
+                <h3>The wall is quiet on purpose.</h3>
+                <p class="mb-3 mx-auto" style="max-width:28rem">
+                    Follow someone who trades like you want to trade. Or be first:
+                    hang one receipt from this week’s Review — that’s how the wall starts breathing.
+                </p>
+                <a href="{{ url_for('weekly_review') }}" class="btn wall-btn-primary">Pick a trade in Review</a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="col-lg-4">
+            <div class="wall-side mb-3">
+                <h3>On the record</h3>
+                <p class="small mb-3" style="line-height:1.6;color:#94a3b8">
+                    HappyTrader is a mirror, not a signal desk. Nothing here is advice — only voluntary proof of work from real accounts.
+                </p>
+            </div>
+            <div class="wall-side">
+                <h3>Find traders</h3>
+                <p class="small mb-2" style="color:#94a3b8">They raised their hand to be discoverable.</p>
+                {% for u in discover %}
+                <div class="wall-discover-row d-flex justify-content-between align-items-center gap-2">
+                    <div>
+                        <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="fw-semibold text-white text-decoration-none">{{ u.display_name }}</a>
+                        <div class="wall-time">@{{ u.username }}</div>
+                    </div>
+                    {% if u.id != current_user.id %}
+                        {% if (u.id|int) in following_ids %}
+                        <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ url_for('community') }}">
+                            <button type="submit" class="btn btn-sm btn-outline-light rounded-pill" style="font-size:.72rem">Following</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ url_for('community') }}">
+                            <button type="submit" class="btn btn-sm wall-btn-primary" style="font-size:.72rem">Follow</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="small mb-0" style="color:#64748b">No one in the directory yet. Open Profile → The door and step out of Private.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <p class="wall-foot">The only wrong move is pretending you have nothing worth showing. One trade. One sentence. That’s the whole ritual.</p>
+</div>
+{% endblock %}

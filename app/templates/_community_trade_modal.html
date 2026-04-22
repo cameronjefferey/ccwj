@@ -1,0 +1,124 @@
+{# Publish flow — framed as “receipt on the wall”, not “social share” #}
+<div class="modal fade" id="communityTradeModal" tabindex="-1" aria-labelledby="communityTradeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content wm-modal border-0 overflow-hidden" style="border-radius:20px;box-shadow:0 24px 80px -20px rgba(15,23,42,.5)">
+            <div class="row g-0">
+                <div class="col-md-5 wm-modal-side d-none d-md-flex flex-column justify-content-between p-4 text-white">
+                    <div>
+                        <p class="text-uppercase small fw-bold mb-3" style="letter-spacing:.16em;opacity:.75">The wall</p>
+                        <h2 class="h4 fw-bold lh-sm mb-3" style="letter-spacing:-.02em">A receipt is proof you showed up.</h2>
+                        <p class="small mb-0" style="opacity:.88;line-height:1.65">
+                            Not bragging. Not signals. One line of context optional — the trade already did the talking.
+                            You can pull it down anytime.
+                        </p>
+                    </div>
+                    <p class="small mb-0 fst-italic opacity-75">“Process in public, doubt in private.”</p>
+                </div>
+                <div class="col-md-7 bg-white">
+                    <div class="modal-header border-0 pb-0 pt-4 px-4">
+                        <div>
+                            <h5 class="modal-title fw-bold mb-1" id="communityTradeModalLabel">Hang this trade</h5>
+                            <p class="small text-muted mb-0">Visible to people who follow you on the Wall.</p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body pt-2 px-4 pb-4">
+                        <div id="communityModalTradeSummary" class="wm-modal-chip small fw-semibold mb-4"></div>
+                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" id="communityPublishForm">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <input type="hidden" name="action" id="communityFormAction" value="publish">
+                            <input type="hidden" name="trade_fingerprint" id="communityFieldFp">
+                            <input type="hidden" name="account" id="communityFieldAccount">
+                            <input type="hidden" name="symbol" id="communityFieldSymbol">
+                            <input type="hidden" name="strategy" id="communityFieldStrategy">
+                            <input type="hidden" name="trade_symbol" id="communityFieldTradeSymbol">
+                            <input type="hidden" name="open_date" id="communityFieldOpen">
+                            <input type="hidden" name="close_date" id="communityFieldClose">
+                            <input type="hidden" name="status" id="communityFieldStatus">
+                            <input type="hidden" name="display_pnl" id="communityFieldPnl">
+                            <label for="communityCaption" class="form-label fw-semibold small">One honest sentence <span class="text-muted fw-normal">(optional)</span></label>
+                            <textarea class="form-control mb-3" rows="2" name="caption" id="communityCaption" maxlength="280"
+                                placeholder="What would you tell yourself next Monday about this trade?"></textarea>
+                            <div class="d-flex gap-2 justify-content-end flex-wrap align-items-center">
+                                <button type="button" class="btn btn-link text-muted text-decoration-none" data-bs-dismiss="modal">Not this one</button>
+                                <button type="submit" class="btn btn-lg fw-bold rounded-pill px-4 wm-modal-cta" id="communityPublishSubmit">Put it on the wall</button>
+                            </div>
+                        </form>
+                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" id="communityUnpublishForm" class="mt-4 pt-3 border-top">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <input type="hidden" name="action" value="unpublish">
+                            <input type="hidden" name="trade_fingerprint" id="communityUnpublishFp">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm w-100" id="communityUnpublishBtn" style="display:none">Take it down</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .wm-modal-side {
+        background: linear-gradient(160deg, #0f172a 0%, #1e293b 55%, #312e81 100%);
+    }
+    .wm-modal-chip {
+        display: inline-block;
+        padding: .5rem 1rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #fff7ed, #ffedd5);
+        border: 1px solid #fed7aa;
+        color: #7c2d12;
+    }
+    .wm-modal-cta {
+        background: linear-gradient(135deg, #ea580c, #c2410c) !important;
+        border: none !important;
+        color: #fff !important;
+        box-shadow: 0 4px 20px rgba(234,88,12,.4);
+    }
+    .wm-modal-cta:hover { filter: brightness(1.05); color: #fff !important; }
+    .wm-modal-cta-outline {
+        background: #fff !important;
+        border: 2px solid #ea580c !important;
+        color: #c2410c !important;
+    }
+</style>
+<script>
+(function() {
+    var modal = document.getElementById('communityTradeModal');
+    if (!modal) return;
+    modal.addEventListener('show.bs.modal', function(ev) {
+        var btn = ev.relatedTarget;
+        if (!btn || !btn.dataset) return;
+        var fp = btn.dataset.fp || '';
+        var published = btn.dataset.published === '1';
+        document.getElementById('communityFieldFp').value = fp;
+        document.getElementById('communityUnpublishFp').value = fp;
+        document.getElementById('communityFieldAccount').value = btn.dataset.account || '';
+        document.getElementById('communityFieldSymbol').value = btn.dataset.symbol || '';
+        document.getElementById('communityFieldStrategy').value = btn.dataset.strategy || '';
+        document.getElementById('communityFieldTradeSymbol').value = btn.dataset.tradeSymbol || '';
+        document.getElementById('communityFieldOpen').value = btn.dataset.open || '';
+        document.getElementById('communityFieldClose').value = btn.dataset.close || '';
+        document.getElementById('communityFieldStatus').value = btn.dataset.status || '';
+        document.getElementById('communityFieldPnl').value = btn.dataset.pnl || '';
+        var sym = btn.dataset.symbol || '';
+        var strat = btn.dataset.strategy || '';
+        document.getElementById('communityModalTradeSummary').textContent = sym + ' · ' + strat;
+        document.getElementById('communityCaption').value = '';
+        var unp = document.getElementById('communityUnpublishBtn');
+        var sub = document.getElementById('communityPublishSubmit');
+        if (published) {
+            unp.style.display = 'block';
+            sub.textContent = 'Update the note';
+            sub.classList.remove('wm-modal-cta');
+            sub.classList.add('wm-modal-cta-outline');
+        } else {
+            unp.style.display = 'none';
+            sub.textContent = 'Put it on the wall';
+            sub.classList.add('wm-modal-cta');
+            sub.classList.remove('wm-modal-cta-outline');
+        }
+    });
+})();
+</script>

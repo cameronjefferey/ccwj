@@ -106,3 +106,4 @@ from app import weekly_review
 from app import schwab
 from app import first_look
 from app import strategies
+from app import profile_community

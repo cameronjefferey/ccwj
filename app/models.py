@@ -5,12 +5,33 @@ Schema is created on app startup via ``init_db()``. All queries go through
 ``app.db.{fetch_all,fetch_one,execute,execute_returning}`` which use a
 shared connection pool.
 """
+import hashlib
+import logging
 import os
 
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from app.db import execute, execute_returning, fetch_all, fetch_one, get_conn
+
+_log = logging.getLogger(__name__)
+
+
+def trade_fingerprint(user_id, account, symbol, trade_symbol, open_date, close_date, strategy):
+    """
+    Stable id for a logical trade row in Weekly Review (matches mart grain).
+    Used for community publish / unpublish without exposing raw brokerage ids.
+    """
+    parts = [
+        str(user_id),
+        str(account or ""),
+        str(symbol or ""),
+        str(trade_symbol or ""),
+        str(open_date or ""),
+        str(close_date or ""),
+        str(strategy or ""),
+    ]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
 def init_db():
@@ -76,6 +97,51 @@ def init_db():
             diagnostic_sentence   TEXT,
             generated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             UNIQUE (user_id, week_start_date)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id                         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            display_name                    TEXT,
+            headline                        TEXT,
+            bio                             TEXT,
+            accent                          TEXT NOT NULL DEFAULT 'violet',
+            timezone                        TEXT NOT NULL DEFAULT 'America/New_York',
+            week_starts_monday              BOOLEAN NOT NULL DEFAULT TRUE,
+            default_route                   TEXT NOT NULL DEFAULT 'weekly_review',
+            digest_email                    BOOLEAN NOT NULL DEFAULT FALSE,
+            compact_tables                  BOOLEAN NOT NULL DEFAULT FALSE,
+            show_account_names_on_published BOOLEAN NOT NULL DEFAULT FALSE,
+            profile_visibility              TEXT NOT NULL DEFAULT 'private',
+            created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_follows (
+            follower_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            following_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (follower_id, following_id),
+            CHECK (follower_id <> following_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS community_published_trades (
+            id                SERIAL PRIMARY KEY,
+            user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            trade_fingerprint TEXT NOT NULL,
+            account_name      TEXT NOT NULL,
+            symbol            TEXT NOT NULL,
+            strategy          TEXT NOT NULL,
+            trade_symbol      TEXT NOT NULL DEFAULT '',
+            open_date         TEXT NOT NULL,
+            close_date        TEXT NOT NULL DEFAULT '',
+            status            TEXT NOT NULL,
+            display_pnl       REAL,
+            caption           TEXT,
+            published_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, trade_fingerprint)
         )
         """,
     ]
@@ -340,6 +406,319 @@ def remove_schwab_connection(user_id, account_number):
 
 
 # ------------------------------------------------------------------
+# Profiles & community (Postgres app tables)
+# ------------------------------------------------------------------
+
+_PROFILE_COLUMNS = (
+    "user_id, display_name, headline, bio, accent, timezone, week_starts_monday, "
+    "default_route, digest_email, compact_tables, show_account_names_on_published, "
+    "profile_visibility, created_at, updated_at"
+)
+
+
+def _default_profile_row(user_id):
+    """Safe defaults when user_profiles is missing or unreadable (e.g. prod before migration)."""
+    return {
+        "user_id": user_id,
+        "display_name": None,
+        "headline": None,
+        "bio": None,
+        "accent": "violet",
+        "timezone": "America/New_York",
+        "week_starts_monday": True,
+        "default_route": "weekly_review",
+        "digest_email": False,
+        "compact_tables": False,
+        "show_account_names_on_published": False,
+        "profile_visibility": "private",
+        "created_at": None,
+        "updated_at": None,
+    }
+
+
+def ensure_user_profile(user_id):
+    """Create a default profile row if missing."""
+    try:
+        execute(
+            """INSERT INTO user_profiles (user_id) VALUES (%s)
+               ON CONFLICT (user_id) DO NOTHING""",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning(
+            "ensure_user_profile failed (table missing or permissions? deploy init_db / migrations): %s",
+            exc,
+        )
+
+
+def get_user_profile(user_id):
+    """
+    Return profile row dict. Never raises: if user_profiles is missing on a
+    stale database, returns defaults so login and Weekly Review still work.
+    """
+    try:
+        ensure_user_profile(user_id)
+        row = fetch_one(
+            f"SELECT {_PROFILE_COLUMNS} FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        )
+        if row:
+            return row
+    except Exception as exc:
+        _log.warning("get_user_profile failed (using defaults): %s", exc)
+    return _default_profile_row(user_id)
+
+
+def update_user_profile(user_id, **fields):
+    """
+    Whitelisted profile updates. Unknown keys are ignored.
+    profile_visibility: private | followers | public
+    Returns True if a write ran, False if nothing to do or DB error.
+    """
+    allowed = {
+        "display_name",
+        "headline",
+        "bio",
+        "accent",
+        "timezone",
+        "week_starts_monday",
+        "default_route",
+        "digest_email",
+        "compact_tables",
+        "show_account_names_on_published",
+        "profile_visibility",
+    }
+    sets = []
+    values = []
+    for key, val in fields.items():
+        if key not in allowed:
+            continue
+        sets.append(f"{key} = %s")
+        values.append(val)
+    if not sets:
+        return True
+    sets.append("updated_at = NOW()")
+    values.append(user_id)
+    try:
+        ensure_user_profile(user_id)
+        execute(f"UPDATE user_profiles SET {', '.join(sets)} WHERE user_id = %s", tuple(values))
+        return True
+    except Exception as exc:
+        _log.warning("update_user_profile failed: %s", exc)
+        return False
+
+
+def get_user_by_username(username):
+    return fetch_one("SELECT id, username FROM users WHERE lower(username) = lower(%s)", (username,))
+
+
+def follow_user(follower_id, following_id):
+    if follower_id == following_id:
+        return False
+    try:
+        execute(
+            """INSERT INTO user_follows (follower_id, following_id) VALUES (%s, %s)
+               ON CONFLICT DO NOTHING""",
+            (follower_id, following_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("follow_user failed: %s", exc)
+        return False
+
+
+def unfollow_user(follower_id, following_id):
+    try:
+        execute(
+            "DELETE FROM user_follows WHERE follower_id = %s AND following_id = %s",
+            (follower_id, following_id),
+        )
+    except Exception as exc:
+        _log.warning("unfollow_user failed: %s", exc)
+
+
+def is_following(follower_id, following_id):
+    try:
+        row = fetch_one(
+            "SELECT 1 FROM user_follows WHERE follower_id = %s AND following_id = %s",
+            (follower_id, following_id),
+        )
+        return row is not None
+    except Exception as exc:
+        _log.warning("is_following failed: %s", exc)
+        return False
+
+
+def follow_counts(user_id):
+    try:
+        followers = fetch_one(
+            "SELECT COUNT(*) AS c FROM user_follows WHERE following_id = %s", (user_id,)
+        )
+        following = fetch_one(
+            "SELECT COUNT(*) AS c FROM user_follows WHERE follower_id = %s", (user_id,)
+        )
+        return int(followers["c"] or 0), int(following["c"] or 0)
+    except Exception as exc:
+        _log.warning("follow_counts failed: %s", exc)
+        return 0, 0
+
+
+def list_following_ids(follower_id):
+    try:
+        rows = fetch_all(
+            "SELECT following_id FROM user_follows WHERE follower_id = %s ORDER BY created_at DESC",
+            (follower_id,),
+        )
+        return [int(r["following_id"]) for r in rows]
+    except Exception as exc:
+        _log.warning("list_following_ids failed: %s", exc)
+        return []
+
+
+def get_published_trade_fingerprints(user_id):
+    try:
+        rows = fetch_all(
+            "SELECT trade_fingerprint FROM community_published_trades WHERE user_id = %s",
+            (user_id,),
+        )
+        return {r["trade_fingerprint"] for r in rows}
+    except Exception as exc:
+        _log.warning("get_published_trade_fingerprints failed: %s", exc)
+        return set()
+
+
+def count_published_trades(user_id):
+    try:
+        row = fetch_one(
+            "SELECT COUNT(*) AS c FROM community_published_trades WHERE user_id = %s",
+            (user_id,),
+        )
+        return int(row["c"] or 0) if row else 0
+    except Exception as exc:
+        _log.warning("count_published_trades failed: %s", exc)
+        return 0
+
+
+def publish_community_trade(
+    user_id,
+    fingerprint,
+    account_name,
+    symbol,
+    strategy,
+    trade_symbol,
+    open_date,
+    close_date,
+    status,
+    display_pnl,
+    caption=None,
+):
+    """Insert or refresh a published trade snapshot for the community feed."""
+    try:
+        execute(
+            """INSERT INTO community_published_trades
+               (user_id, trade_fingerprint, account_name, symbol, strategy, trade_symbol,
+                open_date, close_date, status, display_pnl, caption)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (user_id, trade_fingerprint) DO UPDATE SET
+                 account_name = EXCLUDED.account_name,
+                 symbol = EXCLUDED.symbol,
+                 strategy = EXCLUDED.strategy,
+                 trade_symbol = EXCLUDED.trade_symbol,
+                 open_date = EXCLUDED.open_date,
+                 close_date = EXCLUDED.close_date,
+                 status = EXCLUDED.status,
+                 display_pnl = EXCLUDED.display_pnl,
+                 caption = EXCLUDED.caption,
+                 published_at = NOW()""",
+            (
+                user_id,
+                fingerprint,
+                account_name,
+                symbol,
+                strategy,
+                trade_symbol or "",
+                open_date,
+                close_date or "",
+                status,
+                display_pnl,
+                caption,
+            ),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("publish_community_trade failed: %s", exc)
+        return False
+
+
+def unpublish_community_trade(user_id, fingerprint):
+    try:
+        execute(
+            "DELETE FROM community_published_trades WHERE user_id = %s AND trade_fingerprint = %s",
+            (user_id, fingerprint),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("unpublish_community_trade failed: %s", exc)
+        return False
+
+
+def community_feed_for_follower(viewer_id, limit=50):
+    """Recent published trades from people the viewer follows."""
+    try:
+        return fetch_all(
+            """SELECT t.id, t.user_id, t.symbol, t.strategy, t.trade_symbol, t.open_date, t.close_date,
+                      t.status, t.display_pnl, t.caption, t.published_at, t.account_name,
+                      u.username,
+                      COALESCE(NULLIF(TRIM(p.display_name), ''), u.username) AS author_display
+               FROM community_published_trades t
+               JOIN user_follows f ON f.following_id = t.user_id AND f.follower_id = %s
+               JOIN users u ON u.id = t.user_id
+               LEFT JOIN user_profiles p ON p.user_id = t.user_id
+               ORDER BY t.published_at DESC
+               LIMIT %s""",
+            (viewer_id, limit),
+        )
+    except Exception as exc:
+        _log.warning("community_feed_for_follower failed: %s", exc)
+        return []
+
+
+def list_public_published_trades(target_user_id, limit=100):
+    try:
+        return fetch_all(
+            """SELECT trade_fingerprint, symbol, strategy, trade_symbol, open_date, close_date,
+                      status, display_pnl, caption, published_at, account_name
+               FROM community_published_trades
+               WHERE user_id = %s
+               ORDER BY published_at DESC
+               LIMIT %s""",
+            (target_user_id, limit),
+        )
+    except Exception as exc:
+        _log.warning("list_public_published_trades failed: %s", exc)
+        return []
+
+
+def discover_public_traders(limit=24):
+    """Users who allow public or follower discovery (not private-only)."""
+    try:
+        return fetch_all(
+            """SELECT u.id, u.username,
+                      COALESCE(NULLIF(TRIM(p.display_name), ''), u.username) AS display_name,
+                      p.headline, p.profile_visibility
+               FROM users u
+               JOIN user_profiles p ON p.user_id = u.id
+               WHERE p.profile_visibility IN ('public', 'followers')
+               ORDER BY u.username
+               LIMIT %s""",
+            (limit,),
+        )
+    except Exception as exc:
+        _log.warning("discover_public_traders failed: %s", exc)
+        return []
+
+
+# ------------------------------------------------------------------
 # Admin / bootstrap helpers
 # ------------------------------------------------------------------
 
@@ -394,6 +773,7 @@ def ensure_demo_user():
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
         add_account_for_user(demo.id, DEMO_ACCOUNT)
+        ensure_user_profile(demo.id)
         _ensure_demo_insight(demo.id)
         _seed_demo_mirror_scores(demo.id)
 

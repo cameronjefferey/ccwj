@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
+<style>
+    .atlas { font-family: "DM Sans", system-ui, sans-serif; background: #f7f5f2; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .atlas-shell { max-width: 1160px; margin: 0 auto; }
+    .atlas-hero {
+        border-radius: 28px;
+        padding: 2.5rem 2.25rem;
+        background: linear-gradient(128deg, #0c0a09 0%, #1c1917 45%, #292524 100%);
+        color: #fafaf9;
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 2rem;
+        border: 1px solid rgba(255,255,255,.08);
+    }
+    .atlas-hero::before {
+        content: ""; position: absolute; right: -10%; top: -40%;
+        width: 55%; height: 140%;
+        background: radial-gradient(circle, rgba(245,158,11,.2), transparent 65%);
+        pointer-events: none;
+    }
+    .atlas-hero-in { position: relative; z-index: 1; }
+    .atlas-kicker { font-size: .68rem; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #fbbf24; margin-bottom: .75rem; }
+    .atlas-hero h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 700;
+        font-size: clamp(1.9rem, 4.2vw, 2.65rem);
+        letter-spacing: -.035em;
+        line-height: 1.12;
+        margin: 0 0 1rem;
+        max-width: 18ch;
+    }
+    .atlas-hero p.lead { font-size: 1.05rem; line-height: 1.65; opacity: .86; max-width: 40rem; margin: 0; }
+    .atlas-cta-row { margin-top: 1.75rem; display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+    .atlas-btn-gold {
+        background: linear-gradient(135deg, #fbbf24, #ea580c);
+        color: #1c1917 !important;
+        font-weight: 800;
+        border: none;
+        padding: .75rem 1.5rem;
+        border-radius: 999px;
+        box-shadow: 0 4px 24px rgba(234,88,12,.35);
+        text-decoration: none !important;
+        display: inline-block;
+    }
+    .atlas-btn-gold:hover { filter: brightness(1.05); color: #1c1917 !important; }
+    .atlas-btn-ghost {
+        border: 1px solid rgba(255,255,255,.35);
+        color: #fafaf9 !important;
+        padding: .65rem 1.25rem;
+        border-radius: 999px;
+        font-weight: 600;
+        text-decoration: none !important;
+        background: transparent;
+    }
+    .atlas-btn-ghost:hover { background: rgba(255,255,255,.08); }
+    .atlas-stat { background: rgba(255,255,255,.08); border-radius: 14px; padding: .75rem 1.1rem; text-align: center; min-width: 92px; }
+    .atlas-stat .n { font-size: 1.5rem; font-weight: 800; font-family: "Fraunces", serif; }
+    .atlas-stat .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; opacity: .65; }
+
+    .atlas-grid { display: grid; grid-template-columns: 230px 1fr; gap: 2rem; align-items: start; }
+    @media (max-width: 991px) {
+        .atlas-grid { grid-template-columns: 1fr; }
+        .atlas-nav { display: flex; flex-wrap: wrap; gap: .4rem; }
+    }
+    .atlas-nav .nav-link {
+        border-radius: 12px; color: #57534e; font-weight: 600; font-size: .88rem;
+        padding: .55rem .95rem; border: 1px solid transparent;
+    }
+    .atlas-nav .nav-link:hover { background: #fff; color: #1c1917; border-color: #e7e5e4; }
+    .atlas-nav .nav-link.active {
+        background: #fff; color: #1c1917; border-color: #e7e5e4;
+        box-shadow: 0 2px 12px rgba(15,23,42,.05);
+    }
+    .atlas-card {
+        background: #fff;
+        border-radius: 20px;
+        border: 1px solid #e7e5e4;
+        box-shadow: 0 4px 24px rgba(28,25,23,.04);
+        margin-bottom: 1.25rem;
+        overflow: hidden;
+    }
+    .atlas-card-h {
+        font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+        color: #a8a29e; padding: 1.1rem 1.5rem .5rem;
+    }
+    .atlas-card-b { padding: 0 1.5rem 1.35rem; }
+    .atlas-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8a29e; margin-bottom: .35rem; }
+    .atlas-field { margin-bottom: 1.1rem; }
+    .atlas-hint { font-size: .82rem; color: #78716c; line-height: 1.5; }
+    .account-badge {
+        display: inline-block; background: #f5f5f4; border-radius: 10px;
+        padding: .4rem .85rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
+    }
+    .atlas-check {
+        display: flex; align-items: flex-start; gap: .85rem;
+        padding: .85rem 0; border-bottom: 1px solid #f5f5f4;
+    }
+    .atlas-check:last-child { border-bottom: none; }
+    .atlas-check .ic { font-size: 1.15rem; line-height: 1; flex-shrink: 0; }
+    .atlas-check.ok .ic { color: #059669; }
+    .atlas-check.no .ic { color: #d97706; }
+    .atlas-check strong { display: block; font-size: .92rem; color: #1c1917; }
+    .atlas-check span { font-size: .8rem; color: #78716c; line-height: 1.45; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set vis = profile_row.profile_visibility or 'private' %}
+{% set has_headline = profile_row.headline and profile_row.headline.strip() %}
+{% set has_bio = profile_row.bio and profile_row.bio.strip() %}
+{% set door_open = vis in ('followers', 'public') %}
+
+<div class="atlas">
+<div class="atlas-shell">
+    <div class="atlas-hero">
+        <div class="atlas-hero-in row g-4 align-items-center">
+            <div class="col-lg-8">
+                <div class="atlas-kicker">Identity, not inventory</div>
+                <h1>You are not your P&amp;L. You are what you prove you did.</h1>
+                <p class="lead">
+                    The mirror wall is where serious traders hang one receipt at a time — the trade that said something about discipline,
+                    sizing, or patience. Everything else stays in your Review, private, until you say otherwise.
+                </p>
+                <div class="atlas-cta-row">
+                    <a href="{{ url_for('weekly_review') }}" class="atlas-btn-gold">Weekly Review — hang a receipt</a>
+                    <a href="{{ url_for('community') }}" class="atlas-btn-ghost">See the wall</a>
+                </div>
+            </div>
+            <div class="col-lg-4 d-flex gap-3 justify-content-lg-end">
+                <div class="atlas-stat"><div class="n">{{ follower_count }}</div><div class="l">Followers</div></div>
+                <div class="atlas-stat"><div class="n">{{ following_count }}</div><div class="l">Following</div></div>
+                <div class="atlas-stat"><div class="n">{{ published_count }}</div><div class="l">Receipts</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="atlas-grid">
+        <nav class="atlas-nav nav flex-lg-column">
+            <a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="{{ url_for('profile', tab='overview') }}">Overview</a>
+            <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">How you read</a>
+            <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; login</a>
+            <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">The door</a>
+            <a class="nav-link {% if tab == 'published' %}active{% endif %}" href="{{ url_for('profile', tab='published') }}">Your receipts</a>
+        </nav>
+
+        <div>
+            {% if tab == 'overview' %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Readiness — four beats</div>
+                <div class="atlas-card-b">
+                    <div class="atlas-check {% if door_open %}ok{% else %}no{% endif %}">
+                        <span class="ic">{% if door_open %}✓{% else %}○{% endif %}</span>
+                        <div>
+                            <strong>The door is {% if door_open %}open{% else %}locked{% endif %}</strong>
+                            <span>{% if door_open %}Followers or the world can find you.{% else %}You’re still in stealth — no follows, no wall. Open it under <em>The door</em>.{% endif %}</span>
+                            {% if not door_open %}<a href="{{ url_for('profile', tab='community') }}" class="small fw-semibold d-inline-block mt-1">Open the door →</a>{% endif %}
+                        </div>
+                    </div>
+                    <div class="atlas-check {% if has_headline %}ok{% else %}no{% endif %}">
+                        <span class="ic">{% if has_headline %}✓{% else %}○{% endif %}</span>
+                        <div>
+                            <strong>Headline</strong>
+                            <span>One line that answers: what do you actually trade for?</span>
+                            {% if not has_headline %}<a href="{{ url_for('profile', tab='preferences') }}" class="small fw-semibold d-inline-block mt-1">Write it →</a>{% endif %}
+                        </div>
+                    </div>
+                    <div class="atlas-check {% if has_bio %}ok{% else %}no{% endif %}">
+                        <span class="ic">{% if has_bio %}✓{% else %}○{% endif %}</span>
+                        <div>
+                            <strong>Bio</strong>
+                            <span>Three sentences beat three dashboards. Tell them what “good” looks like for you.</span>
+                            {% if not has_bio %}<a href="{{ url_for('profile', tab='preferences') }}" class="small fw-semibold d-inline-block mt-1">Tell your story →</a>{% endif %}
+                        </div>
+                    </div>
+                    <div class="atlas-check {% if published_count > 0 %}ok{% else %}no{% endif %}">
+                        <span class="ic">{% if published_count > 0 %}✓{% else %}○{% endif %}</span>
+                        <div>
+                            <strong>First receipt on the wall</strong>
+                            <span>{% if published_count > 0 %}You’ve shown the work. Keep going.{% else %}Pick the trade from this week you’re least ashamed to explain out loud.{% endif %}</span>
+                            {% if published_count == 0 %}<a href="{{ url_for('weekly_review') }}" class="small fw-semibold d-inline-block mt-1">Weekly Review →</a>{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="atlas-card">
+                <div class="atlas-card-h">Mirror card</div>
+                <div class="atlas-card-b">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="atlas-label">Name on the wall</div>
+                            <div class="fs-5 fw-bold" style="font-family:Fraunces,serif;color:#1c1917">{{ profile_row.display_name or current_user.username }}</div>
+                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code> — this is how you sign the receipts.</p>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="atlas-label">Headline</div>
+                            <div class="text-body-secondary">{{ profile_row.headline or "— Still blank. That’s a missed first impression." }}</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="atlas-label">Bio</div>
+                            <p class="mb-0" style="line-height:1.7;color:#44403c;font-size:1rem">{{ profile_row.bio or "Silence isn’t mysterious here — it reads as ‘no point of view yet.’ Fill this in." }}</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-dark rounded-pill px-4 fw-semibold">Edit mirror card</a>
+                        <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="btn btn-outline-secondary rounded-pill px-4">Preview public page</a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if tab == 'preferences' %}
+            <form method="POST" action="{{ url_for('profile', tab='preferences') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="save_profile">
+                <input type="hidden" name="settings_tab" value="preferences">
+
+                <div class="atlas-card">
+                    <div class="atlas-card-h">Mirror card</div>
+                    <div class="atlas-card-b">
+                        <div class="row g-3">
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">Display name</label>
+                                <input type="text" class="form-control form-control-lg" name="display_name" maxlength="80"
+                                       value="{{ profile_row.display_name or '' }}" placeholder="{{ current_user.username }}">
+                            </div>
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">Accent (for future UI)</label>
+                                <select class="form-select form-select-lg" name="accent">
+                                    {% for a in accent_presets %}
+                                    <option value="{{ a }}" {% if profile_row.accent == a %}selected{% endif %}>{{ a|capitalize }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 atlas-field">
+                                <label class="atlas-label">Headline — the one line people quote</label>
+                                <input type="text" class="form-control" name="headline" maxlength="120"
+                                       value="{{ profile_row.headline or '' }}" placeholder="e.g. Credit spreads only · max loss before ego">
+                            </div>
+                            <div class="col-12 atlas-field">
+                                <label class="atlas-label">Bio — what “good execution” means to you</label>
+                                <textarea class="form-control" name="bio" rows="5" maxlength="2000" placeholder="Rules you won’t break. What you’re working on. What you don’t trade.">{{ profile_row.bio or '' }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="atlas-card">
+                    <div class="atlas-card-h">How the app opens for you</div>
+                    <div class="atlas-card-b">
+                        <div class="row g-3">
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">Timezone</label>
+                                <input type="text" class="form-control" name="timezone" value="{{ profile_row.timezone or 'America/New_York' }}" placeholder="America/New_York">
+                            </div>
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">Week starts</label>
+                                <div class="form-check form-switch mt-2 pt-1">
+                                    <input class="form-check-input" type="checkbox" name="week_starts_monday" id="wsm"
+                                           {% if profile_row.get('week_starts_monday', True) %}checked{% endif %}>
+                                    <label class="form-check-label" for="wsm">Monday (off = Sunday)</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">After sign-in, land on</label>
+                                <select class="form-select" name="default_route">
+                                    {% for r in default_routes %}
+                                    <option value="{{ r }}" {% if profile_row.default_route == r %}selected{% endif %}>{{ r.replace('_', ' ')|title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
+                                    <label class="form-check-label" for="de">Weekly digest email <span class="text-muted">(when shipped)</span></label>
+                                </div>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
+                                    <label class="form-check-label" for="ct">Prefer tighter tables</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-dark btn-lg rounded-pill px-5 fw-bold">Save</button>
+            </form>
+            {% endif %}
+
+            {% if tab == 'account' %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Brokerage labels in data</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint">These strings tie uploads to BigQuery. Mundane — but wrong label, wrong mirror.</p>
+                    {% if accounts %}
+                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
+                    {% else %}
+                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a> or connect Schwab.</p>
+                    {% endif %}
+                    {% if schwab_enabled %}
+                    <div class="mt-4 pt-3 border-top">
+                        <div class="atlas-label">Schwab</div>
+                        <p class="atlas-hint mb-2">One OAuth, then sync is the same pipeline as CSV.</p>
+                        {% if schwab_connections %}
+                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
+                        </form>
+                        {% else %}
+                        <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary rounded-pill">Connect Schwab</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="atlas-card">
+                <div class="atlas-card-h">Upload history</div>
+                <div class="atlas-card-b p-0">
+                    {% if recent_uploads %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light"><tr><th class="ps-3">Account</th><th>History</th><th>Positions</th><th class="pe-3">When</th></tr></thead>
+                            <tbody>
+                                {% for u in recent_uploads %}
+                                <tr><td class="ps-3">{{ u.account_name }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at }}</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}<p class="text-muted small p-3 mb-0">No uploads yet.</p>{% endif %}
+                </div>
+            </div>
+            <div class="atlas-card">
+                <div class="atlas-card-h">Password</div>
+                <div class="atlas-card-b">
+                    <form method="POST" action="{{ url_for('profile', tab='account') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="change_password">
+                        <div class="mb-3"><label class="form-label">Current</label><input type="password" class="form-control" name="current_password" required autocomplete="current-password"></div>
+                        <div class="mb-3"><label class="form-label">New</label><input type="password" class="form-control" name="new_password" required minlength="8" autocomplete="new-password"></div>
+                        <div class="mb-3"><label class="form-label">Confirm</label><input type="password" class="form-control" name="confirm_password" required minlength="8" autocomplete="new-password"></div>
+                        <button type="submit" class="btn btn-dark rounded-pill px-4 fw-semibold">Update password</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if tab == 'community' %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">The door — who can see you</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint mb-4">Private means you’re a ghost: no follows, no wall, no pressure. The moment you choose Followers or Public, you’re saying <em>hold me accountable in the open</em>.</p>
+                    <form method="POST" action="{{ url_for('profile', tab='community') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="save_profile">
+                        <input type="hidden" name="settings_tab" value="community">
+                        <div class="atlas-field">
+                            <label class="atlas-label">Visibility</label>
+                            <select class="form-select form-select-lg" name="profile_visibility">
+                                <option value="private" {% if profile_row.profile_visibility == 'private' %}selected{% endif %}>Private — I’m not on the wall yet</option>
+                                <option value="followers" {% if profile_row.profile_visibility == 'followers' %}selected{% endif %}>Followers — receipts for people who chose to watch</option>
+                                <option value="public" {% if profile_row.profile_visibility == 'public' %}selected{% endif %}>Public — any signed-in trader can read my card</option>
+                            </select>
+                        </div>
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" name="show_account_names_on_published" id="san" {% if profile_row.show_account_names_on_published %}checked{% endif %}>
+                            <label class="form-check-label" for="san">Show real account nicknames on receipts (otherwise they read as “Account”)</label>
+                        </div>
+                        <button type="submit" class="btn btn-dark btn-lg rounded-pill px-4 fw-bold">Save the door</button>
+                    </form>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('community') }}" class="atlas-btn-gold" style="display:inline-block">Open the wall</a>
+                <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="btn btn-outline-dark rounded-pill px-4 fw-semibold">Preview my card</a>
+            </div>
+            {% endif %}
+
+            {% if tab == 'published' %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Receipts you’ve hung</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint">Taking one down doesn’t erase the trade — it only pulls it off other people’s wall.</p>
+                    {% if my_published_trades %}
+                    <div class="table-responsive mt-3">
+                        <table class="table align-middle">
+                            <thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th class="text-end">P&amp;L shown</th><th></th></tr></thead>
+                            <tbody>
+                                {% for p in my_published_trades %}
+                                <tr>
+                                    <td class="fw-bold">{{ p.symbol }}</td>
+                                    <td class="small text-muted">{{ p.strategy }}</td>
+                                    <td><span class="badge rounded-pill text-bg-light">{{ p.status }}</span></td>
+                                    <td class="text-end small">{% if p.display_pnl is not none %}{{ "+" if p.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.display_pnl) }}{% else %}—{% endif %}</td>
+                                    <td class="text-end">
+                                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" class="d-inline" onsubmit="return confirm('Pull this receipt off the wall?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="action" value="unpublish">
+                                            <input type="hidden" name="trade_fingerprint" value="{{ p.trade_fingerprint }}">
+                                            <input type="hidden" name="next" value="{{ url_for('profile', tab='published') }}">
+                                            <button type="submit" class="btn btn-link btn-sm text-danger p-0">Take down</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="mb-0 mt-3 fw-semibold text-dark">Nothing on the wall yet.</p>
+                    <p class="atlas-hint mt-2">That’s not humility — it’s a blank canvas. Go to Review, hit <strong>Show</strong> on the trade that proves who you were this week.</p>
+                    <a href="{{ url_for('weekly_review') }}" class="atlas-btn-gold mt-3" style="display:inline-block">Weekly Review</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

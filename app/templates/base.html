@@ -123,6 +123,10 @@
                        href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {% if ep == 'community' %}active{% endif %}"
+                       href="{{ url_for('community') }}">Wall</a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
                        href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">Coach</a>
                 </li>
@@ -133,14 +137,24 @@
                         Upload &amp; Refresh
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link text-white-50" href="{{ url_for('settings') }}">{{ current_user.username }}</a>
-                </li>
-                <li class="nav-item">
-                    <form method="post" action="{{ url_for('logout') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="nav-link btn btn-link border-0 py-2 px-0 text-white">Logout</button>
-                    </form>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-white-50" href="#" id="userMenu"
+                       data-bs-toggle="dropdown" aria-expanded="false">{{ current_user.username }}</a>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="userMenu">
+                        <li>
+                            <a class="dropdown-item {% if ep == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">Profile &amp; settings</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'community' %}active{% endif %}" href="{{ url_for('community') }}">The Wall</a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{{ url_for('logout') }}" class="px-3 py-1">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-light w-100">Log out</button>
+                            </form>
+                        </li>
+                    </ul>
                 </li>
             </ul>
             {% else %}

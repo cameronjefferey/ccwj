@@ -34,6 +34,30 @@
         margin-right: .5rem;
         margin-bottom: .5rem;
     }
+    .settings-field {
+        padding-bottom: 1.25rem;
+        margin-bottom: 1.25rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .settings-field:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    .settings-field > .field-label {
+        font-size: .75rem;
+        font-weight: 600;
+        letter-spacing: .02em;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-bottom: .35rem;
+    }
+    .settings-field .field-hint {
+        font-size: .8125rem;
+        color: #6c757d;
+        line-height: 1.45;
+        margin-bottom: .75rem;
+    }
 </style>
 {% endblock %}
 
@@ -49,37 +73,54 @@
         <div class="card settings-card">
             <div class="card-header">Account Info</div>
             <div class="card-body">
-                <div class="mb-3">
-                    <label class="form-label text-muted small mb-1">Username</label>
-                    <div class="fw-semibold">{{ current_user.username }}</div>
+                <div class="settings-field">
+                    <div class="field-label">Username</div>
+                    <div class="fw-semibold fs-6">{{ current_user.username }}</div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label text-muted small mb-1">Linked Accounts</label>
+
+                <div class="settings-field">
+                    <div class="field-label">Portfolio accounts</div>
+                    <p class="field-hint mb-0">
+                        These are the brokerage account <em>names</em> used in your dashboard (for example “Roth IRA” or your Schwab account nickname).
+                        They show up here after you add data—either with Schwab below or by uploading CSVs on the
+                        <a href="{{ url_for('upload') }}">Upload</a> page.
+                    </p>
                     {% if accounts %}
-                    <div>
+                    <div class="mt-2">
                         {% for acct in accounts %}
                         <span class="account-badge">{{ acct }}</span>
                         {% endfor %}
                     </div>
                     {% else %}
-                    <p class="text-muted mb-0 small">
-                        No accounts linked yet.
-                        <a href="{{ url_for('upload') }}">Upload your Schwab CSV files</a> to link an account and see your portfolio.
+                    <p class="text-muted small mb-0 mt-2">
+                        <span class="fw-medium text-body-secondary">None yet.</span>
+                        Use Schwab sync or a manual upload to create your first account label.
                     </p>
                     {% endif %}
                 </div>
+
                 {% if schwab_enabled %}
-                <div class="pt-2 border-top">
-                    <label class="form-label text-muted small mb-1">Schwab API</label>
+                <div class="settings-field">
+                    <div class="field-label">Schwab</div>
+                    <p class="field-hint mb-2">
+                        Sign in to Schwab once to authorize HappyTrader. After that, <strong>Sync now</strong> pulls positions and recent trades into your pipeline (same path as a CSV upload).
+                    </p>
                     {% if schwab_connections %}
-                    <p class="mb-2 small">Connected: {% for c in schwab_connections %}{{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
-                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-outline-primary">Sync now</button>
-                    </form>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="badge text-bg-success">
+                            Connected{% for c in schwab_connections %}: {{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
+                        </span>
+                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
+                        </form>
+                    </div>
                     {% else %}
-                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-sm btn-primary">Connect Schwab</a>
-                    <span class="text-muted small ms-2">Daily sync without CSV uploads</span>
+                    <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
+                        <a href="{{ url_for('schwab_connect') }}" class="btn btn-sm btn-primary">Connect Schwab</a>
+                        <span class="text-muted small">or</span>
+                        <a href="{{ url_for('upload') }}" class="small">Upload CSVs manually</a>
+                    </div>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -141,7 +182,7 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted mb-0 small">No uploads yet. <a href="{{ url_for('upload') }}">Upload your first file</a> to get started.</p>
+                <p class="text-muted mb-0 small">No upload or sync history for this login yet. Data from <a href="{{ url_for('upload') }}">Upload</a> or Schwab sync will appear here.</p>
                 {% endif %}
             </div>
         </div>

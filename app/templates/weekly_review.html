@@ -325,6 +325,38 @@
     .cal-day.today { box-shadow: inset 0 0 0 2px #3b82f6; }
     .cal-day-num { line-height: 1; }
     .cal-day-pnl { font-size: .55rem; font-weight: 700; margin-top: 1px; }
+
+    /* ── Mirror wall (publish) ── */
+    .wm-strip {
+        background: linear-gradient(135deg, #0c1222 0%, #1a2744 42%, #243b53 100%);
+        color: #f8fafc;
+        border: 1px solid rgba(148,163,184,.25);
+        box-shadow: 0 12px 40px -12px rgba(15,23,42,.45);
+    }
+    .wm-strip::before {
+        content: ""; position: absolute; inset: 0;
+        background: radial-gradient(ellipse 70% 80% at 0% 0%, rgba(251,191,36,.12), transparent 50%);
+        pointer-events: none;
+    }
+    .wm-strip-kicker { color: #fbbf24; }
+    .wm-strip-badge { opacity: .85; }
+    .wm-wall-btn {
+        font-weight: 700 !important;
+        letter-spacing: .02em;
+        border: none !important;
+        background: linear-gradient(135deg, #f59e0b, #ea580c) !important;
+        color: #fff !important;
+        box-shadow: 0 2px 12px rgba(234,88,12,.35);
+        transition: transform .12s, box-shadow .12s;
+    }
+    .wm-wall-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 18px rgba(234,88,12,.45); color: #fff !important; }
+    .wm-wall-done {
+        background: rgba(15,23,42,.06) !important;
+        color: #0f766e !important;
+        border: 1px solid rgba(13,148,136,.35) !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+    }
 </style>
 {% endblock %}
 
@@ -878,6 +910,7 @@
 
 {# ── Trades this week ── #}
 {% if trades_this_week %}
+{% include "_show_wall_strip_weekly.html" %}
 <div class="review-section">
     <div class="section-label">All Trades This Week</div>
     <div class="table-responsive">
@@ -888,6 +921,7 @@
                     <th>Strategy</th>
                     <th>Date</th>
                     <th class="text-end">P&amp;L</th>
+                    <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -908,6 +942,25 @@
                     </td>
                     <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
                         {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if t.trade_fingerprint %}
+                        <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
+                                style="font-size:.68rem"
+                                data-bs-toggle="modal" data-bs-target="#communityTradeModal"
+                                data-fp="{{ t.trade_fingerprint }}"
+                                data-published="{{ 1 if t.published_to_community else 0 }}"
+                                data-account="{{ t.account|e }}"
+                                data-symbol="{{ t.symbol|e }}"
+                                data-strategy="{{ t.strategy|e }}"
+                                data-trade-symbol="{{ t.trade_symbol|e }}"
+                                data-open="{{ t.open_date|e }}"
+                                data-close="{{ t.close_date|e }}"
+                                data-status="{{ t.status|e }}"
+                                data-pnl="{{ t.current_pnl if t.current_pnl is not none else '' }}">
+                            {% if t.published_to_community %}On wall{% else %}Show{% endif %}
+                        </button>
+                        {% else %}<span class="small text-muted">—</span>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -1313,6 +1366,7 @@
 
 {# ── Trades this week (mid-week view) ── #}
 {% if trades_this_week %}
+{% include "_show_wall_strip_weekly.html" %}
 <div class="review-section">
     <div class="section-label">Trades This Week</div>
     <div class="table-responsive">
@@ -1323,6 +1377,7 @@
                     <th>Strategy</th>
                     <th>Status</th>
                     <th class="text-end">P&amp;L</th>
+                    <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -1340,6 +1395,25 @@
                     <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
                         {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
                     </td>
+                    <td class="text-end">
+                        {% if t.trade_fingerprint %}
+                        <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
+                                style="font-size:.68rem"
+                                data-bs-toggle="modal" data-bs-target="#communityTradeModal"
+                                data-fp="{{ t.trade_fingerprint }}"
+                                data-published="{{ 1 if t.published_to_community else 0 }}"
+                                data-account="{{ t.account|e }}"
+                                data-symbol="{{ t.symbol|e }}"
+                                data-strategy="{{ t.strategy|e }}"
+                                data-trade-symbol="{{ t.trade_symbol|e }}"
+                                data-open="{{ t.open_date|e }}"
+                                data-close="{{ t.close_date|e }}"
+                                data-status="{{ t.status|e }}"
+                                data-pnl="{{ t.current_pnl if t.current_pnl is not none else '' }}">
+                            {% if t.published_to_community %}On wall{% else %}Show{% endif %}
+                        </button>
+                        {% else %}<span class="small text-muted">—</span>{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1350,5 +1424,7 @@
 
 
 {% endif %}{# end midweek #}
+
+{% include "_community_trade_modal.html" %}
 
 {% endblock %}

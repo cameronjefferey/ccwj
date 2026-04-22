@@ -16,6 +16,9 @@ from app.models import (
     get_accounts_for_user, is_admin,
     get_mirror_score_for_user, get_mirror_score_history,
     get_insight_for_user,
+    get_published_trade_fingerprints,
+    get_user_profile,
+    trade_fingerprint,
 )
 from google.cloud import bigquery
 from concurrent.futures import ThreadPoolExecutor
@@ -933,6 +936,8 @@ def weekly_review():
         "trades_this_week": [],
         "from_upload": from_upload,
         "strategy_breakdown_week": [],
+        "community_profile_visibility": "private",
+        "community_publish_ready": False,
     }
 
     try:
@@ -1314,6 +1319,7 @@ def weekly_review():
         # ── Process: Trades this week ──
         try:
             trades_df = batch.get("trades", pd.DataFrame())
+            published_fps = get_published_trade_fingerprints(current_user.id)
             if not trades_df.empty:
                 trades_list = []
                 for _, row in trades_df.iterrows():
@@ -1330,11 +1336,18 @@ def weekly_review():
                         display_pnl = total_pnl
                     else:
                         display_pnl = float(row["current_unrealized_pnl"]) if row.get("current_unrealized_pnl") is not None else None
+                    acct = str(row.get("account", ""))
+                    sym = str(row.get("symbol", ""))
+                    strat = str(row.get("strategy", ""))
+                    tsym = str(row.get("trade_symbol", "")) if row.get("trade_symbol") else ""
+                    fp = trade_fingerprint(
+                        current_user.id, acct, sym, tsym, open_d, close_d, strat,
+                    )
                     trades_list.append({
-                        "account": str(row.get("account", "")),
-                        "symbol": str(row.get("symbol", "")),
-                        "strategy": str(row.get("strategy", "")),
-                        "trade_symbol": str(row.get("trade_symbol", "")) if row.get("trade_symbol") else "",
+                        "account": acct,
+                        "symbol": sym,
+                        "strategy": strat,
+                        "trade_symbol": tsym,
                         "open_date": open_d,
                         "close_date": close_d,
                         "total_pnl": total_pnl,
@@ -1342,6 +1355,8 @@ def weekly_review():
                         "cost_basis": float(row["trade_cost"]) if row.get("trade_cost") is not None else None,
                         "market_value": float(row["current_market_value"]) if row.get("current_market_value") is not None else None,
                         "current_pnl": display_pnl,
+                        "trade_fingerprint": fp,
+                        "published_to_community": fp in published_fps,
                     })
                 context["trades_this_week"] = trades_list
         except Exception as e:
@@ -1747,5 +1762,10 @@ def weekly_review():
                 break
         if watch_items:
             context["watch_next_week"] = watch_items
+
+    _prof = get_user_profile(current_user.id)
+    _vis = (_prof.get("profile_visibility") or "private").lower()
+    context["community_profile_visibility"] = _vis
+    context["community_publish_ready"] = _vis in ("followers", "public")
 
     return render_template("weekly_review.html", **context)
