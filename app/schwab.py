@@ -75,6 +75,90 @@ def _schwab_transaction_lookback_days():
     return max(1, min(days, 1825))
 
 
+def _schwab_transaction_chunk_days():
+    """
+    Max span (inclusive) per get_transactions call. Schwab returns HTTP 400 if
+    startDate/endDate cover too long a range (see schwab-py docs, often ~60 days).
+    Set SCHWAB_TRANSACTION_CHUNK_DAYS to tune (7–366, default 60). If sync 400s,
+    lower this; if smaller chunks are slow but stable, you can try nudging upward.
+    """
+    raw = (os.environ.get("SCHWAB_TRANSACTION_CHUNK_DAYS") or "60").strip() or "60"
+    try:
+        d = int(raw)
+    except ValueError:
+        d = 60
+    return max(7, min(d, 366))
+
+
+def _schwab_fetch_transactions_window(client, account_hash, start_date, end_date):
+    """
+    Single GET /transactions for [start_date, end_date] (inclusive, date objects).
+    """
+    return _schwab_resp_with_refresh(
+        client,
+        lambda: client.get_transactions(
+            account_hash, start_date=start_date, end_date=end_date
+        ),
+    )
+
+
+def _schwab_fetch_all_transaction_items(client, account_hash, start_date, end_date):
+    """
+    Merge all transaction records from Schwab, requesting in time windows
+    of at most _schwab_transaction_chunk_days() so the API does not 400
+    on long lookbacks (e.g. 1825 days).
+    """
+    if start_date > end_date:
+        return []
+    chunk_days = _schwab_transaction_chunk_days()
+    merged = []
+    seen = set()
+    cursor = start_date
+    is_first = True
+    while cursor <= end_date:
+        if not is_first:
+            time.sleep(0.12)
+        is_first = False
+        window_end = min(
+            end_date, cursor + timedelta(days=chunk_days - 1)
+        )
+        resp = _schwab_fetch_transactions_window(
+            client, account_hash, cursor, window_end
+        )
+        tx_data = resp.json()
+        part = (
+            tx_data
+            if isinstance(tx_data, list)
+            else (
+                tx_data.get("transaction")
+                or tx_data.get("transactions")
+                or []
+            )
+        )
+        if not isinstance(part, list):
+            part = []
+        for tx in part:
+            if not isinstance(tx, dict):
+                continue
+            key = None
+            for k in ("transactionId", "activityId"):
+                v = tx.get(k)
+                if v is not None and str(v).strip() != "":
+                    key = f"id:{k}:{v}"
+                    break
+            if key is None:
+                key = (
+                    f"hash:{tx.get('transactionDate')!s}:"
+                    f"{tx.get('type')!s}:{str(tx)[:200]}"
+                )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(tx)
+        cursor = window_end + timedelta(days=1)
+    return merged
+
+
 def _schwab_resp_with_refresh(client, request_fn):
     """
     Run a schwab-py call that returns httpx.Response. On 401, refresh OAuth
@@ -572,19 +656,10 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
         lookback = _schwab_transaction_lookback_days()
     end_date = date.today()
     start_date = end_date - timedelta(days=lookback)
-    tx_resp = _schwab_resp_with_refresh(
-        client,
-        lambda: client.get_transactions(
-            account_hash,
-            start_date=start_date,
-            end_date=end_date,
-        ),
+    # Schwab 400s if startDate/endDate span a single long range; fetch in chunks.
+    tx_list = _schwab_fetch_all_transaction_items(
+        client, account_hash, start_date, end_date
     )
-    tx_data = tx_resp.json()
-
-    tx_list = tx_data if isinstance(tx_data, list) else (tx_data.get("transaction") or tx_data.get("transactions") or [])
-    if not isinstance(tx_list, list):
-        tx_list = []
 
     transactions = []
     for tx in tx_list:

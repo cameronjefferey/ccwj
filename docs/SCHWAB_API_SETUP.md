@@ -45,8 +45,10 @@ SCHWAB_APP_KEY=your_app_key_here
 SCHWAB_APP_SECRET=your_app_secret_here
 # Must match a callback URL registered in the Schwab portal (HTTPS only).
 SCHWAB_CALLBACK_URL=https://your-domain.com/schwab/callback
-# Optional: days of transactions per sync (default 60)
+# Optional: calendar days of transaction history to request per sync (default 60, max 1825 for UI backfill)
 # SCHWAB_SYNC_TRANSACTION_DAYS=120
+# Optional: max days per Schwab API request — long backfills are split into many calls (default 60; reduce if the API 400s)
+# SCHWAB_TRANSACTION_CHUNK_DAYS=60
 ```
 
 For **local OAuth**, set `SCHWAB_CALLBACK_URL` to the **same HTTPS URL** you registered (your tunnel URL + `/schwab/callback`), not `http://127.0.0.1`.
@@ -122,7 +124,7 @@ Schwab API
 ## Limits and Notes
 
 - **Option cost basis in seeds:** Schwab’s `averagePrice` on options is usually premium **per underlying share** (not total premium). Sync writes `cost_basis` as API `costBasis` when present, otherwise `averagePrice × |quantity| × instrument multiplier` (defaults to **100** for standard US equity options). Using only `averagePrice × quantity` understates cost and makes return % look absurdly high.
-- **Transaction history — first sync vs. routine:** In **Profile → Accounts & login**, the **first** time you use **Sync now**, you can choose a **full backfill (up to 1825 days, ~5 years)** or a **short rolling window only** (faster if you already have history elsewhere). After a successful sync, the UI defaults to the **rolling** mode so daily refreshes do not re-pull years of data; you can still check **one-time long backfill** when you need it. The rolling window size comes from **`SCHWAB_SYNC_TRANSACTION_DAYS`** in `.env` (default **60**, max 1825) and is what the **scheduled cron/CLI** sync uses. Schwab may still cap what the API returns—use CSV upload for the deepest history if needed. New rows are merged with dedupe on the transaction columns (not a blind append of identical trades).
+- **Transaction history — first sync vs. routine:** In **Profile → Accounts & login**, the **first** time you use **Sync now**, you can choose a **full backfill (up to 1825 days, ~5 years)** or a **short rolling window only** (faster if you already have history elsewhere). After a successful sync, the UI defaults to the **rolling** mode so daily refreshes do not re-pull years of data; you can still check **one-time long backfill** when you need it. The rolling window size comes from **`SCHWAB_SYNC_TRANSACTION_DAYS`** in `.env` (default **60**, max 1825) and is what the **scheduled cron/CLI** sync uses. The Schwab **transactions** endpoint only accepts a **short date range per HTTP request**; the app automatically pages through history in **chunks** of **`SCHWAB_TRANSACTION_CHUNK_DAYS`** (default **60**). If you see **400 Bad Request** on sync, try lowering `SCHWAB_TRANSACTION_CHUNK_DAYS` to **30** or **7**. For gaps Schwab will not return via API, use CSV upload. New rows are merged with dedupe on the transaction columns (not a blind append of identical trades).
 - **Price history**: Stocks/ETFs supported; **options** require capturing daily quotes and storing them yourself (which we do during sync).
 - **Rate limits**: Stay under ~120 requests/minute; sync logic batches and throttles where needed.
 - **Tokens**: Access tokens expire after ~7 days. Refresh tokens are used automatically when possible; re-authorize if refresh fails.
@@ -131,6 +133,7 @@ Schwab API
 
 | Issue | Fix |
 |-------|-----|
+| **Sync now** / CLI fails with **400** on `/transactions?...` | The requested **date range is too long for one API call** (or Schwab dislikes the bounds). The app should chunk automatically; if it still 400s, set **`SCHWAB_TRANSACTION_CHUNK_DAYS=30`** (or `7`) in `.env` and sync again. |
 | Portal says **"URL must be HTTPS"** for `http://127.0.0.1` | Schwab no longer allows `http` callbacks. Use an HTTPS tunnel (ngrok / cloudflared) or connect only on production. |
 | "Invalid callback URL" | Ensure `SCHWAB_CALLBACK_URL` in .env matches exactly what you registered in the Schwab portal |
 | "App not approved" | Wait for approval or contact traderapi@schwab.com |
