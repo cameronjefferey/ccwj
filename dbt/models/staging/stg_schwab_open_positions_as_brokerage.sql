@@ -12,7 +12,7 @@
 
 with src as (
     select * from {{ ref('schwab_open_positions') }}
-    where trim(coalesce(account, '')) != ''
+    where trim(coalesce(cast(account as string), '')) != ''
 ),
 
 mv_num as (
@@ -59,10 +59,10 @@ select
     cast(null as string) as intrinsic_value,
     cast(null as string) as in_the_money,
     case
-        when upper(trim(coalesce(asset_type, ''))) = 'EQUITY' then 'Equity'
-        when upper(trim(coalesce(asset_type, ''))) = 'OPTION' then 'Option'
-        when upper(trim(coalesce(asset_type, ''))) = 'COLLECTIVE_INVESTMENT' then 'ETFs & Closed End Funds'
-        else trim(coalesce(asset_type, ''))
+        when upper(trim(coalesce(cast(asset_type as string), ''))) = 'EQUITY' then 'Equity'
+        when upper(trim(coalesce(cast(asset_type as string), ''))) = 'OPTION' then 'Option'
+        when upper(trim(coalesce(cast(asset_type as string), ''))) = 'COLLECTIVE_INVESTMENT' then 'ETFs & Closed End Funds'
+        else trim(coalesce(cast(asset_type as string), ''))
     end as security_type,
     cast(null as string) as margin_requirement
 from mv_num

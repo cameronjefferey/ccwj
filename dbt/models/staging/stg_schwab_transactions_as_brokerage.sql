@@ -20,4 +20,4 @@ select
     trim(coalesce(cast(fees as string), '')) as fees_and_comm,
     trim(coalesce(cast(amount as string), '')) as Amount
 from {{ ref('schwab_transactions') }}
-where trim(coalesce(account, '')) != ''
+where trim(coalesce(cast(account as string), '')) != ''

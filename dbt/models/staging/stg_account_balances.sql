@@ -57,8 +57,8 @@ schwab_bal_rows as (
         safe_cast(trim(replace(replace(replace(cast(unrealized_pnl_pct as string), '%', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl_pct,
         safe_cast(trim(replace(replace(cast(percent_of_account as string), '%', ''), ',', '')) as float64) as percent_of_account
     from {{ ref('schwab_account_balances') }}
-    where trim(coalesce(account, '')) != ''
-      and lower(trim(coalesce(row_type, ''))) in ('cash', 'account_total')
+    where trim(coalesce(cast(account as string), '')) != ''
+      and lower(trim(coalesce(cast(row_type as string), ''))) in ('cash', 'account_total')
 )
 
 select * from cash_rows
