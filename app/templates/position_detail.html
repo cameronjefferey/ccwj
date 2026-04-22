@@ -593,7 +593,7 @@
 
 {% else %}
 <div class="alert alert-warning">
-    No data found for <strong>{{ symbol }}</strong>. Upload your Schwab trade history, or check that this symbol exists in your data.
+    No data found for <strong>{{ symbol }}</strong> in your linked accounts. If you just synced, wait for dbt to finish; otherwise confirm the symbol and account name match your BigQuery seeds.
 </div>
 {% endif %}
 {% endblock %}

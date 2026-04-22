@@ -1102,6 +1102,9 @@ def position_detail(symbol):
     statuses = summary_df[status_col].unique().tolist() if status_col and not summary_df.empty else []
     _has_open = any(str(s).strip().lower() == "open" for s in statuses if s is not None)
     _has_closed = any(str(s).strip().lower() == "closed" for s in statuses if s is not None)
+    # Open equity/options from snapshots have no positions_summary row until trades exist in stg_history.
+    if not _has_open and not current_df.empty:
+        _has_open = True
     if _has_open:
         overall_status = "Open"
     else:
@@ -1156,7 +1159,14 @@ def position_detail(symbol):
         )
 
     kpis = {}
-    if not summary_df.empty or leg_param:
+    # positions_summary is trade-derived; open lots synced without matching history have current_df only.
+    _show_position_kpis = (
+        leg_param
+        or not summary_df.empty
+        or not current_df.empty
+        or not trades_df.empty
+    )
+    if _show_position_kpis:
         unrealized_from_summary = float(summary_df["unrealized_pnl"].sum()) if not summary_df.empty else 0.0
         if not current_df.empty and "unrealized_pnl" in current_df.columns:
             unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
@@ -1169,16 +1179,27 @@ def position_detail(symbol):
             premium_collected = float(summary_df["total_premium_received"].sum()) if not summary_df.empty else 0.0
             premium_paid = float(summary_df["total_premium_paid"].sum()) if not summary_df.empty else 0.0
 
-        # Trade count from filtered trades
-        trade_count = len(trades_df) if leg_param else (int(summary_df["num_individual_trades"].sum()) if not summary_df.empty else 0)
+        # Trade count: use row count when summary is empty (e.g. Schwab positions-only path)
+        trade_count = (
+            len(trades_df)
+            if leg_param or summary_df.empty
+            else int(summary_df["num_individual_trades"].sum())
+        )
 
         # Date range from filtered trades
         if leg_param and not trades_df.empty and "trade_date" in trades_df.columns:
             first_trade = str(trades_df["trade_date"].min())
             last_trade = str(trades_df["trade_date"].max())
         else:
-            first_trade = str(summary_df["first_trade_date"].min()) if not summary_df.empty and "first_trade_date" in summary_df.columns else ""
-            last_trade = str(summary_df["last_trade_date"].max()) if not summary_df.empty and "last_trade_date" in summary_df.columns else ""
+            if not summary_df.empty and "first_trade_date" in summary_df.columns:
+                first_trade = str(summary_df["first_trade_date"].min())
+                last_trade = str(summary_df["last_trade_date"].max())
+            elif not trades_df.empty and "trade_date" in trades_df.columns:
+                first_trade = str(trades_df["trade_date"].min())
+                last_trade = str(trades_df["trade_date"].max())
+            else:
+                first_trade = ""
+                last_trade = ""
 
         # Win/loss from filtered closed legs when leg-filtered
         if leg_param and _leg_ranges:
@@ -1431,8 +1452,13 @@ def position_detail(symbol):
                 seen.add(m["strategy"])
                 option_matrices.append(m)
 
-    # Available accounts for filter
-    all_accounts = sorted(summary_df["account"].dropna().unique()) if not summary_df.empty else []
+    # Available accounts for filter (summary may be empty for open-only Schwab lots)
+    if not summary_df.empty and "account" in summary_df.columns:
+        all_accounts = sorted(summary_df["account"].dropna().unique())
+    elif not current_df.empty and "account" in current_df.columns:
+        all_accounts = sorted(current_df["account"].dropna().unique())
+    else:
+        all_accounts = []
 
     return render_template(
         "position_detail.html",
