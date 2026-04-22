@@ -1560,6 +1560,7 @@ def weekly_review():
         # ── Process: Daily P&L Calendar Heatmap ──
         context["daily_calendar"] = []
         context["calendar_month_label"] = today.strftime("%B %Y")
+        context["daily_calendar_no_query_rows"] = True
         try:
             cal_df = batch.get("calendar", pd.DataFrame())
             # Build lookup of data by date
@@ -1572,6 +1573,8 @@ def weekly_review():
                     cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
                 for _, row in cal_df.iterrows():
                     data_by_date[row["date"]] = round(float(row.get("daily_change") or 0), 2)
+
+            context["daily_calendar_no_query_rows"] = cal_df.empty
 
             # Generate all days of the month up to today
             d = month_start
@@ -1589,6 +1592,7 @@ def weekly_review():
         except Exception as e:
             if app.debug:
                 app.logger.warning("Daily calendar query failed: %s", e)
+            context["daily_calendar_no_query_rows"] = True
 
         # Mode-specific data
         # AI Insight summary (for Friday review)

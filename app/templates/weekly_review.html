@@ -783,12 +783,19 @@
             {% endif %}
             <div class="cal-day {{ 'today' if d.is_today }}" style="background:{{ bg }}; color:{{ fg }};">
                 <div class="cal-day-num">{{ d.day }}</div>
-                {% if d.has_data and d.daily_change != 0 %}
-                <div class="cal-day-pnl">{{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}</div>
+                {% if d.has_data %}
+                <div class="cal-day-pnl">{% if d.daily_change != 0 %}{{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}{% else %}$0{% endif %}</div>
                 {% endif %}
             </div>
         {% endfor %}
     </div>
+    {% if daily_calendar_no_query_rows %}
+    <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
+        No snapshot rows for this month in BigQuery for your linked accounts. This calendar reads <code>mart_account_snapshots_enriched</code> (dbt).
+        Schwab sync updates files / GitHub seeds first; the dashboard updates after <strong>dbt build</strong> (or your repo’s GitHub Action) refreshes BigQuery.
+        If you already ran dbt, confirm the <strong>account name</strong> in your data matches the account labels on your Profile / upload.
+    </p>
+    {% endif %}
 </div>
 {% endif %}
 
