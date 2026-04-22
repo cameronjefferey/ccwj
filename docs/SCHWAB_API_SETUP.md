@@ -117,11 +117,12 @@ Schwab API
 
 **Unified pipeline with manual upload:** Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. Schwab sync updates `schwab_open_positions.csv`, `schwab_account_balances.csv`, and `schwab_transactions.csv` (not the manual `current_positions.csv` / `trade_history.csv` files). If GitHub is not configured, sync still runs but only writes under `data/schwab_sync/` (copy into seeds yourself if needed).
 
-**Account names:** The linked Schwab account name from the API should match how you want that account labeled in seeds/BigQuery. If you previously used manual upload under a different label, align the name or merge carefully.
+**Account names:** The linked Schwab account name from the API should match how you want that account labeled in seeds/BigQuery. If you previously used manual upload under a different label, align the name or merge carefully. Avoid using the **same account label** in both manual export seeds (`current_positions.csv`) and Schwab seeds for one brokerage account, or dbt’s union can **double-count** positions.
 
 ## Limits and Notes
 
-- **Transaction history**: Each sync requests a rolling window ending today. Default is **60 days**; set **`SCHWAB_SYNC_TRANSACTION_DAYS`** in `.env` (integer, 1–1825). Schwab may still cap what the API returns—use CSV upload for deep history if needed.
+- **Option cost basis in seeds:** Schwab’s `averagePrice` on options is usually premium **per underlying share** (not total premium). Sync writes `cost_basis` as API `costBasis` when present, otherwise `averagePrice × |quantity| × instrument multiplier` (defaults to **100** for standard US equity options). Using only `averagePrice × quantity` understates cost and makes return % look absurdly high.
+- **Transaction history**: Each sync requests a rolling window ending today. Default is **60 days**; set **`SCHWAB_SYNC_TRANSACTION_DAYS`** in `.env` (integer, 1–1825). Schwab may still cap what the API returns—use CSV upload for deep history if needed. New rows are merged with dedupe on the transaction columns (not a blind append of identical trades).
 - **Price history**: Stocks/ETFs supported; **options** require capturing daily quotes and storing them yourself (which we do during sync).
 - **Rate limits**: Stay under ~120 requests/minute; sync logic batches and throttles where needed.
 - **Tokens**: Access tokens expire after ~7 days. Refresh tokens are used automatically when possible; re-authorize if refresh fails.

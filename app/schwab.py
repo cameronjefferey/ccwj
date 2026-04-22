@@ -28,6 +28,36 @@ SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 SCHWAB_API_BASE = "https://api.schwabapi.com"
 
 
+def _schwab_position_cost_basis(sec, inst, qty, avg, inst_type):
+    """
+    Total position cost for seeds / dbt.
+
+    Schwab's averagePrice on OPTION positions is normally premium **per share of
+    underlying** (same convention as quotes). Cost = avg * |contracts| * multiplier.
+    US equity options default to 100 when the API omits multiplier.
+
+    Prefer API costBasis when present (covers odd instruments / shorts).
+    """
+    raw_cb = sec.get("costBasis")
+    if raw_cb is not None and str(raw_cb).strip() != "":
+        try:
+            return float(raw_cb)
+        except (TypeError, ValueError):
+            pass
+    q = abs(float(qty or 0))
+    a = float(avg or 0)
+    if str(inst_type).upper() == "OPTION" and q:
+        mult = inst.get("multiplier")
+        try:
+            m = float(mult) if mult is not None else 100.0
+        except (TypeError, ValueError):
+            m = 100.0
+        if m <= 0:
+            m = 100.0
+        return a * q * m
+    return a * q
+
+
 def _schwab_transaction_lookback_days():
     """
     Calendar days of transactions to request from Schwab each sync.
@@ -497,7 +527,7 @@ def _run_sync(user_id, client):
         avg = sec.get("averagePrice", 0) or 0
         mv = sec.get("marketValue", 0) or 0
         inst_type = inst.get("assetType", "EQUITY")
-        cb = avg * qty if qty else 0
+        cb = _schwab_position_cost_basis(sec, inst, qty, avg, inst_type)
         open_positions.append({
             "symbol": sym,
             "description": desc,
