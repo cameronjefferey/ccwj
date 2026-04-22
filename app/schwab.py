@@ -128,8 +128,9 @@ def _get_schwab_client(user_id, account_number=None):
             )
         return wrapped
 
-    def token_write(token):
-        # schwab-py passes the wrapped {creation_timestamp, token} dict on refresh
+    def token_write(token, *args, **kwargs):
+        # schwab-py passes the wrapped {creation_timestamp, token} dict on refresh.
+        # Newer authlib/oauth passes through extra kwargs (e.g. refresh_token=...) — ignore them.
         update_schwab_token(user_id, conn_data["account_number"], json.dumps(token))
 
     try:
