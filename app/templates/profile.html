@@ -306,8 +306,27 @@
                         <div class="atlas-label">Schwab</div>
                         <p class="atlas-hint mb-2">One OAuth, then sync is the same pipeline as CSV.</p>
                         {% if schwab_connections %}
-                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
+                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            {% if not schwab_first_sync_completed %}
+                            <p class="small text-body-secondary mb-2"><strong>First sync</strong> — choose how much trade history to pull from Schwab (API max about {{ schwab_full_history_lookback_days }} days).</p>
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full" value="full" checked>
+                                    <label class="form-check-label" for="schwab_scope_full">Import up to {{ schwab_full_history_lookback_days }} days (~5 years) — recommended for a full backfill</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling" value="rolling">
+                                    <label class="form-check-label" for="schwab_scope_rolling">Only last {{ schwab_routine_lookback_days }} days (faster; use if you already load history elsewhere)</label>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="small text-body-secondary mb-2">Routine sync requests the last <strong>{{ schwab_routine_lookback_days }} days</strong> of transactions (set <code>SCHWAB_SYNC_TRANSACTION_DAYS</code> on the server to change this). Check below for a one-time long backfill.</p>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again" value="1">
+                                <label class="form-check-label" for="schwab_full_again">One-time: fetch up to {{ schwab_full_history_lookback_days }} days of history (slower)</label>
+                            </div>
+                            {% endif %}
                             <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
                         </form>
                         {% else %}

@@ -106,15 +106,17 @@
                         Sign in to Schwab once to authorize HappyTrader. After that, <strong>Sync now</strong> pulls positions and recent trades into your pipeline (same path as a CSV upload).
                     </p>
                     {% if schwab_connections %}
-                    <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                         <span class="badge text-bg-success">
                             Connected{% for c in schwab_connections %}: {{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
                         </span>
-                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
-                        </form>
                     </div>
+                    <p class="small text-muted mb-2">Use <strong>Profile → Accounts &amp; login</strong> to choose first-sync history depth or run a one-time long backfill.</p>
+                    <form method="POST" action="{{ url_for('schwab_sync') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="sync_scope" value="rolling">
+                        <button type="submit" class="btn btn-sm btn-primary">Sync now (rolling window)</button>
+                    </form>
                     {% else %}
                     <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
                         <a href="{{ url_for('schwab_connect') }}" class="btn btn-sm btn-primary">Connect Schwab</a>

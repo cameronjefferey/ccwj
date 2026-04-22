@@ -72,14 +72,15 @@ def init_db():
         """,
         """
         CREATE TABLE IF NOT EXISTS schwab_connections (
-            id             SERIAL PRIMARY KEY,
-            user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            account_hash   TEXT NOT NULL,
-            account_number TEXT NOT NULL,
-            account_name   TEXT,
-            token_json     TEXT NOT NULL,
-            created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            id                            SERIAL PRIMARY KEY,
+            user_id                       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            account_hash                  TEXT NOT NULL,
+            account_number                TEXT NOT NULL,
+            account_name                  TEXT,
+            token_json                    TEXT NOT NULL,
+            created_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            schwab_first_sync_completed   BOOLEAN NOT NULL DEFAULT FALSE,
             UNIQUE (user_id, account_number)
         )
         """,
@@ -149,6 +150,18 @@ def init_db():
         with conn.cursor() as cur:
             for stmt in statements:
                 cur.execute(stmt)
+    _migrate_schwab_first_sync_column()
+
+
+def _migrate_schwab_first_sync_column():
+    """Idempotent: add schwab_first_sync_completed for per-user routine vs full-history sync UX."""
+    try:
+        execute(
+            "ALTER TABLE schwab_connections "
+            "ADD COLUMN IF NOT EXISTS schwab_first_sync_completed BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    except Exception as e:
+        _log.warning("schwab_connections migration skipped: %s", e)
 
 
 class User(UserMixin):
@@ -387,13 +400,24 @@ def get_schwab_connection(user_id, account_number=None):
     If account_number is None, returns the first connection."""
     if account_number:
         return fetch_one(
-            "SELECT account_hash, account_number, account_name, token_json "
+            "SELECT account_hash, account_number, account_name, token_json, "
+            "schwab_first_sync_completed "
             "FROM schwab_connections WHERE user_id = %s AND account_number = %s",
             (user_id, account_number),
         )
     return fetch_one(
-        "SELECT account_hash, account_number, account_name, token_json "
+        "SELECT account_hash, account_number, account_name, token_json, "
+        "schwab_first_sync_completed "
         "FROM schwab_connections WHERE user_id = %s LIMIT 1",
+        (user_id,),
+    )
+
+
+def mark_schwab_first_sync_completed(user_id):
+    """After a successful manual sync, stop defaulting the account tab to full-history."""
+    execute(
+        "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
+        "WHERE user_id = %s",
         (user_id,),
     )
 

@@ -15,6 +15,7 @@ from app.models import (
     User,
     get_schwab_connection,
     get_schwab_connections,
+    mark_schwab_first_sync_completed,
     save_schwab_connection,
     update_schwab_account_hash,
     update_schwab_token,
@@ -26,6 +27,9 @@ from app.models import (
 SCHWAB_AUTH_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 SCHWAB_API_BASE = "https://api.schwabapi.com"
+
+# UI "import full history" uses this many days (cap for API + dbt); routine sync uses env default.
+SCHWAB_FULL_HISTORY_LOOKBACK_DAYS = 1825
 
 
 def _schwab_position_cost_basis(sec, inst, qty, avg, inst_type):
@@ -278,7 +282,7 @@ def schwab_connect():
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured. Contact the administrator.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     app_key, app_secret, callback_url = cfg
     state = secrets.token_urlsafe(32)
@@ -302,7 +306,7 @@ def schwab_callback():
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     code = request.args.get("code")
     state = request.args.get("state")
@@ -310,17 +314,17 @@ def schwab_callback():
 
     if error:
         flash(f"Schwab authorization failed: {error}", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     if not code or not state:
         flash("Invalid callback from Schwab. Please try again.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     saved_state = session.pop("schwab_oauth_state", None)
     user_id = session.pop("schwab_oauth_user_id", None)
     if not saved_state or saved_state != state or not user_id or user_id != current_user.id:
         flash("Invalid state. Please try connecting again.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     app_key, app_secret, callback_url = cfg
 
@@ -341,14 +345,14 @@ def schwab_callback():
 
     if resp.status_code != 200:
         flash(f"Failed to get token from Schwab: {resp.text[:200]}", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     token_data = resp.json()
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
     if not access_token or not refresh_token:
         flash("Schwab did not return tokens. Please try again.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     # schwab-py TokenMetadata expects { creation_timestamp, token: { oauth fields } }
     inner = {
@@ -406,7 +410,7 @@ def schwab_callback():
 
     if not account_hash:
         flash("Could not get account hash. Please try again or use CSV upload.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     save_schwab_connection(
         current_user.id,
@@ -418,7 +422,7 @@ def schwab_callback():
     add_account_for_user(current_user.id, account_name or account_number)
 
     flash("Schwab account connected. Use Sync now to pull your data.", "success")
-    return redirect(url_for("settings"))
+    return redirect(url_for("profile", tab="account"))
 
 
 @app.route("/schwab/sync", methods=["POST"])
@@ -428,12 +432,12 @@ def schwab_sync():
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     conn_row = get_schwab_connection(current_user.id)
     if not conn_row:
         flash("No Schwab connection. Connect your account first.", "warning")
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
 
     client = _get_schwab_client(current_user.id)
     if not client:
@@ -442,21 +446,40 @@ def schwab_sync():
             "Click Connect Schwab again to re-authorize. If it keeps failing, check Render logs.",
             "warning",
         )
-        return redirect(url_for("settings"))
+        return redirect(url_for("profile", tab="account"))
+
+    first_done = bool(conn_row.get("schwab_first_sync_completed"))
+    if not first_done:
+        scope = (request.form.get("sync_scope") or "full").strip().lower()
+        use_full_history = scope == "full"
+    else:
+        use_full_history = request.form.get("full_history_again") == "1"
+
+    if use_full_history:
+        lookback_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+    else:
+        lookback_days = _schwab_transaction_lookback_days()
 
     try:
-        result = _run_sync(current_user.id, client)
+        result = _run_sync(current_user.id, client, transaction_lookback_days=lookback_days)
         hr = result.get("history_rows", 0)
         cr = result.get("current_rows", 0)
+        lb = result.get("lookback_days", lookback_days)
+        mark_schwab_first_sync_completed(current_user.id)
+        window_note = (
+            f"Transaction window: last {lb} days."
+            if lb < SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+            else f"Transaction window: last {lb} days (full history fetch)."
+        )
         if result.get("github_pushed"):
             flash(
                 f"Synced {hr} Schwab transaction rows, {cr} open position lines into schwab_*.csv seeds. "
-                "GitHub / dbt should refresh the dashboard.",
+                f"{window_note} GitHub / dbt should refresh the dashboard.",
                 "success",
             )
         else:
             msg = (
-                f"Synced {hr} Schwab transaction rows, {cr} open position lines. "
+                f"Synced {hr} Schwab transaction rows, {cr} open position lines. {window_note} "
                 "Run 'dbt seed && dbt build' locally if you rely on CSV files only."
             )
             if result.get("github_error"):
@@ -482,14 +505,17 @@ def schwab_sync():
         else:
             flash(f"Sync failed: {e}", "danger")
 
-    return redirect(url_for("settings"))
+    return redirect(url_for("profile", tab="account"))
 
 
-def _run_sync(user_id, client):
+def _run_sync(user_id, client, transaction_lookback_days=None):
     """
     Fetch positions and transactions from Schwab, map to our schema,
     and write to the configured output (GitHub seeds or BigQuery).
-    Returns dict with history_rows, current_rows.
+    Returns dict with history_rows, current_rows, lookback_days.
+
+    transaction_lookback_days: if set (e.g. from UI), use it; else env SCHWAB_SYNC_TRANSACTION_DAYS
+    (used by cron CLI). Clamped to 1..1825.
     """
     # Get account hash
     conn_data = get_schwab_connection(user_id)
@@ -538,7 +564,10 @@ def _run_sync(user_id, client):
             "asset_type": str(inst_type),
         })
 
-    lookback = _schwab_transaction_lookback_days()
+    if transaction_lookback_days is not None:
+        lookback = max(1, min(int(transaction_lookback_days), 1825))
+    else:
+        lookback = _schwab_transaction_lookback_days()
     end_date = date.today()
     start_date = end_date - timedelta(days=lookback)
     tx_resp = _schwab_resp_with_refresh(
@@ -661,6 +690,7 @@ def _run_sync(user_id, client):
     return {
         "history_rows": len(transactions),
         "current_rows": len(open_positions),
+        "lookback_days": lookback,
         "output_dir": out_dir,
         "github_pushed": github_pushed,
         "github_error": github_error,

@@ -17,6 +17,7 @@ from app.models import (
     follow_user,
     get_accounts_for_user,
     get_published_trade_fingerprints,
+    get_schwab_connection,
     get_schwab_connections,
     get_uploads_for_user,
     get_user_by_username,
@@ -148,6 +149,17 @@ def profile():
     recent_uploads = get_uploads_for_user(current_user.id)
     schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
     schwab_connections = get_schwab_connections(current_user.id) if schwab_enabled else []
+    schwab_first_sync_completed = False
+    schwab_routine_lookback_days = 60
+    schwab_full_history_lookback_days = 1825
+    if schwab_enabled and schwab_connections:
+        from app.schwab import SCHWAB_FULL_HISTORY_LOOKBACK_DAYS, _schwab_transaction_lookback_days
+
+        schwab_full_history_lookback_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+        _c = get_schwab_connection(current_user.id)
+        if _c:
+            schwab_first_sync_completed = bool(_c.get("schwab_first_sync_completed"))
+        schwab_routine_lookback_days = _schwab_transaction_lookback_days()
     fc, fwing = follow_counts(current_user.id)
     my_published = list_public_published_trades(current_user.id, limit=100)
     show_names = bool(prof.get("show_account_names_on_published")) if prof else False
@@ -162,6 +174,9 @@ def profile():
         recent_uploads=recent_uploads,
         schwab_enabled=schwab_enabled,
         schwab_connections=schwab_connections,
+        schwab_first_sync_completed=schwab_first_sync_completed,
+        schwab_routine_lookback_days=schwab_routine_lookback_days,
+        schwab_full_history_lookback_days=schwab_full_history_lookback_days,
         follower_count=fc,
         following_count=fwing,
         my_published_trades=my_published,
