@@ -233,6 +233,9 @@ Heavy logic belongs in dbt.
 
 If logic is found in Flask that belongs in dbt: flag it, move it, document it.
 
+**Before pushing dbt changes** (avoids learning errors only in prod): with `~/.dbt/profiles.yml` and network, run
+`cd dbt && ../.venv/bin/dbt parse && ../.venv/bin/dbt build`, or `scripts/dbt-validate.sh` (same). `parse` is fast and offline; `build` must succeed against BigQuery. If a snapshot fails on the first `build` but succeeds on `dbt snapshot --select <name>`, re-run the full `build` once (rare BQ/dag race).
+
 ### 3. Multi-Account Is Required
 
 Users trade multiple accounts. All logic must:
