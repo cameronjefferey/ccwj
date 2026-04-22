@@ -58,14 +58,21 @@ source_with_osi as (
       and lower(trim(coalesce(symbol, ''))) not in ('account total', 'positions total')
 ),
 
+-- BigQuery regexp_extract allows only one capturing group; parse OSI in SQL.
 osi_parts as (
     select
         *,
-        -- YYMMDD + C|Put + 8-digit strike*1000 (e.g. 261218C00135000)
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 1) as osi_ymd,
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 2) as osi_cp,
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 3) as osi_strike_raw
+        regexp_extract(sym_upper, r'(\d{6}[CP]\d{8})') as osi_full
     from source_with_osi
+),
+
+osi_split as (
+    select
+        *,
+        substr(osi_full, 1, 6) as osi_ymd,
+        substr(osi_full, 7, 1) as osi_cp,
+        substr(osi_full, 8, 8) as osi_strike_raw
+    from osi_parts
 ),
 
 cleaned as (
@@ -127,7 +134,7 @@ cleaned as (
         safe_cast(pe_ratio as float64) as pe_ratio,
         current_date() as snapshot_date
 
-    from osi_parts
+    from osi_split
 )
 
 select * from cleaned

@@ -36,13 +36,21 @@ source_parsed as (
       and lower(trim(coalesce(action, ''))) != 'action'  -- filter leaked header row
 ),
 
+-- BigQuery regexp_extract allows only one capturing group; parse OSI in SQL.
 osi_parts as (
     select
         *,
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 1) as osi_ymd,
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 2) as osi_cp,
-        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 3) as osi_strike_raw
+        regexp_extract(sym_upper, r'(\d{6}[CP]\d{8})') as osi_full
     from source_parsed
+),
+
+osi_split as (
+    select
+        *,
+        substr(osi_full, 1, 6) as osi_ymd,
+        substr(osi_full, 7, 1) as osi_cp,
+        substr(osi_full, 8, 8) as osi_strike_raw
+    from osi_parts
 ),
 
 cleaned as (
@@ -134,7 +142,7 @@ cleaned as (
         coalesce(safe_cast(fees_and_comm as float64), 0) as fees,
         coalesce(safe_cast(amount as float64), 0) as amount
 
-    from osi_parts
+    from osi_split
 )
 
 select * from cleaned
