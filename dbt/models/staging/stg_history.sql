@@ -4,10 +4,24 @@
     )
 }}
 
-with source as (
+with demo_as_strings as (
+    select
+        cast(Account as string) as Account,
+        cast(Date as string) as Date,
+        cast(Action as string) as Action,
+        cast(Symbol as string) as Symbol,
+        cast(Description as string) as Description,
+        cast(Quantity as string) as Quantity,
+        cast(Price as string) as Price,
+        cast(fees_and_comm as string) as fees_and_comm,
+        cast(Amount as string) as Amount
+    from {{ ref('demo_history') }}
+),
+
+source as (
     select * from {{ ref('stg_trade_history_seed_union') }}
     union all
-    select * from {{ ref('demo_history') }}
+    select * from demo_as_strings
 ),
 
 cleaned as (
