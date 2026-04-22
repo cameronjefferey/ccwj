@@ -36,10 +36,11 @@
 {% block content %}
 <h4 class="mb-3 fw-bold">Positions Summary</h4>
 
-{% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_status or selected_symbol) %}
+{% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_symbol or selected_start_date or selected_end_date) %}
 <div class="alert alert-warning">
-    <strong>No data yet.</strong>
-    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see your positions here.
+    <strong>No rows in BigQuery for your accounts yet.</strong>
+    Sync or <a href="{{ url_for('upload') }}">upload</a> seeds, then run <code>dbt seed &amp;&amp; dbt build</code> so <code>positions_summary</code> refreshes.
+    Open-only Schwab positions need that build: the dashboard reads the mart, not raw seed files.
 </div>
 {% endif %}
 

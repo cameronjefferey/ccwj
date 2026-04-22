@@ -67,8 +67,8 @@ sessions as (
     from with_prev
 ),
 
--- Aggregate each session
-session_summary as (
+-- Aggregate each session (trade-derived only)
+trade_session_summary as (
     select
         account,
         symbol,
@@ -81,6 +81,35 @@ session_summary as (
     from sessions
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
     group by 1, 2, 3
+),
+
+-- Equity rows in current snapshot with no equity trade history (e.g. Schwab-only)
+snapshot_equity_sessions as (
+    select
+        c.account,
+        c.underlying_symbol as symbol,
+        1 as session_id,
+        coalesce(c.snapshot_date, current_date()) as open_date,
+        coalesce(c.snapshot_date, current_date()) as last_trade_date,
+        coalesce(abs(c.quantity), 0) as max_quantity_held,
+        -coalesce(c.cost_basis, 0) as net_cash_flow,
+        0 as num_trades
+    from {{ ref('stg_current') }} c
+    where c.instrument_type = 'Equity'
+      and coalesce(c.quantity, 0) != 0
+      and trim(coalesce(c.underlying_symbol, '')) != ''
+      and not exists (
+          select 1
+          from trade_session_summary t
+          where t.account = c.account
+            and t.symbol = c.underlying_symbol
+      )
+),
+
+session_summary as (
+    select * from trade_session_summary
+    union all
+    select * from snapshot_equity_sessions
 ),
 
 -- Identify the latest session per account/symbol (candidate for "Open")

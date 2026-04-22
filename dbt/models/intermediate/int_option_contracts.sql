@@ -88,6 +88,56 @@ contract_summary as (
         on o.account = d.account
         and o.trade_symbol = d.trade_symbol
     group by o.account, o.trade_symbol, o.underlying_symbol, d.direction
+),
+
+-- Open options that appear in stg_current (e.g. Schwab snapshot) but have no
+-- matching rows in trade history yet — otherwise positions_summary stays empty.
+snapshot_only_options as (
+    select
+        c.account,
+        c.trade_symbol,
+        c.underlying_symbol,
+        c.option_expiry,
+        c.option_strike,
+        c.option_type,
+        case when coalesce(c.quantity, 0) < 0 then 'Sold' else 'Bought' end as direction,
+
+        coalesce(c.snapshot_date, current_date()) as open_date,
+        cast(null as date) as close_date,
+
+        0.0 as contracts_sold_to_open,
+        0.0 as contracts_bought_to_open,
+        0.0 as contracts_closed,
+
+        0.0 as premium_received,
+        0.0 as premium_paid,
+        0.0 as cost_to_close,
+        0.0 as proceeds_from_close,
+
+        safe_subtract(
+            coalesce(c.unrealized_pnl, safe_subtract(c.market_value, c.cost_basis)),
+            coalesce(c.market_value, 0)
+        ) as net_cash_flow,
+
+        0.0 as total_fees,
+        cast(null as string) as close_type,
+        0 as num_trades
+
+    from {{ ref('stg_current') }} c
+    where c.instrument_type in ('Call', 'Put')
+      and trim(coalesce(c.trade_symbol, '')) != ''
+      and not exists (
+          select 1
+          from contract_summary x
+          where x.account = c.account
+            and x.trade_symbol = c.trade_symbol
+      )
+),
+
+all_contracts as (
+    select * from contract_summary
+    union all
+    select * from snapshot_only_options
 )
 
 select
@@ -122,7 +172,7 @@ select
         day
     ) as days_in_trade
 
-from contract_summary c
+from all_contracts c
 left join {{ ref('stg_current') }} cur
     on c.account = cur.account
     and c.trade_symbol = cur.trade_symbol
