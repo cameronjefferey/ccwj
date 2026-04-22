@@ -28,6 +28,19 @@ SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 SCHWAB_API_BASE = "https://api.schwabapi.com"
 
 
+def _schwab_transaction_lookback_days():
+    """
+    Calendar days of transactions to request from Schwab each sync.
+    Set SCHWAB_SYNC_TRANSACTION_DAYS (integer); default 60, clamped to 1..1825.
+    """
+    raw = (os.environ.get("SCHWAB_SYNC_TRANSACTION_DAYS") or "60").strip() or "60"
+    try:
+        days = int(raw)
+    except ValueError:
+        days = 60
+    return max(1, min(days, 1825))
+
+
 def _schwab_resp_with_refresh(client, request_fn):
     """
     Run a schwab-py call that returns httpx.Response. On 401, refresh OAuth
@@ -495,9 +508,9 @@ def _run_sync(user_id, client):
             "asset_type": str(inst_type),
         })
 
-    # Fetch transactions (last 60 days)
+    lookback = _schwab_transaction_lookback_days()
     end_date = date.today()
-    start_date = end_date - timedelta(days=60)
+    start_date = end_date - timedelta(days=lookback)
     tx_resp = _schwab_resp_with_refresh(
         client,
         lambda: client.get_transactions(

@@ -45,6 +45,8 @@ SCHWAB_APP_KEY=your_app_key_here
 SCHWAB_APP_SECRET=your_app_secret_here
 # Must match a callback URL registered in the Schwab portal (HTTPS only).
 SCHWAB_CALLBACK_URL=https://your-domain.com/schwab/callback
+# Optional: days of transactions per sync (default 60)
+# SCHWAB_SYNC_TRANSACTION_DAYS=120
 ```
 
 For **local OAuth**, set `SCHWAB_CALLBACK_URL` to the **same HTTPS URL** you registered (your tunnel URL + `/schwab/callback`), not `http://127.0.0.1`.
@@ -107,19 +109,19 @@ Create `.github/workflows/schwab-sync.yml` to run the sync on a schedule.
 
 ```
 Schwab API
-  → positions + transactions (last 60 days)
-  → mapped to the same schema as manual CSV upload
-  → if GITHUB_PAT (+ GITHUB_REPO) is set: merge into dbt/seeds on GitHub (same as Upload page) → Actions → BigQuery / dbt
+  → current positions + transactions (lookback window; default 60 days, see SCHWAB_SYNC_TRANSACTION_DAYS)
+  → merged into schwab_*.csv seeds (native API columns); dbt unions with manual export seeds
+  → if GITHUB_PAT (+ GITHUB_REPO) is set: commit to GitHub → Actions → BigQuery / dbt
   → always: also writes data/schwab_sync/{account}_*.csv on the server (local/debug; ephemeral on Render)
 ```
 
-**Unified pipeline with manual upload:** Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. Schwab sync then updates `trade_history.csv` and `current_positions.csv` the same way the Upload page does. If GitHub is not configured, sync still runs but only writes under `data/schwab_sync/` (copy into seeds yourself if needed).
+**Unified pipeline with manual upload:** Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. Schwab sync updates `schwab_open_positions.csv`, `schwab_account_balances.csv`, and `schwab_transactions.csv` (not the manual `current_positions.csv` / `trade_history.csv` files). If GitHub is not configured, sync still runs but only writes under `data/schwab_sync/` (copy into seeds yourself if needed).
 
 **Account names:** The linked Schwab account name from the API should match how you want that account labeled in seeds/BigQuery. If you previously used manual upload under a different label, align the name or merge carefully.
 
 ## Limits and Notes
 
-- **Transaction history**: Schwab API returns only the **last 60 days**. For older history, use CSV upload.
+- **Transaction history**: Each sync requests a rolling window ending today. Default is **60 days**; set **`SCHWAB_SYNC_TRANSACTION_DAYS`** in `.env` (integer, 1–1825). Schwab may still cap what the API returns—use CSV upload for deep history if needed.
 - **Price history**: Stocks/ETFs supported; **options** require capturing daily quotes and storing them yourself (which we do during sync).
 - **Rate limits**: Stay under ~120 requests/minute; sync logic batches and throttles where needed.
 - **Tokens**: Access tokens expire after ~7 days. Refresh tokens are used automatically when possible; re-authorize if refresh fails.
