@@ -45,6 +45,82 @@ def _schwab_resp_with_refresh(client, request_fn):
     return resp
 
 
+def _schwab_float(bal, *keys, default=0.0):
+    """Read first present key from Schwab balances dict as float."""
+    for k in keys:
+        if not k:
+            continue
+        v = bal.get(k)
+        if v is None:
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _schwab_balance_summary_rows(account_name, acct_data, positions):
+    """
+    Append seed rows required by dbt/stg_account_balances (and thus Daily P&L).
+
+    Schwab's positions array alone does not include Schwab-export-style
+    \"Cash & Cash Investments\" / \"Account Total\" rows. Without those,
+    mart_account_equity_daily is empty even after dbt build.
+    """
+    if not isinstance(acct_data, dict):
+        return []
+    sec = acct_data.get("securitiesAccount")
+    if not isinstance(sec, dict):
+        sec = {}
+    bal = sec.get("currentBalances")
+    if not isinstance(bal, dict):
+        bal = {}
+
+    cash = _schwab_float(bal, "cashBalance", "cashAvailableForTrading", "availableFunds")
+    long_mv = _schwab_float(bal, "longMarketValue")
+    total = _schwab_float(
+        bal,
+        "liquidationValue",
+        "equity",
+        "netLiquidationValue",
+        "longMarginValue",
+    )
+    pos_mv = sum(float(p.get("market_value") or 0) for p in positions)
+    if total <= 0 and (cash != 0 or long_mv > 0 or pos_mv > 0):
+        total = long_mv + cash if (long_mv or cash) else pos_mv + cash
+    if total <= 0 and cash == 0 and not positions:
+        return []
+
+    pct_cash = ""
+    if total > 0:
+        pct_cash = str(round(100.0 * cash / total, 6))
+
+    cash_row = {
+        "account": account_name,
+        "symbol": "Cash & Cash Investments",
+        "description": "--",
+        "quantity": "--",
+        "price": "--",
+        "market_value": cash,
+        "cost_basis": "",
+        "security_type": "Cash and Money Market",
+        "percent_of_account": pct_cash,
+    }
+    total_row = {
+        "account": account_name,
+        "symbol": "Account Total",
+        "description": "--",
+        "quantity": "--",
+        "price": "--",
+        "market_value": total,
+        "cost_basis": "",
+        "security_type": "",
+        "percent_of_account": "",
+    }
+    return [cash_row, total_row]
+
+
 def _sync_account_hash_from_numbers(client, user_id, account_number, current_hash):
     """
     Fetch hashValue from GET /accounts/accountNumbers and persist if it changed.
@@ -417,6 +493,8 @@ def _run_sync(user_id, client):
             "cost_basis": avg * qty if qty else 0,
             "security_type": "Equity" if inst_type == "EQUITY" else "Option",
         })
+
+    positions.extend(_schwab_balance_summary_rows(account_name, acct_data, positions))
 
     # Fetch transactions (last 60 days)
     end_date = date.today()
