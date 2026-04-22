@@ -1,8 +1,12 @@
 name: Update Daily Position Performance
 
+# Runs dbt (seeds + models) and daily prices so BigQuery matches repo seeds.
+# Triggered on every push to the default branch — including Schwab/CSV seed commits
+# from the app (GITHUB_PAT + GITHUB_REPO). Keep GITHUB_BRANCH in Render aligned
+# with branches listed here (master or main).
 on:
   push:
-    branches: [master]
+    branches: [master, main]
   workflow_dispatch:
   schedule:
     # 1pm PST daily (21:00 UTC; market close)

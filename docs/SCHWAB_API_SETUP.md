@@ -111,7 +111,7 @@ Create `.github/workflows/schwab-sync.yml` to run the sync on a schedule.
 Schwab API
   → current positions + transactions (lookback window; default 60 days, see SCHWAB_SYNC_TRANSACTION_DAYS)
   → merged into schwab_*.csv seeds (native API columns); dbt unions with manual export seeds
-  → if GITHUB_PAT (+ GITHUB_REPO) is set: commit to GitHub → Actions → BigQuery / dbt
+  → if GITHUB_PAT (+ GITHUB_REPO) is set: commit to GitHub **triggers the same CI as CSV upload** (workflow `Update Daily Position Performance` in `.github/workflows/bigquery_update.yml`): dbt `build` (seeds + models) and the daily price script, so **BigQuery updates without a manual `dbt` run** (typically a few minutes; watch **GitHub → Actions**). Use branch **`master` or `main`** and set `GITHUB_BRANCH` in production to match.
   → always: also writes data/schwab_sync/{account}_*.csv on the server (local/debug; ephemeral on Render)
 ```
 
@@ -136,3 +136,4 @@ Schwab API
 | "App not approved" | Wait for approval or contact traderapi@schwab.com |
 | Token expired | Click **Connect Schwab** again to re-authorize |
 | No positions returned | Verify the Schwab account has positions and you selected the right account |
+| Sync says success but **BigQuery** still old | `GITHUB_PAT` must be able to push; repo **Actions** must be enabled; workflow must run on your branch (use `GITHUB_BRANCH=master` or `main` to match `.github/workflows/bigquery_update.yml`); the workflow needs `DBT_KEYFILE_JSON` and related secrets. Check the latest **Update Daily Position Performance** run for errors. |

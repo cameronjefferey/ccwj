@@ -474,7 +474,9 @@ def schwab_sync():
         if result.get("github_pushed"):
             flash(
                 f"Synced {hr} Schwab transaction rows, {cr} open position lines into schwab_*.csv seeds. "
-                f"{window_note} GitHub / dbt should refresh the dashboard.",
+                f"{window_note} A GitHub Actions run (Update Daily Position Performance) was triggered: "
+                "it loads seeds and runs the full dbt build for BigQuery—usually 2–8 minutes. "
+                "Check the Actions tab on your repo if the dashboard lags.",
                 "success",
             )
         else:
