@@ -46,6 +46,28 @@ source as (
     select * from demo_as_strings
 ),
 
+-- Schwab API / some feeds use CBOE OSI (e.g. "RDDT  261218C00135000"); manual export uses
+-- "TICK 12/18/2026 135.00 C". Parse both so Call/Put and snapshot unions work.
+source_with_osi as (
+    select
+        s.*,
+        trim(symbol) as sym_trim,
+        upper(trim(symbol)) as sym_upper
+    from source s
+    where lower(trim(coalesce(security_type, ''))) not in ('cash and money market', '')
+      and lower(trim(coalesce(symbol, ''))) not in ('account total', 'positions total')
+),
+
+osi_parts as (
+    select
+        *,
+        -- YYMMDD + C|Put + 8-digit strike*1000 (e.g. 261218C00135000)
+        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 1) as osi_ymd,
+        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 2) as osi_cp,
+        regexp_extract(sym_upper, r'(\d{6})([CP])(\d{8})', 3) as osi_strike_raw
+    from source_with_osi
+),
+
 cleaned as (
     select
         trim(account) as account,
@@ -53,18 +75,40 @@ cleaned as (
         -- Full trade symbol
         trim(symbol) as trade_symbol,
 
-        -- Underlying ticker
-        trim(split(trim(symbol), ' ')[safe_offset(0)]) as underlying_symbol,
+        -- Underlying ticker (first token; OSI and export both start with root)
+        trim(split(sym_trim, ' ')[safe_offset(0)]) as underlying_symbol,
 
-        -- Option components
-        safe.parse_date('%m/%d/%Y', split(trim(symbol), ' ')[safe_offset(1)]) as option_expiry,
-        safe_cast(split(trim(symbol), ' ')[safe_offset(2)] as float64) as option_strike,
-        split(trim(symbol), ' ')[safe_offset(3)] as option_type,
+        coalesce(
+            safe.parse_date('%m/%d/%Y', nullif(split(sym_trim, ' ')[safe_offset(1)], '')),
+            case
+                when osi_ymd is not null
+                then date(
+                    2000 + cast(substr(osi_ymd, 1, 2) as int64),
+                    cast(substr(osi_ymd, 3, 2) as int64),
+                    cast(substr(osi_ymd, 5, 2) as int64)
+                )
+            end
+        ) as option_expiry,
 
-        -- Instrument type
+        coalesce(
+            safe_cast(split(sym_trim, ' ')[safe_offset(2)] as float64),
+            safe_cast(safe_divide(safe_cast(osi_strike_raw as int64), 1000) as float64)
+        ) as option_strike,
+
+        coalesce(
+            nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+            osi_cp
+        ) as option_type,
+
         case
-            when split(trim(symbol), ' ')[safe_offset(3)] = 'C' then 'Call'
-            when split(trim(symbol), ' ')[safe_offset(3)] = 'P' then 'Put'
+            when coalesce(
+                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                osi_cp
+            ) = 'C' then 'Call'
+            when coalesce(
+                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                osi_cp
+            ) = 'P' then 'Put'
             when lower(trim(coalesce(security_type, ''))) in ('equity', 'etfs & closed end funds') then 'Equity'
             else 'Other'
         end as instrument_type,
@@ -83,9 +127,7 @@ cleaned as (
         safe_cast(pe_ratio as float64) as pe_ratio,
         current_date() as snapshot_date
 
-    from source
-    where lower(trim(coalesce(security_type, ''))) not in ('cash and money market', '')
-      and lower(trim(coalesce(symbol, ''))) not in ('account total', 'positions total')
+    from osi_parts
 )
 
 select * from cleaned
