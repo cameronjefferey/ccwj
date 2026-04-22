@@ -46,8 +46,8 @@ account_total_rows as (
 
 schwab_bal_rows as (
     select
-        trim(account) as account,
-        case lower(trim(row_type))
+        trim(cast(account as string)) as account,
+        case lower(trim(cast(row_type as string)))
             when 'cash' then 'cash'
             when 'account_total' then 'account_total'
         end as row_type,

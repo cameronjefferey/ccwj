@@ -10,11 +10,11 @@
 */
 
 select
-    trim(account) as Account,
-    trim(transaction_date) as Date,
-    trim(action) as Action,
-    trim(symbol) as Symbol,
-    trim(description) as Description,
+    trim(cast(account as string)) as Account,
+    trim(cast(transaction_date as string)) as Date,
+    trim(cast(action as string)) as Action,
+    trim(cast(symbol as string)) as Symbol,
+    trim(cast(description as string)) as Description,
     cast(safe_cast(quantity as float64) as string) as Quantity,
     cast(safe_cast(price as float64) as string) as Price,
     trim(coalesce(cast(fees as string), '')) as fees_and_comm,

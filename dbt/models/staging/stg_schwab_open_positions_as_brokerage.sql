@@ -24,9 +24,9 @@ mv_num as (
 )
 
 select
-    trim(account) as Account,
-    trim(symbol) as Symbol,
-    trim(description) as Description,
+    trim(cast(account as string)) as Account,
+    trim(cast(symbol as string)) as Symbol,
+    trim(cast(description as string)) as Description,
     cast(safe_cast(quantity as float64) as string) as Quantity,
     cast(safe_cast(average_price as float64) as string) as Price,
     cast(null as string) as price_change_dollar,
