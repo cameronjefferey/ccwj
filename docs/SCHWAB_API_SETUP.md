@@ -18,9 +18,9 @@ Connect HappyTrader to your Schwab account via API for **daily auto-sync** of po
 1. In the developer portal, go to **My Apps** → **Add new app**
 2. Fill in:
    - **App Name**: e.g. `HappyTrader` or `My Portfolio Sync`
-   - **Callback URL**: 
-     - Local: `http://127.0.0.1:5000/schwab/callback`
-     - Production: `https://your-domain.com/schwab/callback`
+   - **Callback URL** (Schwab **only allows HTTPS** — plain `http://127.0.0.1` is rejected in the portal):
+     - **Production:** `https://your-domain.com/schwab/callback` (e.g. `https://happytrader.me/schwab/callback`)
+     - **Local testing:** use an **HTTPS tunnel** to your laptop (see [Local dev with HTTPS](#local-dev-with-https-tunnel) below). Register the tunnel URL, e.g. `https://abc123.ngrok-free.app/schwab/callback`.
 3. Select API products:
    - **Accounts and Trading Production** (positions, transactions)
    - **Market Data Production** (quotes, price history)
@@ -43,14 +43,30 @@ Add to `.env`:
 # Schwab API (optional - for Connect Schwab feature)
 SCHWAB_APP_KEY=your_app_key_here
 SCHWAB_APP_SECRET=your_app_secret_here
-SCHWAB_CALLBACK_URL=http://127.0.0.1:5000/schwab/callback
-```
-
-For production, set:
-
-```bash
+# Must match a callback URL registered in the Schwab portal (HTTPS only).
 SCHWAB_CALLBACK_URL=https://your-domain.com/schwab/callback
 ```
+
+For **local OAuth**, set `SCHWAB_CALLBACK_URL` to the **same HTTPS URL** you registered (your tunnel URL + `/schwab/callback`), not `http://127.0.0.1`.
+
+### Local dev with HTTPS tunnel
+
+Schwab’s portal requires **HTTPS** for callback URLs, so you cannot register raw `http://127.0.0.1:5000/...`.
+
+1. Run Flask locally: `flask run` (default `127.0.0.1:5000`).
+2. Start a tunnel that exposes **HTTPS** to that port, for example:
+   - **[ngrok](https://ngrok.com):** `ngrok http 5000` → copy the `https://....ngrok-free.app` URL (or your static ngrok domain).
+   - **[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/):** `cloudflared tunnel --url http://127.0.0.1:5000` → use the printed `https://....trycloudflare.com` URL.
+3. In the Schwab developer app, add callback:  
+   `https://<your-tunnel-host>/schwab/callback`  
+   (path must be exactly `/schwab/callback` — same as this app’s route).
+4. In `.env`, set **the same** value:  
+   `SCHWAB_CALLBACK_URL=https://<your-tunnel-host>/schwab/callback`
+5. Click **Connect Schwab** in the app. The browser goes to Schwab, then Schwab redirects to your **HTTPS** tunnel URL, which forwards to Flask on localhost.
+
+**Note:** Free tunnel URLs change each time unless you pay for a reserved domain. When the host changes, update both the Schwab portal and `.env`, then connect again.
+
+**Alternative:** Skip local OAuth entirely — connect once on **production** (`https://happytrader.me/schwab/callback`), then use **Sync now** on prod, or run `python -m app.schwab_sync_cli` on a machine that has `DATABASE_URL` and the stored token (callback not needed for CLI sync after the token exists).
 
 ## Step 5: Connect Your Account
 
@@ -112,6 +128,7 @@ Schwab API
 
 | Issue | Fix |
 |-------|-----|
+| Portal says **"URL must be HTTPS"** for `http://127.0.0.1` | Schwab no longer allows `http` callbacks. Use an HTTPS tunnel (ngrok / cloudflared) or connect only on production. |
 | "Invalid callback URL" | Ensure `SCHWAB_CALLBACK_URL` in .env matches exactly what you registered in the Schwab portal |
 | "App not approved" | Wait for approval or contact traderapi@schwab.com |
 | Token expired | Click **Connect Schwab** again to re-authorize |
