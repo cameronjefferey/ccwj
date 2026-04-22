@@ -550,36 +550,31 @@ def schwab_sync():
         cr = result.get("current_rows", 0)
         lb = result.get("lookback_days", lookback_days)
         mark_schwab_first_sync_completed(current_user.id)
-        window_note = (
-            f"Transaction window: last {lb} days."
-            if lb < SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
-            else f"Transaction window: last {lb} days (full history fetch)."
+        scope_phrase = (
+            "This run included the longest history we request (up to about five years)."
+            if lb >= SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+            else f"This run included trades from the last {lb} days."
+        )
+        trade_word = "trade" if hr == 1 else "trades"
+        pos_word = "position" if cr == 1 else "positions"
+        summary = (
+            f"Sync complete. We pulled {hr:,} {trade_word} and {cr} open {pos_word}. {scope_phrase}"
         )
         if result.get("github_pushed"):
             flash(
-                f"Synced {hr} Schwab transaction rows, {cr} open position lines into schwab_*.csv seeds. "
-                f"{window_note} A GitHub Actions run (Update Daily Position Performance) was triggered: "
-                "it loads seeds and runs the full dbt build for BigQuery—usually 2–8 minutes. "
-                "Check the Actions tab on your repo if the dashboard lags.",
+                f"{summary} What you see in the app usually updates within a few minutes.",
                 "success",
             )
-        else:
-            msg = (
-                f"Synced {hr} Schwab transaction rows, {cr} open position lines. {window_note} "
-                "Run 'dbt seed && dbt build' locally if you rely on CSV files only."
+        elif result.get("github_error"):
+            flash(
+                f"{summary} We could not save this to the cloud: {result['github_error']}",
+                "warning",
             )
-            if result.get("github_error"):
-                flash(
-                    f"{msg} Could not update GitHub seeds: {result['github_error']}",
-                    "warning",
-                )
-            elif result.get("github_seed_push_skipped"):
-                flash(
-                    f"{msg} Set GITHUB_PAT (+ GITHUB_REPO) to push the same data path as manual upload.",
-                    "info",
-                )
-            else:
-                flash(msg, "success")
+        elif result.get("github_seed_push_skipped"):
+            flash(
+                f"{summary} Live dashboard updates are not turned on for this environment.",
+                "info",
+            )
     except Exception as e:
         msg = str(e)
         if "401" in msg or "Unauthorized" in msg:

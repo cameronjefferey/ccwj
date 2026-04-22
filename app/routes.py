@@ -13,6 +13,7 @@ from app.models import (
 from google.cloud import bigquery
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
+import math
 import pandas as pd
 import json
 
@@ -1264,7 +1265,10 @@ def position_detail(symbol):
             "position_detail chart query or build failed for %s: %s", safe_symbol, exc
         )
 
-    if not chart_data.get("dates") and kpis:
+    # Chart.js needs at least two x values to draw a line; a single mart day
+    # (e.g. new option leg) would otherwise show only a blank chart.
+    _chart_dates = chart_data.get("dates") or []
+    if kpis and (not _chart_dates or len(_chart_dates) < 2):
         chart_data = _synthetic_cumulative_pnl_for_position(
             kpis, sessions_list, leg_param, selected_legs, current_df
         )
@@ -1480,7 +1484,7 @@ def position_detail(symbol):
         sessions=sessions_list,
         selected_legs=selected_legs,
         leg_param=leg_param,
-        chart_data_json=json.dumps(chart_data),
+        chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
@@ -1667,6 +1671,25 @@ def _build_option_matrices(matrix_df, account, symbol):
         })
 
     return matrices
+
+
+def _chart_data_for_json(obj):
+    """Recursively make chart data JSON/JS-safe (NaN/Inf break Chart.js parsing)."""
+    if isinstance(obj, dict):
+        return {k: _chart_data_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_chart_data_for_json(x) for x in obj]
+    if isinstance(obj, bool) or obj is None:
+        return obj
+    if isinstance(obj, int):
+        return obj
+    try:
+        f = float(obj)
+    except (TypeError, ValueError):
+        return obj
+    if not math.isfinite(f):
+        return None
+    return f
 
 
 def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selected_legs, current_df):
