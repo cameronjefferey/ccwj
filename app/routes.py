@@ -116,6 +116,43 @@ def _df_normalize_account_column(df):
     return df
 
 
+def _iter_symbols_for_daily_detail(trades_df, pnl_df, current_df, open_pairs):
+    """
+    Row keys (account, symbol) for /symbols. dbt can classify open options from
+    the current snapshot alone (int_option_contracts.snapshot_only_options) so
+    positions_summary has a row with no stg_history rows — the Positions page
+    still works. This iterator unions trade-history keys with positions_summary
+    and current so Daily Detail matches that catalog.
+    """
+    seen = set()
+    out = []
+    if (
+        not trades_df.empty
+        and "account" in trades_df.columns
+        and "symbol" in trades_df.columns
+    ):
+        for (acc, sym), _ in trades_df.groupby(["account", "symbol"]):
+            k = (str(acc), str(sym))
+            if open_pairs is not None and k not in open_pairs:
+                continue
+            if k not in seen:
+                seen.add(k)
+                out.append((acc, sym))
+    for df in (pnl_df, current_df):
+        if df is None or df.empty or "account" not in df.columns or "symbol" not in df.columns:
+            continue
+        for _, row in df.drop_duplicates(["account", "symbol"]).iterrows():
+            acc, sym = row["account"], row["symbol"]
+            k = (str(acc), str(sym))
+            if open_pairs is not None and k not in open_pairs:
+                continue
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append((acc, sym))
+    return out
+
+
 # ------------------------------------------------------------------
 # SQL: date-filtered re-aggregation of positions_summary
 # This CANNOT be a dbt model because it requires runtime date parameters
@@ -1357,26 +1394,25 @@ def position_detail(symbol):
             "position_detail chart query or build failed for %s: %s", safe_symbol, exc
         )
 
-    # When mart is thin, pick the alternative with the most calendar points. Critical: stg
-    # can also be 2 days (e.g. recent sync) while int_* has years of close_date steps — we
-    # must not take a 2-day stg branch before comparing to the leg staircase.
+    # Prefer stg/leg when they have more calendar coverage than mart (e.g. mart has 2–3
+    # recent days while closed legs span years). Compare both; tie-break -> leg. stg can
+    # still be 2 days if only recent fills — do not pick stg before comparing n_leg vs n_stg.
     _chart_dates = chart_data.get("dates") or []
     n_m = len(_chart_dates)
     ch_stg = _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df) if not trades_pre_leg.empty else None
     n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
     ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
-    if n_m <= 2:
-        cands = []
-        if ch_leg and n_leg >= 2:
-            cands.append((n_leg, "leg", ch_leg))
-        if ch_stg and n_stg >= 2:
-            cands.append((n_stg, "stg", ch_stg))
-        if cands:
-            cands.sort(key=lambda t: (-t[0], 0 if t[1] == "leg" else 1))  # max days; tie -> leg
+    cands = []
+    if ch_leg and n_leg >= 2:
+        cands.append((n_leg, "leg", ch_leg))
+    if ch_stg and n_stg >= 2:
+        cands.append((n_stg, "stg", ch_stg))
+    if cands:
+        cands.sort(key=lambda t: (-t[0], 0 if t[1] == "leg" else 1))
+        best_n = cands[0][0]
+        if best_n > n_m or (n_m <= 2 and best_n >= 2):
             chart_data = cands[0][2]
-    elif ch_stg and n_stg >= 2 and n_stg > n_m:
-        chart_data = ch_stg
 
     # Chart.js needs at least two x values to draw a line; a single mart day
     # (e.g. new option leg) would otherwise show only a blank chart.
@@ -1955,6 +1991,43 @@ def _align_position_pnl_chart_with_kpi(chart_data, kpis):
     if abs(t_end - k) <= 0.02:
         return
     if abs(t_end) < 1e-9:
+        # e.g. leg staircase is realized closed only, hero is open-only unreal — can't scale
+        if abs(k) > 0.02 and n >= 1:
+            tlist = [0.0] * (n - 1) + [round(k, 2)]
+            chart_data["total"] = tlist
+            e_abs = sum(
+                abs(float(x or 0)) for x in (chart_data.get("equity") or [0.0] * n)[:n]
+            )
+            o_abs = sum(
+                abs(float(x or 0)) for x in (chart_data.get("options") or [0.0] * n)[:n]
+            )
+            d_abs = sum(
+                abs(float(x or 0)) for x in (chart_data.get("dividends") or [0.0] * n)[:n]
+            )
+            for key in ("equity", "options", "dividends"):
+                if key in chart_data and len(chart_data.get(key) or []) == n:
+                    chart_data[key] = [0.0] * n
+            mx = max(d_abs, e_abs, o_abs)
+            if mx < 1e-9:
+                # All-flat leg/stg series: put open P&L on one stream so stacked sum matches `total`
+                if "options" in chart_data and len(chart_data["options"]) == n:
+                    chart_data["options"][-1] = round(k, 2)
+                elif "equity" in chart_data and len(chart_data["equity"]) == n:
+                    chart_data["equity"][-1] = round(k, 2)
+                elif "dividends" in chart_data and len(chart_data["dividends"]) == n:
+                    chart_data["dividends"][-1] = round(k, 2)
+            else:
+                _tie = {"options": 0, "equity": 1, "dividends": 2}
+                streams = [
+                    (d_abs, "dividends"),
+                    (e_abs, "equity"),
+                    (o_abs, "options"),
+                ]
+                streams.sort(key=lambda t: (-t[0], _tie.get(t[1], 9)))
+                for _score, sname in streams:
+                    if sname in chart_data and len(chart_data[sname]) == n:
+                        chart_data[sname][-1] = round(k, 2)
+                        break
         return
     f = k / t_end
     if not all(
@@ -2279,12 +2352,23 @@ def symbols_detail():
             open_only=False,
         )
 
+    trades_df = _df_normalize_account_column(trades_df)
+    current_df = _df_normalize_account_column(current_df)
+    strat_df = _df_normalize_account_column(strat_df)
+    pnl_df = _df_normalize_account_column(pnl_df)
+    open_start_df = _df_normalize_account_column(open_start_df)
+    closed_legs_df = _df_normalize_account_column(closed_legs_df)
+    closed_equity_df = _df_normalize_account_column(closed_equity_df)
+
     # ------------------------------------------------------------------
     # Clean types
     # ------------------------------------------------------------------
-    for col in ["amount", "quantity", "price", "fees"]:
-        trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
-    trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
+    if not trades_df.empty:
+        for col in ["amount", "quantity", "price", "fees"]:
+            if col in trades_df.columns:
+                trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
+        if "trade_date" in trades_df.columns:
+            trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
 
     for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
         if col in current_df.columns:
@@ -2317,11 +2401,23 @@ def symbols_detail():
     # ------------------------------------------------------------------
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
+    strat_df = _filter_df_by_accounts(strat_df, user_accounts)
     pnl_df = _filter_df_by_accounts(pnl_df, user_accounts)
+    if not open_start_df.empty:
+        open_start_df = _filter_df_by_accounts(open_start_df, user_accounts)
     if not closed_legs_df.empty:
         closed_legs_df = _filter_df_by_accounts(closed_legs_df, user_accounts)
+    if not closed_equity_df.empty:
+        closed_equity_df = _filter_df_by_accounts(closed_equity_df, user_accounts)
 
-    accounts = sorted(trades_df["account"].dropna().unique())
+    def _unique_accounts(*frames):
+        s = set()
+        for f in frames:
+            if f is not None and not f.empty and "account" in f.columns:
+                s.update(f["account"].dropna().astype(str).unique())
+        return sorted(s)
+
+    accounts = _unique_accounts(trades_df, pnl_df, current_df)
     selected_account = request.args.get("account", "")
     # Use getlist so duplicate params (e.g. open_only=1&open_only=0 from checkbox+hidden) don't break the filter
     open_only = "1" in request.args.getlist("open_only")
@@ -2347,9 +2443,14 @@ def symbols_detail():
     if selected_account:
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
+        strat_df = strat_df[strat_df["account"] == selected_account]
         pnl_df = pnl_df[pnl_df["account"] == selected_account]
+        if not open_start_df.empty:
+            open_start_df = open_start_df[open_start_df["account"] == selected_account]
         if not closed_legs_df.empty:
             closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
+        if not closed_equity_df.empty:
+            closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
 
     # Restrict to symbols that have a current open position (match current_positions / int_enriched_current)
     if open_only:
@@ -2375,10 +2476,14 @@ def symbols_detail():
     symbol_data = []
     chart_data_list = []
 
-    for (account, symbol), group in trades_df.groupby(["account", "symbol"]):
-        if open_pairs is not None and (str(account), str(symbol)) not in open_pairs:
-            continue
-        group = group.sort_values("trade_date")
+    for account, symbol in _iter_symbols_for_daily_detail(
+        trades_df, pnl_df, current_df, open_pairs
+    ):
+        group = trades_df[
+            (trades_df["account"] == account) & (trades_df["symbol"] == symbol)
+        ]
+        if not group.empty and "trade_date" in group.columns:
+            group = group.sort_values("trade_date")
 
         sym_current = current_df[
             (current_df["account"] == account) & (current_df["symbol"] == symbol)
@@ -2411,7 +2516,11 @@ def symbols_detail():
             total_realized = round(realized_val, 2)
         else:
             # Fallback: net cash flow from trades if mart row missing.
-            total_realized = round(float(group["amount"].sum()), 2)
+            total_realized = (
+                round(float(group["amount"].sum()), 2)
+                if not group.empty and "amount" in group.columns
+                else 0.0
+            )
 
         # Unrealized from current open positions (matches current positions table)
         unrealized = round(float(sym_current["unrealized_pnl"].sum()), 2) if not sym_current.empty else 0.0
@@ -2484,9 +2593,14 @@ def symbols_detail():
             display_realized = closed_legs_pnl
             display_total = round(closed_legs_pnl + unrealized, 2)
 
-        num_trades = len(group)
-        first_date = str(group["trade_date"].min())
-        last_date = str(group["trade_date"].max())
+        if not group.empty and "trade_date" in group.columns:
+            num_trades = len(group)
+            first_date = str(group["trade_date"].min())
+            last_date = str(group["trade_date"].max())
+        else:
+            num_trades = 0
+            first_date = ""
+            last_date = ""
 
         sym_chart_df = all_chart_df[
             (all_chart_df["account"] == account) & (all_chart_df["symbol"] == symbol)
@@ -2497,8 +2611,10 @@ def symbols_detail():
         # true end-of-day prices from mart_daily_pnl.
         if positions_only and open_start_val is not None and not sym_chart_df.empty and "date" in sym_chart_df.columns:
             sym_chart_df = sym_chart_df[sym_chart_df["date"] >= pd.to_datetime(open_start_val)]
-            if not sym_chart_df.empty:
-                first_date = str(min(group["trade_date"].max(), sym_chart_df["date"].min()))
+            if not sym_chart_df.empty and not group.empty and "trade_date" in group.columns:
+                first_date = str(
+                    min(group["trade_date"].max(), sym_chart_df["date"].min())
+                )
 
         chart = _build_chart_from_daily_pnl(sym_chart_df, sym_current)
 
