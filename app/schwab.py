@@ -562,10 +562,14 @@ def schwab_sync():
         )
         if result.get("github_pushed"):
             flash(
-                f"{summary} What you see in the app usually updates within a few minutes.",
+                f"{summary} dbt is updating BigQuery; this page will finish when the GitHub Action completes.",
                 "success",
             )
-        elif result.get("github_error"):
+            h = (result.get("github_head_sha") or "").strip()
+            if h:
+                return redirect(url_for("sync_processing", sha=h))
+            return redirect(url_for("sync_processing"))
+        if result.get("github_error"):
             flash(
                 f"{summary} We could not save this to the cloud: {result['github_error']}",
                 "warning",
@@ -709,6 +713,7 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
 
     github_pushed = False
     github_error = None
+    github_head_sha = None
     ok_cfg = False
     from app.upload import merge_and_push_schwab_seeds, _upload_github_config_ok
 
@@ -728,7 +733,14 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
                 f"Schwab sync ({uname}): {len(transactions)} tx, "
                 f"{len(open_positions)} open lines ({account_name})"
             )
-        ok, err, _open_n, _tx_n, _bal_n = merge_and_push_schwab_seeds(
+        (
+            ok,
+            err,
+            _open_n,
+            _tx_n,
+            _bal_n,
+            github_head_sha,
+        ) = merge_and_push_schwab_seeds(
             account_name,
             open_df,
             balances_df,
@@ -766,6 +778,7 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
         "output_dir": out_dir,
         "github_pushed": github_pushed,
         "github_error": github_error,
+        "github_head_sha": github_head_sha,
         "github_seed_push_skipped": not ok_cfg,
     }
 

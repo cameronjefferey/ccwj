@@ -45,6 +45,12 @@
         pages will show the latest numbers.
     </p>
 
+    {% if head_sha %}
+    <p class="small text-muted mb-2" id="pipelineStateLabel" aria-live="polite">Tracking GitHub Actions…</p>
+    <div class="mb-2">
+        <a id="ghRunLink" href="#" class="btn btn-sm btn-outline-secondary d-none" target="_blank" rel="noopener">View run on GitHub</a>
+    </div>
+    {% endif %}
     <div class="mb-3">
         <a href="{{ url_for('weekly_review', from_upload=1) }}" class="btn btn-outline-primary">
             Go to Weekly Review now
@@ -52,18 +58,17 @@
     </div>
 
     <p class="processing-sub small mb-0">
+        {% if head_sha %}
+        We’ll take you to Weekly Review when the run completes, or you can go anytime.
+        {% else %}
         You’ll be redirected to Weekly Review automatically in a few minutes.
+        {% endif %}
     </p>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
-<script>
-    // Simple client-side redirect after ~3 minutes
-    setTimeout(function () {
-        window.location.href = "{{ url_for('weekly_review', from_upload=1) }}";
-    }, 3 * 60 * 1000);
-</script>
+{% include "includes/_github_actions_poll.html" %}
 {% endblock %}
 

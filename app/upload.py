@@ -4,7 +4,7 @@ import base64
 import requests
 import pandas as pd
 from io import StringIO
-from flask import render_template, request, flash, redirect, url_for
+from flask import render_template, request, flash, redirect, url_for, jsonify
 from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
@@ -373,7 +373,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
 def _commit_file(path, content, message):
     """
     Create or update a file in the GitHub repo via the Contents API.
-    Returns (success, error_message).
+    Returns (success, error_message, head_commit_sha or None).
     """
     repo = _github_repo()
     branch = _github_branch()
@@ -386,15 +386,19 @@ def _commit_file(path, content, message):
     }
 
     # If file exists, include its SHA (required for updates)
-    sha = _get_file_sha(path)
-    if sha:
-        payload["sha"] = sha
+    fsha = _get_file_sha(path)
+    if fsha:
+        payload["sha"] = fsha
 
     resp = requests.put(url, json=payload, headers=_github_headers(), timeout=30)
     if resp.status_code in (200, 201):
-        return True, None
+        try:
+            csha = (resp.json().get("commit") or {}).get("sha")
+        except Exception:
+            csha = None
+        return True, None, csha
     else:
-        return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}"
+        return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}", None
 
 
 def _commit_git_paths(path_contents, message):
@@ -402,10 +406,10 @@ def _commit_git_paths(path_contents, message):
     Create a single commit updating one or more files (Git Data API).
     path_contents: list of (repo_path, utf-8 content).
     One commit = one push event = one workflow run.
-    Returns (success, error_message).
+    Returns (success, error_message, head_commit_sha or None).
     """
     if not path_contents:
-        return True, None
+        return True, None, None
     if len(path_contents) == 1:
         p, c = path_contents[0]
         return _commit_file(p, c, message)
@@ -414,7 +418,7 @@ def _commit_git_paths(path_contents, message):
     branch = _github_branch()
     parts = repo_full.split("/", 1)
     if len(parts) != 2:
-        return False, "Invalid GITHUB_REPO (expected owner/repo)"
+        return False, "Invalid GITHUB_REPO (expected owner/repo)", None
     owner, repo = parts
     base = f"https://api.github.com/repos/{owner}/{repo}/git"
 
@@ -424,12 +428,12 @@ def _commit_git_paths(path_contents, message):
         f"{base}/refs/heads/{branch}", headers=headers, timeout=15
     )
     if ref_resp.status_code != 200:
-        return False, f"Failed to get ref (HTTP {ref_resp.status_code})"
+        return False, f"Failed to get ref (HTTP {ref_resp.status_code})", None
     commit_sha = ref_resp.json()["object"]["sha"]
 
     commit_resp = requests.get(f"{base}/commits/{commit_sha}", headers=headers, timeout=15)
     if commit_resp.status_code != 200:
-        return False, f"Failed to get commit (HTTP {commit_resp.status_code})"
+        return False, f"Failed to get commit (HTTP {commit_resp.status_code})", None
     tree_sha = commit_resp.json()["tree"]["sha"]
 
     def create_blob(content):
@@ -449,18 +453,26 @@ def _commit_git_paths(path_contents, message):
             sha = create_blob(content)
             tree_entries.append({"path": path, "mode": "100644", "type": "blob", "sha": sha})
     except RuntimeError as e:
-        return False, str(e)
+        return False, str(e), None
 
     tree_payload = {"base_tree": tree_sha, "tree": tree_entries}
     tree_resp = requests.post(f"{base}/trees", headers=headers, json=tree_payload, timeout=30)
     if tree_resp.status_code != 201:
-        return False, f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}"
+        return (
+            False,
+            f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}",
+            None,
+        )
     new_tree_sha = tree_resp.json()["sha"]
 
     commit_payload = {"tree": new_tree_sha, "parents": [commit_sha], "message": message}
     commit_resp = requests.post(f"{base}/commits", headers=headers, json=commit_payload, timeout=30)
     if commit_resp.status_code != 201:
-        return False, f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}"
+        return (
+            False,
+            f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}",
+            None,
+        )
     new_commit_sha = commit_resp.json()["sha"]
 
     patch_resp = requests.patch(
@@ -470,8 +482,8 @@ def _commit_git_paths(path_contents, message):
         timeout=15,
     )
     if patch_resp.status_code != 200:
-        return False, f"Failed to update ref (HTTP {patch_resp.status_code})"
-    return True, None
+        return False, f"Failed to update ref (HTTP {patch_resp.status_code})", None
+    return True, None, new_commit_sha
 
 
 def _commit_two_files(path1, content1, path2, content2, message):
@@ -525,10 +537,10 @@ def merge_and_push_seeds(
 
     On success, links account and records an uploads row when user_id is set.
 
-    Returns (ok, err_message, history_rows, current_rows).
+    Returns (ok, err_message, history_rows, current_rows, head_commit_sha or None).
     """
     if current_df is None:
-        return False, "current_df is required.", 0, 0
+        return False, "current_df is required.", 0, 0, None
 
     if history_df is not None:
         history_df = history_df.copy()
@@ -586,23 +598,23 @@ def merge_and_push_seeds(
 
     try:
         if skip_history:
-            ok, err = _commit_file(CURRENT_PATH, current_content, commit_message)
+            ok, err, head_sha = _commit_file(CURRENT_PATH, current_content, commit_message)
         else:
-            ok, err = _commit_two_files(
+            ok, err, head_sha = _commit_two_files(
                 HISTORY_PATH, history_content,
                 CURRENT_PATH, current_content,
                 commit_message,
             )
         if not ok:
-            return False, err or "GitHub commit failed.", history_rows, current_rows
+            return False, err or "GitHub commit failed.", history_rows, current_rows, None
     except Exception as exc:
-        return False, str(exc), history_rows, current_rows
+        return False, str(exc), history_rows, current_rows, None
 
     if user_id is not None:
         add_account_for_user(user_id, account_name)
         record_upload(user_id, account_name, history_rows, current_rows)
 
-    return True, None, history_rows, current_rows
+    return True, None, history_rows, current_rows, head_sha
 
 
 def _schwab_seed_prepare_df(df, account_name, columns):
@@ -633,7 +645,7 @@ def merge_and_push_schwab_seeds(
     """
     Merge Schwab API-shaped rows into schwab_*.csv seeds (separate from
     manual brokerage export CSVs). dbt unions these via stg_*_seed_union.
-    Returns (ok, err, open_rows, tx_rows, balance_rows).
+    Returns (ok, err, open_rows, tx_rows, balance_rows, head_commit_sha or None).
     """
     open_positions_df = _schwab_seed_prepare_df(
         open_positions_df, account_name, SCHWAB_OPEN_COLUMNS
@@ -677,17 +689,17 @@ def merge_and_push_schwab_seeds(
     bal_rows = len(balances_df)
 
     try:
-        ok, err = _commit_git_paths(path_pairs, commit_message)
+        ok, err, head_sha = _commit_git_paths(path_pairs, commit_message)
         if not ok:
-            return False, err or "GitHub commit failed.", open_rows, tx_rows, bal_rows
+            return False, err or "GitHub commit failed.", open_rows, tx_rows, bal_rows, None
     except Exception as exc:
-        return False, str(exc), open_rows, tx_rows, bal_rows
+        return False, str(exc), open_rows, tx_rows, bal_rows, None
 
     if user_id is not None:
         add_account_for_user(user_id, account_name)
         record_upload(user_id, account_name, tx_rows, open_rows)
 
-    return True, None, open_rows, tx_rows, bal_rows
+    return True, None, open_rows, tx_rows, bal_rows, head_sha
 
 
 @app.route("/upload", methods=["GET", "POST"])
@@ -779,7 +791,7 @@ def upload():
             f"({account_name})"
         )
 
-    ok, err, history_rows, current_rows = merge_and_push_seeds(
+    ok, err, history_rows, current_rows, head_sha = merge_and_push_seeds(
         account_name,
         history_df,
         current_df,
@@ -804,7 +816,106 @@ def upload():
             "success",
         )
 
+    if head_sha:
+        return redirect(url_for("upload_processing", sha=head_sha))
     return redirect(url_for("upload_processing"))
+
+
+def _github_workflow_state_for_head(head_sha: str) -> dict:
+    """
+    Return dict with keys: state, github_status, conclusion, html_url, error.
+    state is pending | running | success | failure | error
+    """
+    if not head_sha or len(head_sha) < 7:
+        return {"state": "error", "error": "invalid_sha"}
+    ok, _e = _upload_github_config_ok()
+    if not ok:
+        return {"state": "error", "error": "github_not_configured"}
+    parts = _github_repo().split("/", 1)
+    if len(parts) != 2:
+        return {"state": "error", "error": "bad_repo"}
+    owner, repo = parts
+    url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
+    try:
+        resp = requests.get(
+            url,
+            headers=_github_headers(),
+            params={"head_sha": head_sha.strip(), "per_page": 5},
+            timeout=20,
+        )
+    except OSError as e:
+        return {"state": "error", "error": str(e)}
+
+    if resp.status_code == 403:
+        return {
+            "state": "error",
+            "error": "github_actions_forbidden",
+        }
+    if resp.status_code != 200:
+        return {
+            "state": "error",
+            "error": f"HTTP {resp.status_code}",
+        }
+    data = resp.json() or {}
+    runs = data.get("workflow_runs") or []
+    if not runs:
+        return {
+            "state": "pending",
+            "github_status": None,
+            "conclusion": None,
+            "html_url": None,
+        }
+    w = runs[0]
+    ghs = w.get("status")
+    concl = w.get("conclusion")
+    wurl = w.get("html_url")
+    if ghs is None or ghs in ("queued", "waiting", "requested", "pending"):
+        return {
+            "state": "pending",
+            "github_status": ghs,
+            "conclusion": concl,
+            "html_url": wurl,
+        }
+    if ghs == "in_progress":
+        return {
+            "state": "running",
+            "github_status": ghs,
+            "conclusion": concl,
+            "html_url": wurl,
+        }
+    if ghs == "completed":
+        if concl == "success":
+            return {
+                "state": "success",
+                "github_status": ghs,
+                "conclusion": concl,
+                "html_url": wurl,
+            }
+        return {
+            "state": "failure",
+            "github_status": ghs,
+            "conclusion": concl or "unknown",
+            "html_url": wurl,
+        }
+    return {
+        "state": "pending",
+        "github_status": ghs,
+        "conclusion": concl,
+        "html_url": wurl,
+    }
+
+
+@app.route("/api/github/workflow-status")
+@login_required
+@limiter.limit("60 per minute")
+def api_github_workflow_status():
+    """Poll GitHub Actions for the workflow run associated with a commit (head) SHA."""
+    head_sha = (request.args.get("sha") or "").strip()
+    st = _github_workflow_state_for_head(head_sha)
+    if st.get("state") == "error" and st.get("error") == "invalid_sha":
+        return jsonify({"ok": False, "error": "invalid sha", "state": "error"}), 400
+    st["ok"] = True
+    return jsonify(st)
 
 
 @app.route("/upload/processing")
@@ -812,11 +923,29 @@ def upload():
 def upload_processing():
     """Intermediary page shown after upload while data refreshes."""
     expected_minutes = 3
+    head_sha = (request.args.get("sha") or "").strip() or None
 
     return render_template(
         "upload_processing.html",
         title="Processing Upload",
         expected_minutes=expected_minutes,
+        head_sha=head_sha,
+        done_url=url_for("weekly_review", from_upload=1),
+    )
+
+
+@app.route("/sync/processing")
+@login_required
+def sync_processing():
+    """After Schwab seed push, wait for GitHub Actions dbt to finish (optional poll by commit SHA)."""
+    expected_minutes = 5
+    head_sha = (request.args.get("sha") or "").strip() or None
+    return render_template(
+        "sync_processing.html",
+        title="Pipeline running",
+        expected_minutes=expected_minutes,
+        head_sha=head_sha,
+        done_url=url_for("weekly_review", from_sync=1),
     )
 
 

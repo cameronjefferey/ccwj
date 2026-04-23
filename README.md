@@ -115,6 +115,7 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
    will inject `DATABASE_URL` automatically.
 2. Set environment variables on the web service:
    - `SECRET_KEY` (required)
+   - `GITHUB_PAT` — needs **`repo`** scope to push seed commits; the app also uses it to **poll** GitHub Actions status after upload or Schwab sync (read-only `actions:read` is included in `repo` for private repos)
    - `GEMINI_API_KEY` (optional)
    - `SENTRY_DSN` (optional — no default in code; add only if you want error reporting)
    - `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` (BigQuery service account, base64-encoded)
@@ -134,9 +135,10 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
 Uploads commit `dbt/seeds/trade_history.csv` and `current_positions.csv` in the
 linked GitHub repo and trigger `.github/workflows/bigquery_update.yml`.
 
-1. On the **web service**, set **`GITHUB_PAT`** to a token with permission to
-   push to that repo (classic: **`repo`** scope; fine-grained: **Contents**
-   read/write on the repository).
+1. On the **web service**, set **`GITHUB_PAT`**: same token as the deploy list above — it
+   must **push** seeds and, for the “pipeline done” page after upload or Schwab sync, **read
+   Actions** on the repo. Classic: **`repo`** is enough for private repositories. Fine-grained:
+   **Contents** read/write and **Metadata**; enable **Actions** read if the UI cannot see workflow runs.
 2. Optionally set **`GITHUB_REPO`** (`owner/repo`) and **`GITHUB_BRANCH`**
    if they differ from the defaults (`cameronjefferey/ccwj`, `master`).
 3. The workflow must run on pushes to the branch you use (see

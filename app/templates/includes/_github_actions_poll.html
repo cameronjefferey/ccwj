@@ -1,0 +1,78 @@
+{% set _done = done_url|default(url_for("weekly_review")) %}
+{% if head_sha %}
+<script>
+(function () {
+    var sha = {{ head_sha|tojson }};
+    var doneUrl = {{ _done|tojson }};
+    var statusEndpoint = {{ url_for("api_github_workflow_status")|tojson }};
+    var label = document.getElementById("pipelineStateLabel");
+    var ghLink = document.getElementById("ghRunLink");
+    var n = 0;
+    function tick() {
+        n += 1;
+        fetch(statusEndpoint + "?sha=" + encodeURIComponent(sha), { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d) {
+                    if (label) label.textContent = "Could not read pipeline status. You can open Weekly Review or check GitHub Actions.";
+                    return;
+                }
+                if (d.state === "error" && d.error) {
+                    if (label) label.textContent = "Could not check GitHub (server config or API). We’ll open Weekly Review in 3 minutes, or go now using the button above.";
+                    if (n === 0) { setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000); }
+                    return;
+                }
+                if (!d.ok) {
+                    if (label) label.textContent = "Could not read pipeline status. You can open Weekly Review or check GitHub Actions.";
+                    return;
+                }
+                if (d.state === "success") {
+                    if (label) label.textContent = "Data pipeline completed.";
+                    window.location.href = doneUrl;
+                    return;
+                }
+                if (d.state === "failure") {
+                    if (label) label.textContent = "The GitHub Action reported a problem. Check the run for details, then refresh the app in a few minutes.";
+                    if (d.html_url && ghLink) {
+                        ghLink.href = d.html_url;
+                        ghLink.classList.remove("d-none");
+                    }
+                    return;
+                }
+                if (d.state === "pending") {
+                    if (label) label.textContent = "Waiting for GitHub Actions to start…";
+                } else if (d.state === "running") {
+                    if (label) label.textContent = "dbt is running in GitHub Actions…";
+                } else {
+                    if (label) label.textContent = "Checking pipeline…";
+                }
+                if (d.html_url && ghLink) {
+                    ghLink.href = d.html_url;
+                    ghLink.classList.remove("d-none");
+                }
+                if (n < 120) {
+                    setTimeout(tick, 8000);
+                } else {
+                    if (label) label.textContent = "Still running or status unavailable. Try Weekly Review in a few minutes, or check Actions on GitHub.";
+                }
+            })
+            .catch(function () {
+                if (label) label.textContent = "Could not check status. We’ll try again…";
+                if (n < 30) {
+                    setTimeout(tick, 10000);
+                }
+            });
+    }
+    setTimeout(tick, 1500);
+})();
+</script>
+{% else %}
+<script>
+(function () {
+    var doneUrl = {{ _done|tojson }};
+    var label = document.getElementById("pipelineStateLabel");
+    if (label) { label.textContent = "We can’t read the commit id from the push, so this page can’t follow the run. Redirecting in a few minutes, or go to Weekly Review now."; }
+    setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000);
+})();
+</script>
+{% endif %}

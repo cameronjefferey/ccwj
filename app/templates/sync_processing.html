@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .processing-card {
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 2.5rem 2rem;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 2px 18px rgba(0,0,0,.06);
+        text-align: center;
+    }
+    .processing-icon {
+        margin-bottom: 1rem;
+        color: #0d6efd;
+    }
+    .processing-sub {
+        color: #6c757d;
+        font-size: .95rem;
+    }
+    #pipelineStateLabel { min-height: 1.4em; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="processing-card mb-4">
+    <div class="processing-icon" id="syncSpinner">
+        <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+    </div>
+    <h2 class="fw-bold mb-2">Updating your data</h2>
+    <p class="processing-sub mb-2">
+        Your Schwab data was written to the repo. GitHub Actions is running dbt
+        to refresh BigQuery. This is usually about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
+    </p>
+    <p class="small text-muted mb-3" id="pipelineStateLabel" aria-live="polite">Checking pipeline status…</p>
+    <div class="mb-3">
+        <a id="ghRunLink" href="#" class="btn btn-sm btn-outline-secondary d-none" target="_blank" rel="noopener">View run on GitHub</a>
+    </div>
+    <a href="{{ url_for('weekly_review', from_sync=1) }}" class="btn btn-outline-primary">
+        Open Weekly Review
+    </a>
+    <p class="processing-sub small mt-3 mb-0">
+        We’ll take you to Weekly Review when the run completes successfully, or you can open it anytime.
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include "includes/_github_actions_poll.html" %}
+{% endblock %}
