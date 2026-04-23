@@ -4,6 +4,10 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
+from app.schwab import (
+    SCHWAB_FULL_HISTORY_LOOKBACK_DAYS,
+    _schwab_transaction_lookback_days,
+)
 from app.models import (
     add_account_for_user,
     get_accounts_for_user,
@@ -14,6 +18,7 @@ from google.cloud import bigquery
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import math
+import os
 import pandas as pd
 import json
 
@@ -419,11 +424,22 @@ def get_started():
         except Exception:
             pass
 
+    schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
+    schwab_connected = bool(
+        schwab_enabled and get_schwab_connections(current_user.id)
+    )
+    schwab_full_history_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+    schwab_routine_days = _schwab_transaction_lookback_days()
+
     return render_template(
         "get_started.html",
         title="Get Started",
         has_uploaded=has_uploaded,
         has_data=has_data,
+        schwab_enabled=schwab_enabled,
+        schwab_connected=schwab_connected,
+        schwab_full_history_days=schwab_full_history_days,
+        schwab_routine_days=schwab_routine_days,
     )
 
 

@@ -53,6 +53,17 @@
         margin-bottom: 1.5rem;
     }
     .done-banner h4 { font-weight: 700; margin-bottom: .5rem; }
+    .path-pick { margin-top: .25rem; }
+    .path-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 1.1rem 1.25rem;
+        height: 100%;
+        background: #fff;
+    }
+    .path-card h6 { font-size: 1rem; }
+    .path-card p:last-child, .path-card .small:last-child { margin-bottom: 0; }
+    .path-card ul { margin-bottom: 0.75rem; font-size: .85rem; color: #6c757d; }
 </style>
 {% endblock %}
 
@@ -70,11 +81,11 @@
         {% else %}
         <div class="get-started-hero">
             <h1>Welcome, {{ current_user.username }}!</h1>
-            <p class="mb-0 opacity-90">Get your portfolio set up in three steps.</p>
+            <p class="mb-0 opacity-90">Link your data, then we process it. Three steps &mdash; start by choosing <strong>Connect Schwab</strong> or <strong>Manual upload</strong>.</p>
         </div>
         {% endif %}
 
-        {# ── Step 1: Upload ── #}
+        {# ── Step 1: Link data (Schwab API or CSV) ── #}
         <div class="step-card">
             <span class="step-number {% if has_uploaded %}step-done{% else %}step-pending{% endif %}">
                 {% if has_uploaded %}&#10003;{% else %}1{% endif %}
@@ -82,20 +93,61 @@
             <div class="flex-grow-1">
                 <h6 class="fw-bold">
                     {% if has_uploaded %}
-                    Data uploaded
+                    Data linked
                     {% else %}
-                    Upload your Schwab data
+                    Link your portfolio
                     {% endif %}
                 </h6>
 
                 {% if has_uploaded %}
-                <p>Your data is being processed. You can re-upload anytime from the
-                    <a href="{{ url_for('upload') }}">Upload page</a>.</p>
+                <p class="text-muted">Your data is being processed. Re-upload from the
+                    <a href="{{ url_for('upload') }}">Upload</a> page, or use <strong>Account</strong> to manage Schwab connection and sync.</p>
+                <p class="mb-0"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('upload') }}">Upload</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('profile', tab='account') }}">Account settings</a></p>
                 {% else %}
-                <p>Export two CSV files from schwab.com, then upload them here.</p>
+                <p class="text-muted">Pick <strong>one</strong> path to get started. This step is complete when your first file upload or Schwab import is registered. You can change approach later.</p>
 
+                <div class="row g-3 path-pick">
+                    {% if schwab_enabled %}
+                    <div class="col-md-6">
+                        <div class="path-card">
+                            <h6 class="fw-bold mb-2">Connect Schwab</h6>
+                            <p class="small text-muted mb-2">OAuth link to Schwab. One-time history pull, then background syncs.</p>
+                            <ul>
+                                <li>First backfill: up to <strong>{{ schwab_full_history_days|int }} days</strong> of history in one go (about five years) so the model has depth.</li>
+                                <li>After that, scheduled syncs pull a rolling <strong>{{ schwab_routine_days|int }}&ndash;day</strong> window of new transactions &mdash; no daily export from you.</li>
+                            </ul>
+                            {% if schwab_connected %}
+                            <p class="small text-success mb-2"><strong>Connection saved</strong> &mdash; finish or review sync in Account.</p>
+                            {% endif %}
+                            <a class="btn btn-primary btn-sm" href="{{ url_for('profile', tab='account') }}">Connect in Account</a>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                    {% else %}
+                    <div class="col-12">
+                    {% endif %}
+                        <div class="path-card">
+                            <h6 class="fw-bold mb-2">Manual CSV upload</h6>
+                            <p class="small text-muted mb-2">You export the same two CSVs from schwab.com and upload them here.</p>
+                            <ul>
+                                <li>Each <strong>update</strong> is a new export and upload. To keep the mirror current with trading, most people re-upload <strong>after the trading day</strong> (a daily habit) or on a <strong>fixed cadence</strong> (for example weekly).</li>
+                            </ul>
+                            <a class="btn btn-primary btn-sm" href="{{ url_for('upload') }}">Go to upload</a>
+                        </div>
+                    {% if schwab_enabled %}
+                    </div>
+                    {% else %}
+                    </div>
+                    <p class="small text-muted mt-1 mb-0 col-12">Schwab API connection is not enabled on this server. Use manual upload, or ask your host to add Schwab app credentials.</p>
+                    {% endif %}
+                </div>
+
+                <hr class="my-3">
+
+                <p class="mb-2 small text-muted" id="manual-csv">Manual path &mdash; export from Schwab (same as upload page)</p>
                 <div class="step-detail">
-                    <strong>Trade History</strong>
+                    <strong>Trade history</strong>
                     <ol class="mt-1">
                         <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>History</strong> &rarr; <strong>Transactions</strong></li>
                         <li>Select your account</li>
@@ -104,14 +156,14 @@
                         <li>Click <strong>Export</strong> &rarr; save the CSV</li>
                     </ol>
 
-                    <strong>Current Positions</strong>
+                    <strong>Current positions</strong>
                     <ol class="mt-1 mb-2">
                         <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>Positions</strong></li>
                         <li>Select your account</li>
                         <li>Click <strong>Export</strong> &rarr; save the CSV</li>
                     </ol>
 
-                    <a href="{{ url_for('upload') }}" class="btn btn-primary btn-sm">Upload Files</a>
+                    <a href="{{ url_for('upload') }}" class="btn btn-primary btn-sm">Upload files</a>
                 </div>
                 {% endif %}
             </div>
