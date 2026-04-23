@@ -1366,9 +1366,10 @@ def position_detail(symbol):
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
     if ch_stg and n_stg >= 2 and (n_m <= 2 or n_stg > n_m):
         chart_data = ch_stg
-    elif n_m < 2 and ch_leg and n_leg >= 2:
+    # Must use <=2: mart often has exactly 2 days (yesterday+today) while stg is empty — leg chart was skipped
+    elif n_m <= 2 and ch_leg and n_leg >= 2:
         chart_data = ch_leg
-    elif n_m < 2 and ch_stg and n_stg >= 2:
+    elif n_m <= 2 and ch_stg and n_stg >= 2:
         chart_data = ch_stg
 
     # Chart.js needs at least two x values to draw a line; a single mart day
