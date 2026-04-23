@@ -70,7 +70,19 @@ login_manager.init_app(app)
 @login_manager.user_loader
 def load_user(user_id):
     from app.models import User
-    return User.get_by_id(int(user_id))
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        return User.get_by_id(uid)
+    except Exception as e:
+        # After idle, DB can hiccup once; db layer retries, but a hard failure
+        # should not 500 every page—treat as logged out so the user can refresh / log in.
+        if app.debug:
+            raise
+        app.logger.warning("load_user failed for id=%s: %s", uid, e)
+        return None
 
 
 def _set_sentry_user():

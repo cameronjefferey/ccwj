@@ -42,27 +42,12 @@ def _pool_check_connection(conn):
         cur.execute("SELECT 1")
 
 
-def _transient_conn_error(exc: BaseException) -> bool:
-    """True for flaky network / SSL issues where a retry often succeeds."""
-    if not isinstance(exc, psycopg.OperationalError):
-        return False
-    msg = str(exc).lower()
-    needles = (
-        "ssl",
-        "tls",
-        "bad record",
-        "consuming input failed",
-        "connection reset",
-        "server closed the connection",
-        "could not receive data",
-        "eof detected",
-        "broken pipe",
-    )
-    return any(n in msg for n in needles)
-
-
 def _run_db_twice(fn):
-    """Run fn(); retry once on transient network errors or pool timeout (burst load)."""
+    """Run fn(); retry once on pool timeout, network blips, or dead pooled connections.
+
+    After a laptop sleep or long idle, the first request often uses a connection
+    Postgres already closed; a single retry on *any* OperationalError usually fixes it.
+    """
     last: Optional[BaseException] = None
     for attempt in range(2):
         try:
@@ -75,7 +60,15 @@ def _run_db_twice(fn):
             raise
         except psycopg.OperationalError as e:
             last = e
-            if attempt == 0 and _transient_conn_error(e):
+            if attempt == 0:
+                time.sleep(0.2)
+                continue
+            raise
+        except psycopg.InterfaceError as e:
+            # e.g. connection already closed — common right after idle / pool handoff
+            last = e
+            if attempt == 0:
+                time.sleep(0.2)
                 continue
             raise
     assert last is not None
