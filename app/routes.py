@@ -1357,19 +1357,25 @@ def position_detail(symbol):
             "position_detail chart query or build failed for %s: %s", safe_symbol, exc
         )
 
-    # Prefer stg (full trade history) when mart is sparse; else closed-leg steps; else mart.
+    # When mart is thin, pick the alternative with the most calendar points. Critical: stg
+    # can also be 2 days (e.g. recent sync) while int_* has years of close_date steps — we
+    # must not take a 2-day stg branch before comparing to the leg staircase.
     _chart_dates = chart_data.get("dates") or []
     n_m = len(_chart_dates)
     ch_stg = _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df) if not trades_pre_leg.empty else None
     n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
     ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
-    if ch_stg and n_stg >= 2 and (n_m <= 2 or n_stg > n_m):
-        chart_data = ch_stg
-    # Must use <=2: mart often has exactly 2 days (yesterday+today) while stg is empty — leg chart was skipped
-    elif n_m <= 2 and ch_leg and n_leg >= 2:
-        chart_data = ch_leg
-    elif n_m <= 2 and ch_stg and n_stg >= 2:
+    if n_m <= 2:
+        cands = []
+        if ch_leg and n_leg >= 2:
+            cands.append((n_leg, "leg", ch_leg))
+        if ch_stg and n_stg >= 2:
+            cands.append((n_stg, "stg", ch_stg))
+        if cands:
+            cands.sort(key=lambda t: (-t[0], 0 if t[1] == "leg" else 1))  # max days; tie -> leg
+            chart_data = cands[0][2]
+    elif ch_stg and n_stg >= 2 and n_stg > n_m:
         chart_data = ch_stg
 
     # Chart.js needs at least two x values to draw a line; a single mart day
