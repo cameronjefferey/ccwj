@@ -73,7 +73,7 @@ def _user_account_list():
     return sorted(names)
 
 
-def _account_sql_filter(accounts):
+def _account_sql_filter(accounts, col="account"):
     """
     Build a SQL WHERE clause fragment for filtering by account.
     accounts: list of account names, or None for no filter (admin).
@@ -84,27 +84,45 @@ def _account_sql_filter(accounts):
     if not accounts:
         return "WHERE 1 = 0"            # user has no accounts → return nothing
     quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"WHERE account IN ({quoted})"
+    expr = f"TRIM(CAST({col} AS STRING))"
+    return f"WHERE {expr} IN ({quoted})"
 
 
 def _account_sql_and(accounts, col="account"):
-    """Return AND clause for account filter when already in a WHERE. Empty string if no filter."""
+    """Return AND clause for account filter when already in a WHERE. Empty string if no filter.
+
+    BigQuery may store `account` as INT (e.g. Schwab #) while the app uses string
+    labels from user_accounts. Compare as strings so `IN (...)` is not silently empty.
+    """
     if accounts is None:
         return ""
     if not accounts:
         return "AND 1 = 0"
     quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND {col} IN ({quoted})"
+    expr = f"TRIM(CAST({col} AS STRING))"
+    return f"AND {expr} IN ({quoted})"
 
 
 def _filter_df_by_accounts(df, accounts, col="account"):
     """Filter a DataFrame to only rows matching the user's accounts.
-    accounts=None means admin → return unfiltered."""
+    accounts=None means admin → return unfiltered. Values compared as trimmed
+    strings so BQ int/float account ids still match app-side string labels.
+    """
     if accounts is None:
         return df
     if not accounts:
         return df.iloc[0:0]             # empty frame
-    return df[df[col].isin(accounts)]
+    if col not in df.columns:
+        return df
+    want = {str(a).strip() for a in accounts if a is not None and str(a).strip() != ""}
+
+    def _norm_acc(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return str(v).strip()
+
+    m = df[col].map(_norm_acc).isin(want)
+    return df[m]
 
 
 def _df_normalize_account_column(df):
@@ -2350,6 +2368,8 @@ def symbols_detail():
             accounts=[],
             selected_account="",
             open_only=False,
+            linked_brokerage_accounts=(user_accounts or []),
+            viewer_is_admin=is_admin(current_user.username),
         )
 
     trades_df = _df_normalize_account_column(trades_df)
@@ -2414,10 +2434,17 @@ def symbols_detail():
         s = set()
         for f in frames:
             if f is not None and not f.empty and "account" in f.columns:
-                s.update(f["account"].dropna().astype(str).unique())
+                for v in f["account"].dropna().unique():
+                    t = str(v).strip()
+                    if t:
+                        s.add(t)
         return sorted(s)
 
-    accounts = _unique_accounts(trades_df, pnl_df, current_df)
+    accounts = _unique_accounts(trades_df, pnl_df, current_df, strat_df)
+    if not accounts and user_accounts:
+        accounts = sorted(
+            {str(a).strip() for a in user_accounts if a and str(a).strip()}
+        )
     selected_account = request.args.get("account", "")
     # Use getlist so duplicate params (e.g. open_only=1&open_only=0 from checkbox+hidden) don't break the filter
     open_only = "1" in request.args.getlist("open_only")
@@ -2807,6 +2834,8 @@ def symbols_detail():
         selected_account=selected_account,
         open_only=open_only,
         positions_only=positions_only,
+        linked_brokerage_accounts=(user_accounts or []),
+        viewer_is_admin=is_admin(current_user.username),
     )
 
 
