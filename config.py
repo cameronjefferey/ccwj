@@ -41,7 +41,9 @@ class Config:
     REMEMBER_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_SECURE = _env_bool("REMEMBER_COOKIE_SECURE", "true") if _is_prod else False
 
-    PERMANENT_SESSION_LIFETIME = timedelta(days=14)
+    # Set PERMANENT_SESSION_DAYS=7 in env to expire logged-in sessions sooner.
+    _session_days = int(os.environ.get("PERMANENT_SESSION_DAYS", "14"))
+    PERMANENT_SESSION_LIFETIME = timedelta(days=max(1, _session_days))
 
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))

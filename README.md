@@ -119,9 +119,12 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
    - `SENTRY_DSN` (optional — no default in code; add only if you want error reporting)
    - `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` (BigQuery service account, base64-encoded)
    - `SIGNUP_ENABLED=false` (optional — invite-only; `/signup` returns 404)
+   - `PERMANENT_SESSION_DAYS=7` (optional — shorter session cookie lifetime; default 14)
    Render sets `RENDER=true`; the app uses that to enable secure session cookies over HTTPS.
 3. Build command: `pip install -r requirements.txt`
-4. Start command: `gunicorn -b 0.0.0.0:$PORT wsgi:app`
+4. Start command: `gunicorn wsgi:app -b 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30`  
+   (Position detail and similar pages run several BigQuery jobs; the default 30s
+   Gunicorn timeout can kill the worker, exhaust the DB pool, and return 500s.)
 5. Run dbt (e.g. in a separate job or on deploy): `cd dbt && dbt seed && dbt build`
 6. Create users via the Render shell: `python -m flask create-user --username <name> --password <pw>`  
    Lockout recovery: `python -m flask reset-password --username <name>`

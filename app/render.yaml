@@ -4,7 +4,9 @@ services:
     name: happytrader-flask
     env: python
     buildCommand: ""
-    startCommand: gunicorn wsgi:app
+    # BQ-heavy routes (e.g. /position/<symbol> run many parallel queries). Default
+    # gunicorn timeout 30s causes WORKER TIMEOUT, pool starvation, and cascade 500s.
+    startCommand: gunicorn wsgi:app -b 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/gcp-key.json
