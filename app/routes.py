@@ -107,6 +107,15 @@ def _filter_df_by_accounts(df, accounts, col="account"):
     return df[df[col].isin(accounts)]
 
 
+def _df_normalize_account_column(df):
+    """BigQuery to_dataframe() sometimes returns Account; app filters on account."""
+    if df is None or df.empty:
+        return df
+    if "Account" in df.columns and "account" not in df.columns:
+        return df.rename(columns={"Account": "account"})
+    return df
+
+
 # ------------------------------------------------------------------
 # SQL: date-filtered re-aggregation of positions_summary
 # This CANNOT be a dbt model because it requires runtime date parameters
@@ -686,8 +695,11 @@ POSITION_TRADES_QUERY = """
         fees,
         amount
     FROM `ccwj-dbt.analytics.stg_history`
-    WHERE underlying_symbol = '{symbol}'
-      AND trade_date IS NOT NULL
+    WHERE trade_date IS NOT NULL
+      AND (
+        UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
+        OR UPPER(TRIM(SPLIT(COALESCE(trade_symbol, ''), ' ')[SAFE_OFFSET(0)])) = UPPER(TRIM('{symbol}'))
+      )
     ORDER BY trade_date DESC
 """
 
@@ -833,6 +845,13 @@ def position_detail(symbol):
         closed_equity_df = dfs["closed_equity"]
         matrix_df = dfs["matrix"]
         sessions_df = dfs["sessions"]
+        summary_df = _df_normalize_account_column(summary_df)
+        trades_df = _df_normalize_account_column(trades_df)
+        current_df = _df_normalize_account_column(current_df)
+        closed_legs_df = _df_normalize_account_column(closed_legs_df)
+        closed_equity_df = _df_normalize_account_column(closed_equity_df)
+        matrix_df = _df_normalize_account_column(matrix_df)
+        sessions_df = _df_normalize_account_column(sessions_df)
     except Exception as exc:
         return render_template(
             "position_detail.html",
@@ -1263,6 +1282,18 @@ def position_detail(symbol):
                 first_trade = str(d0)[:10]
                 last_trade = str(date.today())
 
+        # Stg row count for hero; if summary says 0 trades but legs exist, show leg count.
+        _fills = len(trades_pre_leg) if not trades_pre_leg.empty else 0
+        _n_legs = (
+            (len(closed_legs_pre_leg) if not closed_legs_pre_leg.empty else 0)
+            + (len(closed_equity_pre_leg) if not closed_equity_pre_leg.empty else 0)
+            + (len(current_df) if not current_df.empty else 0)
+        )
+        if _fills > 0:
+            trade_count = _fills
+        elif trade_count == 0 and _n_legs > 0:
+            trade_count = _n_legs
+
         # Win/loss from filtered closed legs when leg-filtered
         if leg_param and _leg_ranges:
             opt_wins = int((closed_legs_df["total_pnl"] > 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
@@ -1325,6 +1356,20 @@ def position_detail(symbol):
         app.logger.exception(
             "position_detail chart query or build failed for %s: %s", safe_symbol, exc
         )
+
+    # Prefer stg (full trade history) when mart is sparse; else closed-leg steps; else mart.
+    _chart_dates = chart_data.get("dates") or []
+    n_m = len(_chart_dates)
+    ch_stg = _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df) if not trades_pre_leg.empty else None
+    n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
+    ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
+    n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
+    if ch_stg and n_stg >= 2 and (n_m <= 2 or n_stg > n_m):
+        chart_data = ch_stg
+    elif n_m < 2 and ch_leg and n_leg >= 2:
+        chart_data = ch_leg
+    elif n_m < 2 and ch_stg and n_stg >= 2:
+        chart_data = ch_stg
 
     # Chart.js needs at least two x values to draw a line; a single mart day
     # (e.g. new option leg) would otherwise show only a blank chart.
@@ -1923,6 +1968,112 @@ def _align_position_pnl_chart_with_kpi(chart_data, kpis):
         )
         for i in range(n)
     ]
+
+
+def _cumulative_pnl_from_stg_trades(trades_df, current_df):
+    """
+    Cumulative P&L by calendar day from stg_history (cash flow per row). Used when
+    mart_daily_pnl is sparse but stg has years of RDDT fills (symbol match quirks).
+    """
+    empty = {
+        "dates": [],
+        "equity": [],
+        "options": [],
+        "dividends": [],
+        "total": [],
+        "underlying_price": [],
+        "has_underlying_price": False,
+    }
+    if trades_df is None or trades_df.empty or "amount" not in trades_df.columns:
+        return None
+    t = trades_df.copy()
+    if "trade_date" not in t.columns or "instrument_type" not in t.columns:
+        return None
+    t["td"] = pd.to_datetime(t["trade_date"], errors="coerce").dt.normalize()
+    t = t[pd.notna(t["td"])]
+    if t.empty:
+        return None
+    t["amount"] = pd.to_numeric(t["amount"], errors="coerce").fillna(0.0)
+    it = t["instrument_type"].fillna("").str.strip()
+    a = t["amount"]
+    t["_div"] = a.where(
+        (it == "Dividend") | it.str.contains("ividend", case=False, na=False), 0.0
+    )
+    t["_eq"] = a.where(it == "Equity", 0.0)
+    t["_op"] = a.where(it.isin(["Call", "Put"]), 0.0)
+    t["_oth"] = a - t["_div"] - t["_eq"] - t["_op"]
+    g = t.groupby("td", as_index=False).agg(
+        {"_eq": "sum", "_op": "sum", "_div": "sum", "_oth": "sum"}
+    )
+    g = g.sort_values("td")
+    g["c_eq"] = g["_eq"].cumsum()
+    g["c_op"] = (g["_op"] + g["_oth"]).cumsum()  # fees/margin in with options line for chart
+    g["c_div"] = g["_div"].cumsum()
+    g["tot"] = g["c_eq"] + g["c_op"] + g["c_div"]
+    dates = [str(pd.Timestamp(x).date()) for x in g["td"].tolist()]
+    return {
+        "dates": dates,
+        "equity": [round(x, 2) for x in g["c_eq"]],
+        "options": [round(x, 2) for x in g["c_op"]],
+        "dividends": [round(x, 2) for x in g["c_div"]],
+        "total": [round(x, 2) for x in g["tot"]],
+        "underlying_price": [None] * len(dates),
+        "has_underlying_price": False,
+    }
+
+
+def _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg):
+    """
+    Step cumulative P&L from closed option legs and closed equity by close_date.
+    Fallback when stg is empty but int_* legs exist.
+    """
+    events = []  # (date, d_eq, d_op, d_div)
+    if closed_legs_pre_leg is not None and not closed_legs_pre_leg.empty and "close_date" in closed_legs_pre_leg.columns:
+        for _, r in closed_legs_pre_leg.iterrows():
+            d = r.get("close_date")
+            if pd.isna(d):
+                continue
+            pnl = float(r.get("total_pnl") or 0)
+            d0 = pd.to_datetime(d).date()
+            events.append((d0, 0.0, pnl, 0.0))
+    if closed_equity_pre_leg is not None and not closed_equity_pre_leg.empty and "close_date" in closed_equity_pre_leg.columns:
+        for _, r in closed_equity_pre_leg.iterrows():
+            d = r.get("close_date")
+            if pd.isna(d):
+                continue
+            pnl = float(r.get("realized_pnl") or 0)
+            d0 = pd.to_datetime(d).date()
+            events.append((d0, pnl, 0.0, 0.0))
+    if not events:
+        return None
+    events.sort(key=lambda x: x[0])
+    byd = {}
+    for d0, e, o, di in events:
+        byd.setdefault(d0, [0.0, 0.0, 0.0])
+        byd[d0][0] += e
+        byd[d0][1] += o
+        byd[d0][2] += di
+    d_sorted = sorted(byd)
+    c_eq, c_op, c_div = 0.0, 0.0, 0.0
+    dates, eq, op, div, tot = [], [], [], [], []
+    for d0 in d_sorted:
+        c_eq += byd[d0][0]
+        c_op += byd[d0][1]
+        c_div += byd[d0][2]
+        dates.append(str(d0))
+        eq.append(round(c_eq, 2))
+        op.append(round(c_op, 2))
+        div.append(round(c_div, 2))
+        tot.append(round(c_eq + c_op + c_div, 2))
+    return {
+        "dates": dates,
+        "equity": eq,
+        "options": op,
+        "dividends": div,
+        "total": tot,
+        "underlying_price": [None] * len(dates),
+        "has_underlying_price": False,
+    }
 
 
 def _build_chart_from_daily_pnl(daily_df, current_df):
