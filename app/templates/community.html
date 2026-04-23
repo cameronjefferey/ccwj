@@ -91,6 +91,17 @@
     .wall-side h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: #94a3b8; font-weight: 700; margin: 0 0 1rem; }
     .wall-discover-row { border-bottom: 1px solid rgba(51,65,85,.5); padding: .65rem 0; }
     .wall-discover-row:last-child { border-bottom: none; }
+    .wall-search {
+        display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;
+    }
+    .wall-search input[type="search"] {
+        flex: 1; min-width: 160px; max-width: 100%;
+        background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.25);
+        color: #f1f5f9; border-radius: 12px; padding: .5rem .85rem; font-size: .9rem;
+    }
+    .wall-search input:focus { border-color: rgba(251,191,36,.45); outline: none; }
+    .wall-search .btn { border-radius: 12px; font-size: .85rem; }
+    .wall-search-hint { font-size: .75rem; color: #94a3b8; margin: 0 0 .75rem; }
     .wall-foot { max-width: 1100px; margin: 2rem auto 0; font-size: .78rem; color: #64748b; text-align: center; line-height: 1.6; }
 </style>
 {% endblock %}
@@ -170,7 +181,43 @@
             </div>
             <div class="wall-side">
                 <h3>Find traders</h3>
-                <p class="small mb-2" style="color:#94a3b8">They raised their hand to be discoverable.</p>
+                <p class="small mb-2" style="color:#94a3b8">Search by @handle, display name, or headline. Only people who set visibility to Followers or Public (Profile → The door) appear here.</p>
+                <form class="wall-search" method="get" action="{{ url_for('community') }}" role="search">
+                    <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Search e.g. Alex or @handle" aria-label="Search traders" autocomplete="off">
+                    <button type="submit" class="btn wall-btn-ghost">Search</button>
+                </form>
+                {% if search_query|length == 1 %}
+                <p class="wall-search-hint">Type at least two characters to search.</p>
+                {% endif %}
+                {% if search_query|length >= 2 %}
+                <p class="small mb-2" style="color:#cbd5e1">
+                    {% if search_results|length == 0 %}No one matches that yet. Try another name, or <a href="{{ url_for('community') }}" class="text-warning">clear search</a> to browse.{% else %}{{ search_results|length }} match{{ 'es' if search_results|length != 1 else '' }} &middot; <a href="{{ url_for('community') }}" class="text-warning text-decoration-none">Clear search</a>{% endif %}
+                </p>
+                {% for u in search_results %}
+                <div class="wall-discover-row d-flex justify-content-between align-items-center gap-2">
+                    <div>
+                        <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="fw-semibold text-white text-decoration-none">{{ u.display_name }}</a>
+                        <div class="wall-time">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(70) }}{% endif %}</div>
+                    </div>
+                    {% if u.id != current_user.id %}
+                        {% if (u.id|int) in following_ids %}
+                        <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
+                            <button type="submit" class="btn btn-sm btn-outline-light rounded-pill" style="font-size:.72rem">Following</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
+                            <button type="submit" class="btn btn-sm wall-btn-primary" style="font-size:.72rem">Follow</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
+                </div>
+                {% endfor %}
+                <p class="small mt-3 mb-0" style="color:#64748b; border-top:1px solid rgba(51,65,85,.4); padding-top:1rem">Browse everyone</p>
+                {% endif %}
                 {% for u in discover %}
                 <div class="wall-discover-row d-flex justify-content-between align-items-center gap-2">
                     <div>
@@ -181,20 +228,22 @@
                         {% if (u.id|int) in following_ids %}
                         <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ url_for('community') }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
                             <button type="submit" class="btn btn-sm btn-outline-light rounded-pill" style="font-size:.72rem">Following</button>
                         </form>
                         {% else %}
                         <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ url_for('community') }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
                             <button type="submit" class="btn btn-sm wall-btn-primary" style="font-size:.72rem">Follow</button>
                         </form>
                         {% endif %}
                     {% endif %}
                 </div>
                 {% else %}
+                {% if search_query|length < 2 %}
                 <p class="small mb-0" style="color:#64748b">No one in the directory yet. Open Profile → The door and step out of Private.</p>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>

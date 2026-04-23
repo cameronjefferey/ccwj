@@ -23,12 +23,13 @@ from __future__ import annotations
 import atexit
 import os
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Iterable, Optional
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 
 _pool: Optional[ConnectionPool] = None
@@ -61,11 +62,17 @@ def _transient_conn_error(exc: BaseException) -> bool:
 
 
 def _run_db_twice(fn):
-    """Run fn(); on transient OperationalError retry once with a new connection."""
+    """Run fn(); retry once on transient network errors or pool timeout (burst load)."""
     last: Optional[BaseException] = None
     for attempt in range(2):
         try:
             return fn()
+        except PoolTimeout as e:
+            last = e
+            if attempt == 0:
+                time.sleep(0.2)
+                continue
+            raise
         except psycopg.OperationalError as e:
             last = e
             if attempt == 0 and _transient_conn_error(e):
@@ -107,14 +114,18 @@ def _build_pool() -> ConnectionPool:
     # max_idle / max_lifetime plus check= pre-ping reduces ssl/tls alert errors.
     max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300"))
     max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
+    # pool timeout: how long a request waits for a free connection (default was 30s;
+    # burst traffic or slow queries can starve the pool and cause PoolTimeout on /).
+    pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "60"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
         min_size=1,
-        max_size=int(os.environ.get("DATABASE_POOL_MAX", "10")),
+        max_size=int(os.environ.get("DATABASE_POOL_MAX", "12")),
         kwargs={"row_factory": dict_row},
         check=_pool_check_connection,
         max_idle=max_idle,
         max_lifetime=max_lifetime,
+        timeout=pool_wait,
         open=True,
     )
 

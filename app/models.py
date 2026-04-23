@@ -742,6 +742,48 @@ def discover_public_traders(limit=24):
         return []
 
 
+def _ilike_substring_param(q: str) -> str:
+    """Build a %...% pattern for ILIKE; escape backslash, %, and _ in user input."""
+    q = (q or "").strip()[:200]
+    for a, b in (("\\", "\\\\"), ("%", r"\%"), ("_", r"\_")):
+        q = q.replace(a, b)
+    return f"%{q}%"
+
+
+def search_discoverable_traders(exclude_user_id, q, limit=40):
+    """
+    Substring search (username, display name, headline, bio) among users
+    with profile visibility public or followers. Excludes exclude_user_id.
+    Returns [] if q is shorter than 2 characters after strip.
+    """
+    raw = (q or "").strip()
+    if len(raw) < 2:
+        return []
+    pat = _ilike_substring_param(raw)
+    try:
+        return fetch_all(
+            """SELECT u.id, u.username,
+                      COALESCE(NULLIF(TRIM(p.display_name), ''), u.username) AS display_name,
+                      p.headline, p.profile_visibility
+               FROM users u
+               JOIN user_profiles p ON p.user_id = u.id
+               WHERE p.profile_visibility IN ('public', 'followers')
+                 AND u.id != %s
+                 AND (
+                      u.username ILIKE %s ESCAPE E'\\'
+                   OR TRIM(COALESCE(p.display_name, '')) ILIKE %s ESCAPE E'\\'
+                   OR TRIM(COALESCE(p.headline, '')) ILIKE %s ESCAPE E'\\'
+                   OR TRIM(COALESCE(p.bio, '')) ILIKE %s ESCAPE E'\\'
+                 )
+               ORDER BY u.username
+               LIMIT %s""",
+            (exclude_user_id, pat, pat, pat, pat, limit),
+        )
+    except Exception as exc:
+        _log.warning("search_discoverable_traders failed: %s", exc)
+        return []
+
+
 # ------------------------------------------------------------------
 # Admin / bootstrap helpers
 # ------------------------------------------------------------------

@@ -27,6 +27,7 @@ from app.models import (
     list_following_ids,
     list_public_published_trades,
     publish_community_trade,
+    search_discoverable_traders,
     trade_fingerprint,
     unfollow_user,
     unpublish_community_trade,
@@ -191,16 +192,31 @@ def profile():
 def community():
     feed = community_feed_for_follower(current_user.id, limit=60)
     following_ids = list_following_ids(current_user.id)
+    search_query = (request.args.get("q") or "").strip()[:200]
+    search_results = []
+    if len(search_query) >= 2:
+        search_results = search_discoverable_traders(
+            current_user.id, search_query, limit=50
+        )
     discover = discover_public_traders(limit=30)
     fc, fwing = follow_counts(current_user.id)
     prof = get_user_profile(current_user.id)
     published_count = count_published_trades(current_user.id)
+    # Preserve search when follow/unfollow returns here
+    community_return = (
+        url_for("community", q=search_query)
+        if len(search_query) >= 2
+        else url_for("community")
+    )
     return render_template(
         "community.html",
         title="The Wall",
         feed=feed,
         following_ids=following_ids,
         discover=discover,
+        search_query=search_query,
+        search_results=search_results,
+        community_return_url=community_return,
         follower_count=fc,
         following_count=fwing,
         profile_row=prof,
