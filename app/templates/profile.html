@@ -328,6 +328,7 @@
                             </div>
                             {% endif %}
                             <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
+                            <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
                         </form>
                         {% else %}
                         <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary rounded-pill">Connect Schwab</a>

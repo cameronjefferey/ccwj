@@ -237,6 +237,21 @@
                 }
             });
         });
+
+        // Schwab "Sync now" — show loading state (sync can take a long time; no AJAX, so this is the only progress cue until redirect)
+        document.querySelectorAll('form.schwab-sync-form').forEach(function(form) {
+            form.addEventListener('submit', function() {
+                var btn = form.querySelector('button[type="submit"]');
+                if (!btn || btn.disabled) return;
+                var w = btn.offsetWidth;
+                if (w) btn.style.minWidth = w + 'px';
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="ms-2">Syncing…</span>';
+                var st = form.querySelector('.schwab-sync-status');
+                if (st) st.classList.remove('d-none');
+            });
+        });
     </script>
     {% block scripts %}{% endblock %}
 </body>

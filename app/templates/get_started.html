@@ -121,6 +121,10 @@
                             <p class="small text-success mb-2"><strong>Connection saved</strong> &mdash; finish or review sync in Account.</p>
                             {% endif %}
                             <a class="btn btn-primary btn-sm" href="{{ url_for('profile', tab='account') }}">Connect in Account</a>
+                            <p class="small text-muted mt-2 mb-0 pt-2 border-top">
+                                <strong class="text-secondary">Your sign-in stays with Schwab.</strong>
+                                Happy Trader never stores your password. You type it only on Schwab&rsquo;s own page; after that, Schwab gives the app a short permission to read your activity&mdash;like a hall pass, not a copy of your password. You can remove access anytime in Account.
+                            </p>
                         </div>
                     </div>
                     <div class="col-md-6">
