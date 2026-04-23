@@ -1216,26 +1216,52 @@ def position_detail(symbol):
             if trade_count == 0 and not trades_pre_leg.empty:
                 trade_count = len(trades_pre_leg)
         else:
-            trade_count = int(summary_df["num_individual_trades"].sum())
+            trade_count = int(
+                summary_df["num_individual_trades"].sum()
+            ) if "num_individual_trades" in summary_df.columns else 0
+            if trade_count == 0 and not trades_pre_leg.empty:
+                trade_count = len(trades_pre_leg)
 
-        # Date range from filtered trades
+        # Date range: prefer stg (trades_pre_leg) when present — positions_summary can lag
+        # and show 0 trades + a bogus same-day "first" and "last" as-of stamp.
         if leg_param and not trades_df.empty and "trade_date" in trades_df.columns:
-            first_trade = str(trades_df["trade_date"].min())
-            last_trade = str(trades_df["trade_date"].max())
+            first_trade = str(trades_df["trade_date"].min())[:10]
+            last_trade = str(trades_df["trade_date"].max())[:10]
+        elif (not leg_param) and (not trades_pre_leg.empty) and "trade_date" in trades_pre_leg.columns:
+            first_trade = str(trades_pre_leg["trade_date"].min())[:10]
+            last_trade = str(trades_pre_leg["trade_date"].max())[:10]
+        elif not summary_df.empty and "first_trade_date" in summary_df.columns:
+            first_trade = str(pd.to_datetime(summary_df["first_trade_date"].min()).date())
+            last_trade = str(pd.to_datetime(summary_df["last_trade_date"].max()).date())
+        elif not trades_df.empty and "trade_date" in trades_df.columns:
+            first_trade = str(trades_df["trade_date"].min())[:10]
+            last_trade = str(trades_df["trade_date"].max())[:10]
         else:
-            if not summary_df.empty and "first_trade_date" in summary_df.columns:
-                first_trade = str(summary_df["first_trade_date"].min())
-                last_trade = str(summary_df["last_trade_date"].max())
-            elif not trades_df.empty and "trade_date" in trades_df.columns:
-                first_trade = str(trades_df["trade_date"].min())
-                last_trade = str(trades_df["trade_date"].max())
-            else:
-                first_trade = ""
-                last_trade = ""
+            first_trade = ""
+            last_trade = ""
         if (not first_trade) and _activity_date_min is not None:
             first_trade = str(_activity_date_min)
         if (not last_trade) and _activity_date_max is not None:
             last_trade = str(_activity_date_max)
+
+        # Open, still no real range (e.g. only summary as-of) — session open + through today
+        if (
+            not leg_param
+            and overall_status == "Open"
+            and sessions_list
+            and (not first_trade or (first_trade == last_trade and trade_count == 0))
+        ):
+            ods = []
+            for s in sessions_list:
+                if str(s.get("status", "")).strip().lower() == "open" and s.get("open_date"):
+                    try:
+                        ods.append(pd.to_datetime(s["open_date"]).date())
+                    except Exception:
+                        pass
+            if ods:
+                d0 = min(ods)
+                first_trade = str(d0)[:10]
+                last_trade = str(date.today())
 
         # Win/loss from filtered closed legs when leg-filtered
         if leg_param and _leg_ranges:
@@ -1307,6 +1333,9 @@ def position_detail(symbol):
         chart_data = _synthetic_cumulative_pnl_for_position(
             kpis, sessions_list, leg_param, selected_legs, current_df
         )
+
+    if kpis:
+        _align_position_pnl_chart_with_kpi(chart_data, kpis)
 
     # Trade history rows
     trades_for_table = trades_df.copy()
@@ -1854,6 +1883,46 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
         "underlying_price": [p0, p1],
         "has_underlying_price": p1 is not None,
     }
+
+
+def _align_position_pnl_chart_with_kpi(chart_data, kpis):
+    """
+    `mart_daily_pnl` is full cumulative history for account + symbol. The page KPIs
+    can be scoped with status=Open, strategy, or a leg, so the chart can show a
+    much larger total (e.g. all closed + open) than the hero row. When the
+    series end disagrees, scale equity/options/dividend components to match
+    `kpis['total_return']` and re-sum `total` (leave underlying_price alone).
+    """
+    if not chart_data or not kpis or not chart_data.get("total"):
+        return
+    n = len(chart_data["total"])
+    if n < 1:
+        return
+    t_end = float(chart_data["total"][-1] or 0.0)
+    k = float(kpis.get("total_return", 0) or 0.0)
+    if abs(t_end - k) <= 0.02:
+        return
+    if abs(t_end) < 1e-9:
+        return
+    f = k / t_end
+    if not all(
+        len(chart_data.get(skey) or []) == n
+        for skey in ("equity", "options", "dividends")
+    ):
+        chart_data["total"] = [round(float(x) * f, 2) for x in chart_data["total"]]
+        return
+    for key in ("equity", "options", "dividends"):
+        arr = chart_data.get(key) or []
+        chart_data[key] = [round(float(x) * f, 2) for x in arr]
+    chart_data["total"] = [
+        round(
+            float(chart_data["equity"][i] or 0)
+            + float(chart_data["options"][i] or 0)
+            + float(chart_data["dividends"][i] or 0),
+            2,
+        )
+        for i in range(n)
+    ]
 
 
 def _build_chart_from_daily_pnl(daily_df, current_df):

@@ -74,9 +74,15 @@
                 {% else %}
                     <span class="badge badge-closed">Closed</span>
                 {% endif %}
-                <span class="text-white-50 small">{{ kpis.total_trades }} trades</span>
+                <span class="text-white-50 small">{{ kpis.total_trades }} trade{% if kpis.total_trades != 1 %}s{% endif %}</span>
                 {% if kpis.first_trade and kpis.last_trade %}
-                <span class="text-white-50 small">{{ kpis.first_trade }} &mdash; {{ kpis.last_trade }}</span>
+                <span class="text-white-50 small">
+                    {% if kpis.first_trade[:10] == kpis.last_trade[:10] %}
+                    as of {{ kpis.first_trade[:10] }}
+                    {% else %}
+                    {{ kpis.first_trade[:10] }} &mdash; {{ kpis.last_trade[:10] }}
+                    {% endif %}
+                </span>
                 {% endif %}
             </div>
             {% endif %}
