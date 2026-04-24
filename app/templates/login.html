@@ -64,10 +64,17 @@
             box-shadow: 0 2px 12px rgba(0,0,0,.2);
         }
         .btn-login:disabled {
-            opacity: 0.92;
-            cursor: not-allowed;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+            color: #fff;
+            opacity: 1;
+            cursor: progress;
             transform: none;
         }
+        .btn-login .spinner-border {
+            color: #fff;
+            border-right-color: transparent;
+        }
+        .login-btn-progress { color: #fff; font-weight: 600; }
     </style>
 </head>
 <body>
