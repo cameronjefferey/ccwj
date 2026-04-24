@@ -88,8 +88,11 @@
                 {% endif %}
             {% endwith %}
 
-            <form id="loginForm" method="POST" action="{{ url_for('login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') }}{% endif %}">
+            <form id="loginForm" method="POST" action="{{ url_for('login') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if next_for_form %}
+                <input type="hidden" name="next" value="{{ next_for_form }}">
+                {% endif %}
                 <div class="mb-3">
                     <label for="username" class="form-label fw-semibold small">Username</label>
                     <input type="text" class="form-control" id="username" name="username"

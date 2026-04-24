@@ -107,7 +107,12 @@ def _login_required_redirect():
     """Flask-Login: prefer JSON 401 for API when client expects JSON."""
     if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
         return jsonify({"error": "login_required"}), 401
-    return redirect(url_for("login", next=request.url))
+    # Path + query only (not request.url) so ?next= stays a relative path in the
+    # login form and is not a full https://... string that breaks unencoded form actions.
+    nxt = request.full_path
+    if not nxt.startswith("/"):
+        nxt = request.path
+    return redirect(url_for("login", next=nxt))
 
 
 _SESSION_LAST_KEY = "_last_activity_ts"

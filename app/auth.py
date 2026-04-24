@@ -5,6 +5,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.extensions import limiter
 from app.models import User, get_accounts_for_user, get_user_profile
+from app.utils import safe_internal_next
 
 # Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
 _LANDING = {
@@ -28,6 +29,9 @@ def _landing_endpoint(prof) -> str:
 @limiter.limit("20 per minute")
 def login():
     if current_user.is_authenticated:
+        dest = safe_internal_next(request.args.get("next"))
+        if dest:
+            return redirect(dest)
         return redirect(url_for("weekly_review"))
 
     if request.method == "POST":
@@ -38,13 +42,20 @@ def login():
         user = User.get_by_username(username)
         if user is None or not user.check_password(password):
             flash("Invalid username or password.", "danger")
+            nxt = safe_internal_next(
+                request.form.get("next") or request.args.get("next")
+            )
+            if nxt:
+                return redirect(url_for("login", next=nxt))
             return redirect(url_for("login"))
 
         login_user(user, remember=remember)
 
-        # Redirect to the page the user originally wanted
-        next_page = request.args.get("next")
-        if not next_page or not next_page.startswith("/"):
+        # Prefer hidden form field (reliable on POST); fall back to query string.
+        next_page = safe_internal_next(
+            request.form.get("next") or request.args.get("next")
+        )
+        if not next_page:
             accounts = get_accounts_for_user(user.id)
             if not accounts:
                 next_page = url_for("get_started")
@@ -53,7 +64,8 @@ def login():
                 next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
-    return render_template("login.html", title="Login")
+    next_for_form = safe_internal_next(request.args.get("next"))
+    return render_template("login.html", title="Login", next_for_form=next_for_form)
 
 
 @app.route("/signup", methods=["GET", "POST"])
