@@ -859,6 +859,169 @@ POSITION_MATRIX_QUERY = """
       AND underlying_symbol = '{symbol}'
 """
 
+def _merge_position_strategy_breakdown(
+    symbol: str,
+    summary_df: pd.DataFrame,
+    closed_legs_df: pd.DataFrame,
+    closed_equity_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Return a strategy table that includes any (account, strategy) in closed legs/equity
+    missing from positions_summary, so the breakdown matches the Position Legs / history.
+
+    positions_summary is one row per (account, symbol, strategy); in edge cases a closed
+    strategy can be absent from the mart while int_strategy_classification still has legs.
+    """
+    existing = set()
+    if summary_df is not None and not summary_df.empty and "account" in summary_df.columns:
+        for _, r in summary_df.iterrows():
+            a = r.get("account")
+            s = r.get("strategy")
+            if a is None or (isinstance(s, float) and pd.isna(s)) or s is None:
+                continue
+            st = str(s).strip()
+            if not st:
+                continue
+            existing.add((str(a).strip(), st))
+
+    def _row_from_option_group(acct: str, strat: str, sub: pd.DataFrame) -> dict:
+        total = float(sub["total_pnl"].sum()) if "total_pnl" in sub.columns else 0.0
+        prem_r = float(sub["premium_received"].sum()) if "premium_received" in sub.columns else 0.0
+        prem_p = float(sub["premium_paid"].sum()) if "premium_paid" in sub.columns else 0.0
+        n = len(sub)
+        wins = int((sub["total_pnl"] > 0).sum()) if "total_pnl" in sub.columns else 0
+        losses = n - wins
+        wr = wins / n if n else 0.0
+        days_mean = 0.0
+        if "days_in_trade" in sub.columns:
+            days_mean = float(sub["days_in_trade"].fillna(0).mean() or 0.0)
+        od = (
+            sub["open_date"].dropna().min() if "open_date" in sub.columns else None
+        )
+        cd = (
+            sub["close_date"].dropna().max() if "close_date" in sub.columns else None
+        )
+        avg_pnl = total / n if n else 0.0
+        return {
+            "account": acct,
+            "symbol": symbol,
+            "strategy": strat,
+            "status": "Closed",
+            "total_pnl": round(total, 2),
+            "realized_pnl": round(total, 2),
+            "unrealized_pnl": 0.0,
+            "total_premium_received": round(prem_r, 2),
+            "total_premium_paid": round(prem_p, 2),
+            "num_trade_groups": n,
+            "num_individual_trades": n,
+            "num_winners": wins,
+            "num_losers": losses,
+            "win_rate": wr,
+            "avg_pnl_per_trade": round(avg_pnl, 2),
+            "avg_days_in_trade": round(days_mean, 1),
+            "first_trade_date": od,
+            "last_trade_date": cd,
+            "total_dividend_income": 0.0,
+            "dividend_count": 0,
+            "total_return": round(total, 2),
+        }
+
+    def _row_from_equity_group(acct: str, lbl: str, sub: pd.DataFrame) -> dict:
+        real = float(sub["realized_pnl"].sum()) if "realized_pnl" in sub.columns else 0.0
+        n = len(sub)
+        wins = int((sub["realized_pnl"] > 0).sum()) if "realized_pnl" in sub.columns else 0
+        losses = n - wins
+        wr = wins / n if n else 0.0
+        od = sub["open_date"].dropna().min() if "open_date" in sub.columns else None
+        cd = sub["close_date"].dropna().max() if "close_date" in sub.columns else None
+        days_mean = 0.0
+        for _, er in sub.iterrows():
+            o = er.get("open_date")
+            c = er.get("close_date")
+            if pd.notna(o) and pd.notna(c):
+                try:
+                    days_mean += (pd.to_datetime(c) - pd.to_datetime(o)).days
+                except Exception:
+                    pass
+        if n:
+            days_mean = round(days_mean / n, 1)
+        avg_pnl = real / n if n else 0.0
+        return {
+            "account": acct,
+            "symbol": symbol,
+            "strategy": lbl,
+            "status": "Closed",
+            "total_pnl": round(real, 2),
+            "realized_pnl": round(real, 2),
+            "unrealized_pnl": 0.0,
+            "total_premium_received": 0.0,
+            "total_premium_paid": 0.0,
+            "num_trade_groups": n,
+            "num_individual_trades": n,
+            "num_winners": wins,
+            "num_losers": losses,
+            "win_rate": wr,
+            "avg_pnl_per_trade": round(avg_pnl, 2),
+            "avg_days_in_trade": days_mean,
+            "first_trade_date": od,
+            "last_trade_date": cd,
+            "total_dividend_income": 0.0,
+            "dividend_count": 0,
+            "total_return": round(real, 2),
+        }
+
+    extra: list[dict] = []
+
+    if closed_legs_df is not None and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
+        g = closed_legs_df.copy()
+        g = g[g["strategy"].notna() & (g["strategy"].astype(str).str.strip() != "")]
+        for (acct, strat), sub in g.groupby(
+            [g["account"].astype(str), g["strategy"].astype(str)]
+        ):
+            acct, strat = str(acct).strip(), str(strat).strip()
+            if (acct, strat) in existing:
+                continue
+            extra.append(_row_from_option_group(acct, strat, sub))
+            existing.add((acct, strat))
+
+    if closed_equity_df is not None and not closed_equity_df.empty and "account" in closed_equity_df.columns:
+        g = closed_equity_df.copy()
+        lbl_col = "description" if "description" in g.columns else None
+        if lbl_col:
+            g["_strat_lbl"] = g[lbl_col].fillna("Equity").astype(str).str.strip()
+            g.loc[g["_strat_lbl"] == "", "_strat_lbl"] = "Equity"
+        else:
+            g["_strat_lbl"] = "Equity"
+        for (acct, slbl), sub in g.groupby(
+            [g["account"].astype(str), g["_strat_lbl"]]
+        ):
+            acct, slbl = str(acct).strip(), str(slbl).strip() or "Equity"
+            if (acct, slbl) in existing:
+                continue
+            sub = sub.drop(columns=["_strat_lbl"], errors="ignore")
+            extra.append(_row_from_equity_group(acct, slbl, sub))
+            existing.add((acct, slbl))
+
+    if not extra:
+        return summary_df if summary_df is not None else pd.DataFrame()
+
+    extra_df = pd.DataFrame(extra)
+    if summary_df is None or summary_df.empty:
+        out = extra_df
+    else:
+        extra_df = extra_df.reindex(columns=list(summary_df.columns))
+        out = pd.concat([summary_df, extra_df], ignore_index=True)
+
+    if "status" in out.columns:
+        _open = out["status"].astype(str).str.lower().eq("open")
+        out = out.assign(_o=_open)
+        if "total_return" in out.columns:
+            out = out.sort_values(["_o", "total_return"], ascending=[False, False])
+        else:
+            out = out.sort_values("_o", ascending=False)
+        out = out.drop(columns=["_o"])
+    return out
+
+
 # Pre-aggregated daily P&L data for chart rendering (single symbol)
 CHART_DATA_QUERY = """
     SELECT *
@@ -1378,8 +1541,18 @@ def position_detail(symbol):
             "last_trade": last_trade,
         }
 
-    # Strategy rows — filter by leg date range when active
-    strategy_rows = summary_df.to_dict(orient="records") if not summary_df.empty else []
+    # Strategy rows: positions_summary plus any (account, strategy) seen in closed legs
+    # but missing from the mart, so open + closed strategies all appear.
+    _cl_for_strat = closed_legs_pre_leg if not leg_param else closed_legs_df
+    _eq_for_strat = closed_equity_pre_leg if not leg_param else closed_equity_df
+    merged_strategy_df = _merge_position_strategy_breakdown(
+        safe_symbol, summary_df, _cl_for_strat, _eq_for_strat
+    )
+    strategy_rows = (
+        merged_strategy_df.to_dict(orient="records")
+        if not merged_strategy_df.empty
+        else []
+    )
 
     # Build chart data from pre-aggregated mart_daily_pnl
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}

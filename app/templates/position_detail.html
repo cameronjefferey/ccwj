@@ -110,31 +110,68 @@
     {% endif %}
 </div>
 
-{# ── Position Narrative ── #}
+{# ── Position Narrative (open = snapshot; history = all trades) ── #}
 {% if kpis %}
+{% set open_strats = strategy_rows | selectattr('status', 'equalto', 'Open') | list if strategy_rows else [] %}
 <div class="mb-4 p-4" style="background:#fff; border-radius:16px; box-shadow:0 2px 16px rgba(0,0,0,.05);">
-    <p class="narrative mb-0" style="font-size:1.05rem; line-height:1.7;">
-        You've been trading <strong>{{ symbol }}</strong>
-        {% if strategy_rows|length == 1 %}using <strong>{{ strategy_rows[0].strategy }}</strong>{% elif strategy_rows|length > 1 %}across {{ strategy_rows|length }} strategies ({% for s in strategy_rows[:3] %}{{ s.strategy }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade %} since {{ kpis.first_trade }}{% endif %}.
-        {% if kpis.total_trades > 0 %}{{ kpis.total_trades }} individual trade{{ 's' if kpis.total_trades != 1 }}{% if kpis.num_winners + kpis.num_losers > 0 %} — {{ kpis.num_winners }}W / {{ kpis.num_losers }}L{% endif %}.{% endif %}
-        {% if kpis.avg_days > 0 %}Average hold: {{ kpis.avg_days|int }} days.{% endif %}
-        {% if overall_status == 'Open' %}
-            {% if kpis.unrealized_pnl >= 0 %}
-            Currently sitting on <strong class="text-positive">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> in unrealized gains.
-            {% else %}
-            Currently <strong class="text-negative">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> underwater.
-            {% endif %}
-        {% elif overall_status == 'Closed' %}
-            {% if kpis.total_return >= 0 %}
-            This position is closed with a <strong class="text-positive">${{ "{:,.2f}".format(kpis.total_return) }}</strong> total return.
-            {% else %}
-            This position is closed at a <strong class="text-negative">${{ "{:,.2f}".format(kpis.total_return) }}</strong> loss.
-            {% endif %}
+    {% if overall_status == 'Open' %}
+    <p class="narrative mb-2" style="font-size:1.05rem; line-height:1.7;">
+        <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">Open</span><br>
+        Your current <strong>{{ symbol }}</strong> book
+        {% if open_strats|length == 1 %}
+        is <strong>{{ open_strats[0].strategy }}</strong>
+        {% elif open_strats|length > 1 %}
+        is split across
+        {% for s in open_strats %}<strong>{{ s.strategy }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+        {% else %}
+        is open
         {% endif %}
+        .
+        {% if kpis.unrealized_pnl >= 0 %}
+        You’re <strong class="text-positive">up ${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> unrealized
+        {% else %}
+        You’re <strong class="text-negative">down ${{ "{:,.2f}".format(-kpis.unrealized_pnl) }}</strong> unrealized
+        {% endif %}
+        (mark-to-market on what’s still open).
+    </p>
+    <p class="narrative mb-0 text-muted" style="font-size:1.02rem; line-height:1.65;">
+        <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">History</span><br>
+        Across everything you’ve done in <strong>{{ symbol }}</strong>
+        {%- if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade -%}
+        , from <strong>{{ kpis.first_trade[:10] }}</strong> through <strong>{{ kpis.last_trade[:10] }}</strong>
+        {%- endif -%}
+        {%- if kpis.total_trades > 0 -%}
+        : <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}
+        {%- if kpis.num_winners + kpis.num_losers > 0 -%}
+        (closed legs: <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong>)
+        {%- endif -%}.
+        {%- else -%}.
+        {%- endif %}
+        {% if kpis.avg_days > 0 %}Average time in trade (where we have it): {{ kpis.avg_days|int }} days.{% endif %}
         {% if kpis.premium_collected > 0 %}
-        You've collected <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong> in premium along the way.
+        Premium collected over time: <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong>.
         {% endif %}
     </p>
+    {% else %}
+    <p class="narrative mb-0" style="font-size:1.05rem; line-height:1.7;">
+        Your work in <strong>{{ symbol }}</strong> is fully closed
+        {%- if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade -%}
+        (roughly <strong>{{ kpis.first_trade[:10] }}</strong> — <strong>{{ kpis.last_trade[:10] }}</strong>)
+        {%- endif -%}
+        {%- if kpis.total_trades > 0 -%}
+        with <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}{% if kpis.num_winners + kpis.num_losers > 0 %} and <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed legs{% endif %}.
+        {%- else -%}.
+        {%- endif %}
+        {% if kpis.total_return >= 0 %}
+        Net result: <strong class="text-positive">${{ "{:,.2f}".format(kpis.total_return) }}</strong> total return.
+        {% else %}
+        Net result: <strong class="text-negative">${{ "{:,.2f}".format(-kpis.total_return) }}</strong> loss.
+        {% endif %}
+        {% if kpis.premium_collected > 0 %}
+        Premium collected: <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong>.
+        {% endif %}
+    </p>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -256,7 +293,8 @@
 {# ── Strategy Breakdown ── #}
 {% if strategy_rows %}
 <div class="card stat-card p-4 mb-4">
-    <h6 class="fw-bold mb-3">Strategy Breakdown</h6>
+    <h6 class="fw-bold mb-1">Strategy Breakdown</h6>
+    <p class="text-muted small mb-3">Every strategy label you’ve used for this symbol—<strong>Open</strong> is what’s live now; <strong>Closed</strong> is historical only.</p>
     {% set colors = {
         'Covered Call': '#0d6efd', 'Cash-Secured Put': '#6f42c1',
         'Wheel': '#fd7e14', 'Buy and Hold': '#198754',
@@ -306,7 +344,13 @@
                         ${{ "{:,.2f}".format(r.unrealized_pnl) }}
                     </td>
                     <td>{{ "{:.0%}".format(r.win_rate) }}</td>
-                    <td>{{ r.num_individual_trades | int }}</td>
+                    <td>
+                        {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
+                        <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
+                        {% else %}
+                        {{ r.num_individual_trades | int }}
+                        {% endif %}
+                    </td>
                     <td class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(r.avg_pnl_per_trade) }}
                     </td>
