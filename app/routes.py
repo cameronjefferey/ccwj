@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, Response, flash
+from flask import render_template, request, redirect, url_for, Response, flash, abort
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import login_required, current_user
 from app import app
@@ -406,9 +406,10 @@ FEATURES = {
 @app.route("/features/<slug>")
 def feature_detail(slug):
     """Feature detail page with demo and value prop."""
+    if slug == "ai-trading-insights" and not app.config.get("INSIGHTS_ENABLED", True):
+        abort(404)
     feature = FEATURES.get(slug)
     if not feature:
-        from flask import abort
         abort(404)
     return render_template(
         "features/detail.html",
@@ -441,6 +442,8 @@ def sitemap():
         ("/faq", "monthly", "0.7"),
     ]
     for slug in FEATURES:
+        if slug == "ai-trading-insights" and not app.config.get("INSIGHTS_ENABLED", True):
+            continue
         pages.append((f"/features/{slug}", "monthly", "0.7"))
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     for path, freq, prio in pages:

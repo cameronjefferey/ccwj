@@ -51,6 +51,15 @@ if _sentry_dsn:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+
+@app.context_processor
+def _inject_feature_flags():
+    from flask import current_app
+    return {
+        "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
+    }
+
+
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)

@@ -169,6 +169,7 @@
             <p>Covered Call, Cash-Secured Put, Wheel, spreads, Buy and Hold—all classified automatically from your trade data.</p>
         </a>
     </div>
+    {% if insights_enabled %}
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='ai-trading-insights') }}" class="card feature-card">
             <div class="feature-icon" style="background:rgba(111,66,193,.12); color:#6f42c1">
@@ -181,7 +182,7 @@
             <p>Get a personalized analysis of your style, strengths, and weaknesses—with actionable suggestions to improve.</p>
         </a>
     </div>
-    
+    {% endif %}
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='performance-charts') }}" class="card feature-card">
             <div class="feature-icon" style="background:rgba(253,126,20,.12); color:#fd7e14">

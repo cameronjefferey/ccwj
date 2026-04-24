@@ -33,6 +33,7 @@ def app():
     flask_app.config["WTF_CSRF_ENABLED"] = False
     flask_app.config["RATELIMIT_ENABLED"] = False
     flask_app.config["SESSION_IDLE_TIMEOUT_MINUTES"] = 0
+    flask_app.config["INSIGHTS_ENABLED"] = True
     return flask_app
 
 

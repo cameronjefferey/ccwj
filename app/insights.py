@@ -4,7 +4,7 @@ from google import genai
 from google.genai import types
 import pandas as pd
 import markupsafe
-from flask import render_template, request, redirect, url_for, flash, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_login import login_required, current_user
 from google.cloud import bigquery as bq
 
@@ -566,6 +566,18 @@ def _get_user_accounts(selected_account=""):
 # ------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------
+
+_INSIGHTS_ENDPOINTS = frozenset({"insights", "generate_insights", "insights_ask"})
+
+
+@app.before_request
+def _require_insights_feature():
+    if app.config.get("INSIGHTS_ENABLED", True):
+        return None
+    if request.endpoint in _INSIGHTS_ENDPOINTS:
+        abort(404)
+    return None
+
 
 @app.route("/insights")
 @login_required

@@ -390,6 +390,17 @@
 </div>
 {% endif %}
 
+{% if week_mart_empty %}
+<div class="alert alert-warning small mb-3" role="status">
+    <strong>Data:</strong> There is <strong>no weekly summary row</strong> in analytics yet for
+    this calendar week (week of {{ week_start }} · {{ user_timezone|replace('_', ' ') }}). The job may not have run, or the week is new.
+    Some sections will show &ldquo;—&rdquo; until the pipeline catches up.
+    {% if last_activity_week %}
+    <span class="d-block mt-1 text-muted">Most recent week with trades in the summary mart: <strong>week of {{ last_activity_week }}</strong>.</span>
+    {% endif %}
+</div>
+{% endif %}
+
 {# ════════════════════════════════════
    HERO
    ════════════════════════════════════ #}
@@ -414,9 +425,12 @@
 
     <div class="hero-meta">
         Week of {{ week_start }} &mdash; {{ week_end }}
-        {% if trading_days %}<span class="badge bg-dark ms-2" style="font-size:.7rem">{{ trading_days }} trading day{{ 's' if trading_days != 1 else '' }}</span>{% endif %}
-        {% if not market_open_today %}<span class="badge bg-warning text-dark ms-2" style="font-size:.7rem">Market closed today</span>{% endif %}
-        {% if is_backfilled %}<span class="badge bg-secondary ms-2" style="font-size:.7rem">Most recent active week</span>{% endif %}
+        <span class="text-muted">·</span>
+        <span class="text-muted" style="font-size:.75rem" title="Profile → Settings: timezone for week boundaries and which day drives Friday / Monday / mid-week.">Today&rsquo;s date: <strong class="text-body-secondary">{{ today }}</strong> ({{ user_timezone|replace('_', ' ') }})</span>
+        {% if trading_days %}<span class="badge bg-dark ms-2" style="font-size:.7rem">{{ trading_days }} trading day{{ 's' if trading_days != 1 else '' }} (SPY in range)</span>{% endif %}
+        {% if market_session %}
+        <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %} ms-2" style="font-size:.7rem" title="{{ market_session.label }}">U.S. market: {{ market_session.state|replace('_', ' ') }}</span>
+        {% endif %}
     </div>
 </div>
 
@@ -461,10 +475,10 @@
                 <div class="snap-value text-muted">—</div>
                 {% endif %}
             </div>
-            {# vs Start of Week #}
+            {# vs Start of week (same Mon–Sun range as the hero) #}
             {% set sw = snap.vs_week_start %}
             <div class="snap-cell">
-                <div class="snap-label">vs Mon Open</div>
+                <div class="snap-label" title="Change since start-of-week value for the week of {{ week_start }}">vs week start</div>
                 {% if sw and sw.has_data and sw.delta is not none %}
                 <div class="snap-value {% if sw.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if sw.delta >= 0 else "" }}${{ "{:,.0f}".format(sw.delta) }}
@@ -559,7 +573,13 @@
             <div class="mc-pct {% if your_week.acct_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
                 {% if your_week.acct_pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.acct_pct }}%
             </div>
-            <div class="mc-sub">this week</div>
+            <div class="mc-sub">Total account % · week of {{ week_start }}</div>
+        </div>
+        {% elif week_mart_empty %}
+        <div class="mc-col you">
+            <div class="mc-ticker">You</div>
+            <div class="mc-pct text-muted">&mdash;</div>
+            <div class="mc-sub">No weekly return in data yet</div>
         </div>
         {% endif %}
         {# SPY #}
@@ -587,6 +607,11 @@
         </div>
         {% endif %}
     </div>
+    <p class="small text-muted mb-0 mt-2" style="font-size:.78rem">
+        <strong>You</strong> = combined portfolio % from your analytics mart for the same Monday-start week as the hero.
+        <strong>SPY / QQQ</strong> = index move from that week&rsquo;s first close through the latest close in the feed (not identical to a live quote).
+        <strong>vs week start</strong> in the table above = account value change vs that week&rsquo;s modeled start; it can disagree with the index row if you traded or if timing differs.
+    </p>
 </div>
 {% endif %}
 
@@ -1063,7 +1088,9 @@
         {% endfor %}
     </div>
     {% endif %}
+    {% if insights_enabled %}
     <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="small d-block mt-2">Full coaching analysis &rarr;</a>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -1161,6 +1188,7 @@
 {% endif %}
 
 {# ── AI insight ── #}
+{% if insights_enabled %}
 {% if ai_insight %}
 <div class="review-section">
     <div class="section-label">AI Observation</div>
@@ -1176,6 +1204,7 @@
     <p class="text-muted mb-2" style="font-size:.9rem">No AI analysis generated yet.</p>
     <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-secondary">Generate Insights</a>
 </div>
+{% endif %}
 {% endif %}
 
 

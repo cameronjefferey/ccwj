@@ -7,7 +7,8 @@ Weekly Review — temporal hub with three modes:
 
 Reads pre-aggregated data from mart_weekly_summary where possible.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from flask import render_template, request
 from flask_login import login_required, current_user
 from app import app
@@ -542,7 +543,7 @@ def _detect_patterns(client, account_filter, week_start, week_end):
 
 
 def _build_narrative(mode, review, prev_review, behavior_mirror, market,
-                     today, week_start, trading_days=0, market_open_today=True):
+                     today, week_start, trading_days=0, market_session=None):
     """Generate a dynamic hero headline + subtitle from actual data."""
     review = review or {}
     bm = behavior_mirror or {}
@@ -677,9 +678,14 @@ def _build_narrative(mode, review, prev_review, behavior_mirror, market,
             )
         else:
             headline = f"{td_label} \u00b7 No closed trades yet"
-        subtitle = "Mid-week check. Are you trading your plan, or reacting to the market?"
-        if not market_open_today:
-            subtitle = "Market closed today. " + subtitle
+        prefix = ""
+        if market_session:
+            st = market_session.get("state")
+            if st == "weekend":
+                prefix = "U.S. markets are closed (weekend). "
+            elif st == "pre_market":
+                prefix = "Before the U.S. open. "
+        subtitle = prefix + "Mid-week check. Are you trading your plan, or reacting to the market?"
         return {
             "headline": headline,
             "subtitle": subtitle,
@@ -815,9 +821,55 @@ def _iso_week_start(d):
     return d - timedelta(days=d.weekday())
 
 
-def _auto_mode():
-    """Auto-detect mode from day of week."""
-    dow = date.today().weekday()
+def _date_in_user_tz(tz_name: str) -> date:
+    """Today’s calendar date in the user’s profile timezone (defaults to New York)."""
+    raw = (tz_name or "").strip() or "America/New_York"
+    try:
+        z = ZoneInfo(raw)
+    except Exception:
+        z = ZoneInfo("America/New_York")
+    return datetime.now(z).date()
+
+
+def _us_market_session():
+    """
+    U.S. cash equity regular session, America/New_York. Mon–Fri 9:30–16:00.
+    No NYSE holiday calendar in this pass; holidays may still show 'pre_market' before open.
+    """
+    et = ZoneInfo("America/New_York")
+    now = datetime.now(et)
+    w = now.weekday()
+    if w >= 5:
+        return {
+            "state": "weekend",
+            "label": "U.S. markets closed (weekend) · times in ET",
+            "badge": "weekend",
+        }
+    t = now.time()
+    o, c = time(9, 30), time(16, 0)
+    time_h = now.strftime("%a %I:%M %p %Z")
+    if t < o:
+        return {
+            "state": "pre_market",
+            "label": f"Before U.S. open (9:30 ET) · {time_h}",
+            "badge": "pre_market",
+        }
+    if t > c:
+        return {
+            "state": "after_hours",
+            "label": f"After U.S. close (4:00 ET) · {time_h}",
+            "badge": "after_hours",
+        }
+    return {
+        "state": "open",
+        "label": f"U.S. regular session (9:30–4:00 ET) · {time_h}",
+        "badge": "open",
+    }
+
+
+def _auto_mode(today: date) -> str:
+    """Auto-detect mode from day of week in the user’s local calendar (profile TZ)."""
+    dow = today.weekday()
     if dow == 0:
         return "monday"
     if dow >= 4:
@@ -910,20 +962,24 @@ def weekly_review():
 
     account_filter = _account_sql_and(effective_accounts)
 
-    mode = request.args.get("mode") or _auto_mode()
+    prof = get_user_profile(current_user.id) or {}
+    user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
+    today = _date_in_user_tz(user_tz)
+    this_week = _iso_week_start(today)
+
+    mode = request.args.get("mode") or _auto_mode(today)
     if mode not in ("friday", "monday", "midweek"):
-        mode = _auto_mode()
+        mode = _auto_mode(today)
 
     from_upload = request.args.get("from_upload") == "1"
-
-    today = date.today()
-    this_week = _iso_week_start(today)
 
     context = {
         "title": "Weekly Review",
         "mode": mode,
         "week_start": this_week,
         "week_end": this_week + timedelta(days=6),
+        "user_timezone": user_tz,
+        "today": today,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
         "error": None,
@@ -935,6 +991,9 @@ def weekly_review():
         "opens_this_week": None,
         "ai_insight": None,
         "is_backfilled": False,
+        "week_mart_empty": False,
+        "last_activity_week": None,
+        "market_session": None,
         "market": None,
         "equity_snapshot": None,
         "trades_this_week": [],
@@ -963,42 +1022,33 @@ def weekly_review():
         if not combined_df.empty and "week_start" in combined_df.columns:
             combined_df["week_start"] = pd.to_datetime(combined_df["week_start"]).dt.date
             this_rows = combined_df[combined_df["week_start"] == this_week]
-            has_current = not this_rows.empty and (
-                int(this_rows.iloc[0].get("trades_closed", 0) or 0)
-                + int(this_rows.iloc[0].get("trades_opened", 0) or 0) > 0
-            )
         else:
             this_rows = pd.DataFrame()
-            has_current = False
 
-        if not has_current:
-            latest_df = client.query(
-                LATEST_ACTIVE_WEEK_QUERY.format(account_filter=account_filter)
-            ).to_dataframe()
-            if not latest_df.empty and pd.notna(latest_df.iloc[0]["latest_week"]):
-                lw = latest_df.iloc[0]["latest_week"]
-                if hasattr(lw, "date"):
-                    lw = lw.date()
-                elif not isinstance(lw, date):
-                    lw = date.fromisoformat(str(lw)[:10])
-                this_week = lw
-                prev_week = this_week - timedelta(days=7)
-                context["week_start"] = this_week
-                context["week_end"] = this_week + timedelta(days=6)
-                context["is_backfilled"] = True
-
-                # Re-fetch for the corrected week pair
-                combined_cfg2 = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ArrayQueryParameter("week_starts", "DATE", [this_week, prev_week]),
-                    ]
-                )
-                combined_df = client.query(
-                    WEEKLY_SUMMARY_COMBINED_QUERY.format(account_filter=account_filter),
-                    job_config=combined_cfg2,
+        # No row in mart_weekly_summary for *this* calendar week (pipe lag / new week).
+        # A row with zero trades is still "we have a week" — do not conflate with empty.
+        has_mart_row_for_week = not this_rows.empty
+        # Do not replace the visible week with "latest week in mart" — that caused
+        # snapshot / return / labels to point at different weeks. Show the calendar
+        # week in the user’s TZ; show a banner only when there is no week row at all.
+        context["week_mart_empty"] = not has_mart_row_for_week
+        context["last_activity_week"] = None
+        if not has_mart_row_for_week:
+            try:
+                latest_df = client.query(
+                    LATEST_ACTIVE_WEEK_QUERY.format(account_filter=account_filter)
                 ).to_dataframe()
-                if not combined_df.empty and "week_start" in combined_df.columns:
-                    combined_df["week_start"] = pd.to_datetime(combined_df["week_start"]).dt.date
+                if not latest_df.empty and pd.notna(latest_df.iloc[0]["latest_week"]):
+                    lw = latest_df.iloc[0]["latest_week"]
+                    if hasattr(lw, "date"):
+                        lw = lw.date()
+                    elif not isinstance(lw, date):
+                        lw = date.fromisoformat(str(lw)[:10])
+                    context["last_activity_week"] = lw
+            except Exception:
+                pass
+        context["week_start"] = this_week
+        context["week_end"] = this_week + timedelta(days=6)
 
         # Split combined result into this_week and prev_week
         if not combined_df.empty and "week_start" in combined_df.columns:
@@ -1057,22 +1107,20 @@ def weekly_review():
         # Market performance (SPY, QQQ) for comparison
         context["market"] = _get_market_performance(this_week, today)
 
-        # ── Process: Trading days & market status ──
+        # U.S. session (Eastern) — not inferred from "latest price date" in BQ
+        context["market_session"] = _us_market_session()
+        context["market_open_today"] = context["market_session"]["state"] == "open"
+
+        # ── Process: Trading days (count in this calendar week) ──
         try:
             td_df = batch.get("trading_days", pd.DataFrame())
             if not td_df.empty:
                 row = td_df.iloc[0]
                 context["trading_days"] = int(row.get("trading_days", 0) or 0)
-                last_td = row.get("last_trading_date")
-                if last_td is not None and not isinstance(last_td, date):
-                    last_td = date.fromisoformat(str(last_td)[:10])
-                context["market_open_today"] = (last_td == today) if last_td else False
             else:
                 context["trading_days"] = 0
-                context["market_open_today"] = False
         except Exception:
             context["trading_days"] = 0
-            context["market_open_today"] = True
 
         # ── Process: Account value ──
         try:
@@ -1641,6 +1689,10 @@ def weekly_review():
     except Exception as e:
         context["error"] = str(e)
 
+    if context.get("market_session") is None:
+        context["market_session"] = _us_market_session()
+        context["market_open_today"] = context["market_session"]["state"] == "open"
+
     context["narrative"] = _build_narrative(
         mode=mode,
         review=context.get("review"),
@@ -1650,7 +1702,7 @@ def weekly_review():
         today=today,
         week_start=this_week,
         trading_days=context.get("trading_days", 0),
-        market_open_today=context.get("market_open_today", True),
+        market_session=context.get("market_session"),
     )
     context["key_observation"] = _key_observation(
         review=context.get("review"),

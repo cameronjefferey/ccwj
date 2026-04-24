@@ -60,10 +60,12 @@
         <nav class="d-flex flex-wrap align-items-center gap-2 mb-4">
             <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">&larr; Home</a>
             {% for s, f in all_features.items() %}
+            {% if s != 'ai-trading-insights' or insights_enabled %}
             <a href="{{ url_for('feature_detail', slug=s) }}"
                class="btn btn-sm {{ 'btn-primary' if s == current_slug else 'btn-outline-secondary' }}">
                 {{ f.title }}
             </a>
+            {% endif %}
             {% endfor %}
         </nav>
 

@@ -101,51 +101,52 @@
             {% if current_user.is_authenticated %}
             {% set ep = request.endpoint or '' %}
             {% set selected_account = request.args.get('account', '') %}
+            {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
                        href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Review</a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if ep == 'symbols_detail' %}active{% endif %}"
-                       href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily Detail</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if ep == 'positions' %}active{% endif %}"
-                       href="{{ url_for('positions', account=selected_account) if selected_account else url_for('positions') }}">Positions</a>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
+                       id="navPortfolio" data-bs-toggle="dropdown" aria-expanded="false">Portfolio</a>
+                    <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navPortfolio">
+                        <li>
+                            <a class="dropdown-item {% if ep == 'positions' %}active{% endif %}"
+                               href="{{ url_for('positions', account=selected_account) if selected_account else url_for('positions') }}">Positions</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'symbols_detail' %}active{% endif %}"
+                               href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily detail</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
+                               href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
+                        </li>
+                    </ul>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'strategies' %}active{% endif %}"
                        href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% if ep == 'accounts' %}active{% endif %}"
-                       href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
-                </li>
-                <li class="nav-item">
                     <a class="nav-link {% if ep == 'community' %}active{% endif %}"
                        href="{{ url_for('community') }}">Wall</a>
                 </li>
+                {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
                        href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">Coach</a>
                 </li>
+                {% endif %}
             </ul>
             <ul class="navbar-nav align-items-center">
-                <li class="nav-item me-2">
-                    <a class="btn btn-sm btn-outline-light px-3" href="{{ url_for('upload') }}">
-                        Upload &amp; Refresh
-                    </a>
-                </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle text-white-50" href="#" id="userMenu"
-                       data-bs-toggle="dropdown" aria-expanded="false">{{ current_user.username }}</a>
+                       data-bs-toggle="dropdown" aria-expanded="false">Profile</a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="userMenu">
                         <li>
-                            <a class="dropdown-item {% if ep == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">Profile &amp; settings</a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'community' %}active{% endif %}" href="{{ url_for('community') }}">The Wall</a>
+                            <a class="dropdown-item {% if ep == 'profile' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Settings</a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
@@ -228,8 +229,11 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.querySelectorAll('#navContent .nav-link').forEach(function(link) {
+        document.querySelectorAll('#navContent .nav-link, #navContent .dropdown-item').forEach(function(link) {
             link.addEventListener('click', function() {
+                if (link.classList.contains('dropdown-toggle')) {
+                    return;
+                }
                 var collapse = document.getElementById('navContent');
                 if (collapse && collapse.classList.contains('show') && typeof bootstrap !== 'undefined') {
                     var inst = bootstrap.Collapse.getInstance(collapse);

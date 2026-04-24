@@ -126,6 +126,8 @@ def profile():
             default_route = (request.form.get("default_route") or "weekly_review").strip()
             if default_route not in _ALLOWED_DEFAULT_ROUTE:
                 default_route = "weekly_review"
+            if default_route == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
+                default_route = "weekly_review"
             digest_email = request.form.get("digest_email") == "on"
             compact_tables = request.form.get("compact_tables") == "on"
             if not update_user_profile(
@@ -146,6 +148,9 @@ def profile():
             return redirect(url_for("profile", tab="preferences"))
 
     prof = get_user_profile(current_user.id)
+    profile_row = prof
+    if prof and (prof.get("default_route") or "") == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
+        profile_row = {**prof, "default_route": "weekly_review"}
     accounts = get_accounts_for_user(current_user.id)
     recent_uploads = get_uploads_for_user(current_user.id)
     schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
@@ -166,11 +171,15 @@ def profile():
     show_names = bool(prof.get("show_account_names_on_published")) if prof else False
     published_count = count_published_trades(current_user.id)
 
+    routes = sorted(_ALLOWED_DEFAULT_ROUTE)
+    if not app.config.get("INSIGHTS_ENABLED", True):
+        routes = [r for r in routes if r != "insights"]
+
     return render_template(
         "profile.html",
         title="Who you are",
         tab=tab,
-        profile_row=prof,
+        profile_row=profile_row,
         accounts=accounts,
         recent_uploads=recent_uploads,
         schwab_enabled=schwab_enabled,
@@ -183,7 +192,7 @@ def profile():
         my_published_trades=my_published,
         published_count=published_count,
         accent_presets=sorted(_ALLOWED_ACCENTS),
-        default_routes=sorted(_ALLOWED_DEFAULT_ROUTE),
+        default_routes=routes,
     )
 
 

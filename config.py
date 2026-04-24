@@ -49,6 +49,10 @@ class Config:
     _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
     SESSION_IDLE_TIMEOUT_MINUTES = max(0, _idle_min)
 
+    # /insights (Coach) UI: off by default; set INSIGHTS_ENABLED=1 in .env to show nav + /insights*.
+    # Tests force-enable in conftest.
+    INSIGHTS_ENABLED = _env_bool("INSIGHTS_ENABLED", "false")
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024

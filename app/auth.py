@@ -6,6 +6,23 @@ from app import app
 from app.extensions import limiter
 from app.models import User, get_accounts_for_user, get_user_profile
 
+# Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
+_LANDING = {
+    "weekly_review": "weekly_review",
+    "positions": "positions",
+    "strategies": "strategies",
+    "insights": "insights",
+    "accounts": "accounts",
+    "symbols": "symbols_detail",
+}
+
+
+def _landing_endpoint(prof) -> str:
+    dr = ((prof or {}).get("default_route") or "weekly_review").strip()
+    if dr == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
+        dr = "weekly_review"
+    return _LANDING.get(dr, "weekly_review")
+
 
 @app.route("/login", methods=["GET", "POST"])
 @limiter.limit("20 per minute")
@@ -33,16 +50,7 @@ def login():
                 next_page = url_for("get_started")
             else:
                 prof = get_user_profile(user.id) or {}
-                dr = (prof.get("default_route") or "weekly_review").strip()
-                landing = {
-                    "weekly_review": "weekly_review",
-                    "positions": "positions",
-                    "strategies": "strategies",
-                    "insights": "insights",
-                    "accounts": "accounts",
-                    "symbols": "symbols_detail",
-                }.get(dr, "weekly_review")
-                next_page = url_for(landing)
+                next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
     return render_template("login.html", title="Login")
@@ -91,16 +99,7 @@ def signup():
             next_page = url_for("get_started")
         else:
             prof = get_user_profile(user.id) or {}
-            dr = (prof.get("default_route") or "weekly_review").strip()
-            landing = {
-                "weekly_review": "weekly_review",
-                "positions": "positions",
-                "strategies": "strategies",
-                "insights": "insights",
-                "accounts": "accounts",
-                "symbols": "symbols_detail",
-            }.get(dr, "weekly_review")
-            next_page = url_for(landing)
+            next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
     return render_template("signup.html", title="Sign Up")
