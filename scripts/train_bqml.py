@@ -52,6 +52,10 @@ SQL_DIR = REPO_ROOT / "scripts" / "bqml"
 # default region (e.g. us-west1) and fails with 404 Dataset not found.
 BQ_LOCATION = os.environ.get("BQ_LOCATION", "US")
 
+# Dataset that holds all BQML artifacts the script creates. Kept separate
+# from `analytics` so a dbt full-refresh never wipes the trained model.
+BQML_DATASET = os.environ.get("BQML_DATASET", "ml_models")
+
 STATEMENTS = [
     ("account_behavior_model (CREATE OR REPLACE MODEL)", "01_account_behavior_model.sql"),
     ("trade_anomaly_scores (CREATE OR REPLACE VIEW)",   "02_trade_anomaly_scores.sql"),
@@ -66,10 +70,45 @@ def _load_sql(filename: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _ensure_dataset(client, dataset_id: str, location: str) -> None:
+    """Create the ml_models dataset in the right location if it doesn't exist.
+
+    Idempotent: NotFound -> create; already-exists -> no-op. Keeps CI from
+    needing a one-time out-of-band setup step."""
+    from google.cloud import bigquery  # local import avoids top-level dep
+    from google.api_core.exceptions import NotFound
+
+    full_id = f"{client.project}.{dataset_id}"
+    try:
+        ds = client.get_dataset(full_id)
+        if (ds.location or "").upper() != location.upper():
+            raise RuntimeError(
+                f"Dataset {full_id} exists in location {ds.location!r}, "
+                f"expected {location!r}. Refusing to proceed — move or "
+                f"recreate it manually to avoid cross-region joins."
+            )
+        log.info("Dataset %s already exists in %s", full_id, ds.location)
+        return
+    except NotFound:
+        pass
+
+    ref = bigquery.Dataset(full_id)
+    ref.location = location
+    ref.description = (
+        "BQML artifacts trained nightly by scripts/train_bqml.py. "
+        "Isolated from `analytics` so dbt full-refresh doesn't wipe "
+        "the trained model."
+    )
+    client.create_dataset(ref, exists_ok=True)
+    log.info("Created dataset %s in %s", full_id, location)
+
+
 def main() -> int:
     client = get_bigquery_client()
     log.info("BigQuery client ready (project=%s, location=%s)",
              client.project, BQ_LOCATION)
+
+    _ensure_dataset(client, BQML_DATASET, BQ_LOCATION)
 
     for label, filename in STATEMENTS:
         sql = _load_sql(filename)
