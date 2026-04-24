@@ -252,9 +252,26 @@
     }
     .cm-picker-x:hover { background: #f5f5f4; color: #1c1917; }
 
+    .cm-picker-tabs {
+        display: flex; gap: .25rem; padding: .6rem .8rem 0; border-bottom: 1px solid #f5f5f4;
+    }
+    .cm-tab {
+        background: transparent; border: none; padding: .55rem .9rem .7rem;
+        font-size: .84rem; font-weight: 700; color: #78716c; cursor: pointer;
+        border-bottom: 2px solid transparent; margin-bottom: -1px;
+        display: inline-flex; align-items: center; gap: .4rem;
+    }
+    .cm-tab:hover { color: #1c1917; }
+    .cm-tab.is-active { color: #5b21b6; border-bottom-color: #8b5cf6; }
+    .cm-tab-count {
+        font-size: .68rem; font-weight: 700; padding: .1rem .45rem;
+        border-radius: 999px; background: #f5f5f4; color: #78716c;
+    }
+    .cm-tab.is-active .cm-tab-count { background: #ede9fe; color: #5b21b6; }
+
     .cm-picker-filters {
         display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
-        padding: .9rem 1.3rem; border-bottom: 1px solid #f5f5f4;
+        padding: .75rem 1.3rem; border-bottom: 1px solid #f5f5f4;
     }
     .cm-picker-filters input[type="search"] {
         flex: 1; min-width: 140px; border: 1px solid #e7e5e4; border-radius: 999px;
@@ -292,6 +309,49 @@
     .cm-trade-status.open { background: #dbeafe; color: #1d4ed8; }
     .cm-trade-status.closed { background: #dcfce7; color: #15803d; }
     .cm-trade-shared-tag { font-size: .68rem; color: #6f42c1; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+
+    /* Strategy rows */
+    .cm-strat-row {
+        width: 100%; text-align: left; background: #fff; border: 1px solid transparent;
+        border-bottom: 1px solid #f5f5f4; border-radius: 10px;
+        padding: .7rem .85rem; cursor: pointer; display: flex; align-items: center;
+        justify-content: space-between; gap: .75rem; transition: background .12s;
+    }
+    .cm-strat-row:hover { background: #faf5ff; border-color: #e7e5e4; }
+    .cm-strat-left { min-width: 0; }
+    .cm-strat-head { display: flex; align-items: baseline; gap: .5rem; }
+    .cm-strat-sym { font-weight: 800; color: #1c1917; font-size: .95rem; }
+    .cm-strat-name { font-size: .86rem; color: #5b21b6; font-weight: 700; }
+    .cm-strat-meta { font-size: .74rem; color: #a8a29e; margin-top: .15rem; }
+    .cm-strat-right { text-align: right; font-size: .9rem; font-weight: 700; flex-shrink: 0; }
+    .cm-strat-right.win { color: #15803d; }
+    .cm-strat-right.loss { color: #b91c1c; }
+    .cm-strat-right small { display: block; font-size: .68rem; color: #a8a29e; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+
+    /* Transaction rows */
+    .cm-txn-row {
+        width: 100%; text-align: left; background: #fff; border: 1px solid transparent;
+        border-bottom: 1px solid #f5f5f4; border-radius: 10px;
+        padding: .6rem .85rem; cursor: pointer; display: flex; align-items: center;
+        justify-content: space-between; gap: .75rem; transition: background .12s;
+    }
+    .cm-txn-row:hover { background: #faf5ff; border-color: #e7e5e4; }
+    .cm-txn-left { min-width: 0; }
+    .cm-txn-head { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+    .cm-txn-date { font-size: .76rem; color: #78716c; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cm-txn-action {
+        display: inline-block; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+        font-weight: 700; padding: .1rem .45rem; border-radius: 999px;
+    }
+    .cm-txn-action.buy  { background: #dbeafe; color: #1d4ed8; }
+    .cm-txn-action.sell { background: #dcfce7; color: #15803d; }
+    .cm-txn-action.neutral { background: #f5f5f4; color: #57534e; }
+    .cm-txn-sym { font-weight: 800; color: #1c1917; font-size: .88rem; }
+    .cm-txn-desc { font-size: .76rem; color: #78716c; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22rem; }
+    .cm-txn-right { text-align: right; font-size: .88rem; font-weight: 700; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .cm-txn-right.credit { color: #15803d; }
+    .cm-txn-right.debit { color: #b91c1c; }
+    .cm-txn-right small { display: block; font-size: .68rem; color: #a8a29e; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -400,14 +460,25 @@
                     <div class="cm-picker">
                         <div class="cm-picker-head">
                             <div>
-                                <h3>Attach a trade</h3>
-                                <p>Pick one of your trades to share with the post.</p>
+                                <h3>Attach something to your post</h3>
+                                <p>Pick a strategy, a specific position, or a single transaction.</p>
                             </div>
                             <button type="button" id="cm-picker-close" class="cm-picker-x" aria-label="Close">✕</button>
                         </div>
+                        <div class="cm-picker-tabs" role="tablist">
+                            <button type="button" class="cm-tab is-active" role="tab" data-tab="strategies">
+                                Strategies <span class="cm-tab-count" data-count="strategies">0</span>
+                            </button>
+                            <button type="button" class="cm-tab" role="tab" data-tab="legs">
+                                Positions <span class="cm-tab-count" data-count="legs">0</span>
+                            </button>
+                            <button type="button" class="cm-tab" role="tab" data-tab="transactions">
+                                Transactions <span class="cm-tab-count" data-count="transactions">0</span>
+                            </button>
+                        </div>
                         <div class="cm-picker-filters">
-                            <input type="search" id="cm-picker-search" placeholder="Filter by symbol or strategy…" autocomplete="off">
-                            <label class="cm-picker-toggle">
+                            <input type="search" id="cm-picker-search" placeholder="Filter…" autocomplete="off">
+                            <label class="cm-picker-toggle" id="cm-picker-closed-wrap">
                                 <input type="checkbox" id="cm-picker-closed-only"> Closed only
                             </label>
                         </div>
@@ -636,6 +707,8 @@
     var body        = document.getElementById('cm-picker-body');
     var searchInput = document.getElementById('cm-picker-search');
     var closedOnly  = document.getElementById('cm-picker-closed-only');
+    var closedWrap  = document.getElementById('cm-picker-closed-wrap');
+    var tabs        = Array.prototype.slice.call(document.querySelectorAll('.cm-tab'));
 
     var chip        = document.getElementById('cm-attached-chip');
     var chipSym     = document.getElementById('cm-attached-sym');
@@ -662,13 +735,16 @@
     var postSymbolInput = document.getElementById('post-symbol');
     var postStrategyInput = document.getElementById('post-strategy');
 
-    var tradesCache = null;
+    var cache = { strategies: [], legs: [], transactions: [] };
+    var loaded = false;
     var loading = false;
+    var activeTab = 'strategies';
 
     function openModal() {
         backdrop.hidden = false;
         document.body.style.overflow = 'hidden';
-        if (tradesCache === null && !loading) loadTrades();
+        if (!loaded && !loading) loadAll();
+        else render();
         setTimeout(function () { searchInput && searchInput.focus(); }, 50);
     }
     function closeModal() {
@@ -681,71 +757,204 @@
         var sign = n >= 0 ? '+' : '−';
         return sign + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+    function fmtQty(n) {
+        if (n === null || n === undefined || isNaN(n)) return '';
+        var abs = Math.abs(n);
+        var rounded = abs >= 100 ? Math.round(abs) : abs;
+        return (n < 0 ? '−' : '') + rounded.toLocaleString();
+    }
+    function escHTML(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
 
-    function renderTrades() {
-        if (!tradesCache) return;
-        var q = (searchInput.value || '').trim().toLowerCase();
+    function setTabCounts() {
+        tabs.forEach(function (t) {
+            var key = t.getAttribute('data-tab');
+            var badge = t.querySelector('.cm-tab-count');
+            if (badge) badge.textContent = (cache[key] || []).length;
+        });
+    }
+    function setActiveTab(name) {
+        activeTab = name;
+        tabs.forEach(function (t) {
+            t.classList.toggle('is-active', t.getAttribute('data-tab') === name);
+        });
+        if (closedWrap) closedWrap.style.display = (name === 'legs') ? '' : 'none';
+        if (searchInput) {
+            searchInput.placeholder = (name === 'transactions')
+                ? 'Filter by symbol, action…'
+                : 'Filter by symbol or strategy…';
+        }
+        render();
+    }
+
+    function renderStrategies(q) {
+        var rows = cache.strategies.filter(function (s) {
+            if (!q) return true;
+            return (s.symbol || '').toLowerCase().indexOf(q) !== -1
+                || (s.strategy || '').toLowerCase().indexOf(q) !== -1;
+        });
+        if (!rows.length) return emptyHTML(cache.strategies.length === 0);
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var s = rows[i];
+            var pnlCls = s.total_pnl > 0 ? 'win' : (s.total_pnl < 0 ? 'loss' : '');
+            var subBits = [];
+            if (s.leg_count) subBits.push(s.leg_count + ' position' + (s.leg_count === 1 ? '' : 's'));
+            if (s.open_legs)   subBits.push(s.open_legs + ' open');
+            if (s.closed_legs) subBits.push(s.closed_legs + ' closed');
+            var dateRange = (s.first_open || '') + (s.last_activity && s.last_activity !== s.first_open ? (' → ' + s.last_activity) : '');
+            html += '<button type="button" class="cm-strat-row" data-kind="strategy" data-idx="' + i + '">'
+                 +   '<div class="cm-strat-left">'
+                 +     '<div class="cm-strat-head">'
+                 +       '<span class="cm-strat-sym">' + escHTML(s.symbol) + '</span>'
+                 +       '<span class="cm-strat-name">' + escHTML(s.strategy) + '</span>'
+                 +     '</div>'
+                 +     '<div class="cm-strat-meta">' + escHTML(subBits.join(' · ')) + (dateRange ? ' · ' + escHTML(dateRange) : '') + '</div>'
+                 +   '</div>'
+                 +   '<div class="cm-strat-right ' + pnlCls + '">' + fmtMoney(s.total_pnl) + '<small>Total P&amp;L</small></div>'
+                 + '</button>';
+        }
+        body.innerHTML = html;
+        attachClicks('.cm-strat-row', rows, selectStrategy);
+    }
+
+    function renderLegs(q) {
         var onlyClosed = !!closedOnly.checked;
-        var rows = tradesCache.filter(function (t) {
+        var rows = cache.legs.filter(function (t) {
             if (onlyClosed && (t.status || '').toLowerCase() !== 'closed') return false;
             if (!q) return true;
             return (t.symbol || '').toLowerCase().indexOf(q) !== -1
                 || (t.strategy || '').toLowerCase().indexOf(q) !== -1
                 || (t.trade_symbol || '').toLowerCase().indexOf(q) !== -1;
         });
-
-        if (rows.length === 0) {
-            body.innerHTML = '<div class="cm-picker-empty">No trades match. ' +
-                (tradesCache.length === 0 ? 'You don\'t have any trades yet — upload or sync your account data first.' : 'Try a different filter.') +
-                '</div>';
-            return;
-        }
-
+        if (!rows.length) return emptyHTML(cache.legs.length === 0);
         var html = '';
         for (var i = 0; i < rows.length; i++) {
             var t = rows[i];
             var pnlCls = (t.display_pnl !== null && t.display_pnl >= 0) ? 'win' : (t.display_pnl !== null ? 'loss' : '');
             var statusCls = (t.status || '').toLowerCase();
             var dates = (t.open_date || '') + (t.close_date ? (' → ' + t.close_date) : '');
-            html += '<button type="button" class="cm-trade-row" data-idx="' + i + '">'
+            html += '<button type="button" class="cm-trade-row" data-kind="leg" data-idx="' + i + '">'
                 +     '<div class="cm-trade-left">'
                 +       '<div>'
-                +         '<span class="cm-trade-sym">' + (t.symbol || '—') + '</span>'
-                +         '<span class="cm-trade-status ' + statusCls + '">' + (t.status || '') + '</span>'
+                +         '<span class="cm-trade-sym">' + escHTML(t.symbol || '—') + '</span>'
+                +         '<span class="cm-trade-status ' + statusCls + '">' + escHTML(t.status || '') + '</span>'
                 +         (t.already_shared ? ' <span class="cm-trade-shared-tag">Shared</span>' : '')
                 +       '</div>'
-                +       '<div class="cm-trade-strat">' + (t.strategy || '') + (t.trade_symbol ? (' · ' + t.trade_symbol) : '') + '</div>'
-                +       '<div class="cm-trade-dates">' + dates + '</div>'
+                +       '<div class="cm-trade-strat">' + escHTML(t.strategy || '') + (t.trade_symbol ? (' · ' + escHTML(t.trade_symbol)) : '') + '</div>'
+                +       '<div class="cm-trade-dates">' + escHTML(dates) + '</div>'
                 +     '</div>'
                 +     (t.display_pnl !== null ? '<div class="cm-trade-right ' + pnlCls + '">' + fmtMoney(t.display_pnl) + '</div>' : '')
                 + '</button>';
         }
         body.innerHTML = html;
+        attachClicks('.cm-trade-row', rows, selectLeg);
+    }
 
-        Array.prototype.forEach.call(body.querySelectorAll('.cm-trade-row'), function (el) {
+    function renderTransactions(q) {
+        var rows = cache.transactions.filter(function (x) {
+            if (!q) return true;
+            return (x.symbol || '').toLowerCase().indexOf(q) !== -1
+                || (x.trade_symbol || '').toLowerCase().indexOf(q) !== -1
+                || (x.action || '').toLowerCase().indexOf(q) !== -1
+                || (x.action_label || '').toLowerCase().indexOf(q) !== -1;
+        });
+        if (!rows.length) return emptyHTML(cache.transactions.length === 0);
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var x = rows[i];
+            var actCls = 'neutral';
+            var a = (x.action || '').toLowerCase();
+            if (a.indexOf('buy') !== -1)  actCls = 'buy';
+            if (a.indexOf('sell') !== -1) actCls = 'sell';
+            if (a === 'option_assigned' || a === 'option_exercised') actCls = 'sell';
+            if (a === 'option_expired') actCls = 'neutral';
+            var amtCls = x.amount > 0 ? 'credit' : (x.amount < 0 ? 'debit' : '');
+            var desc = x.trade_symbol ? x.trade_symbol : (x.instrument_type || '');
+            var qtyPrice = '';
+            if (x.quantity) qtyPrice += fmtQty(x.quantity);
+            if (x.price)    qtyPrice += (qtyPrice ? ' @ $' : '$') + x.price.toFixed(2);
+            html += '<button type="button" class="cm-txn-row" data-kind="transaction" data-idx="' + i + '">'
+                +     '<div class="cm-txn-left">'
+                +       '<div class="cm-txn-head">'
+                +         '<span class="cm-txn-date">' + escHTML(x.trade_date || '') + '</span>'
+                +         '<span class="cm-txn-action ' + actCls + '">' + escHTML(x.action_label || x.action) + '</span>'
+                +         '<span class="cm-txn-sym">' + escHTML(x.symbol || '—') + '</span>'
+                +       '</div>'
+                +       '<div class="cm-txn-desc">' + escHTML(desc) + (qtyPrice ? ' · ' + escHTML(qtyPrice) : '') + '</div>'
+                +     '</div>'
+                +     '<div class="cm-txn-right ' + amtCls + '">' + fmtMoney(x.amount) + '</div>'
+                + '</button>';
+        }
+        body.innerHTML = html;
+        attachClicks('.cm-txn-row', rows, selectTransaction);
+    }
+
+    function emptyHTML(totallyEmpty) {
+        body.innerHTML = '<div class="cm-picker-empty">' +
+            (totallyEmpty
+                ? 'Nothing to show yet. Upload or sync your account data first.'
+                : 'Nothing matches that filter.') +
+            '</div>';
+    }
+
+    function attachClicks(selector, rows, handler) {
+        Array.prototype.forEach.call(body.querySelectorAll(selector), function (el) {
             el.addEventListener('click', function () {
                 var idx = parseInt(el.getAttribute('data-idx'), 10);
-                selectTrade(rows[idx]);
+                handler(rows[idx]);
             });
         });
     }
 
-    function loadTrades() {
+    function render() {
+        if (!loaded) return;
+        var q = (searchInput.value || '').trim().toLowerCase();
+        if (activeTab === 'strategies')        renderStrategies(q);
+        else if (activeTab === 'legs')         renderLegs(q);
+        else if (activeTab === 'transactions') renderTransactions(q);
+    }
+
+    function loadAll() {
         loading = true;
         body.innerHTML = '<div class="cm-picker-loading">Loading your trades…</div>';
         fetch('{{ url_for("community_my_trades") }}', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                tradesCache = (data && data.trades) || [];
-                renderTrades();
+                cache.strategies   = (data && data.strategies)   || [];
+                cache.legs         = (data && data.legs)         || [];
+                cache.transactions = (data && data.transactions) || [];
+                loaded = true;
+                setTabCounts();
+                render();
             })
             .catch(function () {
-                body.innerHTML = '<div class="cm-picker-empty">Could not load trades. Please try again.</div>';
+                body.innerHTML = '<div class="cm-picker-empty">Could not load your data. Please try again.</div>';
             })
             .finally(function () { loading = false; });
     }
 
-    function selectTrade(t) {
+    function clearAttachFields() {
+        ['fp','account','symbol','strategy','tradeSym','open','close','status','pnl'].forEach(function (k) {
+            if (fields[k]) fields[k].value = '';
+        });
+    }
+
+    function selectStrategy(s) {
+        // Tagging only — no snapshot. Populate the post's symbol + strategy tags.
+        clearAttachFields();
+        if (postSymbolInput && s.symbol) postSymbolInput.value = s.symbol;
+        if (postStrategyInput && s.strategy) postStrategyInput.value = s.strategy;
+        chip.hidden = true;
+        openBtn.classList.remove('has-attachment');
+        attachLabel.textContent = 'Attach a trade';
+        closeModal();
+    }
+
+    function selectLeg(t) {
         fields.fp.value       = t.fingerprint || '';
         fields.account.value  = t.account || '';
         fields.symbol.value   = t.symbol || '';
@@ -779,10 +988,18 @@
         closeModal();
     }
 
+    function selectTransaction(x) {
+        // Transactions tag the post's symbol but don't attach a trade snapshot.
+        clearAttachFields();
+        if (postSymbolInput && x.symbol) postSymbolInput.value = x.symbol;
+        chip.hidden = true;
+        openBtn.classList.remove('has-attachment');
+        attachLabel.textContent = 'Attach a trade';
+        closeModal();
+    }
+
     function clearAttachment() {
-        ['fp','account','symbol','strategy','tradeSym','open','close','status','pnl'].forEach(function (k) {
-            if (fields[k]) fields[k].value = '';
-        });
+        clearAttachFields();
         chip.hidden = true;
         openBtn.classList.remove('has-attachment');
         attachLabel.textContent = 'Attach a trade';
@@ -793,8 +1010,13 @@
     backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !backdrop.hidden) closeModal(); });
     chipRemove.addEventListener('click', clearAttachment);
-    searchInput.addEventListener('input', renderTrades);
-    closedOnly.addEventListener('change', renderTrades);
+    searchInput.addEventListener('input', render);
+    closedOnly.addEventListener('change', render);
+    tabs.forEach(function (t) {
+        t.addEventListener('click', function () { setActiveTab(t.getAttribute('data-tab')); });
+    });
+    // Default tab state
+    setActiveTab('strategies');
 })();
 </script>
 {% endblock %}

@@ -315,15 +315,44 @@ def community_post_create():
     return redirect(next_url)
 
 
+_TXN_ACTION_LABELS = {
+    "equity_buy": "Bought",
+    "equity_sell": "Sold",
+    "equity_sell_short": "Sold short",
+    "option_sell_to_open": "Sold to open",
+    "option_buy_to_close": "Bought to close",
+    "option_buy_to_open": "Bought to open",
+    "option_sell_to_close": "Sold to close",
+    "option_expired": "Expired",
+    "option_assigned": "Assigned",
+    "option_exercised": "Exercised",
+    "dividend": "Dividend",
+    "margin_interest": "Margin interest",
+    "credit_interest": "Credit interest",
+    "adr_fee": "ADR fee",
+}
+
+
+def _iso_date(v):
+    if v is None:
+        return ""
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)[:10]
+
+
 @app.route("/community/my-trades")
 @login_required
 def community_my_trades():
     """
     JSON API backing the composer's 'Attach a trade' picker.
 
-    Returns up to 80 of the logged-in user's most recent trade groups from
-    mart_weekly_trades (same grain as the Weekly Review publish modal), each
-    with a fingerprint the /community/post endpoint can verify.
+    Returns three buckets of the logged-in user's activity, each newest-first:
+      - strategies:   rollups by (account, symbol, strategy)
+      - legs:         individual trade groups (contracts / sessions) from
+                      mart_weekly_trades — these can attach a trade snapshot
+      - transactions: individual rows from stg_history (buys, sells,
+                      assignments, expires, etc.)
 
     SECURITY: this endpoint MUST stay tenant-scoped — see
     .cursor/rules/bigquery-tenant-isolation.mdc. We scope by account both in
@@ -338,7 +367,9 @@ def community_my_trades():
 
     user_accounts = _user_account_list()
     acct_sql = _account_sql_and(user_accounts)
-    sql = f"""
+
+    # ---- Legs (individual trade groups) --------------------------------
+    legs_sql = f"""
         SELECT
           account, symbol, strategy, trade_symbol,
           open_date, close_date, status,
@@ -348,67 +379,178 @@ def community_my_trades():
           {acct_sql}
         ORDER BY COALESCE(close_date, open_date) DESC NULLS LAST,
                  open_date DESC
+        LIMIT 120
+    """
+
+    # ---- Strategies (rollup across legs) -------------------------------
+    strategies_sql = f"""
+        SELECT
+          account, symbol, strategy,
+          MIN(open_date) AS first_open,
+          MAX(COALESCE(close_date, open_date)) AS last_activity,
+          SUM(CASE WHEN status = 'Closed' THEN COALESCE(total_pnl, 0) ELSE 0 END)
+            AS closed_pnl,
+          SUM(CASE WHEN status = 'Open' THEN COALESCE(current_unrealized_pnl, 0) ELSE 0 END)
+            AS open_pnl,
+          COUNT(*) AS leg_count,
+          COUNTIF(status = 'Open')   AS open_legs,
+          COUNTIF(status = 'Closed') AS closed_legs
+        FROM `ccwj-dbt.analytics.mart_weekly_trades`
+        WHERE account IS NOT NULL
+          AND symbol IS NOT NULL
+          AND strategy IS NOT NULL
+          AND (open_date IS NOT NULL OR close_date IS NOT NULL)
+          {acct_sql}
+        GROUP BY account, symbol, strategy
+        ORDER BY last_activity DESC NULLS LAST
         LIMIT 80
     """
-    try:
-        client = get_bigquery_client()
-        df = client.query(sql).to_dataframe()
-    except Exception as exc:
-        app.logger.warning("community_my_trades BQ query failed: %s", exc)
-        return jsonify({"error": "query_failed", "trades": []}), 200
 
-    df = _filter_df_by_accounts(df, user_accounts)
+    # ---- Transactions (stg_history rows) -------------------------------
+    txn_sql = f"""
+        SELECT
+          account, trade_date, action, action_raw,
+          underlying_symbol, trade_symbol, instrument_type,
+          quantity, price, amount
+        FROM `ccwj-dbt.analytics.stg_history`
+        WHERE trade_date IS NOT NULL
+          AND action NOT IN ('dividend', 'margin_interest',
+                             'credit_interest', 'adr_fee', 'other')
+          {acct_sql}
+        ORDER BY trade_date DESC, ABS(COALESCE(amount, 0)) DESC
+        LIMIT 250
+    """
+
+    client = get_bigquery_client()
+
+    def _run(sql):
+        try:
+            return client.query(sql).to_dataframe()
+        except Exception as exc:
+            app.logger.warning("community_my_trades BQ query failed: %s", exc)
+            return None
+
+    legs_df = _run(legs_sql)
+    strategies_df = _run(strategies_sql)
+    txn_df = _run(txn_sql)
+
+    if legs_df is None and strategies_df is None and txn_df is None:
+        return jsonify({
+            "error": "query_failed",
+            "strategies": [], "legs": [], "transactions": [],
+        }), 200
+
     published_fps = get_published_trade_fingerprints(current_user.id)
 
-    trades = []
-    for _, row in df.iterrows():
-        status = str(row.get("status") or "")
-        # Snapshot-only open rows (num_trades == 0) have no real economic event yet; skip.
-        try:
-            num_trades = int(row.get("num_trades") or 0)
-        except (TypeError, ValueError):
-            num_trades = 0
-        if status.lower() == "open" and num_trades == 0:
-            continue
+    # -- Legs --
+    legs = []
+    if legs_df is not None:
+        legs_df = _filter_df_by_accounts(legs_df, user_accounts)
+        for _, row in legs_df.iterrows():
+            status = str(row.get("status") or "")
+            try:
+                num_trades = int(row.get("num_trades") or 0)
+            except (TypeError, ValueError):
+                num_trades = 0
+            if status.lower() == "open" and num_trades == 0:
+                continue
+            acct = str(row.get("account", ""))
+            sym = str(row.get("symbol", ""))
+            strat = str(row.get("strategy", ""))
+            tsym = str(row.get("trade_symbol") or "")
+            open_d = _iso_date(row.get("open_date"))
+            close_d = _iso_date(row.get("close_date"))
+            total_pnl = row.get("total_pnl")
+            unreal = row.get("current_unrealized_pnl")
+            display_pnl = None
+            if status == "Closed":
+                display_pnl = float(total_pnl) if total_pnl is not None else None
+            else:
+                display_pnl = float(unreal) if unreal is not None else None
+            fp = trade_fingerprint(
+                current_user.id, acct, sym, tsym, open_d, close_d, strat,
+            )
+            legs.append({
+                "fingerprint": fp,
+                "account": acct,
+                "symbol": sym,
+                "strategy": strat,
+                "trade_symbol": tsym,
+                "open_date": open_d,
+                "close_date": close_d,
+                "status": status,
+                "display_pnl": display_pnl,
+                "already_shared": fp in published_fps,
+            })
 
-        def _iso(v):
-            if v is None:
-                return ""
-            if hasattr(v, "isoformat"):
-                return v.isoformat()
-            return str(v)[:10]
+    # -- Strategies --
+    strategies = []
+    if strategies_df is not None:
+        strategies_df = _filter_df_by_accounts(strategies_df, user_accounts)
+        for _, row in strategies_df.iterrows():
+            acct = str(row.get("account", ""))
+            sym = str(row.get("symbol", ""))
+            strat = str(row.get("strategy", ""))
+            open_legs = int(row.get("open_legs") or 0)
+            closed_legs = int(row.get("closed_legs") or 0)
+            closed_pnl = row.get("closed_pnl")
+            open_pnl = row.get("open_pnl")
+            total_pnl = (
+                (float(closed_pnl) if closed_pnl is not None else 0.0)
+                + (float(open_pnl) if open_pnl is not None else 0.0)
+            )
+            strategies.append({
+                "account": acct,
+                "symbol": sym,
+                "strategy": strat,
+                "first_open": _iso_date(row.get("first_open")),
+                "last_activity": _iso_date(row.get("last_activity")),
+                "leg_count": int(row.get("leg_count") or 0),
+                "open_legs": open_legs,
+                "closed_legs": closed_legs,
+                "total_pnl": total_pnl,
+            })
 
-        acct = str(row.get("account", ""))
-        sym = str(row.get("symbol", ""))
-        strat = str(row.get("strategy", ""))
-        tsym = str(row.get("trade_symbol") or "")
-        open_d = _iso(row.get("open_date"))
-        close_d = _iso(row.get("close_date"))
-        total_pnl = row.get("total_pnl")
-        unreal = row.get("current_unrealized_pnl")
-        display_pnl = None
-        if status == "Closed":
-            display_pnl = float(total_pnl) if total_pnl is not None else None
-        else:
-            display_pnl = float(unreal) if unreal is not None else None
+    # -- Transactions --
+    transactions = []
+    if txn_df is not None:
+        txn_df = _filter_df_by_accounts(txn_df, user_accounts)
+        for _, row in txn_df.iterrows():
+            action = str(row.get("action") or "")
+            acct = str(row.get("account", ""))
+            sym = str(row.get("underlying_symbol") or "")
+            tsym = str(row.get("trade_symbol") or "")
+            inst = str(row.get("instrument_type") or "")
+            try:
+                qty = float(row.get("quantity") or 0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            try:
+                price = float(row.get("price") or 0)
+            except (TypeError, ValueError):
+                price = 0.0
+            try:
+                amount = float(row.get("amount") or 0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            transactions.append({
+                "account": acct,
+                "trade_date": _iso_date(row.get("trade_date")),
+                "action": action,
+                "action_label": _TXN_ACTION_LABELS.get(action, action.replace("_", " ").title() or "—"),
+                "symbol": sym,
+                "trade_symbol": tsym,
+                "instrument_type": inst,
+                "quantity": qty,
+                "price": price,
+                "amount": amount,
+            })
 
-        fp = trade_fingerprint(
-            current_user.id, acct, sym, tsym, open_d, close_d, strat,
-        )
-        trades.append({
-            "fingerprint": fp,
-            "account": acct,
-            "symbol": sym,
-            "strategy": strat,
-            "trade_symbol": tsym,
-            "open_date": open_d,
-            "close_date": close_d,
-            "status": status,
-            "display_pnl": display_pnl,
-            "already_shared": fp in published_fps,
-        })
-
-    return jsonify({"trades": trades})
+    return jsonify({
+        "strategies": strategies,
+        "legs": legs,
+        "transactions": transactions,
+    })
 
 
 @app.route("/community/post/<int:post_id>/delete", methods=["POST"])
