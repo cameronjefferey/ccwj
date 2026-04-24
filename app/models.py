@@ -153,6 +153,8 @@ def init_db():
             symbol              TEXT,
             strategy            TEXT,
             attached_fingerprint TEXT,
+            attachment_kind     TEXT,
+            attachment_json     TEXT,
             visibility          TEXT NOT NULL DEFAULT 'followers',
             created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -193,6 +195,11 @@ def _migrate_community_posts_strategy_column():
         execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS strategy TEXT")
     except Exception as e:
         _log.warning("community_posts strategy migration skipped: %s", e)
+    try:
+        execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_kind TEXT")
+        execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_json TEXT")
+    except Exception as e:
+        _log.warning("community_posts attachment migration skipped: %s", e)
 
 
 class User(UserMixin):
@@ -761,7 +768,9 @@ def list_public_published_trades(target_user_id, limit=100):
 _MAX_POST_BODY_LEN = 4000
 _MAX_POST_SYMBOL_LEN = 32
 _MAX_POST_STRATEGY_LEN = 64
+_MAX_ATTACHMENT_JSON_LEN = 4000
 _ALLOWED_POST_VISIBILITY = frozenset({"private", "followers", "public"})
+_ALLOWED_ATTACHMENT_KINDS = frozenset({"leg", "strategy", "transaction"})
 
 
 def create_post(
@@ -771,6 +780,8 @@ def create_post(
     strategy=None,
     visibility="followers",
     attached_fingerprint=None,
+    attachment_kind=None,
+    attachment_json=None,
 ):
     """
     Insert a new community post. Caller is responsible for having confirmed the
@@ -791,13 +802,32 @@ def create_post(
     if vis not in _ALLOWED_POST_VISIBILITY:
         vis = "followers"
     af = (attached_fingerprint or "").strip() or None
+
+    ak = (attachment_kind or "").strip().lower() or None
+    if ak not in _ALLOWED_ATTACHMENT_KINDS:
+        ak = None
+    aj = (attachment_json or "").strip() or None
+    if aj and len(aj) > _MAX_ATTACHMENT_JSON_LEN:
+        aj = None
+    if aj:
+        # Defense in depth: only accept strict JSON objects.
+        import json as _json
+        try:
+            parsed = _json.loads(aj)
+            if not isinstance(parsed, dict):
+                aj = None
+        except Exception:
+            aj = None
+    if not ak:
+        aj = None
     try:
         row = execute_returning(
             """INSERT INTO community_posts
-               (user_id, body, symbol, strategy, attached_fingerprint, visibility)
-               VALUES (%s, %s, %s, %s, %s, %s)
+               (user_id, body, symbol, strategy, attached_fingerprint,
+                attachment_kind, attachment_json, visibility)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (user_id, clean_body, clean_symbol, clean_strategy, af, vis),
+            (user_id, clean_body, clean_symbol, clean_strategy, af, ak, aj, vis),
         )
         return int(row["id"]) if row else None
     except Exception as exc:
@@ -835,6 +865,7 @@ def update_post_visibility(user_id, post_id, visibility):
 
 _POST_SELECT_BASE = """
     SELECT p.id, p.user_id, p.body, p.symbol, p.strategy, p.attached_fingerprint,
+           p.attachment_kind, p.attachment_json,
            p.visibility, p.created_at, p.updated_at,
            u.username,
            COALESCE(NULLIF(TRIM(pr.display_name), ''), u.username) AS author_display,
@@ -941,6 +972,31 @@ def get_post(post_id):
     except Exception as exc:
         _log.warning("get_post failed: %s", exc)
         return None
+
+
+def decode_post_attachments(posts):
+    """Parse attachment_json into an 'attachment' dict on each post for templates."""
+    if not posts:
+        return posts
+    import json as _json
+    for p in posts:
+        if not isinstance(p, dict):
+            continue
+        kind = p.get("attachment_kind")
+        raw = p.get("attachment_json")
+        if not kind or not raw:
+            p["attachment"] = None
+            continue
+        try:
+            data = _json.loads(raw)
+            if isinstance(data, dict):
+                data.setdefault("kind", kind)
+                p["attachment"] = data
+            else:
+                p["attachment"] = None
+        except Exception:
+            p["attachment"] = None
+    return posts
 
 
 def discover_public_traders(limit=24):

@@ -215,6 +215,13 @@
     .cm-attached-info { flex: 1; min-width: 0; }
     .cm-attached-title { font-weight: 700; font-size: .9rem; color: #1c1917; }
     .cm-attached-title #cm-attached-sym { color: #92400e; }
+    .cm-attached-kind {
+        display: inline-block; background: #ede9fe; color: #5b21b6;
+        font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+        padding: .12rem .5rem; border-radius: 999px; margin-right: .4rem;
+    }
+    .cm-attached-kind.leg { background: #e0f2fe; color: #0369a1; }
+    .cm-attached-kind.transaction { background: #fef3c7; color: #92400e; }
     .cm-attached-sep { color: #a8a29e; margin: 0 .35rem; }
     .cm-attached-meta { font-size: .78rem; color: #78716c; margin-top: .2rem; }
     .cm-attached-pnl { font-weight: 700; }
@@ -356,6 +363,51 @@
 {% endblock %}
 
 {% block content %}
+{% macro render_post_attachment(att) %}
+    {% if att and att.kind == 'strategy' %}
+    <div class="cm-trade-card">
+        <div>
+            <div class="cm-trade-strat">
+                <span class="cm-attached-kind strategy" style="margin-right:.35rem">Strategy</span>
+                <strong>{{ att.strategy }}</strong>
+                {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}" style="color:#57534e;text-decoration:none;border-bottom:1px dotted #d6d3d1">{{ att.symbol }}</a>{% endif %}
+            </div>
+            <div class="cm-author-meta mt-1">
+                {% if att.leg_count %}{{ att.leg_count }} position{{ '' if att.leg_count == 1 else 's' }}{% endif %}
+                {% if att.open_legs %} · {{ att.open_legs }} open{% endif %}
+                {% if att.closed_legs %} · {{ att.closed_legs }} closed{% endif %}
+                {% if att.first_open %} · {{ att.first_open }}{% if att.last_activity and att.last_activity != att.first_open %} → {{ att.last_activity }}{% endif %}{% endif %}
+            </div>
+        </div>
+        {% if att.total_pnl is not none %}
+        <div class="cm-trade-pnl {% if att.total_pnl >= 0 %}win{% else %}loss{% endif %}">
+            {{ "+" if att.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(att.total_pnl) }}
+        </div>
+        {% endif %}
+    </div>
+    {% elif att and att.kind == 'transaction' %}
+    <div class="cm-trade-card">
+        <div>
+            <div class="cm-trade-strat">
+                <span class="cm-attached-kind transaction" style="margin-right:.35rem">Transaction</span>
+                <strong>{{ att.action_label or att.action }}</strong>
+                {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}" style="color:#57534e;text-decoration:none;border-bottom:1px dotted #d6d3d1">{{ att.symbol }}</a>{% endif %}
+                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c">{{ att.trade_symbol }}</span>{% endif %}
+            </div>
+            <div class="cm-author-meta mt-1">
+                {% if att.trade_date %}{{ att.trade_date }}{% endif %}
+                {% if att.quantity %} · Qty {{ att.quantity|int if att.quantity == att.quantity|int else att.quantity }}{% endif %}
+                {% if att.price %} @ ${{ "{:,.2f}".format(att.price) }}{% endif %}
+            </div>
+        </div>
+        {% if att.amount is not none %}
+        <div class="cm-trade-pnl {% if att.amount >= 0 %}win{% else %}loss{% endif %}">
+            {{ "+" if att.amount >= 0 else "" }}${{ "{:,.2f}".format(att.amount) }}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+{% endmacro %}
 <div class="cm">
     <div class="cm-shell">
         <div class="cm-hero">
@@ -395,14 +447,34 @@
                     <input type="hidden" name="attach_status"       id="cm-attach-status">
                     <input type="hidden" name="attach_display_pnl"  id="cm-attach-pnl">
 
+                    <input type="hidden" name="attachment_kind"     id="atk-kind">
+                    <input type="hidden" name="atk_account"         id="atk-account">
+                    <input type="hidden" name="atk_symbol"          id="atk-symbol">
+                    <input type="hidden" name="atk_strategy"        id="atk-strategy">
+                    <input type="hidden" name="atk_first_open"      id="atk-first-open">
+                    <input type="hidden" name="atk_last_activity"   id="atk-last-activity">
+                    <input type="hidden" name="atk_leg_count"       id="atk-leg-count">
+                    <input type="hidden" name="atk_open_legs"       id="atk-open-legs">
+                    <input type="hidden" name="atk_closed_legs"     id="atk-closed-legs">
+                    <input type="hidden" name="atk_total_pnl"       id="atk-total-pnl">
+                    <input type="hidden" name="atk_trade_symbol"    id="atk-trade-symbol">
+                    <input type="hidden" name="atk_instrument_type" id="atk-instrument-type">
+                    <input type="hidden" name="atk_trade_date"      id="atk-trade-date">
+                    <input type="hidden" name="atk_action"          id="atk-action">
+                    <input type="hidden" name="atk_action_label"    id="atk-action-label">
+                    <input type="hidden" name="atk_quantity"        id="atk-quantity">
+                    <input type="hidden" name="atk_price"           id="atk-price">
+                    <input type="hidden" name="atk_amount"          id="atk-amount">
+
                     <label for="post-body" class="visually-hidden">Post</label>
                     <textarea id="post-body" name="body" placeholder="Share a trade, an observation, or a lesson..." maxlength="4000" required></textarea>
 
                     <div id="cm-attached-chip" class="cm-attached-chip" hidden>
                         <div class="cm-attached-info">
                             <div class="cm-attached-title">
+                                <span class="cm-attached-kind" id="cm-attached-kind"></span>
                                 <span id="cm-attached-sym"></span>
-                                <span class="cm-attached-sep">·</span>
+                                <span class="cm-attached-sep" id="cm-attached-sep">·</span>
                                 <span id="cm-attached-strat"></span>
                             </div>
                             <div class="cm-attached-meta">
@@ -413,7 +485,7 @@
                                 </span>
                             </div>
                         </div>
-                        <button type="button" id="cm-attached-remove" class="cm-attached-x" title="Remove attachment" aria-label="Remove attached trade">✕</button>
+                        <button type="button" id="cm-attached-remove" class="cm-attached-x" title="Remove attachment" aria-label="Remove attachment">✕</button>
                     </div>
 
                     <div class="cm-composer-row">
@@ -530,6 +602,7 @@
                         <div class="cm-trade-card">
                             <div>
                                 <div class="cm-trade-strat">
+                                    <span class="cm-attached-kind leg" style="margin-right:.35rem">Position</span>
                                     <strong>{{ p.trade_strategy }}</strong>
                                     {% if p.trade_symbol %} · {{ p.trade_symbol }}{% endif %}
                                     {% if p.trade_status %} · <span style="color:#a8a29e">{{ p.trade_status }}</span>{% endif %}
@@ -546,6 +619,8 @@
                             {% endif %}
                         </div>
                         {% endif %}
+
+                        {{ render_post_attachment(p.attachment) }}
 
                         {% if p.user_id|int == current_user.id|int %}
                         <div class="cm-post-foot">
@@ -604,6 +679,7 @@
                         {% endif %}
                     </div>
                     {% endif %}
+                    {{ render_post_attachment(p.attachment) }}
                 </article>
                 {% endfor %}
                 {% endif %}
@@ -711,7 +787,9 @@
     var tabs        = Array.prototype.slice.call(document.querySelectorAll('.cm-tab'));
 
     var chip        = document.getElementById('cm-attached-chip');
+    var chipKind    = document.getElementById('cm-attached-kind');
     var chipSym     = document.getElementById('cm-attached-sym');
+    var chipSep     = document.getElementById('cm-attached-sep');
     var chipStrat   = document.getElementById('cm-attached-strat');
     var chipDates   = document.getElementById('cm-attached-dates');
     var chipPnlWrap = document.getElementById('cm-attached-pnl-wrap');
@@ -732,6 +810,32 @@
         status:    document.getElementById('cm-attach-status'),
         pnl:       document.getElementById('cm-attach-pnl'),
     };
+    var atk = {
+        kind:           document.getElementById('atk-kind'),
+        account:        document.getElementById('atk-account'),
+        symbol:         document.getElementById('atk-symbol'),
+        strategy:       document.getElementById('atk-strategy'),
+        firstOpen:      document.getElementById('atk-first-open'),
+        lastActivity:   document.getElementById('atk-last-activity'),
+        legCount:       document.getElementById('atk-leg-count'),
+        openLegs:       document.getElementById('atk-open-legs'),
+        closedLegs:     document.getElementById('atk-closed-legs'),
+        totalPnl:       document.getElementById('atk-total-pnl'),
+        tradeSymbol:    document.getElementById('atk-trade-symbol'),
+        instrumentType: document.getElementById('atk-instrument-type'),
+        tradeDate:      document.getElementById('atk-trade-date'),
+        action:         document.getElementById('atk-action'),
+        actionLabel:    document.getElementById('atk-action-label'),
+        quantity:       document.getElementById('atk-quantity'),
+        price:          document.getElementById('atk-price'),
+        amount:         document.getElementById('atk-amount'),
+    };
+    function setVal(el, v) {
+        if (el) el.value = (v === null || v === undefined) ? '' : String(v);
+    }
+    function clearAtk() {
+        Object.keys(atk).forEach(function (k) { setVal(atk[k], ''); });
+    }
     var postSymbolInput = document.getElementById('post-symbol');
     var postStrategyInput = document.getElementById('post-strategy');
 
@@ -966,18 +1070,56 @@
         });
     }
 
+    function showChip(kindClass, kindLabel, titleSym, titleStrat, meta, pnl) {
+        chipKind.className = 'cm-attached-kind' + (kindClass ? ' ' + kindClass : '');
+        chipKind.textContent = kindLabel;
+        chipSym.textContent = titleSym || '';
+        chipStrat.textContent = titleStrat || '';
+        chipSep.style.display = (titleSym && titleStrat) ? '' : 'none';
+        chipDates.textContent = meta || '';
+        if (pnl !== null && pnl !== undefined && !isNaN(pnl)) {
+            chipPnlWrap.hidden = false;
+            chipPnl.textContent = fmtMoney(pnl);
+            chipPnl.classList.toggle('win', pnl >= 0);
+            chipPnl.classList.toggle('loss', pnl < 0);
+        } else {
+            chipPnlWrap.hidden = true;
+        }
+        chip.hidden = false;
+        openBtn.classList.add('has-attachment');
+        attachLabel.textContent = 'Attachment added';
+    }
+
     function selectStrategy(s) {
-        // Tagging only — no snapshot. Populate the post's symbol + strategy tags.
+        // Generic strategy attachment: stored in atk_* fields, rendered as a card.
         clearAttachFields();
+        clearAtk();
+        setVal(atk.kind, 'strategy');
+        setVal(atk.account, s.account);
+        setVal(atk.symbol, s.symbol);
+        setVal(atk.strategy, s.strategy);
+        setVal(atk.firstOpen, s.first_open);
+        setVal(atk.lastActivity, s.last_activity);
+        setVal(atk.legCount, s.leg_count);
+        setVal(atk.openLegs, s.open_legs);
+        setVal(atk.closedLegs, s.closed_legs);
+        setVal(atk.totalPnl, s.total_pnl);
+
+        var bits = [];
+        if (s.leg_count)    bits.push(s.leg_count + ' position' + (s.leg_count === 1 ? '' : 's'));
+        if (s.open_legs)    bits.push(s.open_legs + ' open');
+        if (s.closed_legs)  bits.push(s.closed_legs + ' closed');
+        var dateRange = (s.first_open || '') + (s.last_activity && s.last_activity !== s.first_open ? (' → ' + s.last_activity) : '');
+        var meta = bits.join(' · ') + (dateRange ? (bits.length ? ' · ' : '') + dateRange : '');
+        showChip('strategy', 'Strategy', s.symbol, s.strategy, meta, s.total_pnl);
+
         if (postSymbolInput && s.symbol) postSymbolInput.value = s.symbol;
         if (postStrategyInput && s.strategy) postStrategyInput.value = s.strategy;
-        chip.hidden = true;
-        openBtn.classList.remove('has-attachment');
-        attachLabel.textContent = 'Attach a trade';
         closeModal();
     }
 
     function selectLeg(t) {
+        clearAtk();
         fields.fp.value       = t.fingerprint || '';
         fields.account.value  = t.account || '';
         fields.symbol.value   = t.symbol || '';
@@ -988,41 +1130,46 @@
         fields.status.value   = t.status || '';
         fields.pnl.value      = (t.display_pnl === null || t.display_pnl === undefined) ? '' : String(t.display_pnl);
 
-        chipSym.textContent   = t.symbol || '';
-        chipStrat.textContent = t.strategy || '';
-        chipDates.textContent = (t.open_date || '') + (t.close_date ? (' → ' + t.close_date) : '') + ' · ' + (t.status || '');
-        if (t.display_pnl !== null && t.display_pnl !== undefined) {
-            chipPnlWrap.hidden = false;
-            chipPnl.textContent = fmtMoney(t.display_pnl);
-            chipPnl.classList.toggle('win', t.display_pnl >= 0);
-            chipPnl.classList.toggle('loss', t.display_pnl < 0);
-        } else {
-            chipPnlWrap.hidden = true;
-        }
-        chip.hidden = false;
-        openBtn.classList.add('has-attachment');
-        attachLabel.textContent = 'Trade attached';
-        if (postSymbolInput && !postSymbolInput.value && t.symbol) {
-            postSymbolInput.value = t.symbol;
-        }
-        if (postStrategyInput && !postStrategyInput.value && t.strategy) {
-            postStrategyInput.value = t.strategy;
-        }
+        var meta = (t.trade_symbol ? t.trade_symbol + ' · ' : '')
+                 + (t.open_date || '') + (t.close_date ? (' → ' + t.close_date) : '')
+                 + (t.status ? ' · ' + t.status : '');
+        showChip('leg', 'Position', t.symbol, t.strategy, meta, t.display_pnl);
+
+        if (postSymbolInput && !postSymbolInput.value && t.symbol)      postSymbolInput.value = t.symbol;
+        if (postStrategyInput && !postStrategyInput.value && t.strategy) postStrategyInput.value = t.strategy;
         closeModal();
     }
 
     function selectTransaction(x) {
-        // Transactions tag the post's symbol but don't attach a trade snapshot.
         clearAttachFields();
-        if (postSymbolInput && x.symbol) postSymbolInput.value = x.symbol;
-        chip.hidden = true;
-        openBtn.classList.remove('has-attachment');
-        attachLabel.textContent = 'Attach a trade';
+        clearAtk();
+        setVal(atk.kind, 'transaction');
+        setVal(atk.account, x.account);
+        setVal(atk.symbol, x.symbol);
+        setVal(atk.tradeSymbol, x.trade_symbol);
+        setVal(atk.instrumentType, x.instrument_type);
+        setVal(atk.tradeDate, x.trade_date);
+        setVal(atk.action, x.action);
+        setVal(atk.actionLabel, x.action_label);
+        setVal(atk.quantity, x.quantity);
+        setVal(atk.price, x.price);
+        setVal(atk.amount, x.amount);
+
+        var title = (x.action_label || x.action || 'Transaction');
+        var desc = [x.trade_symbol || x.instrument_type || '', x.trade_date || ''].filter(Boolean).join(' · ');
+        var qtyPrice = '';
+        if (x.quantity) qtyPrice += fmtQty(x.quantity);
+        if (x.price)    qtyPrice += (qtyPrice ? ' @ $' : '$') + x.price.toFixed(2);
+        if (qtyPrice) desc = desc ? (desc + ' · ' + qtyPrice) : qtyPrice;
+        showChip('transaction', 'Transaction', x.symbol, title, desc, x.amount);
+
+        if (postSymbolInput && !postSymbolInput.value && x.symbol) postSymbolInput.value = x.symbol;
         closeModal();
     }
 
     function clearAttachment() {
         clearAttachFields();
+        clearAtk();
         chip.hidden = true;
         openBtn.classList.remove('has-attachment');
         attachLabel.textContent = 'Attach a trade';

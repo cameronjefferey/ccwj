@@ -14,6 +14,7 @@ from app.models import (
     community_feed,
     count_published_trades,
     create_post,
+    decode_post_attachments,
     delete_post,
     discover_public_traders,
     discover_recent_public_posts,
@@ -206,7 +207,7 @@ def profile():
 @app.route("/community")
 @login_required
 def community():
-    feed = community_feed(current_user.id, limit=80)
+    feed = decode_post_attachments(community_feed(current_user.id, limit=80))
     following_ids = list_following_ids(current_user.id)
     search_query = (request.args.get("q") or "").strip()[:200]
     search_results = []
@@ -215,7 +216,7 @@ def community():
             current_user.id, search_query, limit=50
         )
     discover_traders = discover_public_traders(limit=12)
-    discover_posts = (
+    discover_posts = decode_post_attachments(
         discover_recent_public_posts(current_user.id, limit=8)
         if not feed else []
     )
@@ -300,6 +301,27 @@ def community_post_create():
         if not strategy and att_strategy:
             strategy = att_strategy
 
+    # Generic attachment payload: supports 'strategy' and 'transaction' pick types
+    # (legs still go through attach_fp above). The payload is a small JSON blob
+    # we validate, truncate, and store so the feed can render an inline card.
+    attachment_kind = (request.form.get("attachment_kind") or "").strip().lower() or None
+    attachment_json = None
+    if attachment_kind in ("strategy", "transaction") and not attach_fp:
+        payload = _build_attachment_payload(attachment_kind, request.form)
+        if payload is None:
+            attachment_kind = None
+        else:
+            import json as _json
+            attachment_json = _json.dumps(payload, separators=(",", ":"))
+            # Auto-fill symbol/strategy tags from the attachment when composer
+            # left them blank, so chips still show even if user didn't type.
+            if not symbol and payload.get("symbol"):
+                symbol = payload["symbol"]
+            if not strategy and attachment_kind == "strategy" and payload.get("strategy"):
+                strategy = payload["strategy"]
+    else:
+        attachment_kind = None
+
     new_id = create_post(
         current_user.id,
         body=body,
@@ -307,12 +329,85 @@ def community_post_create():
         strategy=strategy or None,
         visibility=visibility,
         attached_fingerprint=attach_fp,
+        attachment_kind=attachment_kind,
+        attachment_json=attachment_json,
     )
     if new_id is None:
         flash("Could not save that post. Try again in a moment.", "danger")
     else:
         flash("Posted.", "success")
     return redirect(next_url)
+
+
+def _safe_float(v):
+    try:
+        if v is None or v == "":
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(v):
+    try:
+        if v is None or v == "":
+            return None
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_attachment_payload(kind, form):
+    """
+    Turn the composer's hidden 'atk_*' fields into a small, tenant-checked
+    payload dict suitable for storing in community_posts.attachment_json.
+    Returns None if the payload doesn't belong to the current user.
+    """
+    account = (form.get("atk_account") or "").strip()
+    if not _account_allowed(current_user.id, current_user.username, account):
+        return None
+
+    if kind == "strategy":
+        sym = (form.get("atk_symbol") or "").strip().upper()
+        strat = (form.get("atk_strategy") or "").strip()
+        if not sym or not strat:
+            return None
+        prof = get_user_profile(current_user.id)
+        acct_label = account if prof.get("show_account_names_on_published") else "Account"
+        return {
+            "kind": "strategy",
+            "account": acct_label,
+            "symbol": sym,
+            "strategy": strat,
+            "first_open": (form.get("atk_first_open") or "").strip()[:10],
+            "last_activity": (form.get("atk_last_activity") or "").strip()[:10],
+            "leg_count": _safe_int(form.get("atk_leg_count")),
+            "open_legs": _safe_int(form.get("atk_open_legs")),
+            "closed_legs": _safe_int(form.get("atk_closed_legs")),
+            "total_pnl": _safe_float(form.get("atk_total_pnl")),
+        }
+
+    if kind == "transaction":
+        sym = (form.get("atk_symbol") or "").strip().upper()
+        if not sym:
+            return None
+        prof = get_user_profile(current_user.id)
+        acct_label = account if prof.get("show_account_names_on_published") else "Account"
+        return {
+            "kind": "transaction",
+            "account": acct_label,
+            "symbol": sym,
+            "trade_symbol": (form.get("atk_trade_symbol") or "").strip()[:64],
+            "instrument_type": (form.get("atk_instrument_type") or "").strip()[:32],
+            "trade_date": (form.get("atk_trade_date") or "").strip()[:10],
+            "action": (form.get("atk_action") or "").strip()[:32],
+            "action_label": (form.get("atk_action_label") or "").strip()[:48],
+            "quantity": _safe_float(form.get("atk_quantity")),
+            "price": _safe_float(form.get("atk_price")),
+            "amount": _safe_float(form.get("atk_amount")),
+        }
+
+    return None
 
 
 _TXN_ACTION_LABELS = {
@@ -623,7 +718,9 @@ def public_trader_profile(username):
     can_see = _viewer_can_see_profile(current_user.id, target_id, visibility, following)
     fc, fwing = follow_counts(target_id)
     published = list_public_published_trades(target_id, limit=80) if can_see else []
-    posts = list_posts_by_user(target_id, current_user.id, limit=80) if can_see else []
+    posts = decode_post_attachments(
+        list_posts_by_user(target_id, current_user.id, limit=80)
+    ) if can_see else []
     show_names = bool(prof.get("show_account_names_on_published")) if can_see else False
     published_count = count_published_trades(target_id)
 

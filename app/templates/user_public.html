@@ -88,6 +88,24 @@
         padding: .22rem .6rem; border-radius: 8px; text-decoration: none;
     }
     .up-strategy-chip:hover { background: #ddd6fe; color: #4c1d95; }
+
+    .up-attach-card {
+        margin-top: .7rem; padding: .75rem .9rem;
+        background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px;
+        display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap;
+    }
+    .up-attach-head { font-size: .88rem; color: #1c1917; }
+    .up-attach-head a { color: #1c1917; text-decoration: none; border-bottom: 1px dotted #d6d3d1; }
+    .up-attach-meta { font-size: .78rem; color: #78716c; margin-top: .2rem; }
+    .up-attach-pnl { font-weight: 700; font-size: .95rem; font-variant-numeric: tabular-nums; }
+    .up-attach-pnl.win { color: #15803d; }
+    .up-attach-pnl.loss { color: #b91c1c; }
+    .up-attach-kind {
+        display: inline-block; font-size: .62rem; font-weight: 800; text-transform: uppercase;
+        letter-spacing: .08em; padding: .12rem .5rem; border-radius: 999px; margin-right: .35rem;
+    }
+    .up-attach-kind.strategy    { background: #ede9fe; color: #5b21b6; }
+    .up-attach-kind.transaction { background: #fef3c7; color: #92400e; }
     .up-vis {
         display: inline-flex; align-items: center;
         font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
@@ -218,6 +236,52 @@
                     <a class="up-strategy-chip" href="{{ url_for('strategies', strategy=p.strategy) }}">{{ p.strategy }}</a>
                     {% endif %}
                 </div>
+                {% endif %}
+                {% if p.attachment %}
+                    {% set att = p.attachment %}
+                    {% if att.kind == 'strategy' %}
+                    <div class="up-attach-card">
+                        <div>
+                            <div class="up-attach-head">
+                                <span class="up-attach-kind strategy">Strategy</span>
+                                <strong>{{ att.strategy }}</strong>
+                                {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}">{{ att.symbol }}</a>{% endif %}
+                            </div>
+                            <div class="up-attach-meta">
+                                {% if att.leg_count %}{{ att.leg_count }} position{{ '' if att.leg_count == 1 else 's' }}{% endif %}
+                                {% if att.open_legs %} · {{ att.open_legs }} open{% endif %}
+                                {% if att.closed_legs %} · {{ att.closed_legs }} closed{% endif %}
+                                {% if att.first_open %} · {{ att.first_open }}{% if att.last_activity and att.last_activity != att.first_open %} → {{ att.last_activity }}{% endif %}{% endif %}
+                            </div>
+                        </div>
+                        {% if att.total_pnl is not none %}
+                        <div class="up-attach-pnl {% if att.total_pnl >= 0 %}win{% else %}loss{% endif %}">
+                            {{ "+" if att.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(att.total_pnl) }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% elif att.kind == 'transaction' %}
+                    <div class="up-attach-card">
+                        <div>
+                            <div class="up-attach-head">
+                                <span class="up-attach-kind transaction">Transaction</span>
+                                <strong>{{ att.action_label or att.action }}</strong>
+                                {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}">{{ att.symbol }}</a>{% endif %}
+                                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c">{{ att.trade_symbol }}</span>{% endif %}
+                            </div>
+                            <div class="up-attach-meta">
+                                {% if att.trade_date %}{{ att.trade_date }}{% endif %}
+                                {% if att.quantity %} · Qty {{ att.quantity|int if att.quantity == att.quantity|int else att.quantity }}{% endif %}
+                                {% if att.price %} @ ${{ "{:,.2f}".format(att.price) }}{% endif %}
+                            </div>
+                        </div>
+                        {% if att.amount is not none %}
+                        <div class="up-attach-pnl {% if att.amount >= 0 %}win{% else %}loss{% endif %}">
+                            {{ "+" if att.amount >= 0 else "" }}${{ "{:,.2f}".format(att.amount) }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 {% endif %}
             </article>
             {% endfor %}
