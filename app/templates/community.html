@@ -192,6 +192,96 @@
     .cm-btn-unfollow:hover { background: #fafaf9; color: #1c1917; }
 
     .cm-disclaimer { font-size: .78rem; color: #a8a29e; text-align: center; margin: 2rem auto 0; max-width: 34rem; line-height: 1.6; }
+
+    /* Attach-a-trade button + chip */
+    .cm-attach-btn { display: inline-flex; align-items: center; gap: .35rem; }
+    .cm-attach-btn.has-attachment { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+
+    .cm-attached-chip {
+        display: flex; align-items: center; gap: .75rem;
+        background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px;
+        padding: .7rem .9rem; margin-top: .4rem;
+    }
+    .cm-attached-info { flex: 1; min-width: 0; }
+    .cm-attached-title { font-weight: 700; font-size: .9rem; color: #1c1917; }
+    .cm-attached-title #cm-attached-sym { color: #92400e; }
+    .cm-attached-sep { color: #a8a29e; margin: 0 .35rem; }
+    .cm-attached-meta { font-size: .78rem; color: #78716c; margin-top: .2rem; }
+    .cm-attached-pnl { font-weight: 700; }
+    .cm-attached-pnl.win { color: #15803d; }
+    .cm-attached-pnl.loss { color: #b91c1c; }
+    .cm-attached-x {
+        background: transparent; border: none; color: #a8a29e; font-size: 1rem;
+        cursor: pointer; padding: .1rem .4rem; border-radius: 6px;
+    }
+    .cm-attached-x:hover { background: #f5f5f4; color: #1c1917; }
+
+    /* Trade picker modal */
+    .cm-picker-backdrop {
+        position: fixed; inset: 0; background: rgba(12,10,9,.55);
+        z-index: 1050; display: flex; align-items: center; justify-content: center;
+        padding: 1rem;
+    }
+    .cm-picker {
+        background: #fff; border-radius: 20px; width: 100%; max-width: 640px;
+        max-height: 85vh; display: flex; flex-direction: column;
+        box-shadow: 0 24px 72px rgba(12,10,9,.35);
+    }
+    .cm-picker-head {
+        display: flex; justify-content: space-between; gap: 1rem;
+        padding: 1.1rem 1.3rem .9rem; border-bottom: 1px solid #f5f5f4;
+    }
+    .cm-picker-head h3 {
+        font-family: "Fraunces", serif; font-size: 1.15rem; color: #1c1917; margin: 0 0 .2rem;
+    }
+    .cm-picker-head p { font-size: .82rem; color: #78716c; margin: 0; }
+    .cm-picker-x {
+        background: transparent; border: none; font-size: 1.1rem;
+        color: #78716c; cursor: pointer; padding: .2rem .5rem; border-radius: 6px;
+        height: fit-content;
+    }
+    .cm-picker-x:hover { background: #f5f5f4; color: #1c1917; }
+
+    .cm-picker-filters {
+        display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+        padding: .9rem 1.3rem; border-bottom: 1px solid #f5f5f4;
+    }
+    .cm-picker-filters input[type="search"] {
+        flex: 1; min-width: 140px; border: 1px solid #e7e5e4; border-radius: 999px;
+        padding: .4rem .9rem; font-size: .88rem; background: #fafaf9;
+    }
+    .cm-picker-filters input[type="search"]:focus { outline: none; border-color: #c4b5fd; background: #fff; }
+    .cm-picker-toggle { font-size: .82rem; color: #57534e; display: flex; align-items: center; gap: .35rem; user-select: none; cursor: pointer; }
+
+    .cm-picker-body {
+        overflow-y: auto; padding: .5rem .6rem 1rem;
+    }
+    .cm-picker-loading,
+    .cm-picker-empty { padding: 1.5rem; text-align: center; color: #78716c; font-size: .9rem; }
+
+    .cm-trade-row {
+        width: 100%; text-align: left; background: #fff; border: 1px solid transparent;
+        border-bottom: 1px solid #f5f5f4; border-radius: 10px;
+        padding: .7rem .85rem; cursor: pointer; display: flex; align-items: center;
+        justify-content: space-between; gap: .75rem; transition: background .12s, border-color .12s;
+    }
+    .cm-trade-row:hover { background: #faf5ff; border-color: #e7e5e4; }
+    .cm-trade-row:disabled { opacity: .55; cursor: default; }
+    .cm-trade-left { min-width: 0; }
+    .cm-trade-sym { font-weight: 800; color: #1c1917; font-size: .95rem; letter-spacing: -.01em; }
+    .cm-trade-strat { font-size: .82rem; color: #57534e; }
+    .cm-trade-dates { font-size: .74rem; color: #a8a29e; margin-top: .15rem; }
+    .cm-trade-right { text-align: right; font-size: .9rem; font-weight: 700; flex-shrink: 0; }
+    .cm-trade-right.win { color: #15803d; }
+    .cm-trade-right.loss { color: #b91c1c; }
+    .cm-trade-status {
+        display: inline-block; font-size: .65rem; text-transform: uppercase; letter-spacing: .08em;
+        font-weight: 700; padding: .15rem .45rem; border-radius: 999px;
+        background: #f5f5f4; color: #57534e; margin-left: .4rem;
+    }
+    .cm-trade-status.open { background: #dbeafe; color: #1d4ed8; }
+    .cm-trade-status.closed { background: #dcfce7; color: #15803d; }
+    .cm-trade-shared-tag { font-size: .68rem; color: #6f42c1; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 </style>
 {% endblock %}
 
@@ -222,12 +312,46 @@
 
         <div class="cm-grid">
             <div>
-                <form class="cm-card cm-composer" method="POST" action="{{ url_for('community_post_create') }}">
+                <form id="cm-composer-form" class="cm-card cm-composer" method="POST" action="{{ url_for('community_post_create') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="next" value="{{ url_for('community') }}">
+                    <input type="hidden" name="attach_fingerprint" id="cm-attach-fp">
+                    <input type="hidden" name="attach_account"      id="cm-attach-account">
+                    <input type="hidden" name="attach_symbol"       id="cm-attach-symbol">
+                    <input type="hidden" name="attach_strategy"     id="cm-attach-strategy">
+                    <input type="hidden" name="attach_trade_symbol" id="cm-attach-trade-symbol">
+                    <input type="hidden" name="attach_open_date"    id="cm-attach-open">
+                    <input type="hidden" name="attach_close_date"   id="cm-attach-close">
+                    <input type="hidden" name="attach_status"       id="cm-attach-status">
+                    <input type="hidden" name="attach_display_pnl"  id="cm-attach-pnl">
+
                     <label for="post-body" class="visually-hidden">Post</label>
                     <textarea id="post-body" name="body" placeholder="Share a trade, an observation, or a lesson..." maxlength="4000" required></textarea>
+
+                    <div id="cm-attached-chip" class="cm-attached-chip" hidden>
+                        <div class="cm-attached-info">
+                            <div class="cm-attached-title">
+                                <span id="cm-attached-sym"></span>
+                                <span class="cm-attached-sep">·</span>
+                                <span id="cm-attached-strat"></span>
+                            </div>
+                            <div class="cm-attached-meta">
+                                <span id="cm-attached-dates"></span>
+                                <span id="cm-attached-pnl-wrap" hidden>
+                                    <span class="cm-attached-sep">·</span>
+                                    <span id="cm-attached-pnl" class="cm-attached-pnl"></span>
+                                </span>
+                            </div>
+                        </div>
+                        <button type="button" id="cm-attached-remove" class="cm-attached-x" title="Remove attachment" aria-label="Remove attached trade">✕</button>
+                    </div>
+
                     <div class="cm-composer-row">
+                        <button type="button" id="cm-open-picker" class="cm-select cm-attach-btn" title="Attach one of your trades">
+                            <span id="cm-attach-icon">📎</span>
+                            <span id="cm-attach-label">Attach a trade</span>
+                        </button>
+
                         <label for="post-symbol" class="visually-hidden">Symbol</label>
                         <input id="post-symbol" type="text" name="symbol" class="cm-pill-input" placeholder="Symbol (optional)" maxlength="16" autocomplete="off">
 
@@ -241,6 +365,28 @@
                         <button type="submit" class="cm-btn-post">Post</button>
                     </div>
                 </form>
+
+                <!-- Trade picker modal -->
+                <div id="cm-picker" class="cm-picker-backdrop" hidden>
+                    <div class="cm-picker">
+                        <div class="cm-picker-head">
+                            <div>
+                                <h3>Attach a trade</h3>
+                                <p>Pick one of your trades to share with the post.</p>
+                            </div>
+                            <button type="button" id="cm-picker-close" class="cm-picker-x" aria-label="Close">✕</button>
+                        </div>
+                        <div class="cm-picker-filters">
+                            <input type="search" id="cm-picker-search" placeholder="Filter by symbol or strategy…" autocomplete="off">
+                            <label class="cm-picker-toggle">
+                                <input type="checkbox" id="cm-picker-closed-only"> Closed only
+                            </label>
+                        </div>
+                        <div id="cm-picker-body" class="cm-picker-body">
+                            <div class="cm-picker-loading">Loading your trades…</div>
+                        </div>
+                    </div>
+                </div>
 
                 {% if feed and feed|length > 0 %}
                     {% for p in feed %}
@@ -438,4 +584,170 @@
         <p class="cm-disclaimer">Community posts are voluntary notes from real traders. Nothing here is advice.</p>
     </div>
 </div>
+
+<script>
+(function () {
+    var openBtn     = document.getElementById('cm-open-picker');
+    var closeBtn    = document.getElementById('cm-picker-close');
+    var backdrop    = document.getElementById('cm-picker');
+    var body        = document.getElementById('cm-picker-body');
+    var searchInput = document.getElementById('cm-picker-search');
+    var closedOnly  = document.getElementById('cm-picker-closed-only');
+
+    var chip        = document.getElementById('cm-attached-chip');
+    var chipSym     = document.getElementById('cm-attached-sym');
+    var chipStrat   = document.getElementById('cm-attached-strat');
+    var chipDates   = document.getElementById('cm-attached-dates');
+    var chipPnlWrap = document.getElementById('cm-attached-pnl-wrap');
+    var chipPnl     = document.getElementById('cm-attached-pnl');
+    var chipRemove  = document.getElementById('cm-attached-remove');
+    var attachLabel = document.getElementById('cm-attach-label');
+
+    if (!openBtn || !backdrop) return;
+
+    var fields = {
+        fp:        document.getElementById('cm-attach-fp'),
+        account:   document.getElementById('cm-attach-account'),
+        symbol:    document.getElementById('cm-attach-symbol'),
+        strategy:  document.getElementById('cm-attach-strategy'),
+        tradeSym:  document.getElementById('cm-attach-trade-symbol'),
+        open:      document.getElementById('cm-attach-open'),
+        close:     document.getElementById('cm-attach-close'),
+        status:    document.getElementById('cm-attach-status'),
+        pnl:       document.getElementById('cm-attach-pnl'),
+    };
+    var postSymbolInput = document.getElementById('post-symbol');
+
+    var tradesCache = null;
+    var loading = false;
+
+    function openModal() {
+        backdrop.hidden = false;
+        document.body.style.overflow = 'hidden';
+        if (tradesCache === null && !loading) loadTrades();
+        setTimeout(function () { searchInput && searchInput.focus(); }, 50);
+    }
+    function closeModal() {
+        backdrop.hidden = true;
+        document.body.style.overflow = '';
+    }
+
+    function fmtMoney(n) {
+        if (n === null || n === undefined || isNaN(n)) return '';
+        var sign = n >= 0 ? '+' : '−';
+        return sign + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function renderTrades() {
+        if (!tradesCache) return;
+        var q = (searchInput.value || '').trim().toLowerCase();
+        var onlyClosed = !!closedOnly.checked;
+        var rows = tradesCache.filter(function (t) {
+            if (onlyClosed && (t.status || '').toLowerCase() !== 'closed') return false;
+            if (!q) return true;
+            return (t.symbol || '').toLowerCase().indexOf(q) !== -1
+                || (t.strategy || '').toLowerCase().indexOf(q) !== -1
+                || (t.trade_symbol || '').toLowerCase().indexOf(q) !== -1;
+        });
+
+        if (rows.length === 0) {
+            body.innerHTML = '<div class="cm-picker-empty">No trades match. ' +
+                (tradesCache.length === 0 ? 'You don\'t have any trades yet — upload or sync your account data first.' : 'Try a different filter.') +
+                '</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var t = rows[i];
+            var pnlCls = (t.display_pnl !== null && t.display_pnl >= 0) ? 'win' : (t.display_pnl !== null ? 'loss' : '');
+            var statusCls = (t.status || '').toLowerCase();
+            var dates = (t.open_date || '') + (t.close_date ? (' → ' + t.close_date) : '');
+            html += '<button type="button" class="cm-trade-row" data-idx="' + i + '">'
+                +     '<div class="cm-trade-left">'
+                +       '<div>'
+                +         '<span class="cm-trade-sym">' + (t.symbol || '—') + '</span>'
+                +         '<span class="cm-trade-status ' + statusCls + '">' + (t.status || '') + '</span>'
+                +         (t.already_shared ? ' <span class="cm-trade-shared-tag">Shared</span>' : '')
+                +       '</div>'
+                +       '<div class="cm-trade-strat">' + (t.strategy || '') + (t.trade_symbol ? (' · ' + t.trade_symbol) : '') + '</div>'
+                +       '<div class="cm-trade-dates">' + dates + '</div>'
+                +     '</div>'
+                +     (t.display_pnl !== null ? '<div class="cm-trade-right ' + pnlCls + '">' + fmtMoney(t.display_pnl) + '</div>' : '')
+                + '</button>';
+        }
+        body.innerHTML = html;
+
+        Array.prototype.forEach.call(body.querySelectorAll('.cm-trade-row'), function (el) {
+            el.addEventListener('click', function () {
+                var idx = parseInt(el.getAttribute('data-idx'), 10);
+                selectTrade(rows[idx]);
+            });
+        });
+    }
+
+    function loadTrades() {
+        loading = true;
+        body.innerHTML = '<div class="cm-picker-loading">Loading your trades…</div>';
+        fetch('{{ url_for("community_my_trades") }}', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                tradesCache = (data && data.trades) || [];
+                renderTrades();
+            })
+            .catch(function () {
+                body.innerHTML = '<div class="cm-picker-empty">Could not load trades. Please try again.</div>';
+            })
+            .finally(function () { loading = false; });
+    }
+
+    function selectTrade(t) {
+        fields.fp.value       = t.fingerprint || '';
+        fields.account.value  = t.account || '';
+        fields.symbol.value   = t.symbol || '';
+        fields.strategy.value = t.strategy || '';
+        fields.tradeSym.value = t.trade_symbol || '';
+        fields.open.value     = t.open_date || '';
+        fields.close.value    = t.close_date || '';
+        fields.status.value   = t.status || '';
+        fields.pnl.value      = (t.display_pnl === null || t.display_pnl === undefined) ? '' : String(t.display_pnl);
+
+        chipSym.textContent   = t.symbol || '';
+        chipStrat.textContent = t.strategy || '';
+        chipDates.textContent = (t.open_date || '') + (t.close_date ? (' → ' + t.close_date) : '') + ' · ' + (t.status || '');
+        if (t.display_pnl !== null && t.display_pnl !== undefined) {
+            chipPnlWrap.hidden = false;
+            chipPnl.textContent = fmtMoney(t.display_pnl);
+            chipPnl.classList.toggle('win', t.display_pnl >= 0);
+            chipPnl.classList.toggle('loss', t.display_pnl < 0);
+        } else {
+            chipPnlWrap.hidden = true;
+        }
+        chip.hidden = false;
+        openBtn.classList.add('has-attachment');
+        attachLabel.textContent = 'Trade attached';
+        if (postSymbolInput && !postSymbolInput.value && t.symbol) {
+            postSymbolInput.value = t.symbol;
+        }
+        closeModal();
+    }
+
+    function clearAttachment() {
+        ['fp','account','symbol','strategy','tradeSym','open','close','status','pnl'].forEach(function (k) {
+            if (fields[k]) fields[k].value = '';
+        });
+        chip.hidden = true;
+        openBtn.classList.remove('has-attachment');
+        attachLabel.textContent = 'Attach a trade';
+    }
+
+    openBtn.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !backdrop.hidden) closeModal(); });
+    chipRemove.addEventListener('click', clearAttachment);
+    searchInput.addEventListener('input', renderTrades);
+    closedOnly.addEventListener('change', renderTrades);
+})();
+</script>
 {% endblock %}

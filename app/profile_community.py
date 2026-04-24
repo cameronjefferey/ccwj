@@ -4,10 +4,11 @@ Profile hub (preferences, account, security) and community: follows, feed, publi
 import os
 from urllib.parse import urlparse
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app import app
+from app.bigquery_client import get_bigquery_client
 from app.models import (
     User,
     community_feed,
@@ -259,17 +260,151 @@ def community_post_create():
         flash("Write something before posting.", "warning")
         return redirect(next_url)
 
+    # Optional trade attachment — when the user picks one of their own trades
+    # from the composer, we publish a snapshot row (so the feed can join it)
+    # and wire the post.attached_fingerprint to it.
+    attach_fp = (request.form.get("attach_fingerprint") or "").strip() or None
+    if attach_fp:
+        account = (request.form.get("attach_account") or "").strip()
+        att_symbol = (request.form.get("attach_symbol") or "").strip()
+        att_strategy = (request.form.get("attach_strategy") or "").strip()
+        att_trade_symbol = (request.form.get("attach_trade_symbol") or "").strip()
+        att_open = (request.form.get("attach_open_date") or "").strip()
+        att_close = (request.form.get("attach_close_date") or "").strip()
+        att_status = (request.form.get("attach_status") or "").strip()
+        try:
+            att_pnl = float(request.form.get("attach_display_pnl") or "")
+        except (TypeError, ValueError):
+            att_pnl = None
+
+        if not _account_allowed(current_user.id, current_user.username, account):
+            flash("That trade belongs to an account you don't own.", "danger")
+            return redirect(next_url)
+        expected = trade_fingerprint(
+            current_user.id, account, att_symbol, att_trade_symbol,
+            att_open, att_close, att_strategy,
+        )
+        if expected != attach_fp:
+            flash("Could not verify the attached trade. Refresh and try again.", "danger")
+            return redirect(next_url)
+
+        prof = get_user_profile(current_user.id)
+        acct_label = account if prof.get("show_account_names_on_published") else "Account"
+        publish_community_trade(
+            current_user.id, attach_fp, acct_label, att_symbol, att_strategy,
+            att_trade_symbol, att_open, att_close, att_status, att_pnl, caption=None,
+        )
+        if not symbol and att_symbol:
+            symbol = att_symbol
+
     new_id = create_post(
         current_user.id,
         body=body,
         symbol=symbol or None,
         visibility=visibility,
+        attached_fingerprint=attach_fp,
     )
     if new_id is None:
         flash("Could not save that post. Try again in a moment.", "danger")
     else:
         flash("Posted.", "success")
     return redirect(next_url)
+
+
+@app.route("/community/my-trades")
+@login_required
+def community_my_trades():
+    """
+    JSON API backing the composer's 'Attach a trade' picker.
+
+    Returns up to 80 of the logged-in user's most recent trade groups from
+    mart_weekly_trades (same grain as the Weekly Review publish modal), each
+    with a fingerprint the /community/post endpoint can verify.
+
+    SECURITY: this endpoint MUST stay tenant-scoped — see
+    .cursor/rules/bigquery-tenant-isolation.mdc. We scope by account both in
+    SQL ({account_filter}) and in Python via _filter_df_by_accounts.
+    """
+    # Lazy import to avoid routes.py circularity at module load.
+    from app.routes import (
+        _user_account_list,
+        _account_sql_and,
+        _filter_df_by_accounts,
+    )
+
+    user_accounts = _user_account_list()
+    acct_sql = _account_sql_and(user_accounts)
+    sql = f"""
+        SELECT
+          account, symbol, strategy, trade_symbol,
+          open_date, close_date, status,
+          total_pnl, current_unrealized_pnl, num_trades
+        FROM `ccwj-dbt.analytics.mart_weekly_trades`
+        WHERE (open_date IS NOT NULL OR close_date IS NOT NULL)
+          {acct_sql}
+        ORDER BY COALESCE(close_date, open_date) DESC NULLS LAST,
+                 open_date DESC
+        LIMIT 80
+    """
+    try:
+        client = get_bigquery_client()
+        df = client.query(sql).to_dataframe()
+    except Exception as exc:
+        app.logger.warning("community_my_trades BQ query failed: %s", exc)
+        return jsonify({"error": "query_failed", "trades": []}), 200
+
+    df = _filter_df_by_accounts(df, user_accounts)
+    published_fps = get_published_trade_fingerprints(current_user.id)
+
+    trades = []
+    for _, row in df.iterrows():
+        status = str(row.get("status") or "")
+        # Snapshot-only open rows (num_trades == 0) have no real economic event yet; skip.
+        try:
+            num_trades = int(row.get("num_trades") or 0)
+        except (TypeError, ValueError):
+            num_trades = 0
+        if status.lower() == "open" and num_trades == 0:
+            continue
+
+        def _iso(v):
+            if v is None:
+                return ""
+            if hasattr(v, "isoformat"):
+                return v.isoformat()
+            return str(v)[:10]
+
+        acct = str(row.get("account", ""))
+        sym = str(row.get("symbol", ""))
+        strat = str(row.get("strategy", ""))
+        tsym = str(row.get("trade_symbol") or "")
+        open_d = _iso(row.get("open_date"))
+        close_d = _iso(row.get("close_date"))
+        total_pnl = row.get("total_pnl")
+        unreal = row.get("current_unrealized_pnl")
+        display_pnl = None
+        if status == "Closed":
+            display_pnl = float(total_pnl) if total_pnl is not None else None
+        else:
+            display_pnl = float(unreal) if unreal is not None else None
+
+        fp = trade_fingerprint(
+            current_user.id, acct, sym, tsym, open_d, close_d, strat,
+        )
+        trades.append({
+            "fingerprint": fp,
+            "account": acct,
+            "symbol": sym,
+            "strategy": strat,
+            "trade_symbol": tsym,
+            "open_date": open_d,
+            "close_date": close_d,
+            "status": status,
+            "display_pnl": display_pnl,
+            "already_shared": fp in published_fps,
+        })
+
+    return jsonify({"trades": trades})
 
 
 @app.route("/community/post/<int:post_id>/delete", methods=["POST"])
