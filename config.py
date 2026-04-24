@@ -49,9 +49,9 @@ class Config:
     _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
     SESSION_IDLE_TIMEOUT_MINUTES = max(0, _idle_min)
 
-    # /insights (Coach) UI: off by default; set INSIGHTS_ENABLED=1 in .env to show nav + /insights*.
+    # /insights (Coach) UI: on by default; set INSIGHTS_ENABLED=0 in .env to hide nav + /insights*.
     # Tests force-enable in conftest.
-    INSIGHTS_ENABLED = _env_bool("INSIGHTS_ENABLED", "false")
+    INSIGHTS_ENABLED = _env_bool("INSIGHTS_ENABLED", "true")
 
     # Behavior observations (BQML-ranked evidence) embedded in /insights coach.
     # Default on; set BEHAVIOR_INSIGHTS_ENABLED=0 to hide while the ml_models
