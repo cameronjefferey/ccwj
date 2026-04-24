@@ -46,6 +46,18 @@
 
     .cm-grid { display: grid; grid-template-columns: 1fr 320px; gap: 1.5rem; align-items: start; }
     @media (max-width: 991px) { .cm-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) {
+        .cm-hero { padding: 1.25rem 1.1rem !important; border-radius: 12px !important; }
+        .cm-hero h1 { font-size: 1.4rem !important; }
+        .cm-composer { padding: .9rem 1rem .85rem !important; }
+        .cm-composer-row { gap: .45rem; }
+        .cm-pill-input { width: 100% !important; }
+        .cm-pill-strategy { width: 100% !important; }
+        .cm-btn-post { margin-left: 0 !important; width: 100%; padding: .6rem 1.35rem; }
+        .cm-btn-post-wrap { width: 100%; }
+        .cm-tab { padding: .4rem .65rem !important; font-size: .8rem !important; }
+        .cm-picker { width: 94vw !important; max-width: 94vw !important; }
+    }
 
     .cm-card {
         background: #fff;
