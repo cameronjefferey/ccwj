@@ -90,7 +90,7 @@
         {% if kpis %}
         <div class="text-end">
             <div class="small text-white-50">Total return</div>
-            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized</div>
+            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
             <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
                 ${{ "{:,.2f}".format(kpis.total_return) }}
             </div>

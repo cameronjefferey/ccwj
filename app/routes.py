@@ -1382,6 +1382,8 @@ def position_detail(symbol):
             closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
         if not closed_equity_df.empty:
             closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
+    if selected_strategy and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
+        closed_legs_df = closed_legs_df[closed_legs_df["strategy"] == selected_strategy]
     # Before leg scoping, keep copies for "first/last activity" on the page
     closed_legs_pre_leg = closed_legs_df.copy()
     closed_equity_pre_leg = closed_equity_df.copy()
@@ -1481,10 +1483,13 @@ def position_detail(symbol):
         if not current_df.empty and "unrealized_pnl" in current_df.columns:
             unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
 
-        # When leg-filtered, premium = filtered closed options; else prefer sums from
-        # all closed option legs (correct when book is open but history has premium).
-        if leg_param and _leg_ranges and not closed_legs_df.empty:
-            pr, pp = _premium_totals_from_closed_options(closed_legs_df)
+        # When leg-filtered, premium = filtered closed options only (never full-history
+        # legs when the filtered frame is empty for that range).
+        if leg_param and _leg_ranges:
+            if not closed_legs_df.empty:
+                pr, pp = _premium_totals_from_closed_options(closed_legs_df)
+            else:
+                pr, pp = 0.0, 0.0
             premium_collected, premium_paid = pr, pp
         else:
             pr, pp = _premium_totals_from_closed_options(closed_legs_pre_leg)
@@ -1585,13 +1590,17 @@ def position_detail(symbol):
             if d_alt > 0 and avg_days_val == 0.0:
                 avg_days_val = d_alt
 
+        div_income = (
+            float(summary_df["total_dividend_income"].sum()) if not summary_df.empty else 0.0
+        )
+
         kpis = {
-            "total_return": realized_for_display + unrealized_from_summary,
+            "total_return": realized_for_display + unrealized_from_summary + div_income,
             "realized_pnl": realized_for_display,
             "unrealized_pnl": unrealized_from_summary,
             "premium_collected": premium_collected,
             "premium_paid": premium_paid,
-            "dividend_income": float(summary_df["total_dividend_income"].sum()) if not summary_df.empty else 0.0,
+            "dividend_income": div_income,
             "win_rate": total_winners / total_closed if total_closed else 0,
             "avg_days": avg_days_val,
             "total_trades": trade_count,
@@ -2160,6 +2169,7 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
 
     realized = float(kpis.get("realized_pnl") or 0)
     unreal = float(kpis.get("unrealized_pnl") or 0)
+    div_d = float(kpis.get("dividend_income") or 0)
     tot_end = round(float(kpis.get("total_return") or 0), 2)
 
     eq_unreal = 0.0
@@ -2220,7 +2230,7 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
         "dates": [d0, d1],
         "equity": [0.0, eq_end],
         "options": [0.0, opt_end],
-        "dividends": [0.0, 0.0],
+        "dividends": [0.0, div_d],
         "total": [0.0, tot_end],
         "underlying_price": [p0, p1],
         "has_underlying_price": p1 is not None,
