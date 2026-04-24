@@ -19,16 +19,22 @@ assumed to have been created once, out of band (see the project prompt).
 
 from __future__ import annotations
 
+import importlib.util
 import logging
-import os
 import sys
 from pathlib import Path
 
-# Make `app.bigquery_client` importable when this script is run directly.
+# Load app/bigquery_client.py as a standalone module so we don't trigger
+# app/__init__.py (which pulls in Flask config + requires SECRET_KEY).
+# This script only needs BigQuery credentials, not a Flask app.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from app.bigquery_client import get_bigquery_client  # noqa: E402
+_BQ_CLIENT_PATH = REPO_ROOT / "app" / "bigquery_client.py"
+_spec = importlib.util.spec_from_file_location("_bqml_bq_client", _BQ_CLIENT_PATH)
+if _spec is None or _spec.loader is None:  # pragma: no cover - defensive
+    raise ImportError(f"Could not load bigquery_client from {_BQ_CLIENT_PATH}")
+_bq_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_bq_mod)
+get_bigquery_client = _bq_mod.get_bigquery_client
 
 logging.basicConfig(
     level=logging.INFO,
