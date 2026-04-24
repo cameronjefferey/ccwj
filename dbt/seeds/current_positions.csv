@@ -1,7 +1,7 @@
 Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Schwab Account,PLTR  260424C00141000,PALANTIR TECHNOLOGIES INC 04/24/2026 $141 Call,-2.0,0.98,,,-299.0,,,196.0,-495.0,-252.551,,,,,,,,,,,,,,,,,Option,
-Schwab Account,QTUM,Defiance Quantum ETF,100.0,95.9,,,13259.0,,,9590.0,3669.0,38.2586,,,,,,,,,,,,,,,,,ETFs & Closed End Funds,
-Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,55.7766,,,8005.0,,,11155.32,-3150.32,-28.2405,,,,,,,,,,,,,,,,,Option,
+Schwab Account,PLTR  260424C00141000,PALANTIR TECHNOLOGIES INC 04/24/2026 $141 Call,-2.0,0.98,,,-280.0,,,196.0,-476.0,-242.8571,,,,,,,,,,,,,,,,,Option,
+Schwab Account,QTUM,Defiance Quantum ETF,100.0,95.9,,,13260.0,,,9590.0,3670.0,38.269,,,,,,,,,,,,,,,,,ETFs & Closed End Funds,
+Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,55.7766,,,7985.0,,,11155.32,-3170.32,-28.4198,,,,,,,,,,,,,,,,,Option,
 Schwab Account,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,38.5866,,,4547.5,,,3858.66,688.84,17.8518,,,,,,,,,,,,,,,,,Option,
-Schwab Account,QBTS,QBTS,100.0,28.3117,,,1854.5,,,2831.1699999999996,-976.67,-34.497,,,,,,,,,,,,,,,,,Equity,
-Schwab Account,ASTS,ASTS,11.0,90.1727272727,,,860.75,,,991.8999999997,-131.15,-13.2221,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,QBTS,QBTS,100.0,28.3117,,,1853.5,,,2831.1699999999996,-977.67,-34.5324,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,ASTS,ASTS,11.0,90.1727272727,,,861.96,,,991.8999999997,-129.94,-13.1001,,,,,,,,,,,,,,,,,Equity,
