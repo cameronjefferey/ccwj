@@ -562,7 +562,7 @@ def schwab_sync():
         )
         if result.get("github_pushed"):
             flash(
-                f"{summary} dbt is updating BigQuery; this page will finish when the GitHub Action completes.",
+                f"{summary} We’re processing your data now—this page will move along when it’s ready.",
                 "success",
             )
             h = (result.get("github_head_sha") or "").strip()

@@ -46,10 +46,7 @@
     </p>
 
     {% if head_sha %}
-    <p class="small text-muted mb-2" id="pipelineStateLabel" aria-live="polite">Tracking GitHub Actions…</p>
-    <div class="mb-2">
-        <a id="ghRunLink" href="#" class="btn btn-sm btn-outline-secondary d-none" target="_blank" rel="noopener">View run on GitHub</a>
-    </div>
+    <p class="small text-muted mb-3" id="pipelineStateLabel" aria-live="polite">Putting the finishing touches on your update…</p>
     {% endif %}
     <div class="mb-3">
         <a href="{{ url_for('weekly_review', from_upload=1) }}" class="btn btn-outline-primary">
