@@ -53,6 +53,11 @@ class Config:
     # Tests force-enable in conftest.
     INSIGHTS_ENABLED = _env_bool("INSIGHTS_ENABLED", "false")
 
+    # Behavior observations (BQML-ranked evidence) embedded in /insights coach.
+    # Default on; set BEHAVIOR_INSIGHTS_ENABLED=0 to hide while the ml_models
+    # dataset is still being backfilled/tuned.
+    BEHAVIOR_INSIGHTS_ENABLED = _env_bool("BEHAVIOR_INSIGHTS_ENABLED", "true")
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024
