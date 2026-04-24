@@ -191,7 +191,8 @@ SELECT
   trade_cost,
   current_market_value,
   current_unrealized_pnl,
-  total_pnl
+  total_pnl,
+  num_trades
 FROM `ccwj-dbt.analytics.mart_weekly_trades`
 WHERE week_start = @week_start
   {account_filter}
@@ -1375,13 +1376,25 @@ def weekly_review():
             if not trades_df.empty:
                 trades_list = []
                 for _, row in trades_df.iterrows():
+                    status = str(row.get("status", "") or "")
+                    # Open + num_trades=0 = snapshot-only in our warehouse (see int_option_contracts
+                    # / int_equity_sessions). Skip for "trades this week" when the column exists.
+                    if "num_trades" in trades_df.columns:
+                        nt_raw = row.get("num_trades")
+                        try:
+                            num_trades = int(nt_raw) if nt_raw is not None and not (
+                                hasattr(nt_raw, "__float__") and pd.isna(nt_raw)
+                            ) else None
+                        except (TypeError, ValueError):
+                            num_trades = None
+                        if status.lower() == "open" and (num_trades is not None) and num_trades == 0:
+                            continue
                     open_d = row.get("open_date")
                     close_d = row.get("close_date")
                     open_d = open_d.isoformat() if hasattr(open_d, "isoformat") else (str(open_d)[:10] if open_d is not None else "")
                     close_d = close_d.isoformat() if hasattr(close_d, "isoformat") else (str(close_d)[:10] if close_d is not None else "")
                     total_pnl = row.get("total_pnl")
                     total_pnl = float(total_pnl) if total_pnl is not None else None
-                    status = str(row.get("status", ""))
                     # Open: show unrealized P/L; Closed: show realized P/L (total_pnl)
                     is_closed = status == "Closed"
                     if is_closed:

@@ -942,9 +942,9 @@
 
 {# ── Trades this week ── #}
 {% if trades_this_week %}
-{% include "_show_wall_strip_weekly.html" %}
 <div class="review-section">
     <div class="section-label">All Trades This Week</div>
+    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Rows from your analytics mart for this calendar week. Open positions with <strong>no</strong> trade history in our data yet (broker snapshot only) are excluded so this list matches real activity.</p>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 trades-table">
             <thead class="table-light">
@@ -1402,9 +1402,9 @@
 
 {# ── Trades this week (mid-week view) ── #}
 {% if trades_this_week %}
-{% include "_show_wall_strip_weekly.html" %}
 <div class="review-section">
     <div class="section-label">Trades This Week</div>
+    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Same week as the hero. Snapshot-only positions (no fills in our history) are excluded.</p>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 trades-table">
             <thead class="table-light">

@@ -9,6 +9,7 @@
       - open_date, close_date, status
       - net_cash_flow
       - total_pnl          (lifetime P&L for the group)
+      - num_trades         (0 = snapshot-only synthetic; UI should hide for "this week" open rows)
       - trade_cost         (abs(net_cash_flow))
       - current_unrealized_pnl
       - current_market_value
@@ -36,6 +37,7 @@ with base as (
         status,
         net_cash_flow,
         total_pnl,
+        coalesce(num_trades, 0) as num_trades,
         date_trunc(coalesce(close_date, open_date), isoweek) as week_start
     from {{ ref('int_strategy_classification') }}
     where open_date is not null
@@ -52,6 +54,7 @@ calc as (
         open_date,
         close_date,
         status,
+        cast(num_trades as int64) as num_trades,
         cast(net_cash_flow as float64) as net_cash_flow,
         cast(total_pnl as float64)     as total_pnl,
         abs(cast(net_cash_flow as float64)) as trade_cost,

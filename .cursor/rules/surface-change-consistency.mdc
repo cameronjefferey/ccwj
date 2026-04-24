@@ -1,0 +1,28 @@
+---
+description: After fixing one surface, verify related pages, data pipelines, and copy stay consistent
+alwaysApply: true
+---
+
+# Surface change — holistic follow-through
+
+When you **change behavior, data semantics, or labels** in one place, do not stop at the first file. Treat “fixed” as **verified across the product slice** that shares the same idea.
+
+## Same feature, other surfaces
+
+- **Search the codebase** for the feature name, URL path, `url_for(…)` endpoint, BigQuery model/mart, and any **feature flag** (e.g. `INSIGHTS_ENABLED`). Update every caller: nav, other templates, API routes, tests, and `AGENTS.md` if it documents that flow.
+- If the product has **modes or tabs** (e.g. Friday / Monday / mid-week), check **each** mode block in the same template, not only the one you edited.
+- If you changed **user-visible definitions** (e.g. “this week”, “open”, “trade”), align **headlines, tooltips, FAQ, and marketing** so wording matches the implementation.
+
+## Data and backend alignment
+
+- If the bug was **data-shaped** (wrong week, snapshot vs history, P&amp;L meaning), check **all** marts, queries, and Python that use the same fields — often the same bug appears in a **list**, a **summary**, and a **pace/hero** block.
+- If you add or rely on a **dbt** column, ensure **dbt** ships before or with the app change; call out deploy order in the PR if needed.
+
+## Before you call it done
+
+- [ ] Grep for old strings, route names, or removed UI blocks (no orphan links or dead copy).
+- [ ] If templates branch on flags or `mode`, all branches still make sense.
+- [ ] No contradicting numbers or labels on the same page (same `week`, same meaning for % and $).
+- [ ] Run **tests** or a quick **import/compile** for touched code paths when applicable.
+
+**Anti-pattern:** fixing Pace Check (or one section) while leaving the **same root cause** in “Trades this week”, snapshots, or another tab.
