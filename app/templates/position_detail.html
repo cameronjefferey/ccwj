@@ -89,7 +89,8 @@
         </div>
         {% if kpis %}
         <div class="text-end">
-            <div class="small text-white-50">Total Return</div>
+            <div class="small text-white-50">Total return</div>
+            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized</div>
             <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
                 ${{ "{:,.2f}".format(kpis.total_return) }}
             </div>
@@ -137,8 +138,12 @@
     <p class="narrative mb-0 text-muted" style="font-size:1.02rem; line-height:1.65;">
         <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">History</span><br>
         Across everything you’ve done in <strong>{{ symbol }}</strong>
-        {%- if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade -%}
+        {%- if kpis.first_trade and kpis.last_trade -%}
+        {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
+        , with activity on <strong>{{ kpis.first_trade[:10] }}</strong>
+        {%- else -%}
         , from <strong>{{ kpis.first_trade[:10] }}</strong> through <strong>{{ kpis.last_trade[:10] }}</strong>
+        {%- endif -%}
         {%- endif -%}
         {%- if kpis.total_trades > 0 -%}
         : <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}
@@ -155,8 +160,12 @@
     {% else %}
     <p class="narrative mb-0" style="font-size:1.05rem; line-height:1.7;">
         Your work in <strong>{{ symbol }}</strong> is fully closed
-        {%- if kpis.first_trade and kpis.last_trade and kpis.first_trade != kpis.last_trade -%}
+        {%- if kpis.first_trade and kpis.last_trade -%}
+        {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
+        (activity on <strong>{{ kpis.first_trade[:10] }}</strong>)
+        {%- else -%}
         (roughly <strong>{{ kpis.first_trade[:10] }}</strong> — <strong>{{ kpis.last_trade[:10] }}</strong>)
+        {%- endif -%}
         {%- endif -%}
         {%- if kpis.total_trades > 0 -%}
         with <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}{% if kpis.num_winners + kpis.num_losers > 0 %} and <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed legs{% endif %}.

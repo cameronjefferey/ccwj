@@ -1022,6 +1022,42 @@ def _merge_position_strategy_breakdown(
     return out
 
 
+def _realized_pnl_from_closed_frames(
+    closed_legs_df: pd.DataFrame, closed_equity_df: pd.DataFrame
+) -> float:
+    """Sum realized P&L from closed option contract legs and closed equity lots."""
+    r = 0.0
+    if (
+        closed_legs_df is not None
+        and not closed_legs_df.empty
+        and "total_pnl" in closed_legs_df.columns
+    ):
+        r += float(closed_legs_df["total_pnl"].sum())
+    if (
+        closed_equity_df is not None
+        and not closed_equity_df.empty
+        and "realized_pnl" in closed_equity_df.columns
+    ):
+        r += float(closed_equity_df["realized_pnl"].sum())
+    return r
+
+
+def _premium_totals_from_closed_options(closed_legs_df: pd.DataFrame) -> tuple:
+    if closed_legs_df is None or closed_legs_df.empty:
+        return 0.0, 0.0
+    pr = (
+        float(closed_legs_df["premium_received"].sum())
+        if "premium_received" in closed_legs_df.columns
+        else 0.0
+    )
+    pp = (
+        float(closed_legs_df["premium_paid"].sum())
+        if "premium_paid" in closed_legs_df.columns
+        else 0.0
+    )
+    return pr, pp
+
+
 # Pre-aggregated daily P&L data for chart rendering (single symbol)
 CHART_DATA_QUERY = """
     SELECT *
@@ -1398,30 +1434,33 @@ def position_detail(symbol):
     total_losers = int(summary_df["num_losers"].sum()) if not summary_df.empty else 0
     total_closed = total_winners + total_losers
 
-    # Realized P/L only from closed trades. For open positions there is no realized (cost of buy is not a "realized loss").
     _sell_actions = ("equity_sell", "option_sell_to_close", "option_buy_to_close")
     has_sell_trades = (
         not trades_df.empty
         and "action" in trades_df.columns
         and trades_df["action"].astype(str).str.strip().isin(_sell_actions).any()
     )
-    is_open_only = (
-        overall_status == "Open"
-        or (total_closed == 0 and not current_df.empty)
-        or (not has_sell_trades and not current_df.empty)
+    # True only for snapshot-only / no-history edge cases (not "any open position").
+    is_open_only = (total_closed == 0 and not current_df.empty) or (
+        not has_sell_trades and not current_df.empty
     )
 
     if leg_param and _leg_ranges:
-        realized_for_display = 0.0
-        if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns:
-            realized_for_display += float(closed_legs_df["total_pnl"].sum())
-        if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns:
-            realized_for_display += float(closed_equity_df["realized_pnl"].sum())
+        realized_for_display = _realized_pnl_from_closed_frames(
+            closed_legs_df, closed_equity_df
+        )
     else:
-        if is_open_only:
-            realized_for_display = 0.0
+        has_closed_frame = (not closed_legs_pre_leg.empty) or (
+            not closed_equity_pre_leg.empty
+        )
+        if has_closed_frame:
+            realized_for_display = _realized_pnl_from_closed_frames(
+                closed_legs_pre_leg, closed_equity_pre_leg
+            )
         else:
-            realized_for_display = float(summary_df["realized_pnl"].sum()) if not summary_df.empty else 0.0
+            realized_for_display = (
+                float(summary_df["realized_pnl"].sum()) if not summary_df.empty else 0.0
+            )
 
     if app.debug and symbol == "ATZAF":
         app.logger.warning(
@@ -1442,13 +1481,17 @@ def position_detail(symbol):
         if not current_df.empty and "unrealized_pnl" in current_df.columns:
             unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
 
-        # When leg-filtered, premium collected = sum from filtered closed option legs
+        # When leg-filtered, premium = filtered closed options; else prefer sums from
+        # all closed option legs (correct when book is open but history has premium).
         if leg_param and _leg_ranges and not closed_legs_df.empty:
-            premium_collected = float(closed_legs_df["premium_received"].sum()) if "premium_received" in closed_legs_df.columns else 0.0
-            premium_paid = float(closed_legs_df["premium_paid"].sum()) if "premium_paid" in closed_legs_df.columns else 0.0
+            pr, pp = _premium_totals_from_closed_options(closed_legs_df)
+            premium_collected, premium_paid = pr, pp
         else:
-            premium_collected = float(summary_df["total_premium_received"].sum()) if not summary_df.empty else 0.0
-            premium_paid = float(summary_df["total_premium_paid"].sum()) if not summary_df.empty else 0.0
+            pr, pp = _premium_totals_from_closed_options(closed_legs_pre_leg)
+            premium_collected, premium_paid = pr, pp
+            if (premium_collected == 0.0 and premium_paid == 0.0) and not summary_df.empty:
+                premium_collected = float(summary_df["total_premium_received"].sum())
+                premium_paid = float(summary_df["total_premium_paid"].sum())
 
         # Trade count: use row count when summary is empty (e.g. Schwab positions-only path)
         if leg_param or summary_df.empty:
@@ -1515,7 +1558,8 @@ def position_detail(symbol):
         elif trade_count == 0 and _n_legs > 0:
             trade_count = _n_legs
 
-        # Win/loss from filtered closed legs when leg-filtered
+        # Win/loss: from filtered closed legs when leg-filtered; otherwise from all
+        # symbol closed legs (positions_summary is wrong when open rows mask closed stats).
         if leg_param and _leg_ranges:
             opt_wins = int((closed_legs_df["total_pnl"] > 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
             opt_losses = int((closed_legs_df["total_pnl"] <= 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
@@ -1524,6 +1568,22 @@ def position_detail(symbol):
             total_winners = opt_wins + eq_wins
             total_losers = opt_losses + eq_losses
             total_closed = total_winners + total_losers
+        elif (not closed_legs_pre_leg.empty) or (not closed_equity_pre_leg.empty):
+            opt_wins = int((closed_legs_pre_leg["total_pnl"] > 0).sum()) if not closed_legs_pre_leg.empty and "total_pnl" in closed_legs_pre_leg.columns else 0
+            opt_losses = int((closed_legs_pre_leg["total_pnl"] <= 0).sum()) if not closed_legs_pre_leg.empty and "total_pnl" in closed_legs_pre_leg.columns else 0
+            eq_wins = int((closed_equity_pre_leg["realized_pnl"] > 0).sum()) if not closed_equity_pre_leg.empty and "realized_pnl" in closed_equity_pre_leg.columns else 0
+            eq_losses = int((closed_equity_pre_leg["realized_pnl"] <= 0).sum()) if not closed_equity_pre_leg.empty and "realized_pnl" in closed_equity_pre_leg.columns else 0
+            total_winners = opt_wins + eq_wins
+            total_losers = opt_losses + eq_losses
+            total_closed = total_winners + total_losers
+
+        avg_days_val = float(summary_df["avg_days_in_trade"].mean()) if not summary_df.empty else 0.0
+        if pd.isna(avg_days_val):
+            avg_days_val = 0.0
+        if (not closed_legs_pre_leg.empty) and "days_in_trade" in closed_legs_pre_leg.columns:
+            d_alt = float(closed_legs_pre_leg["days_in_trade"].fillna(0).mean() or 0.0)
+            if d_alt > 0 and avg_days_val == 0.0:
+                avg_days_val = d_alt
 
         kpis = {
             "total_return": realized_for_display + unrealized_from_summary,
@@ -1533,7 +1593,7 @@ def position_detail(symbol):
             "premium_paid": premium_paid,
             "dividend_income": float(summary_df["total_dividend_income"].sum()) if not summary_df.empty else 0.0,
             "win_rate": total_winners / total_closed if total_closed else 0,
-            "avg_days": float(summary_df["avg_days_in_trade"].mean()) if not summary_df.empty else 0,
+            "avg_days": avg_days_val,
             "total_trades": trade_count,
             "num_winners": total_winners,
             "num_losers": total_losers,
