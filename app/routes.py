@@ -1048,7 +1048,60 @@ def _fetch_int_strategy_classification_by_symbol(
     """
     try:
         df = client.query(sql).to_dataframe()
-    except Exception:
+    except Exception as exc:
+        app.logger.exception(
+            "int_strategy_classification by symbol failed for %s: %s", safe_symbol, exc
+        )
+        return pd.DataFrame()
+    df = _df_normalize_account_column(df)
+    return _filter_df_by_accounts(df, user_accounts)
+
+
+def _fetch_closed_option_legs_from_classification(
+    client, safe_symbol: str, user_accounts
+) -> pd.DataFrame:
+    """Closed option contract rows from int_strategy_classification only (no join).
+
+    POSITION_CLOSED_LEGS joins to int_option_contracts. When that join misses (drift,
+    renames, or partial loads), the page loses all closed option history. This query
+    matches the P&L in classification and is the same grain as the join: one row per
+    closed option trade group.
+    """
+    if user_accounts is not None and not user_accounts:
+        return pd.DataFrame()
+    acct = _account_sql_and(user_accounts, col="sc.account")
+    sql = f"""
+    SELECT
+        sc.account,
+        sc.symbol,
+        sc.strategy,
+        sc.trade_symbol,
+        sc.open_date,
+        sc.close_date,
+        sc.total_pnl,
+        sc.status,
+        CAST(COALESCE(sc.num_trades, 1) AS INT64) AS quantity,
+        sc.premium_received,
+        sc.premium_paid,
+        CAST(NULL AS FLOAT64) AS cost_to_close,
+        CAST(NULL AS FLOAT64) AS proceeds_from_close,
+        sc.direction,
+        sc.close_type,
+        sc.days_in_trade
+    FROM `ccwj-dbt.analytics.int_strategy_classification` sc
+    WHERE sc.status = 'Closed'
+      AND sc.trade_group_type = 'option_contract'
+      AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
+    {acct}
+    """
+    try:
+        df = client.query(sql).to_dataframe()
+    except Exception as exc:
+        app.logger.exception(
+            "closed option legs fallback (classification) failed for %s: %s",
+            safe_symbol,
+            exc,
+        )
         return pd.DataFrame()
     df = _df_normalize_account_column(df)
     return _filter_df_by_accounts(df, user_accounts)
@@ -1345,6 +1398,23 @@ def position_detail(symbol):
     closed_legs_df = _filter_df_by_accounts(closed_legs_df, user_accounts)
     closed_equity_df = _filter_df_by_accounts(closed_equity_df, user_accounts)
     matrix_df = _filter_df_by_accounts(matrix_df, user_accounts)
+
+    # Joined closed legs are empty: int_option_contracts can fail to match while
+    # int_strategy_classification still has closed option P&L — use classification only.
+    if closed_legs_df.empty and (
+        user_accounts is None
+        or (isinstance(user_accounts, list) and len(user_accounts) > 0)
+    ):
+        _cl_sup = _fetch_closed_option_legs_from_classification(
+            client, safe_symbol, user_accounts
+        )
+        if not _cl_sup.empty:
+            closed_legs_df = _cl_sup
+            for col in ["total_pnl", "premium_received", "premium_paid", "days_in_trade"]:
+                if col in closed_legs_df.columns:
+                    closed_legs_df[col] = pd.to_numeric(
+                        closed_legs_df[col], errors="coerce"
+                    ).fillna(0)
 
     # Optional filters carried from Positions page
     selected_account = request.args.get("account", "")
