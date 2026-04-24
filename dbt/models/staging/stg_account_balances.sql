@@ -13,9 +13,31 @@
 */
 
 with export_source as (
-    select * from {{ ref('current_positions') }}
+    -- Cast every column we touch to STRING so this model is resilient to the
+    -- seed being empty (BigQuery re-infers column types per load; an empty
+    -- current_positions seed ends up with different types than demo_current,
+    -- which breaks UNION ALL). stg_current does the same via a macro.
+    select
+        cast(account as string) as account,
+        cast(symbol as string) as symbol,
+        cast(security_type as string) as security_type,
+        cast(market_value as string) as market_value,
+        cast(cost_bases as string) as cost_bases,
+        cast(gain_or_loss_dollat as string) as gain_or_loss_dollat,
+        cast(gain_or_loss_percent as string) as gain_or_loss_percent,
+        cast(percent_of_account as string) as percent_of_account
+    from {{ ref('current_positions') }}
     union all
-    select * from {{ ref('demo_current') }}
+    select
+        cast(account as string) as account,
+        cast(symbol as string) as symbol,
+        cast(security_type as string) as security_type,
+        cast(market_value as string) as market_value,
+        cast(cost_bases as string) as cost_bases,
+        cast(gain_or_loss_dollat as string) as gain_or_loss_dollat,
+        cast(gain_or_loss_percent as string) as gain_or_loss_percent,
+        cast(percent_of_account as string) as percent_of_account
+    from {{ ref('demo_current') }}
 ),
 
 cash_rows as (
