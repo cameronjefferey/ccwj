@@ -73,13 +73,21 @@
 
     .up-post-meta { font-size: .75rem; color: #78716c; margin-bottom: .5rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .up-post-body { color: #1c1917; font-size: .97rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+    .up-tag-row { margin-top: .55rem; display: flex; gap: .4rem; flex-wrap: wrap; }
     .up-symbol-chip {
-        display: inline-block; margin-top: .55rem;
+        display: inline-block;
         background: #fef3c7; color: #92400e;
         font-weight: 700; font-size: .76rem; letter-spacing: .04em;
         padding: .22rem .6rem; border-radius: 8px; text-decoration: none;
     }
     .up-symbol-chip:hover { background: #fde68a; color: #7c2d12; }
+    .up-strategy-chip {
+        display: inline-block;
+        background: #ede9fe; color: #5b21b6;
+        font-weight: 700; font-size: .76rem; letter-spacing: .02em;
+        padding: .22rem .6rem; border-radius: 8px; text-decoration: none;
+    }
+    .up-strategy-chip:hover { background: #ddd6fe; color: #4c1d95; }
     .up-vis {
         display: inline-flex; align-items: center;
         font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
@@ -201,8 +209,15 @@
                     {% endif %}
                 </div>
                 <div class="up-post-body">{{ p.body }}</div>
-                {% if p.symbol %}
-                <a class="up-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                {% if p.symbol or p.strategy %}
+                <div class="up-tag-row">
+                    {% if p.symbol %}
+                    <a class="up-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                    {% endif %}
+                    {% if p.strategy %}
+                    <a class="up-strategy-chip" href="{{ url_for('strategies', strategy=p.strategy) }}">{{ p.strategy }}</a>
+                    {% endif %}
+                </div>
                 {% endif %}
             </article>
             {% endfor %}

@@ -253,6 +253,7 @@ def community():
 def community_post_create():
     body = (request.form.get("body") or "").strip()
     symbol = (request.form.get("symbol") or "").strip()
+    strategy = (request.form.get("strategy") or "").strip()
     visibility = (request.form.get("visibility") or "followers").strip().lower()
     next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
 
@@ -296,11 +297,14 @@ def community_post_create():
         )
         if not symbol and att_symbol:
             symbol = att_symbol
+        if not strategy and att_strategy:
+            strategy = att_strategy
 
     new_id = create_post(
         current_user.id,
         body=body,
         symbol=symbol or None,
+        strategy=strategy or None,
         visibility=visibility,
         attached_fingerprint=attach_fp,
     )

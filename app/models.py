@@ -151,6 +151,7 @@ def init_db():
             user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             body                TEXT NOT NULL,
             symbol              TEXT,
+            strategy            TEXT,
             attached_fingerprint TEXT,
             visibility          TEXT NOT NULL DEFAULT 'followers',
             created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -171,6 +172,7 @@ def init_db():
             for stmt in statements:
                 cur.execute(stmt)
     _migrate_schwab_first_sync_column()
+    _migrate_community_posts_strategy_column()
 
 
 def _migrate_schwab_first_sync_column():
@@ -182,6 +184,15 @@ def _migrate_schwab_first_sync_column():
         )
     except Exception as e:
         _log.warning("schwab_connections migration skipped: %s", e)
+
+
+def _migrate_community_posts_strategy_column():
+    """Idempotent: add strategy tag column to community_posts so traders can tag
+    posts with a strategy (Covered Call, Wheel, PMCC, etc) in addition to a symbol."""
+    try:
+        execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS strategy TEXT")
+    except Exception as e:
+        _log.warning("community_posts strategy migration skipped: %s", e)
 
 
 class User(UserMixin):
@@ -749,10 +760,18 @@ def list_public_published_trades(target_user_id, limit=100):
 
 _MAX_POST_BODY_LEN = 4000
 _MAX_POST_SYMBOL_LEN = 32
+_MAX_POST_STRATEGY_LEN = 64
 _ALLOWED_POST_VISIBILITY = frozenset({"private", "followers", "public"})
 
 
-def create_post(user_id, body, symbol=None, visibility="followers", attached_fingerprint=None):
+def create_post(
+    user_id,
+    body,
+    symbol=None,
+    strategy=None,
+    visibility="followers",
+    attached_fingerprint=None,
+):
     """
     Insert a new community post. Caller is responsible for having confirmed the
     author identity (flask-login). Returns the new row id, or None on failure.
@@ -765,6 +784,9 @@ def create_post(user_id, body, symbol=None, visibility="followers", attached_fin
     clean_symbol = (symbol or "").strip().upper() or None
     if clean_symbol and len(clean_symbol) > _MAX_POST_SYMBOL_LEN:
         clean_symbol = clean_symbol[:_MAX_POST_SYMBOL_LEN]
+    clean_strategy = (strategy or "").strip() or None
+    if clean_strategy and len(clean_strategy) > _MAX_POST_STRATEGY_LEN:
+        clean_strategy = clean_strategy[:_MAX_POST_STRATEGY_LEN]
     vis = (visibility or "followers").strip().lower()
     if vis not in _ALLOWED_POST_VISIBILITY:
         vis = "followers"
@@ -772,10 +794,10 @@ def create_post(user_id, body, symbol=None, visibility="followers", attached_fin
     try:
         row = execute_returning(
             """INSERT INTO community_posts
-               (user_id, body, symbol, attached_fingerprint, visibility)
-               VALUES (%s, %s, %s, %s, %s)
+               (user_id, body, symbol, strategy, attached_fingerprint, visibility)
+               VALUES (%s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (user_id, clean_body, clean_symbol, af, vis),
+            (user_id, clean_body, clean_symbol, clean_strategy, af, vis),
         )
         return int(row["id"]) if row else None
     except Exception as exc:
@@ -812,7 +834,7 @@ def update_post_visibility(user_id, post_id, visibility):
 
 
 _POST_SELECT_BASE = """
-    SELECT p.id, p.user_id, p.body, p.symbol, p.attached_fingerprint,
+    SELECT p.id, p.user_id, p.body, p.symbol, p.strategy, p.attached_fingerprint,
            p.visibility, p.created_at, p.updated_at,
            u.username,
            COALESCE(NULLIF(TRIM(pr.display_name), ''), u.username) AS author_display,

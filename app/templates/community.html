@@ -81,6 +81,7 @@
         letter-spacing: .03em; width: 120px; background: #fafaf9; color: #1c1917;
     }
     .cm-pill-input:focus { outline: none; border-color: #c4b5fd; background: #fff; }
+    .cm-pill-strategy { width: 150px; }
     .cm-select {
         border: 1px solid #e7e5e4; border-radius: 999px;
         padding: .3rem .85rem; font-size: .82rem; font-weight: 600;
@@ -126,14 +127,23 @@
 
     .cm-body { color: #1c1917; font-size: .98rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
 
+    .cm-tag-row { margin-top: .6rem; display: flex; gap: .4rem; flex-wrap: wrap; }
     .cm-symbol-chip {
-        display: inline-block; margin-top: .6rem;
+        display: inline-block;
         background: #fef3c7; color: #92400e;
         font-weight: 700; font-size: .78rem; letter-spacing: .05em;
         padding: .25rem .65rem; border-radius: 8px;
         text-decoration: none;
     }
     .cm-symbol-chip:hover { background: #fde68a; color: #7c2d12; }
+    .cm-strategy-chip {
+        display: inline-block;
+        background: #ede9fe; color: #5b21b6;
+        font-weight: 700; font-size: .78rem; letter-spacing: .02em;
+        padding: .25rem .65rem; border-radius: 8px;
+        text-decoration: none;
+    }
+    .cm-strategy-chip:hover { background: #ddd6fe; color: #4c1d95; }
 
     .cm-trade-card {
         margin-top: .75rem; padding: .8rem 1rem;
@@ -353,7 +363,26 @@
                         </button>
 
                         <label for="post-symbol" class="visually-hidden">Symbol</label>
-                        <input id="post-symbol" type="text" name="symbol" class="cm-pill-input" placeholder="Symbol (optional)" maxlength="16" autocomplete="off">
+                        <input id="post-symbol" type="text" name="symbol" class="cm-pill-input" placeholder="Symbol" maxlength="16" autocomplete="off">
+
+                        <label for="post-strategy" class="visually-hidden">Strategy</label>
+                        <input id="post-strategy" type="text" name="strategy" class="cm-pill-input cm-pill-strategy" placeholder="Strategy" maxlength="48" autocomplete="off" list="cm-strategy-options">
+                        <datalist id="cm-strategy-options">
+                            <option value="Covered Call">
+                            <option value="Cash-Secured Put">
+                            <option value="Wheel">
+                            <option value="Poor Man Covered Call">
+                            <option value="Buy and Hold">
+                            <option value="Long Call">
+                            <option value="Long Put">
+                            <option value="Protective Put">
+                            <option value="Vertical Spread">
+                            <option value="Iron Condor">
+                            <option value="Calendar Spread">
+                            <option value="Diagonal Spread">
+                            <option value="Straddle">
+                            <option value="Strangle">
+                        </datalist>
 
                         <label for="post-visibility" class="visually-hidden">Visibility</label>
                         <select id="post-visibility" name="visibility" class="cm-select" title="Who can see this post?">
@@ -415,8 +444,15 @@
                         </div>
                         <div class="cm-body">{{ p.body }}</div>
 
-                        {% if p.symbol %}
-                        <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                        {% if p.symbol or p.strategy %}
+                        <div class="cm-tag-row">
+                            {% if p.symbol %}
+                            <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                            {% endif %}
+                            {% if p.strategy %}
+                            <a class="cm-strategy-chip" href="{{ url_for('strategies', strategy=p.strategy) }}">{{ p.strategy }}</a>
+                            {% endif %}
+                        </div>
                         {% endif %}
 
                         {% if p.trade_strategy %}
@@ -487,8 +523,15 @@
                         <span class="cm-visibility cm-vis-public">Public</span>
                     </div>
                     <div class="cm-body">{{ p.body }}</div>
-                    {% if p.symbol %}
-                    <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                    {% if p.symbol or p.strategy %}
+                    <div class="cm-tag-row">
+                        {% if p.symbol %}
+                        <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                        {% endif %}
+                        {% if p.strategy %}
+                        <a class="cm-strategy-chip" href="{{ url_for('strategies', strategy=p.strategy) }}">{{ p.strategy }}</a>
+                        {% endif %}
+                    </div>
                     {% endif %}
                 </article>
                 {% endfor %}
@@ -617,6 +660,7 @@
         pnl:       document.getElementById('cm-attach-pnl'),
     };
     var postSymbolInput = document.getElementById('post-symbol');
+    var postStrategyInput = document.getElementById('post-strategy');
 
     var tradesCache = null;
     var loading = false;
@@ -728,6 +772,9 @@
         attachLabel.textContent = 'Trade attached';
         if (postSymbolInput && !postSymbolInput.value && t.symbol) {
             postSymbolInput.value = t.symbol;
+        }
+        if (postStrategyInput && !postStrategyInput.value && t.strategy) {
+            postStrategyInput.value = t.strategy;
         }
         closeModal();
     }
