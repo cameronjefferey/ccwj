@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,12 @@ log = logging.getLogger("train_bqml")
 
 SQL_DIR = REPO_ROOT / "scripts" / "bqml"
 
+# Match the dbt project location (dbt/profiles.yml -> location: us). All
+# BQML artifacts live alongside the analytics dataset in the US multi-region,
+# so we must pin every job here — otherwise BigQuery assumes the runner's
+# default region (e.g. us-west1) and fails with 404 Dataset not found.
+BQ_LOCATION = os.environ.get("BQ_LOCATION", "US")
+
 STATEMENTS = [
     ("account_behavior_model (CREATE OR REPLACE MODEL)", "01_account_behavior_model.sql"),
     ("trade_anomaly_scores (CREATE OR REPLACE VIEW)",   "02_trade_anomaly_scores.sql"),
@@ -61,12 +68,13 @@ def _load_sql(filename: str) -> str:
 
 def main() -> int:
     client = get_bigquery_client()
-    log.info("BigQuery client ready (project=%s)", client.project)
+    log.info("BigQuery client ready (project=%s, location=%s)",
+             client.project, BQ_LOCATION)
 
     for label, filename in STATEMENTS:
         sql = _load_sql(filename)
         log.info("Running %s", label)
-        job = client.query(sql)
+        job = client.query(sql, location=BQ_LOCATION)
         job.result()  # block until complete
         log.info("  done (job_id=%s)", job.job_id)
 
