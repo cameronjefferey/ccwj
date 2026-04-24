@@ -473,6 +473,32 @@ def index():
     return render_template("landing.html", title="Home")
 
 
+@app.route("/healthz")
+def healthz():
+    """Liveness probe — does NOT touch DB or BigQuery so it stays green even
+    if Postgres is briefly unreachable. Render uses this to know the worker
+    process itself is alive."""
+    return ("ok", 200, {"Content-Type": "text/plain", "Cache-Control": "no-store"})
+
+
+@app.route("/healthz/db")
+def healthz_db():
+    """Readiness probe — confirms Postgres pool can hand out a connection
+    in well under gunicorn's request timeout. Returns 503 fast on failure
+    rather than hanging the request."""
+    from app.db import get_conn
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return ("ok", 200, {"Content-Type": "text/plain", "Cache-Control": "no-store"})
+    except Exception as exc:
+        app.logger.warning("healthz/db failed: %s", exc)
+        return (f"db_unavailable: {exc.__class__.__name__}", 503,
+                {"Content-Type": "text/plain", "Cache-Control": "no-store"})
+
+
 
 @app.route("/get-started")
 @login_required

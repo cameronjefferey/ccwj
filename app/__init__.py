@@ -120,9 +120,15 @@ _SESSION_LAST_KEY = "_last_activity_ts"
 
 def _check_session_idle():
     minutes = int(app.config.get("SESSION_IDLE_TIMEOUT_MINUTES", 0) or 0)
-    if minutes <= 0 or not current_user.is_authenticated:
+    if minutes <= 0:
         return None
-    if request.path.startswith("/static/"):
+    # Healthcheck endpoints must NEVER hit the DB (otherwise Render's probe
+    # will fail during a pool stall and mark the pod unhealthy at the worst
+    # possible moment). current_user.is_authenticated triggers the user
+    # loader, which queries Postgres — short-circuit before that.
+    if request.path.startswith("/healthz") or request.path.startswith("/static/"):
+        return None
+    if not current_user.is_authenticated:
         return None
     now = time.time()
     last = session.get(_SESSION_LAST_KEY)

@@ -107,12 +107,17 @@ def _build_pool() -> ConnectionPool:
     # max_idle / max_lifetime plus check= pre-ping reduces ssl/tls alert errors.
     max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300"))
     max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
-    # pool timeout: how long a request waits for a free connection (default was 30s;
-    # burst traffic or slow queries can starve the pool and cause PoolTimeout on /).
-    pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "60"))
+    # pool timeout: how long a request waits for a free connection.
+    # Keep this WELL below gunicorn's --timeout (120s) so a stuck pool
+    # surfaces as a fast 500 instead of hanging the worker until gunicorn
+    # SIGKILLs it. 10s is plenty for normal contention; bump via env if
+    # you see legitimate burst PoolTimeouts.
+    pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "10"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
-        min_size=1,
+        # Keep at least 2 warm connections so a single bad/closed conn
+        # doesn't force a brand-new TLS handshake on the next request.
+        min_size=int(os.environ.get("DATABASE_POOL_MIN", "2")),
         max_size=int(os.environ.get("DATABASE_POOL_MAX", "12")),
         kwargs={"row_factory": dict_row},
         check=_pool_check_connection,

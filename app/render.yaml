@@ -6,7 +6,17 @@ services:
     buildCommand: ""
     # BQ-heavy routes (e.g. /position/<symbol> run many parallel queries). Default
     # gunicorn timeout 30s causes WORKER TIMEOUT, pool starvation, and cascade 500s.
-    startCommand: gunicorn wsgi:app -b 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30
+    #
+    # Tuning notes:
+    #   * gthread + 4 threads/worker: a single sync worker only serves one
+    #     request at a time; if it stalls in the Postgres pool the next request
+    #     waits behind it. gthread+threads lets a worker overlap 4 requests.
+    #   * 2 workers: surviving 1 hung/restarting worker keeps the site up.
+    #   * --max-requests 500 recycles workers periodically so any leak / BQ
+    #     client memory growth doesn't accumulate until OOM kill.
+    #   * --timeout 120 stays — BQ-heavy detail pages can legitimately take
+    #     30-60s under load and we don't want gunicorn to abort them.
+    startCommand: gunicorn wsgi:app -b 0.0.0.0:$PORT --workers 2 --threads 4 --worker-class gthread --timeout 120 --graceful-timeout 30 --max-requests 500 --max-requests-jitter 50
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/gcp-key.json
