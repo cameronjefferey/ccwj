@@ -1029,6 +1029,164 @@ def _merge_position_strategy_breakdown(
     return out
 
 
+def _fetch_int_strategy_classification_by_symbol(
+    client, safe_symbol: str, user_accounts
+) -> pd.DataFrame:
+    """User-scoped rows from int_strategy_classification for one symbol. Used when
+    positions_summary is empty but we still need strategy breakdown (mart lag / path gaps).
+    """
+    if user_accounts is not None and not user_accounts:
+        return pd.DataFrame()
+    acct = _account_sql_and(user_accounts, col="account")
+    sql = f"""
+    SELECT
+        account, symbol, strategy, status, total_pnl, num_trades, is_winner,
+        premium_received, premium_paid, days_in_trade, open_date, close_date
+    FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
+    {acct}
+    """
+    try:
+        df = client.query(sql).to_dataframe()
+    except Exception:
+        return pd.DataFrame()
+    df = _df_normalize_account_column(df)
+    return _filter_df_by_accounts(df, user_accounts)
+
+
+def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
+    """Replicate the strategy_summary grain of positions_summary from raw classification rows."""
+    if cdf is None or cdf.empty or "account" not in cdf.columns or "strategy" not in cdf.columns:
+        return pd.DataFrame()
+    cdf = cdf.copy()
+    for c in (
+        "total_pnl", "num_trades", "premium_received", "premium_paid", "days_in_trade",
+    ):
+        if c in cdf.columns:
+            cdf[c] = pd.to_numeric(cdf[c], errors="coerce").fillna(0.0)
+    if "is_winner" in cdf.columns:
+        cdf["is_winner"] = cdf["is_winner"].fillna(False).astype(bool)
+    else:
+        cdf = cdf.assign(is_winner=False)
+    if "status" in cdf.columns:
+        cdf["_st"] = cdf["status"].astype(str).str.strip().str.lower()
+    else:
+        cdf["_st"] = "unknown"
+    if "symbol" not in cdf.columns:
+        return pd.DataFrame()
+    out = []
+    for (acct, sym, strat), sub in cdf.groupby(
+        [cdf["account"].astype(str), cdf["symbol"].astype(str), cdf["strategy"].astype(str)]
+    ):
+        ssub = sub.copy()
+        is_open = ssub["_st"].eq("open")
+        n_closed = int((~is_open).sum())
+        c_real = float(ssub.loc[~is_open, "total_pnl"].sum()) if n_closed else 0.0
+        c_unrl = float(ssub.loc[is_open, "total_pnl"].sum()) if is_open.any() else 0.0
+        tot = float(ssub["total_pnl"].sum())
+        pcr = float(ssub["premium_received"].sum()) if "premium_received" in ssub else 0.0
+        ppd = float(ssub["premium_paid"].sum()) if "premium_paid" in ssub else 0.0
+        n_groups = len(ssub)
+        n_indiv = int(ssub["num_trades"].sum()) if "num_trades" in ssub else n_groups
+        closed_mask = ~is_open
+        if "is_winner" in ssub.columns:
+            w_m = ssub[closed_mask & ssub["is_winner"]]
+            l_m = ssub[closed_mask & ~ssub["is_winner"]]
+            n_w = int(len(w_m))
+            n_l = int(len(l_m))
+        else:
+            closed_pn = ssub.loc[closed_mask, "total_pnl"]
+            n_w = int((closed_pn > 0).sum())
+            n_l = int((closed_pn <= 0).sum())
+        win_rate = n_w / (n_w + n_l) if (n_w + n_l) else 0.0
+        avg_p = c_real / n_closed if n_closed else 0.0
+        avg_d = 0.0
+        if "days_in_trade" in ssub.columns:
+            avg_d = float(ssub["days_in_trade"].fillna(0).mean() or 0.0)
+        ftd, ltd = None, None
+        if "open_date" in ssub.columns:
+            ftd = ssub["open_date"].min()
+        if "close_date" in ssub.columns:
+            ltd = ssub["close_date"].max()
+        row_status = "Open" if is_open.any() else "Closed"
+        out.append(
+            {
+                "account": str(acct).strip(),
+                "symbol": str(sym).strip(),
+                "strategy": str(strat).strip(),
+                "status": row_status,
+                "total_pnl": round(tot, 2),
+                "realized_pnl": round(c_real, 2),
+                "unrealized_pnl": round(c_unrl, 2),
+                "total_premium_received": round(pcr, 2),
+                "total_premium_paid": round(ppd, 2),
+                "num_trade_groups": n_groups,
+                "num_individual_trades": n_indiv,
+                "num_winners": n_w,
+                "num_losers": n_l,
+                "win_rate": win_rate,
+                "avg_pnl_per_trade": round(avg_p, 2),
+                "avg_days_in_trade": round(avg_d, 1) if avg_d else 0.0,
+                "first_trade_date": ftd,
+                "last_trade_date": ltd,
+                "total_dividend_income": 0.0,
+                "dividend_count": 0,
+                "total_return": round(tot, 2),
+            }
+        )
+    return pd.DataFrame(out) if out else pd.DataFrame()
+
+
+def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFrame:
+    """When there is a live snapshot in int_enriched_current but no mart / classification rows
+    (only unrealized in positions_summary or empty), show one Open row so Strategy Breakdown is not empty.
+    """
+    if current_df is None or current_df.empty:
+        return pd.DataFrame()
+    rows = []
+    for _, r in current_df.iterrows():
+        acct = str(r.get("account", "") or "").strip()
+        it = str(r.get("instrument_type", "") or "")
+        if it == "Call":
+            lab = "Long Call"
+        elif it == "Put":
+            lab = "Long Put"
+        elif it == "Equity":
+            lab = "Buy and Hold"
+        else:
+            lab = "Open"
+        u = float(r.get("unrealized_pnl") or 0)
+        sym = str(r.get("symbol", "") or "").strip()
+        rows.append(
+            {
+                "account": acct,
+                "symbol": sym,
+                "strategy": lab,
+                "status": "Open",
+                "total_pnl": round(u, 2),
+                "realized_pnl": 0.0,
+                "unrealized_pnl": round(u, 2),
+                "total_premium_received": 0.0,
+                "total_premium_paid": 0.0,
+                "num_trade_groups": 1,
+                "num_individual_trades": 0,
+                "num_winners": 0,
+                "num_losers": 0,
+                "win_rate": 0.0,
+                "avg_pnl_per_trade": 0.0,
+                "avg_days_in_trade": 0.0,
+                "first_trade_date": None,
+                "last_trade_date": None,
+                "total_dividend_income": 0.0,
+                "dividend_count": 0,
+                "total_return": round(u, 2),
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
 def _realized_pnl_from_closed_frames(
     closed_legs_df: pd.DataFrame, closed_equity_df: pd.DataFrame
 ) -> float:
@@ -1638,12 +1796,26 @@ def position_detail(symbol):
         }
 
     # Strategy rows: positions_summary plus any (account, strategy) seen in closed legs
-    # but missing from the mart, so open + closed strategies all appear.
+    # but missing from the mart. If the mart is empty (lag / snapshot-only), roll up the
+    # user's int_strategy_classification so closed + open strategies still appear (scoped).
+    summary_for_strat = summary_df
+    if summary_for_strat.empty and user_accounts is not None and len(user_accounts) > 0:
+        int_raw = _fetch_int_strategy_classification_by_symbol(
+            client, safe_symbol, user_accounts
+        )
+        if not int_raw.empty:
+            rolled = _rollup_int_strategy_to_summary_shape(int_raw)
+            if not rolled.empty:
+                summary_for_strat = rolled
     _cl_for_strat = closed_legs_pre_leg if not leg_param else closed_legs_df
     _eq_for_strat = closed_equity_pre_leg if not leg_param else closed_equity_df
     merged_strategy_df = _merge_position_strategy_breakdown(
-        safe_symbol, summary_df, _cl_for_strat, _eq_for_strat
+        safe_symbol, summary_for_strat, _cl_for_strat, _eq_for_strat
     )
+    if merged_strategy_df.empty and not current_df.empty:
+        syn = _synthetic_open_strategy_from_current(current_df)
+        if not syn.empty:
+            merged_strategy_df = syn
     strategy_rows = (
         merged_strategy_df.to_dict(orient="records")
         if not merged_strategy_df.empty
