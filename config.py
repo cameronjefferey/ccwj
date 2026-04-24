@@ -45,6 +45,10 @@ class Config:
     _session_days = int(os.environ.get("PERMANENT_SESSION_DAYS", "14"))
     PERMANENT_SESSION_LIFETIME = timedelta(days=max(1, _session_days))
 
+    # Log out after this many minutes without any request (0 = disabled, e.g. tests).
+    _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
+    SESSION_IDLE_TIMEOUT_MINUTES = max(0, _idle_min)
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024

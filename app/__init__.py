@@ -1,9 +1,10 @@
 import hashlib
 import os
+import time
 
 import sentry_sdk
-from flask import Flask, render_template
-from flask_login import LoginManager
+from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
+from flask_login import LoginManager, current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -87,16 +88,63 @@ def load_user(user_id):
 
 def _set_sentry_user():
     """Identify user in Sentry by hashed ID only (no PII)."""
-    from flask_login import current_user
     if current_user.is_authenticated:
         anon = hashlib.sha256(str(current_user.id).encode()).hexdigest()[:16]
         sentry_sdk.set_user({"id": anon})
+
+
+@login_manager.unauthorized_handler
+def _login_required_redirect():
+    """Flask-Login: prefer JSON 401 for API when client expects JSON."""
+    if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+        return jsonify({"error": "login_required"}), 401
+    return redirect(url_for("login", next=request.url))
+
+
+_SESSION_LAST_KEY = "_last_activity_ts"
+
+
+def _check_session_idle():
+    minutes = int(app.config.get("SESSION_IDLE_TIMEOUT_MINUTES", 0) or 0)
+    if minutes <= 0 or not current_user.is_authenticated:
+        return None
+    if request.path.startswith("/static/"):
+        return None
+    now = time.time()
+    last = session.get(_SESSION_LAST_KEY)
+    limit = minutes * 60.0
+    if last is not None and (now - last) > limit:
+        logout_user()
+        session.clear()
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "session_expired", "message": "Session timed out from inactivity."}), 401
+        flash("You were logged out after a period of inactivity. Please sign in again.", "info")
+        nxt = request.full_path
+        if not nxt.startswith("/"):
+            nxt = request.path
+        return redirect(url_for("login", next=nxt))
+    return None
+
+
+def _touch_session_last_activity():
+    if current_user.is_authenticated and not request.path.startswith("/static/"):
+        session[_SESSION_LAST_KEY] = time.time()
+        session.modified = True
 
 
 @app.before_request
 def _before_request_sentry_user():
     if _sentry_dsn:
         _set_sentry_user()
+    idle = _check_session_idle()
+    if idle is not None:
+        return idle
+
+
+@app.after_request
+def _after_request_touch_session_activity(response):
+    _touch_session_last_activity()
+    return response
 
 
 from app.extensions import csrf, limiter

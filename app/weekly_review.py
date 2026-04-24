@@ -305,12 +305,16 @@ ORDER BY date
 """
 
 # Trades opened this week for Mid-Week Check
+# "Opens" = trade-backed position groups. Snapshot-only rows (stg_current with
+# no stg_history yet) have num_trades = 0 and open_date = snapshot day — they
+# must not count as new activity or Pace Check will list every open position.
 OPENS_THIS_WEEK_QUERY = """
 SELECT
     c.account, c.symbol, c.strategy, c.open_date
 FROM `ccwj-dbt.analytics.int_strategy_classification` c
 WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
+  AND c.num_trades > 0
   {account_filter}
 """
 
