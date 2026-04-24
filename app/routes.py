@@ -734,7 +734,7 @@ def positions():
 POSITION_SUMMARY_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.positions_summary`
-    WHERE symbol = '{symbol}'
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
     ORDER BY account, strategy
 """
@@ -777,7 +777,7 @@ POSITION_CURRENT_QUERY = """
         unrealized_pnl,
         unrealized_pnl_pct
     FROM `ccwj-dbt.analytics.int_enriched_current`
-    WHERE underlying_symbol = '{symbol}'
+    WHERE UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
 """
 
@@ -823,7 +823,7 @@ POSITION_CLOSED_EQUITY_QUERY = """
         realized_pnl,
         description
     FROM `ccwj-dbt.analytics.int_closed_equity_legs`
-    WHERE symbol = '{symbol}'
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
 """
 
@@ -840,7 +840,7 @@ POSITION_SESSIONS_QUERY = """
         max_quantity_held,
         num_trades
     FROM `ccwj-dbt.analytics.int_equity_sessions`
-    WHERE symbol = '{symbol}'
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
     ORDER BY account, session_id
 """
@@ -862,7 +862,7 @@ POSITION_MATRIX_QUERY = """
     FROM `ccwj-dbt.analytics.int_option_trade_kinds`
     WHERE status = 'Closed'
       AND strike_distance IS NOT NULL
-      AND underlying_symbol = '{symbol}'
+      AND UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
 """
 
@@ -1280,7 +1280,7 @@ def _premium_totals_from_closed_options(closed_legs_df: pd.DataFrame) -> tuple:
 CHART_DATA_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.mart_daily_pnl`
-    WHERE symbol = '{symbol}'
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
       {account_filter}
     ORDER BY date
 """
