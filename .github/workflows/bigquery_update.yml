@@ -62,3 +62,9 @@ jobs:
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
 
+      - name: Retrain BQML behavior model
+        # Uses the same DBT_KEYFILE_JSON credential as the dbt steps above
+        # via google-github-actions/auth (GOOGLE_APPLICATION_CREDENTIALS
+        # is exported into the runner env).  No new secrets needed.
+        run: python scripts/train_bqml.py
+
