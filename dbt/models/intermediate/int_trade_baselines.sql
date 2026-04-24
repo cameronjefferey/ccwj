@@ -89,7 +89,39 @@ loss_streak_at_close as (
 -- For each opening trade, find the most recent prior close (by account).
 -- The "consecutive_losses_before" is the loss_streak_at_close of that
 -- prior closed trade (or 0 if there is none, or that prior was a winner).
+--
+-- BQ does not de-correlate scalar subqueries with ORDER BY/LIMIT, so we
+-- express this as explicit joins + aggregations.  MAX_BY picks the
+-- streak value associated with the largest stream_id across prior
+-- closes of the same account.
 ------------------------------------------------------------------
+prior_close_streak as (
+    select
+        b.account,
+        b.trade_symbol,
+        b.open_date,
+        max_by(ls.loss_streak_at_close, ls.stream_id) as consecutive_losses_before
+    from base b
+    left join loss_streak_at_close ls
+        on ls.account = b.account
+        and ls.close_date < b.open_date
+    group by 1, 2, 3
+),
+
+prior_last_loss as (
+    select
+        b.account,
+        b.trade_symbol,
+        b.open_date,
+        date_diff(b.open_date, max(ls.close_date), day) as days_since_last_loss
+    from base b
+    left join loss_streak_at_close ls
+        on ls.account = b.account
+        and ls.close_date < b.open_date
+        and ls.is_winner = false
+    group by 1, 2, 3
+),
+
 trade_with_prior_close as (
     select
         b.account,
@@ -101,23 +133,15 @@ trade_with_prior_close as (
         b.realized_pnl,
         b.is_winner,
 
-        (
-            select ls.loss_streak_at_close
-            from loss_streak_at_close ls
-            where ls.account = b.account
-              and ls.close_date < b.open_date
-            order by ls.close_date desc, ls.stream_id desc
-            limit 1
-        ) as consecutive_losses_before,
-
-        (
-            select date_diff(b.open_date, max(ls.close_date), day)
-            from loss_streak_at_close ls
-            where ls.account = b.account
-              and ls.close_date < b.open_date
-              and ls.is_winner = false
-        ) as days_since_last_loss
+        pcs.consecutive_losses_before,
+        pll.days_since_last_loss
     from base b
+    left join prior_close_streak pcs
+        on b.account = pcs.account
+        and b.trade_symbol = pcs.trade_symbol
+    left join prior_last_loss pll
+        on b.account = pll.account
+        and b.trade_symbol = pll.trade_symbol
 ),
 
 ------------------------------------------------------------------
