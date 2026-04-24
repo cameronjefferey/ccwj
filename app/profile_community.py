@@ -112,7 +112,7 @@ def profile():
                 ):
                     flash("Could not save (database may need a deploy restart so new tables exist). Check server logs.", "danger")
                     return redirect(url_for("profile", tab="community"))
-                flash("The door is set how you want it.", "success")
+                flash("Visibility updated.", "success")
                 return redirect(url_for("profile", tab="community"))
 
             display_name = (request.form.get("display_name") or "").strip() or None
@@ -177,7 +177,7 @@ def profile():
 
     return render_template(
         "profile.html",
-        title="Who you are",
+        title="Profile",
         tab=tab,
         profile_row=profile_row,
         accounts=accounts,
@@ -283,7 +283,7 @@ def follow_trader(username):
         flash("This trader keeps their profile private — follows are disabled.", "warning")
         return redirect(url_for("public_trader_profile", username=username))
     follow_user(current_user.id, target_id)
-    flash(f"You’re following @{row['username']} — their receipts will show on your Wall.", "success")
+    flash(f"You’re following @{row['username']}. Their shared trades will appear in your feed.", "success")
     nxt = _safe_redirect_target(request.form.get("next"))
     return redirect(nxt or url_for("public_trader_profile", username=username))
 
@@ -320,7 +320,7 @@ def community_publish_trade_route():
         if not unpublish_community_trade(current_user.id, fingerprint):
             flash("Could not remove that receipt (database error). Try again after redeploy.", "danger")
             return redirect(nxt)
-        flash("Taken down from the wall. That trade is yours alone again.", "success")
+        flash("Shared trade removed.", "success")
         return redirect(nxt)
 
     if action != "publish":
@@ -355,7 +355,7 @@ def community_publish_trade_route():
     prof = get_user_profile(current_user.id)
     vis = (prof.get("profile_visibility") or "private").lower()
     if vis == "private":
-        flash("Open the door first: Profile → The door → set visibility to Followers or Public, then hang your receipt.", "warning")
+        flash("Set your visibility to Followers or Public first: Profile → Community.", "warning")
         return redirect(url_for("profile", tab="community"))
 
     acct_label = account
@@ -377,5 +377,5 @@ def community_publish_trade_route():
     ):
         flash("Could not publish (database may be missing community tables). Redeploy or restart the web service.", "danger")
         return redirect(nxt)
-    flash("It’s on the wall. Anyone who follows you will see that receipt.", "success")
+    flash("Shared. Followers will see this trade in their feed.", "success")
     return redirect(nxt)

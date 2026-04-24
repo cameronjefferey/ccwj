@@ -181,7 +181,7 @@
             </div>
             <div class="wall-side">
                 <h3>Find traders</h3>
-                <p class="small mb-2" style="color:#94a3b8">Search by @handle, display name, or headline. Only people who set visibility to Followers or Public (Profile → The door) appear here.</p>
+                <p class="small mb-2" style="color:#94a3b8">Search by @handle, display name, or headline. Only people who set visibility to Followers or Public (Profile → Community) appear here.</p>
                 <form class="wall-search" method="get" action="{{ url_for('community') }}" role="search">
                     <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Search e.g. Alex or @handle" aria-label="Search traders" autocomplete="off">
                     <button type="submit" class="btn wall-btn-ghost">Search</button>
@@ -242,7 +242,7 @@
                 </div>
                 {% else %}
                 {% if search_query|length < 2 %}
-                <p class="small mb-0" style="color:#64748b">No one in the directory yet. Open Profile → The door and step out of Private.</p>
+                <p class="small mb-0" style="color:#64748b">No one in the directory yet. Set visibility to Followers or Public under Profile → Community to appear here.</p>
                 {% endif %}
                 {% endfor %}
             </div>

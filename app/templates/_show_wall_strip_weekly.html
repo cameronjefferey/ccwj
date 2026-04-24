@@ -4,29 +4,26 @@
     <div class="position-relative" style="z-index:1">
         <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-4">
             <div>
-                <div class="wm-strip-kicker text-uppercase small fw-bold mb-2" style="letter-spacing:.14em">The mirror wall</div>
+                <div class="wm-strip-kicker text-uppercase small fw-bold mb-2" style="letter-spacing:.14em">Community (early)</div>
                 {% if community_publish_ready %}
-                <h3 class="h5 fw-bold mb-2" style="letter-spacing:-.02em">Put one trade where people can see it.</h3>
+                <h3 class="h5 fw-bold mb-2" style="letter-spacing:-.02em">Share a trade from this week.</h3>
                 <p class="mb-0 small" style="max-width:42rem;line-height:1.65;opacity:.92">
-                    You already did the hard part — you traded. The right column is your <strong>receipt</strong>:
-                    one tap, optional line of context, and your followers see <em>how</em> you operate, not a flex.
-                    Pick the trade that best says who you are this week.
+                    Tap <strong>Show</strong> on any row below to share it with followers. You can add a line of context and take it down any time.
                 </p>
                 {% else %}
-                <h3 class="h5 fw-bold mb-2" style="letter-spacing:-.02em">You are one step from the wall.</h3>
+                <h3 class="h5 fw-bold mb-2" style="letter-spacing:-.02em">Sharing is off.</h3>
                 <p class="mb-0 small" style="max-width:42rem;line-height:1.65;opacity:.92">
-                    Trades never leave your account until <strong>you</strong> say so. Open visibility to
-                    <em>Followers</em> or <em>Public</em>, come back here, and the same column becomes your publish button.
+                    Your trades never leave your account unless you explicitly share them. Set visibility to <em>Followers</em> or <em>Public</em> if you want to.
                 </p>
                 {% endif %}
             </div>
             <div class="flex-shrink-0 d-flex flex-column gap-2 align-items-lg-end">
                 {% if community_publish_ready %}
                 <span class="wm-strip-badge text-center small">Use <strong>Show</strong> on a row →</span>
-                <a href="{{ url_for('community') }}" class="btn btn-light btn-sm fw-semibold px-3 rounded-pill">See the Wall</a>
+                <a href="{{ url_for('community') }}" class="btn btn-light btn-sm fw-semibold px-3 rounded-pill">Community feed</a>
                 {% else %}
-                <a href="{{ url_for('profile', tab='community') }}" class="btn btn-light btn-sm fw-semibold px-4 rounded-pill">Open the door →</a>
-                <span class="wm-strip-badge text-center small" style="max-width:14rem">Profile → Community → visibility</span>
+                <a href="{{ url_for('profile', tab='community') }}" class="btn btn-light btn-sm fw-semibold px-4 rounded-pill">Set visibility</a>
+                <span class="wm-strip-badge text-center small" style="max-width:14rem">Profile → Community</span>
                 {% endif %}
             </div>
         </div>

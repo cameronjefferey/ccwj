@@ -3,7 +3,36 @@
 import pandas as pd
 import pytest
 
-from app.routes import _merge_position_strategy_breakdown
+from app.routes import (
+    _merge_position_strategy_breakdown,
+    _supplement_summary_with_rolled,
+)
+
+
+def _summary_row(account, strategy, status, total_pnl):
+    return {
+        "account": account,
+        "symbol": "RDDT",
+        "strategy": strategy,
+        "status": status,
+        "total_pnl": total_pnl,
+        "realized_pnl": total_pnl if status == "Closed" else 0.0,
+        "unrealized_pnl": total_pnl if status == "Open" else 0.0,
+        "total_premium_received": 0.0,
+        "total_premium_paid": 0.0,
+        "num_trade_groups": 1,
+        "num_individual_trades": 1,
+        "num_winners": 1 if (status == "Closed" and total_pnl > 0) else 0,
+        "num_losers": 1 if (status == "Closed" and total_pnl <= 0) else 0,
+        "win_rate": 0.0,
+        "avg_pnl_per_trade": total_pnl,
+        "avg_days_in_trade": 0.0,
+        "first_trade_date": None,
+        "last_trade_date": None,
+        "total_dividend_income": 0.0,
+        "dividend_count": 0,
+        "total_return": total_pnl,
+    }
 
 
 def test_merge_adds_all_closed_strategies_when_summary_empty():
@@ -117,6 +146,47 @@ def test_merge_adds_different_closed_strategy_from_legs():
     out = _merge_position_strategy_breakdown("RDDT", summary, closed, pd.DataFrame())
     assert len(out) == 2
     assert "Covered Call" in set(out["strategy"].astype(str))
+
+
+def test_supplement_adds_missing_closed_strategies_from_rollup():
+    """Mart has open strategy only; classification rollup fills in a closed one."""
+    summary = pd.DataFrame([_summary_row("A", "Long Call", "Open", 50.0)])
+    rolled = pd.DataFrame([
+        _summary_row("A", "Long Call", "Open", 50.0),
+        _summary_row("A", "Wheel", "Closed", 420.0),
+    ])
+    out = _supplement_summary_with_rolled(summary, rolled)
+    strats = set(out["strategy"].astype(str))
+    assert strats == {"Long Call", "Wheel"}
+    assert len(out) == 2
+    wheel = out[out["strategy"] == "Wheel"].iloc[0]
+    assert wheel["status"] == "Closed"
+    assert float(wheel["total_pnl"]) == 420.0
+
+
+def test_supplement_keeps_mart_row_when_pair_already_exists():
+    """Mart rows take precedence; rollup does not override total_pnl."""
+    summary = pd.DataFrame([_summary_row("A", "Long Call", "Open", 50.0)])
+    rolled = pd.DataFrame([_summary_row("A", "Long Call", "Closed", 999.0)])
+    out = _supplement_summary_with_rolled(summary, rolled)
+    assert len(out) == 1
+    r = out.iloc[0]
+    assert r["status"] == "Open"
+    assert float(r["total_pnl"]) == 50.0
+
+
+def test_supplement_with_empty_summary_returns_rolled():
+    rolled = pd.DataFrame([_summary_row("A", "Wheel", "Closed", 100.0)])
+    out = _supplement_summary_with_rolled(pd.DataFrame(), rolled)
+    assert len(out) == 1
+    assert out.iloc[0]["strategy"] == "Wheel"
+
+
+def test_supplement_with_empty_rolled_returns_summary():
+    summary = pd.DataFrame([_summary_row("A", "Long Call", "Open", 10.0)])
+    out = _supplement_summary_with_rolled(summary, pd.DataFrame())
+    assert len(out) == 1
+    assert out.iloc[0]["strategy"] == "Long Call"
 
 
 if __name__ == "__main__":

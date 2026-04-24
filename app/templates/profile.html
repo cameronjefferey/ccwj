@@ -8,64 +8,44 @@
     .atlas { font-family: "DM Sans", system-ui, sans-serif; background: #f7f5f2; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
     .atlas-shell { max-width: 1160px; margin: 0 auto; }
     .atlas-hero {
-        border-radius: 28px;
-        padding: 2.5rem 2.25rem;
+        border-radius: 24px;
+        padding: 1.75rem 2rem;
         background: linear-gradient(128deg, #0c0a09 0%, #1c1917 45%, #292524 100%);
         color: #fafaf9;
         position: relative;
         overflow: hidden;
-        margin-bottom: 2rem;
+        margin-bottom: 1.75rem;
         border: 1px solid rgba(255,255,255,.08);
     }
     .atlas-hero::before {
         content: ""; position: absolute; right: -10%; top: -40%;
         width: 55%; height: 140%;
-        background: radial-gradient(circle, rgba(245,158,11,.2), transparent 65%);
+        background: radial-gradient(circle, rgba(245,158,11,.18), transparent 65%);
         pointer-events: none;
     }
     .atlas-hero-in { position: relative; z-index: 1; }
-    .atlas-kicker { font-size: .68rem; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #fbbf24; margin-bottom: .75rem; }
+    .atlas-kicker { font-size: .66rem; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #fbbf24; margin-bottom: .5rem; }
     .atlas-hero h1 {
         font-family: "Fraunces", Georgia, serif;
         font-weight: 700;
-        font-size: clamp(1.9rem, 4.2vw, 2.65rem);
-        letter-spacing: -.035em;
-        line-height: 1.12;
-        margin: 0 0 1rem;
-        max-width: 18ch;
+        font-size: clamp(1.5rem, 3.5vw, 2.1rem);
+        letter-spacing: -.03em;
+        line-height: 1.15;
+        margin: 0 0 .4rem;
     }
-    .atlas-hero p.lead { font-size: 1.05rem; line-height: 1.65; opacity: .86; max-width: 40rem; margin: 0; }
-    .atlas-cta-row { margin-top: 1.75rem; display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
-    .atlas-btn-gold {
-        background: linear-gradient(135deg, #fbbf24, #ea580c);
-        color: #1c1917 !important;
-        font-weight: 800;
-        border: none;
-        padding: .75rem 1.5rem;
-        border-radius: 999px;
-        box-shadow: 0 4px 24px rgba(234,88,12,.35);
-        text-decoration: none !important;
-        display: inline-block;
+    .atlas-hero p.lead { font-size: .98rem; line-height: 1.55; opacity: .82; max-width: 44rem; margin: 0; }
+    .atlas-stat-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .atlas-stat {
+        background: rgba(255,255,255,.08); border-radius: 12px;
+        padding: .5rem .9rem; text-align: center; min-width: 82px;
     }
-    .atlas-btn-gold:hover { filter: brightness(1.05); color: #1c1917 !important; }
-    .atlas-btn-ghost {
-        border: 1px solid rgba(255,255,255,.35);
-        color: #fafaf9 !important;
-        padding: .65rem 1.25rem;
-        border-radius: 999px;
-        font-weight: 600;
-        text-decoration: none !important;
-        background: transparent;
-    }
-    .atlas-btn-ghost:hover { background: rgba(255,255,255,.08); }
-    .atlas-stat { background: rgba(255,255,255,.08); border-radius: 14px; padding: .75rem 1.1rem; text-align: center; min-width: 92px; }
-    .atlas-stat .n { font-size: 1.5rem; font-weight: 800; font-family: "Fraunces", serif; }
-    .atlas-stat .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; opacity: .65; }
+    .atlas-stat .n { font-size: 1.2rem; font-weight: 800; font-family: "Fraunces", serif; line-height: 1; }
+    .atlas-stat .l { font-size: .58rem; text-transform: uppercase; letter-spacing: .1em; opacity: .65; margin-top: .15rem; }
 
-    .atlas-grid { display: grid; grid-template-columns: 230px 1fr; gap: 2rem; align-items: start; }
+    .atlas-grid { display: grid; grid-template-columns: 220px 1fr; gap: 1.75rem; align-items: start; }
     @media (max-width: 991px) {
         .atlas-grid { grid-template-columns: 1fr; }
-        .atlas-nav { display: flex; flex-wrap: wrap; gap: .4rem; }
+        .atlas-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
     }
     .atlas-nav .nav-link {
         border-radius: 12px; color: #57534e; font-weight: 600; font-size: .88rem;
@@ -78,17 +58,17 @@
     }
     .atlas-card {
         background: #fff;
-        border-radius: 20px;
+        border-radius: 18px;
         border: 1px solid #e7e5e4;
         box-shadow: 0 4px 24px rgba(28,25,23,.04);
-        margin-bottom: 1.25rem;
+        margin-bottom: 1.1rem;
         overflow: hidden;
     }
     .atlas-card-h {
         font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
-        color: #a8a29e; padding: 1.1rem 1.5rem .5rem;
+        color: #a8a29e; padding: 1rem 1.5rem .4rem;
     }
-    .atlas-card-b { padding: 0 1.5rem 1.35rem; }
+    .atlas-card-b { padding: 0 1.5rem 1.3rem; }
     .atlas-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8a29e; margin-bottom: .35rem; }
     .atlas-field { margin-bottom: 1.1rem; }
     .atlas-hint { font-size: .82rem; color: #78716c; line-height: 1.5; }
@@ -96,45 +76,72 @@
         display: inline-block; background: #f5f5f4; border-radius: 10px;
         padding: .4rem .85rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
     }
-    .atlas-check {
-        display: flex; align-items: flex-start; gap: .85rem;
-        padding: .85rem 0; border-bottom: 1px solid #f5f5f4;
+
+    /* Sync card — prominent on Overview */
+    .sync-card {
+        background: linear-gradient(135deg, #fff 0%, #fdfbf7 100%);
+        border: 1px solid #e7e5e4;
+        border-radius: 18px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.1rem;
+        box-shadow: 0 4px 24px rgba(28,25,23,.05);
     }
-    .atlas-check:last-child { border-bottom: none; }
-    .atlas-check .ic { font-size: 1.15rem; line-height: 1; flex-shrink: 0; }
-    .atlas-check.ok .ic { color: #059669; }
-    .atlas-check.no .ic { color: #d97706; }
-    .atlas-check strong { display: block; font-size: .92rem; color: #1c1917; }
-    .atlas-check span { font-size: .8rem; color: #78716c; line-height: 1.45; }
+    .sync-card .sync-title {
+        font-family: "Fraunces", serif;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1c1917;
+        margin: 0 0 .25rem;
+        letter-spacing: -.02em;
+    }
+    .sync-card .sync-sub { font-size: .88rem; color: #78716c; margin: 0 0 1rem; }
+    .sync-status {
+        display: inline-flex; align-items: center; gap: .5rem;
+        font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+        padding: .3rem .7rem; border-radius: 999px;
+    }
+    .sync-status.connected { background: #dcfce7; color: #14532d; }
+    .sync-status.disconnected { background: #fef3c7; color: #78350f; }
+    .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+    .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+    .btn-sync-primary {
+        background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
+        color: #fff !important; border: none; font-weight: 700;
+        padding: .6rem 1.3rem; border-radius: 999px;
+        box-shadow: 0 4px 18px rgba(29,78,216,.28);
+        text-decoration: none !important; display: inline-block;
+    }
+    .btn-sync-primary:hover { filter: brightness(1.05); color: #fff !important; }
+    .btn-sync-ghost {
+        border: 1px solid #d6d3d1; color: #44403c !important;
+        padding: .55rem 1.15rem; border-radius: 999px; font-weight: 600;
+        text-decoration: none !important; background: #fff;
+    }
+    .btn-sync-ghost:hover { background: #f5f5f4; color: #1c1917 !important; }
 </style>
 {% endblock %}
 
 {% block content %}
 {% set vis = profile_row.profile_visibility or 'private' %}
-{% set has_headline = profile_row.headline and profile_row.headline.strip() %}
-{% set has_bio = profile_row.bio and profile_row.bio.strip() %}
-{% set door_open = vis in ('followers', 'public') %}
+{% set schwab_connected = schwab_enabled and schwab_connections %}
 
 <div class="atlas">
 <div class="atlas-shell">
     <div class="atlas-hero">
-        <div class="atlas-hero-in row g-4 align-items-center">
+        <div class="atlas-hero-in row g-3 align-items-center">
             <div class="col-lg-8">
-                <div class="atlas-kicker">Identity, not inventory</div>
-                <h1>You are not your P&amp;L. You are what you prove you did.</h1>
-                <p class="lead">
-                    The mirror wall is where serious traders hang one receipt at a time — the trade that said something about discipline,
-                    sizing, or patience. Everything else stays in your Review, private, until you say otherwise.
-                </p>
-                <div class="atlas-cta-row">
-                    <a href="{{ url_for('weekly_review') }}" class="atlas-btn-gold">Weekly Review — hang a receipt</a>
-                    <a href="{{ url_for('community') }}" class="atlas-btn-ghost">See the wall</a>
-                </div>
+                <div class="atlas-kicker">Settings</div>
+                <h1>{{ profile_row.display_name or current_user.username }}</h1>
+                <p class="lead">Manage how your data syncs, how the app opens, and your login.</p>
             </div>
-            <div class="col-lg-4 d-flex gap-3 justify-content-lg-end">
-                <div class="atlas-stat"><div class="n">{{ follower_count }}</div><div class="l">Followers</div></div>
-                <div class="atlas-stat"><div class="n">{{ following_count }}</div><div class="l">Following</div></div>
-                <div class="atlas-stat"><div class="n">{{ published_count }}</div><div class="l">Receipts</div></div>
+            <div class="col-lg-4 d-flex justify-content-lg-end">
+                <div class="atlas-stat-row">
+                    <div class="atlas-stat"><div class="n">{{ accounts|length }}</div><div class="l">Accounts</div></div>
+                    <div class="atlas-stat"><div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div></div>
+                    {% if schwab_connected %}
+                    <div class="atlas-stat"><div class="n">✓</div><div class="l">Schwab</div></div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -142,75 +149,113 @@
     <div class="atlas-grid">
         <nav class="atlas-nav nav flex-lg-column">
             <a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="{{ url_for('profile', tab='overview') }}">Overview</a>
-            <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">How you read</a>
-            <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; login</a>
-            <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">The door</a>
-            <a class="nav-link {% if tab == 'published' %}active{% endif %}" href="{{ url_for('profile', tab='published') }}">Your receipts</a>
+            <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>
+            <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
+            <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">Community</a>
+            <a class="nav-link {% if tab == 'published' %}active{% endif %}" href="{{ url_for('profile', tab='published') }}">Shared trades</a>
         </nav>
 
         <div>
             {% if tab == 'overview' %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Readiness — four beats</div>
-                <div class="atlas-card-b">
-                    <div class="atlas-check {% if door_open %}ok{% else %}no{% endif %}">
-                        <span class="ic">{% if door_open %}✓{% else %}○{% endif %}</span>
-                        <div>
-                            <strong>The door is {% if door_open %}open{% else %}locked{% endif %}</strong>
-                            <span>{% if door_open %}Followers or the world can find you.{% else %}You’re still in stealth — no follows, no wall. Open it under <em>The door</em>.{% endif %}</span>
-                            {% if not door_open %}<a href="{{ url_for('profile', tab='community') }}" class="small fw-semibold d-inline-block mt-1">Open the door →</a>{% endif %}
+            {# Sync card — primary reason people open this page #}
+            {% if schwab_enabled %}
+            <div class="sync-card">
+                <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
+                    <div>
+                        <div class="sync-title">Schwab sync</div>
+                        <p class="sync-sub mb-0">Pulls your trades and open positions from Schwab into the same pipeline as manual uploads.</p>
+                    </div>
+                    {% if schwab_connected %}
+                    <span class="sync-status connected"><span class="dot"></span> Connected</span>
+                    {% else %}
+                    <span class="sync-status disconnected"><span class="dot"></span> Not connected</span>
+                    {% endif %}
+                </div>
+
+                {% if schwab_connected %}
+                <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% if not schwab_first_sync_completed %}
+                    <div class="mt-2">
+                        <div class="atlas-label mb-2">First sync — how much history?</div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full_o" value="full" checked>
+                            <label class="form-check-label" for="schwab_scope_full_o">Up to {{ schwab_full_history_lookback_days }} days (~5 years) — full backfill</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling_o" value="rolling">
+                            <label class="form-check-label" for="schwab_scope_rolling_o">Only last {{ schwab_routine_lookback_days }} days</label>
                         </div>
                     </div>
-                    <div class="atlas-check {% if has_headline %}ok{% else %}no{% endif %}">
-                        <span class="ic">{% if has_headline %}✓{% else %}○{% endif %}</span>
-                        <div>
-                            <strong>Headline</strong>
-                            <span>One line that answers: what do you actually trade for?</span>
-                            {% if not has_headline %}<a href="{{ url_for('profile', tab='preferences') }}" class="small fw-semibold d-inline-block mt-1">Write it →</a>{% endif %}
-                        </div>
+                    {% else %}
+                    <p class="small text-body-secondary mb-2">Routine sync pulls the last <strong>{{ schwab_routine_lookback_days }} days</strong>.</p>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again_o" value="1">
+                        <label class="form-check-label small" for="schwab_full_again_o">One-time: fetch up to {{ schwab_full_history_lookback_days }} days</label>
                     </div>
-                    <div class="atlas-check {% if has_bio %}ok{% else %}no{% endif %}">
-                        <span class="ic">{% if has_bio %}✓{% else %}○{% endif %}</span>
-                        <div>
-                            <strong>Bio</strong>
-                            <span>Three sentences beat three dashboards. Tell them what “good” looks like for you.</span>
-                            {% if not has_bio %}<a href="{{ url_for('profile', tab='preferences') }}" class="small fw-semibold d-inline-block mt-1">Tell your story →</a>{% endif %}
-                        </div>
+                    {% endif %}
+
+                    <div class="sync-actions">
+                        <button type="submit" class="btn-sync-primary">Sync now</button>
+                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
                     </div>
-                    <div class="atlas-check {% if published_count > 0 %}ok{% else %}no{% endif %}">
-                        <span class="ic">{% if published_count > 0 %}✓{% else %}○{% endif %}</span>
-                        <div>
-                            <strong>First receipt on the wall</strong>
-                            <span>{% if published_count > 0 %}You’ve shown the work. Keep going.{% else %}Pick the trade from this week you’re least ashamed to explain out loud.{% endif %}</span>
-                            {% if published_count == 0 %}<a href="{{ url_for('weekly_review') }}" class="small fw-semibold d-inline-block mt-1">Weekly Review →</a>{% endif %}
-                        </div>
-                    </div>
+                    <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
+                </form>
+                {% else %}
+                <p class="small text-body-secondary mb-0">Connect once and every refresh flows through the same seeds dbt builds from.</p>
+                <div class="sync-actions">
+                    <a href="{{ url_for('schwab_connect') }}" class="btn-sync-primary">Connect Schwab</a>
+                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="sync-card">
+                <div class="sync-title">Get your data in</div>
+                <p class="sync-sub">Schwab sync isn't configured on this server. You can still drop in a CSV export.</p>
+                <div class="sync-actions">
+                    <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
                 </div>
             </div>
+            {% endif %}
+
+            {# Profile summary — condensed, edit via Preferences #}
             <div class="atlas-card">
-                <div class="atlas-card-h">Mirror card</div>
+                <div class="atlas-card-h">Profile</div>
                 <div class="atlas-card-b">
                     <div class="row g-4">
                         <div class="col-md-6">
-                            <div class="atlas-label">Name on the wall</div>
+                            <div class="atlas-label">Display name</div>
                             <div class="fs-5 fw-bold" style="font-family:Fraunces,serif;color:#1c1917">{{ profile_row.display_name or current_user.username }}</div>
-                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code> — this is how you sign the receipts.</p>
+                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
                         </div>
                         <div class="col-md-6">
                             <div class="atlas-label">Headline</div>
-                            <div class="text-body-secondary">{{ profile_row.headline or "— Still blank. That’s a missed first impression." }}</div>
+                            <div class="text-body-secondary">{{ profile_row.headline or "—" }}</div>
                         </div>
+                        {% if profile_row.bio %}
                         <div class="col-12">
                             <div class="atlas-label">Bio</div>
-                            <p class="mb-0" style="line-height:1.7;color:#44403c;font-size:1rem">{{ profile_row.bio or "Silence isn’t mysterious here — it reads as ‘no point of view yet.’ Fill this in." }}</p>
+                            <p class="mb-0" style="line-height:1.6;color:#44403c;font-size:.95rem">{{ profile_row.bio }}</p>
                         </div>
+                        {% endif %}
                     </div>
-                    <div class="mt-4 d-flex flex-wrap gap-2">
-                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-dark rounded-pill px-4 fw-semibold">Edit mirror card</a>
-                        <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="btn btn-outline-secondary rounded-pill px-4">Preview public page</a>
+                    <div class="mt-3 d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-dark rounded-pill px-4 fw-semibold">Edit profile</a>
                     </div>
                 </div>
             </div>
+
+            {# Accounts snapshot #}
+            {% if accounts %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Accounts you’ve linked</div>
+                <div class="atlas-card-b">
+                    <div>{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
+                    <p class="atlas-hint mb-0 mt-2">These labels tie uploads and Schwab sync to the rows you see across the app. Manage them under <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.</p>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
 
             {% if tab == 'preferences' %}
@@ -220,7 +265,7 @@
                 <input type="hidden" name="settings_tab" value="preferences">
 
                 <div class="atlas-card">
-                    <div class="atlas-card-h">Mirror card</div>
+                    <div class="atlas-card-h">Profile</div>
                     <div class="atlas-card-b">
                         <div class="row g-3">
                             <div class="col-md-6 atlas-field">
@@ -237,20 +282,20 @@
                                 </select>
                             </div>
                             <div class="col-12 atlas-field">
-                                <label class="atlas-label">Headline — the one line people quote</label>
+                                <label class="atlas-label">Headline (one line)</label>
                                 <input type="text" class="form-control" name="headline" maxlength="120"
-                                       value="{{ profile_row.headline or '' }}" placeholder="e.g. Credit spreads only · max loss before ego">
+                                       value="{{ profile_row.headline or '' }}" placeholder="e.g. Credit spreads on blue chips">
                             </div>
                             <div class="col-12 atlas-field">
-                                <label class="atlas-label">Bio — what “good execution” means to you</label>
-                                <textarea class="form-control" name="bio" rows="5" maxlength="2000" placeholder="Rules you won’t break. What you’re working on. What you don’t trade.">{{ profile_row.bio or '' }}</textarea>
+                                <label class="atlas-label">Bio</label>
+                                <textarea class="form-control" name="bio" rows="5" maxlength="2000" placeholder="A few sentences about what you trade and why.">{{ profile_row.bio or '' }}</textarea>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="atlas-card">
-                    <div class="atlas-card-h">How the app opens for you</div>
+                    <div class="atlas-card-h">App behavior</div>
                     <div class="atlas-card-b">
                         <div class="row g-3">
                             <div class="col-md-6 atlas-field">
@@ -292,53 +337,57 @@
             {% endif %}
 
             {% if tab == 'account' %}
+            {% if schwab_enabled %}
             <div class="atlas-card">
-                <div class="atlas-card-h">Brokerage labels in data</div>
+                <div class="atlas-card-h">Schwab sync</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint">These strings tie uploads to BigQuery. Mundane — but wrong label, wrong mirror.</p>
-                    {% if accounts %}
-                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
-                    {% else %}
-                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a> or connect Schwab.</p>
-                    {% endif %}
-                    {% if schwab_enabled %}
-                    <div class="mt-4 pt-3 border-top">
-                        <div class="atlas-label">Schwab</div>
-                        <p class="atlas-hint mb-2">One OAuth, then sync is the same pipeline as CSV.</p>
-                        {% if schwab_connections %}
-                        <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            {% if not schwab_first_sync_completed %}
-                            <p class="small text-body-secondary mb-2"><strong>First sync</strong> — choose how much trade history to pull from Schwab (API max about {{ schwab_full_history_lookback_days }} days).</p>
-                            <div class="mb-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full" value="full" checked>
-                                    <label class="form-check-label" for="schwab_scope_full">Import up to {{ schwab_full_history_lookback_days }} days (~5 years) — recommended for a full backfill</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling" value="rolling">
-                                    <label class="form-check-label" for="schwab_scope_rolling">Only last {{ schwab_routine_lookback_days }} days (faster; use if you already load history elsewhere)</label>
-                                </div>
+                    <p class="atlas-hint">One OAuth, then sync runs through the same seeds and dbt models as CSV upload.</p>
+                    {% if schwab_connected %}
+                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {% if not schwab_first_sync_completed %}
+                        <p class="small text-body-secondary mb-2"><strong>First sync</strong> — choose how much history to pull (API max ~{{ schwab_full_history_lookback_days }} days).</p>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full" value="full" checked>
+                                <label class="form-check-label" for="schwab_scope_full">Up to {{ schwab_full_history_lookback_days }} days (~5 years)</label>
                             </div>
-                            {% else %}
-                            <p class="small text-body-secondary mb-2">Routine sync requests the last <strong>{{ schwab_routine_lookback_days }} days</strong> of transactions (set <code>SCHWAB_SYNC_TRANSACTION_DAYS</code> on the server to change this). Check below for a one-time long backfill.</p>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again" value="1">
-                                <label class="form-check-label" for="schwab_full_again">One-time: fetch up to {{ schwab_full_history_lookback_days }} days of history (slower)</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling" value="rolling">
+                                <label class="form-check-label" for="schwab_scope_rolling">Only last {{ schwab_routine_lookback_days }} days</label>
                             </div>
-                            {% endif %}
-                            <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
-                            <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
-                        </form>
+                        </div>
                         {% else %}
-                        <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary rounded-pill">Connect Schwab</a>
+                        <p class="small text-body-secondary mb-2">Routine sync requests the last <strong>{{ schwab_routine_lookback_days }} days</strong> (set <code>SCHWAB_SYNC_TRANSACTION_DAYS</code> on the server to change this).</p>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again" value="1">
+                            <label class="form-check-label" for="schwab_full_again">One-time: fetch up to {{ schwab_full_history_lookback_days }} days</label>
+                        </div>
                         {% endif %}
-                    </div>
+                        <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
+                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
+                    </form>
+                    {% else %}
+                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary rounded-pill">Connect Schwab</a>
                     {% endif %}
                 </div>
             </div>
+            {% endif %}
+
             <div class="atlas-card">
-                <div class="atlas-card-h">Upload history</div>
+                <div class="atlas-card-h">Account labels</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint">These strings tie your uploads and syncs to BigQuery rows.</p>
+                    {% if accounts %}
+                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
+                    {% else %}
+                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled %} or connect Schwab{% endif %}.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="atlas-card">
+                <div class="atlas-card-h">Recent uploads</div>
                 <div class="atlas-card-b p-0">
                     {% if recent_uploads %}
                     <div class="table-responsive">
@@ -354,6 +403,7 @@
                     {% else %}<p class="text-muted small p-3 mb-0">No uploads yet.</p>{% endif %}
                 </div>
             </div>
+
             <div class="atlas-card">
                 <div class="atlas-card-h">Password</div>
                 <div class="atlas-card-b">
@@ -371,40 +421,36 @@
 
             {% if tab == 'community' %}
             <div class="atlas-card">
-                <div class="atlas-card-h">The door — who can see you</div>
+                <div class="atlas-card-h">Visibility</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint mb-4">Private means you’re a ghost: no follows, no wall, no pressure. The moment you choose Followers or Public, you’re saying <em>hold me accountable in the open</em>.</p>
+                    <p class="atlas-hint mb-4">Controls whether other traders can find you and see trades you choose to share. Community features are early — you can stay private and nothing else on the site changes.</p>
                     <form method="POST" action="{{ url_for('profile', tab='community') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="save_profile">
                         <input type="hidden" name="settings_tab" value="community">
                         <div class="atlas-field">
-                            <label class="atlas-label">Visibility</label>
+                            <label class="atlas-label">Who can see your profile</label>
                             <select class="form-select form-select-lg" name="profile_visibility">
-                                <option value="private" {% if profile_row.profile_visibility == 'private' %}selected{% endif %}>Private — I’m not on the wall yet</option>
-                                <option value="followers" {% if profile_row.profile_visibility == 'followers' %}selected{% endif %}>Followers — receipts for people who chose to watch</option>
-                                <option value="public" {% if profile_row.profile_visibility == 'public' %}selected{% endif %}>Public — any signed-in trader can read my card</option>
+                                <option value="private" {% if profile_row.profile_visibility == 'private' %}selected{% endif %}>Private — not discoverable</option>
+                                <option value="followers" {% if profile_row.profile_visibility == 'followers' %}selected{% endif %}>Followers — only people who follow you</option>
+                                <option value="public" {% if profile_row.profile_visibility == 'public' %}selected{% endif %}>Public — any signed-in trader</option>
                             </select>
                         </div>
                         <div class="form-check form-switch mb-4">
                             <input class="form-check-input" type="checkbox" name="show_account_names_on_published" id="san" {% if profile_row.show_account_names_on_published %}checked{% endif %}>
-                            <label class="form-check-label" for="san">Show real account nicknames on receipts (otherwise they read as “Account”)</label>
+                            <label class="form-check-label" for="san">Show real account nicknames on shared trades (otherwise they read as “Account”)</label>
                         </div>
-                        <button type="submit" class="btn btn-dark btn-lg rounded-pill px-4 fw-bold">Save the door</button>
+                        <button type="submit" class="btn btn-dark rounded-pill px-4 fw-semibold">Save</button>
                     </form>
                 </div>
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ url_for('community') }}" class="atlas-btn-gold" style="display:inline-block">Open the wall</a>
-                <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="btn btn-outline-dark rounded-pill px-4 fw-semibold">Preview my card</a>
             </div>
             {% endif %}
 
             {% if tab == 'published' %}
             <div class="atlas-card">
-                <div class="atlas-card-h">Receipts you’ve hung</div>
+                <div class="atlas-card-h">Trades you’ve shared</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint">Taking one down doesn’t erase the trade — it only pulls it off other people’s wall.</p>
+                    <p class="atlas-hint">Removing a shared trade takes it off other people’s feeds. Your underlying data is untouched.</p>
                     {% if my_published_trades %}
                     <div class="table-responsive mt-3">
                         <table class="table align-middle">
@@ -417,12 +463,12 @@
                                     <td><span class="badge rounded-pill text-bg-light">{{ p.status }}</span></td>
                                     <td class="text-end small">{% if p.display_pnl is not none %}{{ "+" if p.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.display_pnl) }}{% else %}—{% endif %}</td>
                                     <td class="text-end">
-                                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" class="d-inline" onsubmit="return confirm('Pull this receipt off the wall?');">
+                                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" class="d-inline" onsubmit="return confirm('Remove this shared trade?');">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <input type="hidden" name="action" value="unpublish">
                                             <input type="hidden" name="trade_fingerprint" value="{{ p.trade_fingerprint }}">
                                             <input type="hidden" name="next" value="{{ url_for('profile', tab='published') }}">
-                                            <button type="submit" class="btn btn-link btn-sm text-danger p-0">Take down</button>
+                                            <button type="submit" class="btn btn-link btn-sm text-danger p-0">Remove</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -431,9 +477,9 @@
                         </table>
                     </div>
                     {% else %}
-                    <p class="mb-0 mt-3 fw-semibold text-dark">Nothing on the wall yet.</p>
-                    <p class="atlas-hint mt-2">That’s not humility — it’s a blank canvas. Go to Review, hit <strong>Show</strong> on the trade that proves who you were this week.</p>
-                    <a href="{{ url_for('weekly_review') }}" class="atlas-btn-gold mt-3" style="display:inline-block">Weekly Review</a>
+                    <p class="mb-0 mt-3 fw-semibold text-dark">Nothing shared yet.</p>
+                    <p class="atlas-hint mt-2">If you want to start sharing, head to Weekly Review and hit <strong>Show</strong> on a trade.</p>
+                    <a href="{{ url_for('weekly_review') }}" class="btn btn-dark rounded-pill px-4 fw-semibold mt-2">Go to Weekly Review</a>
                     {% endif %}
                 </div>
             </div>

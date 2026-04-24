@@ -1208,6 +1208,41 @@ def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out) if out else pd.DataFrame()
 
 
+def _supplement_summary_with_rolled(
+    summary_df: pd.DataFrame, rolled_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Return summary_df with rows from rolled_df whose (account, strategy) are
+    missing. Keeps the mart as source of truth when it has the pair; fills gaps
+    from int_strategy_classification so closed history shows up even when the
+    mart lags (common right after a Schwab/CSV seed commit, before dbt rebuilds).
+    """
+    if rolled_df is None or rolled_df.empty:
+        return summary_df if summary_df is not None else pd.DataFrame()
+    if summary_df is None or summary_df.empty:
+        return rolled_df
+    existing: set[tuple[str, str]] = set()
+    for _, r in summary_df.iterrows():
+        a = r.get("account")
+        s = r.get("strategy")
+        if a is None or s is None or (isinstance(s, float) and pd.isna(s)):
+            continue
+        st = str(s).strip()
+        if not st:
+            continue
+        existing.add((str(a).strip(), st))
+    mask = []
+    for _, r in rolled_df.iterrows():
+        a = str(r.get("account") or "").strip()
+        s = str(r.get("strategy") or "").strip()
+        mask.append((a, s) not in existing and bool(a) and bool(s))
+    add = rolled_df[mask] if mask else rolled_df.iloc[0:0]
+    if add.empty:
+        return summary_df
+    add = add.reindex(columns=list(summary_df.columns))
+    add = add.dropna(axis=1, how="all")
+    return pd.concat([summary_df, add], ignore_index=True)
+
+
 def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFrame:
     """When there is a live snapshot in int_enriched_current but no mart / classification rows
     (only unrealized in positions_summary or empty), show one Open row so Strategy Breakdown is not empty.
@@ -1883,18 +1918,21 @@ def position_detail(symbol):
             "last_trade": last_trade,
         }
 
-    # Strategy rows: positions_summary plus any (account, strategy) seen in closed legs
-    # but missing from the mart. If the mart is empty (lag / snapshot-only), roll up the
-    # user's int_strategy_classification so closed + open strategies still appear (scoped).
+    # Strategy rows: positions_summary plus any (account, strategy) missing from the mart.
+    # Always roll up int_strategy_classification and merge in gaps — the mart can lag by a
+    # dbt run (e.g. right after a Schwab/CSV seed commit) and silently drop closed history
+    # for a symbol whose open row is already in the mart. Scoped to the user's accounts.
     summary_for_strat = summary_df
-    if summary_for_strat.empty and user_accounts is not None and len(user_accounts) > 0:
+    if user_accounts is not None and len(user_accounts) > 0:
         int_raw = _fetch_int_strategy_classification_by_symbol(
             client, safe_symbol, user_accounts
         )
         if not int_raw.empty:
             rolled = _rollup_int_strategy_to_summary_shape(int_raw)
             if not rolled.empty:
-                summary_for_strat = rolled
+                summary_for_strat = _supplement_summary_with_rolled(
+                    summary_for_strat, rolled
+                )
     _cl_for_strat = closed_legs_pre_leg if not leg_param else closed_legs_df
     _eq_for_strat = closed_equity_pre_leg if not leg_param else closed_equity_df
     merged_strategy_df = _merge_position_strategy_breakdown(
