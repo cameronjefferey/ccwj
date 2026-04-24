@@ -1,6 +1,60 @@
 version: 2
 
 seeds:
+  # Pin everything in the two main seeds to STRING so dbt seed loads are
+  # deterministic regardless of what rows are present. BigQuery's CSV
+  # autodetect will otherwise flip column types between runs (e.g. empty
+  # seed → INT64, next load with "100.0"/"-2.0" values → load job fails).
+  # stg_history / stg_current already cast to string on the way in, then
+  # safe_cast to numeric, so this costs nothing downstream.
+  - name: trade_history
+    config:
+      column_types:
+        Account: string
+        Date: string
+        Action: string
+        Symbol: string
+        Description: string
+        Quantity: string
+        Price: string
+        fees_and_comm: string
+        Amount: string
+
+  - name: current_positions
+    config:
+      column_types:
+        Account: string
+        Symbol: string
+        Description: string
+        Quantity: string
+        Price: string
+        price_change_dollar: string
+        price_change_percent: string
+        market_value: string
+        day_change_dollar: string
+        day_change_percent: string
+        cost_bases: string
+        gain_or_loss_dollat: string
+        gain_or_loss_percent: string
+        rating: string
+        divident_reinvestment: string
+        is_capital_gain: string
+        percent_of_account: string
+        expiration_date: string
+        cost_per_share: string
+        last_earnings_date: string
+        dividend_yield: string
+        last_dividend: string
+        ex_dividend_date: string
+        pe_ratio: string
+        annual_week_low: string
+        annual_week_high: string
+        volume: string
+        intrinsic_value: string
+        in_the_money: string
+        security_type: string
+        margin_requirement: string
+
   # Schwab cash + account-total rows used by stg_account_balances for
   # equity snapshots. Manual upload and Schwab sync both write trades into
   # trade_history.csv and open positions into current_positions.csv, so no
