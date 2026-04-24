@@ -921,8 +921,23 @@
     function loadAll() {
         loading = true;
         body.innerHTML = '<div class="cm-picker-loading">Loading your trades…</div>';
-        fetch('{{ url_for("community_my_trades") }}', { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
+        fetch('{{ url_for("community_my_trades") }}', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+            redirect: 'manual',
+        })
+            .then(function (r) {
+                // Session-expired / auth redirects: opaqueredirect or a 3xx.
+                if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) {
+                    throw new Error('auth_required');
+                }
+                if (!r.ok) throw new Error('http_' + r.status);
+                var ct = r.headers.get('content-type') || '';
+                if (ct.indexOf('application/json') === -1) {
+                    throw new Error('auth_required');
+                }
+                return r.json();
+            })
             .then(function (data) {
                 cache.strategies   = (data && data.strategies)   || [];
                 cache.legs         = (data && data.legs)         || [];
@@ -931,8 +946,11 @@
                 setTabCounts();
                 render();
             })
-            .catch(function () {
-                body.innerHTML = '<div class="cm-picker-empty">Could not load your data. Please try again.</div>';
+            .catch(function (err) {
+                var msg = (err && err.message === 'auth_required')
+                    ? 'Your session expired. <a href="{{ url_for("community") }}" style="color:#6f42c1;font-weight:600">Reload the page</a> and try again.'
+                    : 'Could not load your data. Please try again.';
+                body.innerHTML = '<div class="cm-picker-empty">' + msg + '</div>';
             })
             .finally(function () { loading = false; });
     }
