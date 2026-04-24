@@ -735,6 +735,7 @@ POSITION_SUMMARY_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE symbol = '{symbol}'
+    {account_filter}
     ORDER BY account, strategy
 """
 
@@ -758,6 +759,7 @@ POSITION_TRADES_QUERY = """
         UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
         OR UPPER(TRIM(SPLIT(COALESCE(trade_symbol, ''), ' ')[SAFE_OFFSET(0)])) = UPPER(TRIM('{symbol}'))
       )
+    {account_filter}
     ORDER BY trade_date DESC
 """
 
@@ -776,6 +778,7 @@ POSITION_CURRENT_QUERY = """
         unrealized_pnl_pct
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE underlying_symbol = '{symbol}'
+    {account_filter}
 """
 
 POSITION_CLOSED_LEGS_QUERY = """
@@ -802,6 +805,7 @@ POSITION_CLOSED_LEGS_QUERY = """
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       AND sc.symbol = '{symbol}'
+    {sc_account_filter}
 """
 
 POSITION_CLOSED_EQUITY_QUERY = """
@@ -820,6 +824,7 @@ POSITION_CLOSED_EQUITY_QUERY = """
         description
     FROM `ccwj-dbt.analytics.int_closed_equity_legs`
     WHERE symbol = '{symbol}'
+    {account_filter}
 """
 
 POSITION_SESSIONS_QUERY = """
@@ -836,6 +841,7 @@ POSITION_SESSIONS_QUERY = """
         num_trades
     FROM `ccwj-dbt.analytics.int_equity_sessions`
     WHERE symbol = '{symbol}'
+    {account_filter}
     ORDER BY account, session_id
 """
 
@@ -857,6 +863,7 @@ POSITION_MATRIX_QUERY = """
     WHERE status = 'Closed'
       AND strike_distance IS NOT NULL
       AND underlying_symbol = '{symbol}'
+    {account_filter}
 """
 
 def _merge_position_strategy_breakdown(
@@ -1086,14 +1093,30 @@ def position_detail(symbol):
     safe_symbol = symbol.replace("'", "''")
 
     try:
+        _pos_acct = _account_sql_and(user_accounts, col="account")
+        _pos_sc_acct = _account_sql_and(user_accounts, col="sc.account")
         dfs = _bq_parallel(client, {
-            "summary": POSITION_SUMMARY_QUERY.format(symbol=safe_symbol),
-            "trades": POSITION_TRADES_QUERY.format(symbol=safe_symbol),
-            "current": POSITION_CURRENT_QUERY.format(symbol=safe_symbol),
-            "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(symbol=safe_symbol),
-            "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(symbol=safe_symbol),
-            "matrix": POSITION_MATRIX_QUERY.format(symbol=safe_symbol),
-            "sessions": POSITION_SESSIONS_QUERY.format(symbol=safe_symbol),
+            "summary": POSITION_SUMMARY_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
+            "trades": POSITION_TRADES_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
+            "current": POSITION_CURRENT_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
+            "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(
+                symbol=safe_symbol, sc_account_filter=_pos_sc_acct
+            ),
+            "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
+            "matrix": POSITION_MATRIX_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
+            "sessions": POSITION_SESSIONS_QUERY.format(
+                symbol=safe_symbol, account_filter=_pos_acct
+            ),
         })
         summary_df = dfs["summary"]
         trades_df = dfs["trades"]
@@ -1156,10 +1179,14 @@ def position_detail(symbol):
             current_df["unrealized_pnl_pct"], errors="coerce"
         ).fillna(0)
 
-    # Filter to user's accounts
+    # Filter to user's accounts (must run on every BQ frame — queries are by symbol
+    # only, so unfiltered closed_legs/closed_equity/matrix would include all tenants.)
     summary_df = _filter_df_by_accounts(summary_df, user_accounts)
     trades_df = _filter_df_by_accounts(trades_df, user_accounts)
     current_df = _filter_df_by_accounts(current_df, user_accounts)
+    closed_legs_df = _filter_df_by_accounts(closed_legs_df, user_accounts)
+    closed_equity_df = _filter_df_by_accounts(closed_equity_df, user_accounts)
+    matrix_df = _filter_df_by_accounts(matrix_df, user_accounts)
 
     # Optional filters carried from Positions page
     selected_account = request.args.get("account", "")

@@ -202,3 +202,31 @@ class TestMirrorScoreDataIsolation:
         # User B has no data - should get "No Mirror Score" or similar, NOT User A's score
         assert r.status_code == 200
         assert b"User A mirror diagnostic" not in r.data
+
+
+class TestBigQueryFrameAccountFilter:
+    """Symbol-scoped BQ queries return all accounts in the dataset; app must filter."""
+
+    def test_filter_df_by_accounts_keeps_only_linked_accounts(self):
+        import pandas as pd
+
+        from app.routes import _filter_df_by_accounts
+
+        df = pd.DataFrame(
+            {
+                "account": ["Schwab Account", "General", "investment1"],
+                "total_pnl": [1.0, 2.0, 3.0],
+            }
+        )
+        out = _filter_df_by_accounts(df, ["Schwab Account"])
+        assert len(out) == 1
+        assert str(out["account"].iloc[0]) == "Schwab Account"
+
+    def test_filter_empty_accounts_returns_empty_frame(self):
+        import pandas as pd
+
+        from app.routes import _filter_df_by_accounts
+
+        df = pd.DataFrame({"account": ["Other"], "x": [1]})
+        out = _filter_df_by_accounts(df, [])
+        assert len(out) == 0
