@@ -336,9 +336,39 @@ _TXN_ACTION_LABELS = {
 def _iso_date(v):
     if v is None:
         return ""
+    try:
+        import pandas as _pd
+        if _pd.isna(v):
+            return ""
+    except Exception:
+        pass
     if hasattr(v, "isoformat"):
-        return v.isoformat()
+        try:
+            return v.isoformat()
+        except Exception:
+            return ""
     return str(v)[:10]
+
+
+def _num_or_none(v):
+    """Pandas-safe float cast. Treats NaN/None as None."""
+    if v is None:
+        return None
+    try:
+        import pandas as _pd
+        if _pd.isna(v):
+            return None
+    except Exception:
+        pass
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _num_or_zero(v):
+    x = _num_or_none(v)
+    return 0.0 if x is None else x
 
 
 @app.route("/community/my-trades")
@@ -358,7 +388,18 @@ def community_my_trades():
     .cursor/rules/bigquery-tenant-isolation.mdc. We scope by account both in
     SQL ({account_filter}) and in Python via _filter_df_by_accounts.
     """
-    # Lazy import to avoid routes.py circularity at module load.
+    try:
+        return _community_my_trades_impl()
+    except Exception as exc:
+        app.logger.exception("community_my_trades unexpected failure: %s", exc)
+        return jsonify({
+            "error": "server_error",
+            "detail": str(exc),
+            "strategies": [], "legs": [], "transactions": [],
+        }), 200
+
+
+def _community_my_trades_impl():
     from app.routes import (
         _user_account_list,
         _account_sql_and,
@@ -440,7 +481,10 @@ def community_my_trades():
             "strategies": [], "legs": [], "transactions": [],
         }), 200
 
-    published_fps = get_published_trade_fingerprints(current_user.id)
+    try:
+        published_fps = get_published_trade_fingerprints(current_user.id)
+    except Exception:
+        published_fps = set()
 
     # -- Legs --
     legs = []
@@ -448,25 +492,19 @@ def community_my_trades():
         legs_df = _filter_df_by_accounts(legs_df, user_accounts)
         for _, row in legs_df.iterrows():
             status = str(row.get("status") or "")
-            try:
-                num_trades = int(row.get("num_trades") or 0)
-            except (TypeError, ValueError):
-                num_trades = 0
+            num_trades_raw = _num_or_none(row.get("num_trades"))
+            num_trades = int(num_trades_raw) if num_trades_raw is not None else 0
             if status.lower() == "open" and num_trades == 0:
                 continue
-            acct = str(row.get("account", ""))
-            sym = str(row.get("symbol", ""))
-            strat = str(row.get("strategy", ""))
+            acct = str(row.get("account") or "")
+            sym = str(row.get("symbol") or "")
+            strat = str(row.get("strategy") or "")
             tsym = str(row.get("trade_symbol") or "")
             open_d = _iso_date(row.get("open_date"))
             close_d = _iso_date(row.get("close_date"))
-            total_pnl = row.get("total_pnl")
-            unreal = row.get("current_unrealized_pnl")
-            display_pnl = None
-            if status == "Closed":
-                display_pnl = float(total_pnl) if total_pnl is not None else None
-            else:
-                display_pnl = float(unreal) if unreal is not None else None
+            total_pnl = _num_or_none(row.get("total_pnl"))
+            unreal = _num_or_none(row.get("current_unrealized_pnl"))
+            display_pnl = total_pnl if status == "Closed" else unreal
             fp = trade_fingerprint(
                 current_user.id, acct, sym, tsym, open_d, close_d, strat,
             )
@@ -488,24 +526,19 @@ def community_my_trades():
     if strategies_df is not None:
         strategies_df = _filter_df_by_accounts(strategies_df, user_accounts)
         for _, row in strategies_df.iterrows():
-            acct = str(row.get("account", ""))
-            sym = str(row.get("symbol", ""))
-            strat = str(row.get("strategy", ""))
-            open_legs = int(row.get("open_legs") or 0)
-            closed_legs = int(row.get("closed_legs") or 0)
-            closed_pnl = row.get("closed_pnl")
-            open_pnl = row.get("open_pnl")
-            total_pnl = (
-                (float(closed_pnl) if closed_pnl is not None else 0.0)
-                + (float(open_pnl) if open_pnl is not None else 0.0)
-            )
+            acct = str(row.get("account") or "")
+            sym = str(row.get("symbol") or "")
+            strat = str(row.get("strategy") or "")
+            open_legs = int(_num_or_zero(row.get("open_legs")))
+            closed_legs = int(_num_or_zero(row.get("closed_legs")))
+            total_pnl = _num_or_zero(row.get("closed_pnl")) + _num_or_zero(row.get("open_pnl"))
             strategies.append({
                 "account": acct,
                 "symbol": sym,
                 "strategy": strat,
                 "first_open": _iso_date(row.get("first_open")),
                 "last_activity": _iso_date(row.get("last_activity")),
-                "leg_count": int(row.get("leg_count") or 0),
+                "leg_count": int(_num_or_zero(row.get("leg_count"))),
                 "open_legs": open_legs,
                 "closed_legs": closed_legs,
                 "total_pnl": total_pnl,
@@ -517,22 +550,13 @@ def community_my_trades():
         txn_df = _filter_df_by_accounts(txn_df, user_accounts)
         for _, row in txn_df.iterrows():
             action = str(row.get("action") or "")
-            acct = str(row.get("account", ""))
+            acct = str(row.get("account") or "")
             sym = str(row.get("underlying_symbol") or "")
             tsym = str(row.get("trade_symbol") or "")
             inst = str(row.get("instrument_type") or "")
-            try:
-                qty = float(row.get("quantity") or 0)
-            except (TypeError, ValueError):
-                qty = 0.0
-            try:
-                price = float(row.get("price") or 0)
-            except (TypeError, ValueError):
-                price = 0.0
-            try:
-                amount = float(row.get("amount") or 0)
-            except (TypeError, ValueError):
-                amount = 0.0
+            qty = _num_or_zero(row.get("quantity"))
+            price = _num_or_zero(row.get("price"))
+            amount = _num_or_zero(row.get("amount"))
             transactions.append({
                 "account": acct,
                 "trade_date": _iso_date(row.get("trade_date")),

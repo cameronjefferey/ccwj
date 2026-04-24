@@ -944,6 +944,11 @@
                 cache.transactions = (data && data.transactions) || [];
                 loaded = true;
                 setTabCounts();
+                if (data && data.error) {
+                    var detail = data.detail ? (' (' + data.detail + ')') : '';
+                    body.innerHTML = '<div class="cm-picker-empty">Could not load your data' + detail + '.</div>';
+                    return;
+                }
                 render();
             })
             .catch(function (err) {
