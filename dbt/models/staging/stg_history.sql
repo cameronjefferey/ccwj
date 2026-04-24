@@ -4,7 +4,24 @@
     )
 }}
 
-with demo_as_strings as (
+-- Schwab sync and manual upload both merge into trade_history.csv, so
+-- there's a single trade history seed to read from. Normalize demo seeds
+-- to STRING to match (BigQuery CSV autodetect infers numerics).
+with trade_history_as_strings as (
+    select
+        cast(Account as string) as Account,
+        cast(Date as string) as Date,
+        cast(Action as string) as Action,
+        cast(Symbol as string) as Symbol,
+        cast(Description as string) as Description,
+        cast(Quantity as string) as Quantity,
+        cast(Price as string) as Price,
+        cast(fees_and_comm as string) as fees_and_comm,
+        cast(Amount as string) as Amount
+    from {{ ref('trade_history') }}
+),
+
+demo_as_strings as (
     select
         cast(Account as string) as Account,
         cast(Date as string) as Date,
@@ -19,7 +36,7 @@ with demo_as_strings as (
 ),
 
 source as (
-    select * from {{ ref('stg_trade_history_seed_union') }}
+    select * from trade_history_as_strings
     union all
     select * from demo_as_strings
 ),

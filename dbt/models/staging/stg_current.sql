@@ -4,8 +4,10 @@
     )
 }}
 
-with demo_as_strings as (
-    select
+-- Schwab sync and manual upload both merge into current_positions.csv, so
+-- there's a single positions seed to read from. Normalize everything to
+-- STRING so the demo union works regardless of BigQuery CSV type inference.
+{%- set current_string_cols -%}
         cast(Account as string) as Account,
         cast(Symbol as string) as Symbol,
         cast(Description as string) as Description,
@@ -37,11 +39,20 @@ with demo_as_strings as (
         cast(in_the_money as string) as in_the_money,
         cast(security_type as string) as security_type,
         cast(margin_requirement as string) as margin_requirement
+{%- endset %}
+
+with current_as_strings as (
+    select {{ current_string_cols }}
+    from {{ ref('current_positions') }}
+),
+
+demo_as_strings as (
+    select {{ current_string_cols }}
     from {{ ref('demo_current') }}
 ),
 
 source as (
-    select * from {{ ref('stg_positions_seed_union') }}
+    select * from current_as_strings
     union all
     select * from demo_as_strings
 ),

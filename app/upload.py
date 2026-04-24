@@ -85,21 +85,12 @@ CURRENT_SEED_COLUMNS = [
 HISTORY_PATH = "dbt/seeds/trade_history.csv"
 CURRENT_PATH = "dbt/seeds/current_positions.csv"
 
-# Schwab API sync — native columns, separate from manual brokerage export seeds
-SCHWAB_OPEN_POSITIONS_PATH = "dbt/seeds/schwab_open_positions.csv"
+# Schwab-only extra seed (cash + account-total rows for equity snapshots).
+# Schwab sync writes trade history into trade_history.csv and open positions
+# into current_positions.csv — the same seeds the manual upload path uses —
+# so there's a single pipeline into dbt.
 SCHWAB_ACCOUNT_BALANCES_PATH = "dbt/seeds/schwab_account_balances.csv"
-SCHWAB_TRANSACTIONS_PATH = "dbt/seeds/schwab_transactions.csv"
 
-SCHWAB_OPEN_COLUMNS = [
-    "account",
-    "symbol",
-    "description",
-    "quantity",
-    "average_price",
-    "market_value",
-    "cost_basis",
-    "asset_type",
-]
 SCHWAB_BALANCE_COLUMNS = [
     "account",
     "row_type",
@@ -108,17 +99,6 @@ SCHWAB_BALANCE_COLUMNS = [
     "unrealized_pnl",
     "unrealized_pnl_pct",
     "percent_of_account",
-]
-SCHWAB_TX_COLUMNS = [
-    "account",
-    "transaction_date",
-    "action",
-    "symbol",
-    "description",
-    "quantity",
-    "price",
-    "fees",
-    "amount",
 ]
 
 
@@ -339,7 +319,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
     other_df = existing_df.loc[~account_mask]
     existing_account_df = existing_df.loc[account_mask]
 
-    if path in (HISTORY_PATH, SCHWAB_TRANSACTIONS_PATH):
+    if path == HISTORY_PATH:
         # History: append and de-duplicate within this account.
         # New rows take precedence when keys collide.
         if existing_account_df.empty:
@@ -486,11 +466,6 @@ def _commit_git_paths(path_contents, message):
     return True, None, new_commit_sha
 
 
-def _commit_two_files(path1, content1, path2, content2, message):
-    """Create a single commit that updates two files (Git Data API)."""
-    return _commit_git_paths([(path1, content1), (path2, content2)], message)
-
-
 EXISTING_ACCOUNTS_QUERY = """
     SELECT DISTINCT account
     FROM `ccwj-dbt.analytics.positions_summary`
@@ -520,6 +495,21 @@ def _upload_github_config_ok():
     return True, None
 
 
+def _prepare_seed_df(df, account_name, columns, account_col="Account"):
+    """Align a DataFrame to the seed's column set and set the Account column."""
+    if df is None:
+        return pd.DataFrame(columns=columns)
+    out = df.copy()
+    acct_cols = [c for c in out.columns if str(c).lower() == "account"]
+    for c in acct_cols:
+        out.drop(columns=[c], inplace=True)
+    out.insert(0, account_col, account_name)
+    for col in columns:
+        if col not in out.columns:
+            out[col] = ""
+    return out[columns]
+
+
 def merge_and_push_seeds(
     account_name,
     history_df,
@@ -528,16 +518,24 @@ def merge_and_push_seeds(
     commit_message,
     user_id=None,
     skip_history=False,
+    balances_df=None,
 ):
     """
-    Normalize DataFrames, merge with existing GitHub seed files, and commit.
-    When skip_history is True, history_df may be None (positions-only commit).
+    Normalize DataFrames, merge into the GitHub seed files, and commit.
+    Both manual uploads and Schwab sync call this so trade_history.csv +
+    current_positions.csv stay the single pair of seeds that feed dbt.
+
+    Args:
+        history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
+        current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
+        balances_df: optional Schwab cash + account_total rows shaped for
+            SCHWAB_BALANCE_COLUMNS. Committed atomically with the others.
+        skip_history: when True, commit positions only (and balances if given).
+
+    Returns:
+        (ok, err_message, history_rows, current_rows, head_commit_sha or None).
 
     Caller must verify _upload_github_config_ok() first.
-
-    On success, links account and records an uploads row when user_id is set.
-
-    Returns (ok, err_message, history_rows, current_rows, head_commit_sha or None).
     """
     if current_df is None:
         return False, "current_df is required.", 0, 0, None
@@ -560,6 +558,8 @@ def merge_and_push_seeds(
             "symbol": "Symbol", "description": "Description",
             "quantity": "Quantity", "price": "Price",
             "fees_and_comm": "fees_and_comm", "amount": "Amount",
+            # Schwab sync emits lowercase analogues
+            "transaction_date": "Date", "fees": "fees_and_comm",
         }
         history_col_map = {c: history_standard[c.lower()]
                            for c in history_df.columns if c.lower() in history_standard}
@@ -585,26 +585,35 @@ def merge_and_push_seeds(
             current_df[seed_col] = ""
     current_df = current_df[CURRENT_SEED_COLUMNS]
 
+    path_contents = []
     if not skip_history and history_df is not None:
         history_content = _merge_seed_with_existing(
             HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
         )
+        path_contents.append((HISTORY_PATH, history_content))
+
     current_content = _merge_seed_with_existing(
         CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
     )
+    path_contents.append((CURRENT_PATH, current_content))
+
+    if balances_df is not None and len(balances_df) > 0:
+        balances_prepared = _prepare_seed_df(
+            balances_df, account_name, SCHWAB_BALANCE_COLUMNS, account_col="account"
+        )
+        bal_content = _merge_seed_with_existing(
+            SCHWAB_ACCOUNT_BALANCES_PATH,
+            account_name,
+            balances_prepared,
+            SCHWAB_BALANCE_COLUMNS,
+        )
+        path_contents.append((SCHWAB_ACCOUNT_BALANCES_PATH, bal_content))
 
     history_rows = len(history_df) if history_df is not None else 0
     current_rows = len(current_df)
 
     try:
-        if skip_history:
-            ok, err, head_sha = _commit_file(CURRENT_PATH, current_content, commit_message)
-        else:
-            ok, err, head_sha = _commit_two_files(
-                HISTORY_PATH, history_content,
-                CURRENT_PATH, current_content,
-                commit_message,
-            )
+        ok, err, head_sha = _commit_git_paths(path_contents, commit_message)
         if not ok:
             return False, err or "GitHub commit failed.", history_rows, current_rows, None
     except Exception as exc:
@@ -615,91 +624,6 @@ def merge_and_push_seeds(
         record_upload(user_id, account_name, history_rows, current_rows)
 
     return True, None, history_rows, current_rows, head_sha
-
-
-def _schwab_seed_prepare_df(df, account_name, columns):
-    """Align a Schwab-native DataFrame to seed columns; set account from form."""
-    if df is None or (isinstance(df, pd.DataFrame) and len(df) == 0):
-        return pd.DataFrame(columns=columns)
-    out = df.copy()
-    acct_cols = [c for c in out.columns if str(c).lower() == "account"]
-    for c in acct_cols:
-        out.drop(columns=[c], inplace=True)
-    out.insert(0, "account", account_name)
-    for col in columns:
-        if col not in out.columns:
-            out[col] = ""
-    return out[columns]
-
-
-def merge_and_push_schwab_seeds(
-    account_name,
-    open_positions_df,
-    balances_df,
-    transactions_df,
-    *,
-    commit_message,
-    user_id=None,
-    skip_transactions=False,
-):
-    """
-    Merge Schwab API-shaped rows into schwab_*.csv seeds (separate from
-    manual brokerage export CSVs). dbt unions these via stg_*_seed_union.
-    Returns (ok, err, open_rows, tx_rows, balance_rows, head_commit_sha or None).
-    """
-    open_positions_df = _schwab_seed_prepare_df(
-        open_positions_df, account_name, SCHWAB_OPEN_COLUMNS
-    )
-    balances_df = _schwab_seed_prepare_df(
-        balances_df, account_name, SCHWAB_BALANCE_COLUMNS
-    )
-
-    open_content = _merge_seed_with_existing(
-        SCHWAB_OPEN_POSITIONS_PATH,
-        account_name,
-        open_positions_df,
-        SCHWAB_OPEN_COLUMNS,
-    )
-    bal_content = _merge_seed_with_existing(
-        SCHWAB_ACCOUNT_BALANCES_PATH,
-        account_name,
-        balances_df,
-        SCHWAB_BALANCE_COLUMNS,
-    )
-    path_pairs = [
-        (SCHWAB_OPEN_POSITIONS_PATH, open_content),
-        (SCHWAB_ACCOUNT_BALANCES_PATH, bal_content),
-    ]
-
-    tx_rows = 0
-    if not skip_transactions:
-        tx_df = _schwab_seed_prepare_df(
-            transactions_df, account_name, SCHWAB_TX_COLUMNS
-        )
-        tx_content = _merge_seed_with_existing(
-            SCHWAB_TRANSACTIONS_PATH,
-            account_name,
-            tx_df,
-            SCHWAB_TX_COLUMNS,
-        )
-        path_pairs.append((SCHWAB_TRANSACTIONS_PATH, tx_content))
-        tx_rows = len(tx_df)
-
-    open_rows = len(open_positions_df)
-    bal_rows = len(balances_df)
-
-    try:
-        ok, err, head_sha = _commit_git_paths(path_pairs, commit_message)
-        if not ok:
-            return False, err or "GitHub commit failed.", open_rows, tx_rows, bal_rows, None
-    except Exception as exc:
-        return False, str(exc), open_rows, tx_rows, bal_rows, None
-
-    if user_id is not None:
-        add_account_for_user(user_id, account_name)
-        record_upload(user_id, account_name, tx_rows, open_rows)
-
-    return True, None, open_rows, tx_rows, bal_rows, head_sha
 
 
 @app.route("/upload", methods=["GET", "POST"])

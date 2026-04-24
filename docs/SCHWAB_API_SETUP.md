@@ -112,14 +112,14 @@ Create `.github/workflows/schwab-sync.yml` to run the sync on a schedule.
 ```
 Schwab API
   → current positions + transactions (lookback window; default 60 days, see SCHWAB_SYNC_TRANSACTION_DAYS)
-  → merged into schwab_*.csv seeds (native API columns); dbt unions with manual export seeds
+  → merged into the SAME seeds manual upload uses: trade_history.csv and current_positions.csv (+ schwab_account_balances.csv for cash/equity snapshots)
   → if GITHUB_PAT (+ GITHUB_REPO) is set: commit to GitHub **triggers the same CI as CSV upload** (workflow `Update Daily Position Performance` in `.github/workflows/bigquery_update.yml`): dbt `build` (seeds + models) and the daily price script, so **BigQuery updates without a manual `dbt` run** (typically a few minutes; watch **GitHub → Actions**). Use branch **`master` or `main`** and set `GITHUB_BRANCH` in production to match.
   → always: also writes data/schwab_sync/{account}_*.csv on the server (local/debug; ephemeral on Render)
 ```
 
-**Unified pipeline with manual upload:** Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. Schwab sync updates `schwab_open_positions.csv`, `schwab_account_balances.csv`, and `schwab_transactions.csv` (not the manual `current_positions.csv` / `trade_history.csv` files). If GitHub is not configured, sync still runs but only writes under `data/schwab_sync/` (copy into seeds yourself if needed).
+**One pipeline, two sources:** Manual upload and Schwab sync are different front doors into the same `trade_history.csv` + `current_positions.csv` seeds, so everything downstream (stg_history, stg_current, int_*, marts) “just works” without per-source branches. Configure the same `GITHUB_PAT`, `GITHUB_REPO`, and `GITHUB_BRANCH` as for CSV uploads. If GitHub is not configured, sync still runs locally and writes under `data/schwab_sync/` (copy into seeds yourself if needed).
 
-**Account names:** The linked Schwab account name from the API should match how you want that account labeled in seeds/BigQuery. If you previously used manual upload under a different label, align the name or merge carefully. Avoid using the **same account label** in both manual export seeds (`current_positions.csv`) and Schwab seeds for one brokerage account, or dbt’s union can **double-count** positions.
+**Account names:** Sync labels the account as the Schwab nickname if the API returns one, otherwise `Schwab ••••<last4>`. Per-account merge semantics mean you should not use the same label for both manual uploads and sync unless you truly want them concatenated — rename one if they describe different things.
 
 ## Limits and Notes
 

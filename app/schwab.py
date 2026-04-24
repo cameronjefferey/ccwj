@@ -32,6 +32,30 @@ SCHWAB_API_BASE = "https://api.schwabapi.com"
 SCHWAB_FULL_HISTORY_LOOKBACK_DAYS = 1825
 
 
+def _schwab_asset_type_to_security_type(asset_type):
+    """
+    Map Schwab API assetType → the same security_type vocabulary as the
+    brokerage-export current_positions.csv (e.g. 'Equity', 'Option',
+    'ETFs & Closed End Funds'). Anything unmapped passes through title-cased.
+    """
+    at = str(asset_type or "").strip().upper()
+    if at == "EQUITY":
+        return "Equity"
+    if at == "OPTION":
+        return "Option"
+    if at == "COLLECTIVE_INVESTMENT":
+        return "ETFs & Closed End Funds"
+    if at == "MUTUAL_FUND":
+        return "Mutual Funds"
+    if at == "FIXED_INCOME":
+        return "Fixed Income"
+    if at == "CURRENCY":
+        return "Cash and Money Market"
+    if at:
+        return at.title()
+    return ""
+
+
 def _schwab_position_cost_basis(sec, inst, qty, avg, inst_type):
     """
     Total position cost for seeds / dbt.
@@ -194,8 +218,9 @@ def _schwab_float(bal, *keys, default=0.0):
 def _schwab_build_balance_seed_rows(acct_data, open_position_rows):
     """
     Two rows for schwab_account_balances.csv (cash + account_total), derived
-    from Schwab currentBalances. open_position_rows: API positions only (no
-    summary rows). Account column is added by merge_and_push_schwab_seeds.
+    from Schwab currentBalances. open_position_rows: API positions only
+    (list of dicts with market_value/cost_basis). Account column is added
+    by merge_and_push_seeds.
     """
     if not isinstance(acct_data, dict):
         return []
@@ -463,7 +488,7 @@ def schwab_callback():
 
     account_hash = ""
     account_number = ""
-    account_name = "Schwab Account"
+    account_name = ""
 
     if acct_resp.status_code == 200:
         accounts = acct_resp.json()
@@ -471,13 +496,11 @@ def schwab_callback():
             first = accounts[0]
             account_hash = first.get("hashValue", "")
             account_number = str(first.get("accountNumber", ""))
-            if not account_number:
-                account_number = account_hash[:8] if account_hash else "schwab"
     else:
         flash("Connected but could not fetch account list. Sync may be limited.", "warning")
 
-    if not account_hash and acct_resp.status_code == 200:
-        # Fallback: accounts endpoint may return different structure
+    # Try to enrich with a nickname/description from /accounts (optional).
+    if acct_resp.status_code == 200:
         acct_resp2 = requests.get(
             f"{SCHWAB_API_BASE}/trader/v1/accounts",
             headers=headers,
@@ -487,14 +510,29 @@ def schwab_callback():
         if acct_resp2.status_code == 200:
             data = acct_resp2.json()
             if isinstance(data, list) and data:
-                acc = data[0]
-                account_hash = acc.get("hashValue", acc.get("accountNumber", ""))
-                account_number = str(acc.get("accountNumber", account_hash))
-                account_name = acc.get("nickname", acc.get("description", account_number))
+                acc = data[0] if isinstance(data[0], dict) else {}
+                sec = acc.get("securitiesAccount") if isinstance(acc, dict) else None
+                if isinstance(sec, dict):
+                    acc = sec
+                if not account_hash:
+                    account_hash = acc.get("hashValue", acc.get("accountNumber", ""))
+                if not account_number:
+                    account_number = str(acc.get("accountNumber", ""))
+                nickname = acc.get("nickname") or acc.get("description") or ""
+                if nickname and str(nickname).strip():
+                    account_name = str(nickname).strip()
 
     if not account_hash:
         flash("Could not get account hash. Please try again or use CSV upload.", "danger")
         return redirect(url_for("profile", tab="account"))
+
+    # Friendly, stable label: prefer Schwab nickname; else "Schwab ••••<last4>".
+    if not account_name:
+        last4 = (account_number or "")[-4:]
+        if last4 and last4.isdigit():
+            account_name = f"Schwab ••••{last4}"
+        else:
+            account_name = "Schwab Account"
 
     save_schwab_connection(
         current_user.id,
@@ -628,8 +666,11 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
     )
     acct_data = acct_resp.json()
 
-    # Open positions — native Schwab columns (see schwab_open_positions.csv)
-    open_positions = []
+    # Open positions — shaped to match the current_positions.csv column family
+    # so the manual upload path and Schwab sync both feed dbt's stg_current.
+    # Raw-API fields are kept in parallel (`_api_*`) for balance calculations.
+    open_positions_current = []  # current_positions.csv shape (seed rows)
+    open_positions_api = []       # raw API view used by balance calc
     for sec in acct_data.get("securitiesAccount", {}).get("positions", []):
         inst = sec.get("instrument", {}) or {}
         sym = inst.get("symbol", "")
@@ -637,16 +678,37 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
         qty = sec.get("longQuantity", 0) or -(sec.get("shortQuantity", 0) or 0)
         avg = sec.get("averagePrice", 0) or 0
         mv = sec.get("marketValue", 0) or 0
-        inst_type = inst.get("assetType", "EQUITY")
+        inst_type = str(inst.get("assetType", "EQUITY")).upper()
         cb = _schwab_position_cost_basis(sec, inst, qty, avg, inst_type)
-        open_positions.append({
+
+        open_positions_api.append({
             "symbol": sym,
-            "description": desc,
-            "quantity": qty,
-            "average_price": avg,
             "market_value": mv,
             "cost_basis": cb,
-            "asset_type": str(inst_type),
+        })
+
+        security_type = _schwab_asset_type_to_security_type(inst_type)
+        gl_dollar = ""
+        gl_percent = ""
+        try:
+            mv_f = float(mv or 0)
+            cb_f = float(cb or 0)
+            if cb_f:
+                gl_dollar = round(mv_f - cb_f, 4)
+                gl_percent = round(100.0 * (mv_f - cb_f) / abs(cb_f), 4)
+        except (TypeError, ValueError):
+            pass
+
+        open_positions_current.append({
+            "Symbol": sym,
+            "Description": desc,
+            "Quantity": qty,
+            "Price": avg,
+            "market_value": mv,
+            "cost_bases": cb,
+            "gain_or_loss_dollat": gl_dollar,
+            "gain_or_loss_percent": gl_percent,
+            "security_type": security_type,
         })
 
     if transaction_lookback_days is not None:
@@ -662,40 +724,17 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
 
     transactions = []
     for tx in tx_list:
-        if tx.get("type") != "TRADE":
-            continue
-        dt = tx.get("transactionDate") or tx.get("settlementDate", "")
-        if isinstance(dt, (int, float)):
-            dt = str(int(dt))
-        # Map Schwab transaction to our history format
-        item = tx.get("transactionItem", {}) or {}
-        inst = item.get("instrument", {}) or {}
-        sym = inst.get("symbol", "")
-        desc = inst.get("description", sym)
-        qty = item.get("amount", 0) or 0
-        price = item.get("price", 0) or 0
-        # Schwab uses different action names
-        instruction = tx.get("transactionSubType", tx.get("type", ""))
-        action = _map_schwab_action(instruction, item)
-        amount = tx.get("netAmount", 0) or (qty * price)
-        transactions.append({
-            "transaction_date": _format_date(dt),
-            "action": action,
-            "symbol": sym,
-            "description": desc,
-            "quantity": abs(qty),
-            "price": abs(price) if price else "",
-            "fees": "",
-            "amount": amount,
-        })
+        transactions.extend(_schwab_trade_rows(tx))
 
     import pandas as pd
 
     tx_df = pd.DataFrame(transactions) if transactions else None
     skip_tx = tx_df is None or tx_df.empty
 
-    open_df = pd.DataFrame(open_positions) if open_positions else None
-    bal_seed = _schwab_build_balance_seed_rows(acct_data, open_positions)
+    current_df = (
+        pd.DataFrame(open_positions_current) if open_positions_current else pd.DataFrame()
+    )
+    bal_seed = _schwab_build_balance_seed_rows(acct_data, open_positions_api)
     balances_df = (
         pd.DataFrame(bal_seed)
         if bal_seed
@@ -715,7 +754,7 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
     github_error = None
     github_head_sha = None
     ok_cfg = False
-    from app.upload import merge_and_push_schwab_seeds, _upload_github_config_ok
+    from app.upload import merge_and_push_seeds, _upload_github_config_ok
 
     ok_cfg, _cfg_err = _upload_github_config_ok()
     if ok_cfg:
@@ -725,55 +764,52 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
             uname = u.username
         if skip_tx:
             commit_msg = (
-                f"Schwab sync ({uname}): open positions + balances only "
-                f"({len(open_positions)} lines) ({account_name})"
+                f"Schwab sync ({uname}): positions only "
+                f"({len(open_positions_current)} lines) ({account_name})"
             )
         else:
             commit_msg = (
                 f"Schwab sync ({uname}): {len(transactions)} tx, "
-                f"{len(open_positions)} open lines ({account_name})"
+                f"{len(open_positions_current)} open lines ({account_name})"
             )
-        (
-            ok,
-            err,
-            _open_n,
-            _tx_n,
-            _bal_n,
-            github_head_sha,
-        ) = merge_and_push_schwab_seeds(
+        ok, err, _hr, _cr, github_head_sha = merge_and_push_seeds(
             account_name,
-            open_df,
-            balances_df,
             tx_df,
+            current_df,
             commit_message=commit_msg,
             user_id=user_id,
-            skip_transactions=skip_tx,
+            skip_history=skip_tx,
+            balances_df=balances_df,
         )
         github_pushed = ok
         github_error = err if not ok else None
     else:
         github_error = None
 
-    # Local CSV fallback / debugging (ephemeral on Render unless you mount storage)
+    # Local CSV fallback / debugging (ephemeral on Render unless storage mounted)
     out_dir = os.path.join(os.path.dirname(__file__), "..", "data", "schwab_sync")
     os.makedirs(out_dir, exist_ok=True)
     safe_name = "".join(c if c.isalnum() else "_" for c in account_name)[:50]
 
     if tx_df is not None and not tx_df.empty:
-        tx_path = os.path.join(out_dir, f"{safe_name}_schwab_transactions.csv")
-        tx_df.to_csv(tx_path, index=False)
-
-    if open_df is not None and not open_df.empty:
-        op_path = os.path.join(out_dir, f"{safe_name}_schwab_open_positions.csv")
-        open_df.to_csv(op_path, index=False)
-
+        tx_df.to_csv(
+            os.path.join(out_dir, f"{safe_name}_trade_history_delta.csv"),
+            index=False,
+        )
+    if current_df is not None and not current_df.empty:
+        current_df.to_csv(
+            os.path.join(out_dir, f"{safe_name}_current_positions_delta.csv"),
+            index=False,
+        )
     if balances_df is not None and not balances_df.empty:
-        bal_path = os.path.join(out_dir, f"{safe_name}_schwab_account_balances.csv")
-        balances_df.to_csv(bal_path, index=False)
+        balances_df.to_csv(
+            os.path.join(out_dir, f"{safe_name}_schwab_account_balances.csv"),
+            index=False,
+        )
 
     return {
         "history_rows": len(transactions),
-        "current_rows": len(open_positions),
+        "current_rows": len(open_positions_current),
         "lookback_days": lookback,
         "output_dir": out_dir,
         "github_pushed": github_pushed,
@@ -783,26 +819,104 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
     }
 
 
-def _map_schwab_action(instruction, item):
-    """Map Schwab transaction type to our action taxonomy."""
-    i = str(instruction).upper()
-    if "BUY" in i and "CLOSE" not in i:
-        return "Buy" if "EQUITY" in str(item.get("instrument", {}).get("assetType", "")).upper() else "Buy to Open"
-    if "SELL" in i and "CLOSE" not in i:
-        return "Sell" if "EQUITY" in str(item.get("instrument", {}).get("assetType", "")).upper() else "Sell to Open"
-    if "BUY" in i and "CLOSE" in i:
-        return "Buy to Close"
-    if "SELL" in i and "CLOSE" in i:
-        return "Sell to Close"
-    if "EXPIR" in i or "EXPIRED" in i:
-        return "Expired"
-    if "ASSIGN" in i:
-        return "Assigned"
-    if "EXERCISE" in i:
-        return "Exchange or Exercise"
-    if "DIVIDEND" in i:
-        return "Qualified Dividend"
-    return "Other"
+def _schwab_action_from_effect(asset_type, signed_amount, position_effect, instruction=""):
+    """
+    Determine brokerage-export action from Schwab v1 trader transferItem fields.
+
+    Schwab trader-v1 returns transferItems with 'positionEffect' ("OPENING" |
+    "CLOSING") and a signed 'amount' (positive = received, negative = delivered).
+    instruction is a loose hint ("BUY", "SELL", "BUY_TO_OPEN", ...) that some
+    responses also include; used as a tiebreaker.
+    """
+    at = str(asset_type or "").upper()
+    pe = str(position_effect or "").upper()
+    ins = str(instruction or "").upper()
+    try:
+        amt = float(signed_amount or 0)
+    except (TypeError, ValueError):
+        amt = 0.0
+    bought = amt > 0 if amt != 0 else ("BUY" in ins and "SELL" not in ins)
+
+    is_option = at == "OPTION"
+    if is_option:
+        if pe == "OPENING" or "OPEN" in ins:
+            return "Buy to Open" if bought else "Sell to Open"
+        if pe == "CLOSING" or "CLOSE" in ins:
+            return "Buy to Close" if bought else "Sell to Close"
+        return "Buy to Open" if bought else "Sell to Open"
+    return "Buy" if bought else "Sell"
+
+
+def _schwab_trade_rows(tx):
+    """
+    Turn one Schwab transaction (trader v1 shape) into zero or more brokerage-
+    export-shaped rows. Trader v1 puts one or more security legs in
+    'transferItems'; fee legs have no 'instrument' and are skipped.
+
+    Falls back to the legacy 'transactionItem' shape if 'transferItems' is
+    absent, so partial responses and older sandboxes still work.
+    """
+    if not isinstance(tx, dict):
+        return []
+    if tx.get("type") != "TRADE":
+        return []
+
+    dt = (
+        tx.get("tradeDate")
+        or tx.get("time")
+        or tx.get("transactionDate")
+        or tx.get("settlementDate", "")
+    )
+    if isinstance(dt, (int, float)):
+        dt = str(int(dt))
+    date_str = _format_date(dt)
+
+    items = tx.get("transferItems")
+    if not isinstance(items, list) or not items:
+        ti = tx.get("transactionItem")
+        items = [ti] if isinstance(ti, dict) else []
+
+    rows = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        inst = it.get("instrument")
+        if not isinstance(inst, dict):
+            continue
+        sym = inst.get("symbol") or ""
+        if not str(sym).strip():
+            continue
+        desc = inst.get("description", sym)
+        asset_type = inst.get("assetType", "")
+        signed_amt = it.get("amount", 0) or 0
+        price = it.get("price", 0) or 0
+        cost = it.get("cost")
+        pos_effect = it.get("positionEffect", "")
+        instruction = it.get("instruction") or tx.get("transactionSubType") or ""
+
+        action = _schwab_action_from_effect(
+            asset_type, signed_amt, pos_effect, instruction
+        )
+
+        if cost is not None:
+            try:
+                seed_amount = float(cost)
+            except (TypeError, ValueError):
+                seed_amount = tx.get("netAmount") or 0
+        else:
+            seed_amount = tx.get("netAmount") or 0
+
+        rows.append({
+            "transaction_date": date_str,
+            "action": action,
+            "symbol": sym,
+            "description": desc,
+            "quantity": abs(float(signed_amt or 0)),
+            "price": abs(float(price or 0)) if price else "",
+            "fees": "",
+            "amount": seed_amount,
+        })
+    return rows
 
 
 def _format_date(dt):

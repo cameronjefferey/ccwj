@@ -1,20 +1,10 @@
 version: 2
 
 seeds:
-  # BigQuery autodetect can infer INT64 for quantity from whole-number samples;
-  # Schwab sync writes float strings (e.g. 100.0) — force FLOAT64.
-  - name: schwab_open_positions
-    config:
-      column_types:
-        account: string
-        symbol: string
-        description: string
-        quantity: float64
-        average_price: float64
-        market_value: float64
-        cost_basis: float64
-        asset_type: string
-
+  # Schwab cash + account-total rows used by stg_account_balances for
+  # equity snapshots. Manual upload and Schwab sync both write trades into
+  # trade_history.csv and open positions into current_positions.csv, so no
+  # Schwab-specific seed is needed for those.
   - name: schwab_account_balances
     config:
       column_types:
@@ -25,16 +15,3 @@ seeds:
         unrealized_pnl: float64
         unrealized_pnl_pct: float64
         percent_of_account: float64
-
-  - name: schwab_transactions
-    config:
-      column_types:
-        account: string
-        transaction_date: string
-        action: string
-        symbol: string
-        description: string
-        quantity: float64
-        price: float64
-        fees: float64
-        amount: float64
