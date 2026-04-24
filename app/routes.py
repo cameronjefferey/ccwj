@@ -804,7 +804,7 @@ POSITION_CLOSED_LEGS_QUERY = """
       ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
-      AND sc.symbol = '{symbol}'
+      AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
     {sc_account_filter}
 """
 
