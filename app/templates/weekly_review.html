@@ -816,9 +816,8 @@
     </div>
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
-        No snapshot rows for this month in BigQuery for your linked accounts. This calendar reads <code>mart_account_snapshots_enriched</code> (dbt).
-        Schwab sync updates files / GitHub seeds first; the dashboard updates after <strong>dbt build</strong> (or your repo’s GitHub Action) refreshes BigQuery.
-        If you already ran dbt, confirm the <strong>account name</strong> in your data matches the account labels on your Profile / upload.
+        No daily snapshots for this month yet. New Schwab syncs and uploads take a few minutes to show up here while the dashboard refreshes.
+        If it’s been longer than that, double-check the <strong>account name</strong> on your data matches the one on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
     </p>
     {% endif %}
 </div>

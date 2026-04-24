@@ -35,8 +35,8 @@
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>BigQuery Error:</strong> {{ error }}
-    <p class="mb-0 mt-2 small">Make sure you've run <code>dbt seed && dbt build</code> including the <code>stg_account_balances</code> model.</p>
+    <strong>We couldn&rsquo;t load your account balances.</strong> {{ error }}
+    <p class="mb-0 mt-2 small">Try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
 

@@ -159,7 +159,7 @@
             {% if tab == 'overview' %}
             {# Sync card — primary reason people open this page #}
             {% if schwab_enabled %}
-            <div class="sync-card">
+            <div class="sync-card" id="schwab-sync">
                 <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
                     <div>
                         <div class="sync-title">Schwab sync</div>
@@ -202,7 +202,7 @@
                     <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
                 </form>
                 {% else %}
-                <p class="small text-body-secondary mb-0">Connect once and every refresh flows through the same seeds dbt builds from.</p>
+                <p class="small text-body-secondary mb-0">Connect once and every refresh flows through the same data pipeline as your manual uploads.</p>
                 <div class="sync-actions">
                     <a href="{{ url_for('schwab_connect') }}" class="btn-sync-primary">Connect Schwab</a>
                     <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
@@ -210,7 +210,7 @@
                 {% endif %}
             </div>
             {% else %}
-            <div class="sync-card">
+            <div class="sync-card" id="schwab-sync">
                 <div class="sync-title">Get your data in</div>
                 <p class="sync-sub">Schwab sync isn't configured on this server. You can still drop in a CSV export.</p>
                 <div class="sync-actions">
@@ -341,7 +341,7 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Schwab sync</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint">One OAuth, then sync runs through the same seeds and dbt models as CSV upload.</p>
+                    <p class="atlas-hint">Connect once and every sync uses the same pipeline as a manual CSV upload.</p>
                     {% if schwab_connected %}
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -377,7 +377,7 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Account labels</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint">These strings tie your uploads and syncs to BigQuery rows.</p>
+                    <p class="atlas-hint">These labels tie your uploads and syncs to the rows you see across the app.</p>
                     {% if accounts %}
                     <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
                     {% else %}

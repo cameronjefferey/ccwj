@@ -92,18 +92,19 @@
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-warning">
     {% if linked_brokerage_accounts|default([])|length > 0 and not (viewer_is_admin|default(false)) %}
-    <strong>No rows returned for Daily Detail for your linked accounts.</strong>
-    The Positions page may still work. If this persists, check that the production app and BigQuery use matching account values (e.g. numeric account ids vs labels), and that the latest app version is deployed.
+    <strong>No daily detail rows yet for your linked accounts.</strong>
+    Your <a href="{{ url_for('positions') }}">Positions</a> page may still have data. If this sticks around, check that the account label on your data matches what you see on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
     {% else %}
-    <strong>No portfolio data for this login yet.</strong>
-    After you <a href="{{ url_for('upload') }}">upload CSVs</a> or run <strong>Schwab → Sync now</strong> in Settings, wait for GitHub Actions / dbt to finish (usually a few minutes), then refresh this page.
+    <strong>No portfolio data yet.</strong>
+    <a href="{{ url_for('profile') }}#schwab-sync">Connect Schwab</a> or <a href="{{ url_for('upload') }}">upload trade history</a>, then give it a couple of minutes for the dashboard to refresh.
     {% endif %}
 </div>
 {% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>BigQuery Error:</strong> {{ error }}
+    <strong>We couldn&rsquo;t load your daily detail.</strong> {{ error }}
+    <p class="mb-0 mt-2 small">Try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
 

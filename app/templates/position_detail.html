@@ -652,7 +652,7 @@
 
 {% else %}
 <div class="alert alert-warning">
-    No data found for <strong>{{ symbol }}</strong> in your linked accounts. If you just synced, wait for dbt to finish; otherwise confirm the symbol and account name match your BigQuery seeds.
+    No data found for <strong>{{ symbol }}</strong> in your linked accounts. If you just synced, give it a couple of minutes for the dashboard to refresh; otherwise double-check the symbol and that the account label matches what you see on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
 </div>
 {% endif %}
 {% endblock %}
