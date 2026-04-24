@@ -17,6 +17,8 @@ This document describes how AI agents are used in this repository and how to wor
   - `refresh.sh` for local dev builds (targeted `--select` vs full CI build)
   - `current_position_stock_price.py` fetches daily prices (including SPY/QQQ benchmarks)
 
+**BigQuery is multi-tenant in practice:** a shared dataset can contain many `account` labels. Unscoped symbol-only (or unfiltered) queries have leaked other users’ rows to a signed-in user before. **Every BQ read for user-facing pages must be scoped in SQL and/or with `_filter_df_by_accounts` on every DataFrame before merge or render.** See `.cursor/rules/bigquery-tenant-isolation.mdc` (always on for agents) — follow it for every change under `app/` that touches queries.
+
 ---
 
 ## Product Identity
