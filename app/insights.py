@@ -14,6 +14,7 @@ from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
 )
+from app.routes import _filter_df_by_accounts
 
 
 def _account_sql_filter(accounts):
@@ -100,6 +101,31 @@ FROM `ccwj-dbt.analytics.positions_summary`
 ORDER BY account, symbol, strategy
 """
 
+BEHAVIOR_OBSERVATIONS_QUERY = """
+SELECT
+    account,
+    trade_symbol,
+    underlying_symbol,
+    strategy,
+    open_date,
+    close_date,
+    size_vs_30d_baseline,
+    size_vs_90d_baseline,
+    strategy_win_rate_180d,
+    strategy_prior_trades_180d,
+    consecutive_losses_before,
+    observation_text,
+    anomaly_score,
+    is_anomaly
+FROM `ccwj-dbt.ml_models.account_trade_insights`
+WHERE observation_text IS NOT NULL
+  AND open_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+  {account_filter}
+ORDER BY anomaly_score DESC, open_date DESC
+LIMIT 5
+"""
+
+
 WEEKLY_QA_QUERY = """
 SELECT
   week_start,
@@ -141,6 +167,7 @@ def _build_coaching_brief(client, user_accounts):
         "signals": [],
         "recent_exits": [],
         "rolls": [],
+        "behavior_observations": [],
         "has_data": False,
         "total_closed": 0,
         "reliable_contracts": 0,
@@ -316,6 +343,44 @@ def _build_coaching_brief(client, user_accounts):
     except Exception:
         pass
 
+    # 4. Behavior observations (BQML-ranked, neutral evidence).
+    #    Reads ml_models.account_trade_insights which already filters by
+    #    observation_text IS NOT NULL.  The text is pre-rendered in dbt
+    #    so Flask does no phrasing — we just quote it verbatim.
+    if app.config.get("BEHAVIOR_INSIGHTS_ENABLED", True):
+        try:
+            obs_df = client.query(
+                BEHAVIOR_OBSERVATIONS_QUERY.format(account_filter=acct_and)
+            ).to_dataframe()
+            # Belt-and-suspenders tenant scoping: also filter client-side.
+            obs_df = _filter_df_by_accounts(obs_df, user_accounts)
+            if not obs_df.empty:
+                obs_lines = []
+                for _, r in obs_df.iterrows():
+                    text = str(r.get("observation_text") or "").strip()
+                    if not text:
+                        continue
+                    date_str = str(r.get("open_date", ""))[:10]
+                    sym = str(r.get("underlying_symbol", "") or "")
+                    line = f"  - ({date_str}) {sym}: {text}"
+                    obs_lines.append(line)
+                    coaching_data["behavior_observations"].append({
+                        "symbol": sym,
+                        "strategy": str(r.get("strategy", "") or ""),
+                        "open_date": date_str,
+                        "size_vs_30d_baseline": float(r.get("size_vs_30d_baseline") or 0),
+                        "strategy_win_rate_180d": float(r.get("strategy_win_rate_180d") or 0),
+                        "strategy_prior_trades_180d": int(r.get("strategy_prior_trades_180d") or 0),
+                        "anomaly_score": float(r.get("anomaly_score") or 0),
+                        "observation_text": text,
+                    })
+                if obs_lines:
+                    sections.append("BEHAVIOR OBSERVATIONS (last 30 days)\n" + "\n".join(obs_lines))
+        except Exception:
+            # Missing ml_models dataset or untrained model should not break
+            # the coach — the deterministic signals above still render.
+            pass
+
     brief_text = "\n\n".join(sections) if sections else None
     return brief_text, coaching_data
 
@@ -414,6 +479,15 @@ Rules:
 - Focus only on behavioral patterns visible in the data.
 - Write in second person ("You...").
 
+If a BEHAVIOR OBSERVATIONS section is present in the data:
+- You may quote one observation_text verbatim when it's the most
+  informative signal this week.
+- Do NOT add severity labels ("HIGH", "MEDIUM", "ALERT", "WARNING").
+- Do NOT dramatize. Present the observation as evidence, not accusation.
+- Do NOT speculate about the trader's emotional state or motives
+  (no "revenge trading", "tilt", "FOMO", etc.).
+- Do NOT recommend changing position sizes or strategies.
+
 IMPORTANT: Start with a 2-sentence summary under "## Summary" that captures
 the single most important behavioral insight. Then write the full analysis."""
 
@@ -441,7 +515,13 @@ Rules:
 - Do NOT give financial advice or trade recommendations.
 - If data isn't available to answer, say so honestly.
 - Focus on behavioral patterns, not market predictions.
-- Write in second person ("You...")."""
+- Write in second person ("You...").
+
+If a BEHAVIOR OBSERVATIONS section is present in the data:
+- Quote observation_text verbatim when relevant to the question.
+- Do NOT add severity labels ("HIGH", "MEDIUM", "ALERT").
+- Do NOT speculate about psychological state or motive.
+- Do NOT recommend changing size or strategy."""
 
 
 def _call_gemini(data_text):
