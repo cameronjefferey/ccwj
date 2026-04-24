@@ -222,14 +222,12 @@ Schwab Account,01/23/2025,Buy,CURRENCY_USD,USD currency,9.1,,,-9.1
 Schwab Account,01/27/2025,Buy,VST,VST,200.0,143.1199,,-28623.98
 Schwab Account,01/27/2025,Sell,CURRENCY_USD,USD currency,0.0,,,0.0
 Schwab Account,01/27/2025,Buy,CURRENCY_USD,USD currency,0.25,,,-0.25
-Schwab Account,01/27/2025,Sell,LUNR,LUNR,1500.0,23.0,,34500.0
 Schwab Account,01/31/2025,Sell to Close,LODE1 250718C00001000,COMSTOCK INC 07/18/2025 $1 Call,250.0,0.11,,2750.0
 Schwab Account,01/31/2025,Buy,CURRENCY_USD,USD currency,0.7,,,-0.7
 Schwab Account,01/31/2025,Buy,CURRENCY_USD,USD currency,2.75,,,-2.75
 Schwab Account,01/31/2025,Buy,CURRENCY_USD,USD currency,0.08,,,-0.08
 Schwab Account,01/31/2025,Buy,CURRENCY_USD,USD currency,162.5,,,-162.5
 Schwab Account,01/31/2025,Sell,LODE,LODE,1.0,0.3756,,0.38
-Schwab Account,01/27/2025,Buy,LUNR,LUNR,1500.0,23.0,,-34500.0
 Schwab Account,12/30/2024,Buy,CURRENCY_USD,USD currency,24.05,,,-24.05
 Schwab Account,12/30/2024,Buy to Open,LODE1 250718C00001000,COMSTOCK INC 07/18/2025 $1 Call,13.0,0.68,,-884.0
 Schwab Account,12/30/2024,Buy,CURRENCY_USD,USD currency,0.14,,,-0.14
@@ -390,7 +388,6 @@ Schwab Account,10/28/2024,Sell to Open,SMR   241108C00025000,NUSCALE PWR CORP 11
 Schwab Account,10/28/2024,Buy,CURRENCY_USD,USD currency,0.03,,,-0.03
 Schwab Account,10/28/2024,Buy,CURRENCY_USD,USD currency,0.01,,,-0.01
 Schwab Account,10/28/2024,Buy,CURRENCY_USD,USD currency,1.95,,,-1.95
-Schwab Account,10/28/2024,Buy,ONON,ONON,300.0,50.0,,-15000.0
 Schwab Account,10/28/2024,Buy,CURRENCY_USD,USD currency,0.05,,,-0.05
 Schwab Account,10/29/2024,Sell to Open,ASTS  241101C00029000,AST SPACEMOBILE INC 11/01/2024 $29 Call,3.0,0.45,,135.0
 Schwab Account,10/29/2024,Buy,CURRENCY_USD,USD currency,0.01,,,-0.01
@@ -420,7 +417,6 @@ Schwab Account,10/25/2024,Buy to Open,ACHR  241101C00003000,ARCHER AVIATION INC 
 Schwab Account,10/25/2024,Buy,CURRENCY_USD,USD currency,1.1,,,-1.1
 Schwab Account,10/25/2024,Sell,CURRENCY_USD,USD currency,0.0,,,0.0
 Schwab Account,10/25/2024,Buy,CURRENCY_USD,USD currency,65.0,,,-65.0
-Schwab Account,10/28/2024,Sell,ONON,ONON,300.0,50.0,,15000.0
 Schwab Account,10/28/2024,Sell,CURRENCY_USD,USD currency,0.0,,,0.0
 Schwab Account,08/12/2024,Buy,CURRENCY_USD,USD currency,0.55,,,-0.55
 Schwab Account,08/12/2024,Buy,CURRENCY_USD,USD currency,32.5,,,-32.5
@@ -1095,19 +1091,11 @@ Schwab Account,04/06/2026,Buy,CURRENCY_USD,USD currency,0.18,,,-0.18
 Schwab Account,04/07/2026,Buy,PLTR,PLTR,1.0,148.21,,-148.21
 Schwab Account,04/07/2026,Buy,PLTR,PLTR,33.0,148.21,,-4890.93
 Schwab Account,04/06/2026,Buy,CURRENCY_USD,USD currency,0.32,,,-0.32
-Schwab Account,04/06/2026,Buy,RKLB,RKLB,100.0,63.0,,-6300.0
 Schwab Account,03/31/2026,Sell to Open,RKLB  260402C00063000,ROCKET LAB CORP 04/02/2026 $63 Call,1.0,0.76,,76.0
 Schwab Account,03/31/2026,Sell to Open,CRWV  260402C00078000,COREWEAVE INC 04/02/2026 $78 Call,1.0,0.83,,83.0
 Schwab Account,03/31/2026,Buy,CURRENCY_USD,USD currency,0.01,,,-0.01
 Schwab Account,03/31/2026,Sell,CURRENCY_USD,USD currency,0.0,,,0.0
 Schwab Account,03/31/2026,Buy,CURRENCY_USD,USD currency,0.65,,,-0.65
-Schwab Account,04/06/2026,Sell,PLTR,PLTR,100.0,146.0,,14600.0
-Schwab Account,04/06/2026,Sell,CRWV,CRWV,100.0,78.0,,7800.0
-Schwab Account,04/06/2026,Buy,CURRENCY_USD,USD currency,0.02,,,-0.02
-Schwab Account,04/06/2026,Sell,RKLB,RKLB,100.0,63.0,,6300.0
-Schwab Account,04/06/2026,Buy,PLTR,PLTR,100.0,146.0,,-14600.0
-Schwab Account,04/06/2026,Buy,CRWV,CRWV,100.0,78.0,,-7800.0
-Schwab Account,04/06/2026,Sell,CURRENCY_USD,USD currency,0.02,,,0.02
 Schwab Account,04/07/2026,Buy to Open,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,38.58,,-3858.0
 Schwab Account,04/07/2026,Buy,CURRENCY_USD,USD currency,0.01,,,-0.01
 Schwab Account,02/03/2026,Sell to Open,PLTR  260206C00165000,PALANTIR TECHNOLOGIES INC 02/06/2026 $165 Call,2.0,1.4,,280.0

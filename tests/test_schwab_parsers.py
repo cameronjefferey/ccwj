@@ -121,6 +121,127 @@ def test_trade_rows_skips_non_trade_and_fee_only():
     )
 
 
+def test_trade_rows_collapses_covered_call_assignment_wash_pair():
+    """
+    A real Schwab covered-call assignment returned a TRADE payload with THREE
+    LUNR equity transferItems (-1500, +1500, -1500) plus an option leg. The
+    old parser wrote Sell + Buy + Sell, doubling cost basis and gain/loss on
+    the position page. We now group by (symbol, price, asset_type) and sum
+    signed amounts/costs so the wash pair drops, leaving one net Sell for the
+    equity and an "Assigned" row for the option.
+    """
+    tx = {
+        "type": "TRADE",
+        "transactionSubType": "OA",
+        "tradeDate": "2025-01-27T13:30:00Z",
+        "netAmount": 34499.75,
+        "transferItems": [
+            {
+                "instrument": {
+                    "symbol": "LUNR",
+                    "description": "INTUITIVE MACHS INC CLASS A",
+                    "assetType": "EQUITY",
+                },
+                "amount": -1500,
+                "price": 23.0,
+                "cost": 34500.0,
+            },
+            {
+                "instrument": {
+                    "symbol": "LUNR",
+                    "description": "INTUITIVE MACHS INC CLASS A",
+                    "assetType": "EQUITY",
+                },
+                "amount": 1500,
+                "price": 23.0,
+                "cost": -34500.0,
+            },
+            {
+                "instrument": {
+                    "symbol": "LUNR",
+                    "description": "INTUITIVE MACHS INC CLASS A",
+                    "assetType": "EQUITY",
+                },
+                "amount": -1500,
+                "price": 23.0,
+                "cost": 34500.0,
+            },
+            {
+                "instrument": {
+                    "symbol": "LUNR  250124C00023000",
+                    "description": "INTUITIVE MACHS INC 01/24/2025 $23 Call",
+                    "assetType": "OPTION",
+                    "putCall": "CALL",
+                },
+                "amount": -15,
+                "price": 0.0,
+                "cost": 0.0,
+                "positionEffect": "CLOSING",
+            },
+        ],
+    }
+    rows = _schwab_trade_rows(tx)
+    assert len(rows) == 2, rows
+    equity_rows = [r for r in rows if r["symbol"] == "LUNR"]
+    option_rows = [r for r in rows if r["symbol"].startswith("LUNR ")]
+    assert len(equity_rows) == 1
+    assert len(option_rows) == 1
+    eq = equity_rows[0]
+    assert eq["action"] == "Sell"
+    assert eq["quantity"] == 1500
+    assert eq["price"] == 23.0
+    assert eq["amount"] == 34500.0
+    opt = option_rows[0]
+    assert opt["action"] == "Assigned"
+    assert opt["quantity"] == 15
+
+
+def test_trade_rows_option_exercise_emits_exchange_or_exercise():
+    tx = {
+        "type": "TRADE",
+        "transactionSubType": "OE",
+        "tradeDate": "2025-03-10",
+        "transferItems": [
+            {
+                "instrument": {
+                    "symbol": "AAPL  250321C00150000",
+                    "assetType": "OPTION",
+                },
+                "amount": -2,
+                "price": 0.0,
+                "cost": 0.0,
+                "positionEffect": "CLOSING",
+            }
+        ],
+    }
+    rows = _schwab_trade_rows(tx)
+    assert len(rows) == 1
+    assert rows[0]["action"] == "Exchange or Exercise"
+
+
+def test_trade_rows_option_expiration_emits_expired():
+    tx = {
+        "type": "TRADE",
+        "transactionSubType": "EXPIRATION",
+        "tradeDate": "2025-04-18",
+        "transferItems": [
+            {
+                "instrument": {
+                    "symbol": "SPY   250418C00600000",
+                    "assetType": "OPTION",
+                },
+                "amount": -1,
+                "price": 0.0,
+                "cost": 0.0,
+                "positionEffect": "CLOSING",
+            }
+        ],
+    }
+    rows = _schwab_trade_rows(tx)
+    assert len(rows) == 1
+    assert rows[0]["action"] == "Expired"
+
+
 def test_trade_rows_legacy_transactionitem_fallback_still_parsed():
     tx = {
         "type": "TRADE",

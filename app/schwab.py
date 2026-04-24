@@ -853,6 +853,15 @@ def _schwab_trade_rows(tx):
     export-shaped rows. Trader v1 puts one or more security legs in
     'transferItems'; fee legs have no 'instrument' and are skipped.
 
+    Covered-call assignments were previously double-counted: Schwab emits
+    multiple equity transferItems per assignment (a delivery leg plus a
+    zero-net bookkeeping pair), which became three rows (Sell + Buy + Sell)
+    for a single real sale. We now group transferItems by
+    (symbol, price, asset type) and sum signed amount/cost so wash pairs
+    cancel. Option legs tied to assignment / exercise / expiration get the
+    matching manual-export action label ("Assigned" / "Exchange or Exercise"
+    / "Expired") instead of being forced into Buy to Close / Sell to Close.
+
     Falls back to the legacy 'transactionItem' shape if 'transferItems' is
     absent, so partial responses and older sandboxes still work.
     """
@@ -876,7 +885,20 @@ def _schwab_trade_rows(tx):
         ti = tx.get("transactionItem")
         items = [ti] if isinstance(ti, dict) else []
 
-    rows = []
+    subtype_raw = str(tx.get("transactionSubType") or "").upper()
+    is_assignment = (
+        "ASSIGN" in subtype_raw or subtype_raw in {"AS", "OA"}
+    )
+    is_exercise = (
+        "EXERC" in subtype_raw or subtype_raw in {"EX", "OE"}
+    )
+    is_expiration = (
+        "EXPIR" in subtype_raw or subtype_raw in {"OX", "EXP"}
+    )
+
+    from collections import OrderedDict
+
+    buckets = OrderedDict()
     for it in items:
         if not isinstance(it, dict):
             continue
@@ -886,36 +908,93 @@ def _schwab_trade_rows(tx):
         sym = inst.get("symbol") or ""
         if not str(sym).strip():
             continue
-        desc = inst.get("description", sym)
-        asset_type = inst.get("assetType", "")
-        signed_amt = it.get("amount", 0) or 0
-        price = it.get("price", 0) or 0
-        cost = it.get("cost")
-        pos_effect = it.get("positionEffect", "")
-        instruction = it.get("instruction") or tx.get("transactionSubType") or ""
 
-        action = _schwab_action_from_effect(
-            asset_type, signed_amt, pos_effect, instruction
-        )
-
-        if cost is not None:
+        try:
+            amt = float(it.get("amount") or 0)
+        except (TypeError, ValueError):
+            amt = 0.0
+        try:
+            price = float(it.get("price") or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        cost_raw = it.get("cost")
+        if cost_raw is None:
+            cost = 0.0
+            has_cost = False
+        else:
             try:
-                seed_amount = float(cost)
+                cost = float(cost_raw)
+                has_cost = True
             except (TypeError, ValueError):
-                seed_amount = tx.get("netAmount") or 0
+                cost = 0.0
+                has_cost = False
+
+        asset_type = inst.get("assetType", "") or ""
+        key = (str(sym).strip(), round(price, 6), str(asset_type).upper())
+        b = buckets.setdefault(
+            key,
+            {
+                "symbol": str(sym).strip(),
+                "description": inst.get("description", sym),
+                "asset_type": asset_type,
+                "price": price,
+                "amount": 0.0,
+                "cost": 0.0,
+                "has_cost": False,
+                "position_effect": "",
+                "instruction": (
+                    it.get("instruction") or tx.get("transactionSubType") or ""
+                ),
+            },
+        )
+        b["amount"] += amt
+        if has_cost:
+            b["cost"] += cost
+            b["has_cost"] = True
+        # prefer a non-empty positionEffect on any leg in the bucket
+        if not b["position_effect"]:
+            b["position_effect"] = it.get("positionEffect", "") or ""
+
+    rows = []
+    for b in buckets.values():
+        # wash pair: legs cancel both in quantity and cash
+        if abs(b["amount"]) < 1e-9 and (not b["has_cost"] or abs(b["cost"]) < 1e-9):
+            continue
+
+        asset_type_upper = str(b["asset_type"] or "").upper()
+        is_option = asset_type_upper == "OPTION"
+
+        if is_option and is_assignment:
+            action = "Assigned"
+        elif is_option and is_exercise:
+            action = "Exchange or Exercise"
+        elif is_option and is_expiration:
+            action = "Expired"
+        else:
+            action = _schwab_action_from_effect(
+                b["asset_type"],
+                b["amount"],
+                b["position_effect"],
+                b["instruction"],
+            )
+
+        if b["has_cost"]:
+            seed_amount = b["cost"]
         else:
             seed_amount = tx.get("netAmount") or 0
 
-        rows.append({
-            "transaction_date": date_str,
-            "action": action,
-            "symbol": sym,
-            "description": desc,
-            "quantity": abs(float(signed_amt or 0)),
-            "price": abs(float(price or 0)) if price else "",
-            "fees": "",
-            "amount": seed_amount,
-        })
+        rows.append(
+            {
+                "transaction_date": date_str,
+                "action": action,
+                "symbol": b["symbol"],
+                "description": b["description"],
+                "quantity": abs(b["amount"]),
+                "price": abs(b["price"]) if b["price"] else "",
+                "fees": "",
+                "amount": seed_amount,
+            }
+        )
     return rows
 
 
