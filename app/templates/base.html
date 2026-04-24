@@ -82,6 +82,17 @@
         .kpi-value { font-size: 1.5rem; font-weight: 700; }
         .navbar .dropdown-menu { border: none; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
         .navbar .dropdown-menu-dark .dropdown-item:hover { background: rgba(255,255,255,.1); }
+        /* Guest auth — same lift + shadow on Sign In and Sign Up */
+        .navbar .btn.btn-auth-nav {
+            font-weight: 600;
+            transition: transform .2s ease, box-shadow .2s ease, opacity .15s;
+        }
+        .navbar .btn.btn-auth-nav:hover,
+        .navbar .btn.btn-auth-nav:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(0,0,0,.3);
+        }
+        .navbar .btn.btn-auth-nav:active { transform: translateY(0); }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -167,12 +178,12 @@
                         <a class="nav-link" href="{{ url_for('faq') }}">FAQ</a>
                     </li>
                 </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('login') }}">Sign In</a>
+                <ul class="navbar-nav align-items-center">
+                    <li class="nav-item py-1 py-lg-0">
+                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('login') }}">Sign In</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('signup') }}">Sign Up</a>
+                    <li class="nav-item ps-lg-1 py-1 py-lg-0">
+                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('signup') }}">Sign Up</a>
                     </li>
                 </ul>
                 {% endif %}
