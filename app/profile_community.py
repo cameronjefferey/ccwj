@@ -10,12 +10,16 @@ from flask_login import current_user, login_required
 from app import app
 from app.models import (
     User,
-    community_feed_for_follower,
+    community_feed,
     count_published_trades,
+    create_post,
+    delete_post,
     discover_public_traders,
+    discover_recent_public_posts,
     follow_counts,
     follow_user,
     get_accounts_for_user,
+    get_post,
     get_published_trade_fingerprints,
     get_schwab_connection,
     get_schwab_connections,
@@ -25,12 +29,14 @@ from app.models import (
     is_admin,
     is_following,
     list_following_ids,
+    list_posts_by_user,
     list_public_published_trades,
     publish_community_trade,
     search_discoverable_traders,
     trade_fingerprint,
     unfollow_user,
     unpublish_community_trade,
+    update_post_visibility,
     update_user_profile,
 )
 
@@ -199,7 +205,7 @@ def profile():
 @app.route("/community")
 @login_required
 def community():
-    feed = community_feed_for_follower(current_user.id, limit=60)
+    feed = community_feed(current_user.id, limit=80)
     following_ids = list_following_ids(current_user.id)
     search_query = (request.args.get("q") or "").strip()[:200]
     search_results = []
@@ -207,22 +213,29 @@ def community():
         search_results = search_discoverable_traders(
             current_user.id, search_query, limit=50
         )
-    discover = discover_public_traders(limit=30)
+    discover_traders = discover_public_traders(limit=12)
+    discover_posts = (
+        discover_recent_public_posts(current_user.id, limit=8)
+        if not feed else []
+    )
     fc, fwing = follow_counts(current_user.id)
     prof = get_user_profile(current_user.id)
     published_count = count_published_trades(current_user.id)
-    # Preserve search when follow/unfollow returns here
     community_return = (
         url_for("community", q=search_query)
         if len(search_query) >= 2
         else url_for("community")
     )
+    default_visibility = (prof.get("profile_visibility") or "followers").lower()
+    if default_visibility == "private":
+        default_visibility = "followers"
     return render_template(
         "community.html",
-        title="The Wall",
+        title="Community",
         feed=feed,
         following_ids=following_ids,
-        discover=discover,
+        discover_traders=discover_traders,
+        discover_posts=discover_posts,
         search_query=search_query,
         search_results=search_results,
         community_return_url=community_return,
@@ -230,7 +243,64 @@ def community():
         following_count=fwing,
         profile_row=prof,
         published_count=published_count,
+        default_post_visibility=default_visibility,
     )
+
+
+@app.route("/community/post", methods=["POST"])
+@login_required
+def community_post_create():
+    body = (request.form.get("body") or "").strip()
+    symbol = (request.form.get("symbol") or "").strip()
+    visibility = (request.form.get("visibility") or "followers").strip().lower()
+    next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
+
+    if not body:
+        flash("Write something before posting.", "warning")
+        return redirect(next_url)
+
+    new_id = create_post(
+        current_user.id,
+        body=body,
+        symbol=symbol or None,
+        visibility=visibility,
+    )
+    if new_id is None:
+        flash("Could not save that post. Try again in a moment.", "danger")
+    else:
+        flash("Posted.", "success")
+    return redirect(next_url)
+
+
+@app.route("/community/post/<int:post_id>/delete", methods=["POST"])
+@login_required
+def community_post_delete(post_id):
+    next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
+    row = get_post(post_id)
+    if not row or int(row["user_id"]) != int(current_user.id):
+        flash("That post is not yours to remove.", "warning")
+        return redirect(next_url)
+    if not delete_post(current_user.id, post_id):
+        flash("Could not remove the post.", "danger")
+    else:
+        flash("Post deleted.", "info")
+    return redirect(next_url)
+
+
+@app.route("/community/post/<int:post_id>/visibility", methods=["POST"])
+@login_required
+def community_post_visibility(post_id):
+    next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
+    row = get_post(post_id)
+    if not row or int(row["user_id"]) != int(current_user.id):
+        flash("That post is not yours.", "warning")
+        return redirect(next_url)
+    new_vis = (request.form.get("visibility") or "").strip().lower()
+    if not update_post_visibility(current_user.id, post_id, new_vis):
+        flash("Could not update visibility.", "danger")
+    else:
+        flash("Visibility updated.", "success")
+    return redirect(next_url)
 
 
 @app.route("/u/<username>")
@@ -248,6 +318,7 @@ def public_trader_profile(username):
     can_see = _viewer_can_see_profile(current_user.id, target_id, visibility, following)
     fc, fwing = follow_counts(target_id)
     published = list_public_published_trades(target_id, limit=80) if can_see else []
+    posts = list_posts_by_user(target_id, current_user.id, limit=80) if can_see else []
     show_names = bool(prof.get("show_account_names_on_published")) if can_see else False
     published_count = count_published_trades(target_id)
 
@@ -262,6 +333,7 @@ def public_trader_profile(username):
         follower_count=fc,
         following_count=fwing,
         published_trades=published,
+        posts=posts,
         show_account_names=show_names,
         published_count=published_count,
     )

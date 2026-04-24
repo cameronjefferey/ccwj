@@ -145,6 +145,26 @@ def init_db():
             UNIQUE (user_id, trade_fingerprint)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS community_posts (
+            id                  SERIAL PRIMARY KEY,
+            user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            body                TEXT NOT NULL,
+            symbol              TEXT,
+            attached_fingerprint TEXT,
+            visibility          TEXT NOT NULL DEFAULT 'followers',
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_community_posts_author_created
+        ON community_posts (user_id, created_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_community_posts_visibility_created
+        ON community_posts (visibility, created_at DESC)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -721,6 +741,184 @@ def list_public_published_trades(target_user_id, limit=100):
     except Exception as exc:
         _log.warning("list_public_published_trades failed: %s", exc)
         return []
+
+
+# ------------------------------------------------------------------
+# Community posts (blog-style feed, optionally tied to a symbol)
+# ------------------------------------------------------------------
+
+_MAX_POST_BODY_LEN = 4000
+_MAX_POST_SYMBOL_LEN = 32
+_ALLOWED_POST_VISIBILITY = frozenset({"private", "followers", "public"})
+
+
+def create_post(user_id, body, symbol=None, visibility="followers", attached_fingerprint=None):
+    """
+    Insert a new community post. Caller is responsible for having confirmed the
+    author identity (flask-login). Returns the new row id, or None on failure.
+    """
+    clean_body = (body or "").strip()
+    if not clean_body:
+        return None
+    if len(clean_body) > _MAX_POST_BODY_LEN:
+        clean_body = clean_body[:_MAX_POST_BODY_LEN]
+    clean_symbol = (symbol or "").strip().upper() or None
+    if clean_symbol and len(clean_symbol) > _MAX_POST_SYMBOL_LEN:
+        clean_symbol = clean_symbol[:_MAX_POST_SYMBOL_LEN]
+    vis = (visibility or "followers").strip().lower()
+    if vis not in _ALLOWED_POST_VISIBILITY:
+        vis = "followers"
+    af = (attached_fingerprint or "").strip() or None
+    try:
+        row = execute_returning(
+            """INSERT INTO community_posts
+               (user_id, body, symbol, attached_fingerprint, visibility)
+               VALUES (%s, %s, %s, %s, %s)
+               RETURNING id""",
+            (user_id, clean_body, clean_symbol, af, vis),
+        )
+        return int(row["id"]) if row else None
+    except Exception as exc:
+        _log.warning("create_post failed: %s", exc)
+        return None
+
+
+def delete_post(user_id, post_id):
+    try:
+        execute(
+            "DELETE FROM community_posts WHERE id = %s AND user_id = %s",
+            (post_id, user_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("delete_post failed: %s", exc)
+        return False
+
+
+def update_post_visibility(user_id, post_id, visibility):
+    vis = (visibility or "").strip().lower()
+    if vis not in _ALLOWED_POST_VISIBILITY:
+        return False
+    try:
+        execute(
+            "UPDATE community_posts SET visibility = %s, updated_at = NOW() "
+            "WHERE id = %s AND user_id = %s",
+            (vis, post_id, user_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("update_post_visibility failed: %s", exc)
+        return False
+
+
+_POST_SELECT_BASE = """
+    SELECT p.id, p.user_id, p.body, p.symbol, p.attached_fingerprint,
+           p.visibility, p.created_at, p.updated_at,
+           u.username,
+           COALESCE(NULLIF(TRIM(pr.display_name), ''), u.username) AS author_display,
+           pr.headline AS author_headline,
+           t.strategy    AS trade_strategy,
+           t.trade_symbol AS trade_symbol,
+           t.status      AS trade_status,
+           t.display_pnl AS trade_display_pnl,
+           t.open_date   AS trade_open_date,
+           t.close_date  AS trade_close_date
+    FROM community_posts p
+    JOIN users u ON u.id = p.user_id
+    LEFT JOIN user_profiles pr ON pr.user_id = p.user_id
+    LEFT JOIN community_published_trades t
+        ON t.user_id = p.user_id AND t.trade_fingerprint = p.attached_fingerprint
+"""
+
+
+def list_posts_by_user(author_id, viewer_id, limit=60):
+    """
+    Return posts by ``author_id`` that ``viewer_id`` is allowed to see.
+
+    - Private: only the author.
+    - Followers: author + anyone following the author.
+    - Public: everyone.
+    """
+    try:
+        if author_id == viewer_id:
+            sql = (
+                _POST_SELECT_BASE
+                + " WHERE p.user_id = %s ORDER BY p.created_at DESC LIMIT %s"
+            )
+            return fetch_all(sql, (author_id, limit))
+        sql = (
+            _POST_SELECT_BASE
+            + """ WHERE p.user_id = %s
+                   AND (
+                        p.visibility = 'public'
+                        OR (p.visibility = 'followers' AND EXISTS (
+                             SELECT 1 FROM user_follows f
+                             WHERE f.follower_id = %s AND f.following_id = p.user_id
+                        ))
+                   )
+                   ORDER BY p.created_at DESC
+                   LIMIT %s"""
+        )
+        return fetch_all(sql, (author_id, viewer_id, limit))
+    except Exception as exc:
+        _log.warning("list_posts_by_user failed: %s", exc)
+        return []
+
+
+def community_feed(viewer_id, limit=60):
+    """
+    Main feed: posts from people viewer follows (visibility followers or public)
+    plus viewer's own posts, newest first.
+    """
+    try:
+        sql = (
+            _POST_SELECT_BASE
+            + """ WHERE (
+                    p.user_id = %s
+                    OR (
+                        p.user_id IN (
+                            SELECT following_id FROM user_follows WHERE follower_id = %s
+                        )
+                        AND p.visibility IN ('followers', 'public')
+                    )
+                 )
+                 ORDER BY p.created_at DESC
+                 LIMIT %s"""
+        )
+        return fetch_all(sql, (viewer_id, viewer_id, limit))
+    except Exception as exc:
+        _log.warning("community_feed failed: %s", exc)
+        return []
+
+
+def discover_recent_public_posts(viewer_id, limit=30):
+    """Public posts from users the viewer does not already follow (for discovery)."""
+    try:
+        sql = (
+            _POST_SELECT_BASE
+            + """ WHERE p.visibility = 'public'
+                   AND p.user_id <> %s
+                   AND p.user_id NOT IN (
+                        SELECT following_id FROM user_follows WHERE follower_id = %s
+                   )
+                 ORDER BY p.created_at DESC
+                 LIMIT %s"""
+        )
+        return fetch_all(sql, (viewer_id, viewer_id, limit))
+    except Exception as exc:
+        _log.warning("discover_recent_public_posts failed: %s", exc)
+        return []
+
+
+def get_post(post_id):
+    try:
+        return fetch_one(
+            _POST_SELECT_BASE + " WHERE p.id = %s",
+            (post_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_post failed: %s", exc)
+        return None
 
 
 def discover_public_traders(limit=24):

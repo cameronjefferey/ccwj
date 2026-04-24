@@ -3,252 +3,439 @@
 {% block head %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
 <style>
-    .wall-page { font-family: "DM Sans", system-ui, sans-serif; background: #080c14; min-height: 72vh; margin: -1rem -1.5rem 0; padding: 2rem 1.5rem 4rem; }
-    @media (min-width: 992px) { .wall-page { margin: -1rem -1.5rem 0; padding-left: 2.5rem; padding-right: 2.5rem; } }
-    .wall-hero {
-        max-width: 1100px; margin: 0 auto 2.5rem;
-        padding: 2.5rem 2rem 2.25rem;
+    .cm { font-family: "DM Sans", system-ui, sans-serif; background: #f7f5f2; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .cm-shell { max-width: 1160px; margin: 0 auto; }
+
+    .cm-hero {
         border-radius: 24px;
-        background: radial-gradient(ellipse 90% 120% at 10% -20%, rgba(251,191,36,.18), transparent 55%),
-                    linear-gradient(145deg, #111827 0%, #0f172a 40%, #172554 100%);
-        border: 1px solid rgba(148,163,184,.2);
-        color: #f8fafc;
+        padding: 1.5rem 1.75rem;
+        background: linear-gradient(128deg, #0c0a09 0%, #1c1917 45%, #292524 100%);
+        color: #fafaf9;
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+        border: 1px solid rgba(255,255,255,.08);
     }
-    .wall-hero h1 {
+    .cm-hero::before {
+        content: ""; position: absolute; right: -8%; top: -40%;
+        width: 55%; height: 140%;
+        background: radial-gradient(circle, rgba(139,92,246,.22), transparent 65%);
+        pointer-events: none;
+    }
+    .cm-hero-in { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    .cm-kicker { font-size: .62rem; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; color: #c4b5fd; margin-bottom: .35rem; }
+    .cm-hero h1 {
         font-family: "Fraunces", Georgia, serif;
         font-weight: 700;
-        font-size: clamp(1.85rem, 4vw, 2.45rem);
-        letter-spacing: -0.03em;
+        font-size: clamp(1.4rem, 3.2vw, 1.95rem);
+        letter-spacing: -.03em;
         line-height: 1.15;
-        margin: 0 0 .75rem;
+        margin: 0 0 .25rem;
     }
-    .wall-hero .lead { font-size: 1.05rem; opacity: .88; max-width: 38rem; line-height: 1.65; margin: 0; }
-    .wall-hero .cta-row { margin-top: 1.5rem; }
-    .wall-btn-primary {
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        border: none;
-        color: #1c1917 !important;
-        font-weight: 700;
-        padding: .65rem 1.35rem;
-        border-radius: 999px;
-        box-shadow: 0 4px 24px rgba(251,191,36,.35);
+    .cm-hero p.lead { font-size: .92rem; line-height: 1.5; opacity: .78; margin: 0; }
+    .cm-stats { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .cm-stat {
+        background: rgba(255,255,255,.07); border-radius: 12px;
+        padding: .5rem .85rem; text-align: center; min-width: 78px;
     }
-    .wall-btn-primary:hover { filter: brightness(1.06); color: #1c1917 !important; }
-    .wall-btn-ghost {
-        border: 1px solid rgba(248,250,252,.35);
-        color: #f8fafc !important;
-        background: transparent;
-        font-weight: 600;
-        padding: .6rem 1.2rem;
-        border-radius: 999px;
-    }
-    .wall-btn-ghost:hover { background: rgba(255,255,255,.08); color: #fff !important; }
-    .wall-stat { font-size: .8rem; opacity: .75; }
-    .wall-shell { max-width: 1100px; margin: 0 auto; }
-    .wall-feed-title {
-        font-family: "Fraunces", Georgia, serif;
-        font-size: 1.15rem;
-        color: #e2e8f0;
-        margin-bottom: 1rem;
-    }
-    .wall-card {
-        background: rgba(15,23,42,.65);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(148,163,184,.15);
+    .cm-stat .n { font-size: 1.1rem; font-weight: 800; font-family: "Fraunces", serif; line-height: 1; }
+    .cm-stat .l { font-size: .56rem; text-transform: uppercase; letter-spacing: .12em; opacity: .65; margin-top: .15rem; }
+    .cm-stat a { color: inherit; text-decoration: none; }
+
+    .cm-grid { display: grid; grid-template-columns: 1fr 320px; gap: 1.5rem; align-items: start; }
+    @media (max-width: 991px) { .cm-grid { grid-template-columns: 1fr; } }
+
+    .cm-card {
+        background: #fff;
+        border: 1px solid #e7e5e4;
         border-radius: 18px;
-        padding: 1.35rem 1.5rem;
+        box-shadow: 0 4px 24px rgba(28,25,23,.04);
         margin-bottom: 1rem;
-        transition: border-color .2s, transform .15s;
     }
-    .wall-card:hover { border-color: rgba(251,191,36,.35); transform: translateY(-2px); }
-    .wall-author { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 1.05rem; }
-    .wall-author a { color: #fef3c7 !important; text-decoration: none; }
-    .wall-author a:hover { text-decoration: underline; }
-    .wall-time { font-size: .72rem; color: #94a3b8; }
-    .wall-symbol {
-        font-weight: 800;
-        letter-spacing: .04em;
-        font-size: .75rem;
-        padding: .25rem .65rem;
-        border-radius: 8px;
-        background: rgba(251,191,36,.12);
-        color: #fcd34d;
-        border: 1px solid rgba(251,191,36,.25);
+    .cm-side-card {
+        background: #fff;
+        border: 1px solid #e7e5e4;
+        border-radius: 16px;
+        padding: 1.1rem 1.2rem;
+        margin-bottom: 1rem;
     }
-    .wall-strat { color: #94a3b8; font-size: .88rem; margin-top: .35rem; }
-    .wall-caption { color: #e2e8f0; font-size: .95rem; line-height: 1.55; margin: .75rem 0 0; font-style: italic; }
-    .wall-empty {
-        text-align: center;
-        padding: 3rem 1.5rem;
-        border-radius: 20px;
-        border: 1px dashed rgba(148,163,184,.3);
-        color: #94a3b8;
+    .cm-side-h { font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #a8a29e; margin: 0 0 .8rem; }
+
+    /* Composer */
+    .cm-composer { padding: 1.1rem 1.25rem 1rem; }
+    .cm-composer textarea {
+        width: 100%; border: none; outline: none; resize: none;
+        font: inherit; font-size: 1rem; line-height: 1.55; color: #1c1917;
+        min-height: 74px; background: transparent;
     }
-    .wall-empty h3 { font-family: "Fraunces", Georgia, serif; color: #f1f5f9; font-size: 1.25rem; margin-bottom: .75rem; }
-    .wall-side { background: rgba(15,23,42,.5); border: 1px solid rgba(148,163,184,.12); border-radius: 18px; padding: 1.35rem; }
-    .wall-side h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: #94a3b8; font-weight: 700; margin: 0 0 1rem; }
-    .wall-discover-row { border-bottom: 1px solid rgba(51,65,85,.5); padding: .65rem 0; }
-    .wall-discover-row:last-child { border-bottom: none; }
-    .wall-search {
-        display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;
+    .cm-composer textarea::placeholder { color: #a8a29e; }
+    .cm-composer-row {
+        display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+        border-top: 1px solid #f5f5f4; padding-top: .7rem; margin-top: .35rem;
     }
-    .wall-search input[type="search"] {
-        flex: 1; min-width: 160px; max-width: 100%;
-        background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.25);
-        color: #f1f5f9; border-radius: 12px; padding: .5rem .85rem; font-size: .9rem;
+    .cm-pill-input {
+        border: 1px solid #e7e5e4; border-radius: 999px;
+        padding: .3rem .75rem; font-size: .82rem; font-weight: 600;
+        letter-spacing: .03em; width: 120px; background: #fafaf9; color: #1c1917;
     }
-    .wall-search input:focus { border-color: rgba(251,191,36,.45); outline: none; }
-    .wall-search .btn { border-radius: 12px; font-size: .85rem; }
-    .wall-search-hint { font-size: .75rem; color: #94a3b8; margin: 0 0 .75rem; }
-    .wall-foot { max-width: 1100px; margin: 2rem auto 0; font-size: .78rem; color: #64748b; text-align: center; line-height: 1.6; }
+    .cm-pill-input:focus { outline: none; border-color: #c4b5fd; background: #fff; }
+    .cm-select {
+        border: 1px solid #e7e5e4; border-radius: 999px;
+        padding: .3rem .85rem; font-size: .82rem; font-weight: 600;
+        background: #fafaf9; color: #1c1917; cursor: pointer;
+    }
+    .cm-btn-post {
+        margin-left: auto; background: #1c1917; color: #fff; border: none;
+        border-radius: 999px; padding: .5rem 1.35rem; font-weight: 700; font-size: .88rem;
+        transition: transform .15s ease, background .15s;
+    }
+    .cm-btn-post:hover:not(:disabled) { background: #0c0a09; transform: translateY(-1px); }
+    .cm-btn-post:disabled { opacity: .5; cursor: not-allowed; }
+    .cm-private-note {
+        font-size: .78rem; color: #a8a29e; padding: .6rem 1.25rem 1rem;
+        border-top: 1px solid #f5f5f4; margin-top: -.2rem;
+    }
+
+    /* Feed posts */
+    .cm-post { padding: 1.15rem 1.35rem; }
+    .cm-post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; margin-bottom: .5rem; }
+    .cm-avatar {
+        width: 38px; height: 38px; border-radius: 50%;
+        background: linear-gradient(135deg, #c4b5fd, #8b5cf6);
+        color: #fff; font-weight: 700; font-size: .95rem;
+        display: flex; align-items: center; justify-content: center;
+        font-family: "Fraunces", serif; flex-shrink: 0;
+    }
+    .cm-author { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+    .cm-author-name a { color: #1c1917; font-weight: 700; text-decoration: none; font-size: .95rem; }
+    .cm-author-name a:hover { color: #6f42c1; }
+    .cm-author-meta { font-size: .75rem; color: #78716c; }
+    .cm-author-meta a { color: #78716c; text-decoration: none; }
+    .cm-author-meta a:hover { color: #1c1917; }
+
+    .cm-visibility {
+        display: inline-flex; align-items: center; gap: .3rem;
+        font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+        padding: .22rem .6rem; border-radius: 999px;
+    }
+    .cm-vis-public { background: #f0fdf4; color: #15803d; }
+    .cm-vis-followers { background: #eef2ff; color: #4338ca; }
+    .cm-vis-private { background: #f5f5f4; color: #57534e; }
+
+    .cm-body { color: #1c1917; font-size: .98rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+
+    .cm-symbol-chip {
+        display: inline-block; margin-top: .6rem;
+        background: #fef3c7; color: #92400e;
+        font-weight: 700; font-size: .78rem; letter-spacing: .05em;
+        padding: .25rem .65rem; border-radius: 8px;
+        text-decoration: none;
+    }
+    .cm-symbol-chip:hover { background: #fde68a; color: #7c2d12; }
+
+    .cm-trade-card {
+        margin-top: .75rem; padding: .8rem 1rem;
+        background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px;
+        display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap;
+    }
+    .cm-trade-strat { font-size: .85rem; color: #57534e; }
+    .cm-trade-pnl { font-weight: 700; font-size: .95rem; }
+    .cm-trade-pnl.win { color: #15803d; }
+    .cm-trade-pnl.loss { color: #b91c1c; }
+
+    .cm-post-foot { display: flex; justify-content: space-between; align-items: center; margin-top: .85rem; gap: .5rem; }
+    .cm-post-actions { display: flex; gap: .4rem; }
+    .cm-btn-tiny {
+        background: transparent; border: 1px solid transparent;
+        color: #78716c; font-size: .78rem; padding: .2rem .55rem; border-radius: 8px;
+        cursor: pointer; font-weight: 600;
+    }
+    .cm-btn-tiny:hover { background: #fafaf9; color: #1c1917; border-color: #e7e5e4; }
+    .cm-btn-tiny.danger:hover { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+    /* Empty state */
+    .cm-empty { text-align: center; padding: 2.5rem 1.5rem; color: #78716c; }
+    .cm-empty h3 { font-family: "Fraunces", serif; color: #1c1917; font-size: 1.2rem; margin-bottom: .5rem; }
+    .cm-empty p { font-size: .9rem; margin: 0 auto .75rem; max-width: 32rem; line-height: 1.55; }
+
+    /* Search + discover */
+    .cm-search { display: flex; gap: .4rem; margin-bottom: .65rem; }
+    .cm-search input {
+        flex: 1; min-width: 0; border: 1px solid #e7e5e4; border-radius: 999px;
+        padding: .45rem .9rem; font-size: .88rem; background: #fafaf9;
+    }
+    .cm-search input:focus { outline: none; border-color: #c4b5fd; background: #fff; }
+    .cm-search button {
+        background: #1c1917; color: #fff; border: none; border-radius: 999px;
+        padding: .45rem .95rem; font-size: .8rem; font-weight: 700;
+    }
+    .cm-search-hint { font-size: .75rem; color: #a8a29e; margin: 0 0 .6rem; }
+
+    .cm-user-row {
+        display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+        padding: .55rem 0; border-bottom: 1px solid #f5f5f4;
+    }
+    .cm-user-row:last-child { border-bottom: none; }
+    .cm-user-row .name { font-weight: 600; font-size: .88rem; color: #1c1917; text-decoration: none; }
+    .cm-user-row .name:hover { color: #6f42c1; }
+    .cm-user-row .meta { font-size: .72rem; color: #78716c; }
+    .cm-btn-follow {
+        background: #1c1917; color: #fff; border: none; border-radius: 999px;
+        padding: .28rem .85rem; font-size: .72rem; font-weight: 700;
+    }
+    .cm-btn-unfollow {
+        background: #fff; color: #57534e; border: 1px solid #e7e5e4; border-radius: 999px;
+        padding: .27rem .8rem; font-size: .72rem; font-weight: 600;
+    }
+    .cm-btn-unfollow:hover { background: #fafaf9; color: #1c1917; }
+
+    .cm-disclaimer { font-size: .78rem; color: #a8a29e; text-align: center; margin: 2rem auto 0; max-width: 34rem; line-height: 1.6; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="wall-page">
-    <div class="wall-hero">
-        <div class="row align-items-start g-4">
-            <div class="col-lg-8">
-                <p class="text-uppercase small fw-bold mb-2" style="letter-spacing:.2em;color:#fbbf24;opacity:.9">The mirror wall</p>
-                <h1>Traders who prove they were in the room.</h1>
-                <p class="lead">
-                    No leaderboard. No hot takes. Only receipts people chose to hang — so you remember
-                    what it felt like to execute when nobody was clapping.
-                </p>
-                <div class="cta-row d-flex flex-wrap gap-2 align-items-center">
-                    <a href="{{ url_for('weekly_review') }}" class="btn wall-btn-primary">Go to Weekly Review</a>
-                    <a href="{{ url_for('profile', tab='community') }}" class="btn wall-btn-ghost">Who can see me</a>
-                    {% if published_count == 0 %}
-                    <span class="wall-stat ms-lg-2">You have <strong class="text-warning">0</strong> receipts up — this week, change that.</span>
-                    {% else %}
-                    <span class="wall-stat ms-lg-2"><strong class="text-warning">{{ published_count }}</strong> receipt{{ 's' if published_count != 1 else '' }} on the wall from you</span>
-                    {% endif %}
+<div class="cm">
+    <div class="cm-shell">
+        <div class="cm-hero">
+            <div class="cm-hero-in">
+                <div>
+                    <div class="cm-kicker">Community</div>
+                    <h1>What are you trading?</h1>
+                    <p class="lead">Share notes, trades, and lessons with traders you follow.</p>
+                </div>
+                <div class="cm-stats">
+                    <div class="cm-stat">
+                        <a href="{{ url_for('public_trader_profile', username=current_user.username) }}">
+                            <div class="n">{{ follower_count }}</div>
+                            <div class="l">Followers</div>
+                        </a>
+                    </div>
+                    <div class="cm-stat">
+                        <div class="n">{{ following_count }}</div>
+                        <div class="l">Following</div>
+                    </div>
                 </div>
             </div>
-            <div class="col-lg-4 text-lg-end">
-                <div class="wall-stat mb-1"><strong class="text-white">{{ following_count }}</strong> you follow · <strong class="text-white">{{ follower_count }}</strong> follow you</div>
-                <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="small text-warning text-decoration-none">Preview your wall →</a>
-            </div>
         </div>
-    </div>
 
-    <div class="wall-shell row g-4">
-        <div class="col-lg-8">
-            <div class="wall-feed-title">From people you follow</div>
-            {% if feed %}
-                {% for row in feed %}
-                <article class="wall-card">
-                    <div class="d-flex justify-content-between flex-wrap gap-2 align-items-start">
-                        <div>
-                            <span class="wall-author"><a href="{{ url_for('public_trader_profile', username=row.username) }}">{{ row.author_display }}</a></span>
-                            <span class="wall-time d-block d-sm-inline ms-sm-2">{{ row.published_at }}</span>
+        <div class="cm-grid">
+            <div>
+                <form class="cm-card cm-composer" method="POST" action="{{ url_for('community_post_create') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('community') }}">
+                    <label for="post-body" class="visually-hidden">Post</label>
+                    <textarea id="post-body" name="body" placeholder="Share a trade, an observation, or a lesson..." maxlength="4000" required></textarea>
+                    <div class="cm-composer-row">
+                        <label for="post-symbol" class="visually-hidden">Symbol</label>
+                        <input id="post-symbol" type="text" name="symbol" class="cm-pill-input" placeholder="Symbol (optional)" maxlength="16" autocomplete="off">
+
+                        <label for="post-visibility" class="visually-hidden">Visibility</label>
+                        <select id="post-visibility" name="visibility" class="cm-select" title="Who can see this post?">
+                            <option value="public"    {% if default_post_visibility == 'public' %}selected{% endif %}>🌎 Public</option>
+                            <option value="followers" {% if default_post_visibility == 'followers' %}selected{% endif %}>👥 Followers</option>
+                            <option value="private"   {% if default_post_visibility == 'private' %}selected{% endif %}>🔒 Only me</option>
+                        </select>
+
+                        <button type="submit" class="cm-btn-post">Post</button>
+                    </div>
+                </form>
+
+                {% if feed and feed|length > 0 %}
+                    {% for p in feed %}
+                    <article class="cm-card cm-post">
+                        <div class="cm-post-head">
+                            <div class="cm-author">
+                                <div class="cm-avatar">{{ (p.author_display or p.username or '?')[0]|upper }}</div>
+                                <div>
+                                    <div class="cm-author-name">
+                                        <a href="{{ url_for('public_trader_profile', username=p.username) }}">{{ p.author_display }}</a>
+                                    </div>
+                                    <div class="cm-author-meta">
+                                        <a href="{{ url_for('public_trader_profile', username=p.username) }}">@{{ p.username }}</a>
+                                        <span>·</span>
+                                        <span title="{{ p.created_at }}">{{ p.created_at.strftime('%b %-d, %Y · %-I:%M %p') if p.created_at else '' }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {% if p.visibility == 'public' %}
+                            <span class="cm-visibility cm-vis-public">Public</span>
+                            {% elif p.visibility == 'followers' %}
+                            <span class="cm-visibility cm-vis-followers">Followers</span>
+                            {% else %}
+                            <span class="cm-visibility cm-vis-private">Only you</span>
+                            {% endif %}
                         </div>
-                        <span class="wall-symbol">{{ row.symbol }}</span>
-                    </div>
-                    <div class="wall-strat">{{ row.strategy }}{% if row.trade_symbol %} · {{ row.trade_symbol }}{% endif %} · <span style="opacity:.75">{{ row.status }}</span></div>
-                    {% if row.caption %}
-                    <p class="wall-caption">{{ row.caption }}</p>
+                        <div class="cm-body">{{ p.body }}</div>
+
+                        {% if p.symbol %}
+                        <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
+                        {% endif %}
+
+                        {% if p.trade_strategy %}
+                        <div class="cm-trade-card">
+                            <div>
+                                <div class="cm-trade-strat">
+                                    <strong>{{ p.trade_strategy }}</strong>
+                                    {% if p.trade_symbol %} · {{ p.trade_symbol }}{% endif %}
+                                    {% if p.trade_status %} · <span style="color:#a8a29e">{{ p.trade_status }}</span>{% endif %}
+                                </div>
+                                <div class="cm-author-meta mt-1">
+                                    {% if p.trade_open_date %}Opened {{ p.trade_open_date }}{% endif %}
+                                    {% if p.trade_close_date %} → Closed {{ p.trade_close_date }}{% endif %}
+                                </div>
+                            </div>
+                            {% if p.trade_display_pnl is not none %}
+                            <div class="cm-trade-pnl {% if p.trade_display_pnl >= 0 %}win{% else %}loss{% endif %}">
+                                {{ "+" if p.trade_display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.trade_display_pnl) }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
+                        {% if p.user_id|int == current_user.id|int %}
+                        <div class="cm-post-foot">
+                            <span></span>
+                            <div class="cm-post-actions">
+                                <form method="POST" action="{{ url_for('community_post_delete', post_id=p.id) }}" class="m-0"
+                                      onsubmit="return confirm('Delete this post?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="next" value="{{ url_for('community') }}">
+                                    <button type="submit" class="cm-btn-tiny danger">Delete</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </article>
+                    {% endfor %}
+                {% else %}
+                <div class="cm-card cm-empty">
+                    <h3>Your feed is quiet.</h3>
+                    {% if following_count == 0 %}
+                    <p>Follow a few traders to see what they're trading, or start the conversation by posting above.</p>
+                    {% else %}
+                    <p>The people you follow haven't posted recently. Start the conversation above — or discover more traders to follow.</p>
                     {% endif %}
-                    {% if row.display_pnl is not none %}
-                    <div class="mt-2 small">
-                        <span class="{% if row.display_pnl >= 0 %}text-success{% else %}text-danger{% endif %} fw-semibold">
-                            {{ "+" if row.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(row.display_pnl) }}
-                        </span>
-                        <span class="text-muted"> — number they chose to show. Not a score.</span>
+                </div>
+                {% endif %}
+
+                {% if discover_posts %}
+                <h2 class="cm-side-h mt-4">Recent public posts</h2>
+                {% for p in discover_posts %}
+                <article class="cm-card cm-post">
+                    <div class="cm-post-head">
+                        <div class="cm-author">
+                            <div class="cm-avatar">{{ (p.author_display or p.username or '?')[0]|upper }}</div>
+                            <div>
+                                <div class="cm-author-name">
+                                    <a href="{{ url_for('public_trader_profile', username=p.username) }}">{{ p.author_display }}</a>
+                                </div>
+                                <div class="cm-author-meta">
+                                    <a href="{{ url_for('public_trader_profile', username=p.username) }}">@{{ p.username }}</a>
+                                    <span>·</span>
+                                    <span>{{ p.created_at.strftime('%b %-d') if p.created_at else '' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <span class="cm-visibility cm-vis-public">Public</span>
                     </div>
+                    <div class="cm-body">{{ p.body }}</div>
+                    {% if p.symbol %}
+                    <a class="cm-symbol-chip" href="{{ url_for('position_detail', symbol=p.symbol) }}">{{ p.symbol }}</a>
                     {% endif %}
                 </article>
                 {% endfor %}
-            {% else %}
-            <div class="wall-empty">
-                <h3>The wall is quiet on purpose.</h3>
-                <p class="mb-3 mx-auto" style="max-width:28rem">
-                    Follow someone who trades like you want to trade. Or be first:
-                    hang one receipt from this week’s Review — that’s how the wall starts breathing.
-                </p>
-                <a href="{{ url_for('weekly_review') }}" class="btn wall-btn-primary">Pick a trade in Review</a>
-            </div>
-            {% endif %}
-        </div>
-        <div class="col-lg-4">
-            <div class="wall-side mb-3">
-                <h3>On the record</h3>
-                <p class="small mb-3" style="line-height:1.6;color:#94a3b8">
-                    HappyTrader is a mirror, not a signal desk. Nothing here is advice — only voluntary proof of work from real accounts.
-                </p>
-            </div>
-            <div class="wall-side">
-                <h3>Find traders</h3>
-                <p class="small mb-2" style="color:#94a3b8">Search by @handle, display name, or headline. Only people who set visibility to Followers or Public (Profile → Community) appear here.</p>
-                <form class="wall-search" method="get" action="{{ url_for('community') }}" role="search">
-                    <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Search e.g. Alex or @handle" aria-label="Search traders" autocomplete="off">
-                    <button type="submit" class="btn wall-btn-ghost">Search</button>
-                </form>
-                {% if search_query|length == 1 %}
-                <p class="wall-search-hint">Type at least two characters to search.</p>
                 {% endif %}
-                {% if search_query|length >= 2 %}
-                <p class="small mb-2" style="color:#cbd5e1">
-                    {% if search_results|length == 0 %}No one matches that yet. Try another name, or <a href="{{ url_for('community') }}" class="text-warning">clear search</a> to browse.{% else %}{{ search_results|length }} match{{ 'es' if search_results|length != 1 else '' }} &middot; <a href="{{ url_for('community') }}" class="text-warning text-decoration-none">Clear search</a>{% endif %}
-                </p>
-                {% for u in search_results %}
-                <div class="wall-discover-row d-flex justify-content-between align-items-center gap-2">
-                    <div>
-                        <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="fw-semibold text-white text-decoration-none">{{ u.display_name }}</a>
-                        <div class="wall-time">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(70) }}{% endif %}</div>
-                    </div>
-                    {% if u.id != current_user.id %}
-                        {% if (u.id|int) in following_ids %}
-                        <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ community_return_url }}">
-                            <button type="submit" class="btn btn-sm btn-outline-light rounded-pill" style="font-size:.72rem">Following</button>
-                        </form>
-                        {% else %}
-                        <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ community_return_url }}">
-                            <button type="submit" class="btn btn-sm wall-btn-primary" style="font-size:.72rem">Follow</button>
-                        </form>
-                        {% endif %}
-                    {% endif %}
-                </div>
-                {% endfor %}
-                <p class="small mt-3 mb-0" style="color:#64748b; border-top:1px solid rgba(51,65,85,.4); padding-top:1rem">Browse everyone</p>
-                {% endif %}
-                {% for u in discover %}
-                <div class="wall-discover-row d-flex justify-content-between align-items-center gap-2">
-                    <div>
-                        <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="fw-semibold text-white text-decoration-none">{{ u.display_name }}</a>
-                        <div class="wall-time">@{{ u.username }}</div>
-                    </div>
-                    {% if u.id != current_user.id %}
-                        {% if (u.id|int) in following_ids %}
-                        <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ community_return_url }}">
-                            <button type="submit" class="btn btn-sm btn-outline-light rounded-pill" style="font-size:.72rem">Following</button>
-                        </form>
-                        {% else %}
-                        <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ community_return_url }}">
-                            <button type="submit" class="btn btn-sm wall-btn-primary" style="font-size:.72rem">Follow</button>
-                        </form>
-                        {% endif %}
-                    {% endif %}
-                </div>
-                {% else %}
-                {% if search_query|length < 2 %}
-                <p class="small mb-0" style="color:#64748b">No one in the directory yet. Set visibility to Followers or Public under Profile → Community to appear here.</p>
-                {% endif %}
-                {% endfor %}
             </div>
-        </div>
-    </div>
 
-    <p class="wall-foot">The only wrong move is pretending you have nothing worth showing. One trade. One sentence. That’s the whole ritual.</p>
+            <div>
+                <div class="cm-side-card">
+                    <h3 class="cm-side-h">Find traders</h3>
+                    <form class="cm-search" method="get" action="{{ url_for('community') }}" role="search">
+                        <input type="search" name="q" value="{{ search_query or '' }}" placeholder="@handle or name" aria-label="Search traders" autocomplete="off">
+                        <button type="submit">Search</button>
+                    </form>
+                    {% if search_query|length == 1 %}
+                    <p class="cm-search-hint">Type at least 2 characters.</p>
+                    {% endif %}
+
+                    {% if search_query|length >= 2 %}
+                        {% if search_results|length == 0 %}
+                        <p class="cm-search-hint">No matches. <a href="{{ url_for('community') }}" style="color:#6f42c1;text-decoration:none">Clear</a></p>
+                        {% else %}
+                        <p class="cm-search-hint">{{ search_results|length }} match{{ 'es' if search_results|length != 1 else '' }} · <a href="{{ url_for('community') }}" style="color:#6f42c1;text-decoration:none">Clear</a></p>
+                        {% endif %}
+                        {% for u in search_results %}
+                        <div class="cm-user-row">
+                            <div style="min-width:0">
+                                <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="name d-block text-truncate">{{ u.display_name }}</a>
+                                <div class="meta text-truncate">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(48) }}{% endif %}</div>
+                            </div>
+                            {% if u.id != current_user.id %}
+                                {% if (u.id|int) in following_ids %}
+                                <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="next" value="{{ community_return_url }}">
+                                    <button type="submit" class="cm-btn-unfollow">Following</button>
+                                </form>
+                                {% else %}
+                                <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="next" value="{{ community_return_url }}">
+                                    <button type="submit" class="cm-btn-follow">Follow</button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                {% if discover_traders %}
+                <div class="cm-side-card">
+                    <h3 class="cm-side-h">Discover traders</h3>
+                    {% for u in discover_traders %}
+                    {% if u.id != current_user.id %}
+                    <div class="cm-user-row">
+                        <div style="min-width:0">
+                            <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="name d-block text-truncate">{{ u.display_name }}</a>
+                            <div class="meta text-truncate">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(36) }}{% endif %}</div>
+                        </div>
+                        {% if (u.id|int) in following_ids %}
+                        <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
+                            <button type="submit" class="cm-btn-unfollow">Following</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('follow_trader', username=u.username) }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ community_return_url }}">
+                            <button type="submit" class="cm-btn-follow">Follow</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="cm-side-card">
+                    <h3 class="cm-side-h">Your profile</h3>
+                    <p class="cm-author-meta mb-2" style="line-height:1.55;font-size:.82rem;color:#57534e">
+                        Visibility: <strong style="color:#1c1917">{{ (profile_row.profile_visibility or 'private')|capitalize }}</strong>.
+                        {% if profile_row.profile_visibility == 'private' %}
+                        Your profile is hidden from other traders.
+                        {% endif %}
+                    </p>
+                    <a href="{{ url_for('profile', tab='community') }}" class="cm-btn-unfollow d-inline-block">Edit</a>
+                    <a href="{{ url_for('public_trader_profile', username=current_user.username) }}" class="cm-btn-unfollow d-inline-block">Preview</a>
+                </div>
+            </div>
+        </div>
+
+        <p class="cm-disclaimer">Community posts are voluntary notes from real traders. Nothing here is advice.</p>
+    </div>
 </div>
 {% endblock %}
