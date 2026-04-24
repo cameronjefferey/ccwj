@@ -2,6 +2,34 @@
 
 {% block head %}
 <style>
+    /* Hero (matches /position/<symbol> styling for consistency) */
+    .pos-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.25rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+    }
+    .pos-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .15rem; }
+    .pos-hero .hero-sub { color: rgba(255,255,255,.8); font-size: .9rem; }
+    .pos-hero .hero-chip {
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .25rem .6rem; border-radius: 999px;
+        background: rgba(255,255,255,.12); color: #fff;
+        font-size: .72rem; font-weight: 600; letter-spacing: .2px;
+    }
+    .pos-hero .hero-chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .pos-hero .hero-chip .dot.open   { background: #22c55e; }
+    .pos-hero .hero-chip .dot.closed { background: #9ca3af; }
+    .pos-hero .hero-chip .dot.mixed  { background: #fbbf24; }
+    .pos-hero .hero-kpi .label {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .6px;
+        color: rgba(255,255,255,.7);
+    }
+    .pos-hero .hero-kpi .value { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .pos-hero .hero-kpi .value.pos { color: #4ade80; }
+    .pos-hero .hero-kpi .value.neg { color: #f87171; }
+
     /* Strategy color badges */
     .badge-strategy {
         font-size: .75rem;
@@ -34,7 +62,81 @@
 {% endblock %}
 
 {% block content %}
-<h4 class="mb-3 fw-bold">Positions Summary</h4>
+
+{# ── Hero ─────────────────────────────────────────────────────────── #}
+{% set _acct_count = user_accounts|length if user_accounts else 0 %}
+{% set _open_ct    = status_counts.Open    if status_counts else 0 %}
+{% set _closed_ct  = status_counts.Closed  if status_counts else 0 %}
+{% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
+<div class="pos-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <h1>Your Positions</h1>
+            <div class="hero-sub">
+                {% if _acct_count == 0 %}
+                    No accounts linked yet &mdash;
+                    <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a>
+                    or connect Schwab to get started.
+                {% elif _acct_count == 1 %}
+                    {{ user_accounts[0] }}
+                    &middot; your current and historical options strategies.
+                {% else %}
+                    Across {{ _acct_count }} account{{ '' if _acct_count == 1 else 's' }}:
+                    {{ user_accounts | join(', ') }}.
+                {% endif %}
+            </div>
+            {% if _acct_count > 0 %}
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <span class="hero-chip"><span class="dot open"></span>{{ _open_ct }} open</span>
+                <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
+                {% if _mixed_ct %}
+                <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
+                {% endif %}
+                {% if date_filtered %}
+                    <span class="hero-chip">
+                        {% if selected_start_date and selected_end_date %}
+                            {{ selected_start_date }} &mdash; {{ selected_end_date }}
+                        {% elif selected_start_date %}
+                            since {{ selected_start_date }}
+                        {% else %}
+                            through {{ selected_end_date }}
+                        {% endif %}
+                    </span>
+                {% else %}
+                    <span class="hero-chip">All time</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        {% if kpis and _acct_count > 0 %}
+        <div class="d-flex gap-4 flex-wrap">
+            <div class="hero-kpi">
+                <div class="label">Total Return</div>
+                <div class="value {{ 'pos' if kpis.total_return >= 0 else 'neg' }}">
+                    ${{ "{:,.0f}".format(kpis.total_return) }}
+                </div>
+            </div>
+            <div class="hero-kpi">
+                <div class="label">Realized</div>
+                <div class="value {{ 'pos' if kpis.realized_pnl >= 0 else 'neg' }}">
+                    ${{ "{:,.0f}".format(kpis.realized_pnl) }}
+                </div>
+            </div>
+            <div class="hero-kpi">
+                <div class="label">Unrealized</div>
+                <div class="value {{ 'pos' if kpis.unrealized_pnl >= 0 else 'neg' }}">
+                    ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+                </div>
+            </div>
+            <div class="hero-kpi">
+                <div class="label">Win Rate</div>
+                <div class="value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
 
 {% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_symbol or selected_start_date or selected_end_date) %}
 <div class="alert alert-warning">
@@ -80,7 +182,7 @@
             {% endfor %}
         </select>
     </div>
-    {% set status_label = 'All' if not selected_statuses or selected_statuses|length == 3 else selected_statuses|join(', ') %}
+    {% set status_label = 'All statuses' if not selected_statuses or selected_statuses|length >= 3 else selected_statuses|join(', ') %}
     <div class="col-auto">
         <label class="form-label small fw-bold mb-1 d-block">Status</label>
         <div class="dropdown">
@@ -122,7 +224,15 @@
         <a href="/positions" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
     </div>
     <div class="col-12 d-flex flex-wrap gap-1 mt-1">
-        <span class="small text-muted align-self-center me-1">Quick:</span>
+        {% set _all_statuses = (not selected_statuses) or (selected_statuses|length >= 3) %}
+        <span class="small text-muted align-self-center me-1">Status:</span>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) }}"
+           class="btn btn-sm py-0 {{ 'btn-primary' if _all_statuses else 'btn-outline-secondary' }}">All</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}"
+           class="btn btn-sm py-0 {{ 'btn-primary' if (not _all_statuses and selected_statuses == ['Open']) else 'btn-outline-secondary' }}">Open only</a>
+        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}"
+           class="btn btn-sm py-0 {{ 'btn-primary' if (not _all_statuses and selected_statuses == ['Closed']) else 'btn-outline-secondary' }}">History</a>
+        <span class="small text-muted align-self-center ms-3 me-1">Dates:</span>
         <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">Last 30 days</a>
         <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today.replace(month=1, day=1)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">YTD</a>
         <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol) }}" class="btn btn-sm btn-outline-secondary py-0">All time</a>
@@ -144,39 +254,9 @@
 </div>
 {% endif %}
 
-{# ── KPI Cards ────────────────────────────────────────────────────── #}
-{% if kpis %}
+{# ── Secondary stats (premium / positions count / trades) ────────── #}
+{% if kpis and accounts and accounts|length > 0 %}
 <div class="row g-3 mb-4">
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Total Return</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.total_return) }}
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Realized P&amp;L</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.realized_pnl) }}
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Unrealized P&amp;L</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Win Rate</div>
-            <div class="kpi-value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
-        </div>
-    </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Premium Collected</div>
@@ -187,6 +267,12 @@
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Positions</div>
             <div class="kpi-value">{{ kpis.num_positions }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Trades</div>
+            <div class="kpi-value">{{ "{:,}".format(kpis.total_trades) }}</div>
         </div>
     </div>
 </div>

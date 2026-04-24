@@ -319,9 +319,11 @@ ERROR_DEFAULTS = dict(
     accounts=[],
     strategies=[],
     symbols=[],
+    user_accounts=[],
+    status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
     selected_account="",
     selected_strategy="",
-    selected_status="",
+    selected_statuses=[],
     selected_symbol="",
     selected_start_date="",
     selected_end_date="",
@@ -534,10 +536,9 @@ def positions():
     # ------------------------------------------------------------------
     selected_account = request.args.get("account", "")
     selected_strategy = request.args.get("strategy", "")
-    # Allow multi-select status; default to Open when no explicit filter
+    # Multi-select status; default is all (current + history) so users see their
+    # full book unless they explicitly narrow it.
     selected_statuses = request.args.getlist("status")
-    if not selected_statuses:
-        selected_statuses = ["Open"]
     selected_symbol = request.args.get("symbol", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
@@ -590,12 +591,24 @@ def positions():
 
     # ------------------------------------------------------------------
     # 4. Safety-belt filter (SQL already filtered by account)
+    #
+    # IMPORTANT tenancy rule (keep): the hero, KPIs, chart, and every table
+    # below MUST read off DataFrames that have already been scoped to the
+    # logged-in user's accounts. Do not re-introduce paths that compute from
+    # the unscoped df. See .cursor/rules/bigquery-tenant-isolation.mdc.
     # ------------------------------------------------------------------
     df = _filter_df_by_accounts(df, user_accounts)
 
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
+
+    # Status counts for hero/filters (from user-scoped df, before other filters)
+    status_counts = {"Open": 0, "Closed": 0, "Mixed": 0}
+    if "status" in df.columns and not df.empty:
+        vc = df["status"].fillna("").value_counts()
+        for k in list(status_counts.keys()):
+            status_counts[k] = int(vc.get(k, 0))
 
     filtered = df.copy()
     if selected_account:
@@ -711,6 +724,8 @@ def positions():
         accounts=accounts,
         strategies=strategies,
         symbols=symbols,
+        user_accounts=accounts,
+        status_counts=status_counts,
         selected_account=selected_account,
         selected_strategy=selected_strategy,
         selected_statuses=selected_statuses,
@@ -1016,6 +1031,9 @@ def _merge_position_strategy_breakdown(
         out = extra_df
     else:
         extra_df = extra_df.reindex(columns=list(summary_df.columns))
+        # Drop all-NA columns from extra_df before concat to avoid pandas 2.x
+        # FutureWarning about dtype-inferring through empty/all-NA columns.
+        extra_df = extra_df.dropna(axis=1, how="all")
         out = pd.concat([summary_df, extra_df], ignore_index=True)
 
     if "status" in out.columns:
