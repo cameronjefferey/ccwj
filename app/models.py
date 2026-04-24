@@ -153,6 +153,8 @@ def init_db():
             symbol              TEXT,
             strategy            TEXT,
             attached_fingerprint TEXT,
+            attachment_kind     TEXT,
+            attachment_json     TEXT,
             visibility          TEXT NOT NULL DEFAULT 'followers',
             created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -193,6 +195,11 @@ def _migrate_community_posts_strategy_column():
         execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS strategy TEXT")
     except Exception as e:
         _log.warning("community_posts strategy migration skipped: %s", e)
+    try:
+        execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_kind TEXT")
+        execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_json TEXT")
+    except Exception as e:
+        _log.warning("community_posts attachment migration skipped: %s", e)
 
 
 class User(UserMixin):
