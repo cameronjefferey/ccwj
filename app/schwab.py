@@ -726,6 +726,24 @@ def _run_sync(user_id, client, transaction_lookback_days=None):
     for tx in tx_list:
         transactions.extend(_schwab_trade_rows(tx))
 
+    # Cross-transaction wash-pair cleanup.
+    #
+    # Schwab's assignment flow frequently ships *two* separate TRADE
+    # transactions for the same underlying on the same day: one with a
+    # negative-amount equity leg (the real sell at strike) and one with the
+    # equal-and-opposite positive-amount equity leg (a bookkeeping journal).
+    # Left in place, the pair (Buy, Sell) at identical price nets to zero and
+    # the strategy engine misses the covered-call exit entirely — cost basis
+    # on the equity session never closes and short calls get mis-classified
+    # as Naked Call.
+    #
+    # Real day-trades almost never buy and sell the same symbol at exactly
+    # the same price, so we drop the Buy side of any (symbol, qty, price,
+    # date) pair where amounts cancel. Put-assignment cases would need the
+    # opposite rule (drop Sell, keep Buy); we haven't hit one in this
+    # dataset yet, so leave that as an explicit TODO.
+    transactions = _schwab_collapse_wash_pairs(transactions)
+
     import pandas as pd
 
     tx_df = pd.DataFrame(transactions) if transactions else None
@@ -996,6 +1014,64 @@ def _schwab_trade_rows(tx):
             }
         )
     return rows
+
+
+def _schwab_collapse_wash_pairs(rows):
+    """
+    Drop the bookkeeping leg of same-day covered-call assignment wash pairs.
+
+    A wash pair is (Buy, Sell) rows on the same date, same symbol, same
+    quantity, same price, with amounts that are exact negatives of each
+    other. Real day-trades effectively never buy and sell the same symbol
+    at exactly the same price, so this signature is specific to the
+    journal entry Schwab emits alongside a real assignment sale.
+
+    We keep the Sell (economically real: shares went out, cash came in at
+    strike) and drop the Buy (journal noise). This is the correct rule for
+    call assignments; for put assignments the real leg is the Buy — we
+    haven't observed that case yet in this codebase but flag it here.
+    """
+    if not rows:
+        return rows
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    for i, r in enumerate(rows):
+        sym = str(r.get("symbol") or "").strip()
+        try:
+            qty = float(r.get("quantity") or 0)
+        except (TypeError, ValueError):
+            qty = 0.0
+        try:
+            price = float(r.get("price") or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        date = str(r.get("transaction_date") or "").strip()
+        if not sym or not date or qty == 0 or price == 0:
+            continue
+        key = (sym, round(qty, 6), round(price, 6), date)
+        groups[key].append(i)
+
+    drop = set()
+    for idxs in groups.values():
+        if len(idxs) < 2:
+            continue
+        buys = [i for i in idxs if str(rows[i].get("action") or "") == "Buy"]
+        sells = [i for i in idxs if str(rows[i].get("action") or "") == "Sell"]
+        while buys and sells:
+            bi = buys.pop(0)
+            si = sells.pop(0)
+            try:
+                b_amt = float(rows[bi].get("amount") or 0)
+                s_amt = float(rows[si].get("amount") or 0)
+            except (TypeError, ValueError):
+                continue
+            if abs(b_amt + s_amt) < 0.01:
+                drop.add(bi)  # keep Sell (economic), drop Buy (journal)
+
+    if not drop:
+        return rows
+    return [r for i, r in enumerate(rows) if i not in drop]
 
 
 def _format_date(dt):

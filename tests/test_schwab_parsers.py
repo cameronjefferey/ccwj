@@ -6,6 +6,7 @@ Action='Other' with empty symbols — tests here guard against that regression.
 from app.schwab import (
     _schwab_action_from_effect,
     _schwab_asset_type_to_security_type,
+    _schwab_collapse_wash_pairs,
     _schwab_trade_rows,
 )
 
@@ -240,6 +241,48 @@ def test_trade_rows_option_expiration_emits_expired():
     rows = _schwab_trade_rows(tx)
     assert len(rows) == 1
     assert rows[0]["action"] == "Expired"
+
+
+def test_collapse_wash_pairs_drops_buy_keeps_sell():
+    rows = [
+        {"transaction_date": "01/27/2025", "action": "Sell", "symbol": "LUNR", "description": "LUNR", "quantity": 1500, "price": 23.0, "fees": "", "amount": 34500.0},
+        {"transaction_date": "01/27/2025", "action": "Buy",  "symbol": "LUNR", "description": "LUNR", "quantity": 1500, "price": 23.0, "fees": "", "amount": -34500.0},
+    ]
+    out = _schwab_collapse_wash_pairs(rows)
+    assert len(out) == 1
+    assert out[0]["action"] == "Sell"
+    assert out[0]["amount"] == 34500.0
+
+
+def test_collapse_wash_pairs_leaves_unmatched_pair_alone():
+    rows = [
+        {"transaction_date": "01/27/2025", "action": "Sell", "symbol": "LUNR", "description": "LUNR", "quantity": 1500, "price": 23.0, "fees": "", "amount": 34500.0},
+        {"transaction_date": "01/27/2025", "action": "Buy",  "symbol": "LUNR", "description": "LUNR", "quantity": 1500, "price": 22.0, "fees": "", "amount": -33000.0},
+    ]
+    out = _schwab_collapse_wash_pairs(rows)
+    assert len(out) == 2
+
+
+def test_collapse_wash_pairs_does_not_drop_real_scalp_with_different_prices():
+    rows = [
+        {"transaction_date": "03/01/2025", "action": "Buy",  "symbol": "AAPL", "description": "AAPL", "quantity": 100, "price": 150.0, "fees": "", "amount": -15000.0},
+        {"transaction_date": "03/01/2025", "action": "Sell", "symbol": "AAPL", "description": "AAPL", "quantity": 100, "price": 151.0, "fees": "", "amount": 15100.0},
+    ]
+    out = _schwab_collapse_wash_pairs(rows)
+    assert len(out) == 2
+
+
+def test_collapse_wash_pairs_handles_multiple_symbols_same_day():
+    rows = [
+        {"transaction_date": "04/06/2026", "action": "Buy",  "symbol": "RKLB", "description": "RKLB", "quantity": 100, "price": 63.0, "fees": "", "amount": -6300.0},
+        {"transaction_date": "04/06/2026", "action": "Sell", "symbol": "RKLB", "description": "RKLB", "quantity": 100, "price": 63.0, "fees": "", "amount": 6300.0},
+        {"transaction_date": "04/06/2026", "action": "Buy",  "symbol": "CRWV", "description": "CRWV", "quantity": 100, "price": 78.0, "fees": "", "amount": -7800.0},
+        {"transaction_date": "04/06/2026", "action": "Sell", "symbol": "CRWV", "description": "CRWV", "quantity": 100, "price": 78.0, "fees": "", "amount": 7800.0},
+    ]
+    out = _schwab_collapse_wash_pairs(rows)
+    assert len(out) == 2
+    actions = sorted(r["action"] for r in out)
+    assert actions == ["Sell", "Sell"]
 
 
 def test_trade_rows_legacy_transactionitem_fallback_still_parsed():
