@@ -892,32 +892,40 @@ def _aggregate_weekly_rows(rows):
         "trades_opened": sum(r.get("trades_opened", 0) for r in rows),
     }
 
-    # Best trade: highest PnL across accounts
-    best_candidates = [r for r in rows if r.get("best_pnl") is not None]
+    # Best trade: highest PnL across accounts. Skip rows where the symbol is
+    # missing — without a symbol we can't link to /position/<symbol> and
+    # url_for() will raise BuildError at render time.
+    best_candidates = [
+        r for r in rows
+        if r.get("best_pnl") is not None and r.get("best_symbol")
+    ]
     if best_candidates:
         best = max(best_candidates, key=lambda r: float(r.get("best_pnl", 0)))
         summary["best_trade"] = {
-            "symbol": best.get("best_symbol", ""),
-            "strategy": best.get("best_strategy", ""),
-            "trade_symbol": best.get("best_trade_symbol", ""),
+            "symbol": best.get("best_symbol") or "",
+            "strategy": best.get("best_strategy") or "",
+            "trade_symbol": best.get("best_trade_symbol") or "",
             "total_pnl": float(best.get("best_pnl", 0)),
-            "close_date": str(best.get("best_close_date", "")),
-            "account": best.get("account", ""),
+            "close_date": str(best.get("best_close_date") or ""),
+            "account": best.get("account") or "",
         }
     else:
         summary["best_trade"] = None
 
-    # Worst trade: lowest PnL across accounts
-    worst_candidates = [r for r in rows if r.get("worst_pnl") is not None]
+    # Worst trade: lowest PnL across accounts. Same symbol-required guard.
+    worst_candidates = [
+        r for r in rows
+        if r.get("worst_pnl") is not None and r.get("worst_symbol")
+    ]
     if worst_candidates:
         worst = min(worst_candidates, key=lambda r: float(r.get("worst_pnl", 0)))
         summary["worst_trade"] = {
-            "symbol": worst.get("worst_symbol", ""),
-            "strategy": worst.get("worst_strategy", ""),
-            "trade_symbol": worst.get("worst_trade_symbol", ""),
+            "symbol": worst.get("worst_symbol") or "",
+            "strategy": worst.get("worst_strategy") or "",
+            "trade_symbol": worst.get("worst_trade_symbol") or "",
             "total_pnl": float(worst.get("worst_pnl", 0)),
-            "close_date": str(worst.get("worst_close_date", "")),
-            "account": worst.get("account", ""),
+            "close_date": str(worst.get("worst_close_date") or ""),
+            "account": worst.get("account") or "",
         }
     else:
         summary["worst_trade"] = None

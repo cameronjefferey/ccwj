@@ -848,25 +848,33 @@
         <div class="col-md-6">
             <div class="trade-highlight best">
                 <div class="small text-muted mb-1">Best Trade</div>
+                {% if review.best_trade.symbol %}
                 <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}"
                    class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
                     {{ review.best_trade.symbol }}
                 </a>
-                <div class="small text-muted mb-2">{{ review.best_trade.strategy }} &middot; Closed {{ review.best_trade.close_date }}</div>
-                <div class="h4 fw-bold text-positive mb-2">${{ "{:,.2f}".format(review.best_trade.total_pnl) }}</div>
+                {% else %}
+                <span class="fw-bold d-block mb-1" style="font-size:1.1rem">—</span>
+                {% endif %}
+                <div class="small text-muted mb-2">{{ review.best_trade.strategy or '' }}{% if review.best_trade.close_date %} &middot; Closed {{ review.best_trade.close_date }}{% endif %}</div>
+                <div class="h4 fw-bold text-positive mb-2">${{ "{:,.2f}".format(review.best_trade.total_pnl or 0) }}</div>
             </div>
         </div>
         {% endif %}
-        {% if review.worst_trade and review.worst_trade.total_pnl < 0 %}
+        {% if review.worst_trade and (review.worst_trade.total_pnl or 0) < 0 %}
         <div class="col-md-6">
             <div class="trade-highlight worst">
                 <div class="small text-muted mb-1">Worst Trade</div>
+                {% if review.worst_trade.symbol %}
                 <a href="{{ url_for('position_detail', symbol=review.worst_trade.symbol) }}"
                    class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
                     {{ review.worst_trade.symbol }}
                 </a>
-                <div class="small text-muted mb-2">{{ review.worst_trade.strategy }} &middot; Closed {{ review.worst_trade.close_date }}</div>
-                <div class="h4 fw-bold text-negative mb-2">${{ "{:,.2f}".format(review.worst_trade.total_pnl) }}</div>
+                {% else %}
+                <span class="fw-bold d-block mb-1" style="font-size:1.1rem">—</span>
+                {% endif %}
+                <div class="small text-muted mb-2">{{ review.worst_trade.strategy or '' }}{% if review.worst_trade.close_date %} &middot; Closed {{ review.worst_trade.close_date }}{% endif %}</div>
+                <div class="h4 fw-bold text-negative mb-2">${{ "{:,.2f}".format(review.worst_trade.total_pnl or 0) }}</div>
             </div>
         </div>
         {% endif %}
