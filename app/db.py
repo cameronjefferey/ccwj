@@ -103,36 +103,38 @@ def _build_pool() -> ConnectionPool:
             "DATABASE_URL is not set. Add it to .env, e.g.\n"
             "  DATABASE_URL=postgresql://user:pass@localhost:5432/happytrader"
         )
-    # Managed Postgres (e.g. Render) silently kills idle TCP sessions,
-    # often well under 5 minutes. Two coordinated defenses:
-    #   1. min_size=0 — don't try to keep idle conns "warm". After a long
-    #      idle period, "warm" conns are actually dead at the network layer
-    #      and the pool's pre-ping just reports them all bad at once,
-    #      timing the request out instead of opening a fresh one.
-    #   2. TCP keepalives — heartbeats on whatever idle conns *do* exist,
-    #      so the OS notices a dead route long before psycopg does.
-    # Plus shorter max_idle so anything we do keep is recycled before
-    # Render's load balancer kills it.
+    # Managed Postgres (e.g. Render) silently kills idle TCP sessions, and
+    # OOM-killed gunicorn workers can leave their connections held server-side
+    # for minutes (Postgres only times them out when its own keepalives fire).
+    # That can starve a fresh worker on boot. Defenses:
+    #   1. Modest pool ceiling (max_size=4 per worker × 2 workers = 8 conns).
+    #      Render's smaller Postgres tiers cap connections aggressively, and
+    #      a SIGKILL'd worker leaves orphans behind.
+    #   2. TCP keepalives so the OS reaps dead conns before psycopg does.
+    #   3. Shorter max_idle so idle conns recycle before Render's edge kills
+    #      them at the network layer.
+    #   4. Tunable min_size — defaults to 1 (one warm conn so the first
+    #      request doesn't pay full TLS handshake), low enough that even
+    #      after a worker SIGKILL we don't crowd Postgres on the next boot.
     max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "120"))
     max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
     # pool timeout: how long a request waits for a free connection.
     # Keep this WELL below gunicorn's --timeout (120s) so a stuck pool
     # surfaces as a fast 500 instead of hanging the worker until gunicorn
-    # SIGKILLs it. 10s is plenty for normal contention; bump via env if
-    # you see legitimate burst PoolTimeouts.
+    # SIGKILLs it.
     pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "10"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
-        # Don't pre-warm idle connections. For a low-traffic app, the cost
-        # of a fresh connect on cold cache is tiny vs. a request hanging
-        # waiting for the pool to discover all its "warm" conns are dead.
-        min_size=int(os.environ.get("DATABASE_POOL_MIN", "0")),
-        max_size=int(os.environ.get("DATABASE_POOL_MAX", "12")),
+        min_size=int(os.environ.get("DATABASE_POOL_MIN", "1")),
+        # CRITICAL: keep this small. With 2 gunicorn workers, total conns =
+        # 2 × max_size; an OOM-killed worker leaves its conns orphaned on the
+        # server until Postgres reaps them. Raising this risks "too many
+        # connections" on a fresh worker boot.
+        max_size=int(os.environ.get("DATABASE_POOL_MAX", "4")),
         kwargs={
             "row_factory": dict_row,
-            # TCP-level keepalives so idle conns don't get silently dropped
-            # by Render's network. After 60s of idle, send a probe every 10s
-            # up to 5 times before declaring the conn dead.
+            # TCP-level keepalives so the OS notices a dead route long before
+            # psycopg does. After 60s of idle, probe every 10s up to 5 times.
             "keepalives": 1,
             "keepalives_idle": 60,
             "keepalives_interval": 10,
