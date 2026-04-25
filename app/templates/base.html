@@ -97,6 +97,20 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+    {% if session.get('_impersonator_id') %}
+    <div style="background: #fef08a; color: #713f12; padding: .55rem 1rem;
+                border-bottom: 2px solid #f59e0b; font-weight: 600; font-size: .9rem;
+                display: flex; align-items: center; gap: 1rem; justify-content: center;
+                flex-wrap: wrap;">
+        <span>You are viewing the site as
+              <strong>@{{ current_user.username }}</strong>
+              (admin impersonation).</span>
+        <a href="{{ url_for('admin_impersonate_stop') }}"
+           style="background: #713f12; color: #fef9c3; padding: .25rem .85rem;
+                  border-radius: 999px; text-decoration: none; font-weight: 700;
+                  font-size: .82rem;">Stop impersonating</a>
+    </div>
+    {% endif %}
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
             <a class="navbar-brand" href="{{ url_for('weekly_review') if current_user.is_authenticated else url_for('index') }}">

@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .aa-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        color: #fff; padding: 1.4rem 1.6rem; border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .aa-hero h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+    .aa-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; }
+
+    .aa-section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+    .aa-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .15rem; color: #1c1917; }
+    .aa-section .aa-sub { color: #78716c; font-size: .8rem; margin-bottom: .9rem; }
+    .aa-empty { color: #a8a29e; font-size: .85rem; padding: .5rem 0; }
+    .aa-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: .6rem .8rem; border-radius: 8px; font-family: monospace; font-size: .8rem; }
+
+    .aa-form { display: flex; gap: .6rem; flex-wrap: wrap; align-items: end; }
+    .aa-form label { font-size: .72rem; font-weight: 600; color: #57534e; text-transform: uppercase; letter-spacing: .04em; display: block; margin-bottom: .2rem; }
+    .aa-form input { border: 1px solid #d6d3d1; border-radius: 8px; padding: .5rem .75rem; font-size: .9rem; min-width: 180px; }
+    .aa-form button { background: #1c1917; color: #fff; border: none; padding: .55rem 1.2rem; border-radius: 8px; font-weight: 700; font-size: .88rem; cursor: pointer; }
+    .aa-form button.alt { background: #0369a1; }
+
+    /* Card-style summary */
+    .aa-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: .9rem; }
+    .aa-card { border: 1px solid #e7e5e4; border-radius: 10px; padding: .85rem 1rem; background: #fafaf9; }
+    .aa-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
+    .aa-card-strategy { font-weight: 700; font-size: .95rem; color: #1c1917; }
+    .aa-card-status { font-size: .68rem; font-weight: 700; text-transform: uppercase; padding: .15rem .55rem; border-radius: 999px; letter-spacing: .04em; }
+    .aa-card-status.open { background: #dbeafe; color: #1e40af; }
+    .aa-card-status.closed { background: #e7e5e4; color: #44403c; }
+    .aa-stat-row { display: flex; justify-content: space-between; padding: .25rem 0; font-size: .85rem; border-top: 1px dashed #e7e5e4; }
+    .aa-stat-row:first-of-type { border-top: none; }
+    .aa-stat-row .lbl { color: #78716c; }
+    .aa-stat-row .val { font-variant-numeric: tabular-nums; font-weight: 600; color: #1c1917; }
+
+    /* Tables */
+    .aa-table { width: 100%; font-size: .82rem; border-collapse: collapse; }
+    .aa-table th { text-transform: uppercase; font-size: .65rem; letter-spacing: .04em; color: #57534e; background: #fafaf9; padding: .45rem .55rem; text-align: left; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .aa-table td { padding: .4rem .55rem; border-bottom: 1px solid #f5f5f4; font-variant-numeric: tabular-nums; vertical-align: top; }
+    .aa-table tr:hover td { background: #fafaf9; }
+    .aa-table .num { text-align: right; }
+    .aa-table .muted { color: #a8a29e; }
+
+    .aa-pos { color: #15803d; font-weight: 600; }
+    .aa-neg { color: #b91c1c; font-weight: 600; }
+
+    .aa-impersonate-card {
+        background: #f0f9ff; border: 1px solid #bae6fd;
+        padding: .65rem .9rem; border-radius: 10px; margin: 0 0 1rem;
+        display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem;
+    }
+    .aa-impersonate-card .pill {
+        background: #0369a1; color: #fff; padding: .25rem .8rem;
+        border-radius: 999px; text-decoration: none; font-size: .78rem;
+        font-weight: 700;
+    }
+    .aa-impersonate-card .pill:hover { background: #075985; }
+
+    .aa-warn-card {
+        background: #fef3c7; border: 1px solid #fde68a;
+        padding: .65rem .9rem; border-radius: 10px; margin: 0 0 1rem;
+        font-size: .85rem; color: #78350f;
+    }
+    .aa-warn-card code { background: rgba(120,53,15,.08); padding: .05rem .4rem; border-radius: 4px; }
+
+    .aa-quick-form { display: flex; gap: .5rem; align-items: center; }
+    .aa-quick-form input { font-size: .82rem; padding: .3rem .55rem; min-width: 130px; border-radius: 6px; border: 1px solid #d6d3d1; }
+    .aa-quick-form button { background: #0369a1; color: #fff; border: none; padding: .35rem .85rem; border-radius: 999px; font-size: .78rem; font-weight: 700; cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="aa-hero">
+    <h1>Position audit</h1>
+    <p>Side-by-side view of every transaction, every leg, and the rolled-up summary for one (account, symbol). Use this to verify what a user is seeing matches the underlying truth in BigQuery.</p>
+</div>
+
+{# Always-on "impersonate any user" tool — independent of the audit query #}
+<div class="aa-section" style="padding: .85rem 1rem;">
+    <h2 style="margin-bottom: .55rem;">Impersonate any user</h2>
+    <form class="aa-quick-form" method="get" action="/admin/impersonate/__sentinel__"
+          onsubmit="event.preventDefault(); var u=this.username.value.trim(); if(u){ window.location='/admin/impersonate/'+encodeURIComponent(u); }">
+        <input name="username" type="text" placeholder="username" required autocomplete="off">
+        <button type="submit">Impersonate</button>
+        <span class="aa-sub" style="margin: 0;">— a yellow banner will appear; click "Stop impersonating" to switch back.</span>
+    </form>
+</div>
+
+<div class="aa-section">
+    <h2>Audit a position</h2>
+    <div class="aa-sub">Look up a (broker account, symbol) pair.</div>
+    <form class="aa-form" method="get" action="{{ url_for('admin_audit') }}">
+        <div>
+            <label for="aa-account">Account</label>
+            <input id="aa-account" type="text" name="account" value="{{ account or '' }}" placeholder="Schwab ••••0044" required>
+        </div>
+        <div>
+            <label for="aa-symbol">Symbol</label>
+            <input id="aa-symbol" type="text" name="symbol" value="{{ symbol or '' }}" placeholder="BE" required>
+        </div>
+        <button type="submit">Audit</button>
+    </form>
+</div>
+
+{% if account and linked_users %}
+<div class="aa-impersonate-card">
+    <strong>Linked users for {{ account }}:</strong>
+    {% for u in linked_users %}
+        <span>@{{ u.username }}</span>
+        <a class="pill" href="{{ url_for('admin_impersonate', username=u.username) }}">Impersonate @{{ u.username }}</a>
+    {% endfor %}
+</div>
+{% elif account %}
+<div class="aa-warn-card">
+    No Flask user has <code>{{ account }}</code> linked in <code>user_accounts</code>.
+    The data lives in BigQuery, but no app user is wired up to see it.
+    Use the search above to impersonate by username instead.
+</div>
+{% endif %}
+
+{% if account and symbol %}
+
+{# ──────────────────────────────────────────────────────────────────── #}
+{# Top-of-page rollup: P&L by security type (Equity vs Options)         #}
+{# ──────────────────────────────────────────────────────────────────── #}
+{% if by_kind_rows and not by_kind_rows[0].get("_error") %}
+{% set total_pnl = by_kind_rows | sum(attribute='total_pnl') %}
+{% set total_realized = by_kind_rows | sum(attribute='realized_pnl') %}
+{% set total_unrealized = by_kind_rows | sum(attribute='unrealized_pnl') %}
+<div class="aa-section">
+    <h2>P&amp;L by security type <span style="color:#78716c;font-weight:500;">— {{ account }} / {{ symbol }}</span></h2>
+    <div class="aa-sub">High-level rollup. Equity vs Options P&amp;L, plus the combined position-level total.</div>
+
+    <div class="aa-cards">
+        <div class="aa-card" style="background: #ecfeff; border-color: #a5f3fc;">
+            <div class="aa-card-head">
+                <div class="aa-card-strategy">Combined</div>
+                <div class="aa-card-status" style="background:#0e7490;color:#fff;">TOTAL</div>
+            </div>
+            <div class="aa-stat-row"><span class="lbl">Total P&amp;L</span>
+                <span class="val {% if total_pnl < 0 %}aa-neg{% elif total_pnl > 0 %}aa-pos{% endif %}" style="font-size:1.05rem;">{{ money(total_pnl) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Realized</span>
+                <span class="val {% if total_realized < 0 %}aa-neg{% elif total_realized > 0 %}aa-pos{% endif %}">{{ money(total_realized) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Unrealized</span>
+                <span class="val {% if total_unrealized < 0 %}aa-neg{% elif total_unrealized > 0 %}aa-pos{% endif %}">{{ money(total_unrealized) }}</span></div>
+        </div>
+
+        {% for r in by_kind_rows %}
+        <div class="aa-card">
+            <div class="aa-card-head">
+                <div class="aa-card-strategy">{{ r.kind }}</div>
+                <div class="aa-card-status">{{ r.num_legs }} leg{% if r.num_legs != 1 %}s{% endif %}</div>
+            </div>
+            <div class="aa-stat-row"><span class="lbl">Total P&amp;L</span>
+                <span class="val {% if (r.total_pnl or 0) < 0 %}aa-neg{% elif (r.total_pnl or 0) > 0 %}aa-pos{% endif %}" style="font-size:1.05rem;">{{ money(r.total_pnl) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Realized</span>
+                <span class="val {% if (r.realized_pnl or 0) < 0 %}aa-neg{% elif (r.realized_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.realized_pnl) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Unrealized</span>
+                <span class="val {% if (r.unrealized_pnl or 0) < 0 %}aa-neg{% elif (r.unrealized_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.unrealized_pnl) }}</span></div>
+            {% if r.premium_received or r.premium_paid %}
+            <div class="aa-stat-row"><span class="lbl">Premium received</span>
+                <span class="val">{{ money(r.premium_received) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Premium paid</span>
+                <span class="val">{{ money(r.premium_paid) }}</span></div>
+            {% endif %}
+            <div class="aa-stat-row"><span class="lbl">Net cash flow</span>
+                <span class="val {% if (r.net_cash_flow or 0) < 0 %}aa-neg{% elif (r.net_cash_flow or 0) > 0 %}aa-pos{% endif %}">{{ money(r.net_cash_flow) }}</span></div>
+            <div class="aa-stat-row"><span class="lbl">Open / closed</span>
+                <span class="val">{{ r.num_open or 0 }} open / {{ r.num_closed or 0 }} closed</span></div>
+            {% if r.num_closed %}
+            <div class="aa-stat-row"><span class="lbl">Win / loss</span>
+                <span class="val">{{ r.num_winners or 0 }} W / {{ r.num_losers or 0 }} L</span></div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# ──────────────────────────────────────────────────────────────────── #}
+{# positions_summary — rendered as readable cards, one per row          #}
+{# ──────────────────────────────────────────────────────────────────── #}
+<div class="aa-section">
+    <h2>positions_summary <span style="color:#78716c;font-weight:500;">— breakdown by strategy</span></h2>
+    <div class="aa-sub">Source of the row shown on /positions and the hero on /position/{{ symbol }}.</div>
+    {% if summary_rows and summary_rows[0].get("_error") %}
+        <div class="aa-error">BigQuery error: {{ summary_rows[0]._error }}</div>
+    {% elif summary_rows %}
+        <div class="aa-cards">
+        {% for r in summary_rows %}
+            <div class="aa-card">
+                <div class="aa-card-head">
+                    <div class="aa-card-strategy">{{ r.strategy or '—' }}</div>
+                    <div class="aa-card-status {{ (r.status or '')|lower }}">{{ r.status or '—' }}</div>
+                </div>
+
+                <div class="aa-stat-row"><span class="lbl">Total P&amp;L</span>
+                    <span class="val {% if (r.total_pnl or 0) < 0 %}aa-neg{% elif (r.total_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.total_pnl) }}</span></div>
+                <div class="aa-stat-row"><span class="lbl">Realized</span>
+                    <span class="val {% if (r.realized_pnl or 0) < 0 %}aa-neg{% elif (r.realized_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.realized_pnl) }}</span></div>
+                <div class="aa-stat-row"><span class="lbl">Unrealized</span>
+                    <span class="val {% if (r.unrealized_pnl or 0) < 0 %}aa-neg{% elif (r.unrealized_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.unrealized_pnl) }}</span></div>
+
+                {% if r.total_premium_received or r.total_premium_paid %}
+                <div class="aa-stat-row"><span class="lbl">Premium received</span>
+                    <span class="val">{{ money(r.total_premium_received) }}</span></div>
+                <div class="aa-stat-row"><span class="lbl">Premium paid</span>
+                    <span class="val">{{ money(r.total_premium_paid) }}</span></div>
+                {% endif %}
+
+                <div class="aa-stat-row"><span class="lbl">Trade groups</span>
+                    <span class="val">{{ r.num_trade_groups or 0 }} ({{ r.num_individual_trades or 0 }} txns)</span></div>
+                <div class="aa-stat-row"><span class="lbl">Win / loss</span>
+                    <span class="val">{{ r.num_winners or 0 }} W / {{ r.num_losers or 0 }} L
+                        {% if r.win_rate is not none %} <span class="muted">({{ "%.0f"|format(r.win_rate * 100) }}%)</span>{% endif %}
+                    </span></div>
+                <div class="aa-stat-row"><span class="lbl">Avg P&amp;L per trade</span>
+                    <span class="val">{{ money(r.avg_pnl_per_trade) }}</span></div>
+                <div class="aa-stat-row"><span class="lbl">Avg days in trade</span>
+                    <span class="val">{{ r.avg_days_in_trade if r.avg_days_in_trade is not none else '—' }}</span></div>
+                <div class="aa-stat-row"><span class="lbl">First → last</span>
+                    <span class="val">{{ r.first_trade_date }} → {{ r.last_trade_date }}</span></div>
+
+                {% if r.total_dividend_income %}
+                <div class="aa-stat-row"><span class="lbl">Dividends</span>
+                    <span class="val aa-pos">{{ money(r.total_dividend_income) }} ({{ r.dividend_count or 0 }})</span></div>
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+    {% else %}
+        <div class="aa-empty">No row in positions_summary for this (account, symbol). The app will show "no data".</div>
+    {% endif %}
+</div>
+
+{# ──────────────────────────────────────────────────────────────────── #}
+{# int_strategy_classification — one row per leg                        #}
+{# ──────────────────────────────────────────────────────────────────── #}
+<div class="aa-section">
+    <h2>int_strategy_classification <span style="color:#78716c;font-weight:500;">— {{ legs|length }} legs</span></h2>
+    <div class="aa-sub">One row per identified strategy leg. The "Strategy breakdown" card and closed-position rows on /positions are built from this table.</div>
+    {% if legs and legs[0].get("_error") %}
+        <div class="aa-error">BigQuery error: {{ legs[0]._error }}</div>
+    {% elif legs %}
+        <div style="overflow-x:auto;">
+        <table class="aa-table">
+            <thead>
+                <tr>
+                    <th>Strategy</th><th>Trade symbol</th><th>Type</th><th>Direction</th>
+                    <th>Open</th><th>Close</th><th>Status</th>
+                    <th class="num">Days</th><th class="num"># txns</th>
+                    <th class="num">Net cash</th><th class="num">Total P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in legs %}
+                <tr>
+                    <td><strong>{{ r.strategy or '—' }}</strong></td>
+                    <td>{{ r.trade_symbol or '—' }}</td>
+                    <td class="muted">{{ r.trade_group_type or '—' }}</td>
+                    <td>{{ r.direction or '—' }}</td>
+                    <td>{{ r.open_date or '—' }}</td>
+                    <td>{{ r.close_date or '—' }}</td>
+                    <td>{{ r.status or '—' }}{% if r.close_type %} <span class="muted">({{ r.close_type }})</span>{% endif %}</td>
+                    <td class="num">{{ r.days_in_trade if r.days_in_trade is not none else '—' }}</td>
+                    <td class="num">{{ r.num_trades if r.num_trades is not none else '—' }}</td>
+                    <td class="num {% if (r.net_cash_flow or 0) < 0 %}aa-neg{% elif (r.net_cash_flow or 0) > 0 %}aa-pos{% endif %}">{{ money(r.net_cash_flow) }}</td>
+                    <td class="num {% if (r.total_pnl or 0) < 0 %}aa-neg{% elif (r.total_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.total_pnl) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    {% else %}
+        <div class="aa-empty">No legs classified for this (account, symbol).</div>
+    {% endif %}
+</div>
+
+{# ──────────────────────────────────────────────────────────────────── #}
+{# stg_history — every transaction                                      #}
+{# ──────────────────────────────────────────────────────────────────── #}
+<div class="aa-section">
+    <h2>stg_history <span style="color:#78716c;font-weight:500;">— {{ transactions|length }} transactions</span></h2>
+    <div class="aa-sub">Every trade-history row that hit BigQuery for this account &amp; underlying. If a transaction the user expects is missing here, the bug is in the seed/sync layer; if it's here but the legs/summary disagree, the bug is in classification.</div>
+    {% if transactions and transactions[0].get("_error") %}
+        <div class="aa-error">BigQuery error: {{ transactions[0]._error }}</div>
+    {% elif transactions %}
+        <div style="overflow-x:auto;">
+        <table class="aa-table">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Action</th><th>Trade symbol</th><th>Type</th>
+                    <th class="num">Qty</th><th class="num">Price</th>
+                    <th class="num">Fees</th><th class="num">Amount</th>
+                    <th>Action raw</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in transactions %}
+                <tr>
+                    <td>{{ r.trade_date }}</td>
+                    <td><strong>{{ r.action or '—' }}</strong></td>
+                    <td>{{ r.trade_symbol or r.underlying_symbol or '—' }}</td>
+                    <td class="muted">{{ r.instrument_type or '—' }}</td>
+                    <td class="num">{{ "{:,.0f}".format(r.quantity) if r.quantity is not none else '—' }}</td>
+                    <td class="num">{{ money(r.price) }}</td>
+                    <td class="num">{{ money(r.fees) }}</td>
+                    <td class="num {% if (r.amount or 0) < 0 %}aa-neg{% elif (r.amount or 0) > 0 %}aa-pos{% endif %}">{{ money(r.amount) }}</td>
+                    <td class="muted" style="font-size:.75rem;">{{ r.action_raw or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    {% else %}
+        <div class="aa-empty">No transactions in stg_history for this (account, symbol). If the user expects to see them, the seed/sync didn't pull them in.</div>
+    {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}
