@@ -1813,9 +1813,18 @@ def position_detail(symbol):
         or not trades_df.empty
     )
     if _show_position_kpis:
-        unrealized_from_summary = float(summary_df["unrealized_pnl"].sum()) if not summary_df.empty else 0.0
-        if not current_df.empty and "unrealized_pnl" in current_df.columns:
+        # Prefer positions_summary's unrealized_pnl when we have it — it is trade-derived
+        # and rolls up *every* open leg (equity + each option contract). int_enriched_current
+        # can be partial for a symbol (e.g. broker positions feed has the open option but not
+        # the long stock, or vice versa) which is what was making the hero disagree with the
+        # strategy-breakdown row underneath it. Only fall back to current_df when summary is
+        # empty (positions imported with no transaction history at all).
+        if not summary_df.empty and "unrealized_pnl" in summary_df.columns:
+            unrealized_from_summary = float(summary_df["unrealized_pnl"].sum())
+        elif not current_df.empty and "unrealized_pnl" in current_df.columns:
             unrealized_from_summary = float(current_df["unrealized_pnl"].sum())
+        else:
+            unrealized_from_summary = 0.0
 
         # When leg-filtered, premium = filtered closed options only (never full-history
         # legs when the filtered frame is empty for that range).
