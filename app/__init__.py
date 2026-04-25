@@ -69,6 +69,22 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 def not_found(e):
     return render_template("404.html", title="Page not found"), 404
 
+
+@app.errorhandler(500)
+def internal_error(e):
+    """Make sure 500s are *logged* with a full traceback. Flask's default
+    handler logs the message but not always the traceback when something
+    re-raises in middleware or before_request hooks. We always log + render
+    a small friendly page (or fall back to plain text if even that fails)."""
+    import traceback
+    tb = traceback.format_exc()
+    app.logger.error("500 on %s %s\n%s", request.method, request.path, tb)
+    try:
+        return render_template("500.html", title="Something went wrong"), 500
+    except Exception:
+        return ("Something went wrong on our end. The team has been notified. "
+                "Try refreshing in a minute."), 500
+
 # Flask-Login setup
 login_manager = LoginManager()
 login_manager.login_view = 'login'
