@@ -354,15 +354,14 @@
 
         {% else %}
         <div class="generate-card">
-            <h5>AI Coach Not Configured</h5>
+            <h5>AI Coach is warming up</h5>
             <p>
-                To enable AI-powered coaching, add a Gemini API key to your environment.<br>
-                Get a free key at <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a>,
-                then add <code>GEMINI_API_KEY=your_key</code> to your <code>.env</code> file.
+                Your Coach is still being trained on the patterns we see across the platform.
+                It'll be available here as soon as it's ready — no setup on your end.
             </p>
             {% if coaching and coaching.has_data %}
             <p class="small text-muted">
-                The deterministic coaching data above works without an API key.
+                In the meantime, the data-driven coaching insights above are based on your own trades.
             </p>
             {% endif %}
         </div>
