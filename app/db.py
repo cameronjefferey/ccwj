@@ -103,9 +103,17 @@ def _build_pool() -> ConnectionPool:
             "DATABASE_URL is not set. Add it to .env, e.g.\n"
             "  DATABASE_URL=postgresql://user:pass@localhost:5432/happytrader"
         )
-    # Managed Postgres (e.g. Render) often closes idle TLS sessions; shorter
-    # max_idle / max_lifetime plus check= pre-ping reduces ssl/tls alert errors.
-    max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300"))
+    # Managed Postgres (e.g. Render) silently kills idle TCP sessions,
+    # often well under 5 minutes. Two coordinated defenses:
+    #   1. min_size=0 — don't try to keep idle conns "warm". After a long
+    #      idle period, "warm" conns are actually dead at the network layer
+    #      and the pool's pre-ping just reports them all bad at once,
+    #      timing the request out instead of opening a fresh one.
+    #   2. TCP keepalives — heartbeats on whatever idle conns *do* exist,
+    #      so the OS notices a dead route long before psycopg does.
+    # Plus shorter max_idle so anything we do keep is recycled before
+    # Render's load balancer kills it.
+    max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "120"))
     max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
     # pool timeout: how long a request waits for a free connection.
     # Keep this WELL below gunicorn's --timeout (120s) so a stuck pool
@@ -115,11 +123,21 @@ def _build_pool() -> ConnectionPool:
     pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "10"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
-        # Keep at least 2 warm connections so a single bad/closed conn
-        # doesn't force a brand-new TLS handshake on the next request.
-        min_size=int(os.environ.get("DATABASE_POOL_MIN", "2")),
+        # Don't pre-warm idle connections. For a low-traffic app, the cost
+        # of a fresh connect on cold cache is tiny vs. a request hanging
+        # waiting for the pool to discover all its "warm" conns are dead.
+        min_size=int(os.environ.get("DATABASE_POOL_MIN", "0")),
         max_size=int(os.environ.get("DATABASE_POOL_MAX", "12")),
-        kwargs={"row_factory": dict_row},
+        kwargs={
+            "row_factory": dict_row,
+            # TCP-level keepalives so idle conns don't get silently dropped
+            # by Render's network. After 60s of idle, send a probe every 10s
+            # up to 5 times before declaring the conn dead.
+            "keepalives": 1,
+            "keepalives_idle": 60,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
+        },
         check=_pool_check_connection,
         max_idle=max_idle,
         max_lifetime=max_lifetime,
