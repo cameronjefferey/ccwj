@@ -1,14 +1,18 @@
 """
-Admin tooling — impersonation + diagnostic audit page.
+Admin tooling — user list + impersonation + diagnostic audit page.
 
-Two distinct features live here:
+Three features live here:
 
-1. /admin/impersonate/<username>  +  /admin/impersonate/stop
+1. /admin/users
+       Listing of every Flask user with linked broker accounts, profile
+       info, and per-row Impersonate / Audit buttons.
+
+2. /admin/impersonate/<username>  +  /admin/impersonate/stop
        Lets a user listed in ADMIN_USERS log in as another user for support.
        Original admin id is stashed in flask.session under _impersonator_id
        so the /stop route can switch back without forcing a re-login.
 
-2. /admin/audit
+3. /admin/audit
        Side-by-side view of every stg_history row, every leg in
        int_strategy_classification, and the rolled-up positions_summary
        row for a given (account, symbol). Lets the admin verify whether
@@ -293,4 +297,54 @@ def admin_audit():
         summary_rows=summary_rows,
         linked_users=linked_users,
         by_kind_rows=by_kind_rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /admin/users — list every Flask user with linked broker accounts
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/users", methods=["GET"])
+@_admin_only
+def admin_users():
+    """One-stop list of every Flask user with their linked broker accounts,
+    profile email, signup date, and a per-row Impersonate button."""
+    from app.db import fetch_all
+    rows = []
+    try:
+        rows = fetch_all(
+            """
+            SELECT
+                u.id,
+                u.username,
+                up.created_at                                   AS profile_created_at,
+                up.display_name                                 AS display_name,
+                up.timezone                                     AS timezone,
+                up.profile_visibility                           AS profile_visibility,
+                COALESCE(
+                    (SELECT array_agg(account_name ORDER BY account_name)
+                     FROM user_accounts WHERE user_id = u.id),
+                    ARRAY[]::text[]
+                )                                               AS accounts,
+                (SELECT COUNT(*) FROM community_posts WHERE user_id = u.id)
+                                                                AS post_count,
+                (SELECT MAX(created_at) FROM community_posts WHERE user_id = u.id)
+                                                                AS last_post_at
+            FROM users u
+            LEFT JOIN user_profiles up ON up.user_id = u.id
+            ORDER BY u.username
+            """
+        )
+    except Exception as exc:
+        app.logger.warning("admin_users query failed: %s", exc)
+
+    return render_template(
+        "admin_users.html",
+        title="Admin: users",
+        users=rows,
+        admin_usernames={
+            u.strip().lower()
+            for u in (os.environ.get("ADMIN_USERS", "") or "").split(",")
+            if u.strip()
+        },
     )

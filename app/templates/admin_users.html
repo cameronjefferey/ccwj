@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .au-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        color: #fff; padding: 1.4rem 1.6rem; border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .au-hero h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+    .au-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; }
+
+    .au-section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+    .au-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .au-search { padding: .45rem .75rem; border: 1px solid #d6d3d1; border-radius: 8px; font-size: .9rem; min-width: 220px; }
+    .au-count { color: #78716c; font-size: .82rem; }
+
+    .au-table { width: 100%; font-size: .85rem; border-collapse: collapse; }
+    .au-table th { text-transform: uppercase; font-size: .65rem; letter-spacing: .04em; color: #57534e; background: #fafaf9; padding: .55rem .65rem; text-align: left; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .au-table td { padding: .55rem .65rem; border-bottom: 1px solid #f5f5f4; vertical-align: middle; }
+    .au-table tr:hover td { background: #fafaf9; }
+    .au-username { font-weight: 700; color: #1c1917; }
+    .au-display { color: #78716c; font-size: .78rem; }
+    .au-admin-pill { background: #fef3c7; color: #92400e; font-weight: 700; font-size: .65rem; padding: .1rem .55rem; border-radius: 999px; margin-left: .35rem; letter-spacing: .04em; text-transform: uppercase; }
+    .au-account { display: inline-block; background: #f1f5f9; color: #0f172a; padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-family: monospace; margin: .15rem .25rem .15rem 0; }
+    .au-no-accounts { color: #a8a29e; font-size: .78rem; font-style: italic; }
+    .au-vis { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .au-vis.private { background: #f5f5f4; color: #57534e; }
+    .au-vis.followers { background: #dbeafe; color: #1e40af; }
+    .au-vis.public { background: #dcfce7; color: #166534; }
+    .au-actions { display: flex; gap: .35rem; }
+    .au-actions a {
+        background: #0369a1; color: #fff; padding: .2rem .65rem;
+        border-radius: 999px; text-decoration: none; font-size: .72rem; font-weight: 700;
+        white-space: nowrap;
+    }
+    .au-actions a:hover { background: #075985; }
+    .au-actions a.audit { background: #1c1917; }
+    .au-actions a.audit:hover { background: #292524; }
+
+    .au-empty { color: #a8a29e; font-size: .85rem; padding: 1rem; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="au-hero">
+    <h1>Users <span style="color:rgba(255,255,255,.55);font-weight:500;font-size:1rem;">— {{ users|length }}</span></h1>
+    <p>Every user in the production database, with their linked broker accounts and community activity. Use Impersonate to see exactly what they see.</p>
+</div>
+
+<div class="au-section">
+    <div class="au-toolbar">
+        <input type="search" id="au-search" class="au-search" placeholder="Filter by username, display name, or account…" autocomplete="off">
+        <span class="au-count"><span id="au-visible-count">{{ users|length }}</span> shown</span>
+    </div>
+
+    {% if users %}
+    <div style="overflow-x:auto;">
+    <table class="au-table" id="au-table">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Visibility</th>
+                <th>Broker accounts</th>
+                <th class="text-end">Posts</th>
+                <th>Last post</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+            <tr data-search="{{ u.username|lower }} {{ (u.display_name or '')|lower }} {{ u.accounts|join(' ')|lower }}">
+                <td>
+                    <div class="au-username">@{{ u.username }}{% if u.username|lower in admin_usernames %}<span class="au-admin-pill">admin</span>{% endif %}</div>
+                    {% if u.display_name %}<div class="au-display">{{ u.display_name }}</div>{% endif %}
+                </td>
+                <td>
+                    <span class="au-vis {{ u.profile_visibility or 'private' }}">{{ u.profile_visibility or 'private' }}</span>
+                </td>
+                <td>
+                    {% if u.accounts %}
+                        {% for acct in u.accounts %}<span class="au-account">{{ acct }}</span>{% endfor %}
+                    {% else %}
+                        <span class="au-no-accounts">none linked</span>
+                    {% endif %}
+                </td>
+                <td class="text-end" style="font-variant-numeric: tabular-nums;">{{ u.post_count or 0 }}</td>
+                <td style="font-size: .78rem; color: #78716c;">
+                    {% if u.last_post_at %}{{ u.last_post_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
+                </td>
+                <td>
+                    <div class="au-actions">
+                        <a href="{{ url_for('admin_impersonate', username=u.username) }}">Impersonate</a>
+                        {% if u.accounts %}
+                        <a class="audit" href="{{ url_for('admin_audit', account=u.accounts[0]) }}">Audit</a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+        <div class="au-empty">No users found. (Or the query failed — check Render logs.)</div>
+    {% endif %}
+</div>
+
+<script>
+(function() {
+    var searchInput = document.getElementById('au-search');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#au-table tbody tr'));
+    var counter = document.getElementById('au-visible-count');
+    if (!searchInput || !rows.length) return;
+    searchInput.addEventListener('input', function() {
+        var q = (searchInput.value || '').trim().toLowerCase();
+        var visible = 0;
+        rows.forEach(function(r) {
+            var hay = r.getAttribute('data-search') || '';
+            var match = !q || hay.indexOf(q) !== -1;
+            r.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+        if (counter) counter.textContent = visible;
+    });
+})();
+</script>
+{% endblock %}

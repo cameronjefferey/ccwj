@@ -164,6 +164,24 @@
                        href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">Coach</a>
                 </li>
                 {% endif %}
+                {% if is_admin_user %}
+                {% set in_admin = ep in ('admin_users', 'admin_audit') %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if in_admin %}active{% endif %}" href="#"
+                       id="navAdmin" data-bs-toggle="dropdown" aria-expanded="false"
+                       style="color: #fef08a;">Admin</a>
+                    <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navAdmin">
+                        <li>
+                            <a class="dropdown-item {% if ep == 'admin_users' %}active{% endif %}"
+                               href="{{ url_for('admin_users') }}">Users</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'admin_audit' %}active{% endif %}"
+                               href="{{ url_for('admin_audit') }}">Position audit</a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
             </ul>
             <ul class="navbar-nav align-items-center">
                 <li class="nav-item dropdown">

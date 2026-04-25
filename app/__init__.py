@@ -55,8 +55,19 @@ app.config.from_object(Config)
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app
+    from flask_login import current_user
+    from app.models import is_admin
+
+    is_admin_user = False
+    try:
+        if current_user.is_authenticated:
+            is_admin_user = is_admin(current_user.username)
+    except Exception:
+        is_admin_user = False
+
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
+        "is_admin_user": is_admin_user,
     }
 
 
