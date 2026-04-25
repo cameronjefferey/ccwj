@@ -17,6 +17,10 @@ dividends as (
     select * from {{ ref('int_dividends') }}
 ),
 
+symbol_meta as (
+    select * from {{ ref('stg_symbol_metadata') }}
+),
+
 ---------------------------------------------------------------------
 -- Aggregate by account × symbol × strategy
 ---------------------------------------------------------------------
@@ -133,12 +137,23 @@ final as (
         round(
             wdr.total_pnl
             + case when wdr.dividend_rank = 1 then coalesce(d.total_dividend_income, 0) else 0 end
-        , 2) as total_return
+        , 2) as total_return,
+
+        -- Sector / industry context (yfinance, refreshed daily). Coalesce so
+        -- a missing-from-yfinance ticker still has 'Unknown' instead of NULL,
+        -- which lets the app filter/group without special-casing nulls.
+        coalesce(sm.sector, 'Unknown')         as sector,
+        coalesce(sm.industry, 'Unknown')       as industry,
+        coalesce(sm.industry_group, 'Unknown') as industry_group,
+        sm.long_name                            as company_name,
+        sm.market_cap                           as market_cap
 
     from with_dividend_rank wdr
     left join dividends d
         on wdr.account = d.account
         and wdr.symbol = d.symbol
+    left join symbol_meta sm
+        on upper(trim(wdr.symbol)) = sm.symbol
 )
 
 select * from final

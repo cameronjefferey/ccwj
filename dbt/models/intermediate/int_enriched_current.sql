@@ -21,6 +21,10 @@ latest_prices as (
         from {{ ref('stg_daily_prices') }}
     )
     where rn = 1
+),
+
+symbol_meta as (
+    select * from {{ ref('stg_symbol_metadata') }}
 )
 
 select
@@ -87,9 +91,17 @@ select
     cp.dividend_yield,
     cp.pe_ratio,
     cp.snapshot_date,
-    lp.price_date
+    lp.price_date,
+
+    -- Sector / industry from yfinance (Unknown when missing)
+    coalesce(sm.sector, 'Unknown')          as sector,
+    coalesce(sm.industry, 'Unknown')        as industry,
+    coalesce(sm.industry_group, 'Unknown')  as industry_group,
+    sm.long_name                            as company_name
 
 from current_positions cp
 left join latest_prices lp
     on cp.account = lp.account
     and cp.underlying_symbol = lp.symbol
+left join symbol_meta sm
+    on upper(trim(cp.underlying_symbol)) = sm.symbol

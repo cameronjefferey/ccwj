@@ -319,12 +319,16 @@ ERROR_DEFAULTS = dict(
     accounts=[],
     strategies=[],
     symbols=[],
+    industries=[],
+    sectors=[],
     user_accounts=[],
     status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
     selected_account="",
     selected_strategy="",
     selected_statuses=[],
     selected_symbol="",
+    selected_industry="",
+    selected_sector="",
     selected_start_date="",
     selected_end_date="",
     date_filtered=False,
@@ -566,6 +570,8 @@ def positions():
     # full book unless they explicitly narrow it.
     selected_statuses = request.args.getlist("status")
     selected_symbol = request.args.get("symbol", "")
+    selected_industry = request.args.get("industry", "")
+    selected_sector = request.args.get("sector", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
     page = max(1, int(request.args.get("page", 1)))
@@ -628,6 +634,14 @@ def positions():
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
+    industries = (
+        sorted(df["industry"].dropna().unique())
+        if "industry" in df.columns else []
+    )
+    sectors = (
+        sorted(df["sector"].dropna().unique())
+        if "sector" in df.columns else []
+    )
 
     # Status counts for hero/filters (from user-scoped df, before other filters)
     status_counts = {"Open": 0, "Closed": 0, "Mixed": 0}
@@ -645,6 +659,10 @@ def positions():
         filtered = filtered[filtered["status"].isin(selected_statuses)]
     if selected_symbol:
         filtered = filtered[filtered["symbol"] == selected_symbol]
+    if selected_industry and "industry" in filtered.columns:
+        filtered = filtered[filtered["industry"] == selected_industry]
+    if selected_sector and "sector" in filtered.columns:
+        filtered = filtered[filtered["sector"] == selected_sector]
 
     # ------------------------------------------------------------------
     # 5. KPIs
@@ -679,21 +697,29 @@ def positions():
     # 7. Symbol-level summary (grouped by account + symbol)
     # ------------------------------------------------------------------
     if not filtered.empty:
+        # Carry sector / industry through the symbol-level rollup. Each
+        # (account, symbol) maps to a single sector/industry, so 'first' is
+        # safe and fast.
+        agg_kwargs = dict(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            total_premium_received=("total_premium_received", "sum"),
+            total_dividend_income=("total_dividend_income", "sum"),
+            total_return=("total_return", "sum"),
+            num_individual_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_strategies=("strategy", "nunique"),
+            strategies=("strategy", lambda x: ", ".join(sorted(x.unique()))),
+        )
+        if "sector" in filtered.columns:
+            agg_kwargs["sector"] = ("sector", "first")
+        if "industry" in filtered.columns:
+            agg_kwargs["industry"] = ("industry", "first")
         symbol_agg = (
             filtered.groupby(["account", "symbol"])
-            .agg(
-                total_pnl=("total_pnl", "sum"),
-                realized_pnl=("realized_pnl", "sum"),
-                unrealized_pnl=("unrealized_pnl", "sum"),
-                total_premium_received=("total_premium_received", "sum"),
-                total_dividend_income=("total_dividend_income", "sum"),
-                total_return=("total_return", "sum"),
-                num_individual_trades=("num_individual_trades", "sum"),
-                num_winners=("num_winners", "sum"),
-                num_losers=("num_losers", "sum"),
-                num_strategies=("strategy", "nunique"),
-                strategies=("strategy", lambda x: ", ".join(sorted(x.unique()))),
-            )
+            .agg(**agg_kwargs)
             .reset_index()
         )
         closed = symbol_agg["num_winners"] + symbol_agg["num_losers"]
@@ -750,12 +776,16 @@ def positions():
         accounts=accounts,
         strategies=strategies,
         symbols=symbols,
+        industries=industries,
+        sectors=sectors,
         user_accounts=accounts,
         status_counts=status_counts,
         selected_account=selected_account,
         selected_strategy=selected_strategy,
         selected_statuses=selected_statuses,
         selected_symbol=selected_symbol,
+        selected_industry=selected_industry,
+        selected_sector=selected_sector,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
         date_filtered=date_filtered,
@@ -1438,6 +1468,9 @@ def position_detail(symbol):
             leg_param="",
             chart_data_json="{}",
             has_underlying_price=False,
+            symbol_sector="",
+            symbol_industry="",
+            symbol_company="",
         )
 
     # Clean numeric types for summary
@@ -2246,6 +2279,25 @@ def position_detail(symbol):
     else:
         all_accounts = []
 
+    # Sector / industry: take the first non-Unknown value we can find from
+    # either summary or current. Both sources are joined to stg_symbol_metadata
+    # in dbt, so they should agree — falling through is just defensive.
+    def _first_nonempty(df_, col):
+        if df_ is None or df_.empty or col not in df_.columns:
+            return ""
+        vals = df_[col].dropna().astype(str).str.strip()
+        vals = vals[(vals != "") & (vals.str.lower() != "unknown")]
+        if vals.empty:
+            # Fall back to whatever we have, including 'Unknown', so the UI
+            # can still render a label rather than nothing.
+            any_vals = df_[col].dropna().astype(str).str.strip()
+            return any_vals.iloc[0] if not any_vals.empty else ""
+        return vals.iloc[0]
+
+    symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
+    symbol_industry = _first_nonempty(summary_df, "industry") or _first_nonempty(current_df, "industry")
+    symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
+
     return render_template(
         "position_detail.html",
         symbol=symbol,
@@ -2264,6 +2316,9 @@ def position_detail(symbol):
         prices_through_date=prices_through_date,
         accounts=all_accounts,
         selected_account=selected_account,
+        symbol_sector=symbol_sector,
+        symbol_industry=symbol_industry,
+        symbol_company=symbol_company,
     )
 
 
@@ -3602,6 +3657,206 @@ def _build_strategy_time_chart(strat_df):
         "dates": [str(d) for d in all_dates],
         "series": series,
     }
+
+
+# ======================================================================
+# Industries  (/industries)
+# ======================================================================
+#
+# Sector / industry rollup of positions_summary, scoped to the logged-in
+# user's accounts. Powers the new "Industries" page in the Portfolio nav.
+# Tenancy: positions_summary is multi-tenant -> we MUST scope the SQL with
+# _account_sql_and AND filter the resulting DataFrame with
+# _filter_df_by_accounts before aggregating, per
+# .cursor/rules/bigquery-tenant-isolation.mdc.
+# ----------------------------------------------------------------------
+
+INDUSTRIES_QUERY = """
+    SELECT
+        account,
+        symbol,
+        strategy,
+        status,
+        total_pnl,
+        realized_pnl,
+        unrealized_pnl,
+        total_premium_received,
+        total_dividend_income,
+        total_return,
+        num_individual_trades,
+        num_winners,
+        num_losers,
+        sector,
+        industry,
+        company_name
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1
+    {account_filter}
+"""
+
+
+@app.route("/industries")
+@login_required
+def industries():
+    client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    acct_filter = _account_sql_and(user_accounts)
+
+    selected_account = request.args.get("account", "")
+
+    try:
+        df = client.query(
+            INDUSTRIES_QUERY.format(account_filter=acct_filter)
+        ).to_dataframe()
+    except Exception as exc:
+        return render_template(
+            "industries.html",
+            error=str(exc),
+            sectors=[],
+            sector_rows=[],
+            industry_rows=[],
+            unknown_count=0,
+            kpis={},
+            accounts=[],
+            selected_account="",
+        )
+
+    df = _df_normalize_account_column(df)
+    df = _filter_df_by_accounts(df, user_accounts)
+
+    if selected_account:
+        df = df[df["account"] == selected_account]
+
+    for col in (
+        "total_pnl", "realized_pnl", "unrealized_pnl",
+        "total_premium_received", "total_dividend_income", "total_return",
+        "num_individual_trades", "num_winners", "num_losers",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    for col in ("sector", "industry"):
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+
+    accounts_for_filter = sorted(df["account"].dropna().unique().tolist()) if not df.empty else []
+
+    if df.empty:
+        return render_template(
+            "industries.html",
+            error=None,
+            sectors=[],
+            sector_rows=[],
+            industry_rows=[],
+            unknown_count=0,
+            kpis={
+                "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
+                "num_industries": 0, "num_symbols": 0, "num_trades": 0,
+                "win_rate": 0.0,
+            },
+            accounts=accounts_for_filter,
+            selected_account=selected_account,
+        )
+
+    overall_winners = int(df["num_winners"].sum())
+    overall_losers = int(df["num_losers"].sum())
+    overall_closed = overall_winners + overall_losers
+    kpis = {
+        "total_pnl": float(df["total_pnl"].sum()),
+        "realized_pnl": float(df["realized_pnl"].sum()),
+        "unrealized_pnl": float(df["unrealized_pnl"].sum()),
+        "num_industries": int(df["industry"].nunique()),
+        "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
+        "num_trades": int(df["num_individual_trades"].sum()),
+        "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
+    }
+
+    # Per-industry rollup: collapse strategy granularity, aggregate over the
+    # user's accounts. One row per (sector, industry).
+    industry_agg = (
+        df.groupby(["sector", "industry"], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            premium_received=("total_premium_received", "sum"),
+            dividend_income=("total_dividend_income", "sum"),
+            total_return=("total_return", "sum"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("symbol", "nunique"),
+        )
+        .reset_index()
+    )
+    closed = industry_agg["num_winners"] + industry_agg["num_losers"]
+    industry_agg["win_rate"] = industry_agg["num_winners"] / closed.replace(0, pd.NA)
+    industry_agg["win_rate"] = industry_agg["win_rate"].fillna(0)
+
+    # Top symbol per (sector, industry) by total_return — useful "what's
+    # actually carrying this industry?" tooltip on the card.
+    sym_in_ind = (
+        df.groupby(["sector", "industry", "symbol"], dropna=False)["total_return"]
+        .sum()
+        .reset_index()
+    )
+    if not sym_in_ind.empty:
+        sym_in_ind = sym_in_ind.sort_values(
+            ["sector", "industry", "total_return"], ascending=[True, True, False]
+        )
+        top_symbol_map = (
+            sym_in_ind.groupby(["sector", "industry"])
+            .first()
+            .reset_index()[["sector", "industry", "symbol", "total_return"]]
+            .rename(columns={"symbol": "top_symbol", "total_return": "top_symbol_return"})
+        )
+        industry_agg = industry_agg.merge(
+            top_symbol_map, on=["sector", "industry"], how="left"
+        )
+    else:
+        industry_agg["top_symbol"] = ""
+        industry_agg["top_symbol_return"] = 0.0
+
+    industry_agg = industry_agg.sort_values("total_return", ascending=False)
+    industry_rows = industry_agg.to_dict(orient="records")
+
+    # Sector rollup for the hero strip (one row per sector).
+    sector_agg = (
+        df.groupby(["sector"], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_industries=("industry", "nunique"),
+            num_symbols=("symbol", "nunique"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+        )
+        .reset_index()
+    )
+    s_closed = sector_agg["num_winners"] + sector_agg["num_losers"]
+    sector_agg["win_rate"] = sector_agg["num_winners"] / s_closed.replace(0, pd.NA)
+    sector_agg["win_rate"] = sector_agg["win_rate"].fillna(0)
+    sector_agg = sector_agg.sort_values("total_pnl", ascending=False)
+    sector_rows = sector_agg.to_dict(orient="records")
+    sectors = sector_agg["sector"].tolist()
+
+    unknown_count = int(
+        ((df["sector"] == "Unknown") | (df["industry"] == "Unknown"))
+        .pipe(lambda s: s.groupby([df["account"], df["symbol"]]).any())
+        .sum()
+    )
+
+    return render_template(
+        "industries.html",
+        error=None,
+        sectors=sectors,
+        sector_rows=sector_rows,
+        industry_rows=industry_rows,
+        unknown_count=unknown_count,
+        kpis=kpis,
+        accounts=accounts_for_filter,
+        selected_account=selected_account,
+    )
 
 
 @app.route("/accounts")

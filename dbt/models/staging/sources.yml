@@ -16,3 +16,17 @@ sources:
           - name: date
           - name: close_price
           - name: dividend
+      - name: symbol_metadata
+        description: >
+          Sector / industry / market cap / company name per symbol, fetched
+          via yfinance by scripts/refresh_symbol_metadata.py (runs in
+          GitHub Actions). Symbol-only — no account column, safe to share.
+        columns:
+          - name: symbol
+          - name: sector
+          - name: industry
+          - name: industry_group
+          - name: country
+          - name: market_cap
+          - name: long_name
+          - name: fetched_at

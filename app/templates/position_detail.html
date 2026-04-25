@@ -75,6 +75,18 @@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <h1>{{ symbol }}</h1>
+            {% if symbol_company %}
+            <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
+            {% endif %}
+            {% if symbol_industry and symbol_industry != 'Unknown' %}
+            <div class="mt-1">
+                <a href="{{ url_for('industries') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
+                   class="text-decoration-none"
+                   style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
+                    {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_industry }}
+                </a>
+            </div>
+            {% endif %}
             {% if kpis %}
             <div class="d-flex gap-3 flex-wrap mt-2">
                 {% if overall_status == 'Open' %}

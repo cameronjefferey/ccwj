@@ -190,6 +190,17 @@
             {% endfor %}
         </select>
     </div>
+    {% if industries %}
+    <div class="col-auto">
+        <label class="form-label small fw-bold mb-1">Industry</label>
+        <select name="industry" class="form-select form-select-sm">
+            <option value="">All Industries</option>
+            {% for ind in industries %}
+            <option value="{{ ind }}" {{ 'selected' if ind == selected_industry }}>{{ ind }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
     {% set status_label = 'All statuses' if not selected_statuses or selected_statuses|length >= 3 else selected_statuses|join(', ') %}
     <div class="col-auto">
         <label class="form-label small fw-bold mb-1 d-block">Status</label>
@@ -349,6 +360,7 @@
                     <tr>
                         <th class="sortable" data-sort="str">Account</th>
                         <th class="sortable" data-sort="str">Symbol</th>
+                        <th class="sortable" data-sort="str">Industry</th>
                         <th>Strategies</th>
                         <th class="sortable" data-sort="num">Total P&amp;L</th>
                         <th class="sortable" data-sort="num">Realized</th>
@@ -369,6 +381,15 @@
                             <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
                                 {{ row.symbol }}
                             </a>
+                        </td>
+                        <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                            title="{{ row.sector or '' }}{% if row.sector and row.industry %} / {% endif %}{{ row.industry or '' }}">
+                            {% if row.industry and row.industry != 'Unknown' %}
+                            <a href="{{ url_for('positions', industry=row.industry, account=selected_account) }}"
+                               class="text-decoration-none text-muted">{{ row.industry }}</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% for strat in row.strategies.split(', ') %}

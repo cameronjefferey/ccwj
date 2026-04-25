@@ -41,6 +41,14 @@ jobs:
           cp dbt/profiles.yml ~/.dbt/profiles.yml
           echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
 
+      # Sector / industry: refresh BEFORE the first dbt build so
+      # stg_symbol_metadata (and downstream marts that join it) have a real
+      # source table to read from. Uses the previous run's stg_history for
+      # the symbol list, which is fine — sectors don't change daily.
+      - name: Refresh symbol metadata (sector / industry)
+        run: python scripts/refresh_symbol_metadata.py
+        continue-on-error: true
+
       - name: Run DBT build (seeds + models, excluding price-dependent)
         run: |
           cd dbt

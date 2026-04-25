@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .ind-hero {
+        background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%);
+        color: #fff;
+        padding: 1.5rem 1.6rem;
+        border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .ind-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+    .ind-hero .lede { color: rgba(255,255,255,.75); font-size: .9rem; margin: .35rem 0 0; }
+    .ind-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .85rem; margin-top: 1.1rem; }
+    .ind-kpi  { background: rgba(255,255,255,.08); padding: .7rem .85rem; border-radius: 10px; }
+    .ind-kpi .lbl { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.55); }
+    .ind-kpi .val { font-size: 1.15rem; font-weight: 700; margin-top: .1rem; font-variant-numeric: tabular-nums; }
+    .ind-pos { color: #6ee7b7; }
+    .ind-neg { color: #fca5a5; }
+
+    .ind-section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+    .ind-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .9rem; color: #1c1917; }
+    .ind-section .sub { color: #78716c; font-size: .82rem; margin: -.5rem 0 .9rem; }
+
+    .sector-strip { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .sector-chip {
+        background: #f1f5f9; color: #0f172a;
+        padding: .35rem .85rem;
+        border-radius: 999px;
+        font-size: .8rem;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-flex; align-items: center; gap: .5rem;
+        border: 1px solid #e2e8f0;
+    }
+    .sector-chip:hover { background: #e0e7ff; border-color: #c7d2fe; color: #0f172a; }
+    .sector-chip .sc-pnl { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .sector-chip .sc-pnl.pos { color: #059669; }
+    .sector-chip .sc-pnl.neg { color: #b91c1c; }
+    .sector-chip .sc-meta { color: #78716c; font-weight: 500; font-size: .72rem; }
+
+    .ind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .9rem; }
+    .ind-card {
+        background: #fafaf9;
+        border: 1px solid #e7e5e4;
+        border-radius: 12px;
+        padding: .95rem 1rem;
+        display: flex; flex-direction: column; gap: .55rem;
+        transition: transform .12s ease, box-shadow .12s ease;
+    }
+    .ind-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,.06); }
+    .ind-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .55rem; }
+    .ind-card .industry { font-weight: 700; color: #1c1917; line-height: 1.25; }
+    .ind-card .sector { font-size: .7rem; color: #78716c; text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; }
+    .ind-card .pnl { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ind-card .pnl.pos { color: #059669; }
+    .ind-card .pnl.neg { color: #b91c1c; }
+    .ind-card .stats { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem; font-size: .78rem; }
+    .ind-card .stats .lbl { color: #78716c; }
+    .ind-card .stats .val { color: #1c1917; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ind-card .top-sym { font-size: .72rem; color: #78716c; padding-top: .35rem; border-top: 1px dashed #e7e5e4; }
+    .ind-card .top-sym a { color: #1c1917; font-weight: 600; text-decoration: none; }
+    .ind-card .top-sym a:hover { text-decoration: underline; }
+    .ind-card .actions { display: flex; gap: .35rem; margin-top: .25rem; }
+    .ind-card .actions a {
+        flex: 1; text-align: center; background: #1c1917; color: #fafaf9;
+        padding: .35rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 600;
+        text-decoration: none;
+    }
+    .ind-card .actions a:hover { background: #292524; }
+    .ind-card .actions a.secondary { background: #f5f5f4; color: #1c1917; border: 1px solid #e7e5e4; }
+    .ind-card .actions a.secondary:hover { background: #e7e5e4; }
+
+    .ind-empty { color: #78716c; font-size: .85rem; padding: 1.5rem; text-align: center; }
+
+    h3.sector-header {
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #57534e;
+        margin: 1.1rem 0 .55rem;
+        padding-top: .35rem;
+        border-top: 1px solid #f5f5f4;
+    }
+    h3.sector-header:first-of-type { border-top: 0; padding-top: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="ind-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <h1>Industries</h1>
+            <p class="lede">How your trading breaks down by sector and industry. Some setups work better in some industries — this view makes that pattern visible.</p>
+        </div>
+        {% if accounts and accounts|length > 1 %}
+        <form method="get" class="d-flex gap-2 align-items-end">
+            <div>
+                <label class="form-label small text-white-50 mb-1">Account</label>
+                <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">All Accounts</option>
+                    {% for a in accounts %}
+                    <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if kpis and kpis.num_industries > 0 %}
+    <div class="ind-kpis">
+        <div class="ind-kpi">
+            <div class="lbl">Total P&amp;L</div>
+            <div class="val {% if kpis.total_pnl < 0 %}ind-neg{% elif kpis.total_pnl > 0 %}ind-pos{% endif %}">
+                ${{ "{:,.2f}".format(kpis.total_pnl) }}
+            </div>
+        </div>
+        <div class="ind-kpi">
+            <div class="lbl">Industries</div>
+            <div class="val">{{ kpis.num_industries }}</div>
+        </div>
+        <div class="ind-kpi">
+            <div class="lbl">Symbols</div>
+            <div class="val">{{ kpis.num_symbols }}</div>
+        </div>
+        <div class="ind-kpi">
+            <div class="lbl">Trades</div>
+            <div class="val">{{ kpis.num_trades }}</div>
+        </div>
+        <div class="ind-kpi">
+            <div class="lbl">Win Rate</div>
+            <div class="val">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-danger">
+    Could not load industry rollup: {{ error }}
+</div>
+{% elif not industry_rows %}
+<div class="ind-section">
+    <div class="ind-empty">
+        <strong>No industry data yet.</strong>
+        <p class="mb-0 mt-2">Once your trades sync and the daily refresh runs, you'll see your sector / industry breakdown here.</p>
+    </div>
+</div>
+{% else %}
+
+{% if sector_rows %}
+<div class="ind-section">
+    <h2>By Sector</h2>
+    <div class="sub">Click a chip to jump to that sector's industries below.</div>
+    <div class="sector-strip">
+        {% for s in sector_rows %}
+        <a href="#{{ s.sector|replace(' ', '-')|lower }}" class="sector-chip">
+            <span>{{ s.sector }}</span>
+            <span class="sc-pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                ${{ "{:,.0f}".format(s.total_pnl) }}
+            </span>
+            <span class="sc-meta">{{ s.num_industries }}&nbsp;ind. &middot; {{ "{:.0%}".format(s.win_rate) }} win</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="ind-section">
+    <h2>By Industry</h2>
+    <div class="sub">Sorted within each sector by total return. Click an industry card to filter Positions to it.</div>
+
+    {% set ns = namespace(current_sector=None) %}
+    {% for r in industry_rows %}
+        {% if r.sector != ns.current_sector %}
+            {% set ns.current_sector = r.sector %}
+            <h3 class="sector-header" id="{{ r.sector|replace(' ', '-')|lower }}">{{ r.sector }}</h3>
+            <div class="ind-grid">
+        {% endif %}
+
+        <div class="ind-card">
+            <div class="head">
+                <div>
+                    <div class="industry">{{ r.industry }}</div>
+                    <div class="sector">{{ r.sector }}</div>
+                </div>
+                <div class="pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                    ${{ "{:,.0f}".format(r.total_pnl) }}
+                </div>
+            </div>
+            <div class="stats">
+                <div class="lbl">Realized</div>
+                <div class="val {% if r.realized_pnl < 0 %}ind-neg{% endif %}">${{ "{:,.0f}".format(r.realized_pnl) }}</div>
+                <div class="lbl">Unrealized</div>
+                <div class="val {% if r.unrealized_pnl < 0 %}ind-neg{% endif %}">${{ "{:,.0f}".format(r.unrealized_pnl) }}</div>
+                <div class="lbl">Symbols</div>
+                <div class="val">{{ r.num_symbols }}</div>
+                <div class="lbl">Trades</div>
+                <div class="val">{{ r.num_trades | int }}</div>
+                <div class="lbl">Win rate</div>
+                <div class="val">
+                    {% if (r.num_winners + r.num_losers) > 0 %}
+                        {{ "{:.0%}".format(r.win_rate) }}
+                        <span class="text-muted small fw-normal">({{ r.num_winners | int }}W&nbsp;/&nbsp;{{ r.num_losers | int }}L)</span>
+                    {% else %}—{% endif %}
+                </div>
+                <div class="lbl">Premium</div>
+                <div class="val">${{ "{:,.0f}".format(r.premium_received) }}</div>
+            </div>
+            {% if r.top_symbol %}
+            <div class="top-sym">
+                Best symbol:
+                <a href="{{ url_for('position_detail', symbol=r.top_symbol, account=selected_account) }}">{{ r.top_symbol }}</a>
+                &middot; ${{ "{:,.0f}".format(r.top_symbol_return or 0) }}
+            </div>
+            {% endif %}
+            <div class="actions">
+                <a href="{{ url_for('positions', industry=r.industry, account=selected_account) }}">View positions</a>
+            </div>
+        </div>
+
+        {# close grid when next row is a different sector or this is the last row #}
+        {% if loop.last or industry_rows[loop.index].sector != r.sector %}
+            </div>
+        {% endif %}
+    {% endfor %}
+</div>
+
+{% if unknown_count and unknown_count > 0 %}
+<div class="ind-section">
+    <div class="text-muted small">
+        <strong>Note:</strong> {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to an industry yet.
+        These show under <em>Unknown</em>. They'll fill in automatically as the daily metadata refresh picks them up.
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}
