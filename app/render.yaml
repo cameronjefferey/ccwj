@@ -37,8 +37,11 @@ services:
       # Pull DATABASE_URL from the existing manually-managed web service
       # so we never have two divergent copies of the connection string.
       # `name` here must match the service's exact name in the Render
-      # dashboard (currently `ccwj`).
-      - fromService:
+      # dashboard (currently `ccwj`). `key` is how this var is named
+      # locally on the cron service; `envVarKey` is the name on the
+      # source service.
+      - key: DATABASE_URL
+        fromService:
           type: web
           name: ccwj
           envVarKey: DATABASE_URL
