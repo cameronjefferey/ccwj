@@ -302,16 +302,19 @@
     .expiry-badge.otm { background: rgba(25,135,84,.1); color: #166534; }
     .expiry-badge.atm { background: rgba(234,179,8,.1); color: #713f12; }
 
-    /* ── Calendar heatmap ── */
+    /* ── Calendar heatmap ──
+       Trading-week only (Mon–Fri): 5 columns, no weekends. Capped width so
+       the cells don't balloon to 200px+ on wide screens. */
     .cal-grid {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 3px;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+        max-width: 32rem;
     }
     .cal-header {
         font-size: .6rem; font-weight: 600; text-transform: uppercase;
         letter-spacing: .5px; color: #9ca3af; text-align: center;
-        padding: .25rem 0;
+        padding: .2rem 0;
     }
     .cal-day {
         aspect-ratio: 1; border-radius: 6px;
@@ -324,7 +327,7 @@
     .cal-day.no-data { background: #f3f4f6; color: #d1d5db; }
     .cal-day.today { box-shadow: inset 0 0 0 2px #3b82f6; }
     .cal-day-num { line-height: 1; }
-    .cal-day-pnl { font-size: .55rem; font-weight: 700; margin-top: 1px; }
+    .cal-day-pnl { font-size: .6rem; font-weight: 700; margin-top: 2px; }
 
     /* ── Mirror wall (publish) ── */
     .wm-strip {
@@ -770,26 +773,30 @@
         <div class="cal-header">Wed</div>
         <div class="cal-header">Thu</div>
         <div class="cal-header">Fri</div>
-        <div class="cal-header">Sat</div>
-        <div class="cal-header">Sun</div>
 
-        {# Leading empty cells for days before the 1st #}
+        {# Leading empty cells for weekdays before the 1st.
+           weekday: Mon=0..Sun=6. Weekend starts (Sat/Sun) need 0 leading
+           empties because their first rendered day is the next Monday. #}
         {% set first_day = daily_calendar[0] %}
         {% set first_weekday = first_day.weekday %}
-        {% for _ in range(first_weekday) %}
+        {% set leading = first_weekday if first_weekday < 5 else 0 %}
+        {% for _ in range(leading) %}
         <div class="cal-day empty"></div>
         {% endfor %}
 
-        {# Calendar days #}
+        {# Max P&L for color intensity — only consider weekdays since
+           weekend cells aren't rendered. #}
         {% set today_str = None %}
         {% set max_abs = namespace(val=1) %}
         {% for d in daily_calendar %}
-            {% if d.daily_change|abs > max_abs.val %}
+            {% if d.weekday < 5 and d.daily_change|abs > max_abs.val %}
                 {% set max_abs.val = d.daily_change|abs %}
             {% endif %}
         {% endfor %}
 
         {% for d in daily_calendar %}
+            {% if d.weekday >= 5 %}{# Skip Sat/Sun — markets are closed. #}
+            {% else %}
             {% if d.has_data %}
                 {% set intensity = (d.daily_change|abs / max_abs.val * 100)|int if max_abs.val > 0 else 0 %}
                 {% if d.daily_change > 0 %}
@@ -812,6 +819,7 @@
                 <div class="cal-day-pnl">{% if d.daily_change != 0 %}{{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}{% else %}$0{% endif %}</div>
                 {% endif %}
             </div>
+            {% endif %}{# /weekday >= 5 skip #}
         {% endfor %}
     </div>
     {% if daily_calendar_no_query_rows %}

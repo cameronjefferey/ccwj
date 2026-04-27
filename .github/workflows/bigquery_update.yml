@@ -4,13 +4,15 @@ name: Update Daily Position Performance
 # Triggered on every push to the default branch — including Schwab/CSV seed commits
 # from the app (GITHUB_PAT + GITHUB_REPO). Keep GITHUB_BRANCH in Render aligned
 # with branches listed here (master or main).
+#
+# The previous daily `schedule:` cron was removed: the Render cron service
+# `happytrader-schwab-sync` now runs at 21:30 UTC weekdays, pushes updated
+# seed CSVs, and that push triggers this workflow automatically. Manual
+# rebuilds without a seed change can still use workflow_dispatch.
 on:
   push:
     branches: [master, main]
   workflow_dispatch:
-  schedule:
-    # 1pm PST daily (21:00 UTC; market close)
-    - cron: '0 21 * * *'
 
 jobs:
   update-performance:

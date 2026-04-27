@@ -21,3 +21,45 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/gcp-key.json
     autoDeploy: true
+
+  # Daily Schwab sync — replaces the manual "Sync now" button click.
+  #
+  # Iterates every row in `schwab_connections` and runs the same _run_sync()
+  # the dashboard button calls. Each successful sync pushes updated seed CSVs
+  # to GitHub, which triggers .github/workflows/bigquery_update.yml on push and
+  # rebuilds the dbt marts. No BigQuery credentials are needed here — the cron
+  # only touches Postgres, Schwab, and the GitHub API.
+  #
+  # Schedule note: Render cron is UTC and does NOT observe DST. 21:30 UTC =
+  # 4:30pm EST in winter / 5:30pm EDT in summer, i.e. always 30+ min after the
+  # 4pm ET US equity market close. Weekdays only (1–5).
+  - type: cron
+    name: happytrader-schwab-sync
+    env: python
+    schedule: "30 21 * * 1-5"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.schwab_sync_cli
+    envVars:
+      - fromService:
+          type: web
+          name: happytrader-flask
+          envVarKey: DATABASE_URL
+      # Each daily run only needs a small overlapping window — the previous
+      # day's run already covered everything older. 3 days handles a single
+      # missed run (long weekend, Render outage) without re-pulling 60 days
+      # of trades on every cron tick.
+      - key: SCHWAB_SYNC_TRANSACTION_DAYS
+        value: "3"
+      # The values below must be set ONCE in the Render dashboard for this
+      # cron service (sync: false = Render won't auto-overwrite). Use the
+      # same values that are already configured on happytrader-flask.
+      - key: SCHWAB_APP_KEY
+        sync: false
+      - key: SCHWAB_APP_SECRET
+        sync: false
+      - key: GITHUB_PAT
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_BRANCH
+        sync: false
