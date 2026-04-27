@@ -29,29 +29,35 @@ from typing import Any, Iterable, Optional
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 
 _pool: Optional[ConnectionPool] = None
 _pool_lock = threading.Lock()
 
 
-def _run_db_twice(fn):
-    """Run fn(); retry once on a stale pooled connection (OperationalError /
-    InterfaceError). After a laptop sleep or long idle, the first request often
-    uses a connection Postgres already closed; a single retry usually fixes it.
+def _pool_check_connection(conn):
+    """Verify the connection is alive before use (drops stale TLS sessions)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
 
-    We do NOT retry on PoolTimeout. PoolTimeout means the pool genuinely couldn't
-    hand out a connection within `timeout` seconds (DB unreachable, conn limit
-    saturated, network blip). Retrying just doubles the user's wait — the pool
-    won't magically recover in another `timeout` seconds. Surface it fast so the
-    error handler can render a 503 "try again in a moment" page instead of
-    burning 20s on a spinner before showing a generic 500.
+
+def _run_db_twice(fn):
+    """Run fn(); retry once on pool timeout, network blips, or dead pooled connections.
+
+    After a laptop sleep or long idle, the first request often uses a connection
+    Postgres already closed; a single retry on *any* OperationalError usually fixes it.
     """
     last: Optional[BaseException] = None
     for attempt in range(2):
         try:
             return fn()
+        except PoolTimeout as e:
+            last = e
+            if attempt == 0:
+                time.sleep(0.2)
+                continue
+            raise
         except psycopg.OperationalError as e:
             last = e
             if attempt == 0:
@@ -110,22 +116,13 @@ def _build_pool() -> ConnectionPool:
     #   4. Tunable min_size — defaults to 1 (one warm conn so the first
     #      request doesn't pay full TLS handshake), low enough that even
     #      after a worker SIGKILL we don't crowd Postgres on the next boot.
-    # Recycle aggressively (60s default): Render's network silently kills idle
-    # TCP sessions to managed Postgres after a couple minutes. Recycling before
-    # the edge does it for us means fewer "stale conn discovered on first
-    # request after idle" round-trips.
-    max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "60"))
+    max_idle = float(os.environ.get("DATABASE_POOL_MAX_IDLE", "120"))
     max_lifetime = float(os.environ.get("DATABASE_POOL_MAX_LIFETIME", "1800"))
-    # pool_wait: how long a request waits for a free connection. Keep small
-    # (5s default): a longer wait doesn't save a request whose pool is already
-    # saturated; it just blocks a worker thread and makes the user stare at a
-    # spinner. The 503 handler turns this into a fast, clear "try again in a
-    # moment" page instead of a 20s timeout → generic 500. CRITICAL: keep this
-    # WELL below gunicorn's --timeout (120s); otherwise stuck pool waits pile
-    # up across all 4 threads in a worker, the worker gets SIGKILL'd, and its
-    # Postgres conns are orphaned server-side — a feedback loop that takes the
-    # site down for minutes after a single hiccup.
-    pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "5"))
+    # pool timeout: how long a request waits for a free connection.
+    # Keep this WELL below gunicorn's --timeout (120s) so a stuck pool
+    # surfaces as a fast 500 instead of hanging the worker until gunicorn
+    # SIGKILLs it.
+    pool_wait = float(os.environ.get("DATABASE_POOL_TIMEOUT", "10"))
     return ConnectionPool(
         conninfo=_normalize_url(url),
         min_size=int(os.environ.get("DATABASE_POOL_MIN", "1")),
@@ -136,28 +133,14 @@ def _build_pool() -> ConnectionPool:
         max_size=int(os.environ.get("DATABASE_POOL_MAX", "4")),
         kwargs={
             "row_factory": dict_row,
-            # connect_timeout: cap how long a brand-new TCP+TLS+auth handshake
-            # can take. Without this, libpq will sit on a dead route for tens
-            # of seconds, eating the entire pool_wait window with a single
-            # failed connection attempt instead of failing fast and trying
-            # again.
-            "connect_timeout": 5,
             # TCP-level keepalives so the OS notices a dead route long before
-            # psycopg does. Tightened from 60/10/5 → 15/5/3: detect a dead
-            # conn in ~30s instead of ~110s, so post-idle requests don't hang
-            # waiting for libpq to figure out the route is gone.
+            # psycopg does. After 60s of idle, probe every 10s up to 5 times.
             "keepalives": 1,
-            "keepalives_idle": 15,
-            "keepalives_interval": 5,
-            "keepalives_count": 3,
+            "keepalives_idle": 60,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
         },
-        # NOTE: deliberately NO check= callback. A per-checkout SELECT 1 adds
-        # a round-trip to every successful query and, worse, on a half-open
-        # TCP it hangs until the OS keepalives fire — burning the entire
-        # pool_wait window on a stale conn we could have just thrown away.
-        # Stale-conn handling lives in `_run_db_twice` instead: the actual
-        # query fails fast with OperationalError/InterfaceError, we discard
-        # the conn, retry once, succeed. That's cheaper and degrades better.
+        check=_pool_check_connection,
         max_idle=max_idle,
         max_lifetime=max_lifetime,
         timeout=pool_wait,

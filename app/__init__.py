@@ -81,47 +81,14 @@ def not_found(e):
     return render_template("404.html", title="Page not found"), 404
 
 
-def _is_db_unavailable_error(e):
-    """True if the exception is a transient Postgres-pool / connectivity issue
-    (DB briefly unreachable, pool saturated, dead conn from idle). These are
-    NOT app bugs — surface them as 503 "reconnecting" instead of a generic 500
-    so the user knows refreshing will work."""
-    try:
-        from psycopg_pool import PoolTimeout
-        import psycopg
-    except Exception:
-        return False
-    cur = e
-    seen = 0
-    while cur is not None and seen < 5:
-        if isinstance(cur, (PoolTimeout, psycopg.OperationalError, psycopg.InterfaceError)):
-            return True
-        cur = getattr(cur, "__cause__", None) or getattr(cur, "__context__", None)
-        seen += 1
-    return False
-
-
 @app.errorhandler(500)
 def internal_error(e):
     """Make sure 500s are *logged* with a full traceback. Flask's default
     handler logs the message but not always the traceback when something
     re-raises in middleware or before_request hooks. We always log + render
-    a small friendly page (or fall back to plain text if even that fails).
-
-    Special case: if the underlying exception is a Postgres pool timeout or
-    connectivity error, render a 503 'database briefly unreachable' page so
-    the user knows refreshing will likely work."""
+    a small friendly page (or fall back to plain text if even that fails)."""
     import traceback
     tb = traceback.format_exc()
-    original = getattr(e, "original_exception", None) or e
-    if _is_db_unavailable_error(original):
-        app.logger.warning("503 (db unavailable) on %s %s: %s",
-                           request.method, request.path, original)
-        try:
-            return render_template("503.html", title="Reconnecting"), 503
-        except Exception:
-            return ("Database is briefly unreachable. Hit refresh in a moment "
-                    "and try again."), 503
     app.logger.error("500 on %s %s\n%s", request.method, request.path, tb)
     try:
         return render_template("500.html", title="Something went wrong"), 500
