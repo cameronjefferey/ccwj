@@ -54,6 +54,16 @@ services:
           name: ccwj
           envVarKey: DATABASE_URL
 
+      # `python -m app.schwab_sync_cli` imports the `app` package, which
+      # runs `app/__init__.py`, which loads `config.Config` and raises
+      # if SECRET_KEY is unset. The cron has no sessions, cookies, or
+      # CSRF — SECRET_KEY here is just a placeholder for Flask app init,
+      # so a Render-generated random value is correct. Don't try to
+      # match the web service's value; that would couple the cron to
+      # an unrelated secret.
+      - key: SECRET_KEY
+        generateValue: true
+
       # Each daily run only needs a small overlapping window — the
       # previous day's run already covered everything older. 3 days
       # handles a single missed run (long weekend, Render outage)
