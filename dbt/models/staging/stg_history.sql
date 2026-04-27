@@ -129,18 +129,28 @@ cleaned as (
             safe_cast(safe_divide(safe_cast(osi_strike_raw as int64), 1000) as float64)
         ) as option_strike,
 
+        -- Only accept the "export" 4th token if it's literally 'C' or 'P';
+        -- otherwise the trade_symbol is the Schwab compact OSI form ("NET   240119C00080000")
+        -- where split-by-space returns the OSI as the 4th token, which would
+        -- corrupt option_type and cascade into instrument_type='Equity'.
         coalesce(
-            nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+            case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                 then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+            end,
             osi_cp
         ) as option_type,  -- 'C' or 'P'
 
         case
             when coalesce(
-                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                     then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+                end,
                 osi_cp
             ) = 'C' then 'Call'
             when coalesce(
-                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                     then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+                end,
                 osi_cp
             ) = 'P' then 'Put'
             when lower(trim(action)) in (
@@ -157,9 +167,59 @@ cleaned as (
         safe_cast(quantity as float64) as quantity,
         safe_cast(price as float64) as price,
         coalesce(safe_cast(fees_and_comm as float64), 0) as fees,
-        coalesce(safe_cast(amount as float64), 0) as amount
+        coalesce(safe_cast(amount as float64), 0) as amount_raw
 
     from osi_split
+),
+
+-- Normalize amount sign by action.
+--
+-- Different upstream sources have shipped contradictory sign conventions for
+-- the Amount column (older Schwab Connect: buys positive / STO negative; CSV
+-- export and newer Schwab Connect: buys negative / STO positive). To guarantee
+-- downstream models — int_equity_sessions, int_option_contracts, int_dividends —
+-- always see a consistent "negative = cash out, positive = cash in" convention,
+-- we re-sign every unambiguous action here using the absolute amount.
+amount_signed as (
+    select
+        c.* except (amount_raw),
+        case
+            -- Cash out (negative)
+            when c.action in (
+                'equity_buy',
+                'option_buy_to_open',
+                'option_buy_to_close',
+                'margin_interest',
+                'adr_fee'
+            ) then -abs(c.amount_raw)
+
+            -- Cash in (positive)
+            when c.action in (
+                'equity_sell',
+                'equity_sell_short',
+                'option_sell_to_open',
+                'option_sell_to_close',
+                'dividend',
+                'credit_interest'
+            ) then abs(c.amount_raw)
+
+            -- option_assigned / option_exercised / option_expired / 'other':
+            -- preserve whatever the source reports (the broker's signed amount
+            -- correctly captures the direction of the resulting equity flow).
+            else c.amount_raw
+        end as amount
+    from cleaned c
 )
 
-select * from cleaned
+select
+    account, trade_date, action_raw, action, trade_symbol, underlying_symbol,
+    option_expiry, option_strike, option_type, instrument_type, description,
+    quantity, price, fees, amount
+from amount_signed
+-- Drop non-tradeable entries that Schwab Connect emits as fake "Buy" rows:
+--   - CURRENCY_USD (cash settlement/transfer pseudo-trades)
+--   - CUSIPs (e.g. "09247X101") — money-market funds and other non-ticker
+--     securities that we don't price or chart, so they pollute positions
+--     dashboards without adding signal.
+where underlying_symbol != 'CURRENCY_USD'
+  and not regexp_contains(underlying_symbol, r'^[A-Z0-9]{8}[0-9]$')

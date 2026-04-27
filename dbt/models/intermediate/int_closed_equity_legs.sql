@@ -75,12 +75,19 @@ session_avg_cost as (
         session_id,
         min(trade_date) as session_open_date,
         sum(case when action = 'equity_buy' then abs(amount) else 0 end) as total_buy_cost,
-        sum(case when action = 'equity_buy' then quantity else 0 end)    as total_buy_qty
+        sum(case when action = 'equity_buy' then quantity else 0 end)    as total_buy_qty,
+        sum(case when action in ('equity_sell','equity_sell_short')
+                 then quantity else 0 end)                                as total_sell_qty
     from sessions
     where session_id > 0
     group by 1, 2, 3
 ),
 
+-- Avg cost per share. Use the LARGER of total_buy_qty and total_sell_qty as
+-- the denominator so the sum of realized P&L across sell events reconciles
+-- to the session's actual net cash flow (= true realized P&L) even when the
+-- trade history has more sells than buys (e.g. transfers-in or pre-history
+-- holdings that aren't represented as buy rows).
 sell_events as (
     select
         s.account,
@@ -91,11 +98,23 @@ sell_events as (
         s.trade_date                                                      as close_date,
         s.quantity                                                        as sell_qty,
         s.amount                                                          as sell_proceeds,
-        safe_divide(sac.total_buy_cost, sac.total_buy_qty)               as avg_cost_per_share,
+        safe_divide(
+            sac.total_buy_cost,
+            greatest(sac.total_buy_qty, sac.total_sell_qty)
+        ) as avg_cost_per_share,
         round(safe_divide(s.amount, s.quantity), 2)                       as sale_price_per_share,
-        round(safe_divide(sac.total_buy_cost, sac.total_buy_qty) * s.quantity, 2) as cost_basis,
         round(
-            s.amount - safe_divide(sac.total_buy_cost, sac.total_buy_qty) * s.quantity,
+            safe_divide(
+                sac.total_buy_cost,
+                greatest(sac.total_buy_qty, sac.total_sell_qty)
+            ) * s.quantity,
+            2
+        ) as cost_basis,
+        round(
+            s.amount - safe_divide(
+                sac.total_buy_cost,
+                greatest(sac.total_buy_qty, sac.total_sell_qty)
+            ) * s.quantity,
             2
         ) as realized_pnl
     from sessions s
@@ -105,21 +124,69 @@ sell_events as (
         and s.session_id = sac.session_id
     where s.action in ('equity_sell', 'equity_sell_short')
       and s.session_id > 0
+),
+
+-- Synthetic write-off row for any session where the trade history shows
+-- fewer shares sold than bought yet the session has closed (e.g. the symbol
+-- is no longer in current holdings). The residual cost basis is the loss
+-- caused by missing trade history (transfers, corporate actions, etc.) and
+-- is needed so the sum of realized P&L per leg reconciles to the session's
+-- actual net cash flow (which is what positions_summary reports).
+session_status as (
+    select account, symbol, session_id, status, last_trade_date
+    from {{ ref('int_equity_sessions') }}
+),
+
+writeoffs as (
+    select
+        sac.account,
+        sac.symbol,
+        sac.symbol                                                      as trade_symbol,
+        sac.session_id,
+        sac.session_open_date                                           as open_date,
+        ss.last_trade_date                                              as close_date,
+        sac.total_buy_qty - sac.total_sell_qty                          as sell_qty,
+        cast(0 as float64)                                              as sell_proceeds,
+        cast(0 as float64)                                              as sale_price_per_share,
+        round(
+            safe_divide(
+                sac.total_buy_cost,
+                greatest(sac.total_buy_qty, sac.total_sell_qty)
+            ) * (sac.total_buy_qty - sac.total_sell_qty),
+            2
+        ) as cost_basis,
+        round(
+            -safe_divide(
+                sac.total_buy_cost,
+                greatest(sac.total_buy_qty, sac.total_sell_qty)
+            ) * (sac.total_buy_qty - sac.total_sell_qty),
+            2
+        ) as realized_pnl
+    from session_avg_cost sac
+    join session_status ss
+        on sac.account    = ss.account
+        and sac.symbol     = ss.symbol
+        and sac.session_id = ss.session_id
+    where ss.status = 'Closed'
+      and sac.total_buy_qty > sac.total_sell_qty
+      and (sac.total_buy_qty - sac.total_sell_qty) > 0
+),
+
+all_legs as (
+    select
+        account, symbol, trade_symbol, session_id, open_date, close_date,
+        sell_qty as quantity, sale_price_per_share, sell_proceeds,
+        cost_basis, realized_pnl,
+        'Closed' as status, 'Equity Sold' as description
+    from sell_events
+    union all
+    select
+        account, symbol, trade_symbol, session_id, open_date, close_date,
+        sell_qty as quantity, sale_price_per_share, sell_proceeds,
+        cost_basis, realized_pnl,
+        'Closed' as status, 'Cost Written Off' as description
+    from writeoffs
 )
 
-select
-    account,
-    symbol,
-    trade_symbol,
-    session_id,
-    open_date,
-    close_date,
-    sell_qty       as quantity,
-    sale_price_per_share,
-    sell_proceeds,
-    cost_basis,
-    realized_pnl,
-    'Closed'       as status,
-    'Equity Sold'  as description
-from sell_events
+select * from all_legs
 order by account, symbol, close_date

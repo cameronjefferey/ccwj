@@ -139,6 +139,11 @@ options_classified as (
         oc.days_in_trade,
         oc.net_cash_flow,
         oc.total_pnl,
+        -- Realized vs unrealized for options:
+        --   Closed contracts: all P&L is realized
+        --   Open contracts:   total_pnl is mark-to-market unrealized
+        case when oc.status = 'Closed' then oc.total_pnl else 0 end as realized_pnl,
+        case when oc.status = 'Open'   then oc.total_pnl else 0 end as unrealized_pnl,
         oc.num_trades,
         oc.close_type,
         oc.premium_received,
@@ -208,6 +213,20 @@ options_classified as (
 ---------------------------------------------------------------------
 -- 5. Classify equity sessions
 ---------------------------------------------------------------------
+-- Realized P&L by session, summed from int_closed_equity_legs.
+-- Captures the realized portion of an Open session that has had interim sells
+-- (e.g. JEPI: bought 2000 shares, sold 1000, holding 1000 → realized $2,681,
+-- unrealized = total_pnl − realized).
+session_realized as (
+    select
+        account,
+        symbol,
+        session_id,
+        sum(realized_pnl) as realized_pnl
+    from {{ ref('int_closed_equity_legs') }}
+    group by 1, 2, 3
+),
+
 equity_classified as (
     select
         e.account,
@@ -224,6 +243,18 @@ equity_classified as (
         e.days_held                            as days_in_trade,
         e.net_cash_flow,
         e.total_pnl,
+        -- Realized vs unrealized for equity sessions:
+        --   Closed session: every share has been sold → all P&L is realized
+        --   Open session:   realized = sum of int_closed_equity_legs for any
+        --                   interim sells; unrealized = total_pnl − realized
+        case
+            when e.status = 'Closed' then e.total_pnl
+            else coalesce(sr.realized_pnl, 0)
+        end as realized_pnl,
+        case
+            when e.status = 'Closed' then 0
+            else e.total_pnl - coalesce(sr.realized_pnl, 0)
+        end as unrealized_pnl,
         e.num_trades,
         cast(null as string)                   as close_type,
         cast(0 as float64)                     as premium_received,
@@ -250,6 +281,10 @@ equity_classified as (
         on e.account = efa.account
         and e.symbol = efa.symbol
         and e.session_id = efa.session_id
+    left join session_realized sr
+        on e.account = sr.account
+        and e.symbol = sr.symbol
+        and e.session_id = sr.session_id
 )
 
 ---------------------------------------------------------------------

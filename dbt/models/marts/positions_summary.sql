@@ -37,10 +37,12 @@ strategy_summary as (
             else 'Closed'
         end as status,
 
-        -- P&L
+        -- P&L (realized/unrealized are pre-split inside int_strategy_classification
+        -- so an Open equity session with interim sells correctly attributes the
+        -- already-realized portion to realized_pnl rather than unrealized_pnl).
         sum(total_pnl) as total_pnl,
-        sum(case when status = 'Closed' then total_pnl else 0 end) as realized_pnl,
-        sum(case when status = 'Open'   then total_pnl else 0 end) as unrealized_pnl,
+        sum(realized_pnl) as realized_pnl,
+        sum(unrealized_pnl) as unrealized_pnl,
 
         -- Premium flows (option strategies)
         sum(premium_received) as total_premium_received,
