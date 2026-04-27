@@ -404,7 +404,7 @@
 
             const loading = document.createElement('div');
             loading.className = 'mb-2 small text-muted';
-            loading.textContent = 'Coach is thinking...';
+            loading.textContent = 'AI Coach is thinking...';
             coachThread.appendChild(loading);
             coachThread.scrollTop = coachThread.scrollHeight;
 
@@ -430,7 +430,7 @@
 
                 const coachBlock = document.createElement('div');
                 coachBlock.className = 'mb-3';
-                coachBlock.innerHTML = '<div class="small text-muted">Coach</div>' + data.answer_html;
+                coachBlock.innerHTML = '<div class="small text-muted">AI Coach</div>' + data.answer_html;
                 coachThread.appendChild(coachBlock);
                 coachThread.scrollTop = coachThread.scrollHeight;
             } catch (err) {

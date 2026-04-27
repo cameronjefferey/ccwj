@@ -422,7 +422,9 @@ def schwab_callback():
     error = request.args.get("error")
 
     if error:
-        flash(f"Schwab authorization failed: {error}", "danger")
+        from app import app as _app
+        _app.logger.warning("Schwab OAuth returned error: %s", error)
+        flash("Schwab couldn't authorize the connection. Please try again from Settings.", "danger")
         return redirect(url_for("profile", tab="account"))
 
     if not code or not state:
@@ -453,7 +455,9 @@ def schwab_callback():
     )
 
     if resp.status_code != 200:
-        flash(f"Failed to get token from Schwab: {resp.text[:200]}", "danger")
+        from app import app as _app
+        _app.logger.error("Schwab token exchange failed (%s): %s", resp.status_code, resp.text[:500])
+        flash("Couldn't finish connecting to Schwab. Please try again, or contact support if it keeps happening.", "danger")
         return redirect(url_for("profile", tab="account"))
 
     token_data = resp.json()
@@ -604,9 +608,12 @@ def schwab_sync():
                 "success",
             )
             h = (result.get("github_head_sha") or "").strip()
+            qp = {}
             if h:
-                return redirect(url_for("sync_processing", sha=h))
-            return redirect(url_for("sync_processing"))
+                qp["sha"] = h
+            if not first_done:
+                qp["first"] = 1
+            return redirect(url_for("sync_processing", **qp))
         if result.get("github_error"):
             flash(
                 f"{summary} We could not save this to the cloud: {result['github_error']}",
@@ -626,7 +633,9 @@ def schwab_sync():
                 "danger",
             )
         else:
-            flash(f"Sync failed: {e}", "danger")
+            from app import app as _app
+            _app.logger.exception("Schwab sync failed: %s", e)
+            flash("Schwab sync didn't finish. Try again in a minute, or reconnect Schwab in Settings if it keeps happening.", "danger")
 
     return redirect(url_for("profile", tab="account"))
 

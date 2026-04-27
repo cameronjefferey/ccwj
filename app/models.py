@@ -71,6 +71,25 @@ def init_db():
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS strategy_fit_insights (
+            id             SERIAL PRIMARY KEY,
+            user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            account_filter TEXT NOT NULL DEFAULT '',
+            summary        TEXT NOT NULL,
+            full_analysis  TEXT NOT NULL,
+            brief_text     TEXT,
+            generated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS pro_waitlist (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            email       TEXT,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS schwab_connections (
             id                            SERIAL PRIMARY KEY,
             user_id                       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -297,6 +316,60 @@ def get_uploads_for_user(user_id, limit=10):
     )
 
 
+def count_uploads_for_user(user_id):
+    """Total number of CSV uploads recorded for this user."""
+    row = fetch_one(
+        "SELECT COUNT(*) AS n FROM uploads WHERE user_id = %s",
+        (user_id,),
+    )
+    return int(row["n"]) if row else 0
+
+
+# ------------------------------------------------------------------
+# Pro tier waitlist
+# ------------------------------------------------------------------
+
+def add_pro_waitlist_entry(user_id=None, email=None):
+    """Add a logged-in user (or anonymous email) to the Pro waitlist.
+
+    Idempotent: if the same user_id or email already exists, no-op.
+    """
+    if user_id is not None:
+        existing = fetch_one(
+            "SELECT id FROM pro_waitlist WHERE user_id = %s LIMIT 1",
+            (user_id,),
+        )
+        if existing:
+            return
+        execute(
+            "INSERT INTO pro_waitlist (user_id, email) VALUES (%s, %s)",
+            (user_id, email),
+        )
+        return
+
+    if email:
+        existing = fetch_one(
+            "SELECT id FROM pro_waitlist WHERE email = %s LIMIT 1",
+            (email,),
+        )
+        if existing:
+            return
+        execute(
+            "INSERT INTO pro_waitlist (user_id, email) VALUES (NULL, %s)",
+            (email,),
+        )
+
+
+def is_user_on_pro_waitlist(user_id):
+    if user_id is None:
+        return False
+    row = fetch_one(
+        "SELECT 1 FROM pro_waitlist WHERE user_id = %s LIMIT 1",
+        (user_id,),
+    )
+    return bool(row)
+
+
 # ------------------------------------------------------------------
 # Insights (AI analysis cache)
 # ------------------------------------------------------------------
@@ -318,6 +391,37 @@ def get_insight_for_user(user_id):
         "SELECT summary, full_analysis, generated_at FROM insights "
         "WHERE user_id = %s ORDER BY generated_at DESC LIMIT 1",
         (user_id,),
+    )
+
+
+def save_strategy_fit_insight(user_id, account_filter, summary, full_analysis, brief_text):
+    """Save (or replace) a cached strategy-fit insight for (user, account scope).
+
+    `account_filter` lets us cache different views separately (e.g. "All" vs
+    a specific account) so toggling the account dropdown doesn't show stale
+    narration."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM strategy_fit_insights "
+                "WHERE user_id = %s AND account_filter = %s",
+                (user_id, account_filter or ""),
+            )
+            cur.execute(
+                "INSERT INTO strategy_fit_insights "
+                "(user_id, account_filter, summary, full_analysis, brief_text) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (user_id, account_filter or "", summary, full_analysis, brief_text),
+            )
+
+
+def get_strategy_fit_insight_for_user(user_id, account_filter=""):
+    return fetch_one(
+        "SELECT summary, full_analysis, brief_text, generated_at "
+        "FROM strategy_fit_insights "
+        "WHERE user_id = %s AND account_filter = %s "
+        "ORDER BY generated_at DESC LIMIT 1",
+        (user_id, account_filter or ""),
     )
 
 

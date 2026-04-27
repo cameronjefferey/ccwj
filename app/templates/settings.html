@@ -103,7 +103,7 @@
                 <div class="settings-field">
                     <div class="field-label">Schwab</div>
                     <p class="field-hint mb-2">
-                        Sign in to Schwab once to authorize HappyTrader. After that, <strong>Sync now</strong> pulls positions and recent trades into your pipeline (same path as a CSV upload).
+                        Sign in to Schwab once to authorize HappyTrader. After that, <strong>Sync now</strong> pulls in your latest positions and trades automatically.
                     </p>
                     {% if schwab_connections %}
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -111,7 +111,7 @@
                             Connected{% for c in schwab_connections %}: {{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
                         </span>
                     </div>
-                    <p class="small text-muted mb-2">Use <strong>Profile → Accounts &amp; login</strong> to choose first-sync history depth or run a one-time long backfill.</p>
+                    <p class="small text-muted mb-2">Use <strong>Profile → Accounts &amp; login</strong> to choose how far back the first sync goes, or run a one-time full history import.</p>
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="sync_scope" value="rolling">

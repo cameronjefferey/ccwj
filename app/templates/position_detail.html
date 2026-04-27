@@ -207,7 +207,8 @@
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>Error:</strong> {{ error }}
+    We're having trouble loading this position right now. Refresh in a minute, or
+    <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.
 </div>
 {% elif kpis %}
 

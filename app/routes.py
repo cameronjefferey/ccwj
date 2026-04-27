@@ -12,6 +12,7 @@ from app.models import (
     add_account_for_user,
     get_accounts_for_user,
     get_schwab_connections,
+    get_strategy_fit_insight_for_user,
     is_admin,
 )
 from google.cloud import bigquery
@@ -429,13 +430,70 @@ def feature_detail(slug):
 @app.route("/pricing")
 def pricing():
     """Pricing placeholder for marketing."""
-    return render_template("pricing.html", title="Pricing")
+    waitlisted = False
+    try:
+        if current_user.is_authenticated:
+            from app.models import is_user_on_pro_waitlist
+            waitlisted = is_user_on_pro_waitlist(current_user.id)
+    except Exception:
+        waitlisted = False
+    return render_template(
+        "pricing.html",
+        title="Pricing",
+        pro_waitlisted=waitlisted,
+    )
+
+
+@app.route("/pro/waitlist", methods=["POST"])
+def pro_waitlist():
+    """Add an email (or current user) to the Pro tier waitlist."""
+    from app.models import add_pro_waitlist_entry
+
+    email = (request.form.get("email") or "").strip().lower()
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    if not user_id and not email:
+        flash("Enter an email address so we can notify you.", "warning")
+        return redirect(url_for("pricing"))
+
+    if not user_id:
+        # Light email validation
+        if "@" not in email or "." not in email or len(email) > 320:
+            flash("That email doesn't look right. Try again?", "warning")
+            return redirect(url_for("pricing"))
+
+    try:
+        add_pro_waitlist_entry(user_id=user_id, email=email or None)
+        flash("You're on the waitlist. We'll be in touch when Pro is ready.", "success")
+    except Exception as exc:
+        app.logger.exception("Pro waitlist signup failed: %s", exc)
+        flash("Couldn't add you to the waitlist right now. Try again in a moment.", "danger")
+
+    return redirect(url_for("pricing"))
 
 
 @app.route("/faq")
 def faq():
     """FAQ page for marketing."""
     return render_template("faq.html", title="FAQ")
+
+
+@app.route("/privacy")
+def privacy():
+    """Plain-English privacy policy."""
+    return render_template("privacy.html", title="Privacy")
+
+
+@app.route("/terms")
+def terms():
+    """Plain-English terms of service."""
+    return render_template("terms.html", title="Terms")
+
+
+@app.route("/contact")
+def contact():
+    """Contact / support page."""
+    return render_template("contact.html", title="Contact")
 
 
 @app.route("/sitemap.xml")
@@ -546,12 +604,6 @@ def get_started():
 @limiter.exempt
 def ping():
     return "Flask app is alive"
-
-
-@app.route("/sentry-debug")
-def sentry_debug():
-    """Verify Sentry installation. Remove after verification."""
-    raise RuntimeError("Sentry test: this error is intentional")
 
 
 @app.route("/positions")
@@ -675,6 +727,11 @@ def positions():
         "total_return": float(filtered["total_return"].sum()),
         "realized_pnl": float(filtered["realized_pnl"].sum()),
         "unrealized_pnl": float(filtered["unrealized_pnl"].sum()),
+        "dividend_income": (
+            float(filtered["total_dividend_income"].sum())
+            if "total_dividend_income" in filtered.columns
+            else 0.0
+        ),
         "premium_collected": float(filtered["total_premium_received"].sum()),
         "win_rate": total_winners / total_closed if total_closed else 0,
         "num_positions": len(filtered),
@@ -3021,8 +3078,10 @@ def symbols_detail():
         closed_legs_df = dfs["closed_legs"]
         closed_equity_df = dfs["closed_equity"]
     except Exception as exc:
+        app.logger.exception("Daily P&L by symbol load failed: %s", exc)
         return render_template(
             "symbols.html",
+            title="Daily P&L by symbol",
             error=str(exc),
             symbol_data=[],
             chart_data_json="[]",
@@ -3489,6 +3548,7 @@ def symbols_detail():
 
     return render_template(
         "symbols.html",
+        title="Daily P&L by symbol",
         symbol_data=symbol_data,
         chart_data_json=json.dumps(sorted_charts),
         accounts=accounts,
@@ -3715,6 +3775,7 @@ def industries():
             sectors=[],
             sector_rows=[],
             industry_rows=[],
+            industries_by_sector={},
             unknown_count=0,
             kpis={},
             accounts=[],
@@ -3748,6 +3809,7 @@ def industries():
             sectors=[],
             sector_rows=[],
             industry_rows=[],
+            industries_by_sector={},
             unknown_count=0,
             kpis={
                 "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
@@ -3820,11 +3882,18 @@ def industries():
     industry_agg = industry_agg.sort_values("total_return", ascending=False)
     industry_rows = industry_agg.to_dict(orient="records")
 
-    # Sector rollup for the hero strip (one row per sector).
+    # Sector rollup — this is now the primary view on the page, so it carries
+    # the same shape as industry_rows: realized / unrealized / premium /
+    # dividends / total_return so the sector cards have everything at a glance.
     sector_agg = (
         df.groupby(["sector"], dropna=False)
         .agg(
             total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            premium_received=("total_premium_received", "sum"),
+            dividend_income=("total_dividend_income", "sum"),
+            total_return=("total_return", "sum"),
             num_industries=("industry", "nunique"),
             num_symbols=("symbol", "nunique"),
             num_trades=("num_individual_trades", "sum"),
@@ -3836,9 +3905,46 @@ def industries():
     s_closed = sector_agg["num_winners"] + sector_agg["num_losers"]
     sector_agg["win_rate"] = sector_agg["num_winners"] / s_closed.replace(0, pd.NA)
     sector_agg["win_rate"] = sector_agg["win_rate"].fillna(0)
+
+    # Best / worst symbol per sector — drives the "what's carrying this?" /
+    # "what's dragging?" callouts on each sector card.
+    sym_per_sector = (
+        df.groupby(["sector", "symbol"], dropna=False)["total_return"]
+        .sum()
+        .reset_index()
+    )
+    if not sym_per_sector.empty:
+        top_per_sector = (
+            sym_per_sector.sort_values(["sector", "total_return"], ascending=[True, False])
+            .groupby("sector").first().reset_index()
+            .rename(columns={"symbol": "top_symbol", "total_return": "top_symbol_return"})
+        )
+        worst_per_sector = (
+            sym_per_sector.sort_values(["sector", "total_return"], ascending=[True, True])
+            .groupby("sector").first().reset_index()
+            .rename(columns={"symbol": "worst_symbol", "total_return": "worst_symbol_return"})
+        )
+        sector_agg = sector_agg.merge(top_per_sector[["sector", "top_symbol", "top_symbol_return"]], on="sector", how="left")
+        sector_agg = sector_agg.merge(worst_per_sector[["sector", "worst_symbol", "worst_symbol_return"]], on="sector", how="left")
+    else:
+        sector_agg["top_symbol"] = ""
+        sector_agg["top_symbol_return"] = 0.0
+        sector_agg["worst_symbol"] = ""
+        sector_agg["worst_symbol_return"] = 0.0
+
     sector_agg = sector_agg.sort_values("total_pnl", ascending=False)
     sector_rows = sector_agg.to_dict(orient="records")
     sectors = sector_agg["sector"].tolist()
+
+    # Group industries under their sector for the collapsible drill-down on
+    # the page. Order each sector's industries by total_return desc.
+    industries_by_sector: dict[str, list[dict]] = {}
+    for r in industry_rows:
+        industries_by_sector.setdefault(r["sector"], []).append(r)
+    for sec in industries_by_sector:
+        industries_by_sector[sec].sort(
+            key=lambda x: x.get("total_return", 0), reverse=True
+        )
 
     unknown_count = int(
         ((df["sector"] == "Unknown") | (df["industry"] == "Unknown"))
@@ -3852,10 +3958,336 @@ def industries():
         sectors=sectors,
         sector_rows=sector_rows,
         industry_rows=industry_rows,
+        industries_by_sector=industries_by_sector,
         unknown_count=unknown_count,
         kpis=kpis,
         accounts=accounts_for_filter,
         selected_account=selected_account,
+    )
+
+
+# ======================================================================
+# Strategy fit  (/strategy-fit)
+# ======================================================================
+#
+# Cross-tab of strategy x sector (or strategy x industry when drilled into
+# a single sector) so users can see "what strategies work best in what
+# kinds of companies?". Same tenancy guarantees as /industries — query is
+# scoped by _account_sql_and AND the DataFrame is _filter_df_by_accounts'd
+# before any aggregation.
+# ----------------------------------------------------------------------
+
+STRATEGY_FIT_QUERY = """
+    SELECT
+        account,
+        symbol,
+        strategy,
+        status,
+        total_pnl,
+        realized_pnl,
+        unrealized_pnl,
+        total_return,
+        num_individual_trades,
+        num_winners,
+        num_losers,
+        sector,
+        industry
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE 1=1
+    {account_filter}
+"""
+
+
+def _strategy_fit_insight_context(selected_account: str) -> dict:
+    """Pull the cached AI strategy-fit insight for the current user/account
+    scope and convert its markdown to HTML for the template.
+
+    Returns a small dict that's safe to **-unpack into render_template()
+    in all code paths (success, empty, error)."""
+    ctx = {
+        "ai_summary": None,
+        "ai_full_html": None,
+        "ai_generated_at": None,
+        "ai_enabled": app.config.get("INSIGHTS_ENABLED", True),
+        "ai_available": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+    }
+    if not ctx["ai_enabled"]:
+        return ctx
+    try:
+        cached = get_strategy_fit_insight_for_user(
+            current_user.id, account_filter=selected_account or ""
+        )
+    except Exception:
+        cached = None
+    if cached:
+        from app.insights import _md_to_html
+        ctx["ai_summary"] = cached.get("summary")
+        ctx["ai_full_html"] = _md_to_html(cached.get("full_analysis") or "")
+        ctx["ai_generated_at"] = cached.get("generated_at")
+    return ctx
+
+
+@app.route("/strategy-fit")
+@login_required
+def strategy_fit():
+    client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    acct_filter = _account_sql_and(user_accounts)
+
+    selected_account = request.args.get("account", "")
+    drill_sector = request.args.get("sector", "")  # optional — drill into industries
+
+    insight_ctx = _strategy_fit_insight_context(selected_account)
+
+    try:
+        df = client.query(
+            STRATEGY_FIT_QUERY.format(account_filter=acct_filter)
+        ).to_dataframe()
+    except Exception as exc:
+        return render_template(
+            "strategy_fit.html",
+            error=str(exc),
+            **insight_ctx,
+            row_labels=[],
+            col_labels=[],
+            cells={},
+            cell_symbols_json="{}",
+            row_totals={},
+            col_totals={},
+            grand_total=None,
+            max_abs_pnl=1.0, max_abs_expectancy=1.0, max_abs_edge=1.0,
+            baseline_expectancy=0.0, baseline_win_rate=0.0,
+            sweet_spots=[], soft_spots=[],
+            col_field="sector",
+            mode="sector",
+            drill_sector="",
+            accounts=[],
+            selected_account="",
+        )
+
+    df = _df_normalize_account_column(df)
+    df = _filter_df_by_accounts(df, user_accounts)
+
+    if selected_account:
+        df = df[df["account"] == selected_account]
+
+    accounts_for_filter = sorted(df["account"].dropna().unique().tolist()) if not df.empty else []
+
+    for col in ("total_pnl", "realized_pnl", "unrealized_pnl", "total_return",
+                "num_individual_trades", "num_winners", "num_losers"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    for col in ("sector", "industry", "strategy"):
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+
+    if df.empty:
+        return render_template(
+            "strategy_fit.html",
+            error=None,
+            row_labels=[],
+            col_labels=[],
+            cells={},
+            cell_symbols_json="{}",
+            row_totals={},
+            col_totals={},
+            grand_total=None,
+            max_abs_pnl=1.0, max_abs_expectancy=1.0, max_abs_edge=1.0,
+            baseline_expectancy=0.0, baseline_win_rate=0.0,
+            sweet_spots=[], soft_spots=[],
+            col_field="sector",
+            mode="sector",
+            drill_sector="",
+            accounts=accounts_for_filter,
+            selected_account=selected_account,
+            **insight_ctx,
+        )
+
+    # If a sector was passed, drill into industries within that sector.
+    # Otherwise the columns are sectors.
+    mode = "industry" if drill_sector else "sector"
+    if mode == "industry":
+        df = df[df["sector"] == drill_sector]
+        col_field = "industry"
+    else:
+        col_field = "sector"
+
+    # Aggregate to (strategy, col_field). One cell per intersection.
+    cell_agg = (
+        df.groupby(["strategy", col_field], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("symbol", "nunique"),
+        )
+        .reset_index()
+    )
+    closed = cell_agg["num_winners"] + cell_agg["num_losers"]
+    cell_agg["win_rate"] = cell_agg["num_winners"] / closed.replace(0, pd.NA)
+    cell_agg["win_rate"] = cell_agg["win_rate"].fillna(0)
+
+    # Expectancy = avg P&L per trade. The single most decision-relevant metric
+    # because it normalizes for volume — "per trade I take, am I making money?"
+    cell_agg["expectancy"] = cell_agg["total_pnl"] / cell_agg["num_trades"].replace(0, pd.NA)
+    cell_agg["expectancy"] = cell_agg["expectancy"].fillna(0)
+
+    # Baselines: your overall expectancy and your overall win rate. Edge is
+    # then (cell - your_avg) — positive means you do BETTER than your usual
+    # self in that cell, negative means worse. Way more meaningful than raw
+    # numbers because it answers "where do I have edge?" not "what made money?"
+    overall_total_pnl = float(df["total_pnl"].sum())
+    overall_trades = int(df["num_individual_trades"].sum())
+    overall_winners = int(df["num_winners"].sum())
+    overall_losers = int(df["num_losers"].sum())
+    overall_closed = overall_winners + overall_losers
+    baseline_expectancy = (overall_total_pnl / overall_trades) if overall_trades else 0.0
+    baseline_win_rate = (overall_winners / overall_closed) if overall_closed else 0.0
+    cell_agg["edge_expectancy"] = cell_agg["expectancy"] - baseline_expectancy
+    cell_agg["edge_win_rate"] = cell_agg["win_rate"] - baseline_win_rate
+
+    # Row order: by strategy total P&L desc (best-performing strategies on top)
+    row_order = (
+        cell_agg.groupby("strategy")["total_pnl"].sum().sort_values(ascending=False)
+        .index.tolist()
+    )
+    # Column order: by column total P&L desc (best-performing sectors first)
+    col_order = (
+        cell_agg.groupby(col_field)["total_pnl"].sum().sort_values(ascending=False)
+        .index.tolist()
+    )
+
+    # Build a nested {strategy: {col: cell_dict}} lookup. Nested is friendlier
+    # for Jinja than tuple keys.
+    cells: dict = {}
+    for r in cell_agg.to_dict(orient="records"):
+        cells.setdefault(r["strategy"], {})[r[col_field]] = r
+
+    # Per-cell symbol breakdown — used by the drill-down panel so users can
+    # answer "what symbols are carrying this cell?" without leaving the page.
+    # Top 5 by total P&L per cell to keep the payload tight.
+    cell_sym_agg = (
+        df.groupby(["strategy", col_field, "symbol"], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+        )
+        .reset_index()
+        .sort_values("total_pnl", ascending=False)
+    )
+    cell_symbols_map: dict = {}
+    for _, r in cell_sym_agg.iterrows():
+        key = f"{r['strategy']}||{r[col_field]}"
+        cell_symbols_map.setdefault(key, []).append({
+            "symbol": str(r["symbol"]),
+            "total_pnl": float(r["total_pnl"]),
+            "num_trades": int(r["num_trades"]),
+            "num_winners": int(r["num_winners"]),
+            "num_losers": int(r["num_losers"]),
+        })
+    cell_symbols_map = {k: v[:5] for k, v in cell_symbols_map.items()}
+
+    # Row totals (one per strategy)
+    row_totals_agg = (
+        cell_agg.groupby("strategy")
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("num_symbols", "sum"),
+        )
+        .reset_index()
+    )
+    rclosed = row_totals_agg["num_winners"] + row_totals_agg["num_losers"]
+    row_totals_agg["win_rate"] = (row_totals_agg["num_winners"] / rclosed.replace(0, pd.NA)).fillna(0)
+    row_totals = {r["strategy"]: r for r in row_totals_agg.to_dict(orient="records")}
+
+    # Column totals (one per sector / industry)
+    col_totals_agg = (
+        cell_agg.groupby(col_field)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("num_symbols", "sum"),
+        )
+        .reset_index()
+    )
+    cclosed = col_totals_agg["num_winners"] + col_totals_agg["num_losers"]
+    col_totals_agg["win_rate"] = (col_totals_agg["num_winners"] / cclosed.replace(0, pd.NA)).fillna(0)
+    col_totals = {r[col_field]: r for r in col_totals_agg.to_dict(orient="records")}
+
+    grand = {
+        "total_pnl": float(cell_agg["total_pnl"].sum()),
+        "num_trades": int(cell_agg["num_trades"].sum()),
+        "num_winners": int(cell_agg["num_winners"].sum()),
+        "num_losers": int(cell_agg["num_losers"].sum()),
+        "expectancy": baseline_expectancy,
+    }
+    g_closed = grand["num_winners"] + grand["num_losers"]
+    grand["win_rate"] = baseline_win_rate
+
+    # Magnitude scales for each color metric — template uses these to size
+    # cell tints. Compute against ALL cells, not just sweet/soft, so cells
+    # with low N still get correct relative tint.
+    records = cell_agg.to_dict(orient="records")
+    abs_pnls = [abs(c["total_pnl"]) for c in records if c["total_pnl"]]
+    abs_exps = [abs(c["expectancy"]) for c in records if c["expectancy"]]
+    abs_edges = [abs(c["edge_expectancy"]) for c in records if c["edge_expectancy"]]
+    max_abs_pnl = max(abs_pnls) if abs_pnls else 1.0
+    max_abs_expectancy = max(abs_exps) if abs_exps else 1.0
+    max_abs_edge = max(abs_edges) if abs_edges else 1.0
+
+    # Smarter sweet/soft picks — sample-size and win-rate guarded so we don't
+    # celebrate a 1-trade fluke or a coin-flip strategy that lucked into R:R.
+    MIN_TRADES_FOR_CALLOUT = 5
+    qualified = cell_agg[cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT].copy()
+
+    sweet_spots: list[dict] = []
+    soft_spots: list[dict] = []
+    if not qualified.empty:
+        # Sweet: positive expectancy AND win rate ≥ 45% (so we don't glorify
+        # high R:R but coin-flip-y setups). Sort by expectancy desc.
+        sweet_df = qualified[
+            (qualified["expectancy"] > 0) & (qualified["win_rate"] >= 0.45)
+        ].sort_values("expectancy", ascending=False).head(3)
+        # Soft: negative expectancy. Sort by expectancy asc (most negative first).
+        soft_df = qualified[qualified["expectancy"] < 0].sort_values(
+            "expectancy", ascending=True
+        ).head(2)
+        sweet_spots = sweet_df.to_dict(orient="records")
+        soft_spots = soft_df.to_dict(orient="records")
+
+    return render_template(
+        "strategy_fit.html",
+        error=None,
+        row_labels=row_order,
+        col_labels=col_order,
+        cells=cells,
+        cell_symbols_json=json.dumps(cell_symbols_map),
+        row_totals=row_totals,
+        col_totals=col_totals,
+        grand_total=grand,
+        max_abs_pnl=max_abs_pnl,
+        max_abs_expectancy=max_abs_expectancy,
+        max_abs_edge=max_abs_edge,
+        baseline_expectancy=baseline_expectancy,
+        baseline_win_rate=baseline_win_rate,
+        sweet_spots=sweet_spots,
+        soft_spots=soft_spots,
+        col_field=col_field,
+        mode=mode,
+        drill_sector=drill_sector,
+        accounts=accounts_for_filter,
+        selected_account=selected_account,
+        **insight_ctx,
     )
 
 

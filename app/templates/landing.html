@@ -232,6 +232,28 @@
         </a>
     </div>
     <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('industries') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(13,148,136,.12); color:#0d9488">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M14.763.075A.5.5 0 0 1 15 .5v15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V11h-1V8a.5.5 0 0 0-.5-.5H8.5v-1H7.515c-.146 0-.272-.044-.396-.118l-1.18-.708a.5.5 0 0 1-.063-.84l1.71-1.41a.5.5 0 0 1 .064-.041L11 1.232V.5a.5.5 0 0 1 .763-.425zM4.5 15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V14h4z"/>
+                </svg>
+            </div>
+            <h6>Sector &amp; industry insights</h6>
+            <p>See where you actually have edge. Each ticker tagged by sector and industry, so you know which corners of the market are working for you.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ url_for('strategy_fit') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
+            <div class="feature-icon" style="background:rgba(220,53,69,.12); color:#dc3545">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M0 0h5v5H0V0zm6 0h5v5H6V0zm6 0h4v5h-4V0zM0 6h5v5H0V6zm6 0h5v5H6V6zm6 0h4v5h-4V6zM0 12h5v4H0v-4zm6 0h5v4H6v-4zm6 0h4v4h-4v-4z"/>
+                </svg>
+            </div>
+            <h6>Strategy fit matrix</h6>
+            <p>A heatmap of every strategy crossed with every sector you've traded. Spot your sweet spots and avoid the corners that quietly drain capital.</p>
+        </a>
+    </div>
+    <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='multi-account') }}" class="card feature-card">
             <div class="feature-icon" style="background:rgba(108,117,125,.12); color:#6c757d">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
@@ -264,6 +286,9 @@
         <a href="{{ url_for('signup') }}">Create Account</a>
         <a href="{{ url_for('pricing') }}">Pricing</a>
         <a href="{{ url_for('faq') }}">FAQ</a>
+        <a href="{{ url_for('privacy') }}">Privacy</a>
+        <a href="{{ url_for('terms') }}">Terms</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
     </div>
     <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Options strategies made clear.</p>
 </footer>

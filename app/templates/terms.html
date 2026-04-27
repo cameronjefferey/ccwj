@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .static-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        border-radius: 20px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+    }
+    .static-hero h1 { font-size: 2rem; font-weight: 700; margin: 0 0 .5rem; }
+    .static-hero p { color: rgba(255, 255, 255, .85); margin: 0; }
+    .static-card {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, .05);
+        padding: 2rem;
+        max-width: 760px;
+    }
+    .static-card h2 { font-size: 1.1rem; font-weight: 700; margin: 1.5rem 0 .5rem; }
+    .static-card h2:first-of-type { margin-top: 0; }
+    .static-card p, .static-card li { color: #374151; line-height: 1.6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="static-hero">
+    <h1>Terms of Service</h1>
+    <p>Plain-English ground rules for using HappyTrader.</p>
+</div>
+
+<div class="static-card">
+    <p class="text-muted small mb-4">Last updated: April 2026</p>
+
+    <h2>Beta software</h2>
+    <p>HappyTrader is a beta product built for individual traders to review their own performance. Bugs happen. Numbers may occasionally drift while we improve how we process your trades. If something looks wrong, <a href="{{ url_for('contact') }}">tell us</a>.</p>
+
+    <h2>You own your data</h2>
+    <p>The trade history and positions you upload or sync remain yours. You can export or delete them at any time. We don't claim any rights over them.</p>
+
+    <h2>Not financial advice</h2>
+    <p>HappyTrader is an analytics tool. Anything we display — including AI-generated narratives — is for informational purposes only. It is <strong>not</strong> investment advice, a recommendation to buy or sell any security, or a substitute for a licensed advisor. You are solely responsible for your trading decisions.</p>
+
+    <h2>No warranty</h2>
+    <p>We do our best to keep the service accurate and available, but the product is provided "as is" without warranties of any kind. We're not liable for trading losses, data inaccuracies, downtime, or any consequential damages arising from your use of the site.</p>
+
+    <h2>Acceptable use</h2>
+    <p>Don't try to break the site, scrape other users' data, abuse community features, or upload anything you don't have the right to upload. We can suspend accounts that do.</p>
+
+    <h2>Changes to the service</h2>
+    <p>Features may change, get added, or be removed during the beta. We'll do our best to give heads-up when something user-facing changes meaningfully.</p>
+
+    <h2>Termination</h2>
+    <p>You can delete your account at any time from <a href="{{ url_for('profile') }}">Settings</a>. We can suspend or close accounts that violate these terms.</p>
+
+    <h2>Contact</h2>
+    <p>Questions? <a href="{{ url_for('contact') }}">Reach out</a>.</p>
+</div>
+{% endblock %}

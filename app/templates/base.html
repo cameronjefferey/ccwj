@@ -126,7 +126,8 @@
             {% if current_user.is_authenticated %}
             {% set ep = request.endpoint or '' %}
             {% set selected_account = request.args.get('account', '') %}
-            {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts', 'industries') %}
+            {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts') %}
+            {% set in_breakdowns = ep in ('strategies', 'industries', 'strategy_fit') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
@@ -142,21 +143,32 @@
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'symbols_detail' %}active{% endif %}"
-                               href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily detail</a>
+                               href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily P&amp;L by symbol</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
                                href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
                         </li>
+                    </ul>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if in_breakdowns %}active{% endif %}" href="#"
+                       id="navBreakdowns" data-bs-toggle="dropdown" aria-expanded="false">Breakdowns</a>
+                    <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navBreakdowns">
+                        <li>
+                            <a class="dropdown-item {% if ep == 'strategies' %}active{% endif %}"
+                               href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
+                        </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'industries' %}active{% endif %}"
                                href="{{ url_for('industries', account=selected_account) if selected_account else url_for('industries') }}">Industries</a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'strategy_fit' %}active{% endif %}"
+                               href="{{ url_for('strategy_fit', account=selected_account) if selected_account else url_for('strategy_fit') }}">Strategy fit</a>
+                        </li>
                     </ul>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {% if ep == 'strategies' %}active{% endif %}"
-                       href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'community' %}active{% endif %}"
@@ -165,7 +177,7 @@
                 {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
-                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">Coach</a>
+                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">AI Coach</a>
                 </li>
                 {% endif %}
                 {% if is_admin_user %}
@@ -190,10 +202,13 @@
             <ul class="navbar-nav align-items-center">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle text-white-50" href="#" id="userMenu"
-                       data-bs-toggle="dropdown" aria-expanded="false">Profile</a>
+                       data-bs-toggle="dropdown" aria-expanded="false">Account</a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="userMenu">
                         <li>
                             <a class="dropdown-item {% if ep == 'profile' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Settings</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'get_started' %}active{% endif %}" href="{{ url_for('get_started') }}">Get started</a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
@@ -268,7 +283,24 @@
                 <a href="{{ url_for('pricing') }}">Pricing</a>
                 <a href="{{ url_for('faq') }}">FAQ</a>
             </div>
+            <div class="d-flex flex-wrap justify-content-center gap-4 mt-2 small">
+                <a href="{{ url_for('privacy') }}" class="text-muted">Privacy</a>
+                <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
+                <a href="{{ url_for('contact') }}" class="text-muted">Contact</a>
+            </div>
             <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Your trading mirror.</p>
+        </div>
+    </footer>
+    {% else %}
+    <footer class="mt-5 py-3 border-top">
+        <div class="container-fluid px-4">
+            <div class="d-flex flex-wrap justify-content-center gap-4 small text-muted">
+                <a href="{{ url_for('faq') }}" class="text-muted">FAQ</a>
+                <a href="{{ url_for('privacy') }}" class="text-muted">Privacy</a>
+                <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
+                <a href="{{ url_for('contact') }}" class="text-muted">Contact</a>
+                <span>&copy; HappyTrader</span>
+            </div>
         </div>
     </footer>
     {% endif %}

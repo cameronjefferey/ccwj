@@ -528,7 +528,8 @@ def _call_gemini(data_text):
     """Call Gemini with coaching brief and return (summary, full_analysis)."""
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        return None, "GEMINI_API_KEY not set. Add it to your .env file."
+        app.logger.warning("AI Coach generate requested but GEMINI_API_KEY is not configured")
+        return None, "AI Coach is temporarily unavailable. Try again in a few minutes."
 
     try:
         client = genai.Client(api_key=api_key)
@@ -555,14 +556,16 @@ def _call_gemini(data_text):
 
         return (summary, full_text), None
     except Exception as exc:
-        return None, f"Gemini API error: {exc}"
+        app.logger.exception("Gemini coaching call failed: %s", exc)
+        return None, "Couldn't generate insights right now. Try again in a moment."
 
 
 def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
     """Call Gemini for Q&A, grounded in coaching + portfolio + weekly data."""
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        return None, "GEMINI_API_KEY not set. Add it to your .env file."
+        app.logger.warning("AI Coach Q&A requested but GEMINI_API_KEY is not configured")
+        return None, "AI Coach is temporarily unavailable. Try again in a few minutes."
 
     try:
         client = genai.Client(api_key=api_key)
@@ -590,7 +593,8 @@ def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
         )
         return response.text.strip(), None
     except Exception as exc:
-        return None, f"Gemini API error: {exc}"
+        app.logger.exception("Gemini Q&A call failed: %s", exc)
+        return None, "Couldn't answer that right now. Try again in a moment."
 
 
 def _md_to_html(md_text):
@@ -733,7 +737,8 @@ def generate_insights():
         flash("AI coaching analysis generated.", "success")
 
     except Exception as exc:
-        flash(f"Could not generate insights: {exc}", "danger")
+        app.logger.exception("AI coach insight generation failed: %s", exc)
+        flash("Couldn't generate insights right now. Try again in a moment.", "danger")
 
     return redirect(redir)
 

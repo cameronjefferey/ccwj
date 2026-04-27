@@ -185,7 +185,7 @@ def profile():
 
     return render_template(
         "profile.html",
-        title="Profile",
+        title="Settings",
         tab=tab,
         profile_row=profile_row,
         accounts=accounts,

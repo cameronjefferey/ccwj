@@ -73,10 +73,12 @@
                     <ul>
                         <li>Unlimited accounts</li>
                         <li>Strategy auto-detection</li>
-                        <li>Performance charts</li>
-                        <li>Position detail & drill-down</li>
-                        <li>AI trading insights</li>
-                        <li>CSV export from Schwab</li>
+                        <li>Weekly review with narrative</li>
+                        <li>Position detail &amp; drill-down</li>
+                        <li>Sector &amp; industry breakdown</li>
+                        <li>Strategy fit matrix</li>
+                        <li>AI Coach (insights &amp; chat)</li>
+                        <li>Schwab Connect or CSV upload</li>
                     </ul>
                     <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">Create Free Account</a>
                     <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
@@ -94,13 +96,24 @@
                         <li>Export & reporting</li>
                         <li>More brokers (planned)</li>
                     </ul>
-                    <button class="btn btn-outline-secondary btn-lg w-100" disabled>Notify me</button>
+                    {% if pro_waitlisted %}
+                    <button class="btn btn-success btn-lg w-100" disabled>You're on the list ✓</button>
+                    {% else %}
+                    <form method="post" action="{{ url_for('pro_waitlist') }}" class="d-grid gap-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {% if not current_user.is_authenticated %}
+                        <input type="email" name="email" class="form-control form-control-lg" placeholder="you@example.com" required>
+                        {% endif %}
+                        <button type="submit" class="btn btn-outline-primary btn-lg w-100">Notify me</button>
+                    </form>
+                    <p class="text-muted small mt-2 mb-0">No spam — one email when Pro is ready.</p>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <p class="text-center text-muted small">
-            Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or reach out.
+            Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or <a href="{{ url_for('contact') }}">reach out</a>.
         </p>
     </div>
 </div>

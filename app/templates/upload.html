@@ -70,10 +70,12 @@
 
         {% if not upload_cfg_ok %}
         <div class="alert alert-warning mb-4" role="alert">
-            <strong>Manual upload is not configured on this server.</strong>
-            Set the <code>GITHUB_PAT</code> environment variable on the web service (a token with
-            <strong>Contents: Read and write</strong> on the repo that holds your dbt seeds), then redeploy.
-            See README → Deployment for details.
+            <strong>CSV upload is temporarily unavailable.</strong>
+            You can still connect Schwab to bring in your trades automatically.
+            <div class="mt-2">
+                <a href="{{ url_for('profile', tab='account') }}" class="btn btn-sm btn-primary">Connect Schwab</a>
+            </div>
+            {# Operator note: set the GITHUB_PAT environment variable to enable CSV uploads. #}
         </div>
         {% endif %}
 
@@ -214,7 +216,7 @@
 
             <div class="text-center">
                 <button type="submit" class="btn btn-primary btn-lg px-5" id="submitBtn" disabled>
-                    Upload &amp; Trigger Pipeline
+                    Upload &amp; Process
                 </button>
                 <p class="text-muted small mt-2">
                     Current positions are always required. Check "No trades today" to skip history.

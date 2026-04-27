@@ -93,6 +93,20 @@
 
             <div class="faq-item">
                 <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-schwab-connect" aria-expanded="false" aria-controls="faq-schwab-connect">
+                    Do I have to re-upload CSVs every day?
+                </h3>
+                <div id="faq-schwab-connect" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        No. Once you've done one upload to get started, you can connect Schwab via OAuth from your <strong>Account</strong> page and we'll pull new transactions on a schedule &mdash; no daily export needed.
+                        <br><br>
+                        We never see your Schwab password. The OAuth handshake happens on Schwab's site; Schwab gives us a short-lived, read-only permission to read your activity. You can revoke it at any time.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                     data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">
                     Can I have multiple accounts?
                 </h3>
@@ -115,10 +129,63 @@
                 </div>
             </div>
 
-            
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-coach" aria-expanded="false" aria-controls="faq-coach">
+                    What does the AI Coach actually do?
+                </h3>
+                <div id="faq-coach" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        The AI Coach reads the same numbers we compute from your trades &mdash; exit timing, roll patterns, give-back, win/loss rates per strategy &mdash; and writes a plain-English read of what's working, where you're leaving money on the table, and what to try next.
+                        <br><br>
+                        You can also ask follow-up questions about your own trading patterns. Every answer is grounded in your data &mdash; not generic advice.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-fit" aria-expanded="false" aria-controls="faq-fit">
+                    What is the Strategy fit matrix?
+                </h3>
+                <div id="faq-fit" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        A heatmap of every strategy you've used crossed against every sector you've traded. Each cell shows how your real trades performed &mdash; expectancy, win rate, and number of trades.
+                        <br><br>
+                        It surfaces sweet spots ("Covered Calls in Tech are paying off") and soft spots ("Cash-Secured Puts in Energy are bleeding"), so you can lean into what works and avoid the corners that don't.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-sectors" aria-expanded="false" aria-controls="faq-sectors">
+                    How do you tag sectors and industries?
+                </h3>
+                <div id="faq-sectors" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Every ticker you trade is automatically tagged with its sector and industry using public market data &mdash; no manual entry. Your performance rolls up by sector on the <strong>Industries</strong> page so you can see at a glance where your edge actually lives.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-cost" aria-expanded="false" aria-controls="faq-cost">
+                    What does it cost?
+                </h3>
+                <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Free during beta. Every feature on the site &mdash; positions, weekly review, AI Coach, sector breakdowns, strategy fit &mdash; is included. See the <a href="{{ url_for('pricing') }}">pricing page</a> for what's planned after beta.
+                    </div>
+                </div>
+            </div>
         </div>
 
         <p class="text-center text-muted mt-4">
+            Still have a question? <a href="{{ url_for('contact') }}">Get in touch</a>.
+        </p>
+        <p class="text-center text-muted small mt-2">
             <a href="{{ url_for('index') }}">Back to Home</a> &middot;
             <a href="{{ url_for('pricing') }}">Pricing</a> &middot;
             <a href="{{ url_for('signup') }}">Create Account</a>

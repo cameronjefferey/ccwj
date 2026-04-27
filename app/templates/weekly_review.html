@@ -382,7 +382,7 @@
 </form>
 {% endif %}
 
-{% if error %}<div class="alert alert-danger small">{{ error }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger small">We're having trouble loading your weekly review right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% if from_upload %}
 <div class="alert alert-info small mb-3">
@@ -392,11 +392,11 @@
 
 {% if week_mart_empty %}
 <div class="alert alert-warning small mb-3" role="status">
-    <strong>Data:</strong> There is <strong>no weekly summary row</strong> in analytics yet for
-    this calendar week (week of {{ week_start }} · {{ user_timezone|replace('_', ' ') }}). The job may not have run, or the week is new.
-    Some sections will show &ldquo;—&rdquo; until the pipeline catches up.
+    <strong>Heads up:</strong> Your weekly numbers are still being calculated for the week of
+    {{ week_start }} ({{ user_timezone|replace('_', ' ') }}). Some sections will fill in once we finish processing —
+    check back in a few minutes.
     {% if last_activity_week %}
-    <span class="d-block mt-1 text-muted">Most recent week with trades in the summary mart: <strong>week of {{ last_activity_week }}</strong>.</span>
+    <span class="d-block mt-1 text-muted">Most recent completed week: <strong>week of {{ last_activity_week }}</strong>.</span>
     {% endif %}
 </div>
 {% endif %}
@@ -608,7 +608,7 @@
         {% endif %}
     </div>
     <p class="small text-muted mb-0 mt-2" style="font-size:.78rem">
-        <strong>You</strong> = combined portfolio % from your analytics mart for the same Monday-start week as the hero.
+        <strong>You</strong> = your combined portfolio return % for the same Monday-start week as the hero.
         <strong>SPY / QQQ</strong> = index move from that week&rsquo;s first close through the latest close in the feed (not identical to a live quote).
         <strong>vs week start</strong> in the table above = account value change vs that week&rsquo;s modeled start; it can disagree with the index row if you traded or if timing differs.
     </p>
@@ -951,7 +951,7 @@
 {% if trades_this_week %}
 <div class="review-section">
     <div class="section-label">All Trades This Week</div>
-    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Rows from your analytics mart for this calendar week. Open positions with <strong>no</strong> trade history in our data yet (broker snapshot only) are excluded so this list matches real activity.</p>
+    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Trades closed this calendar week. Open positions with <strong>no</strong> trade history in your data yet (broker snapshot only) are excluded so this list matches real activity.</p>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 trades-table">
             <thead class="table-light">

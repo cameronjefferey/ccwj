@@ -68,6 +68,12 @@ def login():
     return render_template("login.html", title="Login", next_for_form=next_for_form)
 
 
+@app.route("/register")
+def register_redirect():
+    """Common typo/bookmark — redirect to /signup."""
+    return redirect(url_for("signup"))
+
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if not app.config.get("SIGNUP_ENABLED", True):

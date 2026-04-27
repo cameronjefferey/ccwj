@@ -128,7 +128,7 @@
 </form>
 {% endif %}
 
-{% if error %}<div class="alert alert-danger small">{{ error }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger small">We're having trouble loading your strategies right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% if not strategies %}
 <div class="data-section text-center py-5">

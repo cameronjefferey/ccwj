@@ -10,7 +10,7 @@
         margin-bottom: 1.25rem;
     }
     .ind-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
-    .ind-hero .lede { color: rgba(255,255,255,.75); font-size: .9rem; margin: .35rem 0 0; }
+    .ind-hero .lede { color: rgba(255,255,255,.78); font-size: .9rem; margin: .35rem 0 0; max-width: 60ch; }
     .ind-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .85rem; margin-top: 1.1rem; }
     .ind-kpi  { background: rgba(255,255,255,.08); padding: .7rem .85rem; border-radius: 10px; }
     .ind-kpi .lbl { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.55); }
@@ -18,71 +18,99 @@
     .ind-pos { color: #6ee7b7; }
     .ind-neg { color: #fca5a5; }
 
-    .ind-section { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
-    .ind-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .9rem; color: #1c1917; }
-    .ind-section .sub { color: #78716c; font-size: .82rem; margin: -.5rem 0 .9rem; }
+    .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 
-    .sector-strip { display: flex; flex-wrap: wrap; gap: .5rem; }
-    .sector-chip {
-        background: #f1f5f9; color: #0f172a;
-        padding: .35rem .85rem;
-        border-radius: 999px;
-        font-size: .8rem;
-        font-weight: 600;
-        text-decoration: none;
-        display: inline-flex; align-items: center; gap: .5rem;
-        border: 1px solid #e2e8f0;
-    }
-    .sector-chip:hover { background: #e0e7ff; border-color: #c7d2fe; color: #0f172a; }
-    .sector-chip .sc-pnl { font-variant-numeric: tabular-nums; font-weight: 700; }
-    .sector-chip .sc-pnl.pos { color: #059669; }
-    .sector-chip .sc-pnl.neg { color: #b91c1c; }
-    .sector-chip .sc-meta { color: #78716c; font-weight: 500; font-size: .72rem; }
-
-    .ind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .9rem; }
-    .ind-card {
-        background: #fafaf9;
+    .sec-card {
+        background: #fff;
         border: 1px solid #e7e5e4;
-        border-radius: 12px;
-        padding: .95rem 1rem;
-        display: flex; flex-direction: column; gap: .55rem;
-        transition: transform .12s ease, box-shadow .12s ease;
+        border-radius: 14px;
+        padding: 1.1rem 1.2rem;
+        display: flex; flex-direction: column; gap: .75rem;
+        transition: box-shadow .15s ease, transform .15s ease;
     }
-    .ind-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,.06); }
-    .ind-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .55rem; }
-    .ind-card .industry { font-weight: 700; color: #1c1917; line-height: 1.25; }
-    .ind-card .sector { font-size: .7rem; color: #78716c; text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; }
-    .ind-card .pnl { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ind-card .pnl.pos { color: #059669; }
-    .ind-card .pnl.neg { color: #b91c1c; }
-    .ind-card .stats { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .75rem; font-size: .78rem; }
-    .ind-card .stats .lbl { color: #78716c; }
-    .ind-card .stats .val { color: #1c1917; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .ind-card .top-sym { font-size: .72rem; color: #78716c; padding-top: .35rem; border-top: 1px dashed #e7e5e4; }
-    .ind-card .top-sym a { color: #1c1917; font-weight: 600; text-decoration: none; }
-    .ind-card .top-sym a:hover { text-decoration: underline; }
-    .ind-card .actions { display: flex; gap: .35rem; margin-top: .25rem; }
-    .ind-card .actions a {
-        flex: 1; text-align: center; background: #1c1917; color: #fafaf9;
-        padding: .35rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 600;
-        text-decoration: none;
-    }
-    .ind-card .actions a:hover { background: #292524; }
-    .ind-card .actions a.secondary { background: #f5f5f4; color: #1c1917; border: 1px solid #e7e5e4; }
-    .ind-card .actions a.secondary:hover { background: #e7e5e4; }
+    .sec-card:hover { box-shadow: 0 10px 24px rgba(0,0,0,.06); }
+    .sec-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
+    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+    .sec-card .meta { font-size: .72rem; color: #64748b; margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .pnl { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
+    .sec-card .pnl.pos { color: #059669; }
+    .sec-card .pnl.neg { color: #b91c1c; }
+    .sec-card .pnl-sub { font-size: .7rem; color: #64748b; text-align: right; margin-top: .15rem; }
 
-    .ind-empty { color: #78716c; font-size: .85rem; padding: 1.5rem; text-align: center; }
-
-    h3.sector-header {
-        font-size: .8rem;
-        text-transform: uppercase;
-        letter-spacing: .05em;
-        color: #57534e;
-        margin: 1.1rem 0 .55rem;
-        padding-top: .35rem;
-        border-top: 1px solid #f5f5f4;
+    .sec-card .stats {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem;
+        background: #f8fafc; border-radius: 10px; padding: .55rem .65rem;
     }
-    h3.sector-header:first-of-type { border-top: 0; padding-top: 0; }
+    .sec-card .stat .lbl { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+
+    .sec-card .splits {
+        display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .9rem;
+        font-size: .78rem;
+    }
+    .sec-card .splits .k { color: #64748b; }
+    .sec-card .splits .v { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; text-align: right; }
+    .sec-card .splits .v.neg { color: #b91c1c; }
+
+    .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
+    .sec-card .extremes .ex { background: #f8fafc; border-radius: 8px; padding: .45rem .6rem; }
+    .sec-card .extremes .ex .lbl { font-size: .62rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .extremes .ex .sym { font-weight: 700; color: #0f172a; }
+    .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
+    .sec-card .extremes .ex .ret.pos { color: #059669; }
+    .sec-card .extremes .ex .ret.neg { color: #b91c1c; }
+
+    .sec-card .actions { display: flex; gap: .5rem; }
+    .sec-card .btn-toggle {
+        flex: 1; border: none; background: #0f172a; color: #fafaf9;
+        padding: .5rem .75rem; border-radius: 999px;
+        font-size: .78rem; font-weight: 600; cursor: pointer;
+        transition: background .12s ease;
+    }
+    .sec-card .btn-toggle:hover { background: #1e293b; }
+    .sec-card .btn-toggle .chev { transition: transform .15s ease; display: inline-block; margin-left: .3rem; }
+    .sec-card.expanded .btn-toggle .chev { transform: rotate(180deg); }
+    .sec-card .btn-positions {
+        background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0;
+        padding: .5rem .85rem; border-radius: 999px;
+        font-size: .78rem; font-weight: 600; text-decoration: none;
+        white-space: nowrap;
+    }
+    .sec-card .btn-positions:hover { background: #e0e7ff; }
+
+    /* Industry breakdown — only visible when sector is expanded */
+    .sec-card .ind-list { display: none; flex-direction: column; gap: .4rem; padding-top: .25rem; }
+    .sec-card.expanded .ind-list { display: flex; }
+    .ind-row {
+        display: grid; grid-template-columns: 1fr auto auto; align-items: center;
+        gap: .55rem;
+        padding: .5rem .65rem;
+        background: #fafafa;
+        border: 1px solid #f1f5f9;
+        border-radius: 8px;
+        font-size: .82rem;
+    }
+    .ind-row .ind-name { font-weight: 600; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ind-row .ind-name a { color: inherit; text-decoration: none; }
+    .ind-row .ind-name a:hover { text-decoration: underline; }
+    .ind-row .ind-meta { font-size: .68rem; color: #64748b; font-weight: 500; margin-top: .1rem; }
+    .ind-row .ind-pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ind-row .ind-pnl.pos { color: #059669; }
+    .ind-row .ind-pnl.neg { color: #b91c1c; }
+    .ind-row .ind-link {
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 999px;
+        padding: .15rem .55rem; font-size: .68rem; font-weight: 600;
+        color: #0f172a; text-decoration: none; white-space: nowrap;
+    }
+    .ind-row .ind-link:hover { background: #e0e7ff; }
+
+    .ind-empty { color: #78716c; font-size: .85rem; padding: 2rem; text-align: center; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+
+    .ind-section-note {
+        background: #fff; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .8rem; color: #64748b;
+        border: 1px dashed #e7e5e4; margin-top: 1rem;
+    }
 </style>
 {% endblock %}
 
@@ -92,7 +120,7 @@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div>
             <h1>Industries</h1>
-            <p class="lede">How your trading breaks down by sector and industry. Some setups work better in some industries — this view makes that pattern visible.</p>
+            <p class="lede">How your trading breaks down by sector. Click a sector to see the specific industries you've traded inside it.</p>
         </div>
         {% if accounts and accounts|length > 1 %}
         <form method="get" class="d-flex gap-2 align-items-end">
@@ -118,16 +146,16 @@
             </div>
         </div>
         <div class="ind-kpi">
+            <div class="lbl">Sectors</div>
+            <div class="val">{{ sectors|length }}</div>
+        </div>
+        <div class="ind-kpi">
             <div class="lbl">Industries</div>
             <div class="val">{{ kpis.num_industries }}</div>
         </div>
         <div class="ind-kpi">
             <div class="lbl">Symbols</div>
             <div class="val">{{ kpis.num_symbols }}</div>
-        </div>
-        <div class="ind-kpi">
-            <div class="lbl">Trades</div>
-            <div class="val">{{ kpis.num_trades }}</div>
         </div>
         <div class="ind-kpi">
             <div class="lbl">Win Rate</div>
@@ -139,104 +167,173 @@
 
 {% if error %}
 <div class="alert alert-danger">
-    Could not load industry rollup: {{ error }}
+    We're having trouble loading your sector breakdown right now. Refresh in a minute, or
+    <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.
 </div>
-{% elif not industry_rows %}
-<div class="ind-section">
-    <div class="ind-empty">
-        <strong>No industry data yet.</strong>
-        <p class="mb-0 mt-2">Once your trades sync and the daily refresh runs, you'll see your sector / industry breakdown here.</p>
+{% elif not sector_rows %}
+<div class="ind-empty">
+    <strong>No sector breakdown yet.</strong>
+    <p class="mb-0 mt-2">Once your trades come in and we tag the symbols, you'll see your performance broken out by sector and industry.</p>
+    <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
     </div>
 </div>
 {% else %}
 
-{% if sector_rows %}
-<div class="ind-section">
-    <h2>By Sector</h2>
-    <div class="sub">Click a chip to jump to that sector's industries below.</div>
-    <div class="sector-strip">
-        {% for s in sector_rows %}
-        <a href="#{{ s.sector|replace(' ', '-')|lower }}" class="sector-chip">
-            <span>{{ s.sector }}</span>
-            <span class="sc-pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                ${{ "{:,.0f}".format(s.total_pnl) }}
-            </span>
-            <span class="sc-meta">{{ s.num_industries }}&nbsp;ind. &middot; {{ "{:.0%}".format(s.win_rate) }} win</span>
-        </a>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-<div class="ind-section">
-    <h2>By Industry</h2>
-    <div class="sub">Sorted within each sector by total return. Click an industry card to filter Positions to it.</div>
-
-    {% set ns = namespace(current_sector=None) %}
-    {% for r in industry_rows %}
-        {% if r.sector != ns.current_sector %}
-            {% set ns.current_sector = r.sector %}
-            <h3 class="sector-header" id="{{ r.sector|replace(' ', '-')|lower }}">{{ r.sector }}</h3>
-            <div class="ind-grid">
-        {% endif %}
-
-        <div class="ind-card">
-            <div class="head">
-                <div>
-                    <div class="industry">{{ r.industry }}</div>
-                    <div class="sector">{{ r.sector }}</div>
-                </div>
-                <div class="pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    ${{ "{:,.0f}".format(r.total_pnl) }}
+<div class="sec-grid">
+    {% for s in sector_rows %}
+    {% set sec_id = s.sector|replace(' ', '-')|lower %}
+    {% set inds = industries_by_sector.get(s.sector, []) %}
+    <article class="sec-card" id="{{ sec_id }}" data-sector="{{ s.sector }}">
+        <div class="head">
+            <div>
+                <div class="name">{{ s.sector }}</div>
+                <div class="meta">
+                    {{ s.num_symbols }} symbol{% if s.num_symbols != 1 %}s{% endif %}
+                    &middot; {{ s.num_industries }} industr{% if s.num_industries == 1 %}y{% else %}ies{% endif %}
+                    &middot; {{ s.num_trades | int }} trade{% if s.num_trades != 1 %}s{% endif %}
                 </div>
             </div>
-            <div class="stats">
-                <div class="lbl">Realized</div>
-                <div class="val {% if r.realized_pnl < 0 %}ind-neg{% endif %}">${{ "{:,.0f}".format(r.realized_pnl) }}</div>
-                <div class="lbl">Unrealized</div>
-                <div class="val {% if r.unrealized_pnl < 0 %}ind-neg{% endif %}">${{ "{:,.0f}".format(r.unrealized_pnl) }}</div>
-                <div class="lbl">Symbols</div>
-                <div class="val">{{ r.num_symbols }}</div>
-                <div class="lbl">Trades</div>
-                <div class="val">{{ r.num_trades | int }}</div>
-                <div class="lbl">Win rate</div>
-                <div class="val">
-                    {% if (r.num_winners + r.num_losers) > 0 %}
-                        {{ "{:.0%}".format(r.win_rate) }}
-                        <span class="text-muted small fw-normal">({{ r.num_winners | int }}W&nbsp;/&nbsp;{{ r.num_losers | int }}L)</span>
-                    {% else %}—{% endif %}
+            <div>
+                <div class="pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                    ${{ "{:,.0f}".format(s.total_pnl) }}
                 </div>
-                <div class="lbl">Premium</div>
-                <div class="val">${{ "{:,.0f}".format(r.premium_received) }}</div>
-            </div>
-            {% if r.top_symbol %}
-            <div class="top-sym">
-                Best symbol:
-                <a href="{{ url_for('position_detail', symbol=r.top_symbol, account=selected_account) }}">{{ r.top_symbol }}</a>
-                &middot; ${{ "{:,.0f}".format(r.top_symbol_return or 0) }}
-            </div>
-            {% endif %}
-            <div class="actions">
-                <a href="{{ url_for('positions', industry=r.industry, account=selected_account) }}">View positions</a>
+                <div class="pnl-sub">total P&amp;L</div>
             </div>
         </div>
 
-        {# close grid when next row is a different sector or this is the last row #}
-        {% if loop.last or industry_rows[loop.index].sector != r.sector %}
+        <div class="stats">
+            <div class="stat">
+                <div class="lbl">Win Rate</div>
+                <div class="val">
+                    {% if (s.num_winners + s.num_losers) > 0 %}
+                        {{ "{:.0%}".format(s.win_rate) }}
+                    {% else %}—{% endif %}
+                </div>
             </div>
+            <div class="stat">
+                <div class="lbl">W / L</div>
+                <div class="val">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
+            </div>
+            <div class="stat">
+                <div class="lbl">Premium</div>
+                <div class="val">${{ "{:,.0f}".format(s.premium_received or 0) }}</div>
+            </div>
+        </div>
+
+        <div class="splits">
+            <span class="k">Realized</span>
+            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.realized_pnl) }}</span>
+            <span class="k">Unrealized</span>
+            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.unrealized_pnl) }}</span>
+            {% if s.dividend_income and s.dividend_income > 0 %}
+            <span class="k">Dividends</span>
+            <span class="v">${{ "{:,.0f}".format(s.dividend_income) }}</span>
+            {% endif %}
+        </div>
+
+        {% if s.top_symbol or s.worst_symbol %}
+        <div class="extremes">
+            {% if s.top_symbol %}
+            <div class="ex">
+                <div class="lbl">Best</div>
+                <a href="{{ url_for('position_detail', symbol=s.top_symbol, account=selected_account) }}"
+                   class="text-decoration-none d-block">
+                    <span class="sym">{{ s.top_symbol }}</span>
+                    <span class="ret pos">${{ "{:,.0f}".format(s.top_symbol_return or 0) }}</span>
+                </a>
+            </div>
+            {% endif %}
+            {# Only show "Worst" if it's actually a loser AND different from top #}
+            {% if s.worst_symbol and s.worst_symbol != s.top_symbol and (s.worst_symbol_return or 0) < 0 %}
+            <div class="ex">
+                <div class="lbl">Worst</div>
+                <a href="{{ url_for('position_detail', symbol=s.worst_symbol, account=selected_account) }}"
+                   class="text-decoration-none d-block">
+                    <span class="sym">{{ s.worst_symbol }}</span>
+                    <span class="ret neg">${{ "{:,.0f}".format(s.worst_symbol_return or 0) }}</span>
+                </a>
+            </div>
+            {% endif %}
+        </div>
         {% endif %}
+
+        <div class="actions">
+            {% if inds and inds|length > 0 %}
+            <button type="button" class="btn-toggle" data-target="{{ sec_id }}-inds">
+                <span class="lbl-show">Show {{ inds|length }} industr{% if inds|length == 1 %}y{% else %}ies{% endif %}</span>
+                <span class="chev">▾</span>
+            </button>
+            {% endif %}
+            <a class="btn-positions" href="{{ url_for('positions', sector=s.sector, account=selected_account) }}">
+                View positions
+            </a>
+        </div>
+
+        {% if inds and inds|length > 0 %}
+        <div class="ind-list" id="{{ sec_id }}-inds">
+            {% for r in inds %}
+            <div class="ind-row">
+                <div class="ind-name" title="{{ r.industry }}">
+                    <a href="{{ url_for('positions', industry=r.industry, account=selected_account) }}">{{ r.industry }}</a>
+                    <div class="ind-meta">
+                        {{ r.num_symbols }} symbol{% if r.num_symbols != 1 %}s{% endif %}
+                        &middot; {{ r.num_trades | int }} trade{% if r.num_trades != 1 %}s{% endif %}
+                        {% if (r.num_winners + r.num_losers) > 0 %}
+                        &middot; {{ "{:.0%}".format(r.win_rate) }} win
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="ind-pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                    ${{ "{:,.0f}".format(r.total_pnl) }}
+                </div>
+                <a class="ind-link" href="{{ url_for('positions', industry=r.industry, account=selected_account) }}">View</a>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </article>
     {% endfor %}
 </div>
 
 {% if unknown_count and unknown_count > 0 %}
-<div class="ind-section">
-    <div class="text-muted small">
-        <strong>Note:</strong> {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to an industry yet.
-        These show under <em>Unknown</em>. They'll fill in automatically as the daily metadata refresh picks them up.
-    </div>
+<div class="ind-section-note">
+    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to a sector yet —
+    they'll show up under <em>Unknown</em>. They fill in automatically as the daily metadata refresh picks them up.
 </div>
 {% endif %}
 
 {% endif %}
+
+<script>
+(function () {
+    document.querySelectorAll('.sec-card .btn-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var card = btn.closest('.sec-card');
+            var open = card.classList.toggle('expanded');
+            var label = btn.querySelector('.lbl-show');
+            if (label) {
+                if (open) {
+                    label.textContent = label.textContent.replace(/^Show /, 'Hide ');
+                } else {
+                    label.textContent = label.textContent.replace(/^Hide /, 'Show ');
+                }
+            }
+        });
+    });
+
+    // If the URL has a #sector hash (e.g. from position_detail pill), expand
+    // that sector card on load so the user lands directly on the breakdown.
+    if (window.location.hash) {
+        var target = document.querySelector(window.location.hash);
+        if (target && target.classList.contains('sec-card')) {
+            target.classList.add('expanded');
+            var label = target.querySelector('.btn-toggle .lbl-show');
+            if (label) label.textContent = label.textContent.replace(/^Show /, 'Hide ');
+        }
+    }
+})();
+</script>
 
 {% endblock %}

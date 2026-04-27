@@ -1,0 +1,982 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .fit-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        padding: 1.4rem 1.6rem;
+        border-radius: 14px;
+        margin-bottom: 1rem;
+    }
+    .fit-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+    .fit-hero .lede { color: rgba(255,255,255,.78); font-size: .9rem; margin: .35rem 0 0; max-width: 60ch; }
+
+    .fit-baselines {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .7rem;
+        margin-top: 1rem;
+    }
+    .fit-baseline { background: rgba(255,255,255,.08); padding: .55rem .75rem; border-radius: 9px; }
+    .fit-baseline .lbl { font-size: .62rem; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .04em; }
+    .fit-baseline .val { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .callouts-row { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; margin-bottom: .9rem; }
+    @media (max-width: 720px) { .callouts-row { grid-template-columns: 1fr; } }
+
+    /* ── AI Insights card ─────────────────────────────────────────── */
+    .ai-card {
+        background: #fff; border-radius: 14px; padding: 1.1rem 1.25rem;
+        border: 1px solid #e7e5e4;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        margin-bottom: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .ai-card::before {
+        content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+        width: 4px;
+        background: linear-gradient(180deg, #4338ca 0%, #6366f1 50%, #06b6d4 100%);
+    }
+    .ai-card .ai-head {
+        display: flex; gap: .8rem; align-items: center; flex-wrap: wrap;
+        margin-bottom: .55rem;
+    }
+    .ai-card .ai-head .badge-ai {
+        background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+        color: #fff;
+        font-size: .62rem; font-weight: 700; letter-spacing: .05em;
+        text-transform: uppercase;
+        padding: .25rem .6rem;
+        border-radius: 999px;
+    }
+    .ai-card .ai-head h2 {
+        font-size: 1.05rem; font-weight: 700; margin: 0; color: #0f172a;
+    }
+    .ai-card .ai-head .when {
+        font-size: .72rem; color: #64748b;
+        margin-left: auto;
+    }
+    .ai-card .ai-summary {
+        font-size: .95rem; line-height: 1.5;
+        color: #0f172a; font-weight: 500;
+        padding: .55rem 0 .65rem;
+    }
+    .ai-card .ai-toggle {
+        background: transparent; border: 0;
+        color: #4338ca; font-size: .78rem; font-weight: 600;
+        padding: 0; cursor: pointer;
+        display: inline-flex; align-items: center; gap: .25rem;
+    }
+    .ai-card .ai-toggle:hover { text-decoration: underline; }
+    .ai-card .ai-toggle .arrow { transition: transform .15s ease; display: inline-block; }
+    .ai-card.expanded .ai-toggle .arrow { transform: rotate(180deg); }
+    .ai-card .ai-full {
+        display: none;
+        margin-top: .85rem; padding-top: .85rem;
+        border-top: 1px dashed #e2e8f0;
+        color: #1e293b;
+        font-size: .88rem;
+        line-height: 1.55;
+    }
+    .ai-card.expanded .ai-full { display: block; }
+    .ai-card .ai-full h2 {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+        color: #64748b; font-weight: 700; margin: 0 0 .45rem;
+    }
+    .ai-card .ai-full ul { padding-left: 1.1rem; margin: .45rem 0 .45rem; }
+    .ai-card .ai-full li { margin-bottom: .45rem; }
+    .ai-card .ai-full p { margin: 0 0 .55rem; }
+    .ai-card .ai-actions {
+        display: flex; gap: .5rem; align-items: center;
+        margin-top: .65rem;
+    }
+    .ai-card .ai-refresh {
+        background: #f1f5f9; border: 1px solid #e2e8f0;
+        color: #0f172a; font-size: .75rem; font-weight: 600;
+        padding: .35rem .8rem; border-radius: 999px;
+        cursor: pointer;
+    }
+    .ai-card .ai-refresh:hover { background: #e0e7ff; border-color: #c7d2fe; }
+    .ai-card .ai-disclaimer {
+        font-size: .68rem; color: #94a3b8; font-style: italic;
+        margin-left: auto;
+    }
+
+    .ai-card.empty .ai-summary {
+        color: #64748b; font-weight: 400;
+    }
+    .ai-generate-btn {
+        background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+        color: #fff; border: 0;
+        padding: .55rem 1.05rem; border-radius: 999px;
+        font-size: .82rem; font-weight: 600;
+        cursor: pointer; box-shadow: 0 2px 6px rgba(99,102,241,.3);
+    }
+    .ai-generate-btn:hover { box-shadow: 0 4px 12px rgba(99,102,241,.4); }
+    .ai-generate-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .callouts-card {
+        background: #fff; border-radius: 12px; padding: .9rem 1rem;
+        border: 1px solid #e7e5e4; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    .callouts-card.sweet { border-left: 3px solid #059669; }
+    .callouts-card.soft  { border-left: 3px solid #b91c1c; }
+    .callouts-card h3 {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+        color: #64748b; margin: 0 0 .55rem; font-weight: 700;
+    }
+    .callouts-card .pair {
+        display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+        font-size: .85rem; padding: .35rem 0;
+        border-bottom: 1px dashed #f1f5f9;
+    }
+    .callouts-card .pair:last-child { border-bottom: 0; }
+    .strat-tag { background: #1e293b; color: #fafaf9; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; }
+    .ind-tag   { background: #e0e7ff; color: #1e3a8a; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 600; }
+    .callouts-card .pair .meta { color: #64748b; font-size: .72rem; }
+    .callouts-card .pair .pnl-big {
+        margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums;
+        font-size: 1rem; white-space: nowrap;
+    }
+    .callouts-card .pair .pnl-big.pos { color: #059669; }
+    .callouts-card .pair .pnl-big.neg { color: #b91c1c; }
+
+    .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; }
+    .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
+
+    .metric-toggle {
+        display: inline-flex; gap: 0; background: #f1f5f9; padding: 3px;
+        border-radius: 999px; border: 1px solid #e2e8f0;
+    }
+    .metric-toggle button {
+        background: transparent; border: 0; color: #475569;
+        padding: .35rem .85rem; border-radius: 999px;
+        font-size: .75rem; font-weight: 600; cursor: pointer;
+        transition: all .12s ease;
+        white-space: nowrap;
+    }
+    .metric-toggle button.active { background: #0f172a; color: #fafaf9; }
+    .metric-toggle button:hover:not(.active) { color: #0f172a; background: #fff; }
+
+    .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+    .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
+
+    .fit-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1rem; margin-bottom: 1rem; overflow: hidden; }
+
+    .fit-table-wrap { overflow-x: auto; }
+    table.fit {
+        width: 100%; border-collapse: separate; border-spacing: 3px;
+        font-size: .82rem;
+    }
+    table.fit th, table.fit td { padding: .5rem .55rem; vertical-align: top; }
+    table.fit thead th {
+        background: #f1f5f9; color: #0f172a;
+        font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+        font-weight: 700;
+        border-radius: 6px;
+        text-align: center;
+        white-space: nowrap;
+        position: sticky; top: 0; z-index: 1;
+    }
+    table.fit thead th.row-head { text-align: left; background: transparent; }
+    table.fit thead th a { color: inherit; text-decoration: none; display: block; }
+    table.fit thead th a:hover { color: #2563eb; }
+    table.fit thead th .col-pnl {
+        display: block; font-weight: 700; font-variant-numeric: tabular-nums;
+        margin-top: .15rem; font-size: .8rem; text-transform: none; letter-spacing: 0;
+    }
+    table.fit thead th .col-pnl.pos { color: #059669; }
+    table.fit thead th .col-pnl.neg { color: #b91c1c; }
+    table.fit thead th .col-meta {
+        display: block; font-size: .62rem; color: #64748b; font-weight: 500;
+        text-transform: none; letter-spacing: 0; margin-top: .1rem;
+    }
+    table.fit thead th.totals { background: #1e293b; color: #fff; }
+
+    table.fit tbody th.strategy {
+        text-align: left; background: #fafafa; border-radius: 6px;
+        white-space: nowrap; font-weight: 700; color: #0f172a; min-width: 140px;
+    }
+    table.fit tbody th.strategy .row-meta {
+        display: block; font-size: .65rem; color: #64748b; font-weight: 500; margin-top: .1rem;
+    }
+
+    table.fit td.cell {
+        text-align: right; border-radius: 6px;
+        font-variant-numeric: tabular-nums; min-width: 90px;
+        cursor: default; transition: transform .08s ease, opacity .12s ease;
+    }
+    table.fit td.cell.has-data { cursor: pointer; }
+    table.fit td.cell.has-data:hover { transform: scale(1.03); box-shadow: 0 3px 8px rgba(0,0,0,.1); z-index: 1; position: relative; }
+    table.fit td.cell .cell-pnl { font-weight: 700; display: block; line-height: 1.1; }
+    table.fit td.cell .cell-meta { font-size: .65rem; color: #475569; display: block; margin-top: .15rem; }
+
+    /* Low-N de-emphasis — cells with <3 trades fade to suppress noise */
+    table.fit td.cell.low-n { opacity: .35; }
+    table.fit td.cell.low-n:hover { opacity: 1; }
+
+    table.fit td.cell.empty {
+        background: #fafafa; color: #cbd5e1; text-align: center;
+    }
+
+    table.fit td.total-cell {
+        background: #1e293b !important; color: #fff !important;
+        font-weight: 700; text-align: right; border-radius: 6px;
+    }
+    table.fit td.total-cell .cell-meta { color: rgba(255,255,255,.65) !important; }
+    table.fit td.total-cell .cell-pnl.pos { color: #6ee7b7 !important; }
+    table.fit td.total-cell .cell-pnl.neg { color: #fca5a5 !important; }
+    table.fit tr.totals-row th.strategy { background: #1e293b; color: #fff; }
+    table.fit tr.totals-row td.total-cell.grand { background: #4338ca !important; }
+
+    .pos { color: #059669; }
+    .neg { color: #b91c1c; }
+
+    .fit-legend {
+        display: flex; gap: .9rem; align-items: center; flex-wrap: wrap;
+        font-size: .72rem; color: #64748b; margin-top: .6rem;
+    }
+    .fit-legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: .35rem; }
+
+    .fit-empty { padding: 2rem; text-align: center; color: #64748b; }
+
+    /* Hidden Unknown column toggle */
+    .hide-unknown table.fit th.col-unknown,
+    .hide-unknown table.fit td.col-unknown { display: none; }
+
+    /* ── Drill-down side panel ───────────────────────────────────────── */
+    .fit-panel-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(15, 23, 42, .35);
+        opacity: 0; pointer-events: none;
+        transition: opacity .18s ease;
+        z-index: 1040;
+    }
+    .fit-panel-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .fit-panel {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: min(440px, 92vw);
+        background: #fff;
+        box-shadow: -8px 0 24px rgba(15, 23, 42, .15);
+        transform: translateX(100%);
+        transition: transform .22s ease;
+        display: flex; flex-direction: column;
+        z-index: 1050;
+    }
+    .fit-panel.open { transform: translateX(0); }
+
+    .fit-panel header {
+        padding: 1.1rem 1.2rem .9rem;
+        border-bottom: 1px solid #e7e5e4;
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+    }
+    .fit-panel header .close {
+        position: absolute; top: .8rem; right: .9rem;
+        background: rgba(255,255,255,.15); border: 0; color: #fff;
+        width: 30px; height: 30px; border-radius: 999px;
+        cursor: pointer; font-size: 1.05rem;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .fit-panel header .close:hover { background: rgba(255,255,255,.25); }
+    .fit-panel header .tags {
+        display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem;
+    }
+    .fit-panel header h2 {
+        font-size: 1.05rem; font-weight: 700; margin: .8rem 0 .3rem;
+    }
+    .fit-panel header .pnl-headline {
+        font-size: 1.6rem; font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        margin-top: .35rem;
+    }
+    .fit-panel header .pnl-headline.pos { color: #6ee7b7; }
+    .fit-panel header .pnl-headline.neg { color: #fca5a5; }
+    .fit-panel header .pnl-sub { color: rgba(255,255,255,.7); font-size: .78rem; margin-top: .15rem; }
+
+    .fit-panel .body { padding: 1rem 1.2rem; overflow-y: auto; flex: 1; }
+
+    .panel-stats {
+        display: grid; grid-template-columns: 1fr 1fr; gap: .6rem;
+        margin-bottom: 1.1rem;
+    }
+    .panel-stats .stat {
+        background: #f8fafc; padding: .6rem .75rem; border-radius: 9px;
+    }
+    .panel-stats .stat .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+    .panel-stats .stat .val { font-size: .95rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .panel-stats .stat .val.pos { color: #059669; }
+    .panel-stats .stat .val.neg { color: #b91c1c; }
+
+    .panel-edge {
+        background: #eef2ff; border-left: 3px solid #4338ca;
+        padding: .65rem .8rem; border-radius: 0 9px 9px 0;
+        font-size: .82rem; color: #1e1b4b; margin-bottom: 1rem;
+    }
+    .panel-edge .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #4338ca; font-weight: 700; }
+    .panel-edge .narr { margin-top: .25rem; line-height: 1.45; }
+
+    .panel-section-title {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+        color: #64748b; font-weight: 700;
+        margin: 1rem 0 .55rem;
+    }
+
+    .symbol-row {
+        display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+        gap: .6rem; padding: .55rem .75rem;
+        border-radius: 8px; margin-bottom: .35rem;
+        background: #fafafa;
+        text-decoration: none; color: inherit;
+        transition: background .12s ease;
+    }
+    .symbol-row:hover { background: #eef2ff; color: inherit; }
+    .symbol-row .sym { font-weight: 700; color: #0f172a; min-width: 60px; font-variant-numeric: tabular-nums; }
+    .symbol-row .bar { height: 6px; border-radius: 3px; background: #e2e8f0; position: relative; }
+    .symbol-row .bar > span {
+        position: absolute; top: 0; bottom: 0; left: 0;
+        background: #10b981; border-radius: 3px;
+    }
+    .symbol-row .bar > span.neg { background: #ef4444; }
+    .symbol-row .pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: .85rem; }
+    .symbol-row .pnl.pos { color: #059669; }
+    .symbol-row .pnl.neg { color: #b91c1c; }
+    .symbol-row .meta { font-size: .65rem; color: #64748b; margin-top: .15rem; }
+
+    .panel-actions {
+        display: flex; gap: .5rem; margin-top: 1.1rem;
+        padding-top: .9rem; border-top: 1px solid #e7e5e4;
+    }
+    .panel-actions a {
+        flex: 1; text-align: center; padding: .55rem .85rem;
+        border-radius: 999px; font-size: .8rem; font-weight: 600;
+        text-decoration: none;
+    }
+    .panel-actions a.primary { background: #0f172a; color: #fafaf9; }
+    .panel-actions a.primary:hover { background: #1e293b; color: #fafaf9; }
+    .panel-actions a.secondary { background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; }
+    .panel-actions a.secondary:hover { background: #e0e7ff; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="fit-hero">
+    <h1>Strategy fit</h1>
+    <p class="lede">Which of your strategies actually have edge in which {{ 'sectors' if mode == 'sector' else 'industries' }}? Each cell shows how your real trades performed.</p>
+    {% if grand_total and grand_total.num_trades %}
+    <div class="fit-baselines">
+        <div class="fit-baseline">
+            <div class="lbl">Your baseline expectancy</div>
+            <div class="val">${{ "{:,.2f}".format(baseline_expectancy) }}/trade</div>
+        </div>
+        <div class="fit-baseline">
+            <div class="lbl">Your baseline win rate</div>
+            <div class="val">{{ "{:.0%}".format(baseline_win_rate) }}</div>
+        </div>
+        <div class="fit-baseline">
+            <div class="lbl">Total trades</div>
+            <div class="val">{{ grand_total.num_trades | int }}</div>
+        </div>
+        <div class="fit-baseline">
+            <div class="lbl">Total P&amp;L</div>
+            <div class="val">${{ "{:,.0f}".format(grand_total.total_pnl) }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-danger">
+    We're having trouble loading your data right now. Refresh in a minute, or
+    <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.
+</div>
+{% elif not row_labels or not col_labels %}
+<div class="fit-card fit-empty">
+    <strong>Not enough data yet.</strong>
+    <p class="mb-0 mt-2">Once your trades are tagged with a sector, you'll see a strategy-by-sector matrix here &mdash; one cell for every combo you've actually traded.</p>
+    <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
+    </div>
+</div>
+{% else %}
+
+{# ── AI-narrated insights ─────────────────────────────────────────── #}
+{% if ai_enabled %}
+{% if ai_summary %}
+<div class="ai-card" id="aiCard">
+    <div class="ai-head">
+        <span class="badge-ai">AI Insight</span>
+        <h2>What we noticed</h2>
+        {% if ai_generated_at %}
+        <span class="when">Updated {{ ai_generated_at.strftime('%b %d, %I:%M %p') }}</span>
+        {% endif %}
+    </div>
+    <div class="ai-summary">{{ ai_summary }}</div>
+    <button type="button" class="ai-toggle" id="aiToggleBtn">
+        <span class="label">Show full breakdown</span>
+        <span class="arrow">▾</span>
+    </button>
+    <div class="ai-full">
+        {{ ai_full_html|safe }}
+    </div>
+    <div class="ai-actions">
+        <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="ai-refresh" title="Regenerate insights from your latest data">↻ Refresh</button>
+        </form>
+        <span class="ai-disclaimer">Generated from your data. Observations only — not advice.</span>
+    </div>
+</div>
+{% else %}
+<div class="ai-card empty">
+    <div class="ai-head">
+        <span class="badge-ai">AI Insight</span>
+        <h2>Want a narrated read on this matrix?</h2>
+    </div>
+    <div class="ai-summary">
+        {% if ai_available %}
+            Click below to have your data summarized in plain English — what's working, where the edge is, and what's small-sample-size noise.
+        {% else %}
+            AI Coach is warming up. Once it's ready, you'll get a narrated read of where your strategies have edge.
+        {% endif %}
+    </div>
+    {% if ai_available %}
+    <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin-top: .35rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ai-generate-btn">Generate insights</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{# ── Smarter sweet/soft callouts (sample-size guarded, expectancy-based) ── #}
+{% if sweet_spots or soft_spots %}
+<div class="callouts-row">
+    {% if sweet_spots %}
+    <div class="callouts-card sweet">
+        <h3>Where you have edge</h3>
+        {% for c in sweet_spots %}
+        <div class="pair">
+            <span class="strat-tag">{{ c.strategy }}</span>
+            <span class="text-muted small">in</span>
+            <span class="ind-tag">{{ c[col_field] }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
+            <span class="pnl-big pos">+${{ "{:,.0f}".format(c.total_pnl) }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if soft_spots %}
+    <div class="callouts-card soft">
+        <h3>Where you lose money</h3>
+        {% for c in soft_spots %}
+        <div class="pair">
+            <span class="strat-tag">{{ c.strategy }}</span>
+            <span class="text-muted small">in</span>
+            <span class="ind-tag">{{ c[col_field] }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
+            <span class="pnl-big neg">${{ "{:,.0f}".format(c.total_pnl) }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Controls: metric toggle + visibility ── #}
+<div class="fit-controls">
+    <div>
+        <label class="lblh">View metric</label>
+        <div class="metric-toggle" id="metricToggle">
+            <button type="button" data-metric="total_pnl" class="active">Total P&amp;L</button>
+            <button type="button" data-metric="expectancy">Per trade</button>
+            <button type="button" data-metric="win_rate">Win rate</button>
+            <button type="button" data-metric="edge">Edge vs. you</button>
+        </div>
+    </div>
+
+    <div>
+        <label class="lblh">View options</label>
+        <div class="visibility-toggles">
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="hideUnknown" checked>
+                <label class="form-check-label" for="hideUnknown">Hide Unknown</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="dimLowN" checked>
+                <label class="form-check-label" for="dimLowN">Dim cells with &lt; 3 trades</label>
+            </div>
+        </div>
+    </div>
+
+    {% if accounts and accounts|length > 1 %}
+    <form method="get" class="d-flex gap-2 align-items-end" style="margin: 0;">
+        <input type="hidden" name="sector" value="{{ drill_sector }}">
+        <div>
+            <label class="lblh">Account</label>
+            <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">All Accounts</option>
+                {% for a in accounts %}
+                <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if mode == 'industry' %}
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('strategy_fit', account=selected_account) }}">
+        ← Back to all sectors
+    </a>
+    <span class="text-muted small">Drilled into <strong>{{ drill_sector }}</strong>.</span>
+    {% endif %}
+</div>
+
+<div class="fit-card hide-unknown" id="fitCard">
+    <div class="fit-table-wrap">
+    <table class="fit" id="fitTable"
+        data-baseline-expectancy="{{ baseline_expectancy }}"
+        data-baseline-win-rate="{{ baseline_win_rate }}"
+        data-max-pnl="{{ max_abs_pnl }}"
+        data-max-expectancy="{{ max_abs_expectancy }}"
+        data-max-edge="{{ max_abs_edge }}">
+        <thead>
+            <tr>
+                <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ 'Sector' if mode == 'sector' else 'Industry' }} →</th>
+                {% for col in col_labels %}
+                <th class="{% if col == 'Unknown' %}col-unknown{% endif %}">
+                    {% if mode == 'sector' %}
+                    <a href="{{ url_for('strategy_fit', sector=col, account=selected_account) }}"
+                       title="Drill into {{ col }} industries">{{ col }}</a>
+                    {% else %}
+                    {{ col }}
+                    {% endif %}
+                    {% set ct = col_totals.get(col) %}
+                    {% if ct %}
+                    <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">${{ "{:,.0f}".format(ct.total_pnl) }}</span>
+                    <span class="col-meta">
+                        {{ ct.num_symbols }} sym ·
+                        {% if (ct.num_winners + ct.num_losers) > 0 %}{{ "{:.0%}".format(ct.win_rate) }} win{% else %}—{% endif %}
+                    </span>
+                    {% endif %}
+                </th>
+                {% endfor %}
+                <th class="totals">Strategy total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for strat in row_labels %}
+            {% set rt = row_totals.get(strat) %}
+            <tr>
+                <th class="strategy">
+                    {{ strat }}
+                    {% if rt %}
+                    <span class="row-meta">
+                        {{ rt.num_symbols | int }} sym
+                        {% if (rt.num_winners + rt.num_losers) > 0 %}
+                        · {{ "{:.0%}".format(rt.win_rate) }} win
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </th>
+                {% for col in col_labels %}
+                    {% set c = cells.get(strat, {}).get(col) %}
+                    {% if c and c.num_trades and c.num_trades > 0 %}
+                        {% set drill_url = url_for('positions', strategy=strat, sector=(col if mode == 'sector' else drill_sector), industry=('' if mode == 'sector' else col), account=selected_account) %}
+                        <td class="cell has-data {% if col == 'Unknown' %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
+                            data-strategy="{{ strat }}"
+                            data-col="{{ col }}"
+                            data-col-label="{{ 'Sector' if mode == 'sector' else 'Industry' }}"
+                            data-total-pnl="{{ c.total_pnl }}"
+                            data-realized-pnl="{{ c.realized_pnl }}"
+                            data-unrealized-pnl="{{ c.unrealized_pnl }}"
+                            data-expectancy="{{ c.expectancy }}"
+                            data-win-rate="{{ c.win_rate }}"
+                            data-edge-expectancy="{{ c.edge_expectancy }}"
+                            data-edge-win-rate="{{ c.edge_win_rate }}"
+                            data-num-trades="{{ c.num_trades | int }}"
+                            data-num-winners="{{ c.num_winners | int }}"
+                            data-num-losers="{{ c.num_losers | int }}"
+                            data-num-symbols="{{ c.num_symbols | int }}"
+                            data-positions-url="{{ drill_url }}"
+                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · ${{ '{:,.2f}'.format(c.expectancy) }}/trade · ${{ '{:,.0f}'.format(c.total_pnl) }} total · click for details">
+                            <span class="cell-pnl"></span>
+                            <span class="cell-meta">{{ c.num_trades | int }}t{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
+                        </td>
+                    {% else %}
+                        <td class="cell empty {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                    {% endif %}
+                {% endfor %}
+                {% if rt %}
+                <td class="total-cell">
+                    <span class="cell-pnl {% if rt.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                        {% if rt.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(rt.total_pnl) }}
+                    </span>
+                    <span class="cell-meta">
+                        {{ rt.num_trades | int }}t
+                        {% if (rt.num_winners + rt.num_losers) > 0 %}· {{ "{:.0%}".format(rt.win_rate) }}{% endif %}
+                    </span>
+                </td>
+                {% else %}
+                <td class="total-cell">—</td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+
+            <tr class="totals-row">
+                <th class="strategy">{{ 'Sector' if mode == 'sector' else 'Industry' }} total</th>
+                {% for col in col_labels %}
+                    {% set ct = col_totals.get(col) %}
+                    {% if ct %}
+                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}">
+                        <span class="cell-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                            {% if ct.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(ct.total_pnl) }}
+                        </span>
+                        <span class="cell-meta">
+                            {{ ct.num_trades | int }}t
+                            {% if (ct.num_winners + ct.num_losers) > 0 %}· {{ "{:.0%}".format(ct.win_rate) }}{% endif %}
+                        </span>
+                    </td>
+                    {% else %}
+                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                    {% endif %}
+                {% endfor %}
+                {% if grand_total %}
+                <td class="total-cell grand">
+                    <span class="cell-pnl {% if grand_total.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+                        {% if grand_total.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(grand_total.total_pnl) }}
+                    </span>
+                    <span class="cell-meta">
+                        {{ grand_total.num_trades | int }}t · {{ "{:.0%}".format(grand_total.win_rate) }}
+                    </span>
+                </td>
+                {% endif %}
+            </tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="fit-legend">
+        <span><span class="swatch" style="background: rgba(16,185,129,.5);"></span>positive</span>
+        <span><span class="swatch" style="background: rgba(239,68,68,.5);"></span>negative</span>
+        <span class="text-muted">Color intensity scales with magnitude.</span>
+        <span class="text-muted">Faded cells have &lt; 3 trades — too few to call signal.</span>
+        <span class="text-muted">Click a cell to filter Positions.</span>
+    </div>
+</div>
+
+{% endif %}
+
+{# ── Drill-down side panel ─────────────────────────────────────────── #}
+<div class="fit-panel-backdrop" id="fitPanelBackdrop"></div>
+<aside class="fit-panel" id="fitPanel" aria-hidden="true">
+    <header style="position: relative;">
+        <button type="button" class="close" id="fitPanelClose" aria-label="Close">×</button>
+        <div class="tags">
+            <span class="strat-tag" id="panelStrategy">—</span>
+            <span class="text-white-50 small" style="align-self: center;">in</span>
+            <span class="ind-tag" id="panelCol">—</span>
+        </div>
+        <h2 id="panelTitle">Cell details</h2>
+        <div class="pnl-headline" id="panelPnl">$0</div>
+        <div class="pnl-sub" id="panelPnlSub">—</div>
+    </header>
+    <div class="body">
+        <div class="panel-edge" id="panelEdge" style="display: none;">
+            <div class="lbl">Your edge here</div>
+            <div class="narr" id="panelEdgeText"></div>
+        </div>
+
+        <div class="panel-stats">
+            <div class="stat"><div class="lbl">Trades</div><div class="val" id="panelTrades">0</div></div>
+            <div class="stat"><div class="lbl">Win rate</div><div class="val" id="panelWinRate">—</div></div>
+            <div class="stat"><div class="lbl">Per trade</div><div class="val" id="panelExpectancy">$0</div></div>
+            <div class="stat"><div class="lbl">W / L</div><div class="val" id="panelWL">— / —</div></div>
+            <div class="stat"><div class="lbl">Realized</div><div class="val" id="panelRealized">$0</div></div>
+            <div class="stat"><div class="lbl">Unrealized</div><div class="val" id="panelUnrealized">$0</div></div>
+        </div>
+
+        <div class="panel-section-title" id="panelSymbolsTitle">Top symbols</div>
+        <div id="panelSymbols">
+            <div class="text-muted small">No symbol breakdown available.</div>
+        </div>
+
+        <div class="panel-actions">
+            <a href="#" id="panelOpenPositions" class="primary">Open in Positions →</a>
+            <button type="button" class="secondary" id="panelCloseBottom">Close</button>
+        </div>
+    </div>
+</aside>
+
+<script>
+const CELL_SYMBOLS = {{ cell_symbols_json|safe }};
+const BASELINE_EXPECTANCY = {{ baseline_expectancy|float }};
+const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
+
+(function () {
+    var table = document.getElementById('fitTable');
+    var fitCard = document.getElementById('fitCard');
+    if (!table) return;
+
+    var maxAbsPnl       = parseFloat(table.dataset.maxPnl) || 1;
+    var maxAbsExpect    = parseFloat(table.dataset.maxExpectancy) || 1;
+    var maxAbsEdge      = parseFloat(table.dataset.maxEdge) || 1;
+    var baseExpectancy  = parseFloat(table.dataset.baselineExpectancy) || 0;
+
+    function fmtMoney(n, decimals) {
+        if (decimals === undefined) decimals = 0;
+        var sign = n >= 0 ? '+' : '-';
+        return sign + '$' + Math.abs(n).toLocaleString('en-US', {
+            minimumFractionDigits: decimals, maximumFractionDigits: decimals
+        });
+    }
+    function fmtPct(n) { return Math.round(n * 100) + '%'; }
+
+    function colorFor(value, maxAbs, mode) {
+        if (!value && value !== 0) return { bg: '#fafafa', txt: '#cbd5e1' };
+        var intensity = Math.min(Math.abs(value) / (maxAbs || 1), 1);
+        var alpha = 0.12 + intensity * 0.55;
+        if (mode === 'win_rate') {
+            // Win-rate uses 50% as neutral. Above 50% green, below red, scaled
+            // by distance from .50 capped at .5 (so 100% wr is fully green).
+            var dist = Math.min(Math.abs(value - 0.5) / 0.5, 1);
+            alpha = 0.12 + dist * 0.55;
+            if (value >= 0.5) {
+                return { bg: 'rgba(16,185,129,' + alpha + ')', txt: '#065f46' };
+            }
+            return { bg: 'rgba(239,68,68,' + alpha + ')', txt: '#7f1d1d' };
+        }
+        if (value >= 0) {
+            return { bg: 'rgba(16,185,129,' + alpha + ')', txt: '#065f46' };
+        }
+        return { bg: 'rgba(239,68,68,' + alpha + ')', txt: '#7f1d1d' };
+    }
+
+    function renderCell(td, metric) {
+        if (!td.classList.contains('has-data')) return;
+        var totalPnl    = parseFloat(td.dataset.totalPnl) || 0;
+        var expectancy  = parseFloat(td.dataset.expectancy) || 0;
+        var winRate     = parseFloat(td.dataset.winRate) || 0;
+        var edgeExp     = parseFloat(td.dataset.edgeExpectancy) || 0;
+        var trades      = parseInt(td.dataset.numTrades, 10) || 0;
+
+        var label = td.querySelector('.cell-pnl');
+        var meta  = td.querySelector('.cell-meta');
+        var color, value;
+
+        if (metric === 'total_pnl') {
+            value = totalPnl;
+            color = colorFor(value, maxAbsPnl);
+            label.textContent = fmtMoney(totalPnl);
+        } else if (metric === 'expectancy') {
+            value = expectancy;
+            color = colorFor(value, maxAbsExpect);
+            label.textContent = fmtMoney(expectancy, expectancy && Math.abs(expectancy) < 100 ? 2 : 0) + '/t';
+        } else if (metric === 'win_rate') {
+            value = winRate;
+            color = colorFor(value, 1, 'win_rate');
+            label.textContent = fmtPct(winRate);
+        } else if (metric === 'edge') {
+            value = edgeExp;
+            color = colorFor(value, maxAbsEdge);
+            label.textContent = (edgeExp >= 0 ? '+' : '') + fmtMoney(edgeExp, Math.abs(edgeExp) < 100 ? 2 : 0).replace('+', '').replace('-', edgeExp < 0 ? '-' : '');
+            // simpler: use fmtMoney directly which already handles sign
+            label.textContent = fmtMoney(edgeExp, Math.abs(edgeExp) < 100 ? 2 : 0);
+        }
+
+        td.style.background = color.bg;
+        td.style.color = color.txt;
+    }
+
+    function applyMetric(metric) {
+        document.querySelectorAll('#metricToggle button').forEach(function (b) {
+            b.classList.toggle('active', b.dataset.metric === metric);
+        });
+        document.querySelectorAll('#fitTable td.cell').forEach(function (td) {
+            renderCell(td, metric);
+        });
+    }
+
+    document.querySelectorAll('#metricToggle button').forEach(function (b) {
+        b.addEventListener('click', function () { applyMetric(b.dataset.metric); });
+    });
+
+    // ── Drill-down panel wiring ───────────────────────────────────────
+    var panel        = document.getElementById('fitPanel');
+    var backdrop     = document.getElementById('fitPanelBackdrop');
+    var btnClose     = document.getElementById('fitPanelClose');
+    var btnCloseBot  = document.getElementById('fitPanelCloseBottom') || document.getElementById('panelCloseBottom');
+
+    function openPanel(td) {
+        var strat       = td.dataset.strategy;
+        var col         = td.dataset.col;
+        var colLabel    = td.dataset.colLabel || 'Sector';
+        var totalPnl    = parseFloat(td.dataset.totalPnl) || 0;
+        var realizedPnl = parseFloat(td.dataset.realizedPnl) || 0;
+        var unrealPnl   = parseFloat(td.dataset.unrealizedPnl) || 0;
+        var expectancy  = parseFloat(td.dataset.expectancy) || 0;
+        var winRate     = parseFloat(td.dataset.winRate) || 0;
+        var edgeExp     = parseFloat(td.dataset.edgeExpectancy) || 0;
+        var edgeWr      = parseFloat(td.dataset.edgeWinRate) || 0;
+        var trades      = parseInt(td.dataset.numTrades, 10) || 0;
+        var winners     = parseInt(td.dataset.numWinners, 10) || 0;
+        var losers      = parseInt(td.dataset.numLosers, 10) || 0;
+        var positionsUrl = td.dataset.positionsUrl;
+
+        document.getElementById('panelStrategy').textContent = strat;
+        document.getElementById('panelCol').textContent = col;
+        document.getElementById('panelTitle').textContent = strat + ' · ' + col;
+        var pnlEl = document.getElementById('panelPnl');
+        pnlEl.textContent = fmtMoney(totalPnl);
+        pnlEl.classList.toggle('pos', totalPnl >= 0);
+        pnlEl.classList.toggle('neg', totalPnl < 0);
+        document.getElementById('panelPnlSub').textContent =
+            trades + ' trade' + (trades === 1 ? '' : 's') +
+            (winners + losers > 0 ? ' · ' + fmtPct(winRate) + ' win rate' : '');
+
+        // Edge narrative — only when sample size is reasonable so we don't
+        // celebrate or flag noise.
+        var edgeEl = document.getElementById('panelEdge');
+        var edgeText = document.getElementById('panelEdgeText');
+        if (trades >= 5) {
+            var pieces = [];
+            if (Math.abs(edgeExp) > 0.5) {
+                pieces.push(
+                    'You earn ' + fmtMoney(Math.abs(edgeExp), Math.abs(edgeExp) < 100 ? 2 : 0).replace(/^[+-]/, '') +
+                    '/trade ' + (edgeExp >= 0 ? 'more' : 'less') +
+                    ' here than your overall average (' +
+                    fmtMoney(BASELINE_EXPECTANCY, Math.abs(BASELINE_EXPECTANCY) < 100 ? 2 : 0) + '/trade).'
+                );
+            }
+            if (winners + losers >= 5 && Math.abs(edgeWr) > 0.05) {
+                pieces.push(
+                    'Your win rate here is ' +
+                    Math.round(Math.abs(edgeWr) * 100) + 'pp ' +
+                    (edgeWr >= 0 ? 'higher' : 'lower') + ' than your usual ' +
+                    fmtPct(BASELINE_WIN_RATE) + '.'
+                );
+            }
+            if (pieces.length > 0) {
+                edgeText.textContent = pieces.join(' ');
+                edgeEl.style.display = 'block';
+            } else {
+                edgeEl.style.display = 'none';
+            }
+        } else {
+            edgeEl.style.display = 'none';
+        }
+
+        document.getElementById('panelTrades').textContent = trades.toLocaleString();
+        document.getElementById('panelWinRate').textContent =
+            (winners + losers > 0) ? fmtPct(winRate) : '—';
+        var expEl = document.getElementById('panelExpectancy');
+        expEl.textContent = fmtMoney(expectancy, Math.abs(expectancy) < 100 ? 2 : 0) + '/t';
+        expEl.classList.toggle('pos', expectancy >= 0);
+        expEl.classList.toggle('neg', expectancy < 0);
+        document.getElementById('panelWL').textContent = winners + ' / ' + losers;
+        var realizedEl = document.getElementById('panelRealized');
+        realizedEl.textContent = fmtMoney(realizedPnl);
+        realizedEl.classList.toggle('pos', realizedPnl >= 0);
+        realizedEl.classList.toggle('neg', realizedPnl < 0);
+        var unrealEl = document.getElementById('panelUnrealized');
+        unrealEl.textContent = fmtMoney(unrealPnl);
+        unrealEl.classList.toggle('pos', unrealPnl >= 0);
+        unrealEl.classList.toggle('neg', unrealPnl < 0);
+
+        var symKey = strat + '||' + col;
+        var symbols = CELL_SYMBOLS[symKey] || [];
+        var symContainer = document.getElementById('panelSymbols');
+        if (symbols.length === 0) {
+            symContainer.innerHTML = '<div class="text-muted small">No symbol breakdown available.</div>';
+        } else {
+            var maxAbs = Math.max.apply(null, symbols.map(function (s) { return Math.abs(s.total_pnl); }));
+            if (maxAbs <= 0) maxAbs = 1;
+            symContainer.innerHTML = symbols.map(function (s) {
+                var w = Math.round((Math.abs(s.total_pnl) / maxAbs) * 100);
+                var posCls = s.total_pnl >= 0 ? 'pos' : 'neg';
+                var closed = s.num_winners + s.num_losers;
+                var wr = closed > 0 ? Math.round((s.num_winners / closed) * 100) + '% win' : '';
+                var url = '/position/' + encodeURIComponent(s.symbol);
+                return '' +
+                    '<a class="symbol-row" href="' + url + '">' +
+                        '<span class="sym">' + s.symbol + '</span>' +
+                        '<div>' +
+                            '<div class="bar"><span class="' + posCls + '" style="width: ' + w + '%;"></span></div>' +
+                            '<div class="meta">' + s.num_trades + ' trade' + (s.num_trades === 1 ? '' : 's') +
+                            (wr ? ' · ' + wr : '') + '</div>' +
+                        '</div>' +
+                        '<span class="pnl ' + posCls + '">' + fmtMoney(s.total_pnl) + '</span>' +
+                    '</a>';
+            }).join('');
+        }
+        var symTitle = document.getElementById('panelSymbolsTitle');
+        symTitle.textContent = symbols.length > 0
+            ? 'Top ' + symbols.length + ' symbol' + (symbols.length === 1 ? '' : 's') +
+              ' (of ' + (parseInt(td.dataset.numSymbols, 10) || symbols.length) + ')'
+            : 'Symbols';
+
+        document.getElementById('panelOpenPositions').href = positionsUrl;
+
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+        backdrop.classList.add('open');
+    }
+
+    function closePanel() {
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+        backdrop.classList.remove('open');
+    }
+
+    document.querySelectorAll('#fitTable td.cell.has-data').forEach(function (td) {
+        td.addEventListener('click', function (e) {
+            // Don't intercept if user is shift-clicking or middle-clicking
+            if (e.shiftKey || e.metaKey || e.ctrlKey || e.button === 1) return;
+            openPanel(td);
+        });
+    });
+    if (btnClose) btnClose.addEventListener('click', closePanel);
+    if (btnCloseBot) btnCloseBot.addEventListener('click', closePanel);
+    backdrop.addEventListener('click', closePanel);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+    });
+
+    var hideUnknown = document.getElementById('hideUnknown');
+    var dimLowN     = document.getElementById('dimLowN');
+    if (hideUnknown) {
+        hideUnknown.addEventListener('change', function () {
+            fitCard.classList.toggle('hide-unknown', hideUnknown.checked);
+        });
+    }
+    if (dimLowN) {
+        dimLowN.addEventListener('change', function () {
+            document.querySelectorAll('#fitTable td.cell.has-data').forEach(function (td) {
+                var n = parseInt(td.dataset.numTrades, 10) || 0;
+                if (n < 3) td.classList.toggle('low-n', dimLowN.checked);
+            });
+        });
+    }
+
+    applyMetric('total_pnl');
+
+    // AI insight expand/collapse — collapsed by default to keep the page
+    // scannable; users opt in to the full bullets.
+    var aiCard = document.getElementById('aiCard');
+    var aiToggle = document.getElementById('aiToggleBtn');
+    if (aiCard && aiToggle) {
+        aiToggle.addEventListener('click', function () {
+            var expanded = aiCard.classList.toggle('expanded');
+            aiToggle.querySelector('.label').textContent =
+                expanded ? 'Hide full breakdown' : 'Show full breakdown';
+        });
+    }
+})();
+</script>
+
+{% endblock %}

@@ -53,7 +53,12 @@
 {% block content %}
 
 {# ── Hero ── #}
-<div class="fl-hero">
+<div class="fl-hero position-relative">
+    <a href="{{ url_for('weekly_review') }}"
+       class="position-absolute top-0 end-0 m-3 small text-decoration-none"
+       style="color:rgba(255,255,255,.7);">
+       Skip to weekly review &rarr;
+    </a>
     <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
     <h1 class="display-5 fw-bold mb-2">Here's what we found.</h1>
     <p class="lead mb-0" style="color:rgba(255,255,255,.7)">

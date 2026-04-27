@@ -1,78 +1,66 @@
 {% extends "base.html" %}
 
 {% block head %}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
 <style>
-    .up { font-family: "DM Sans", system-ui, sans-serif; background: #f7f5f2; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .up { background: #f8fafc; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
     .up-shell { max-width: 780px; margin: 0 auto; }
 
     .up-hero {
-        background: linear-gradient(128deg, #0c0a09 0%, #1c1917 45%, #292524 100%);
-        color: #fafaf9;
-        border-radius: 24px; padding: 1.75rem 2rem;
-        position: relative; overflow: hidden;
-        border: 1px solid rgba(255,255,255,.08);
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        border-radius: 16px; padding: 1.75rem 2rem;
         margin-bottom: 1.25rem;
     }
     .up-hero.gated { background: linear-gradient(135deg, #334155, #1e293b); }
-    .up-hero::before {
-        content: ""; position: absolute; right: -8%; top: -40%;
-        width: 55%; height: 140%;
-        background: radial-gradient(circle, rgba(139,92,246,.22), transparent 65%);
-        pointer-events: none;
-    }
-    .up-hero-in { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+    .up-hero-in { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
     .up-avatar {
         width: 58px; height: 58px; border-radius: 50%;
-        background: linear-gradient(135deg, #c4b5fd, #8b5cf6);
+        background: linear-gradient(135deg, #1e3a8a, #3b82f6);
         color: #fff; font-weight: 700; font-size: 1.5rem;
         display: flex; align-items: center; justify-content: center;
-        font-family: "Fraunces", serif;
     }
     .up-id { display: flex; align-items: center; gap: .85rem; }
-    .up-name { font-family: "Fraunces", Georgia, serif; font-weight: 700; font-size: clamp(1.3rem, 3vw, 1.7rem); letter-spacing: -.03em; margin: 0; }
-    .up-handle { font-size: .82rem; opacity: .65; }
-    .up-headline { margin-top: .85rem; font-size: .95rem; opacity: .85; line-height: 1.55; max-width: 36rem; }
+    .up-name { font-weight: 700; font-size: clamp(1.3rem, 3vw, 1.7rem); margin: 0; }
+    .up-handle { font-size: .82rem; opacity: .7; }
+    .up-headline { margin-top: .85rem; font-size: .95rem; color: rgba(255,255,255,.85); line-height: 1.55; max-width: 36rem; }
 
     .up-stat-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .35rem; }
     .up-stat {
-        background: rgba(255,255,255,.07); border-radius: 10px;
+        background: rgba(255,255,255,.12); border-radius: 8px;
         padding: .45rem .85rem; font-size: .78rem; line-height: 1.25;
     }
-    .up-stat strong { display: block; font-size: 1.1rem; font-weight: 800; font-family: "Fraunces", serif; }
+    .up-stat strong { display: block; font-size: 1.1rem; font-weight: 700; }
 
     .up-follow-btn {
-        background: #fff; color: #1c1917; border: none;
-        border-radius: 999px; padding: .45rem 1.25rem;
-        font-weight: 700; font-size: .85rem;
-    }
-    .up-follow-btn:hover { background: #e7e5e4; }
-    .up-following-btn {
-        background: transparent; color: #fafaf9; border: 1px solid rgba(255,255,255,.3);
-        border-radius: 999px; padding: .45rem 1.15rem;
+        background: #fff; color: #0f172a; border: none;
+        border-radius: 6px; padding: .45rem 1.25rem;
         font-weight: 600; font-size: .85rem;
     }
-    .up-following-btn:hover { background: rgba(255,255,255,.08); }
+    .up-follow-btn:hover { background: #e2e8f0; }
+    .up-following-btn {
+        background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.4);
+        border-radius: 6px; padding: .45rem 1.15rem;
+        font-weight: 500; font-size: .85rem;
+    }
+    .up-following-btn:hover { background: rgba(255,255,255,.1); }
 
     .up-bio {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 18px;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
         padding: 1.2rem 1.35rem; margin-bottom: 1rem;
-        box-shadow: 0 4px 24px rgba(28,25,23,.04);
+        box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }
-    .up-bio p { font-size: .95rem; line-height: 1.65; color: #44403c; margin: 0; }
+    .up-bio p { font-size: .95rem; line-height: 1.65; color: #334155; margin: 0; }
 
-    .up-section-h { font-family: "Fraunces", serif; font-size: 1.1rem; color: #1c1917; margin: 1.25rem 0 .75rem; }
+    .up-section-h { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin: 1.25rem 0 .75rem; }
 
     .up-card {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 18px;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
         padding: 1.1rem 1.35rem; margin-bottom: .9rem;
-        box-shadow: 0 4px 24px rgba(28,25,23,.04);
+        box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }
 
-    .up-post-meta { font-size: .75rem; color: #78716c; margin-bottom: .5rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-    .up-post-body { color: #1c1917; font-size: .97rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+    .up-post-meta { font-size: .75rem; color: #64748b; margin-bottom: .5rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .up-post-body { color: #0f172a; font-size: .97rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
     .up-tag-row { margin-top: .55rem; display: flex; gap: .4rem; flex-wrap: wrap; }
     .up-symbol-chip {
         display: inline-block;
@@ -126,15 +114,16 @@
 
     /* Gate */
     .up-gate {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 20px;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
         padding: 2rem 1.5rem; text-align: center;
-        box-shadow: 0 4px 24px rgba(28,25,23,.04);
+        box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }
-    .up-gate h2 { font-family: "Fraunces", serif; font-size: 1.2rem; color: #1c1917; margin-bottom: .5rem; }
-    .up-gate p { color: #78716c; font-size: .9rem; line-height: 1.55; max-width: 28rem; margin: 0 auto 1rem; }
-    .up-gate .btn { background: #1c1917; color: #fff; border: none; border-radius: 999px; padding: .55rem 1.4rem; font-weight: 700; font-size: .9rem; }
+    .up-gate h2 { font-size: 1.2rem; font-weight: 700; color: #0f172a; margin-bottom: .5rem; }
+    .up-gate p { color: #64748b; font-size: .9rem; line-height: 1.55; max-width: 28rem; margin: 0 auto 1rem; }
+    .up-gate .btn { background: #1e3a8a; color: #fff; border: none; border-radius: 6px; padding: .55rem 1.4rem; font-weight: 600; font-size: .9rem; }
+    .up-gate .btn:hover { background: #1e40af; }
 
-    .up-empty { color: #78716c; font-size: .9rem; padding: .5rem 0 1rem; }
+    .up-empty { color: #64748b; font-size: .9rem; padding: .5rem 0 1rem; }
 </style>
 {% endblock %}
 

@@ -83,28 +83,51 @@
         overflow-y: auto;
     }
     .trade-table-wrap table th { position: sticky; top: 0; z-index: 1; background: #f8f9fa; }
+
+    /* ── Hero ───────────────────────────────────────────────────── */
+    .sym-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 14px;
+        padding: 1.6rem 1.75rem;
+        color: #fff;
+        margin-bottom: 1.25rem;
+    }
+    .sym-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 .35rem; letter-spacing: -0.01em; }
+    .sym-hero .lede { color: rgba(255,255,255,.85); margin: 0; font-size: .92rem; line-height: 1.5; }
+    @media (max-width: 640px) {
+        .sym-hero { padding: 1.1rem 1.1rem; border-radius: 12px; }
+        .sym-hero h1 { font-size: 1.2rem; }
+        .sym-hero .lede { font-size: .85rem; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<h4 class="mb-3 fw-bold">Daily Position Detail</h4>
+<div class="sym-hero">
+    <h1>Daily P&amp;L by symbol</h1>
+    <p class="lede">Day-by-day performance for every ticker you've held. See exactly when winners ran and where slow bleeds happened &mdash; click any symbol to drill into its full history.</p>
+</div>
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-warning">
     {% if linked_brokerage_accounts|default([])|length > 0 and not (viewer_is_admin|default(false)) %}
-    <strong>No daily detail rows yet for your linked accounts.</strong>
+    <strong>No daily P&amp;L yet for your linked accounts.</strong>
     Your <a href="{{ url_for('positions') }}">Positions</a> page may still have data. If this sticks around, check that the account label on your data matches what you see on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
     {% else %}
     <strong>No portfolio data yet.</strong>
-    <a href="{{ url_for('profile') }}#schwab-sync">Connect Schwab</a> or <a href="{{ url_for('upload') }}">upload trade history</a>, then give it a couple of minutes for the dashboard to refresh.
+    Bring in your trades to see day-by-day P&amp;L for every symbol:
+    <div class="mt-2 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
+    </div>
     {% endif %}
 </div>
 {% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>We couldn&rsquo;t load your daily detail.</strong> {{ error }}
-    <p class="mb-0 mt-2 small">Try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
+    <strong>We couldn&rsquo;t load your daily P&amp;L right now.</strong>
+    <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
 

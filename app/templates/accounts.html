@@ -20,23 +20,46 @@
         border-radius: 6px;
         color: #fff;
     }
+
+    /* ── Hero ───────────────────────────────────────────────────── */
+    .acct-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 14px;
+        padding: 1.6rem 1.75rem;
+        color: #fff;
+        margin-bottom: 1.25rem;
+    }
+    .acct-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 .35rem; letter-spacing: -0.01em; }
+    .acct-hero .lede { color: rgba(255,255,255,.85); margin: 0; font-size: .92rem; line-height: 1.5; }
+    @media (max-width: 640px) {
+        .acct-hero { padding: 1.1rem 1.1rem; border-radius: 12px; }
+        .acct-hero h1 { font-size: 1.2rem; }
+        .acct-hero .lede { font-size: .85rem; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<h4 class="mb-3 fw-bold">Account Performance</h4>
+<div class="acct-hero">
+    <h1>Account performance</h1>
+    <p class="lede">A side-by-side view of every account you've connected &mdash; current value, what's invested, and how realized vs unrealized P&amp;L is trending over time.</p>
+</div>
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
-<div class="alert alert-warning">
-    <strong>No data yet.</strong>
-    <a href="{{ url_for('upload') }}">Upload your Schwab trade history and current positions</a> to see account performance.
+<div class="alert alert-info">
+    <strong>No account data yet.</strong>
+    Bring in your trades to see how each account is performing.
+    <div class="mt-2 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
+    </div>
 </div>
 {% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>We couldn&rsquo;t load your account balances.</strong> {{ error }}
-    <p class="mb-0 mt-2 small">Try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
+    <strong>We couldn&rsquo;t load your account balances right now.</strong>
+    <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
 

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .static-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        border-radius: 20px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+    }
+    .static-hero h1 { font-size: 2rem; font-weight: 700; margin: 0 0 .5rem; }
+    .static-hero p { color: rgba(255, 255, 255, .85); margin: 0; }
+    .static-card {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, .05);
+        padding: 2rem;
+        max-width: 720px;
+    }
+    .static-card h2 { font-size: 1.1rem; font-weight: 700; margin: 1.25rem 0 .5rem; }
+    .static-card h2:first-of-type { margin-top: 0; }
+    .static-card p, .static-card li { color: #374151; line-height: 1.6; }
+    .contact-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        background: #0f172a;
+        color: #fff;
+        padding: .75rem 1.25rem;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        margin-top: .5rem;
+    }
+    .contact-cta:hover { background: #1e3a8a; color: #fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="static-hero">
+    <h1>Contact</h1>
+    <p>Questions, bug reports, feature requests — we want to hear it.</p>
+</div>
+
+<div class="static-card">
+    <h2>Email us</h2>
+    <p>The fastest way to reach us is email. We read every message and usually reply within a business day.</p>
+    <p>
+        <a href="mailto:support@happytrader.me?subject=HappyTrader%20support" class="contact-cta">
+            support@happytrader.me
+        </a>
+    </p>
+
+    <h2>What helps us help you</h2>
+    <ul>
+        <li>Your username (so we can look up your account)</li>
+        <li>Which page you were on and what happened</li>
+        <li>A screenshot if you can</li>
+    </ul>
+
+    <h2>Heads up</h2>
+    <p>HappyTrader is an analytics tool. We can't give investment advice, place trades for you, or troubleshoot your brokerage account directly. For Schwab account questions, contact Schwab support.</p>
+</div>
+{% endblock %}

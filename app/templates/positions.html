@@ -52,6 +52,24 @@
     .sortable.asc::after  { content: ' \25B2'; opacity: .7; }
     .sortable.desc::after { content: ' \25BC'; opacity: .7; }
 
+    /* Mobile horizontal-scroll affordance */
+    @media (max-width: 768px) {
+        .table-responsive {
+            position: relative;
+            box-shadow: inset -10px 0 8px -8px rgba(15,23,42,.15);
+            border-radius: 8px;
+        }
+        .table-responsive::after {
+            content: 'swipe →';
+            display: block;
+            text-align: right;
+            font-size: .7rem;
+            color: #94a3b8;
+            padding: .25rem .5rem 0;
+            font-style: italic;
+        }
+    }
+
     .chart-wrapper {
         background: #fff;
         border-radius: 12px;
@@ -137,6 +155,15 @@
                     ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
                 </div>
             </div>
+            {% if kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
+            <div class="hero-kpi">
+                <div class="label">Dividends</div>
+                <div class="value {{ 'pos' if kpis.dividend_income >= 0 else 'neg' }}"
+                     title="Cash dividends received. Total Return = Realized + Unrealized + Dividends.">
+                    ${{ "{:,.0f}".format(kpis.dividend_income) }}
+                </div>
+            </div>
+            {% endif %}
             <div class="hero-kpi">
                 <div class="label">Win Rate</div>
                 <div class="value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
@@ -147,17 +174,21 @@
 </div>
 
 {% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_symbol or selected_start_date or selected_end_date) %}
-<div class="alert alert-warning">
+<div class="alert alert-info">
     <strong>No positions yet.</strong>
-    <a href="{{ url_for('profile') }}#schwab-sync">Connect Schwab</a>
-    or <a href="{{ url_for('upload') }}">upload trade history</a> and your positions will show up here.
+    Bring in your trades to see your live positions, P&amp;L, and performance:
+    <div class="mt-2 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
+        <a href="{{ url_for('get_started') }}" class="btn btn-link btn-sm text-decoration-none">Walk me through it</a>
+    </div>
 </div>
 {% endif %}
 
 {% if error is defined and error %}
 <div class="alert alert-danger">
-    <strong>We couldn&rsquo;t load your positions.</strong> {{ error }}
-    <p class="mb-0 mt-2 small">Try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again. If it keeps happening, reach out.</p>
+    <strong>We couldn&rsquo;t load your positions right now.</strong>
+    <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again. If it keeps happening, <a href="{{ url_for('contact') }}">contact support</a>.</p>
 </div>
 {% else %}
 

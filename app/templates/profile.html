@@ -1,46 +1,32 @@
 {% extends "base.html" %}
 
 {% block head %}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&display=swap" rel="stylesheet">
 <style>
-    .atlas { font-family: "DM Sans", system-ui, sans-serif; background: #f7f5f2; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .atlas { background: #f8fafc; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
     .atlas-shell { max-width: 1160px; margin: 0 auto; }
     .atlas-hero {
-        border-radius: 24px;
-        padding: 1.75rem 2rem;
-        background: linear-gradient(128deg, #0c0a09 0%, #1c1917 45%, #292524 100%);
-        color: #fafaf9;
-        position: relative;
-        overflow: hidden;
+        border-radius: 16px;
+        padding: 2rem 2rem;
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
         margin-bottom: 1.75rem;
-        border: 1px solid rgba(255,255,255,.08);
-    }
-    .atlas-hero::before {
-        content: ""; position: absolute; right: -10%; top: -40%;
-        width: 55%; height: 140%;
-        background: radial-gradient(circle, rgba(245,158,11,.18), transparent 65%);
-        pointer-events: none;
     }
     .atlas-hero-in { position: relative; z-index: 1; }
-    .atlas-kicker { font-size: .66rem; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #fbbf24; margin-bottom: .5rem; }
+    .atlas-kicker { font-size: .7rem; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: rgba(255,255,255,.7); margin-bottom: .5rem; }
     .atlas-hero h1 {
-        font-family: "Fraunces", Georgia, serif;
         font-weight: 700;
         font-size: clamp(1.5rem, 3.5vw, 2.1rem);
-        letter-spacing: -.03em;
-        line-height: 1.15;
+        line-height: 1.2;
         margin: 0 0 .4rem;
     }
-    .atlas-hero p.lead { font-size: .98rem; line-height: 1.55; opacity: .82; max-width: 44rem; margin: 0; }
+    .atlas-hero p.lead { font-size: .98rem; line-height: 1.55; color: rgba(255,255,255,.85); max-width: 44rem; margin: 0; }
     .atlas-stat-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
     .atlas-stat {
-        background: rgba(255,255,255,.08); border-radius: 12px;
+        background: rgba(255,255,255,.12); border-radius: 12px;
         padding: .5rem .9rem; text-align: center; min-width: 82px;
     }
-    .atlas-stat .n { font-size: 1.2rem; font-weight: 800; font-family: "Fraunces", serif; line-height: 1; }
-    .atlas-stat .l { font-size: .58rem; text-transform: uppercase; letter-spacing: .1em; opacity: .65; margin-top: .15rem; }
+    .atlas-stat .n { font-size: 1.2rem; font-weight: 700; line-height: 1; }
+    .atlas-stat .l { font-size: .6rem; text-transform: uppercase; letter-spacing: .1em; opacity: .75; margin-top: .15rem; }
 
     .atlas-grid { display: grid; grid-template-columns: 220px 1fr; gap: 1.75rem; align-items: start; }
     @media (max-width: 991px) {
@@ -48,56 +34,55 @@
         .atlas-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
     }
     .atlas-nav .nav-link {
-        border-radius: 12px; color: #57534e; font-weight: 600; font-size: .88rem;
+        border-radius: 8px; color: #475569; font-weight: 600; font-size: .88rem;
         padding: .55rem .95rem; border: 1px solid transparent;
     }
-    .atlas-nav .nav-link:hover { background: #fff; color: #1c1917; border-color: #e7e5e4; }
+    .atlas-nav .nav-link:hover { background: #fff; color: #1e3a8a; border-color: #e2e8f0; }
     .atlas-nav .nav-link.active {
-        background: #fff; color: #1c1917; border-color: #e7e5e4;
-        box-shadow: 0 2px 12px rgba(15,23,42,.05);
+        background: #fff; color: #0f172a; border-color: #e2e8f0;
+        box-shadow: 0 2px 8px rgba(15,23,42,.05);
     }
     .atlas-card {
         background: #fff;
-        border-radius: 18px;
-        border: 1px solid #e7e5e4;
-        box-shadow: 0 4px 24px rgba(28,25,23,.04);
-        margin-bottom: 1.1rem;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 1px 3px rgba(15,23,42,.04);
+        margin-bottom: 1rem;
         overflow: hidden;
     }
     .atlas-card-h {
-        font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
-        color: #a8a29e; padding: 1rem 1.5rem .4rem;
+        font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+        color: #64748b; padding: 1rem 1.5rem .4rem;
     }
     .atlas-card-b { padding: 0 1.5rem 1.3rem; }
-    .atlas-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8a29e; margin-bottom: .35rem; }
+    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-bottom: .35rem; }
     .atlas-field { margin-bottom: 1.1rem; }
-    .atlas-hint { font-size: .82rem; color: #78716c; line-height: 1.5; }
+    .atlas-hint { font-size: .85rem; color: #64748b; line-height: 1.5; }
     .account-badge {
-        display: inline-block; background: #f5f5f4; border-radius: 10px;
-        padding: .4rem .85rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
+        display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+        padding: .35rem .75rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
+        color: #0f172a;
     }
 
     /* Sync card — prominent on Overview */
     .sync-card {
-        background: linear-gradient(135deg, #fff 0%, #fdfbf7 100%);
-        border: 1px solid #e7e5e4;
-        border-radius: 18px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
         padding: 1.5rem 1.75rem;
-        margin-bottom: 1.1rem;
-        box-shadow: 0 4px 24px rgba(28,25,23,.05);
+        margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }
     .sync-card .sync-title {
-        font-family: "Fraunces", serif;
-        font-size: 1.3rem;
+        font-size: 1.15rem;
         font-weight: 700;
-        color: #1c1917;
+        color: #0f172a;
         margin: 0 0 .25rem;
-        letter-spacing: -.02em;
     }
-    .sync-card .sync-sub { font-size: .88rem; color: #78716c; margin: 0 0 1rem; }
+    .sync-card .sync-sub { font-size: .88rem; color: #64748b; margin: 0 0 1rem; }
     .sync-status {
         display: inline-flex; align-items: center; gap: .5rem;
-        font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+        font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
         padding: .3rem .7rem; border-radius: 999px;
     }
     .sync-status.connected { background: #dcfce7; color: #14532d; }
@@ -105,19 +90,18 @@
     .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
     .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
     .btn-sync-primary {
-        background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
-        color: #fff !important; border: none; font-weight: 700;
-        padding: .6rem 1.3rem; border-radius: 999px;
-        box-shadow: 0 4px 18px rgba(29,78,216,.28);
+        background: #1e3a8a;
+        color: #fff !important; border: none; font-weight: 600;
+        padding: .55rem 1.25rem; border-radius: 6px;
         text-decoration: none !important; display: inline-block;
     }
-    .btn-sync-primary:hover { filter: brightness(1.05); color: #fff !important; }
+    .btn-sync-primary:hover { background: #1e40af; color: #fff !important; }
     .btn-sync-ghost {
-        border: 1px solid #d6d3d1; color: #44403c !important;
-        padding: .55rem 1.15rem; border-radius: 999px; font-weight: 600;
+        border: 1px solid #cbd5e1; color: #334155 !important;
+        padding: .5rem 1.15rem; border-radius: 6px; font-weight: 500;
         text-decoration: none !important; background: #fff;
     }
-    .btn-sync-ghost:hover { background: #f5f5f4; color: #1c1917 !important; }
+    .btn-sync-ghost:hover { background: #f1f5f9; color: #0f172a !important; }
 </style>
 {% endblock %}
 
@@ -163,7 +147,7 @@
                 <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
                     <div>
                         <div class="sync-title">Schwab sync</div>
-                        <p class="sync-sub mb-0">Pulls your trades and open positions from Schwab into the same pipeline as manual uploads.</p>
+                        <p class="sync-sub mb-0">Pulls your trades and open positions from Schwab automatically — same data path as a manual upload.</p>
                     </div>
                     {% if schwab_connected %}
                     <span class="sync-status connected"><span class="dot"></span> Connected</span>
@@ -180,7 +164,7 @@
                         <div class="atlas-label mb-2">First sync — how much history?</div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full_o" value="full" checked>
-                            <label class="form-check-label" for="schwab_scope_full_o">Up to {{ schwab_full_history_lookback_days }} days (~5 years) — full backfill</label>
+                            <label class="form-check-label" for="schwab_scope_full_o">Up to {{ schwab_full_history_lookback_days }} days (~5 years) — full history import</label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling_o" value="rolling">
@@ -199,10 +183,10 @@
                         <button type="submit" class="btn-sync-primary">Sync now</button>
                         <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
                     </div>
-                    <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
+                    <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
                 </form>
                 {% else %}
-                <p class="small text-body-secondary mb-0">Connect once and every refresh flows through the same data pipeline as your manual uploads.</p>
+                <p class="small text-body-secondary mb-0">Connect once and every refresh stays in sync with your Schwab account automatically.</p>
                 <div class="sync-actions">
                     <a href="{{ url_for('schwab_connect') }}" class="btn-sync-primary">Connect Schwab</a>
                     <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
@@ -226,7 +210,7 @@
                     <div class="row g-4">
                         <div class="col-md-6">
                             <div class="atlas-label">Display name</div>
-                            <div class="fs-5 fw-bold" style="font-family:Fraunces,serif;color:#1c1917">{{ profile_row.display_name or current_user.username }}</div>
+                            <div class="fs-5 fw-bold" style="color:#0f172a">{{ profile_row.display_name or current_user.username }}</div>
                             <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
                         </div>
                         <div class="col-md-6">
@@ -241,7 +225,7 @@
                         {% endif %}
                     </div>
                     <div class="mt-3 d-flex flex-wrap gap-2">
-                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-dark rounded-pill px-4 fw-semibold">Edit profile</a>
+                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-primary px-4 fw-semibold">Edit profile</a>
                     </div>
                 </div>
             </div>
@@ -332,7 +316,7 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-dark btn-lg rounded-pill px-5 fw-bold">Save</button>
+                <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">Save</button>
             </form>
             {% endif %}
 
@@ -341,7 +325,7 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Schwab sync</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint">Connect once and every sync uses the same pipeline as a manual CSV upload.</p>
+                    <p class="atlas-hint">Connect once and every sync stays in sync with your Schwab account automatically.</p>
                     {% if schwab_connected %}
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -364,11 +348,11 @@
                             <label class="form-check-label" for="schwab_full_again">One-time: fetch up to {{ schwab_full_history_lookback_days }} days</label>
                         </div>
                         {% endif %}
-                        <button type="submit" class="btn btn-primary rounded-pill">Sync now</button>
-                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab and updating your pipeline. This can take a minute — keep this tab open.</p>
+                        <button type="submit" class="btn btn-primary">Sync now</button>
+                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
                     </form>
                     {% else %}
-                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary rounded-pill">Connect Schwab</a>
+                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary">Connect Schwab</a>
                     {% endif %}
                 </div>
             </div>
@@ -413,7 +397,7 @@
                         <div class="mb-3"><label class="form-label">Current</label><input type="password" class="form-control" name="current_password" required autocomplete="current-password"></div>
                         <div class="mb-3"><label class="form-label">New</label><input type="password" class="form-control" name="new_password" required minlength="8" autocomplete="new-password"></div>
                         <div class="mb-3"><label class="form-label">Confirm</label><input type="password" class="form-control" name="confirm_password" required minlength="8" autocomplete="new-password"></div>
-                        <button type="submit" class="btn btn-dark rounded-pill px-4 fw-semibold">Update password</button>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold">Update password</button>
                     </form>
                 </div>
             </div>
@@ -440,7 +424,7 @@
                             <input class="form-check-input" type="checkbox" name="show_account_names_on_published" id="san" {% if profile_row.show_account_names_on_published %}checked{% endif %}>
                             <label class="form-check-label" for="san">Show real account nicknames on shared trades (otherwise they read as “Account”)</label>
                         </div>
-                        <button type="submit" class="btn btn-dark rounded-pill px-4 fw-semibold">Save</button>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold">Save</button>
                     </form>
                 </div>
             </div>
@@ -479,7 +463,7 @@
                     {% else %}
                     <p class="mb-0 mt-3 fw-semibold text-dark">Nothing shared yet.</p>
                     <p class="atlas-hint mt-2">If you want to start sharing, head to Weekly Review and hit <strong>Show</strong> on a trade.</p>
-                    <a href="{{ url_for('weekly_review') }}" class="btn btn-dark rounded-pill px-4 fw-semibold mt-2">Go to Weekly Review</a>
+                    <a href="{{ url_for('weekly_review') }}" class="btn btn-primary px-4 fw-semibold mt-2">Go to Weekly Review</a>
                     {% endif %}
                 </div>
             </div>

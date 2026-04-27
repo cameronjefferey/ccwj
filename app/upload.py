@@ -11,7 +11,7 @@ from app.extensions import limiter
 from app.models import (
     get_accounts_for_user, add_account_for_user,
     remove_account_for_user, is_admin,
-    record_upload, get_uploads_for_user,
+    record_upload, get_uploads_for_user, count_uploads_for_user,
 )
 
 
@@ -715,6 +715,12 @@ def upload():
             f"({account_name})"
         )
 
+    is_first_upload = False
+    try:
+        is_first_upload = count_uploads_for_user(current_user.id) == 0
+    except Exception:
+        is_first_upload = False
+
     ok, err, history_rows, current_rows, head_sha = merge_and_push_seeds(
         account_name,
         history_df,
@@ -724,7 +730,9 @@ def upload():
         skip_history=skip_history,
     )
     if not ok:
-        flash(f"Failed to update seeds: {err}", "danger")
+        from app import app as _app
+        _app.logger.error("Upload seeds update failed: %s", err)
+        flash("Couldn't save that upload right now. Try again in a moment, or contact support if it keeps happening.", "danger")
         return redirect(url_for("upload"))
 
     if skip_history:
@@ -740,9 +748,12 @@ def upload():
             "success",
         )
 
+    qp = {}
     if head_sha:
-        return redirect(url_for("upload_processing", sha=head_sha))
-    return redirect(url_for("upload_processing"))
+        qp["sha"] = head_sha
+    if is_first_upload:
+        qp["first"] = 1
+    return redirect(url_for("upload_processing", **qp))
 
 
 def _github_workflow_state_for_head(head_sha: str) -> dict:
@@ -848,13 +859,19 @@ def upload_processing():
     """Intermediary page shown after upload while data refreshes."""
     expected_minutes = 3
     head_sha = (request.args.get("sha") or "").strip() or None
+    is_first = (request.args.get("first") or "").strip() == "1"
+
+    if is_first:
+        done_url = url_for("first_look", from_upload=1)
+    else:
+        done_url = url_for("weekly_review", from_upload=1)
 
     return render_template(
         "upload_processing.html",
         title="Processing Upload",
         expected_minutes=expected_minutes,
         head_sha=head_sha,
-        done_url=url_for("weekly_review", from_upload=1),
+        done_url=done_url,
     )
 
 
@@ -864,12 +881,19 @@ def sync_processing():
     """After Schwab seed push, wait for GitHub Actions dbt to finish (optional poll by commit SHA)."""
     expected_minutes = 5
     head_sha = (request.args.get("sha") or "").strip() or None
+    is_first = (request.args.get("first") or "").strip() == "1"
+
+    if is_first:
+        done_url = url_for("first_look", from_sync=1)
+    else:
+        done_url = url_for("weekly_review", from_sync=1)
+
     return render_template(
         "sync_processing.html",
-        title="Pipeline running",
+        title="Processing Schwab sync",
         expected_minutes=expected_minutes,
         head_sha=head_sha,
-        done_url=url_for("weekly_review", from_sync=1),
+        done_url=done_url,
     )
 
 

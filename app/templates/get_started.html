@@ -114,7 +114,7 @@
                             <h6 class="fw-bold mb-2">Connect Schwab</h6>
                             <p class="small text-muted mb-2">OAuth link to Schwab. One-time history pull, then background syncs.</p>
                             <ul>
-                                <li>First backfill: up to <strong>{{ schwab_full_history_days|int }} days</strong> of history in one go (about five years) so the model has depth.</li>
+                                <li>First import: up to <strong>{{ schwab_full_history_days|int }} days</strong> of history in one go (about five years) so the analytics have depth.</li>
                                 <li>After that, scheduled syncs pull a rolling <strong>{{ schwab_routine_days|int }}&ndash;day</strong> window of new transactions &mdash; no daily export from you.</li>
                             </ul>
                             {% if schwab_connected %}
@@ -123,7 +123,7 @@
                             <a class="btn btn-primary btn-sm" href="{{ url_for('profile', tab='account') }}">Connect in Account</a>
                             <p class="small text-muted mt-2 mb-0 pt-2 border-top">
                                 <strong class="text-secondary">Your sign-in stays with Schwab.</strong>
-                                Happy Trader never stores your password. You type it only on Schwab&rsquo;s own page; after that, Schwab gives the app a short permission to read your activity&mdash;like a hall pass, not a copy of your password. You can remove access anytime in Account.
+                                HappyTrader never stores your password. You type it only on Schwab&rsquo;s own page; after that, Schwab gives the app a short permission to read your activity&mdash;like a hall pass, not a copy of your password. You can remove access anytime in Account.
                             </p>
                         </div>
                     </div>
@@ -192,7 +192,7 @@
                 {% if has_data %}
                 <p>Your positions and strategies are ready to view.</p>
                 {% elif has_uploaded %}
-                <p>Your data is being loaded into the pipeline. This usually takes 3-5 minutes.
+                <p>We're crunching your trades right now. This usually takes 3-5 minutes.
                     <a href="{{ url_for('get_started') }}">Refresh this page</a> to check.</p>
                 {% else %}
                 <p>After uploading, your data will be processed automatically.</p>
