@@ -57,12 +57,13 @@ services:
       # `python -m app.schwab_sync_cli` imports the `app` package, which
       # runs `app/__init__.py`, which loads `config.Config` and raises
       # if SECRET_KEY is unset. The cron has no sessions, cookies, or
-      # CSRF — SECRET_KEY here is just a placeholder for Flask app init,
-      # so a Render-generated random value is correct. Don't try to
-      # match the web service's value; that would couple the cron to
-      # an unrelated secret.
+      # CSRF — SECRET_KEY here is purely a placeholder for Flask app
+      # init. Any non-empty string works. (Tried `generateValue: true`;
+      # Render's Blueprint sync didn't reliably apply it to an existing
+      # cron service, so we treat it like the other secrets below and
+      # set it once in the Render dashboard.)
       - key: SECRET_KEY
-        generateValue: true
+        sync: false
 
       # Each daily run only needs a small overlapping window — the
       # previous day's run already covered everything older. 3 days
