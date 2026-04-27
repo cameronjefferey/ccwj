@@ -1,38 +1,32 @@
-# render.yaml
+# app/render.yaml — Render Blueprint definition.
+#
+# SCOPE: This Blueprint manages **background jobs only** (cron services).
+# The web service `ccwj` (https://happytrader.me) is intentionally NOT
+# declared here — it was created manually in the Render dashboard and
+# stays manually managed for now. Migrating it would require a service
+# rename, custom-domain re-attachment, and full env-var re-entry, which
+# isn't worth the downtime just to consolidate config.
+#
+# Going forward, add new broker syncs (Fidelity, IBKR, Robinhood, etc.)
+# as additional `type: cron` entries below. After editing, push to
+# master and click "Sync" on the Blueprint in the Render dashboard for
+# Render to apply the changes.
 services:
-  - type: web
-    name: happytrader-flask
-    env: python
-    buildCommand: ""
-    # BQ-heavy routes (e.g. /position/<symbol> run many parallel queries). Default
-    # gunicorn timeout 30s causes WORKER TIMEOUT, pool starvation, and cascade 500s.
-    #
-    # Tuning notes:
-    #   * gthread + 4 threads/worker: a single sync worker only serves one
-    #     request at a time; if it stalls in the Postgres pool the next request
-    #     waits behind it. gthread+threads lets a worker overlap 4 requests.
-    #   * 2 workers: surviving 1 hung/restarting worker keeps the site up.
-    #   * --max-requests 500 recycles workers periodically so any leak / BQ
-    #     client memory growth doesn't accumulate until OOM kill.
-    #   * --timeout 120 stays — BQ-heavy detail pages can legitimately take
-    #     30-60s under load and we don't want gunicorn to abort them.
-    startCommand: gunicorn wsgi:app -b 0.0.0.0:$PORT --workers 2 --threads 4 --worker-class gthread --timeout 120 --graceful-timeout 30 --max-requests 500 --max-requests-jitter 50
-    envVars:
-      - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /etc/secrets/gcp-key.json
-    autoDeploy: true
 
+  # ──────────────────────────────────────────────────────────────────
   # Daily Schwab sync — replaces the manual "Sync now" button click.
   #
-  # Iterates every row in `schwab_connections` and runs the same _run_sync()
-  # the dashboard button calls. Each successful sync pushes updated seed CSVs
-  # to GitHub, which triggers .github/workflows/bigquery_update.yml on push and
-  # rebuilds the dbt marts. No BigQuery credentials are needed here — the cron
-  # only touches Postgres, Schwab, and the GitHub API.
+  # Iterates every row in `schwab_connections` and runs the same
+  # _run_sync() the dashboard button calls. Each successful sync pushes
+  # updated seed CSVs to GitHub, which triggers
+  # .github/workflows/bigquery_update.yml on push and rebuilds the dbt
+  # marts. No BigQuery credentials needed here — the cron only touches
+  # Postgres, Schwab, and the GitHub API.
   #
-  # Schedule note: Render cron is UTC and does NOT observe DST. 21:30 UTC =
-  # 4:30pm EST in winter / 5:30pm EDT in summer, i.e. always 30+ min after the
-  # 4pm ET US equity market close. Weekdays only (1–5).
+  # Schedule: Render cron is UTC and does NOT observe DST. 21:30 UTC =
+  # 4:30pm EST (winter) / 5:30pm EDT (summer), i.e. always 30+ min after
+  # the 4pm ET US equity market close. Weekdays only (1–5).
+  # ──────────────────────────────────────────────────────────────────
   - type: cron
     name: happytrader-schwab-sync
     env: python
@@ -40,19 +34,25 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.schwab_sync_cli
     envVars:
+      # Pull DATABASE_URL from the existing manually-managed web service
+      # so we never have two divergent copies of the connection string.
+      # `name` here must match the service's exact name in the Render
+      # dashboard (currently `ccwj`).
       - fromService:
           type: web
-          name: happytrader-flask
+          name: ccwj
           envVarKey: DATABASE_URL
-      # Each daily run only needs a small overlapping window — the previous
-      # day's run already covered everything older. 3 days handles a single
-      # missed run (long weekend, Render outage) without re-pulling 60 days
-      # of trades on every cron tick.
+
+      # Each daily run only needs a small overlapping window — the
+      # previous day's run already covered everything older. 3 days
+      # handles a single missed run (long weekend, Render outage)
+      # without re-pulling 60 days of trades on every cron tick.
       - key: SCHWAB_SYNC_TRANSACTION_DAYS
         value: "3"
-      # The values below must be set ONCE in the Render dashboard for this
-      # cron service (sync: false = Render won't auto-overwrite). Use the
-      # same values that are already configured on happytrader-flask.
+
+      # The values below must be set ONCE in the Render dashboard for
+      # this cron service (sync: false = Render won't auto-overwrite).
+      # Use the same values that are already configured on `ccwj`.
       - key: SCHWAB_APP_KEY
         sync: false
       - key: SCHWAB_APP_SECRET
