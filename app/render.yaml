@@ -34,6 +34,14 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.schwab_sync_cli
     envVars:
+      # Pin Python explicitly. Render now defaults new services to
+      # Python 3.14, which has no prebuilt wheels for several packages
+      # we pin (pydantic_core==2.27.2, etc.) and falls back to a Rust
+      # source build that fails in Render's read-only Cargo cache.
+      # 3.12.x has wheels for everything in requirements.txt.
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+
       # Pull DATABASE_URL from the existing manually-managed web service
       # so we never have two divergent copies of the connection string.
       # `name` here must match the service's exact name in the Render
