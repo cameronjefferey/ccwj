@@ -10,6 +10,7 @@ from app.utils import safe_internal_next
 # Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
 _LANDING = {
     "weekly_review": "weekly_review",
+    "wealth": "wealth",
     "positions": "positions",
     "strategies": "strategies",
     "insights": "insights",

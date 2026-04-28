@@ -44,7 +44,7 @@ from app.models import (
 _ALLOWED_ACCENTS = frozenset({"violet", "teal", "amber", "rose", "slate"})
 _ALLOWED_VISIBILITY = frozenset({"private", "followers", "public"})
 _ALLOWED_DEFAULT_ROUTE = frozenset({
-    "weekly_review", "positions", "strategies", "insights", "accounts", "symbols",
+    "weekly_review", "wealth", "positions", "strategies", "insights", "accounts", "symbols",
 })
 
 
