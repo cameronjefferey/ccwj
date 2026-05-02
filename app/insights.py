@@ -526,8 +526,35 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 - Do NOT recommend changing size or strategy."""
 
 
+def _gemini_usage_fields(response) -> dict:
+    """Extract token-count fields from a Gemini response, when available.
+
+    The SDK shape varies a little across versions; we read defensively so
+    a missing attribute never breaks cost logging.
+    """
+    out = {}
+    try:
+        meta = getattr(response, "usage_metadata", None)
+        if meta is None:
+            return out
+        for src, dst in (
+            ("prompt_token_count", "prompt_tokens"),
+            ("candidates_token_count", "output_tokens"),
+            ("total_token_count", "total_tokens"),
+        ):
+            v = getattr(meta, src, None)
+            if v is not None:
+                out[dst] = int(v)
+    except Exception:
+        pass
+    return out
+
+
 def _call_gemini(data_text):
     """Call Gemini with coaching brief and return (summary, full_analysis)."""
+    import time as _time
+    from app.cost_tracking import log_cost_event
+
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         app.logger.warning("AI Coach generate requested but GEMINI_API_KEY is not configured")
@@ -535,6 +562,7 @@ def _call_gemini(data_text):
 
     try:
         client = genai.Client(api_key=api_key)
+        t0 = _time.monotonic()
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=SYSTEM_PROMPT + "\n\nHere is the trader's behavioral data:\n\n" + data_text,
@@ -542,6 +570,14 @@ def _call_gemini(data_text):
                 temperature=0.7,
                 max_output_tokens=2000,
             ),
+        )
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        log_cost_event(
+            "gemini",
+            "coach.generate",
+            model="gemini-2.0-flash",
+            duration_ms=duration_ms,
+            **_gemini_usage_fields(response),
         )
         full_text = response.text.strip()
 
@@ -564,6 +600,9 @@ def _call_gemini(data_text):
 
 def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
     """Call Gemini for Q&A, grounded in coaching + portfolio + weekly data."""
+    import time as _time
+    from app.cost_tracking import log_cost_event
+
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         app.logger.warning("AI Coach Q&A requested but GEMINI_API_KEY is not configured")
@@ -585,6 +624,7 @@ def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
         )
         prompt = "\n\n".join(parts)
 
+        t0 = _time.monotonic()
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
@@ -592,6 +632,14 @@ def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
                 temperature=0.6,
                 max_output_tokens=800,
             ),
+        )
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        log_cost_event(
+            "gemini",
+            "coach.ask",
+            model="gemini-2.0-flash",
+            duration_ms=duration_ms,
+            **_gemini_usage_fields(response),
         )
         return response.text.strip(), None
     except Exception as exc:

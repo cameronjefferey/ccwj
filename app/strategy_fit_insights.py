@@ -490,12 +490,17 @@ def _call_gemini_strategy_fit(brief_text):
 
     Returns ((summary, full_markdown), None) on success or (None, error_msg).
     """
+    import time as _time
+    from app.cost_tracking import log_cost_event
+    from app.insights import _gemini_usage_fields
+
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None, "GEMINI_API_KEY not set."
 
     try:
         client = genai.Client(api_key=api_key)
+        t0 = _time.monotonic()
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=SYSTEM_PROMPT + "\n\nBRIEF:\n\n" + brief_text,
@@ -503,6 +508,14 @@ def _call_gemini_strategy_fit(brief_text):
                 temperature=0.4,  # lower than the coach — we want fewer flourishes
                 max_output_tokens=1400,  # slight bump to fit symbol parentheticals
             ),
+        )
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        log_cost_event(
+            "gemini",
+            "strategy_fit.generate",
+            model="gemini-2.0-flash",
+            duration_ms=duration_ms,
+            **_gemini_usage_fields(response),
         )
         full = (response.text or "").strip()
         if not full:
