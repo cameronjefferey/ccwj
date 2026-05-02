@@ -10,6 +10,7 @@ from google.cloud import bigquery as bq
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
@@ -703,8 +704,15 @@ def insights():
 
 @app.route("/insights/generate", methods=["POST"])
 @login_required
+@limiter.limit("3 per minute; 10 per hour; 30 per day")
 def generate_insights():
-    """Build coaching brief, call Gemini, cache the result."""
+    """Build coaching brief, call Gemini, cache the result.
+
+    Rate-limited per signed-in user (extensions._rate_limit_key returns
+    user:<id>): 3/min/10/hour/30/day. The cached insight rarely needs
+    refresh, so even an over-eager tester hits a generous ceiling without
+    burning Gemini quota for the rest of the beta.
+    """
     blocked = demo_block_writes("regenerating AI Coach insights")
     if blocked:
         return blocked
@@ -749,8 +757,14 @@ def generate_insights():
 
 @app.route("/insights/ask", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute; 60 per hour; 200 per day")
 def insights_ask():
-    """Q&A endpoint grounded in coaching signals + portfolio data."""
+    """Q&A endpoint grounded in coaching signals + portfolio data.
+
+    Each call invokes Gemini with several thousand tokens of context, so
+    we cap conversational rate. The 200/day ceiling is roughly a
+    multi-hour deep-dive; anything past that is plausibly automated.
+    """
     # The demo's pre-seeded insight is its showcase; live Q&A would burn
     # Gemini quota for every stranger that pokes at the chat box. Block
     # at the JSON layer with a 403 so the chat UI can render a banner.

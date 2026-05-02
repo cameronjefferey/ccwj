@@ -85,6 +85,44 @@ def not_found(e):
     return render_template("404.html", title="Page not found"), 404
 
 
+@app.errorhandler(429)
+def too_many_requests(e):
+    """flask-limiter raises RateLimitExceeded → 429.
+
+    We pick the response shape from the request:
+    - JSON / API clients (XHR, /api/*, /insights/ask, Accept: json) get a
+      structured payload with a stable error code so the client UI can
+      render its own 'try again later' banner without a page reload.
+    - HTML clients see a friendly flash + redirect back where they came
+      from. Falls back to the homepage when Referer is unsafe or unset.
+    """
+    from flask import jsonify, redirect
+
+    description = getattr(e, "description", "Too many requests, slow down.")
+
+    wants_json = (
+        request.path.startswith("/api/")
+        or request.path == "/insights/ask"
+        or request.accept_mimetypes.best == "application/json"
+        or (request.headers.get("X-Requested-With", "") == "XMLHttpRequest")
+    )
+    if wants_json:
+        return (
+            jsonify({
+                "error": "rate_limited",
+                "message": str(description),
+            }),
+            429,
+        )
+
+    flash("You're going a little fast for our beta — give it a minute and try again.", "warning")
+
+    referrer = request.referrer or ""
+    if referrer.startswith(request.host_url):
+        return redirect(referrer)
+    return redirect(url_for("index"))
+
+
 @app.errorhandler(500)
 def internal_error(e):
     """Make sure 500s are *logged* with a full traceback. Flask's default

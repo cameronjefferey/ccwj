@@ -28,6 +28,7 @@ from google.genai import types
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.models import (
     get_accounts_for_user,
     is_admin,
@@ -528,6 +529,7 @@ def _call_gemini_strategy_fit(brief_text):
 
 @app.route("/strategy-fit/insights/generate", methods=["POST"])
 @login_required
+@limiter.limit("3 per minute; 10 per hour; 30 per day")
 def generate_strategy_fit_insights():
     """Build the brief, call Gemini, cache. Redirects back to /strategy-fit."""
     blocked = demo_block_writes("regenerating Strategy Fit insights")
