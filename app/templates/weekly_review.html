@@ -429,6 +429,43 @@
         font-weight: 600 !important;
         box-shadow: none !important;
     }
+
+    /* ──────────────────────────────────────────────────────────────────
+       Mobile pass (≤ 640px)
+       The page was designed for laptop-width hero/snapshot/grid layouts;
+       on a phone the hero overflows, the snapshot row crowds, and the
+       trades / open-positions tables push horizontally. These overrides
+       keep the existing desktop layout intact and only kick in on
+       narrow viewports. We do NOT touch table data — overflow-x:auto
+       on table containers lets the table scroll instead of breaking.
+       ────────────────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+        .review-hero {
+            padding: 1.5rem 1.1rem;
+            border-radius: 14px;
+            margin-bottom: 1rem;
+        }
+        .hero-headline { font-size: 1.25rem; line-height: 1.3; }
+        .hero-subtitle { font-size: .85rem; }
+        .hero-meta { font-size: .7rem; }
+        .mode-pill { padding: .3rem .65rem; font-size: .7rem; }
+
+        .snapshot-section { padding: .85rem 1rem; }
+        .snap-value { font-size: .95rem; }
+        .snap-label { font-size: .65rem; }
+
+        .pattern-card { flex: 1 1 100%; padding: .75rem .9rem; font-size: .82rem; }
+        .pattern-headline { font-size: .72rem; }
+
+        .watch-card { padding: 1rem 1.1rem; }
+        .watch-item { font-size: .82rem; }
+
+        /* Make any table.responsive-on-mobile actually respect the wrap. */
+        .table-responsive { -webkit-overflow-scrolling: touch; }
+
+        /* Account-filter row should stack on phones, not run off the side. */
+        form.d-flex.flex-wrap { gap: .5rem !important; }
+    }
 </style>
 {% endblock %}
 

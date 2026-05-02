@@ -61,6 +61,20 @@
         .kpi-mini .value { font-size: 1.05rem; }
         .kpi-mini .label { font-size: .58rem; }
         .stat-card .card-body { padding: .9rem; }
+
+        /* Section padding stays generous; the matrix gets its own scroll. */
+        .stat-card.p-4 { padding: 1rem !important; }
+
+        /* Session/leg pills: smaller on phones so they wrap to ~2 per row
+           instead of 1 per row + horizontal scroll. */
+        .session-pill { padding: .3rem .65rem; font-size: .72rem; }
+        .session-pill .pill-pnl { font-size: .65rem; }
+
+        /* Win/loss matrix rows can be 6+ columns wide; keep them inside
+           a horizontal scroll container instead of breaking the layout.
+           bordered table + min-width keeps cells legible while scrolling. */
+        .table-responsive { -webkit-overflow-scrolling: touch; }
+        .leg-detail-table { font-size: .7rem; }
     }
 </style>
 {% endblock %}
