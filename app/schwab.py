@@ -21,6 +21,7 @@ from app.models import (
     update_schwab_token,
     add_account_for_user,
 )
+from app.utils import demo_block_writes
 
 # OAuth state stored in Flask session
 
@@ -388,6 +389,9 @@ def _get_schwab_client(user_id, account_number=None):
 @login_required
 def schwab_connect():
     """Redirect user to Schwab OAuth authorization."""
+    blocked = demo_block_writes("connecting a Schwab account")
+    if blocked:
+        return blocked
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured. Contact the administrator.", "danger")
@@ -555,6 +559,9 @@ def schwab_callback():
 @login_required
 def schwab_sync():
     """Sync positions and transactions from Schwab to our data store."""
+    blocked = demo_block_writes("syncing Schwab data")
+    if blocked:
+        return blocked
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured.", "danger")

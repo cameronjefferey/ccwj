@@ -448,6 +448,13 @@ def pricing():
 def pro_waitlist():
     """Add an email (or current user) to the Pro tier waitlist."""
     from app.models import add_pro_waitlist_entry
+    from app.utils import demo_block_writes
+
+    # Demo: every visitor would be 'demo' on the waitlist, which is noise
+    # and would confuse outreach later.
+    blocked = demo_block_writes("joining the Pro waitlist")
+    if blocked:
+        return blocked
 
     email = (request.form.get("email") or "").strip().lower()
     user_id = current_user.id if current_user.is_authenticated else None

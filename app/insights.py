@@ -15,6 +15,7 @@ from app.models import (
     save_insight, get_insight_for_user,
 )
 from app.routes import _filter_df_by_accounts
+from app.utils import demo_block_writes
 
 
 def _account_sql_filter(accounts):
@@ -704,6 +705,9 @@ def insights():
 @login_required
 def generate_insights():
     """Build coaching brief, call Gemini, cache the result."""
+    blocked = demo_block_writes("regenerating AI Coach insights")
+    if blocked:
+        return blocked
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
     redir = url_for("insights", account=selected_account) if selected_account else url_for("insights")
@@ -747,6 +751,12 @@ def generate_insights():
 @login_required
 def insights_ask():
     """Q&A endpoint grounded in coaching signals + portfolio data."""
+    # The demo's pre-seeded insight is its showcase; live Q&A would burn
+    # Gemini quota for every stranger that pokes at the chat box. Block
+    # at the JSON layer with a 403 so the chat UI can render a banner.
+    blocked = demo_block_writes("asking the AI Coach questions")
+    if blocked:
+        return blocked
     payload = request.get_json(silent=True) or {}
     question = str(payload.get("question", "")).strip()
     if not question:

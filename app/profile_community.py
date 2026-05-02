@@ -9,6 +9,7 @@ from flask_login import current_user, login_required
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.utils import demo_block_writes
 from app.models import (
     User,
     community_feed,
@@ -87,6 +88,9 @@ def profile():
         tab = "overview"
 
     if request.method == "POST":
+        blocked = demo_block_writes("profile and account settings")
+        if blocked:
+            return blocked
         action = request.form.get("action", "")
         if action == "change_password":
             current_pw = request.form.get("current_password", "")
@@ -252,6 +256,9 @@ def community():
 @app.route("/community/post", methods=["POST"])
 @login_required
 def community_post_create():
+    blocked = demo_block_writes("posting to the community")
+    if blocked:
+        return blocked
     body = (request.form.get("body") or "").strip()
     symbol = (request.form.get("symbol") or "").strip()
     strategy = (request.form.get("strategy") or "").strip()
@@ -675,6 +682,9 @@ def _community_my_trades_impl():
 @app.route("/community/post/<int:post_id>/delete", methods=["POST"])
 @login_required
 def community_post_delete(post_id):
+    blocked = demo_block_writes("removing community posts")
+    if blocked:
+        return blocked
     next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
     row = get_post(post_id)
     if not row or int(row["user_id"]) != int(current_user.id):
@@ -690,6 +700,9 @@ def community_post_delete(post_id):
 @app.route("/community/post/<int:post_id>/visibility", methods=["POST"])
 @login_required
 def community_post_visibility(post_id):
+    blocked = demo_block_writes("changing post visibility")
+    if blocked:
+        return blocked
     next_url = _safe_redirect_target(request.form.get("next")) or url_for("community")
     row = get_post(post_id)
     if not row or int(row["user_id"]) != int(current_user.id):
@@ -744,6 +757,9 @@ def public_trader_profile(username):
 @app.route("/u/<username>/follow", methods=["POST"])
 @login_required
 def follow_trader(username):
+    blocked = demo_block_writes("following other traders")
+    if blocked:
+        return blocked
     row = get_user_by_username(username)
     if not row:
         abort(404)
@@ -765,6 +781,9 @@ def follow_trader(username):
 @app.route("/u/<username>/unfollow", methods=["POST"])
 @login_required
 def unfollow_trader(username):
+    blocked = demo_block_writes("changing follow lists")
+    if blocked:
+        return blocked
     row = get_user_by_username(username)
     if not row:
         abort(404)
@@ -779,6 +798,9 @@ def unfollow_trader(username):
 @login_required
 def community_publish_trade_route():
     """Publish or unpublish a single trade to the community feed (snapshot row in Postgres)."""
+    blocked = demo_block_writes("publishing trades to the community")
+    if blocked:
+        return blocked
     nxt = _safe_redirect_target(request.form.get("next")) or url_for("weekly_review")
     action = (request.form.get("action") or "").strip().lower()
     fingerprint = (request.form.get("trade_fingerprint") or "").strip()

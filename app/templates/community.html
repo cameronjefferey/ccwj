@@ -433,6 +433,16 @@
 
         <div class="cm-grid">
             <div>
+                {% if is_demo_user %}
+                <div class="cm-card" style="border:1px dashed #cbd5e1;background:#f8fafc;padding:1.25rem;text-align:center;">
+                    <p class="text-muted small mb-2 fst-italic">Posting and following are disabled in demo mode.</p>
+                    {% if signup_enabled %}
+                    <a href="{{ url_for('signup') }}" class="btn btn-sm btn-primary">
+                        {% if signup_invite_required %}Have an invite? Create your account{% else %}Create your own account to post{% endif %}
+                    </a>
+                    {% endif %}
+                </div>
+                {% else %}
                 <form id="cm-composer-form" class="cm-card cm-composer" method="POST" action="{{ url_for('community_post_create') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="next" value="{{ url_for('community') }}">
@@ -525,6 +535,7 @@
                         <button type="submit" class="cm-btn-post">Post</button>
                     </div>
                 </form>
+                {% endif %}
 
                 <!-- Trade picker modal -->
                 <div id="cm-picker" class="cm-picker-backdrop" hidden>
@@ -707,7 +718,7 @@
                                 <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="name d-block text-truncate">{{ u.display_name }}</a>
                                 <div class="meta text-truncate">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(48) }}{% endif %}</div>
                             </div>
-                            {% if u.id != current_user.id %}
+                            {% if u.id != current_user.id and not is_demo_user %}
                                 {% if (u.id|int) in following_ids %}
                                 <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -737,6 +748,7 @@
                             <a href="{{ url_for('public_trader_profile', username=u.username) }}" class="name d-block text-truncate">{{ u.display_name }}</a>
                             <div class="meta text-truncate">@{{ u.username }}{% if u.headline %} · {{ u.headline|truncate(36) }}{% endif %}</div>
                         </div>
+                        {% if not is_demo_user %}
                         {% if (u.id|int) in following_ids %}
                         <form method="POST" action="{{ url_for('unfollow_trader', username=u.username) }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -749,6 +761,7 @@
                             <input type="hidden" name="next" value="{{ community_return_url }}">
                             <button type="submit" class="cm-btn-follow">Follow</button>
                         </form>
+                        {% endif %}
                         {% endif %}
                     </div>
                     {% endif %}

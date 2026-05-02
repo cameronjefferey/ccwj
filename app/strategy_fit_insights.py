@@ -34,6 +34,7 @@ from app.models import (
     save_strategy_fit_insight,
 )
 from app.routes import _account_sql_and, _filter_df_by_accounts
+from app.utils import demo_block_writes
 
 
 STRATEGY_FIT_QUERY = """
@@ -529,6 +530,9 @@ def _call_gemini_strategy_fit(brief_text):
 @login_required
 def generate_strategy_fit_insights():
     """Build the brief, call Gemini, cache. Redirects back to /strategy-fit."""
+    blocked = demo_block_writes("regenerating Strategy Fit insights")
+    if blocked:
+        return blocked
     selected_account = request.args.get("account", "")
     drill_sector     = request.args.get("sector", "")
     redir_kwargs = {}

@@ -13,6 +13,7 @@ from app.models import (
     remove_account_for_user, is_admin,
     record_upload, get_uploads_for_user, count_uploads_for_user,
 )
+from app.utils import demo_block_writes
 
 
 # ------------------------------------------------------------------
@@ -632,6 +633,13 @@ def merge_and_push_seeds(
 def upload():
     pat_configured = bool(os.environ.get("GITHUB_PAT", "").strip())
 
+    if request.method == "POST":
+        # Demo is read-only. Without this, any visitor could replace the seed
+        # CSVs that every other demo viewer is reading from.
+        blocked = demo_block_writes("uploading new trade data")
+        if blocked:
+            return blocked
+
     if request.method == "GET":
         user_accounts = get_accounts_for_user(current_user.id)
         # Admins see every account in BigQuery; regular users see only
@@ -901,6 +909,9 @@ def sync_processing():
 @login_required
 def unclaim_account():
     """Unlink an account from the current user."""
+    blocked = demo_block_writes("removing accounts from your profile")
+    if blocked:
+        return blocked
     account_name = request.form.get("unclaim_account_name", "").strip()
     if not account_name:
         flash("No account selected to remove.", "danger")

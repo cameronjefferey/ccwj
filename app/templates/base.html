@@ -250,10 +250,13 @@
     <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
          style="background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%); color: #fff;">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span>You're exploring the demo with sample data.{% if not signup_invite_required %} No sign-up required.{% endif %}</span>
+            <span>
+                <strong>Demo mode &mdash; read-only.</strong>
+                You're exploring with sample data; uploads, AI regeneration, follows, posts, and profile changes are disabled so the demo stays consistent for everyone.
+            </span>
             {% if signup_enabled %}
             <a href="{{ url_for('signup') }}" class="btn btn-light btn-sm">
-                {% if signup_invite_required %}Have an invite? Create your account{% else %}Create account to upload your own{% endif %}
+                {% if signup_invite_required %}Have an invite? Create your account{% else %}Create your own account{% endif %}
             </a>
             {% endif %}
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>

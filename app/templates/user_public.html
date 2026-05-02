@@ -155,7 +155,7 @@
                     </div>
                 </div>
                 <div>
-                    {% if subject.id != current_user.id %}
+                    {% if subject.id != current_user.id and not is_demo_user %}
                         {% if is_following %}
                         <form method="POST" action="{{ url_for('unfollow_trader', username=subject.username) }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -186,7 +186,7 @@
                 @{{ subject.username }} shares posts with their followers. One tap to follow.
                 {% endif %}
             </p>
-            {% if visibility == 'followers' and subject.id != current_user.id %}
+            {% if visibility == 'followers' and subject.id != current_user.id and not is_demo_user %}
             <form method="POST" action="{{ url_for('follow_trader', username=subject.username) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">

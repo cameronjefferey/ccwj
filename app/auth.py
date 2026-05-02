@@ -6,7 +6,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.extensions import limiter
 from app.models import User, get_accounts_for_user, get_user_profile
-from app.utils import safe_internal_next
+from app.utils import demo_block_writes, safe_internal_next
 
 # Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
 _LANDING = {
@@ -170,6 +170,9 @@ def settings():
         return redirect(url_for("profile", tab="account"))
 
     if request.method == "POST":
+        blocked = demo_block_writes("changing the demo password")
+        if blocked:
+            return blocked
         current_pw = request.form.get("current_password", "")
         new_pw = request.form.get("new_password", "")
         confirm_pw = request.form.get("confirm_password", "")
