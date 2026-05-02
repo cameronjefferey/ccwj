@@ -64,21 +64,23 @@
 {% else %}
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
-<form method="get" class="row g-2 mb-4 align-items-end">
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
+{% if accounts and accounts|length > 1 %}
+<form method="get" class="filter-bar">
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="/accounts" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
+    {% if selected_account %}
+    <a class="filter-reset" href="{{ url_for('accounts') }}">Reset</a>
+    {% endif %}
 </form>
+{% endif %}
 
 {# ── KPI Cards ────────────────────────────────────────────────────── #}
 {% if kpis %}
@@ -117,6 +119,20 @@
             </div>
         </div>
     </div>
+    {# Dividends KPI surfaces the missing reconciliation piece so a reader
+       can verify realized + unrealized + dividends = total return at a
+       glance. Hidden when zero to avoid clutter for users who don't hold
+       dividend payers. #}
+    {% if kpis.dividend_income %}
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Dividends</div>
+            <div class="kpi-value text-positive">
+                ${{ "{:,.0f}".format(kpis.dividend_income) }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Total Return</div>

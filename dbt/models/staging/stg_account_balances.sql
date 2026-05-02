@@ -40,15 +40,18 @@ with export_source as (
     from {{ ref('demo_current') }}
 ),
 
+-- Schwab CSV exports format dollar columns as `$1,234.56` (with $ and commas)
+-- and pct columns as `5.54%`. Strip those before safe_cast so the demo seed
+-- — which uses the export-style quoting — produces real numbers, not NULLs.
 cash_rows as (
     select
         trim(account) as account,
         'cash' as row_type,
-        safe_cast(market_value as float64) as market_value,
+        safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
         cast(null as float64) as cost_basis,
         cast(null as float64) as unrealized_pnl,
         cast(null as float64) as unrealized_pnl_pct,
-        safe_cast(percent_of_account as float64) as percent_of_account
+        safe_cast(trim(replace(percent_of_account, '%', '')) as float64) as percent_of_account
     from export_source
     where lower(trim(coalesce(security_type, ''))) = 'cash and money market'
 ),
@@ -57,10 +60,10 @@ account_total_rows as (
     select
         trim(account) as account,
         'account_total' as row_type,
-        safe_cast(market_value as float64) as market_value,
-        safe_cast(cost_bases as float64) as cost_basis,
-        safe_cast(gain_or_loss_dollat as float64) as unrealized_pnl,
-        safe_cast(gain_or_loss_percent as float64) as unrealized_pnl_pct,
+        safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
+        safe_cast(trim(replace(replace(cost_bases, '$', ''), ',', '')) as float64) as cost_basis,
+        safe_cast(trim(replace(replace(gain_or_loss_dollat, '$', ''), ',', '')) as float64) as unrealized_pnl,
+        safe_cast(trim(replace(gain_or_loss_percent, '%', '')) as float64) as unrealized_pnl_pct,
         cast(null as float64) as percent_of_account
     from export_source
     where lower(trim(coalesce(symbol, ''))) in ('account total', 'positions total')

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .schwab-mgr-shell { max-width: 920px; margin: 0 auto; padding: 0 1rem; }
+    .schwab-mgr-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.25rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+    }
+    .schwab-mgr-hero h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .35rem; }
+    .schwab-mgr-hero p { margin: 0; opacity: .85; line-height: 1.55; max-width: 60ch; }
+    .schwab-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 1.4rem 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .schwab-card h2 {
+        font-size: 1rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #475569;
+        margin-bottom: 1rem;
+    }
+    .schwab-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        padding: .9rem 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .schwab-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .schwab-row:first-child { padding-top: 0; }
+    .schwab-row .who { flex: 1 1 220px; }
+    .schwab-row .who .name { font-weight: 600; color: #0f172a; }
+    .schwab-row .who .num { font-size: .8125rem; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .schwab-row .meta { font-size: .8125rem; color: #475569; }
+    .schwab-row form { margin: 0; }
+    .schwab-row .nick {
+        flex: 1 1 220px;
+    }
+    .schwab-row .nick input {
+        width: 100%;
+        font-size: .875rem;
+        padding: .35rem .55rem;
+    }
+    .empty-hint {
+        color: #6b7280;
+        font-size: .9rem;
+        line-height: 1.55;
+        margin: 0;
+    }
+    .schwab-mgr-back { font-size: .875rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="schwab-mgr-shell">
+    <div class="schwab-mgr-hero">
+        <div class="text-uppercase small fw-semibold opacity-75 mb-2" style="letter-spacing:.08em">Schwab</div>
+        <h1>Manage your Schwab accounts</h1>
+        <p>One Schwab login can authorize several brokerage accounts. Sync the
+            ones you want to mirror, leave the rest alone — you can come back
+            here any time to add another.</p>
+    </div>
+
+    <div class="schwab-card">
+        <h2>Connected accounts</h2>
+        {% if connected_accounts %}
+        {% for c in connected_accounts %}
+        <div class="schwab-row">
+            <div class="who">
+                <div class="name">{{ c.account_name }}</div>
+                <div class="num">{{ c.account_number }}</div>
+            </div>
+            <div class="meta">
+                {% if c.first_sync_completed %}
+                <span class="badge text-bg-light">Synced before</span>
+                {% else %}
+                <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
+                {% endif %}
+            </div>
+            <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="account_number" value="{{ c.account_number }}">
+                {% if not c.first_sync_completed %}
+                <input type="hidden" name="sync_scope" value="full">
+                {% endif %}
+                <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
+                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab. This can take a minute — keep this tab open.</p>
+            </form>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="empty-hint">No Schwab accounts connected yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="schwab-card">
+        <h2>Add another account</h2>
+        {% if discovery_failed %}
+        <p class="empty-hint">
+            We couldn't reach Schwab to list your accounts. Your session may
+            have expired — <a href="{{ url_for('schwab_connect') }}">reconnect Schwab</a>
+            and try again.
+        </p>
+        {% elif available_accounts %}
+        <p class="empty-hint mb-3">These accounts are visible under your Schwab login but aren't being mirrored yet.</p>
+        {% for a in available_accounts %}
+        <form method="POST" action="{{ url_for('schwab_accounts_add') }}" class="schwab-row">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="account_number" value="{{ a.account_number }}">
+            <div class="who">
+                <div class="name">{{ a.account_name or "Schwab account" }}</div>
+                <div class="num">{{ a.account_number }}</div>
+            </div>
+            <div class="nick">
+                <input type="text" name="account_name" maxlength="80"
+                       class="form-control"
+                       placeholder="Nickname (optional, e.g. Roth IRA)"
+                       value="{{ a.account_name or '' }}">
+            </div>
+            <button type="submit" class="btn btn-sm btn-success">Add to HappyTrader</button>
+        </form>
+        {% endfor %}
+        {% else %}
+        <p class="empty-hint">
+            Every Schwab account under this login is already connected. If you
+            need to bring in an account from a different Schwab login,
+            <a href="{{ url_for('schwab_connect') }}">connect that Schwab login</a>
+            and we'll pick up its accounts here too.
+        </p>
+        {% endif %}
+    </div>
+
+    <p class="schwab-mgr-back">
+        <a href="{{ url_for('profile', tab='account') }}">← Back to Accounts &amp; data</a>
+    </p>
+</div>
+{% endblock %}

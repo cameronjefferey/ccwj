@@ -368,6 +368,10 @@ def strategies():
         strategies_list = []
         for _, row in all_by_strategy.sort_values("total_return", ascending=False).iterrows():
             wr = row["win_rate"]
+            # pandas/numpy can produce NaN for groups with no closed trades;
+            # treat those the same as None so we render an em-dash, not "nan%".
+            if wr is None or pd.isna(wr):
+                wr = None
             wr_vs_overall = (
                 round(wr - overall_win_rate, 1)
                 if wr is not None and overall_win_rate is not None
@@ -397,9 +401,10 @@ def strategies():
                         trades=("trades_closed", "sum"),
                     ).reset_index().sort_values("month_start")
                     for _, m in agg_monthly.tail(6).iterrows():
+                        m_wr = m["wr"]
                         sparkline.append({
                             "month": str(m["month_start"])[:7],
-                            "win_rate": round(float(m["wr"]), 1),
+                            "win_rate": round(float(m_wr), 1) if pd.notna(m_wr) else None,
                             "pnl": round(float(m["pnl"]), 2),
                             "trades": int(m["trades"]),
                         })

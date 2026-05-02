@@ -147,8 +147,15 @@ def _build_strategy_fit_brief(client, user_accounts):
     cell_agg["edge_expectancy"] = cell_agg["expectancy"] - baseline_expectancy
     cell_agg["edge_win_rate"]   = cell_agg["win_rate"]   - baseline_win_rate
 
-    # Sample-size guarded sweet/soft picks.
-    qualified = cell_agg[cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT].copy()
+    # Sample-size guarded sweet/soft picks. Cells in the "Unknown"
+    # sector bucket are excluded from the narrative — naming "Unknown"
+    # as a sweet or soft spot isn't actionable for the user, and the
+    # symbols in there are typically delisted/post-corp-action tickers
+    # that yfinance can't classify rather than a coherent group.
+    qualified = cell_agg[
+        (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        & (cell_agg["sector"].astype(str) != "Unknown")
+    ].copy()
 
     sweet_df = qualified[
         (qualified["expectancy"] > 0)
@@ -239,9 +246,13 @@ def _build_strategy_fit_brief(client, user_accounts):
 
     # Strategy-level rollup — answers "is this strategy concentrated or
     # broad?" If a strategy only works in 1 sector, that's narrower edge
-    # than one that works in 4.
+    # than one that works in 4. Exclude "Unknown" from the sector count
+    # so a strategy with trades in 2 real sectors + 1 Unknown bucket
+    # doesn't get falsely promoted to "works across 3 sectors" in the
+    # narrative.
+    cell_agg_named = cell_agg[cell_agg["sector"].astype(str) != "Unknown"].copy()
     strat_agg = (
-        cell_agg.groupby("strategy")
+        cell_agg_named.groupby("strategy")
         .agg(
             total_pnl=("total_pnl", "sum"),
             num_trades=("num_trades", "sum"),

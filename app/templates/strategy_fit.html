@@ -148,15 +148,20 @@
         display: inline-flex; gap: 0; background: #f1f5f9; padding: 3px;
         border-radius: 999px; border: 1px solid #e2e8f0;
     }
-    .metric-toggle button {
+    .metric-toggle button,
+    .metric-toggle a {
         background: transparent; border: 0; color: #475569;
         padding: .35rem .85rem; border-radius: 999px;
         font-size: .75rem; font-weight: 600; cursor: pointer;
         transition: all .12s ease;
         white-space: nowrap;
+        text-decoration: none;
+        display: inline-flex; align-items: center;
     }
-    .metric-toggle button.active { background: #0f172a; color: #fafaf9; }
-    .metric-toggle button:hover:not(.active) { color: #0f172a; background: #fff; }
+    .metric-toggle button.active,
+    .metric-toggle a.active { background: #0f172a; color: #fafaf9; }
+    .metric-toggle button:hover:not(.active),
+    .metric-toggle a:hover:not(.active) { color: #0f172a; background: #fff; }
 
     .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
     .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
@@ -218,6 +223,36 @@
     table.fit td.cell.empty {
         background: #fafafa; color: #cbd5e1; text-align: center;
     }
+
+    /* Equity-only strategies viewed under an options-only dimension
+       (DTE / Moneyness). Visually distinct from low-N (which means
+       "small sample") — this is "wrong dimension," not a sample issue.
+       Diagonal hatch tells the user "this row doesn't apply here." */
+    table.fit tr.equity-na th.strategy {
+        background: #f5f5f4; color: #57534e; font-weight: 600;
+    }
+    table.fit tr.equity-na th.strategy .row-meta {
+        color: #78716c;
+    }
+    table.fit tr.equity-na th.strategy .equity-badge {
+        display: inline-block;
+        background: #e7e5e4; color: #57534e;
+        font-size: .58rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .04em;
+        padding: .12rem .42rem; border-radius: 999px;
+        margin-left: .35rem;
+    }
+    table.fit tr.equity-na td.cell.na {
+        background: repeating-linear-gradient(
+            45deg,
+            #fafaf9, #fafaf9 6px,
+            #f5f5f4 6px, #f5f5f4 12px
+        );
+        color: #a8a29e; text-align: center;
+        font-size: .7rem; font-style: italic;
+        cursor: default;
+    }
+    table.fit tr.equity-na td.cell.na:hover { transform: none; box-shadow: none; }
 
     table.fit td.total-cell {
         background: #1e293b !important; color: #fff !important;
@@ -364,7 +399,7 @@
 
 <div class="fit-hero">
     <h1>Strategy fit</h1>
-    <p class="lede">Which of your strategies actually have edge in which {{ 'sectors' if mode == 'sector' else 'industries' }}? Each cell shows how your real trades performed.</p>
+    <p class="lede">Which of your strategies actually have edge across {{ dim_label_plural or 'sectors' }}? Each cell shows how your real trades performed.</p>
     {% if grand_total and grand_total.num_trades %}
     <div class="fit-baselines">
         <div class="fit-baseline">
@@ -395,7 +430,13 @@
 {% elif not row_labels or not col_labels %}
 <div class="fit-card fit-empty">
     <strong>Not enough data yet.</strong>
-    <p class="mb-0 mt-2">Once your trades are tagged with a sector, you'll see a strategy-by-sector matrix here &mdash; one cell for every combo you've actually traded.</p>
+    <p class="mb-0 mt-2">
+        {% if dim in ('dte', 'moneyness') %}
+        Once you have closed option contracts, you'll see a strategy-by-{{ dim_label }} matrix here. {{ dim_label }} is only computed for option trades.
+        {% else %}
+        Once your trades are tagged, you'll see a strategy-by-{{ (dim_label or 'sector')|lower }} matrix here &mdash; one cell for every combo you've actually traded.
+        {% endif %}
+    </p>
     <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
         <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
@@ -403,8 +444,13 @@
 </div>
 {% else %}
 
-{# ── AI-narrated insights ─────────────────────────────────────────── #}
-{% if ai_enabled %}
+{# ── AI-narrated insights ───────────────────────────────────────────
+   AI insight is currently keyed to sector/industry data only. On
+   DTE / Moneyness / Market Cap dims we hide the card with a small
+   note rather than offering a Generate button that would mismatch
+   the matrix the user is looking at. (Per-dim insights = v2.)
+#}
+{% if ai_enabled and dim in ('sector', 'industry') %}
 {% if ai_summary %}
 <div class="ai-card" id="aiCard">
     <div class="ai-head">
@@ -487,8 +533,26 @@
 </div>
 {% endif %}
 
-{# ── Controls: metric toggle + visibility ── #}
+{# ── Controls: dimension switcher + metric toggle + visibility ── #}
 <div class="fit-controls">
+    {# "Slice by" dimension switcher. Industry isn't a top-level option —
+       it's reached by drilling a Sector cell — so we surface it here only
+       when the user is currently in industry-drill mode. #}
+    <div>
+        <label class="lblh">Slice by</label>
+        <div class="metric-toggle" id="dimSwitcher">
+            <a href="{{ url_for('strategy_fit', dim='sector', account=selected_account) }}"
+               class="{% if dim == 'sector' %}active{% endif %}">Sector</a>
+            {% if dim == 'industry' %}
+            <a href="#" class="active" aria-current="page">Industry</a>
+            {% endif %}
+            <a href="{{ url_for('strategy_fit', dim='dte', account=selected_account) }}"
+               class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
+            <a href="{{ url_for('strategy_fit', dim='moneyness', account=selected_account) }}"
+               class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
+        </div>
+    </div>
+
     <div>
         <label class="lblh">View metric</label>
         <div class="metric-toggle" id="metricToggle">
@@ -516,6 +580,7 @@
     {% if accounts and accounts|length > 1 %}
     <form method="get" class="d-flex gap-2 align-items-end" style="margin: 0;">
         <input type="hidden" name="sector" value="{{ drill_sector }}">
+        <input type="hidden" name="dim" value="{{ dim }}">
         <div>
             <label class="lblh">Account</label>
             <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -528,14 +593,24 @@
     </form>
     {% endif %}
 
-    {% if mode == 'industry' %}
+    {% if dim == 'industry' %}
     <a class="btn btn-sm btn-outline-secondary"
-       href="{{ url_for('strategy_fit', account=selected_account) }}">
+       href="{{ url_for('strategy_fit', dim='sector', account=selected_account) }}">
         ← Back to all sectors
     </a>
     <span class="text-muted small">Drilled into <strong>{{ drill_sector }}</strong>.</span>
     {% endif %}
 </div>
+
+{% if dim in ('dte', 'moneyness') %}
+<p class="text-muted small mb-2" style="margin-top: -0.4rem;">
+    {% if dim == 'dte' %}
+    DTE = days to expiration when the contract was opened. Equity-only strategies (no option contracts) are shown for context but don't have data here.
+    {% elif dim == 'moneyness' %}
+    Moneyness is measured at the time the contract was opened (within ±2% of strike = ATM). Equity-only strategies are shown for context but don't have data here.
+    {% endif %}
+</p>
+{% endif %}
 
 <div class="fit-card hide-unknown" id="fitCard">
     <div class="fit-table-wrap">
@@ -547,10 +622,10 @@
         data-max-edge="{{ max_abs_edge }}">
         <thead>
             <tr>
-                <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ 'Sector' if mode == 'sector' else 'Industry' }} →</th>
+                <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</th>
                 {% for col in col_labels %}
                 <th class="{% if col == 'Unknown' %}col-unknown{% endif %}">
-                    {% if mode == 'sector' %}
+                    {% if dim == 'sector' %}
                     <a href="{{ url_for('strategy_fit', sector=col, account=selected_account) }}"
                        title="Drill into {{ col }} industries">{{ col }}</a>
                     {% else %}
@@ -570,12 +645,17 @@
             </tr>
         </thead>
         <tbody>
+            {% set positions_dim = dim in ('sector', 'industry') %}
+            {% set equity_set = equity_strategies or [] %}
             {% for strat in row_labels %}
             {% set rt = row_totals.get(strat) %}
-            <tr>
+            {% set is_equity_na = strat in equity_set %}
+            <tr {% if is_equity_na %}class="equity-na"{% endif %}>
                 <th class="strategy">
                     {{ strat }}
-                    {% if rt %}
+                    {% if is_equity_na %}
+                    <span class="equity-badge" title="This strategy has no option contracts, so {{ dim_label }} doesn't apply.">N/A · equity</span>
+                    {% elif rt %}
                     <span class="row-meta">
                         {{ rt.num_symbols | int }} sym
                         {% if (rt.num_winners + rt.num_losers) > 0 %}
@@ -587,11 +667,15 @@
                 {% for col in col_labels %}
                     {% set c = cells.get(strat, {}).get(col) %}
                     {% if c and c.num_trades and c.num_trades > 0 %}
-                        {% set drill_url = url_for('positions', strategy=strat, sector=(col if mode == 'sector' else drill_sector), industry=('' if mode == 'sector' else col), account=selected_account) %}
+                        {% if positions_dim %}
+                            {% set drill_url = url_for('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), industry=('' if dim == 'sector' else col), account=selected_account) %}
+                        {% else %}
+                            {% set drill_url = '' %}
+                        {% endif %}
                         <td class="cell has-data {% if col == 'Unknown' %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
                             data-strategy="{{ strat }}"
                             data-col="{{ col }}"
-                            data-col-label="{{ 'Sector' if mode == 'sector' else 'Industry' }}"
+                            data-col-label="{{ dim_label }}"
                             data-total-pnl="{{ c.total_pnl }}"
                             data-realized-pnl="{{ c.realized_pnl }}"
                             data-unrealized-pnl="{{ c.unrealized_pnl }}"
@@ -608,11 +692,15 @@
                             <span class="cell-pnl"></span>
                             <span class="cell-meta">{{ c.num_trades | int }}t{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
                         </td>
+                    {% elif is_equity_na %}
+                        <td class="cell na {% if col == 'Unknown' %}col-unknown{% endif %}">N/A</td>
                     {% else %}
                         <td class="cell empty {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
                     {% endif %}
                 {% endfor %}
-                {% if rt %}
+                {% if is_equity_na %}
+                <td class="cell na">N/A</td>
+                {% elif rt %}
                 <td class="total-cell">
                     <span class="cell-pnl {% if rt.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
                         {% if rt.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(rt.total_pnl) }}
@@ -629,7 +717,7 @@
             {% endfor %}
 
             <tr class="totals-row">
-                <th class="strategy">{{ 'Sector' if mode == 'sector' else 'Industry' }} total</th>
+                <th class="strategy">{{ dim_label }} total</th>
                 {% for col in col_labels %}
                     {% set ct = col_totals.get(col) %}
                     {% if ct %}
@@ -920,7 +1008,18 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
               ' (of ' + (parseInt(td.dataset.numSymbols, 10) || symbols.length) + ')'
             : 'Symbols';
 
-        document.getElementById('panelOpenPositions').href = positionsUrl;
+        // The Positions page can filter by strategy + sector/industry, but
+        // not by DTE / Moneyness / Market Cap. Hide the CTA on those dims
+        // rather than render a broken link — the symbol list above is the
+        // actionable affordance there.
+        var openPos = document.getElementById('panelOpenPositions');
+        if (positionsUrl) {
+            openPos.href = positionsUrl;
+            openPos.style.display = '';
+        } else {
+            openPos.removeAttribute('href');
+            openPos.style.display = 'none';
+        }
 
         panel.classList.add('open');
         panel.setAttribute('aria-hidden', 'false');

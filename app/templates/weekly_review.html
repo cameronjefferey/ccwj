@@ -429,28 +429,186 @@
         font-weight: 600 !important;
         box-shadow: none !important;
     }
+
+    /* ── Dual-hero (Trading Mirror redesign) ──
+       Hero leads with a behavior sentence (process-first), and the P&L /
+       trade count / market context get a smaller supporting line. */
+    .review-hero .hero-mode-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        font-size: .72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        padding: .25rem .7rem;
+        border-radius: 20px;
+        background: rgba(255,255,255,.1);
+        color: rgba(255,255,255,.85);
+        border: 1px solid rgba(255,255,255,.18);
+        text-decoration: none;
+    }
+    .review-hero .hero-mode-chip:hover { background: rgba(255,255,255,.18); color: #fff; }
+    .review-hero .hero-mode-chip .auto-flag { color: rgba(255,255,255,.5); font-weight: 500; }
+    .review-hero .hero-overrides { display: inline-flex; gap: .35rem; }
+    .review-hero .hero-overrides a {
+        font-size: .68rem; padding: .15rem .55rem; border-radius: 14px;
+        text-decoration: none; color: rgba(255,255,255,.5);
+        border: 1px solid rgba(255,255,255,.15);
+    }
+    .review-hero .hero-overrides a:hover { color: #fff; border-color: rgba(255,255,255,.4); }
+    .dual-hero-pnl {
+        margin-top: .65rem;
+        font-size: .92rem;
+        color: rgba(255,255,255,.85);
+        font-variant-numeric: tabular-nums;
+    }
+    .dual-hero-pnl .pnl-num { font-weight: 700; }
+    .dual-hero-pnl .market-extra {
+        margin-left: .65rem;
+        color: rgba(255,255,255,.55);
+        font-weight: 500;
+    }
+
+    /* ── Diary (Mon→Fri timeline) ──
+       Centerpiece of the redesigned Weekly Review: a chronological journal
+       of what happened each day, with a 1-line summary. Process-first. */
+    .diary-section { padding: 1.25rem 1.5rem; }
+    .diary-row {
+        display: grid;
+        grid-template-columns: 4rem 1fr auto;
+        align-items: center;
+        gap: .9rem;
+        padding: .6rem .25rem;
+        border-bottom: 1px solid #f1f5f9;
+        transition: background-color .12s;
+    }
+    .diary-row:last-child { border-bottom: none; }
+    .diary-row.is-today {
+        background: rgba(59,130,246,.05);
+        border-radius: 8px;
+        padding-left: .75rem; padding-right: .75rem;
+    }
+    .diary-row.is-future { opacity: .45; }
+    .diary-day {
+        display: flex; flex-direction: column;
+        font-variant-numeric: tabular-nums;
+    }
+    .diary-day-label {
+        font-size: .82rem; font-weight: 700; color: #1e293b;
+        line-height: 1.1;
+    }
+    .diary-row.is-today .diary-day-label { color: #1d4ed8; }
+    .diary-row.is-future .diary-day-label { color: #94a3b8; }
+    .diary-day-date {
+        font-size: .68rem; color: #94a3b8; text-transform: uppercase;
+        letter-spacing: .4px; margin-top: .15rem;
+    }
+    .diary-summary {
+        font-size: .9rem; color: #334155; line-height: 1.5;
+    }
+    .diary-row.is-future .diary-summary { color: #cbd5e1; font-style: italic; }
+    .diary-pnl {
+        font-size: .85rem; font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+    .diary-pnl.flat { color: #94a3b8; font-weight: 500; }
+
+    /* ── "What we noticed" merged panel ──
+       Replaces 3 separate sections (Key Observation, Patterns, Coach's Take). */
+    .noticed-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: .75rem;
+    }
+    .noticed-card {
+        border-radius: 12px;
+        padding: .9rem 1.1rem;
+        font-size: .9rem;
+        line-height: 1.5;
+        border-left: 4px solid;
+    }
+    .noticed-card.positive { background: rgba(25,135,84,.06);  border-left-color: #198754; color: #166534; }
+    .noticed-card.negative { background: rgba(220,53,69,.06);  border-left-color: #dc3545; color: #7f1d1d; }
+    .noticed-card.warning  { background: rgba(234,179,8,.08);  border-left-color: #ca8a04; color: #854d0e; }
+    .noticed-card.neutral  { background: rgba(13,110,253,.05); border-left-color: #0d6efd; color: #1e3a5f; }
+    .noticed-headline {
+        font-size: .7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .35px; opacity: .85; margin-bottom: .25rem;
+    }
+    .noticed-detail { font-weight: 400; }
+
+    /* ── Rolling 4-week calendar ──
+       Replaces the "current calendar month so far" grid that was empty on
+       the 1st of every month. Always shows 4 weeks × Mon-Fri. */
+    .cal-grid-rolling {
+        display: grid;
+        grid-template-columns: 5rem repeat(5, 1fr);
+        gap: 4px;
+        max-width: 36rem;
+    }
+    .cal-grid-rolling .cal-rolling-header {
+        font-size: .6rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .5px; color: #9ca3af; text-align: center;
+        padding: .2rem 0;
+    }
+    .cal-grid-rolling .cal-rolling-week-label {
+        font-size: .68rem; color: #94a3b8; text-transform: uppercase;
+        letter-spacing: .4px; align-self: center; padding-left: .25rem;
+    }
+
+    /* ── Numbers disclosure (collapsible) ──
+       The richer P&L tables are kept (don't lose data!) but tucked behind
+       a single disclosure so they don't dominate the page. */
+    details.numbers-disclosure { margin-bottom: 1.25rem; }
+    details.numbers-disclosure > summary {
+        cursor: pointer;
+        list-style: none;
+        font-size: .82rem;
+        font-weight: 600;
+        color: #475569;
+        padding: .65rem 1rem;
+        border-radius: 10px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    details.numbers-disclosure > summary::-webkit-details-marker { display: none; }
+    details.numbers-disclosure > summary::after {
+        content: "Show ▾"; font-weight: 500; color: #94a3b8; font-size: .78rem;
+    }
+    details.numbers-disclosure[open] > summary::after { content: "Hide ▴"; }
+    details.numbers-disclosure[open] > summary { background: #f1f5f9; }
+    details.numbers-disclosure > .numbers-body {
+        padding-top: 1.25rem;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 
 {# ── Account filter ── #}
-{% if accounts %}
-<form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+{% if accounts and accounts|length > 1 %}
+<form method="get" class="filter-bar">
     <div>
-        <label class="form-label small fw-semibold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
             {% endfor %}
         </select>
     </div>
+    {# Mode is selected via the in-hero pills (Friday / Monday / Mid-Week);
+       preserve it across account changes so the review stays in the same
+       mode the user picked. #}
     {% if mode %}<input type="hidden" name="mode" value="{{ mode }}">{% endif %}
-    <div>
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="{{ url_for('weekly_review') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
+    {% if selected_account %}
+    <a class="filter-reset" href="{{ url_for('weekly_review', mode=mode or none) }}">Reset</a>
+    {% endif %}
 </form>
 {% endif %}
 
@@ -474,10 +632,16 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   HERO
+   HERO (dual: behavior sentence + small P&L line)
    ════════════════════════════════════ #}
 <div class="review-hero">
+    {# Auto-mode chip with optional override links — replaces the noisy
+       3-button mode-pill row. Page already auto-detects the right mode
+       from your day-of-week; the override links are there for power users. #}
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        {# Mode pills kept from master (Mid-Week → "Today" reframe). My
+           earlier auto-chip experiment is dropped per the rebase directive:
+           leave master's UI and layer the redesign around it. #}
         <a href="{{ url_for('weekly_review', mode='friday', account=selected_account) if selected_account else url_for('weekly_review', mode='friday') }}"
            class="mode-pill {% if mode == 'friday' %}active{% endif %}">Friday Review</a>
         <a href="{{ url_for('weekly_review', mode='monday', account=selected_account) if selected_account else url_for('weekly_review', mode='monday') }}"
@@ -486,20 +650,36 @@
            class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Today</a>
     </div>
 
-    {% if narrative %}
-    <p class="hero-headline">{{ narrative.headline }}</p>
-    {% if narrative.subtitle %}
-    <p class="hero-subtitle">{{ narrative.subtitle }}</p>
-    {% endif %}
+    {# Big behavior sentence — the answer to "did I trade like myself?" — and
+       a smaller supporting P&L / market line. P&L is no longer the headline. #}
+    {% if behavior_sentence %}
+    <p class="hero-headline">{{ behavior_sentence }}</p>
     {% else %}
     <p class="hero-headline">Weekly Review</p>
+    {% endif %}
+
+    {% if review and review.trades_closed > 0 %}
+    {% set _wr_pct = (review.num_winners / review.trades_closed * 100) if review.trades_closed > 0 else None %}
+    <div class="dual-hero-pnl">
+        <span class="pnl-num {% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+            {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(review.total_pnl) }}
+        </span>
+        · {{ review.trades_closed }} close{{ 's' if review.trades_closed != 1 else '' }}
+        {% if _wr_pct is not none %} · {{ "%.0f%%"|format(_wr_pct) }} wins{% endif %}
+        {% if market_neutral_line %}
+        <span class="market-extra">· {{ market_neutral_line.replace('Market context this week: ', '') }}</span>
+        {% endif %}
+    </div>
+    {% elif market_neutral_line %}
+    <div class="dual-hero-pnl">
+        <span class="market-extra">{{ market_neutral_line }}</span>
+    </div>
     {% endif %}
 
     <div class="hero-meta">
         Week of {{ week_start }} &mdash; {{ week_end }}
         <span class="text-muted">·</span>
-        <span class="text-muted" style="font-size:.75rem" title="Profile → Settings: timezone for week boundaries and which day drives Friday / Monday / mid-week.">Today&rsquo;s date: <strong class="text-body-secondary">{{ today }}</strong> ({{ user_timezone|replace('_', ' ') }})</span>
-        {% if trading_days %}<span class="badge bg-dark ms-2" style="font-size:.7rem">{{ trading_days }} trading day{{ 's' if trading_days != 1 else '' }} (SPY in range)</span>{% endif %}
+        <span class="text-muted" style="font-size:.75rem" title="Profile → Settings: timezone for week boundaries and which day drives Friday / Monday / mid-week.">Today: <strong class="text-body-secondary">{{ today }}</strong> ({{ user_timezone|replace('_', ' ') }})</span>
         {% if market_session %}
         <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %} ms-2" style="font-size:.7rem" title="{{ market_session.label }}">U.S. market: {{ market_session.state|replace('_', ' ') }}</span>
         {% endif %}
@@ -507,7 +687,7 @@
 </div>
 
 {# ════════════════════════════════════
-   SINCE YOU LAST LOOKED (daily-pull diff)
+   SINCE YOU LAST LOOKED (daily-pull diff) — kept from master.
 
    Renders only when there's something genuinely new vs the user's previous
    visit: stock moves on open positions, trades that opened/closed, options
@@ -611,7 +791,12 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   ACCOUNT SNAPSHOT (daily hook)
+   ACCOUNT SNAPSHOT — daily hook (master) + redesign comment context.
+
+   Lives directly under "Since you last looked" so the page answers
+   "what just happened?" → "how am I doing today / this week / this month?"
+   in two stacked sections, before the diary and the rest of the redesign
+   take over below.
    ════════════════════════════════════ #}
 {% if today_snapshots_by_account %}
 <div class="review-section snapshot-section mb-3">
@@ -624,7 +809,6 @@
         </div>
         {% endif %}
         <div class="snapshot-row">
-            {# Account value #}
             <div class="snap-cell">
                 <div class="snap-label">Account Value</div>
                 {% if snap.today_value is not none %}
@@ -636,7 +820,6 @@
                 <div class="snap-value text-muted">—</div>
                 {% endif %}
             </div>
-            {# vs Yesterday #}
             {% set d = snap.comparisons.day %}
             <div class="snap-cell">
                 <div class="snap-label">vs Yesterday</div>
@@ -644,14 +827,9 @@
                 <div class="snap-value {% if d.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if d.delta >= 0 else "" }}${{ "{:,.0f}".format(d.delta) }}
                 </div>
-                {% if d.delta_pct is not none %}
-                <div class="snap-meta">{{ "+" if d.delta_pct >= 0 else "" }}{{ "%.2f"|format(d.delta_pct) }}%</div>
-                {% endif %}
-                {% else %}
-                <div class="snap-value text-muted">—</div>
-                {% endif %}
+                {% if d.delta_pct is not none %}<div class="snap-meta">{{ "+" if d.delta_pct >= 0 else "" }}{{ "%.2f"|format(d.delta_pct) }}%</div>{% endif %}
+                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
             </div>
-            {# vs Start of week (same Mon–Sun range as the hero) #}
             {% set sw = snap.vs_week_start %}
             <div class="snap-cell">
                 <div class="snap-label" title="Change since start-of-week value for the week of {{ week_start }}">vs week start</div>
@@ -659,14 +837,9 @@
                 <div class="snap-value {% if sw.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if sw.delta >= 0 else "" }}${{ "{:,.0f}".format(sw.delta) }}
                 </div>
-                {% if sw.delta_pct is not none %}
-                <div class="snap-meta">{{ "+" if sw.delta_pct >= 0 else "" }}{{ "%.2f"|format(sw.delta_pct) }}%</div>
-                {% endif %}
-                {% else %}
-                <div class="snap-value text-muted">—</div>
-                {% endif %}
+                {% if sw.delta_pct is not none %}<div class="snap-meta">{{ "+" if sw.delta_pct >= 0 else "" }}{{ "%.2f"|format(sw.delta_pct) }}%</div>{% endif %}
+                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
             </div>
-            {# vs 1 Week Ago #}
             {% set w = snap.comparisons.week %}
             <div class="snap-cell">
                 <div class="snap-label">vs 1 Week</div>
@@ -674,14 +847,9 @@
                 <div class="snap-value {% if w.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if w.delta >= 0 else "" }}${{ "{:,.0f}".format(w.delta) }}
                 </div>
-                {% if w.delta_pct is not none %}
-                <div class="snap-meta">{{ "+" if w.delta_pct >= 0 else "" }}{{ "%.2f"|format(w.delta_pct) }}%</div>
-                {% endif %}
-                {% else %}
-                <div class="snap-value text-muted">—</div>
-                {% endif %}
+                {% if w.delta_pct is not none %}<div class="snap-meta">{{ "+" if w.delta_pct >= 0 else "" }}{{ "%.2f"|format(w.delta_pct) }}%</div>{% endif %}
+                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
             </div>
-            {# vs 1 Month Ago #}
             {% set m = snap.comparisons.month %}
             <div class="snap-cell">
                 <div class="snap-label">vs 1 Month</div>
@@ -689,12 +857,8 @@
                 <div class="snap-value {% if m.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if m.delta >= 0 else "" }}${{ "{:,.0f}".format(m.delta) }}
                 </div>
-                {% if m.delta_pct is not none %}
-                <div class="snap-meta">{{ "+" if m.delta_pct >= 0 else "" }}{{ "%.2f"|format(m.delta_pct) }}%</div>
-                {% endif %}
-                {% else %}
-                <div class="snap-value text-muted">—</div>
-                {% endif %}
+                {% if m.delta_pct is not none %}<div class="snap-meta">{{ "+" if m.delta_pct >= 0 else "" }}{{ "%.2f"|format(m.delta_pct) }}%</div>{% endif %}
+                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
             </div>
         </div>
     </div>
@@ -703,155 +867,50 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   YOU VS MARKET (always visible)
+   DIARY (Mon→Fri timeline) — centerpiece of the redesigned page
    ════════════════════════════════════ #}
-{% if market and (market.spy_week_pct is not none or market.qqq_week_pct is not none) %}
-<div class="review-section market-vs-section mb-3">
-    {# Compute tagline: how many indexes are you beating? #}
-    {% if your_week and your_week.acct_pct is not none %}
-    {% set acct = your_week.acct_pct %}
-    {% set beating_spy = (market.spy_week_pct is not none and acct > market.spy_week_pct) %}
-    {% set beating_qqq = (market.qqq_week_pct is not none and acct > market.qqq_week_pct) %}
-    {% set has_spy = market.spy_week_pct is not none %}
-    {% set has_qqq = market.qqq_week_pct is not none %}
-    {% set both = has_spy and has_qqq %}
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <div class="section-label mb-0">vs Market This Week</div>
-        <div class="market-tagline
-            {% if both and beating_spy and beating_qqq %}positive
-            {% elif both and not beating_spy and not beating_qqq %}negative
-            {% else %}neutral{% endif %}">
-            {% if both %}
-                {% if beating_spy and beating_qqq %}
-                Outperforming both indexes &#x2191;
-                {% elif not beating_spy and not beating_qqq %}
-                Trailing both indexes &#x2193;
-                {% elif beating_spy %}
-                Ahead of SPY, trailing QQQ
-                {% else %}
-                Ahead of QQQ, trailing SPY
-                {% endif %}
-            {% elif has_spy %}
-                {% if beating_spy %}Outperforming SPY &#x2191;{% else %}Trailing SPY &#x2193;{% endif %}
-            {% elif has_qqq %}
-                {% if beating_qqq %}Outperforming QQQ &#x2191;{% else %}Trailing QQQ &#x2193;{% endif %}
+{% if diary %}
+<div class="review-section diary-section mb-3">
+    <div class="section-label">Your Week, Day by Day</div>
+    {% for d in diary %}
+    <div class="diary-row {% if d.is_today %}is-today{% elif d.is_future %}is-future{% endif %}">
+        <div class="diary-day">
+            <div class="diary-day-label">{{ d.label }}</div>
+            <div class="diary-day-date">{{ d.date.strftime("%b %d") }}</div>
+        </div>
+        <div class="diary-summary">
+            {{ d.summary or '—' }}
+        </div>
+        <div>
+            {% if d.is_future %}
+            {# nothing #}
+            {% elif d.daily_change is not none and d.daily_change != 0 %}
+            <span class="diary-pnl {% if d.daily_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}
+            </span>
+            {% elif d.daily_change == 0 %}
+            <span class="diary-pnl flat">$0</span>
             {% endif %}
         </div>
-    </div>
-    {% else %}
-    <div class="section-label mb-3">Market This Week</div>
-    {% endif %}
-    <div class="market-compare-row">
-        {# You #}
-        {% if your_week and your_week.acct_pct is not none %}
-        <div class="mc-col you">
-            <div class="mc-ticker">You</div>
-            <div class="mc-pct {% if your_week.acct_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {% if your_week.acct_pct >= 0 %}+{% endif %}{{ "%.2f" % your_week.acct_pct }}%
-            </div>
-            <div class="mc-sub">Total account % · week of {{ week_start }}</div>
-        </div>
-        {% elif week_mart_empty %}
-        <div class="mc-col you">
-            <div class="mc-ticker">You</div>
-            <div class="mc-pct text-muted">&mdash;</div>
-            <div class="mc-sub">No weekly return in data yet</div>
-        </div>
-        {% endif %}
-        {# SPY #}
-        {% if market.spy_week_pct is not none %}
-        <div class="mc-col">
-            <div class="mc-ticker">SPY</div>
-            <div class="mc-pct {% if market.spy_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {% if market.spy_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.spy_week_pct }}%
-            </div>
-            {% if market.spy_ytd_pct is not none %}
-            <div class="mc-sub">YTD {{ "+" if market.spy_ytd_pct >= 0 else "" }}{{ "%.1f" % market.spy_ytd_pct }}%</div>
-            {% endif %}
-        </div>
-        {% endif %}
-        {# QQQ #}
-        {% if market.qqq_week_pct is not none %}
-        <div class="mc-col">
-            <div class="mc-ticker">QQQ</div>
-            <div class="mc-pct {% if market.qqq_week_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {% if market.qqq_week_pct >= 0 %}+{% endif %}{{ "%.2f" % market.qqq_week_pct }}%
-            </div>
-            {% if market.qqq_ytd_pct is not none %}
-            <div class="mc-sub">YTD {{ "+" if market.qqq_ytd_pct >= 0 else "" }}{{ "%.1f" % market.qqq_ytd_pct }}%</div>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-    <p class="small text-muted mb-0 mt-2" style="font-size:.78rem">
-        <strong>You</strong> = your combined portfolio return % for the same Monday-start week as the hero.
-        <strong>SPY / QQQ</strong> = index move from that week&rsquo;s first close through the latest close in the feed (not identical to a live quote).
-        <strong>vs week start</strong> in the table above = account value change vs that week&rsquo;s modeled start; it can disagree with the index row if you traded or if timing differs.
-    </p>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   KEY OBSERVATION (the aha moment)
-   ════════════════════════════════════ #}
-{% if key_observation %}
-<div class="obs-card {{ key_observation.type }}">
-    <span class="obs-icon">{{ key_observation.icon }}</span>
-    <span>{{ key_observation.text }}</span>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   YOUR PATTERNS — behavioral signals from history
-   ════════════════════════════════════ #}
-{% if patterns %}
-<div class="patterns-row">
-    {% for p in patterns %}
-    <div class="pattern-card {{ p.severity }}">
-        <div class="pattern-headline">{{ p.headline }}</div>
-        <div class="pattern-detail">{{ p.detail }}</div>
     </div>
     {% endfor %}
 </div>
 {% endif %}
 
 {# ════════════════════════════════════
-   WEEK AT A GLANCE — compact 3-stat bar
+   WHAT WE NOTICED — merged narrative panel
+   (replaces Key Observation + Patterns + Coach's Take section bodies)
    ════════════════════════════════════ #}
-{% if review and review.trades_closed > 0 %}
-<div class="review-section mb-3 py-3 px-0">
-    <div class="week-stats">
-        {# P&L #}
-        <div class="week-stat">
-            <div class="week-stat-value {% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(review.total_pnl) }}
-            </div>
-            <div class="week-stat-label">Week P&amp;L</div>
+{% if noticed %}
+<div class="review-section mb-3">
+    <div class="section-label">What we noticed</div>
+    <div class="noticed-grid">
+        {% for n in noticed %}
+        <div class="noticed-card {{ n.severity }}">
+            {% if n.headline %}<div class="noticed-headline">{{ n.headline }}</div>{% endif %}
+            <div class="noticed-detail">{{ n.detail }}</div>
         </div>
-        {# Win rate #}
-        {% set wr_val = (review.num_winners / review.trades_closed * 100) if review.trades_closed > 0 else none %}
-        <div class="week-stat">
-            <div class="week-stat-value">{{ "%.0f%%"|format(wr_val) if wr_val is not none else "—" }}</div>
-            <div class="week-stat-label">Win Rate</div>
-        </div>
-        {# vs baseline #}
-        <div class="week-stat">
-            {% if behavior_mirror and behavior_mirror.has_baseline and behavior_mirror.pnl.diff is not none %}
-            {% set bm_diff = behavior_mirror.pnl.diff %}
-            <div class="week-stat-value {% if bm_diff >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if bm_diff >= 0 else "" }}${{ "{:,.0f}".format(bm_diff) }}
-            </div>
-            <div class="week-stat-label">vs Your Avg</div>
-            {% else %}
-            <div class="week-stat-value text-muted">—</div>
-            <div class="week-stat-label">vs Your Avg</div>
-            {% endif %}
-        </div>
-        {# Trades count #}
-        <div class="week-stat">
-            <div class="week-stat-value">{{ review.trades_closed }}</div>
-            <div class="week-stat-label">Closed</div>
-        </div>
+        {% endfor %}
     </div>
 </div>
 {% endif %}
@@ -905,7 +964,7 @@
         </div>
         <div class="expiry-details">
             <div class="expiry-sym">
-                {{ opt.trade_symbol }}
+                <span title="{{ opt.trade_symbol }}">{{ opt.trade_symbol|option_symbol }}</span>
                 {% if opt.itm is not none %}
                     {% if opt.distance is not none and opt.distance|abs < 0.50 %}
                     <span class="expiry-badge atm">ATM</span>
@@ -935,70 +994,60 @@
 
 
 {# ════════════════════════════════════════════════════════
-   DAILY P&L CALENDAR — Month heatmap
+   DAILY P&L — rolling 4-week grid (always populated)
    ════════════════════════════════════════════════════════ #}
-{% if daily_calendar %}
+{% if calendar_grid %}
+{# Compute a max-magnitude value once for color intensity. #}
+{% set _cal_max = namespace(val=1) %}
+{% for r in calendar_grid %}{% for c in r.cells %}
+    {% if c.has_data and c.daily_change|abs > _cal_max.val %}
+        {% set _cal_max.val = c.daily_change|abs %}
+    {% endif %}
+{% endfor %}{% endfor %}
 <div class="review-section">
-    <div class="section-label">Daily P&amp;L — {{ calendar_month_label }}</div>
-    <div class="cal-grid">
-        <div class="cal-header">Mon</div>
-        <div class="cal-header">Tue</div>
-        <div class="cal-header">Wed</div>
-        <div class="cal-header">Thu</div>
-        <div class="cal-header">Fri</div>
-
-        {# Leading empty cells for weekdays before the 1st.
-           weekday: Mon=0..Sun=6. Weekend starts (Sat/Sun) need 0 leading
-           empties because their first rendered day is the next Monday. #}
-        {% set first_day = daily_calendar[0] %}
-        {% set first_weekday = first_day.weekday %}
-        {% set leading = first_weekday if first_weekday < 5 else 0 %}
-        {% for _ in range(leading) %}
-        <div class="cal-day empty"></div>
-        {% endfor %}
-
-        {# Max P&L for color intensity — only consider weekdays since
-           weekend cells aren't rendered. #}
-        {% set today_str = None %}
-        {% set max_abs = namespace(val=1) %}
-        {% for d in daily_calendar %}
-            {% if d.weekday < 5 and d.daily_change|abs > max_abs.val %}
-                {% set max_abs.val = d.daily_change|abs %}
-            {% endif %}
-        {% endfor %}
-
-        {% for d in daily_calendar %}
-            {% if d.weekday >= 5 %}{# Skip Sat/Sun — markets are closed. #}
-            {% else %}
-            {% if d.has_data %}
-                {% set intensity = (d.daily_change|abs / max_abs.val * 100)|int if max_abs.val > 0 else 0 %}
-                {% if d.daily_change > 0 %}
-                    {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
-                    {% set fg = "#166534" %}
-                {% elif d.daily_change < 0 %}
-                    {% set bg = "rgba(220,53,69," ~ (0.08 + intensity * 0.007) ~ ")" %}
-                    {% set fg = "#991b1b" %}
-                {% else %}
+    <div class="section-label">Daily P&amp;L — last 4 weeks</div>
+    <div class="cal-grid-rolling">
+        <div class="cal-rolling-header">Week</div>
+        <div class="cal-rolling-header">Mon</div>
+        <div class="cal-rolling-header">Tue</div>
+        <div class="cal-rolling-header">Wed</div>
+        <div class="cal-rolling-header">Thu</div>
+        <div class="cal-rolling-header">Fri</div>
+        {% for r in calendar_grid %}
+            <div class="cal-rolling-week-label">{{ r.week_label }}</div>
+            {% for c in r.cells %}
+                {% if c.is_future %}
                     {% set bg = "#f9fafb" %}
-                    {% set fg = "#6b7280" %}
+                    {% set fg = "#cbd5e1" %}
+                {% elif c.has_data %}
+                    {% set intensity = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
+                    {% if c.daily_change > 0 %}
+                        {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
+                        {% set fg = "#166534" %}
+                    {% elif c.daily_change < 0 %}
+                        {% set bg = "rgba(220,53,69," ~ (0.08 + intensity * 0.007) ~ ")" %}
+                        {% set fg = "#991b1b" %}
+                    {% else %}
+                        {% set bg = "#f9fafb" %}
+                        {% set fg = "#6b7280" %}
+                    {% endif %}
+                {% else %}
+                    {% set bg = "#f3f4f6" %}
+                    {% set fg = "#d1d5db" %}
                 {% endif %}
-            {% else %}
-                {% set bg = "#f3f4f6" %}
-                {% set fg = "#d1d5db" %}
-            {% endif %}
-            <div class="cal-day {{ 'today' if d.is_today }}" style="background:{{ bg }}; color:{{ fg }};">
-                <div class="cal-day-num">{{ d.day }}</div>
-                {% if d.has_data %}
-                <div class="cal-day-pnl">{% if d.daily_change != 0 %}{{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}{% else %}$0{% endif %}</div>
-                {% endif %}
-            </div>
-            {% endif %}{# /weekday >= 5 skip #}
+                <div class="cal-day {{ 'today' if c.is_today }}" style="background:{{ bg }}; color:{{ fg }};">
+                    <div class="cal-day-num">{{ c.day }}</div>
+                    {% if c.has_data and not c.is_future %}
+                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
         {% endfor %}
     </div>
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
-        No daily snapshots for this month yet. New Schwab syncs and uploads take a few minutes to show up here while the dashboard refreshes.
-        If it’s been longer than that, double-check the <strong>account name</strong> on your data matches the one on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
+        Daily account snapshots haven&rsquo;t arrived yet. New Schwab syncs and uploads take a few minutes to show up here.
+        If it&rsquo;s been longer, double-check the <strong>account name</strong> on your data matches your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
     </p>
     {% endif %}
 </div>
@@ -1007,61 +1056,42 @@
 
 {# ════════════════════════════════════════════════════════
    FRIDAY MODE
+   The new structure leads with AI Observation (the story), then tucks the
+   richer P&L tables behind a single "Numbers" disclosure so the diary +
+   noticed panel above can lead the page.
    ════════════════════════════════════════════════════════ #}
 {% if mode == 'friday' %}
 
-{# ── Week Story (Friday narrative) ── #}
-{% if narrative and narrative.story is defined and narrative.story %}
-{% set story = narrative.story %}
-<div class="week-story">
-    {% if story.opening %}<p>{{ story.opening }}</p>{% endif %}
-    {% if story.middle %}<p>{{ story.middle }}</p>{% endif %}
-</div>
-{% endif %}
-
-{# ── Best & Worst ── #}
 {% if review and review.trades_closed > 0 %}
-{% if review.best_trade or review.worst_trade %}
+
+{# ── AI Observation: full narrative paragraph ── #}
+{% if insights_enabled %}
+{% if ai_insight %}
 <div class="review-section">
-    <div class="section-label">Best &amp; Worst</div>
-    <div class="row g-3">
-        {% if review.best_trade %}
-        <div class="col-md-6">
-            <div class="trade-highlight best">
-                <div class="small text-muted mb-1">Best Trade</div>
-                {% if review.best_trade.symbol %}
-                <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}"
-                   class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
-                    {{ review.best_trade.symbol }}
-                </a>
-                {% else %}
-                <span class="fw-bold d-block mb-1" style="font-size:1.1rem">—</span>
-                {% endif %}
-                <div class="small text-muted mb-2">{{ review.best_trade.strategy or '' }}{% if review.best_trade.close_date %} &middot; Closed {{ review.best_trade.close_date }}{% endif %}</div>
-                <div class="h4 fw-bold text-positive mb-2">${{ "{:,.2f}".format(review.best_trade.total_pnl or 0) }}</div>
-            </div>
-        </div>
-        {% endif %}
-        {% if review.worst_trade and (review.worst_trade.total_pnl or 0) < 0 %}
-        <div class="col-md-6">
-            <div class="trade-highlight worst">
-                <div class="small text-muted mb-1">Worst Trade</div>
-                {% if review.worst_trade.symbol %}
-                <a href="{{ url_for('position_detail', symbol=review.worst_trade.symbol) }}"
-                   class="fw-bold text-decoration-none d-block mb-1" style="font-size:1.1rem">
-                    {{ review.worst_trade.symbol }}
-                </a>
-                {% else %}
-                <span class="fw-bold d-block mb-1" style="font-size:1.1rem">—</span>
-                {% endif %}
-                <div class="small text-muted mb-2">{{ review.worst_trade.strategy or '' }}{% if review.worst_trade.close_date %} &middot; Closed {{ review.worst_trade.close_date }}{% endif %}</div>
-                <div class="h4 fw-bold text-negative mb-2">${{ "{:,.2f}".format(review.worst_trade.total_pnl or 0) }}</div>
-            </div>
-        </div>
-        {% endif %}
+    <div class="section-label">AI Observation</div>
+    <p style="font-size:.95rem; color:#334155; line-height:1.6; margin:0 0 .75rem">{{ ai_insight.summary }}</p>
+    <div class="d-flex align-items-center gap-3">
+        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Full Analysis &rarr;</a>
+        <span class="small text-muted">{{ ai_insight.generated_at }}</span>
     </div>
 </div>
+{% else %}
+<div class="review-section">
+    <div class="section-label">AI Observation</div>
+    <p class="text-muted mb-2" style="font-size:.9rem">No AI analysis generated yet.</p>
+    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-secondary">Generate Insights</a>
+</div>
 {% endif %}
+{% endif %}
+
+{# ── Numbers disclosure: deeper P&L breakdown ──
+   Default-closed. Holds the trades table (with best/worst highlighted),
+   strategy breakdown, position impact, exit-timing detail, behavior
+   baseline, and the historical comparison snapshots. The page leads with
+   the diary and the "what we noticed" panel; this is for power users. #}
+<details class="numbers-disclosure">
+<summary>Numbers — trades, strategies, position impact, exit timing</summary>
+<div class="numbers-body">
 
 {# ── Position Impact: stock movement vs option P&L ── #}
 {% if position_impact %}
@@ -1128,11 +1158,19 @@
 </div>
 {% endif %}
 
-{# ── Trades this week ── #}
+{# ── Trades this week — Best/Worst folded in as ★/▼ row highlights ── #}
 {% if trades_this_week %}
+{# Best/Worst keys: symbol|close_date is good enough for our marts —
+   collisions happen when the same symbol closes multiple legs the same day,
+   in which case all rows of that family will be highlighted (acceptable). #}
+{% set _best_key = (review.best_trade.symbol ~ '|' ~ review.best_trade.close_date) if (review and review.best_trade and review.best_trade.symbol and review.best_trade.close_date) else '' %}
+{% set _worst_key = (review.worst_trade.symbol ~ '|' ~ review.worst_trade.close_date) if (review and review.worst_trade and review.worst_trade.symbol and review.worst_trade.close_date and review.worst_trade.total_pnl < 0) else '' %}
 <div class="review-section">
     <div class="section-label">All Trades This Week</div>
-    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Trades closed this calendar week. Open positions with <strong>no</strong> trade history in your data yet (broker snapshot only) are excluded so this list matches real activity.</p>
+    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">
+        Trades closed this calendar week. Open positions with <strong>no</strong> trade history in your data yet (broker snapshot only) are excluded so this list matches real activity.
+        {% if _best_key %}<span class="ms-1">Best of the week marked <span class="text-positive fw-bold">★</span>{% if _worst_key %}, worst marked <span class="text-negative fw-bold">▼</span>{% endif %}.</span>{% endif %}
+    </p>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 trades-table">
             <thead class="table-light">
@@ -1146,10 +1184,14 @@
             </thead>
             <tbody>
                 {% for t in trades_this_week %}
-                <tr>
+                {% set _row_key = (t.symbol or '') ~ '|' ~ (t.close_date or '') %}
+                {% set _is_best = (_best_key and _row_key == _best_key) %}
+                {% set _is_worst = (_worst_key and _row_key == _worst_key) %}
+                <tr {% if _is_best %}style="background:rgba(25,135,84,.05)"{% elif _is_worst %}style="background:rgba(220,53,69,.04)"{% endif %}>
                     <td>
+                        {% if _is_best %}<span title="Best trade this week" class="text-positive me-1 fw-bold">★</span>{% elif _is_worst %}<span title="Worst trade this week" class="text-negative me-1 fw-bold">▼</span>{% endif %}
                         <a href="{{ url_for('position_detail', symbol=t.symbol) }}" class="fw-semibold text-decoration-none">{{ t.symbol }}</a>
-                        {% if t.trade_symbol %}<span class="d-block small text-muted" style="font-size:.75rem">{{ t.trade_symbol }}</span>{% endif %}
+                        {% if t.trade_symbol %}<span class="d-block small text-muted" style="font-size:.75rem" title="{{ t.trade_symbol }}">{{ t.trade_symbol|option_symbol }}</span>{% endif %}
                     </td>
                     <td class="text-muted small">{{ t.strategy }}</td>
                     <td class="small">
@@ -1332,69 +1374,8 @@
 </div>
 {% endif %}
 
-{# market section moved to always-visible block above #}
-
-{# ── Pattern: most consistent strategy ── #}
-{% if review.most_consistent_strategy %}
-<div class="review-section">
-    <div class="section-label">Your Pattern</div>
-    <p class="mb-0" style="font-size:.95rem; color:#334155; line-height:1.6">
-        Your most consistent strategy this week was <strong>{{ review.most_consistent_strategy.strategy }}</strong> &mdash;
-        {{ "{:.0f}".format(review.most_consistent_strategy.win_rate * 100) }}% win rate on {{ review.most_consistent_strategy.trades }} trade{{ 's' if review.most_consistent_strategy.trades != 1 else '' }}
-        (${{ "{:,.2f}".format(review.most_consistent_strategy.total_pnl) }}).
-        {% if review.most_consistent_strategy.win_rate >= 0.7 %}You stuck to what works.{% else %}Some room to tighten up.{% endif %}
-    </p>
-</div>
-{% endif %}
-
-{# ── Risk: position count change ── #}
-{% if review and review.risk_drift %}
-<div class="review-section">
-    <div class="section-label">Activity Check</div>
-    <p class="mb-0" style="font-size:.95rem; color:#334155">
-        You opened <strong>{{ review.risk_drift.this_week_opens }}</strong> new position{{ 's' if review.risk_drift.this_week_opens != 1 else '' }} this week
-        vs <strong>{{ review.risk_drift.prev_week_opens }}</strong> last week.
-        {% if review.risk_drift.diff > 2 %}
-        <strong>That&rsquo;s noticeably more. Was it planned?</strong>
-        {% elif review.risk_drift.diff < -2 %}
-        Pulling back. Disciplined or hesitant?
-        {% else %}
-        Consistent pace.
-        {% endif %}
-    </p>
-</div>
-{% endif %}
-
-{# ── Watch Next Week ── #}
-{% if watch_next_week %}
-<div class="watch-card">
-    <div class="section-label" style="margin-bottom:.75rem">Watch Next Week</div>
-    {% for item in watch_next_week %}
-    <div class="watch-item"><span class="watch-dot"></span> {{ item }}</div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# ── AI insight ── #}
-{% if insights_enabled %}
-{% if ai_insight %}
-<div class="review-section">
-    <div class="section-label">AI Observation</div>
-    <p style="font-size:.95rem; color:#334155; line-height:1.6; margin:0 0 .75rem">{{ ai_insight.summary }}</p>
-    <div class="d-flex align-items-center gap-3">
-        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Full Analysis &rarr;</a>
-        <span class="small text-muted">{{ ai_insight.generated_at }}</span>
-    </div>
-</div>
-{% else %}
-<div class="review-section">
-    <div class="section-label">AI Observation</div>
-    <p class="text-muted mb-2" style="font-size:.9rem">No AI analysis generated yet.</p>
-    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-secondary">Generate Insights</a>
-</div>
-{% endif %}
-{% endif %}
-
+</div>{# /numbers-body #}
+</details>{# /numbers-disclosure #}
 
 {% else %}{# review has no closed trades #}
 <div class="review-section text-center py-4">

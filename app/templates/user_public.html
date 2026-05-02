@@ -256,7 +256,7 @@
                                 <span class="up-attach-kind transaction">Transaction</span>
                                 <strong>{{ att.action_label or att.action }}</strong>
                                 {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}">{{ att.symbol }}</a>{% endif %}
-                                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c">{{ att.trade_symbol }}</span>{% endif %}
+                                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c" title="{{ att.trade_symbol }}">{{ att.trade_symbol|option_symbol }}</span>{% endif %}
                             </div>
                             <div class="up-attach-meta">
                                 {% if att.trade_date %}{{ att.trade_date }}{% endif %}

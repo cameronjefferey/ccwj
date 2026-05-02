@@ -157,6 +157,13 @@
                 </div>
 
                 {% if schwab_connected %}
+                {% if schwab_connections|length > 1 %}
+                <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked. Sync any one of them on its own page.</p>
+                <div class="sync-actions">
+                    <a href="{{ url_for('schwab_accounts') }}" class="btn-sync-primary">Manage &amp; sync accounts</a>
+                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
+                </div>
+                {% else %}
                 <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {% if not schwab_first_sync_completed %}
@@ -182,9 +189,11 @@
                     <div class="sync-actions">
                         <button type="submit" class="btn-sync-primary">Sync now</button>
                         <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
+                        <a href="{{ url_for('schwab_accounts') }}" class="btn-sync-ghost">Add another account</a>
                     </div>
                     <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
                 </form>
+                {% endif %}
                 {% else %}
                 <p class="small text-body-secondary mb-0">Connect once and every refresh stays in sync with your Schwab account automatically.</p>
                 <div class="sync-actions">
@@ -327,6 +336,23 @@
                 <div class="atlas-card-b">
                     <p class="atlas-hint">Connect once and every sync stays in sync with your Schwab account automatically.</p>
                     {% if schwab_connected %}
+                    {% if schwab_connections|length > 1 %}
+                    <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked. Pick one to sync.</p>
+                    <ul class="list-unstyled mb-3">
+                        {% for c in schwab_connections %}
+                        <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                            <span class="account-badge mb-0">{{ c.account_name or c.account_number }}</span>
+                            <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="account_number" value="{{ c.account_number }}">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this account</button>
+                                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab. This can take a minute — keep this tab open.</p>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('schwab_accounts') }}" class="btn btn-outline-secondary btn-sm">Manage Schwab accounts</a>
+                    {% else %}
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         {% if not schwab_first_sync_completed %}
@@ -351,6 +377,11 @@
                         <button type="submit" class="btn btn-primary">Sync now</button>
                         <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
                     </form>
+                    <p class="atlas-hint mt-3 mb-0">
+                        Have another account under the same Schwab login?
+                        <a href="{{ url_for('schwab_accounts') }}">Add it here.</a>
+                    </p>
+                    {% endif %}
                     {% else %}
                     <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary">Connect Schwab</a>
                     {% endif %}

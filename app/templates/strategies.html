@@ -109,22 +109,24 @@
 {% block content %}
 
 {# ── Account filter ── #}
-{% if accounts %}
-<form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+{% if accounts and accounts|length > 1 %}
+<form method="get" class="filter-bar">
     <div>
-        <label class="form-label small fw-semibold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
             {% endfor %}
         </select>
     </div>
+    {# Preserve the strategy drill-in selection across account changes
+       so the user doesn't lose context when scoping by account. #}
     {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
-    <div>
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="{{ url_for('strategies') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
+    {% if selected_account %}
+    <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
+    {% endif %}
 </form>
 {% endif %}
 
@@ -180,14 +182,12 @@
             <div class="hero-stat-label">Win Rate</div>
         </div>
         {% endif %}
-        {% if summary.net_premium %}
-        <div class="hero-stat">
-            <div class="hero-stat-value" style="color:inherit">
-                {{ "+" if summary.net_premium >= 0 else "" }}${{ "{:,.0f}".format(summary.net_premium) }}
-            </div>
-            <div class="hero-stat-label">Net Premium</div>
-        </div>
-        {% endif %}
+        {# Net Premium hero stat removed — for options traders the sign of
+           premium-received minus premium-paid is contextual (positive when
+           selling more, negative when buying long calls/PMCCs) and the
+           bare KPI was repeatedly read as "this strategy lost money" by
+           non-options viewers. The same number is still surfaced on the
+           focused-strategy card below where the context makes it clear. #}
     </div>
     {% endif %}
     {% endif %}

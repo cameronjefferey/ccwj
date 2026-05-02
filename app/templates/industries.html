@@ -117,24 +117,9 @@
 {% block content %}
 
 <div class="ind-hero">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-        <div>
-            <h1>Industries</h1>
-            <p class="lede">How your trading breaks down by sector. Click a sector to see the specific industries you've traded inside it.</p>
-        </div>
-        {% if accounts and accounts|length > 1 %}
-        <form method="get" class="d-flex gap-2 align-items-end">
-            <div>
-                <label class="form-label small text-white-50 mb-1">Account</label>
-                <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
-                    <option value="">All Accounts</option>
-                    {% for a in accounts %}
-                    <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </form>
-        {% endif %}
+    <div>
+        <h1>Industries</h1>
+        <p class="lede">How your trading breaks down by sector. Click a sector to see the specific industries you've traded inside it.</p>
     </div>
 
     {% if kpis and kpis.num_industries > 0 %}
@@ -180,6 +165,24 @@
     </div>
 </div>
 {% else %}
+
+{% if accounts and accounts|length > 1 %}
+<form method="get" class="filter-bar">
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if selected_account %}
+    <a class="filter-reset" href="{{ url_for('industries') }}">Reset</a>
+    {% endif %}
+</form>
+{% endif %}
 
 <div class="sec-grid">
     {% for s in sector_rows %}

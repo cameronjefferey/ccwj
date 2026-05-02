@@ -527,6 +527,23 @@ def update_schwab_token(user_id, account_number, token_json):
     )
 
 
+def update_schwab_tokens_for_user(user_id, token_json):
+    """
+    Replace token_json on every Schwab connection a user owns.
+
+    A single Schwab OAuth grant authorizes all the accounts under one
+    customer login; the same access/refresh token works for each one.
+    When a refresh rotates the token (or the user re-authorizes), every
+    connection row needs the new token or the next sync of the un-updated
+    rows will 401 with a stale refresh_token.
+    """
+    execute(
+        "UPDATE schwab_connections SET token_json = %s, updated_at = NOW() "
+        "WHERE user_id = %s",
+        (token_json, user_id),
+    )
+
+
 def update_schwab_account_hash(user_id, account_number, account_hash):
     """Update account hash when Schwab rotates hashValue (avoids 401 on trader API)."""
     execute(
@@ -562,8 +579,21 @@ def get_schwab_connection(user_id, account_number=None):
     )
 
 
-def mark_schwab_first_sync_completed(user_id):
-    """After a successful manual sync, stop defaulting the account tab to full-history."""
+def mark_schwab_first_sync_completed(user_id, account_number=None):
+    """
+    After a successful manual sync, stop defaulting the account tab to
+    full-history. When ``account_number`` is given, mark just that
+    connection (so newly added accounts can still default to full
+    history on their own first sync); otherwise mark every row for the
+    user (legacy behavior).
+    """
+    if account_number:
+        execute(
+            "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
+            "WHERE user_id = %s AND account_number = %s",
+            (user_id, account_number),
+        )
+        return
     execute(
         "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
         "WHERE user_id = %s",

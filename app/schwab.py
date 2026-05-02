@@ -7,7 +7,7 @@ import time
 from datetime import datetime, date, timedelta
 from urllib.parse import urlencode
 
-from flask import redirect, request, url_for, flash, session
+from flask import redirect, render_template, request, url_for, flash, session
 from flask_login import login_required, current_user
 
 from app import app
@@ -19,6 +19,7 @@ from app.models import (
     save_schwab_connection,
     update_schwab_account_hash,
     update_schwab_token,
+    update_schwab_tokens_for_user,
     add_account_for_user,
 )
 
@@ -356,15 +357,18 @@ def _get_schwab_client(user_id, account_number=None):
         raw = json.loads(c["token_json"])
         wrapped = _wrap_schwab_token_for_py(raw)
         if wrapped is not raw:
-            update_schwab_token(
-                user_id, conn_data["account_number"], json.dumps(wrapped)
-            )
+            # Wrap-format upgrade should propagate to *all* the user's rows so
+            # subsequent reads on a sibling connection don't re-do it.
+            update_schwab_tokens_for_user(user_id, json.dumps(wrapped))
         return wrapped
 
     def token_write(token, *args, **kwargs):
         # schwab-py passes the wrapped {creation_timestamp, token} dict on refresh.
         # Newer authlib/oauth passes through extra kwargs (e.g. refresh_token=...) — ignore them.
-        update_schwab_token(user_id, conn_data["account_number"], json.dumps(token))
+        # Update *every* row for this user — the OAuth grant covers all
+        # accounts under a single Schwab login, so a refresh here means
+        # the sibling rows' refresh tokens are now stale.
+        update_schwab_tokens_for_user(user_id, json.dumps(token))
 
     try:
         from schwab.auth import client_from_access_functions
@@ -493,11 +497,14 @@ def schwab_callback():
     account_hash = ""
     account_number = ""
     account_name = ""
+    remote_accounts = []
 
     if acct_resp.status_code == 200:
-        accounts = acct_resp.json()
-        if isinstance(accounts, list) and accounts:
-            first = accounts[0]
+        payload = acct_resp.json()
+        if isinstance(payload, list):
+            remote_accounts = [a for a in payload if isinstance(a, dict)]
+        if remote_accounts:
+            first = remote_accounts[0]
             account_hash = first.get("hashValue", "")
             account_number = str(first.get("accountNumber", ""))
     else:
@@ -546,6 +553,19 @@ def schwab_callback():
         token_json=token_json,
     )
     add_account_for_user(current_user.id, account_name or account_number)
+    # Re-auth covers every account under this Schwab login. Refresh tokens
+    # on any pre-existing rows so a sync that targets a sibling connection
+    # doesn't keep using the now-revoked old refresh token.
+    update_schwab_tokens_for_user(current_user.id, token_json)
+
+    has_more_remote = len(remote_accounts) > 1
+    if has_more_remote:
+        flash(
+            "Schwab login connected. We saved one account — pick any others "
+            "you want to bring over below.",
+            "success",
+        )
+        return redirect(url_for("schwab_accounts"))
 
     flash("Schwab account connected. Use Sync now to pull your data.", "success")
     return redirect(url_for("profile", tab="account"))
@@ -554,18 +574,37 @@ def schwab_callback():
 @app.route("/schwab/sync", methods=["POST"])
 @login_required
 def schwab_sync():
-    """Sync positions and transactions from Schwab to our data store."""
+    """Sync positions and transactions from Schwab to our data store.
+
+    Form fields:
+        account_number (optional): when provided, sync only that connection.
+            If omitted, the user's first connection is synced (legacy
+            single-account behaviour).
+        sync_scope: "full" or "rolling" (only used on the first sync per
+            connection — see `schwab_first_sync_completed`).
+        full_history_again: "1" to do a one-off full re-import after the
+            first sync.
+    """
     cfg = _schwab_config()
     if not cfg:
         flash("Schwab API is not configured.", "danger")
         return redirect(url_for("profile", tab="account"))
 
-    conn_row = get_schwab_connection(current_user.id)
+    requested_account = (request.form.get("account_number") or "").strip() or None
+    conn_row = get_schwab_connection(current_user.id, requested_account)
     if not conn_row:
+        if requested_account:
+            flash(
+                "We couldn't find that Schwab connection on your account. "
+                "Try the manage page and pick from your connected accounts.",
+                "warning",
+            )
+            return redirect(url_for("schwab_accounts"))
         flash("No Schwab connection. Connect your account first.", "warning")
         return redirect(url_for("profile", tab="account"))
 
-    client = _get_schwab_client(current_user.id)
+    account_number = conn_row["account_number"]
+    client = _get_schwab_client(current_user.id, account_number)
     if not client:
         flash(
             "Could not open your Schwab session (invalid token or app credentials). "
@@ -587,11 +626,18 @@ def schwab_sync():
         lookback_days = _schwab_transaction_lookback_days()
 
     try:
-        result = _run_sync(current_user.id, client, transaction_lookback_days=lookback_days)
+        result = _run_sync(
+            current_user.id,
+            client,
+            account_number=account_number,
+            transaction_lookback_days=lookback_days,
+        )
         hr = result.get("history_rows", 0)
         cr = result.get("current_rows", 0)
         lb = result.get("lookback_days", lookback_days)
-        mark_schwab_first_sync_completed(current_user.id)
+        mark_schwab_first_sync_completed(
+            current_user.id, account_number=account_number
+        )
         scope_phrase = (
             "This run included the longest history we request (up to about five years)."
             if lb >= SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
@@ -640,17 +686,254 @@ def schwab_sync():
     return redirect(url_for("profile", tab="account"))
 
 
-def _run_sync(user_id, client, transaction_lookback_days=None):
+# ---------------------------------------------------------------------------
+# Multi-account management — pull additional accounts under the same Schwab
+# OAuth grant after the initial connect.
+# ---------------------------------------------------------------------------
+
+def _schwab_default_account_label(account_number):
+    """Friendly fallback name when Schwab does not return a nickname."""
+    last4 = (account_number or "")[-4:]
+    if last4 and last4.isdigit():
+        return f"Schwab ••••{last4}"
+    return f"Schwab {account_number}"
+
+
+def _schwab_fetch_remote_accounts(client):
+    """
+    Discover every Schwab account reachable with the user's current OAuth
+    grant. Returns a list of dicts:
+        {"account_number": str, "account_hash": str, "account_name": str|None}
+
+    Falls back to the bare /accountNumbers list when the richer /accounts
+    endpoint is unavailable so we still get the numbers/hashes needed to
+    save a connection. Empty list on auth failure.
+    """
+    try:
+        nums_resp = _schwab_resp_with_refresh(client, client.get_account_numbers)
+        nums_payload = nums_resp.json()
+    except Exception:
+        app.logger.exception("Schwab account discovery (account numbers) failed")
+        return []
+
+    if not isinstance(nums_payload, list):
+        return []
+
+    accounts = []
+    seen_numbers = set()
+    for row in nums_payload:
+        if not isinstance(row, dict):
+            continue
+        number = str(row.get("accountNumber", "")).strip()
+        if not number or number in seen_numbers:
+            continue
+        seen_numbers.add(number)
+        accounts.append({
+            "account_number": number,
+            "account_hash": (row.get("hashValue") or "").strip(),
+            "account_name": None,
+        })
+
+    if not accounts:
+        return accounts
+
+    # Best-effort enrichment: pull human nicknames from /accounts. Failures
+    # are logged but don't block the page.
+    try:
+        full_resp = _schwab_resp_with_refresh(
+            client, lambda: client.get_accounts()
+        )
+        full_payload = full_resp.json()
+    except Exception:
+        app.logger.exception("Schwab account discovery (accounts enrich) failed")
+        full_payload = None
+
+    if isinstance(full_payload, list):
+        nick_by_number = {}
+        for entry in full_payload:
+            if not isinstance(entry, dict):
+                continue
+            sec = entry.get("securitiesAccount")
+            sec = sec if isinstance(sec, dict) else entry
+            num = str(sec.get("accountNumber", "")).strip()
+            if not num:
+                continue
+            nick = (
+                sec.get("nickname")
+                or sec.get("displayAcctId")
+                or sec.get("description")
+                or ""
+            )
+            nick = str(nick).strip()
+            if nick:
+                nick_by_number[num] = nick
+        for acc in accounts:
+            if acc["account_number"] in nick_by_number:
+                acc["account_name"] = nick_by_number[acc["account_number"]]
+
+    return accounts
+
+
+@app.route("/schwab/accounts")
+@login_required
+def schwab_accounts():
+    """
+    Manage which Schwab accounts under the user's OAuth grant are
+    connected. Lets the trader bring over an account they skipped on
+    the initial connect.
+    """
+    cfg = _schwab_config()
+    if not cfg:
+        flash("Schwab API is not configured.", "danger")
+        return redirect(url_for("profile", tab="account"))
+
+    connected_rows = list(get_schwab_connections(current_user.id) or [])
+    if not connected_rows:
+        flash(
+            "Connect a Schwab login first, then you can pick which accounts to sync.",
+            "warning",
+        )
+        return redirect(url_for("profile", tab="account"))
+
+    client = _get_schwab_client(current_user.id)
+    if client is None:
+        flash(
+            "We couldn't open your Schwab session. Click Connect Schwab to "
+            "re-authorize so we can list your accounts.",
+            "warning",
+        )
+        return redirect(url_for("profile", tab="account"))
+
+    remote = _schwab_fetch_remote_accounts(client)
+    connected_numbers = {
+        str(r.get("account_number") or "").strip() for r in connected_rows
+    }
+    available = [
+        a for a in remote
+        if a["account_number"] and a["account_number"] not in connected_numbers
+    ]
+    # Decorate the connected list with default-display names so the template
+    # doesn't have to do that work.
+    connected = []
+    for row in connected_rows:
+        number = str(row.get("account_number") or "")
+        label = (row.get("account_name") or "").strip() or _schwab_default_account_label(number)
+        connected.append({
+            "account_number": number,
+            "account_name": label,
+            "first_sync_completed": bool(row.get("schwab_first_sync_completed")),
+        })
+
+    discovery_failed = (not remote) and bool(connected_rows)
+
+    return render_template(
+        "schwab_accounts.html",
+        title="Schwab accounts",
+        connected_accounts=connected,
+        available_accounts=available,
+        discovery_failed=discovery_failed,
+    )
+
+
+@app.route("/schwab/accounts/add", methods=["POST"])
+@login_required
+def schwab_accounts_add():
+    """
+    Save a previously-skipped Schwab account using the existing OAuth
+    grant. The new connection reuses the token from any current
+    connection (one Schwab login authorizes every account under it).
+    """
+    cfg = _schwab_config()
+    if not cfg:
+        flash("Schwab API is not configured.", "danger")
+        return redirect(url_for("profile", tab="account"))
+
+    requested_number = (request.form.get("account_number") or "").strip()
+    nickname = (request.form.get("account_name") or "").strip()
+    if not requested_number:
+        flash("Pick an account to add.", "warning")
+        return redirect(url_for("schwab_accounts"))
+
+    existing = get_schwab_connection(current_user.id, requested_number)
+    if existing:
+        flash("That Schwab account is already connected.", "info")
+        return redirect(url_for("schwab_accounts"))
+
+    primary = get_schwab_connection(current_user.id)
+    if not primary:
+        flash(
+            "Connect a Schwab login first, then you can add additional accounts.",
+            "warning",
+        )
+        return redirect(url_for("profile", tab="account"))
+
+    client = _get_schwab_client(current_user.id)
+    if client is None:
+        flash(
+            "We couldn't open your Schwab session. Click Connect Schwab to "
+            "re-authorize, then try again.",
+            "warning",
+        )
+        return redirect(url_for("profile", tab="account"))
+
+    remote = _schwab_fetch_remote_accounts(client)
+    match = next(
+        (a for a in remote if a["account_number"] == requested_number), None
+    )
+    if not match:
+        # Don't trust the form alone — the account number must come from the
+        # OAuth grant. Anything else would let a user attach a number they
+        # don't actually own.
+        flash(
+            "That account isn't visible under your Schwab login. "
+            "Refresh this page or re-connect Schwab.",
+            "danger",
+        )
+        return redirect(url_for("schwab_accounts"))
+
+    account_hash = (match.get("account_hash") or "").strip()
+    if not account_hash:
+        flash(
+            "Schwab didn't return a routing key for that account. "
+            "Try again in a moment.",
+            "danger",
+        )
+        return redirect(url_for("schwab_accounts"))
+
+    label = nickname or (match.get("account_name") or "").strip()
+    if not label:
+        label = _schwab_default_account_label(requested_number)
+
+    save_schwab_connection(
+        current_user.id,
+        account_hash=account_hash,
+        account_number=requested_number,
+        account_name=label,
+        token_json=primary["token_json"],
+    )
+    add_account_for_user(current_user.id, label)
+
+    flash(
+        f"Added {label}. Use Sync now on this page to pull its history.",
+        "success",
+    )
+    return redirect(url_for("schwab_accounts"))
+
+
+def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days=None):
     """
     Fetch positions and transactions from Schwab, map to our schema,
     and write to the configured output (GitHub seeds or BigQuery).
     Returns dict with history_rows, current_rows, lookback_days.
 
+    account_number: which Schwab connection to sync. If omitted, the
+        first connection for the user is used (legacy single-account
+        behaviour). Required when the user has multiple connections so
+        each row is synced exactly once.
     transaction_lookback_days: if set (e.g. from UI), use it; else env SCHWAB_SYNC_TRANSACTION_DAYS
     (used by cron CLI). Clamped to 1..1825.
     """
-    # Get account hash
-    conn_data = get_schwab_connection(user_id)
+    conn_data = get_schwab_connection(user_id, account_number)
     if not conn_data:
         raise ValueError("No Schwab connection")
 

@@ -109,21 +109,21 @@
             </p>
         </div>
 
-        {% if accounts %}
-        <form method="get" class="row g-2 mb-4 align-items-end">
-            <div class="col-auto">
-                <label class="form-label small fw-bold mb-1">Account</label>
-                <select name="account" class="form-select form-select-sm">
+        {% if accounts and accounts|length > 1 %}
+        <form method="get" class="filter-bar">
+            <div>
+                <label class="lblh">Account</label>
+                <select name="account" class="form-select form-select-sm"
+                        onchange="this.form.submit()">
                     <option value="">All Accounts</option>
                     {% for a in accounts %}
                     <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-                <a href="{{ url_for('insights') }}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-            </div>
+            {% if selected_account %}
+            <a class="filter-reset" href="{{ url_for('insights') }}">Reset</a>
+            {% endif %}
         </form>
         {% endif %}
 
@@ -300,7 +300,7 @@
                 {{ insight.full_analysis_html }}
             </div>
             <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="insights-meta">Generated {{ insight.generated_at }}</span>
+                <span class="insights-meta">Generated {{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") if insight.generated_at and insight.generated_at.strftime else insight.generated_at }}</span>
                 {% if gemini_available %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
