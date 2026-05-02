@@ -20,6 +20,8 @@ from app.models import (
     get_published_trade_fingerprints,
     get_user_profile,
     trade_fingerprint,
+    get_review_visit,
+    bump_review_visit,
 )
 from google.cloud import bigquery
 from concurrent.futures import ThreadPoolExecutor
@@ -543,6 +545,278 @@ def _detect_patterns(client, account_filter, week_start, week_end):
     return patterns
 
 
+# ──────────────────────────────────────────────────────────────────
+# "Since you last looked" — daily pull hook
+# ──────────────────────────────────────────────────────────────────
+#
+# The page is Today-first. We diff the current world against a snapshot of
+# the world at the user's previous visit (or yesterday if this is their first
+# real visit). Output is ALWAYS in the user's accounts only — every query
+# below is account-scoped at the SQL level (per BigQuery tenant-isolation
+# rules) and any DataFrame is filtered before merge.
+
+# Prior closes (one row per symbol) at the most recent close strictly BEFORE
+# the cutoff date. Used to compute "since you last looked" stock moves.
+PRIOR_CLOSE_QUERY = """
+WITH ranked AS (
+    SELECT symbol, date, close_price,
+           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE symbol IN UNNEST(@symbols)
+      AND date <= @cutoff_date
+      AND close_price IS NOT NULL AND close_price > 0
+)
+SELECT symbol, date AS prior_date, close_price AS prior_close
+FROM ranked
+WHERE rn = 1
+"""
+
+# Trades that closed since the prior visit (date-grain — within the user's
+# account scope). Small list intended for the "since" strip.
+TRADES_CLOSED_SINCE_QUERY = """
+SELECT account, symbol, strategy, trade_symbol, close_date, total_pnl
+FROM `ccwj-dbt.analytics.int_strategy_classification`
+WHERE status = 'Closed'
+  AND close_date >= @since_date
+  AND close_date <= @today_date
+  AND num_trades > 0
+  {account_filter}
+ORDER BY close_date DESC, ABS(total_pnl) DESC
+LIMIT 5
+"""
+
+# Trades that opened since the prior visit.
+TRADES_OPENED_SINCE_QUERY = """
+SELECT account, symbol, strategy, open_date
+FROM `ccwj-dbt.analytics.int_strategy_classification`
+WHERE open_date >= @since_date
+  AND open_date <= @today_date
+  AND num_trades > 0
+  {account_filter}
+ORDER BY open_date DESC
+LIMIT 10
+"""
+
+
+def _humanize_gap(gap):
+    """Render a timedelta as 'N hours/days/weeks ago' for a friendly label."""
+    if gap is None:
+        return "your last visit"
+    total_seconds = int(gap.total_seconds())
+    if total_seconds < 60:
+        return "moments ago"
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = hours // 24
+    if days < 7:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    weeks = days // 7
+    if weeks < 5:
+        return f"{weeks} week{'s' if weeks != 1 else ''} ago"
+    return "a while ago"
+
+
+def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip,
+                       expiring_options, user_tz):
+    """
+    Build the "Since you last looked" diff card.
+
+    Strategy:
+      • Anchor date = the calendar date of prev_visit_dt in the user's TZ
+        (or today - 1 day if there's no prior visit yet — first real visit
+        still gets a useful "since yesterday" view).
+      • Stock moves: per open-position symbol, compare today's latest close
+        vs the close on/before anchor_date (PRIOR_CLOSE_QUERY).
+      • Trades closed / opened since anchor (account-scoped).
+      • Newly-near expirations: options now ≤ 7 days out that were > 7 days
+        out at anchor_date (cheap heuristic: expiry - anchor_date > 7).
+
+    Returns a dict consumable by the template, or None if there's nothing
+    interesting to show.
+    """
+    try:
+        if prev_visit_dt is not None:
+            tz = ZoneInfo(user_tz) if user_tz else ZoneInfo("America/New_York")
+            anchor_date = prev_visit_dt.astimezone(tz).date()
+            gap = datetime.now(tz) - prev_visit_dt.astimezone(tz)
+            time_ago = _humanize_gap(gap)
+            is_first_visit = False
+        else:
+            anchor_date = today - timedelta(days=1)
+            time_ago = "yesterday"
+            is_first_visit = True
+
+        # Don't diff against today itself — nothing changes.
+        if anchor_date >= today:
+            anchor_date = today - timedelta(days=1)
+
+        symbols = sorted({
+            (s.get("symbol") or "").upper()
+            for s in (today_strip or [])
+            if s.get("symbol")
+        })
+
+        moves = []
+        if symbols:
+            try:
+                cfg = bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ArrayQueryParameter("symbols", "STRING", symbols),
+                    bigquery.ScalarQueryParameter("cutoff_date", "DATE", anchor_date),
+                ])
+                df = client.query(PRIOR_CLOSE_QUERY, job_config=cfg).to_dataframe()
+                # Map: symbol → prior_close  (PRIOR_CLOSE_QUERY is symbol-only,
+                # not user-data; account scoping doesn't apply.)
+                prior_map = {}
+                for _, row in df.iterrows():
+                    sym = str(row["symbol"]).upper()
+                    prior_map[sym] = float(row["prior_close"])
+
+                for s in today_strip:
+                    sym = (s.get("symbol") or "").upper()
+                    cur_price = s.get("price")
+                    prior = prior_map.get(sym)
+                    if not sym or cur_price is None or prior is None or prior <= 0:
+                        continue
+                    delta = float(cur_price) - prior
+                    pct = (delta / prior) * 100.0
+                    if abs(pct) < 0.5:
+                        continue  # too small to bother surfacing
+                    moves.append({
+                        "symbol": sym,
+                        "prior_price": round(prior, 2),
+                        "current_price": round(float(cur_price), 2),
+                        "delta": round(delta, 2),
+                        "delta_pct": round(pct, 2),
+                        "positive": delta >= 0,
+                    })
+                moves.sort(key=lambda m: abs(m["delta_pct"]), reverse=True)
+                moves = moves[:5]
+            except Exception as exc:
+                if app.debug:
+                    app.logger.warning("Since-last-looked prior closes failed: %s", exc)
+
+        # Trades opened / closed since anchor — strictly account-scoped.
+        opened = []
+        closed = []
+        try:
+            cfg = bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("since_date", "DATE", anchor_date),
+                bigquery.ScalarQueryParameter("today_date", "DATE", today),
+            ])
+            closed_df = client.query(
+                TRADES_CLOSED_SINCE_QUERY.format(account_filter=account_filter),
+                job_config=cfg,
+            ).to_dataframe()
+            for _, row in closed_df.iterrows():
+                pnl = row.get("total_pnl")
+                pnl_v = float(pnl) if pnl is not None else None
+                cd = row.get("close_date")
+                cd_s = cd.isoformat() if hasattr(cd, "isoformat") else str(cd)[:10]
+                closed.append({
+                    "symbol": str(row.get("symbol") or ""),
+                    "strategy": str(row.get("strategy") or ""),
+                    "trade_symbol": str(row.get("trade_symbol") or ""),
+                    "close_date": cd_s,
+                    "total_pnl": pnl_v,
+                    "positive": (pnl_v is not None and pnl_v >= 0),
+                })
+
+            opened_df = client.query(
+                TRADES_OPENED_SINCE_QUERY.format(account_filter=account_filter),
+                job_config=cfg,
+            ).to_dataframe()
+            for _, row in opened_df.iterrows():
+                od = row.get("open_date")
+                od_s = od.isoformat() if hasattr(od, "isoformat") else str(od)[:10]
+                opened.append({
+                    "symbol": str(row.get("symbol") or ""),
+                    "strategy": str(row.get("strategy") or ""),
+                    "open_date": od_s,
+                })
+        except Exception as exc:
+            if app.debug:
+                app.logger.warning("Since-last-looked trades query failed: %s", exc)
+
+        # Newly-near expirations: now in the 7-day window AND were further out
+        # at anchor (expiry - anchor > 7 days). Uses already-computed list.
+        newly_near_expiry = []
+        for opt in (expiring_options or []):
+            try:
+                exp_str = opt.get("expiry") or ""
+                if not exp_str:
+                    continue
+                exp_d = date.fromisoformat(str(exp_str)[:10])
+            except Exception:
+                continue
+            days_now = (exp_d - today).days
+            days_at_anchor = (exp_d - anchor_date).days
+            if 0 <= days_now <= 7 and days_at_anchor > 7:
+                newly_near_expiry.append({
+                    "symbol": opt.get("symbol"),
+                    "trade_symbol": opt.get("trade_symbol"),
+                    "option_type": opt.get("option_type"),
+                    "strike": opt.get("strike"),
+                    "expiry": exp_str,
+                    "days_to_exp": days_now,
+                    "itm": opt.get("itm"),
+                })
+
+        # Newly-ITM options: ITM now AND would have been OTM/ATM at anchor
+        # (cheap proxy: stock_price moved across strike since anchor based on
+        # the same prior_map we built for today_strip, falling back to
+        # stock_price on the option row if symbol isn't in the strip).
+        prior_map_for_opts = {m["symbol"]: m["prior_price"] for m in moves}
+        newly_itm = []
+        for opt in (expiring_options or []):
+            sym = (opt.get("symbol") or "").upper()
+            strike = opt.get("strike") or 0
+            opt_type = opt.get("option_type") or ""
+            cur_stock = opt.get("stock_price") or 0
+            if not opt.get("itm") or not strike or not cur_stock:
+                continue
+            prior_stock = prior_map_for_opts.get(sym)
+            if prior_stock is None:
+                continue
+            was_itm_then = (
+                (opt_type == "Call" and prior_stock >= strike) or
+                (opt_type == "Put" and prior_stock <= strike)
+            )
+            if not was_itm_then:
+                newly_itm.append({
+                    "symbol": sym,
+                    "trade_symbol": opt.get("trade_symbol"),
+                    "option_type": opt_type,
+                    "strike": strike,
+                    "expiry": opt.get("expiry"),
+                    "days_to_exp": opt.get("days_to_exp"),
+                    "prior_stock": prior_stock,
+                    "current_stock": cur_stock,
+                })
+
+        has_anything = bool(moves or opened or closed or newly_near_expiry or newly_itm)
+        if not has_anything:
+            return None
+
+        return {
+            "time_ago": time_ago,
+            "anchor_date": anchor_date.isoformat(),
+            "is_first_visit": is_first_visit,
+            "moves": moves,
+            "opened_trades": opened,
+            "closed_trades": closed,
+            "newly_near_expiry": newly_near_expiry,
+            "newly_itm": newly_itm,
+        }
+    except Exception as exc:
+        if app.debug:
+            app.logger.warning("_since_last_looked failed: %s", exc)
+        return None
+
+
 def _build_narrative(mode, review, prev_review, behavior_mirror, market,
                      today, week_start, trading_days=0, market_session=None):
     """Generate a dynamic hero headline + subtitle from actual data."""
@@ -666,27 +940,32 @@ def _build_narrative(mode, review, prev_review, behavior_mirror, market,
         return {"headline": headline, "subtitle": subtitle}
 
     elif mode == "midweek":
+        # "Today" framing — forward-looking, not a recap. The weekly stats are
+        # context underneath; the headline answers "what's live right now".
         try:
-            days_in = max(1, (today - week_start).days + 1)
-        except TypeError:
-            days_in = 1
-        td_label = f"{trading_days} trading day{'s' if trading_days != 1 else ''}" if trading_days else f"Day {days_in}"
+            day_name = today.strftime("%A")
+        except Exception:
+            day_name = "Today"
         if trades_closed > 0:
             sign = "+" if total_pnl >= 0 else ""
             headline = (
-                f"{td_label} \u00b7 {trades_closed} closed \u00b7 "
+                f"{day_name} \u00b7 {trades_closed} closed this week \u00b7 "
                 f"{sign}${abs(total_pnl):,.0f} so far"
             )
         else:
-            headline = f"{td_label} \u00b7 No closed trades yet"
+            headline = f"{day_name} \u00b7 Nothing closed this week yet"
         prefix = ""
         if market_session:
             st = market_session.get("state")
-            if st == "weekend":
-                prefix = "U.S. markets are closed (weekend). "
+            if st == "open":
+                prefix = "Markets are open. "
+            elif st == "weekend":
+                prefix = "Markets are closed (weekend). "
             elif st == "pre_market":
                 prefix = "Before the U.S. open. "
-        subtitle = prefix + "Mid-week check. Are you trading your plan, or reacting to the market?"
+            elif st == "after_hours":
+                prefix = "After the U.S. close. "
+        subtitle = prefix + "Here's what's live, what just changed, and what's coming up."
         return {
             "headline": headline,
             "subtitle": subtitle,
@@ -982,8 +1261,23 @@ def weekly_review():
 
     from_upload = request.args.get("from_upload") == "1"
 
+    # ── Visit anchors for "Since you last looked" ──
+    # bump_review_visit returns the row state BEFORE this request and
+    # debounces rapid reloads, so prior_visit['last_visit_at'] is literally
+    # "the time of your previous distinct visit" — what we want to diff
+    # against. None means this is the user's first visit ever.
+    prior_visit = bump_review_visit(current_user.id, datetime.now(ZoneInfo("UTC")))
+    since_anchor_dt = prior_visit.get("last_visit_at") if prior_visit else None
+
+    # Title leans on mode: "Today" pulls people in daily; "Friday Review"
+    # is the recap; "Monday Check" frames the start of week.
+    _titles = {
+        "friday":  "Friday Review",
+        "monday":  "Monday Check",
+        "midweek": "Today",
+    }
     context = {
-        "title": "Weekly Review",
+        "title": _titles.get(mode, "Weekly Review"),
         "mode": mode,
         "week_start": this_week,
         "week_end": this_week + timedelta(days=6),
@@ -1010,6 +1304,7 @@ def weekly_review():
         "strategy_breakdown_week": [],
         "community_profile_visibility": "private",
         "community_publish_ready": False,
+        "since_last_looked": None,
     }
 
     try:
@@ -1538,6 +1833,22 @@ def weekly_review():
         except Exception as e:
             if app.debug:
                 app.logger.warning("Open positions query failed: %s", e)
+
+        # ── Process: Since you last looked (daily-pull diff) ──
+        context["since_last_looked"] = None
+        try:
+            context["since_last_looked"] = _since_last_looked(
+                client=client,
+                account_filter=account_filter,
+                prev_visit_dt=since_anchor_dt,
+                today=today,
+                today_strip=context.get("today_strip", []),
+                expiring_options=context.get("expiring_options", []),
+                user_tz=user_tz,
+            )
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Since-last-looked failed: %s", e)
 
         # ── Process: Position Impact (stock movement vs option P&L) ──
         context["position_impact"] = []
