@@ -130,6 +130,63 @@ class TestMirrorScoreDataIsolation:
         assert b"User A mirror diagnostic" not in r.data
 
 
+class TestAccountNameClaim:
+    """An account label can be linked to at most one user."""
+
+    def test_second_user_cannot_claim_same_label(self, db_conn):
+        from app.models import (
+            AccountClaimedError,
+            account_is_claimed_by_other,
+            add_account_for_user,
+        )
+
+        owner = _unique_username("acct_owner")
+        intruder = _unique_username("acct_intruder")
+        owner_id = _create_user(db_conn, owner)
+        intruder_id = _create_user(db_conn, intruder)
+
+        label = f"Brokerage_{uuid.uuid4().hex[:6]}"
+        add_account_for_user(owner_id, label)
+
+        # The challenger sees the label as claimed before they try.
+        assert account_is_claimed_by_other(intruder_id, label) is True
+
+        # And actually trying to insert raises.
+        with pytest.raises(AccountClaimedError):
+            add_account_for_user(intruder_id, label)
+
+    def test_same_user_can_re_link_same_label(self, db_conn):
+        """Idempotent for the same user — re-linking is a no-op, not an error."""
+        from app.models import add_account_for_user, get_accounts_for_user
+
+        user = _unique_username("acct_repeat")
+        user_id = _create_user(db_conn, user)
+        label = f"MyBrokerage_{uuid.uuid4().hex[:6]}"
+
+        add_account_for_user(user_id, label)
+        add_account_for_user(user_id, label)  # second call must not raise
+
+        accounts = get_accounts_for_user(user_id)
+        assert accounts.count(label) == 1
+
+    def test_case_and_whitespace_variants_collide(self, db_conn):
+        """ 'Brokerage', ' brokerage ', 'BROKERAGE' all map to the same claim."""
+        from app.models import AccountClaimedError, add_account_for_user
+
+        owner = _unique_username("acct_case_owner")
+        intruder = _unique_username("acct_case_intruder")
+        owner_id = _create_user(db_conn, owner)
+        intruder_id = _create_user(db_conn, intruder)
+
+        suffix = uuid.uuid4().hex[:6]
+        add_account_for_user(owner_id, f"Brokerage{suffix}")
+
+        with pytest.raises(AccountClaimedError):
+            add_account_for_user(intruder_id, f"  brokerage{suffix}  ")
+        with pytest.raises(AccountClaimedError):
+            add_account_for_user(intruder_id, f"BROKERAGE{suffix}")
+
+
 class TestUserProfileIsolation:
     """User profile reads/writes must be scoped to current_user.id."""
 

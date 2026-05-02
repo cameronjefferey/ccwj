@@ -9,6 +9,7 @@ from app.schwab import (
     _schwab_transaction_lookback_days,
 )
 from app.models import (
+    AccountClaimedError,
     add_account_for_user,
     get_accounts_for_user,
     get_schwab_connections,
@@ -68,7 +69,23 @@ def _user_account_list():
         if not label:
             continue
         if label not in have:
-            add_account_for_user(current_user.id, label)
+            try:
+                add_account_for_user(current_user.id, label)
+            except AccountClaimedError:
+                # Another user owns this label. We must NOT add it to this
+                # user's allowed list — that's exactly the cross-tenant
+                # leak the unique index exists to prevent. The Schwab
+                # connect callback re-suffixes on collision, so we should
+                # only land here for legacy connections that predate the
+                # unique index. Surface in logs but keep going so the rest
+                # of the user's accounts still load.
+                app.logger.warning(
+                    "Stale Schwab account label %r already owned by another "
+                    "user; skipping for user_id=%s. The user should "
+                    "reconnect Schwab to get a renamed label.",
+                    label, current_user.id,
+                )
+                continue
             have.add(label)
             names.append(label)
     return sorted(names)

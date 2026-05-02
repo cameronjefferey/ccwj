@@ -201,6 +201,7 @@ def init_db():
                 cur.execute(stmt)
     _migrate_schwab_first_sync_column()
     _migrate_community_posts_strategy_column()
+    _migrate_account_name_unique_index()
 
 
 def _migrate_schwab_first_sync_column():
@@ -226,6 +227,42 @@ def _migrate_community_posts_strategy_column():
         execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_json TEXT")
     except Exception as e:
         _log.warning("community_posts attachment migration skipped: %s", e)
+
+
+def _migrate_account_name_unique_index():
+    """
+    Idempotent: enforce that a normalized account label can be claimed by at
+    most one user. Two users with the SAME `account_name` row collide on
+    BigQuery seed reads (the dataset is multi-tenant; the only filter is the
+    account string), which is exactly the leak called out in
+    .cursor/rules/bigquery-tenant-isolation.mdc.
+
+    The unique index is on lower(trim(account_name)) so case + leading/
+    trailing-space variants of the same label all collide. The trade-off:
+    one user types 'Brokerage' and a second tester later types 'brokerage';
+    the second one gets a clean 'already taken' error path instead of
+    silently inheriting the first user's BigQuery rows.
+
+    Existing data: if the prod DB already has duplicate labels across
+    different user_id rows from the open-signup era, CREATE UNIQUE INDEX
+    will fail. We log the failure (don't crash app boot) — the operator
+    can resolve the conflict manually with the SELECT below before the
+    next deploy. Most prod rows today are admin / single-user.
+    """
+    try:
+        execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS
+               uniq_user_accounts_global_account_name
+               ON user_accounts (lower(trim(account_name)))"""
+        )
+    except Exception as e:
+        _log.warning(
+            "user_accounts global-unique index not created (likely existing "
+            "duplicates from open-beta era): %s. Resolve with: "
+            "SELECT lower(trim(account_name)) AS k, count(*) FROM user_accounts "
+            "GROUP BY 1 HAVING count(*) > 1;",
+            e,
+        )
 
 
 class User(UserMixin):
@@ -289,11 +326,76 @@ def get_accounts_for_user(user_id):
 
 
 def add_account_for_user(user_id, account_name):
-    execute(
-        "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s) "
-        "ON CONFLICT (user_id, account_name) DO NOTHING",
-        (user_id, account_name),
+    """Link an account label to a user.
+
+    Idempotent for the same (user_id, account_name). Raises
+    ``AccountClaimedError`` when the label already belongs to a DIFFERENT
+    user — the global-unique index on lower(trim(account_name)) is what
+    enforces this. Callers (upload, Schwab connect) MUST handle that
+    exception so the user sees an actionable message instead of a 500.
+
+    Re-raises any other database error so the caller can decide whether
+    to retry or surface a generic failure.
+    """
+    try:
+        execute(
+            "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s) "
+            "ON CONFLICT (user_id, account_name) DO NOTHING",
+            (user_id, account_name),
+        )
+    except Exception as exc:
+        # Catch by SQLSTATE (23505 = unique_violation) when available; fall
+        # back to a string match for environments where the underlying
+        # driver doesn't surface the code on the wrapped exception. We've
+        # already swallowed (user_id, name) duplicates via ON CONFLICT, so
+        # any unique-violation here is the GLOBAL index — i.e. another
+        # user already claimed this label.
+        sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+        msg = str(exc).lower()
+        if (
+            sqlstate == "23505"
+            or "uniq_user_accounts_global_account_name" in msg
+            or "duplicate key" in msg
+        ):
+            owner = _account_owner_id(account_name)
+            if owner is not None and owner != user_id:
+                raise AccountClaimedError(account_name, owner) from exc
+        raise
+
+
+class AccountClaimedError(Exception):
+    """Raised when add_account_for_user is asked to link a label that's
+    already claimed by a different user. The Schwab nickname / CSV upload
+    flow surfaces this with a clear 'pick a different name' UX."""
+
+    def __init__(self, account_name: str, owner_user_id: int):
+        super().__init__(
+            f"Account label {account_name!r} is already linked to another user "
+            f"(owner_user_id={owner_user_id})."
+        )
+        self.account_name = account_name
+        self.owner_user_id = owner_user_id
+
+
+def _account_owner_id(account_name):
+    """Return the user_id that already owns this label, or None.
+
+    Match is case- and whitespace-insensitive to mirror the unique index
+    so the human-readable error matches the constraint that fired.
+    """
+    row = fetch_one(
+        "SELECT user_id FROM user_accounts "
+        "WHERE lower(trim(account_name)) = lower(trim(%s)) "
+        "LIMIT 1",
+        (account_name,),
     )
+    return int(row["user_id"]) if row else None
+
+
+def account_is_claimed_by_other(user_id, account_name):
+    """True iff some other user already owns this label."""
+    owner = _account_owner_id(account_name)
+    return owner is not None and owner != user_id
 
 
 def remove_account_for_user(user_id, account_name):
@@ -1290,7 +1392,18 @@ def ensure_demo_user():
         demo = User.get_by_username("demo")
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
-        add_account_for_user(demo.id, DEMO_ACCOUNT)
+        try:
+            add_account_for_user(demo.id, DEMO_ACCOUNT)
+        except AccountClaimedError:
+            # Demo Account was claimed by some other user during a prior
+            # mis-configuration. The demo only ever uses the seed dataset
+            # named exactly DEMO_ACCOUNT, so this requires manual cleanup —
+            # log it and skip rather than crash app boot.
+            _log.error(
+                "ensure_demo_user: %r is owned by a non-demo user; demo will "
+                "have no linked accounts until an admin rebinds the label.",
+                DEMO_ACCOUNT,
+            )
         ensure_user_profile(demo.id)
         _ensure_demo_insight(demo.id)
         _seed_demo_mirror_scores(demo.id)
