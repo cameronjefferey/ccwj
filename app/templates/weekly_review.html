@@ -48,6 +48,75 @@
         color: rgba(255,255,255,.35);
     }
 
+    /* ── Since you last looked ── */
+    .since-card {
+        background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
+        border: 1px solid #fde68a;
+        border-radius: 14px;
+        padding: 1.1rem 1.4rem;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 1px 8px rgba(234, 179, 8, .08);
+    }
+    .since-kicker {
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: 1.1px;
+        color: #b45309;
+        font-weight: 700;
+        margin-bottom: .2rem;
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+    }
+    .since-kicker .since-dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #f59e0b;
+        animation: since-pulse 2.2s infinite;
+    }
+    @keyframes since-pulse {
+        0%, 100% { opacity: .5; }
+        50%      { opacity: 1; }
+    }
+    .since-headline {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0 0 .65rem;
+    }
+    .since-row {
+        display: flex; flex-wrap: wrap; gap: .5rem .9rem;
+        font-size: .85rem;
+        margin-bottom: .35rem;
+    }
+    .since-row:last-child { margin-bottom: 0; }
+    .since-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .25rem .65rem;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        font-size: .8rem;
+        text-decoration: none;
+        color: inherit;
+        white-space: nowrap;
+    }
+    .since-chip:hover { border-color: #cbd5e1; color: inherit; text-decoration: none; }
+    .since-chip .sym { font-weight: 700; }
+    .since-chip.up   { border-color: rgba(25,135,84,.3);  background: rgba(25,135,84,.05); }
+    .since-chip.down { border-color: rgba(220,53,69,.3);  background: rgba(220,53,69,.05); }
+    .since-chip.warn { border-color: rgba(234,179,8,.4);  background: rgba(234,179,8,.08); }
+    .since-section-label {
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        color: #94a3b8;
+        font-weight: 600;
+        margin-right: .25rem;
+        align-self: center;
+    }
+
     /* ── Account snapshot ── */
     .snapshot-section { padding: 1.25rem 1.75rem; }
     .snapshot-row {
@@ -414,7 +483,7 @@
         <a href="{{ url_for('weekly_review', mode='monday', account=selected_account) if selected_account else url_for('weekly_review', mode='monday') }}"
            class="mode-pill {% if mode == 'monday' %}active{% endif %}">Monday Check</a>
         <a href="{{ url_for('weekly_review', mode='midweek', account=selected_account) if selected_account else url_for('weekly_review', mode='midweek') }}"
-           class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Mid-Week</a>
+           class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Today</a>
     </div>
 
     {% if narrative %}
@@ -436,6 +505,110 @@
         {% endif %}
     </div>
 </div>
+
+{# ════════════════════════════════════
+   SINCE YOU LAST LOOKED (daily-pull diff)
+
+   Renders only when there's something genuinely new vs the user's previous
+   visit: stock moves on open positions, trades that opened/closed, options
+   that newly entered the 7-day expiry window, or options that just went ITM.
+   ════════════════════════════════════ #}
+{% if since_last_looked %}
+{% set sll = since_last_looked %}
+<div class="since-card">
+    <div class="since-kicker">
+        <span class="since-dot"></span>
+        Since you last looked
+    </div>
+    <p class="since-headline">
+        {% if sll.is_first_visit %}
+        What changed yesterday
+        {% else %}
+        What changed since {{ sll.time_ago }}
+        {% endif %}
+    </p>
+
+    {# Stock moves on open positions #}
+    {% if sll.moves %}
+    <div class="since-row">
+        <span class="since-section-label">Moves</span>
+        {% for m in sll.moves %}
+        <a class="since-chip {% if m.positive %}up{% else %}down{% endif %}"
+           href="{{ url_for('position_detail', symbol=m.symbol) }}"
+           title="From ${{ '%.2f' % m.prior_price }} to ${{ '%.2f' % m.current_price }}">
+            <span class="sym">{{ m.symbol }}</span>
+            <span>{{ '+' if m.positive else '' }}{{ '%.2f' % m.delta_pct }}%</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Newly in the money — strongest signal, surface up top with stronger styling #}
+    {% if sll.newly_itm %}
+    <div class="since-row">
+        <span class="since-section-label">Newly ITM</span>
+        {% for opt in sll.newly_itm %}
+        <a class="since-chip warn"
+           href="{{ url_for('position_detail', symbol=opt.symbol) }}"
+           title="Stock moved across the {{ '%.2f' % opt.strike }} strike since your last visit">
+            <span class="sym">{{ opt.symbol }}</span>
+            <span>{{ opt.option_type|lower }} {{ '%.0f' % opt.strike }}</span>
+            {% if opt.days_to_exp is not none %}
+            <span class="text-muted">{{ opt.days_to_exp }}d</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Options that just entered the 7-day expiry window #}
+    {% if sll.newly_near_expiry %}
+    <div class="since-row">
+        <span class="since-section-label">Now expiring soon</span>
+        {% for opt in sll.newly_near_expiry %}
+        <a class="since-chip"
+           href="{{ url_for('position_detail', symbol=opt.symbol) }}">
+            <span class="sym">{{ opt.symbol }}</span>
+            <span>{{ opt.option_type|lower }} {{ '%.0f' % (opt.strike or 0) }}</span>
+            <span class="text-muted">{{ opt.days_to_exp }}d</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Trades that closed since #}
+    {% if sll.closed_trades %}
+    <div class="since-row">
+        <span class="since-section-label">Closed</span>
+        {% for t in sll.closed_trades %}
+        <a class="since-chip {% if t.positive %}up{% else %}down{% endif %}"
+           href="{{ url_for('position_detail', symbol=t.symbol) }}">
+            <span class="sym">{{ t.symbol }}</span>
+            {% if t.total_pnl is not none %}
+            <span>{{ '+' if t.positive else '' }}${{ '{:,.0f}'.format(t.total_pnl) }}</span>
+            {% endif %}
+            <span class="text-muted">{{ t.close_date }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Trades that opened since #}
+    {% if sll.opened_trades %}
+    <div class="since-row">
+        <span class="since-section-label">Opened</span>
+        {% for t in sll.opened_trades %}
+        <a class="since-chip"
+           href="{{ url_for('position_detail', symbol=t.symbol) }}">
+            <span class="sym">{{ t.symbol }}</span>
+            {% if t.strategy %}<span class="text-muted">{{ t.strategy }}</span>{% endif %}
+            <span class="text-muted">{{ t.open_date }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 
 {# ════════════════════════════════════
    ACCOUNT SNAPSHOT (daily hook)

@@ -187,6 +187,13 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_community_posts_visibility_created
         ON community_posts (visibility, created_at DESC)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS user_review_visits (
+            user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            last_visit_at  TIMESTAMPTZ NOT NULL,
+            prev_visit_at  TIMESTAMPTZ
+        )
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -672,6 +679,71 @@ def update_user_profile(user_id, **fields):
     except Exception as exc:
         _log.warning("update_user_profile failed: %s", exc)
         return False
+
+
+# ------------------------------------------------------------------
+# Review visit anchors  ("Since you last looked")
+#
+# We track two timestamps per user:
+#   prev_visit_at  → the visit BEFORE the current one (the one we diff against)
+#   last_visit_at  → the most recent visit (becomes prev on the next "real" visit)
+#
+# A "real" visit is one separated from last_visit_at by at least
+# REVIEW_VISIT_PROMOTE_GAP — otherwise rapid reloads would clobber the prev
+# anchor and make the diff strip useless.
+# ------------------------------------------------------------------
+from datetime import timedelta as _timedelta
+
+REVIEW_VISIT_PROMOTE_GAP = _timedelta(minutes=30)
+
+
+def get_review_visit(user_id):
+    """Return {'last_visit_at': dt, 'prev_visit_at': dt} or None if never visited."""
+    try:
+        row = fetch_one(
+            "SELECT last_visit_at, prev_visit_at FROM user_review_visits WHERE user_id = %s",
+            (user_id,),
+        )
+        return row
+    except Exception as exc:
+        _log.warning("get_review_visit failed: %s", exc)
+        return None
+
+
+def bump_review_visit(user_id, now):
+    """
+    Record a weekly-review visit. Debounced: if the prior last_visit_at is
+    within REVIEW_VISIT_PROMOTE_GAP, last_visit_at is NOT moved — that way a
+    burst of reloads doesn't reset the "since you last looked" anchor and
+    flatten the diff to nothing.
+
+    On a non-debounced visit, prior last_visit_at is rotated to prev_visit_at.
+
+    Returns the row state BEFORE the bump, so the route can use
+    prior['last_visit_at'] as the anchor to diff against.
+    """
+    prior = get_review_visit(user_id)
+    try:
+        if prior is None:
+            execute(
+                "INSERT INTO user_review_visits (user_id, last_visit_at, prev_visit_at) "
+                "VALUES (%s, %s, NULL) "
+                "ON CONFLICT (user_id) DO UPDATE SET last_visit_at = EXCLUDED.last_visit_at",
+                (user_id, now),
+            )
+        else:
+            last = prior.get("last_visit_at")
+            if last is None or (now - last) >= REVIEW_VISIT_PROMOTE_GAP:
+                execute(
+                    "UPDATE user_review_visits "
+                    "SET prev_visit_at = last_visit_at, last_visit_at = %s "
+                    "WHERE user_id = %s",
+                    (now, user_id),
+                )
+            # else: debounced reload, leave last_visit_at alone
+    except Exception as exc:
+        _log.warning("bump_review_visit failed: %s", exc)
+    return prior
 
 
 def get_user_by_username(username):
