@@ -201,11 +201,16 @@ from app.extensions import csrf, limiter
 csrf.init_app(app)
 limiter.init_app(app)
 
-# Initialize the database and seed users from env
+# Initialize the database and seed users from env.
+#
+# HAPPYTRADER_SKIP_DB_INIT=1 lets unit-test runs that import `app.*` (e.g.
+# tests/test_safe_next.py, tests/test_schwab_parsers.py) skip the Postgres
+# bootstrap. Production never sets it; Render always has DATABASE_URL.
 from app.models import init_db, seed_users_from_env, ensure_demo_user
-init_db()
-seed_users_from_env()
-ensure_demo_user()
+if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") != "1":
+    init_db()
+    seed_users_from_env()
+    ensure_demo_user()
 
 from app import routes
 from app import auth
