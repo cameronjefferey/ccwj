@@ -348,3 +348,37 @@ def admin_users():
             if u.strip()
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# /admin/feedback — beta feedback inbox
+# ---------------------------------------------------------------------------
+
+
+@app.route("/admin/feedback", methods=["GET"])
+@_admin_only
+def admin_feedback():
+    """Newest-first list of testers' feedback. Defaults to unresolved."""
+    from app.models import list_feedback
+
+    show = (request.args.get("show") or "open").strip().lower()
+    only_unresolved = show != "all"
+    rows = list_feedback(only_unresolved=only_unresolved, limit=200)
+    return render_template(
+        "admin_feedback.html",
+        title="Admin: feedback",
+        feedback_rows=rows,
+        only_unresolved=only_unresolved,
+    )
+
+
+@app.route("/admin/feedback/<int:feedback_id>/resolve", methods=["POST"])
+@_admin_only
+def admin_feedback_resolve(feedback_id):
+    """Toggle a single feedback row's resolved status."""
+    from app.models import mark_feedback_resolved
+
+    action = (request.form.get("action") or "resolve").strip().lower()
+    mark_feedback_resolved(feedback_id, resolved=(action != "reopen"))
+    show = request.form.get("show") or request.args.get("show") or "open"
+    return redirect(url_for("admin_feedback", show=show))

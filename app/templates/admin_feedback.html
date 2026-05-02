@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .af-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        color: #fff; padding: 1.4rem 1.6rem; border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .af-hero h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+    .af-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; }
+
+    .af-toolbar { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; }
+    .af-toolbar .seg { display: inline-flex; border: 1px solid #d6d3d1; border-radius: 8px; overflow: hidden; }
+    .af-toolbar .seg a {
+        padding: .4rem .9rem; font-size: .85rem; color: #44403c; text-decoration: none;
+        background: #fff; font-weight: 600;
+    }
+    .af-toolbar .seg a.active { background: #0f172a; color: #fff; }
+
+    .af-card {
+        background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        padding: 1rem 1.25rem; margin-bottom: .9rem;
+    }
+    .af-card.resolved { opacity: .6; }
+    .af-meta { font-size: .78rem; color: #78716c; display: flex; flex-wrap: wrap; gap: .9rem; margin-bottom: .55rem; }
+    .af-meta .who { font-weight: 700; color: #1c1917; }
+    .af-meta .anon { font-style: italic; color: #a8a29e; }
+    .af-meta .path { font-family: monospace; font-size: .75rem; color: #475569; word-break: break-all; }
+    .af-body { white-space: pre-wrap; font-size: .92rem; line-height: 1.45; color: #1c1917; }
+    .af-extra { font-size: .72rem; color: #a8a29e; margin-top: .5rem; word-break: break-all; }
+    .af-actions { display: flex; gap: .5rem; margin-top: .65rem; }
+    .af-actions button {
+        background: #0369a1; color: #fff; border: 0; padding: .25rem .8rem;
+        border-radius: 999px; font-size: .75rem; font-weight: 700; cursor: pointer;
+    }
+    .af-actions button:hover { background: #075985; }
+    .af-actions button.reopen { background: #57534e; }
+    .af-actions button.reopen:hover { background: #44403c; }
+    .af-empty { text-align: center; color: #78716c; padding: 2rem; font-style: italic; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="af-hero">
+    <h1>Feedback inbox</h1>
+    <p>Beta testers' bug reports, confusion, and feature requests. We read every one.</p>
+</div>
+
+<div class="af-toolbar">
+    <div class="seg">
+        <a href="{{ url_for('admin_feedback', show='open') }}"
+           class="{% if only_unresolved %}active{% endif %}">Open</a>
+        <a href="{{ url_for('admin_feedback', show='all') }}"
+           class="{% if not only_unresolved %}active{% endif %}">All</a>
+    </div>
+    <span class="text-muted small">{{ feedback_rows|length }} message{{ '' if feedback_rows|length == 1 else 's' }}</span>
+</div>
+
+{% if feedback_rows %}
+    {% for f in feedback_rows %}
+    <div class="af-card {% if f.resolved_at %}resolved{% endif %}">
+        <div class="af-meta">
+            <span>
+                {% if f.username %}
+                <span class="who">@{{ f.username }}</span>
+                {% else %}
+                <span class="anon">anonymous</span>
+                {% endif %}
+            </span>
+            <span title="{{ f.created_at }}">{{ f.created_at.strftime('%b %-d, %Y · %-I:%M %p') if f.created_at else '' }}</span>
+            {% if f.page_path %}
+            <span>on <span class="path">{{ f.page_path }}</span></span>
+            {% endif %}
+            {% if f.resolved_at %}
+            <span class="text-success">✓ resolved</span>
+            {% endif %}
+        </div>
+        <div class="af-body">{{ f.body }}</div>
+        {% if f.user_agent or f.ip_address %}
+        <div class="af-extra">
+            {% if f.user_agent %}{{ f.user_agent }}{% endif %}
+            {% if f.ip_address %}<br>{{ f.ip_address }}{% endif %}
+        </div>
+        {% endif %}
+        <div class="af-actions">
+            <form method="POST" action="{{ url_for('admin_feedback_resolve', feedback_id=f.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="show" value="{{ 'open' if only_unresolved else 'all' }}">
+                {% if f.resolved_at %}
+                <input type="hidden" name="action" value="reopen">
+                <button type="submit" class="reopen">Reopen</button>
+                {% else %}
+                <input type="hidden" name="action" value="resolve">
+                <button type="submit">Mark resolved</button>
+                {% endif %}
+            </form>
+            {% if f.username %}
+            <a href="{{ url_for('admin_impersonate', username=f.username) }}"
+               class="btn btn-sm btn-outline-secondary">Impersonate</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="af-card af-empty">
+        {% if only_unresolved %}No open feedback. <a href="{{ url_for('admin_feedback', show='all') }}">View all</a>?{% else %}No feedback yet — share the demo link with someone.{% endif %}
+    </div>
+{% endif %}
+{% endblock %}

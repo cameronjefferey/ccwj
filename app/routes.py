@@ -496,6 +496,65 @@ def pro_waitlist():
     return redirect(url_for("pricing"))
 
 
+# ------------------------------------------------------------------
+# Beta feedback inbox
+# ------------------------------------------------------------------
+
+
+@app.route("/feedback", methods=["POST"])
+@limiter.limit("5 per minute; 30 per hour")
+def submit_feedback():
+    """
+    Footer Send-Feedback button posts here.
+
+    Anonymous users CAN submit (we capture their IP for spam triage) so
+    a tester who hits a 500 on a logged-out page can still report it.
+    Demo user is allowed — feedback from the demo seat is signal, not
+    noise. We hard-cap the body at 4 KB in the model layer.
+
+    Returns JSON for XHR clients (the modal uses fetch) and redirects
+    for plain form submits so the route degrades gracefully without JS.
+    """
+    from app.models import save_feedback
+
+    body = (request.form.get("body") or request.form.get("message") or "").strip()
+    page_path = (request.form.get("page_path") or request.referrer or "")[:512]
+
+    user_id = current_user.id if current_user.is_authenticated else None
+    username = current_user.username if current_user.is_authenticated else None
+
+    wants_json = (
+        request.accept_mimetypes.best == "application/json"
+        or request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
+    )
+
+    if not body:
+        if wants_json:
+            return {"ok": False, "error": "Tell us what's up — the message can't be empty."}, 400
+        flash("Tell us what's up — the message can't be empty.", "warning")
+        return redirect(request.referrer or url_for("index"))
+
+    new_id = save_feedback(
+        user_id=user_id,
+        username=username,
+        body=body,
+        page_path=page_path or None,
+        user_agent=(request.headers.get("User-Agent") or "")[:512] or None,
+        ip_address=request.remote_addr,
+    )
+
+    if new_id is None:
+        if wants_json:
+            return {"ok": False, "error": "We couldn't save that just now. Try again in a minute."}, 500
+        flash("We couldn't save that just now. Try again in a minute.", "danger")
+        return redirect(request.referrer or url_for("index"))
+
+    if wants_json:
+        return {"ok": True, "id": new_id}
+    flash("Thanks — feedback received. We read every message.", "success")
+    return redirect(request.referrer or url_for("index"))
+
+
 @app.route("/faq")
 def faq():
     """FAQ page for marketing."""

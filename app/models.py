@@ -217,6 +217,27 @@ def init_db():
             prev_visit_at  TIMESTAMPTZ
         )
         """,
+        # Feedback inbox — anything testers want to flag (broken numbers,
+        # ugly mobile, "this is confusing"). Admin reads the table from
+        # /admin/feedback and acts on it. ON DELETE SET NULL so removing
+        # a user does not erase their bug reports.
+        """
+        CREATE TABLE IF NOT EXISTS feedback (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            username     TEXT,
+            body         TEXT NOT NULL,
+            page_path    TEXT,
+            user_agent   TEXT,
+            ip_address   TEXT,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            resolved_at  TIMESTAMPTZ
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_feedback_unresolved_created
+        ON feedback (created_at DESC) WHERE resolved_at IS NULL
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -1627,6 +1648,89 @@ def consume_password_reset_token(raw_token: str) -> int | None:
                 (row["id"],),
             )
             return int(row["user_id"])
+
+
+# ------------------------------------------------------------------
+# Feedback inbox (footer Send-Feedback button)
+# ------------------------------------------------------------------
+
+
+_MAX_FEEDBACK_LEN = 4000
+
+
+def save_feedback(
+    *,
+    user_id: int | None,
+    username: str | None,
+    body: str,
+    page_path: str | None,
+    user_agent: str | None,
+    ip_address: str | None,
+) -> int | None:
+    """Persist a feedback message. Returns the new row id, or None on
+    failure (DB unavailable, body empty, etc.). The body is truncated to
+    4 KB so a runaway form post can't blow up the table."""
+    clean_body = (body or "").strip()
+    if not clean_body:
+        return None
+    if len(clean_body) > _MAX_FEEDBACK_LEN:
+        clean_body = clean_body[:_MAX_FEEDBACK_LEN]
+    try:
+        row = execute_returning(
+            """INSERT INTO feedback
+               (user_id, username, body, page_path, user_agent, ip_address)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               RETURNING id""",
+            (
+                user_id,
+                (username or None),
+                clean_body,
+                (page_path or None),
+                (user_agent or None),
+                (ip_address or None),
+            ),
+        )
+        return int(row["id"]) if row else None
+    except Exception as exc:
+        _log.warning("save_feedback failed: %s", exc)
+        return None
+
+
+def list_feedback(*, only_unresolved: bool = False, limit: int = 100) -> list[dict]:
+    """Newest-first list for /admin/feedback."""
+    where = "WHERE resolved_at IS NULL " if only_unresolved else ""
+    try:
+        return fetch_all(
+            f"""SELECT id, user_id, username, body, page_path, user_agent,
+                       ip_address, created_at, resolved_at
+                FROM feedback
+                {where}
+                ORDER BY created_at DESC
+                LIMIT %s""",
+            (limit,),
+        )
+    except Exception as exc:
+        _log.warning("list_feedback failed: %s", exc)
+        return []
+
+
+def mark_feedback_resolved(feedback_id: int, resolved: bool = True) -> bool:
+    """Toggle resolved_at on a single row. Returns True on success."""
+    try:
+        if resolved:
+            execute(
+                "UPDATE feedback SET resolved_at = NOW() WHERE id = %s",
+                (feedback_id,),
+            )
+        else:
+            execute(
+                "UPDATE feedback SET resolved_at = NULL WHERE id = %s",
+                (feedback_id,),
+            )
+        return True
+    except Exception as exc:
+        _log.warning("mark_feedback_resolved failed: %s", exc)
+        return False
 
 
 def peek_password_reset_token(raw_token: str) -> int | None:
