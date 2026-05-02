@@ -260,6 +260,77 @@ class TestPasswordResetTokens:
         assert raw not in (row["token_hash"] or "")
 
 
+class TestLoginLockout:
+    """Per-username lockout: 5 failures within 15 min → cooldown."""
+
+    def test_under_threshold_returns_zero(self, db_conn):
+        from app.models import (
+            login_lockout_remaining_seconds,
+            record_login_attempt,
+        )
+
+        username = _unique_username("ll_under")
+        _create_user(db_conn, username)
+
+        for _ in range(3):
+            record_login_attempt(username, success=False, ip_address="10.0.0.1")
+        assert login_lockout_remaining_seconds(username) == 0
+
+    def test_threshold_triggers_cooldown(self, db_conn):
+        from app.models import (
+            LOGIN_FAILURE_LIMIT,
+            LOGIN_LOCKOUT_MINUTES,
+            login_lockout_remaining_seconds,
+            record_login_attempt,
+        )
+
+        username = _unique_username("ll_lock")
+        _create_user(db_conn, username)
+        for _ in range(LOGIN_FAILURE_LIMIT):
+            record_login_attempt(username, success=False, ip_address="10.0.0.1")
+
+        remaining = login_lockout_remaining_seconds(username)
+        assert remaining > 0
+        # Cap should be at most the configured window (sliding from now).
+        assert remaining <= LOGIN_LOCKOUT_MINUTES * 60 + 5
+
+    def test_successful_login_clears_failures(self, db_conn):
+        """A correct login resets the counter — typo'd legitimate users
+        do not accumulate a permanent hole toward lockout."""
+        from app.models import (
+            LOGIN_FAILURE_LIMIT,
+            login_lockout_remaining_seconds,
+            record_login_attempt,
+        )
+
+        username = _unique_username("ll_clear")
+        _create_user(db_conn, username)
+        for _ in range(LOGIN_FAILURE_LIMIT - 1):
+            record_login_attempt(username, success=False, ip_address="10.0.0.1")
+
+        record_login_attempt(username, success=True, ip_address="10.0.0.1")
+        # Now even a fresh batch of failures shouldn't already be locked.
+        for _ in range(LOGIN_FAILURE_LIMIT - 1):
+            record_login_attempt(username, success=False, ip_address="10.0.0.1")
+        assert login_lockout_remaining_seconds(username) == 0
+
+    def test_lookup_is_case_insensitive(self, db_conn):
+        """Lockout key normalizes username so 'Alice' and 'alice' are one."""
+        from app.models import (
+            LOGIN_FAILURE_LIMIT,
+            login_lockout_remaining_seconds,
+            record_login_attempt,
+        )
+
+        username = "Alice_" + uuid.uuid4().hex[:6]
+        _create_user(db_conn, username)
+        for _ in range(LOGIN_FAILURE_LIMIT):
+            record_login_attempt(username.lower(), success=False, ip_address="10.0.0.1")
+        # Querying with mixed case still sees the lock.
+        assert login_lockout_remaining_seconds(username.upper()) > 0
+        assert login_lockout_remaining_seconds(username) > 0
+
+
 class TestEmailAddressUniqueness:
     """users.email is globally unique (case-insensitive); also nullable."""
 

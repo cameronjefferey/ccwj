@@ -13,8 +13,10 @@ from app.models import (
     consume_password_reset_token,
     get_accounts_for_user,
     get_user_profile,
+    login_lockout_remaining_seconds,
     mint_password_reset_token,
     peek_password_reset_token,
+    record_login_attempt,
 )
 from app.utils import demo_block_writes, safe_internal_next
 
@@ -65,9 +67,46 @@ def login():
         password = request.form.get("password", "")
         remember = request.form.get("remember") == "on"
 
+        # Per-username lockout: stop credential-stuffing that cycles IPs.
+        # The IP-keyed flask-limiter cap above blocks one host hammering
+        # us; this catches a botnet probing a single account from many
+        # hosts. Cooldown is computed from the most recent failures so
+        # legitimate users naturally clear once the window slides.
+        remaining = login_lockout_remaining_seconds(username)
+        if remaining > 0:
+            mins = max(1, (remaining + 59) // 60)
+            # Don't disclose whether the username exists. Same message
+            # whether it's a real user mid-attack or a typo'd handle.
+            flash(
+                f"Too many failed attempts for that account. Try again in "
+                f"about {mins} minute{'s' if mins != 1 else ''}, or use "
+                f"'Forgot password' to reset.",
+                "danger",
+            )
+            return redirect(url_for("login"))
+
         user = User.get_by_username(username)
         if user is None or not user.check_password(password):
-            flash("Invalid username or password.", "danger")
+            record_login_attempt(
+                username,
+                success=False,
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get("User-Agent"),
+            )
+            # Re-check after recording: this attempt may have just tipped
+            # the username into lockout. Surface the imminent-lockout
+            # message at the right moment.
+            after_remaining = login_lockout_remaining_seconds(username)
+            if after_remaining > 0:
+                mins = max(1, (after_remaining + 59) // 60)
+                flash(
+                    f"Too many failed attempts for that account. Try again "
+                    f"in about {mins} minute{'s' if mins != 1 else ''}, or "
+                    f"use 'Forgot password' to reset.",
+                    "danger",
+                )
+            else:
+                flash("Invalid username or password.", "danger")
             nxt = safe_internal_next(
                 request.form.get("next") or request.args.get("next")
             )
@@ -75,6 +114,12 @@ def login():
                 return redirect(url_for("login", next=nxt))
             return redirect(url_for("login"))
 
+        record_login_attempt(
+            username,
+            success=True,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get("User-Agent"),
+        )
         login_user(user, remember=remember)
 
         # Prefer hidden form field (reliable on POST); fall back to query string.

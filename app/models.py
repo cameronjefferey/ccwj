@@ -217,6 +217,25 @@ def init_db():
             prev_visit_at  TIMESTAMPTZ
         )
         """,
+        # Login attempt log — feeds the per-username lockout. We keep a
+        # row per failed attempt rather than a single counter so we can
+        # (a) auto-clear after the cooldown without scheduled work
+        # (b) audit what happened during a brute-force probe.
+        # Successful logins prune the attacker's prior failures.
+        """
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id            SERIAL PRIMARY KEY,
+            username_lc   TEXT NOT NULL,
+            success       BOOLEAN NOT NULL,
+            ip_address    TEXT,
+            user_agent    TEXT,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_login_attempts_username_recent
+        ON login_attempts (username_lc, created_at DESC)
+        """,
         # Feedback inbox — anything testers want to flag (broken numbers,
         # ugly mobile, "this is confusing"). Admin reads the table from
         # /admin/feedback and acts on it. ON DELETE SET NULL so removing
@@ -1731,6 +1750,105 @@ def mark_feedback_resolved(feedback_id: int, resolved: bool = True) -> bool:
     except Exception as exc:
         _log.warning("mark_feedback_resolved failed: %s", exc)
         return False
+
+
+# ------------------------------------------------------------------
+# Login lockout
+# ------------------------------------------------------------------
+#
+# Why per-username, not per-IP?
+#   The /login endpoint already has an IP-keyed flask-limiter cap. That
+#   stops a script from hammering a single host. It does NOT stop an
+#   attacker who cycles IPs (proxy network, residential VPN) from
+#   guessing one user's password forever. Per-username gives the right
+#   defense: 5 wrong tries → 15 min cooldown for that name regardless
+#   of where the requests come from.
+#
+# Why a row-per-attempt instead of a counter?
+#   - The lockout window slides naturally: we just count failures in
+#     the last N minutes; old rows are ignored, no cron needed.
+#   - On successful login we delete the username's failure rows, so
+#     legitimate users with a typo never accumulate a hole.
+#   - The audit table doubles as evidence during incident review and
+#     can feed the admin Feedback view later.
+
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_LOCKOUT_MINUTES = 15
+
+
+def _login_username_key(username: str) -> str:
+    return (username or "").strip().lower()
+
+
+def record_login_attempt(
+    username: str,
+    success: bool,
+    *,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """Persist one login attempt. On success, also prune that username's
+    prior failure rows so the next typo doesn't trigger lockout."""
+    key = _login_username_key(username)
+    if not key:
+        return
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO login_attempts
+                       (username_lc, success, ip_address, user_agent)
+                       VALUES (%s, %s, %s, %s)""",
+                    (key, success, ip_address, (user_agent or "")[:512] or None),
+                )
+                if success:
+                    cur.execute(
+                        "DELETE FROM login_attempts "
+                        "WHERE username_lc = %s AND success = FALSE",
+                        (key,),
+                    )
+    except Exception as exc:
+        _log.warning("record_login_attempt failed: %s", exc)
+
+
+def login_lockout_remaining_seconds(username: str) -> int:
+    """Return cooldown seconds left for *username*, or 0 if not locked.
+
+    A username is locked when it has at least LOGIN_FAILURE_LIMIT failed
+    attempts within the most recent LOGIN_LOCKOUT_MINUTES window. The
+    'remaining' value is the time until the OLDEST failure inside that
+    window slides out, which is when the count drops back below the
+    limit. We return 0 (no lock) for unknown DB errors so a transient
+    Postgres hiccup never permanently locks anyone out.
+    """
+    key = _login_username_key(username)
+    if not key:
+        return 0
+    try:
+        rows = fetch_all(
+            """SELECT created_at FROM login_attempts
+               WHERE username_lc = %s
+                 AND success = FALSE
+                 AND created_at > NOW() - (%s || ' minutes')::interval
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (key, str(LOGIN_LOCKOUT_MINUTES), LOGIN_FAILURE_LIMIT),
+        )
+    except Exception as exc:
+        _log.warning("login_lockout_remaining_seconds failed: %s", exc)
+        return 0
+    if len(rows) < LOGIN_FAILURE_LIMIT:
+        return 0
+    oldest = rows[-1]["created_at"]
+    if oldest is None:
+        return 0
+    if oldest.tzinfo is None:
+        from datetime import timezone as _tz_local
+        oldest = oldest.replace(tzinfo=_tz_local.utc)
+    from datetime import datetime as _dt_local, timezone as _tz_local2
+    deadline = oldest + _td(minutes=LOGIN_LOCKOUT_MINUTES)
+    delta = (deadline - _dt_local.now(_tz_local2.utc)).total_seconds()
+    return max(0, int(delta))
 
 
 def peek_password_reset_token(raw_token: str) -> int | None:
