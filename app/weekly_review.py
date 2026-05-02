@@ -1261,6 +1261,18 @@ def weekly_review():
 
     from_upload = request.args.get("from_upload") == "1"
 
+    # Brand-new accounts have user_accounts == [] (an empty list, not None).
+    # Bounce them to /get-started BEFORE touching any per-user state
+    # (visit anchor, queries) so a user who never uploaded data doesn't
+    # get a "still being calculated" banner or a bumped last-visit
+    # timestamp. _redirect_if_no_accounts also short-circuits on
+    # ?from_upload=1 / ?from_sync=1 so the post-upload processing screen
+    # still works.
+    from app.routes import _redirect_if_no_accounts
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
+
     # ── Visit anchors for "Since you last looked" ──
     # bump_review_visit returns the row state BEFORE this request and
     # debounces rapid reloads, so prior_visit['last_visit_at'] is literally
@@ -1276,6 +1288,7 @@ def weekly_review():
         "monday":  "Monday Check",
         "midweek": "Today",
     }
+
     context = {
         "title": _titles.get(mode, "Weekly Review"),
         "mode": mode,

@@ -48,6 +48,28 @@ def _bq_parallel(client, queries):
     return results
 
 
+def _redirect_if_no_accounts():
+    """Bounce a freshly signed-up user to /get-started instead of letting
+    them land on a data-driven page where every BigQuery query gets
+    AND 1=0'd and the UI shows "we're calculating…" forever.
+
+    Returns a Flask redirect response when the current user has zero
+    linked accounts (and isn't an admin), or None when the caller should
+    continue rendering normally.
+    """
+    if current_user.is_authenticated and not is_admin(current_user.username):
+        if len(get_accounts_for_user(current_user.id)) == 0:
+            # Skip if they're already on /get-started or coming back from
+            # an upload; the upload-processing screen redirects through
+            # weekly-review with from_upload=1 during the 3–5 min lag.
+            if request.endpoint == "get_started":
+                return None
+            if request.args.get("from_upload") == "1" or request.args.get("from_sync") == "1":
+                return None
+            return redirect(url_for("get_started"))
+    return None
+
+
 def _user_account_list():
     """
     Return the list of accounts the current user is allowed to see,
@@ -652,7 +674,12 @@ def get_started():
     user_accounts = get_accounts_for_user(current_user.id)
     has_uploaded = len(user_accounts) > 0
 
-    # Check if data is actually available in BigQuery
+    # Check if data is actually available in BigQuery. We swallow the
+    # exception so a transient BQ outage doesn't break the onboarding
+    # page (the user can still see step 1/2/3 and the "refresh to check"
+    # link), but the failure is logged so the operator can spot a
+    # genuinely stuck pipeline. AGENTS.md flagged the silent pass as
+    # known debt — replace with a logged warning.
     has_data = False
     if has_uploaded:
         try:
@@ -661,8 +688,11 @@ def get_started():
             check_q = f"SELECT COUNT(*) AS cnt FROM `ccwj-dbt.analytics.positions_summary` {where}"
             result = client.query(check_q).to_dataframe()
             has_data = int(result.iloc[0]["cnt"]) > 0 if not result.empty else False
-        except Exception:
-            pass
+        except Exception as exc:
+            app.logger.warning(
+                "get_started has_data check failed for user_id=%s: %s",
+                current_user.id, exc,
+            )
 
     schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
     schwab_connected = bool(
@@ -692,6 +722,9 @@ def ping():
 @app.route("/positions")
 @login_required
 def positions():
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     acct_filter = _account_sql_and(user_accounts)
@@ -1546,6 +1579,9 @@ CHART_DATA_ALL_QUERY = """
 @app.route("/position/<symbol>")
 @login_required
 def position_detail(symbol):
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
 
@@ -3138,6 +3174,9 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
 @app.route("/symbols")
 @login_required
 def symbols_detail():
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     acct_filter = _account_sql_and(user_accounts)
@@ -3841,6 +3880,9 @@ INDUSTRIES_QUERY = """
 @app.route("/industries")
 @login_required
 def industries():
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     acct_filter = _account_sql_and(user_accounts)
@@ -4113,6 +4155,9 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
 @app.route("/strategy-fit")
 @login_required
 def strategy_fit():
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     acct_filter = _account_sql_and(user_accounts)

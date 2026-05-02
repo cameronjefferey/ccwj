@@ -219,6 +219,10 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
 @login_required
 def strategies():
     """Strategy performance — process-focused, trend-aware."""
+    from app.routes import _redirect_if_no_accounts
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     user_accounts = _user_account_list()
 
     selected_account = request.args.get("account", "")

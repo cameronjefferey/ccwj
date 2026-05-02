@@ -717,6 +717,10 @@ def _require_insights_feature():
 @login_required
 def insights():
     """Show coaching data + cached AI analysis."""
+    from app.routes import _redirect_if_no_accounts
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
 
