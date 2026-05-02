@@ -389,6 +389,35 @@
             </div>
 
             <div class="atlas-card">
+                <div class="atlas-card-h">Email</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint mb-3">
+                        Used only for password recovery. We never email marketing,
+                        share it, or sell it.
+                    </p>
+                    {% if not current_user.email %}
+                    <p class="text-warning small mb-3">
+                        <strong>Heads up:</strong> no email on file means you can't reset your password if you lose it. Add one below.
+                    </p>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('profile', tab='account') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="set_email">
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" name="email"
+                                   value="{{ current_user.email or '' }}"
+                                   placeholder="you@example.com" autocomplete="email">
+                        </div>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Save email
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="atlas-card">
                 <div class="atlas-card-h">Password</div>
                 <div class="atlas-card-b">
                     <form method="POST" action="{{ url_for('profile', tab='account') }}">

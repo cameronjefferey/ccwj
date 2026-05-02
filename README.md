@@ -128,7 +128,12 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
    Gunicorn timeout can kill the worker, exhaust the DB pool, and return 500s.)
 5. Run dbt (e.g. in a separate job or on deploy): `cd dbt && dbt seed && dbt build`
 6. Create users via the Render shell: `python -m flask create-user --username <name> --password <pw>`  
-   Lockout recovery: `python -m flask reset-password --username <name>`
+   Lockout recovery: `python -m flask reset-password --username <name>`  
+   Self-serve recovery: signed-up users can use the **Forgot password** link on
+   the login page. By default `EMAIL_BACKEND=log` prints the reset email to the
+   app log so the operator can paste it into Slack/SMS for the tester. To enable
+   real email delivery, set `EMAIL_BACKEND=smtp` plus the `EMAIL_SMTP_*` env
+   vars (see `.env.example`).
 
 #### Manual CSV upload (Schwab → GitHub → BigQuery)
 

@@ -92,6 +92,35 @@ def profile():
         if blocked:
             return blocked
         action = request.form.get("action", "")
+        if action == "set_email":
+            from app.auth import _validate_email
+
+            email_raw = request.form.get("email", "")
+            email, err = _validate_email(email_raw)
+            if err:
+                flash(err, "danger")
+                return redirect(url_for("profile", tab="account"))
+            # Allow clearing the email by submitting blank, but warn since
+            # losing email means losing self-serve recovery.
+            if email is None:
+                User.update_email(current_user.id, None)
+                flash(
+                    "Email removed. You won't be able to reset your password "
+                    "without contacting support.",
+                    "warning",
+                )
+                return redirect(url_for("profile", tab="account"))
+            existing = User.get_by_email(email)
+            if existing is not None and int(existing.id) != int(current_user.id):
+                flash(
+                    "That email is already in use on another account.",
+                    "danger",
+                )
+                return redirect(url_for("profile", tab="account"))
+            User.update_email(current_user.id, email)
+            flash("Email updated.", "success")
+            return redirect(url_for("profile", tab="account"))
+
         if action == "change_password":
             current_pw = request.form.get("current_password", "")
             new_pw = request.form.get("new_password", "")

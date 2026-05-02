@@ -187,6 +187,98 @@ class TestAccountNameClaim:
             add_account_for_user(intruder_id, f"BROKERAGE{suffix}")
 
 
+class TestPasswordResetTokens:
+    """One-time password reset tokens: single-use, expiring, hashed at rest."""
+
+    def test_mint_then_consume_returns_user_id(self, db_conn):
+        from app.models import (
+            consume_password_reset_token,
+            mint_password_reset_token,
+        )
+
+        user_id = _create_user(db_conn, _unique_username("rst_ok"))
+        raw = mint_password_reset_token(user_id, requester_ip="10.0.0.1")
+        assert isinstance(raw, str) and len(raw) > 20
+
+        consumed = consume_password_reset_token(raw)
+        assert consumed == user_id
+
+    def test_token_is_single_use(self, db_conn):
+        from app.models import (
+            consume_password_reset_token,
+            mint_password_reset_token,
+        )
+
+        user_id = _create_user(db_conn, _unique_username("rst_used"))
+        raw = mint_password_reset_token(user_id)
+
+        first = consume_password_reset_token(raw)
+        second = consume_password_reset_token(raw)
+        assert first == user_id
+        assert second is None
+
+    def test_unknown_token_returns_none(self):
+        from app.models import consume_password_reset_token
+
+        assert consume_password_reset_token("definitely-not-a-real-token") is None
+        assert consume_password_reset_token("") is None
+
+    def test_minting_revokes_prior_active_tokens(self, db_conn):
+        """If a user requests two reset emails in a row, only the latest
+        link should work; the older one is invalidated immediately."""
+        from app.models import (
+            consume_password_reset_token,
+            mint_password_reset_token,
+        )
+
+        user_id = _create_user(db_conn, _unique_username("rst_revoke"))
+        old = mint_password_reset_token(user_id)
+        new = mint_password_reset_token(user_id)
+
+        # Old link no longer works.
+        assert consume_password_reset_token(old) is None
+        # New link works once.
+        assert consume_password_reset_token(new) == user_id
+
+    def test_token_is_hashed_at_rest(self, db_conn):
+        """The raw URL token must never be stored in plaintext — a DB
+        leak would otherwise hand out reset access for every live link."""
+        from app.models import mint_password_reset_token
+
+        user_id = _create_user(db_conn, _unique_username("rst_hash"))
+        raw = mint_password_reset_token(user_id)
+
+        with db_conn.cursor() as cur:
+            cur.execute(
+                "SELECT token_hash FROM password_reset_tokens "
+                "WHERE user_id = %s ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            )
+            row = cur.fetchone()
+        assert row is not None
+        assert row["token_hash"] != raw
+        assert raw not in (row["token_hash"] or "")
+
+
+class TestEmailAddressUniqueness:
+    """users.email is globally unique (case-insensitive); also nullable."""
+
+    def test_lookup_by_email_is_case_insensitive(self, db_conn):
+        from app.models import User
+
+        user_id = _create_user(db_conn, _unique_username("em_case"))
+        unique = uuid.uuid4().hex[:6]
+        canonical = f"Foo.Bar.{unique}@Example.com"
+        User.update_email(user_id, canonical)
+
+        # Stored lowercased on update; lookup is case-insensitive both ways.
+        a = User.get_by_email(canonical.lower())
+        b = User.get_by_email(canonical.upper())
+        assert a is not None
+        assert b is not None
+        assert int(a.id) == int(b.id) == user_id
+
+
 class TestUserProfileIsolation:
     """User profile reads/writes must be scoped to current_user.id."""
 

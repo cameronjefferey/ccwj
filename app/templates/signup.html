@@ -112,9 +112,15 @@
                            placeholder="Choose a username" required {% if not invite_required %}autofocus {% endif %}minlength="3">
                 </div>
                 <div class="mb-3">
+                    <label for="email" class="form-label fw-semibold small">Email</label>
+                    <input type="email" class="form-control" id="email" name="email"
+                           placeholder="you@example.com" required autocomplete="email">
+                    <div class="form-text small">We only use this to recover your account if you forget your password.</div>
+                </div>
+                <div class="mb-3">
                     <label for="password" class="form-label fw-semibold small">Password</label>
                     <input type="password" class="form-control" id="password" name="password"
-                           placeholder="Choose a password" required minlength="8">
+                           placeholder="Choose a password" required minlength="8" autocomplete="new-password">
                     <div class="form-text small">At least 8 characters, with one letter and one number.</div>
                 </div>
                 <div class="mb-3">

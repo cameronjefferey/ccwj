@@ -41,8 +41,31 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id            SERIAL PRIMARY KEY,
             username      TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            email         TEXT
         )
+        """,
+        # Email is optional for legacy rows but unique when present, so two
+        # users can never share a recovery address. Index uses lower(email)
+        # so 'Foo@bar.com' and 'foo@bar.com' collide on signup.
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower
+        ON users (lower(email)) WHERE email IS NOT NULL
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash  TEXT NOT NULL UNIQUE,
+            expires_at  TIMESTAMPTZ NOT NULL,
+            used_at     TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            requester_ip TEXT
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_password_reset_user_active
+        ON password_reset_tokens (user_id) WHERE used_at IS NULL
         """,
         """
         CREATE TABLE IF NOT EXISTS user_accounts (
@@ -202,6 +225,7 @@ def init_db():
     _migrate_schwab_first_sync_column()
     _migrate_community_posts_strategy_column()
     _migrate_account_name_unique_index()
+    _migrate_users_email_column()
 
 
 def _migrate_schwab_first_sync_column():
@@ -227,6 +251,16 @@ def _migrate_community_posts_strategy_column():
         execute("ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS attachment_json TEXT")
     except Exception as e:
         _log.warning("community_posts attachment migration skipped: %s", e)
+
+
+def _migrate_users_email_column():
+    """Idempotent: add users.email column on databases created before
+    self-serve password recovery existed. The CREATE TABLE above already
+    declares it, so this only runs on legacy schemas."""
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
+    except Exception as exc:
+        _log.warning("users.email migration skipped: %s", exc)
 
 
 def _migrate_account_name_unique_index():
@@ -268,10 +302,11 @@ def _migrate_account_name_unique_index():
 class User(UserMixin):
     """Simple user model backed by Postgres."""
 
-    def __init__(self, id, username, password_hash):
+    def __init__(self, id, username, password_hash, email=None):
         self.id = id
         self.username = username
         self.password_hash = password_hash
+        self.email = email
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -280,29 +315,54 @@ class User(UserMixin):
     def _from_row(row):
         if not row:
             return None
-        return User(id=row["id"], username=row["username"], password_hash=row["password_hash"])
+        return User(
+            id=row["id"],
+            username=row["username"],
+            password_hash=row["password_hash"],
+            email=row.get("email") if isinstance(row, dict) else None,
+        )
 
     @staticmethod
     def get_by_id(user_id):
         return User._from_row(
-            fetch_one("SELECT id, username, password_hash FROM users WHERE id = %s", (user_id,))
+            fetch_one(
+                "SELECT id, username, password_hash, email FROM users WHERE id = %s",
+                (user_id,),
+            )
         )
 
     @staticmethod
     def get_by_username(username):
         return User._from_row(
             fetch_one(
-                "SELECT id, username, password_hash FROM users WHERE username = %s",
+                "SELECT id, username, password_hash, email FROM users WHERE username = %s",
                 (username,),
             )
         )
 
     @staticmethod
-    def create(username, password):
+    def get_by_email(email):
+        """Lookup is case-insensitive (mirrors uniq_users_email_lower).
+        Returns None when no row matches; treat that as 'no account' but do
+        not echo it back to the requester in /forgot-password to avoid
+        leaking which addresses are signed up."""
+        if not email:
+            return None
+        return User._from_row(
+            fetch_one(
+                "SELECT id, username, password_hash, email FROM users "
+                "WHERE lower(email) = lower(%s) LIMIT 1",
+                (email,),
+            )
+        )
+
+    @staticmethod
+    def create(username, password, email=None):
         password_hash = generate_password_hash(password)
+        clean_email = (email or "").strip() or None
         execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
-            (username, password_hash),
+            "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s)",
+            (username, password_hash, clean_email),
         )
 
     @staticmethod
@@ -311,6 +371,11 @@ class User(UserMixin):
             "UPDATE users SET password_hash = %s WHERE id = %s",
             (generate_password_hash(new_password), user_id),
         )
+
+    @staticmethod
+    def update_email(user_id, email):
+        clean = (email or "").strip() or None
+        execute("UPDATE users SET email = %s WHERE id = %s", (clean, user_id))
 
 
 # ------------------------------------------------------------------
@@ -1473,3 +1538,115 @@ def _seed_demo_mirror_scores(demo_user_id):
             discipline, intent_, risk_, consistency_, mirror,
             level, sentence,
         )
+
+
+# ------------------------------------------------------------------
+# Password reset tokens (self-serve recovery)
+# ------------------------------------------------------------------
+#
+# Flow:
+# 1. /forgot-password POST → mint a token (raw 32-byte URL-safe string).
+#    Email it as ?token=<raw>; persist only sha256(raw). A DB leak does
+#    not let an attacker forge reset URLs.
+# 2. User clicks /reset-password/<raw> → look up by sha256(raw); validate
+#    not used and not expired (1-hour default).
+# 3. POST sets the new password and marks token used. Token is
+#    single-use; revisiting the same link returns "expired".
+#
+# Rate limits live on the routes (auth.py).
+
+import hashlib as _hashlib
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+
+PASSWORD_RESET_TOKEN_TTL = _td(hours=1)
+
+
+def _hash_reset_token(raw_token: str) -> str:
+    """sha256 hex of the URL-safe raw token. Stored in DB."""
+    return _hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def mint_password_reset_token(user_id: int, requester_ip: str | None = None) -> str:
+    """Create a single-use reset token and return the raw value to email
+    to the user. Existing unused tokens for the same user are invalidated
+    so an old email link can't override the most recent request."""
+    raw = _secrets.token_urlsafe(32)
+    token_hash = _hash_reset_token(raw)
+    expires_at = _dt.now(_tz.utc) + PASSWORD_RESET_TOKEN_TTL
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Revoke any older live tokens for this user. The path uses
+            # the partial index idx_password_reset_user_active.
+            cur.execute(
+                "UPDATE password_reset_tokens SET used_at = NOW() "
+                "WHERE user_id = %s AND used_at IS NULL",
+                (user_id,),
+            )
+            cur.execute(
+                """INSERT INTO password_reset_tokens
+                   (user_id, token_hash, expires_at, requester_ip)
+                   VALUES (%s, %s, %s, %s)""",
+                (user_id, token_hash, expires_at, requester_ip),
+            )
+    return raw
+
+
+def consume_password_reset_token(raw_token: str) -> int | None:
+    """Validate and atomically consume a token. Returns the owning
+    user_id on success, or None if the token is unknown, expired, or
+    already used. Single transaction so two clients with the same link
+    can't both succeed."""
+    if not raw_token:
+        return None
+    token_hash = _hash_reset_token(raw_token)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, user_id, expires_at, used_at
+                   FROM password_reset_tokens
+                   WHERE token_hash = %s
+                   FOR UPDATE""",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            if row["used_at"] is not None:
+                return None
+            expires_at = row["expires_at"]
+            now = _dt.now(_tz.utc)
+            # psycopg may give a naive or aware datetime; compare as aware.
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=_tz.utc)
+            if now > expires_at:
+                return None
+            cur.execute(
+                "UPDATE password_reset_tokens SET used_at = NOW() WHERE id = %s",
+                (row["id"],),
+            )
+            return int(row["user_id"])
+
+
+def peek_password_reset_token(raw_token: str) -> int | None:
+    """Read-only check used by the GET form: is the token still valid?
+    Does NOT consume the token; the consume happens on POST."""
+    if not raw_token:
+        return None
+    token_hash = _hash_reset_token(raw_token)
+    row = fetch_one(
+        """SELECT user_id, expires_at, used_at
+           FROM password_reset_tokens
+           WHERE token_hash = %s LIMIT 1""",
+        (token_hash,),
+    )
+    if not row or row["used_at"] is not None:
+        return None
+    expires_at = row["expires_at"]
+    now = _dt.now(_tz.utc)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=_tz.utc)
+    if now > expires_at:
+        return None
+    return int(row["user_id"])

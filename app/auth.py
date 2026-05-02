@@ -1,12 +1,37 @@
 import hmac
 import os
+import re
 import click
 from flask import render_template, redirect, url_for, request, flash, abort
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
+from app.email import send_password_reset_email
 from app.extensions import limiter
-from app.models import User, get_accounts_for_user, get_user_profile
+from app.models import (
+    PASSWORD_RESET_TOKEN_TTL,
+    User,
+    consume_password_reset_token,
+    get_accounts_for_user,
+    get_user_profile,
+    mint_password_reset_token,
+    peek_password_reset_token,
+)
 from app.utils import demo_block_writes, safe_internal_next
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_email(raw):
+    """Lightweight format check. Returns (cleaned_email_or_None, error_or_None).
+    Empty input returns (None, None) so the caller can decide if email is
+    required for that flow."""
+    email = (raw or "").strip().lower()
+    if not email:
+        return None, None
+    if len(email) > 320 or not _EMAIL_RE.match(email):
+        return None, "That email address doesn't look right."
+    return email, None
 
 # Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
 _LANDING = {
@@ -91,6 +116,7 @@ def signup():
         password = request.form.get("password", "")
         confirm = request.form.get("confirm", "")
         invite = (request.form.get("invite_code", "") or "").strip()
+        email_raw = request.form.get("email", "")
 
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
         # form value must match exactly. compare_digest avoids leaking the
@@ -103,6 +129,30 @@ def signup():
 
         if not username or not password:
             flash("Username and password are required.", "danger")
+            return redirect(url_for("signup"))
+
+        # Email is required for new accounts so testers always have a
+        # self-service password recovery path. Existing pre-email rows in
+        # Postgres keep working — we only enforce it on signup.
+        email, email_err = _validate_email(email_raw)
+        if email_err:
+            flash(email_err, "danger")
+            return redirect(url_for("signup"))
+        if not email:
+            flash(
+                "Please add an email so you can recover your account if you "
+                "forget your password.",
+                "danger",
+            )
+            return redirect(url_for("signup"))
+        if User.get_by_email(email):
+            # Generic message: don't confirm to a stranger which addresses
+            # are signed up. They can recover via /forgot-password.
+            flash(
+                "That email is already in use. If it's yours, sign in or "
+                "use 'Forgot password' to recover.",
+                "danger",
+            )
             return redirect(url_for("signup"))
 
         if len(username) < 3:
@@ -122,7 +172,7 @@ def signup():
             flash("That username is already taken.", "danger")
             return redirect(url_for("signup"))
 
-        User.create(username, password)
+        User.create(username, password, email=email)
         user = User.get_by_username(username)
         login_user(user, remember=False)
         flash("Welcome! You're signed in.", "success")
@@ -193,6 +243,127 @@ def settings():
         User.update_password(current_user.id, new_pw)
         flash("Password updated successfully.", "success")
         return redirect(url_for("profile", tab="account"))
+
+
+# ------------------------------------------------------------------
+# Password recovery (email-based)
+# ------------------------------------------------------------------
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 20 per hour", methods=["POST"])
+def forgot_password():
+    """Step 1: user submits email → we mint a one-time token and email it.
+
+    The response is identical whether the email matches a real account or
+    not — we never confirm membership to an anonymous requester. That's
+    why the same flash + redirect runs in both branches below.
+
+    Per-IP rate limit (anonymous endpoint) keeps this from being a probe
+    for which addresses are signed up.
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for("weekly_review"))
+
+    if request.method == "POST":
+        email_raw = request.form.get("email", "")
+        email, err = _validate_email(email_raw)
+        if err or not email:
+            # Don't echo "no email" vs "bad format" differently here either.
+            flash(
+                "If that email is on file, we sent a password-reset link. "
+                "Check your inbox (and spam) within a few minutes.",
+                "info",
+            )
+            return redirect(url_for("forgot_password"))
+
+        user = User.get_by_email(email)
+        if user is not None:
+            # Demo user is shared; refuse to send anyone a reset link for it.
+            if (user.username or "").lower() == "demo":
+                app.logger.info(
+                    "forgot_password: ignoring reset request for the shared "
+                    "demo account (requester_ip=%s).",
+                    request.remote_addr,
+                )
+            else:
+                try:
+                    token = mint_password_reset_token(
+                        user.id, requester_ip=request.remote_addr
+                    )
+                    reset_url = url_for(
+                        "reset_password", token=token, _external=True
+                    )
+                    send_password_reset_email(
+                        to=user.email,
+                        username=user.username,
+                        reset_url=reset_url,
+                        ttl_minutes=int(
+                            PASSWORD_RESET_TOKEN_TTL.total_seconds() // 60
+                        ),
+                    )
+                except Exception as exc:
+                    # Failed mint or send: log but don't tell the requester
+                    # (would leak account existence). They can retry.
+                    app.logger.exception(
+                        "forgot_password mint/send failed for user_id=%s: %s",
+                        user.id, exc,
+                    )
+
+        flash(
+            "If that email is on file, we sent a password-reset link. "
+            "Check your inbox (and spam) within a few minutes.",
+            "info",
+        )
+        return redirect(url_for("forgot_password"))
+
+    return render_template("forgot_password.html", title="Forgot Password")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+@limiter.limit("10 per minute; 30 per hour", methods=["POST"])
+def reset_password(token):
+    """Step 2: user opens the email link, picks a new password.
+
+    GET peeks (read-only) at the token so we can show 'expired link' UX
+    without burning the token. POST consumes the token in a single
+    transaction so two parallel clicks can't both succeed.
+    """
+    if current_user.is_authenticated:
+        # Re-using a reset link while signed in is almost never what you
+        # want; bounce them to settings instead of letting an attacker
+        # who already hijacked a session also rotate the password.
+        return redirect(url_for("profile", tab="account"))
+
+    target_user_id = peek_password_reset_token(token)
+    if target_user_id is None:
+        flash(
+            "That reset link is invalid or expired. Request a new one.",
+            "danger",
+        )
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        new_pw = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        valid, err = _validate_password(new_pw)
+        if not valid:
+            flash(err, "danger")
+            return redirect(url_for("reset_password", token=token))
+        if new_pw != confirm:
+            flash("New passwords do not match.", "danger")
+            return redirect(url_for("reset_password", token=token))
+
+        consumed_user_id = consume_password_reset_token(token)
+        if consumed_user_id is None:
+            # Race: another tab consumed it between peek and consume.
+            flash("That reset link just expired. Request a new one.", "danger")
+            return redirect(url_for("forgot_password"))
+        User.update_password(consumed_user_id, new_pw)
+        flash("Password updated. Sign in with your new password.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html", title="Set a new password", token=token)
 
 
 # ------------------------------------------------------------------
