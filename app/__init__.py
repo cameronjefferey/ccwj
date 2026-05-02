@@ -68,6 +68,8 @@ def _inject_feature_flags():
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
         "is_admin_user": is_admin_user,
+        "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
+        "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
     }
 
 

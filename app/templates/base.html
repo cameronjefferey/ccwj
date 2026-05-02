@@ -233,9 +233,13 @@
                     <li class="nav-item py-1 py-lg-0">
                         <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('login') }}">Sign In</a>
                     </li>
+                    {% if signup_enabled %}
                     <li class="nav-item ps-lg-1 py-1 py-lg-0">
-                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('signup') }}">Sign Up</a>
+                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('signup') }}">
+                            {% if signup_invite_required %}Sign Up (invite){% else %}Sign Up{% endif %}
+                        </a>
                     </li>
+                    {% endif %}
                 </ul>
                 {% endif %}
             </div>
@@ -246,8 +250,12 @@
     <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
          style="background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%); color: #fff;">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span>You're exploring the demo with sample data. No sign-up required.</span>
-            <a href="{{ url_for('signup') }}" class="btn btn-light btn-sm">Create account to upload your own</a>
+            <span>You're exploring the demo with sample data.{% if not signup_invite_required %} No sign-up required.{% endif %}</span>
+            {% if signup_enabled %}
+            <a href="{{ url_for('signup') }}" class="btn btn-light btn-sm">
+                {% if signup_invite_required %}Have an invite? Create your account{% else %}Create account to upload your own{% endif %}
+            </a>
+            {% endif %}
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     </div>
@@ -279,7 +287,11 @@
             <div class="d-flex flex-wrap justify-content-center gap-4">
                 <a href="{{ url_for('demo_start') }}">Try Demo</a>
                 <a href="{{ url_for('login') }}">Sign In</a>
-                <a href="{{ url_for('signup') }}">Create Account</a>
+                {% if signup_enabled %}
+                <a href="{{ url_for('signup') }}">
+                    {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
+                </a>
+                {% endif %}
                 <a href="{{ url_for('pricing') }}">Pricing</a>
                 <a href="{{ url_for('faq') }}">FAQ</a>
             </div>

@@ -122,10 +122,14 @@
                     </span>
                 </button>
             </form>
+            {% if signup_enabled %}
             <div class="text-center mt-3">
                 <span class="text-muted small">Don't have an account?</span>
-                <a href="{{ url_for('signup') }}" class="small fw-semibold text-decoration-none">Sign up</a>
+                <a href="{{ url_for('signup') }}" class="small fw-semibold text-decoration-none">
+                    {% if signup_invite_required %}Sign up (invite){% else %}Sign up{% endif %}
+                </a>
             </div>
+            {% endif %}
         </div>
     </div>
 

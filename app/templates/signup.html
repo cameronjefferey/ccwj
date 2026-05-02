@@ -97,10 +97,19 @@
 
             <form id="signupForm" method="POST" action="{{ url_for('signup') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if invite_required %}
+                <div class="mb-3">
+                    <label for="invite_code" class="form-label fw-semibold small">Invite Code</label>
+                    <input type="text" class="form-control" id="invite_code" name="invite_code"
+                           placeholder="Paste your invite code" required autocomplete="off"
+                           autocapitalize="none" spellcheck="false">
+                    <div class="form-text small">HappyTrader is in closed beta. You'll find this code in the email or message that invited you.</div>
+                </div>
+                {% endif %}
                 <div class="mb-3">
                     <label for="username" class="form-label fw-semibold small">Username</label>
                     <input type="text" class="form-control" id="username" name="username"
-                           placeholder="Choose a username" required autofocus minlength="3">
+                           placeholder="Choose a username" required {% if not invite_required %}autofocus {% endif %}minlength="3">
                 </div>
                 <div class="mb-3">
                     <label for="password" class="form-label fw-semibold small">Password</label>

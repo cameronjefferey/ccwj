@@ -90,7 +90,11 @@
 
         <div class="text-center mt-4 mb-5 d-flex gap-3 justify-content-center flex-wrap">
             <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary btn-lg px-4">Try Demo</a>
-            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg px-4">Create Free Account</a>
+            {% if signup_enabled %}
+            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg px-4">
+                {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
+            </a>
+            {% endif %}
         </div>
     </div>
 </div>

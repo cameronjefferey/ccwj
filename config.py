@@ -29,8 +29,14 @@ class Config:
     # CSRF (Flask-WTF). Tests set WTF_CSRF_ENABLED=false via app.config in conftest.
     WTF_CSRF_ENABLED = _env_bool("WTF_CSRF_ENABLED", "true")
 
-    # Open registration. Set SIGNUP_ENABLED=false for invite-only.
+    # Open registration. Set SIGNUP_ENABLED=false to hide /signup entirely.
     SIGNUP_ENABLED = _env_bool("SIGNUP_ENABLED", "true")
+
+    # Soft gate: if SIGNUP_INVITE_CODE is set, /signup is reachable but the
+    # form requires a matching code (compare with hmac.compare_digest). Empty
+    # string = no gate (open signup, current behavior). Use this for closed
+    # beta with strangers without flipping SIGNUP_ENABLED off entirely.
+    SIGNUP_INVITE_CODE = (os.environ.get("SIGNUP_INVITE_CODE", "") or "").strip()
 
     # Session / remember-me cookies
     SESSION_COOKIE_HTTPONLY = True

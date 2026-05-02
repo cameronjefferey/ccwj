@@ -1,3 +1,4 @@
+import hmac
 import os
 import click
 from flask import render_template, redirect, url_for, request, flash, abort
@@ -75,6 +76,7 @@ def register_redirect():
 
 
 @app.route("/signup", methods=["GET", "POST"])
+@limiter.limit("10 per minute; 30 per hour", methods=["POST"])
 def signup():
     if not app.config.get("SIGNUP_ENABLED", True):
         abort(404)
@@ -82,10 +84,22 @@ def signup():
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
 
+    invite_required = bool(app.config.get("SIGNUP_INVITE_CODE", ""))
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         confirm = request.form.get("confirm", "")
+        invite = (request.form.get("invite_code", "") or "").strip()
+
+        # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
+        # form value must match exactly. compare_digest avoids leaking the
+        # code length via early-return timing.
+        if invite_required:
+            expected = app.config.get("SIGNUP_INVITE_CODE", "")
+            if not invite or not hmac.compare_digest(invite, expected):
+                flash("That invite code isn't valid.", "danger")
+                return redirect(url_for("signup"))
 
         if not username or not password:
             flash("Username and password are required.", "danger")
@@ -120,7 +134,11 @@ def signup():
             next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
-    return render_template("signup.html", title="Sign Up")
+    return render_template(
+        "signup.html",
+        title="Sign Up",
+        invite_required=invite_required,
+    )
 
 
 @app.route("/logout", methods=["POST"])

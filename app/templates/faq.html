@@ -187,8 +187,13 @@
         </p>
         <p class="text-center text-muted small mt-2">
             <a href="{{ url_for('index') }}">Back to Home</a> &middot;
-            <a href="{{ url_for('pricing') }}">Pricing</a> &middot;
-            <a href="{{ url_for('signup') }}">Create Account</a>
+            <a href="{{ url_for('pricing') }}">Pricing</a>
+            {% if signup_enabled %}
+            &middot;
+            <a href="{{ url_for('signup') }}">
+                {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
+            </a>
+            {% endif %}
         </p>
     </div>
 </div>

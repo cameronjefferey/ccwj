@@ -150,9 +150,18 @@
     </p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
         <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
-        <a href="{{ url_for('signup') }}" class="btn btn-outline-light">Create Free Account</a>
+        {% if signup_enabled %}
+        <a href="{{ url_for('signup') }}" class="btn btn-outline-light">
+            {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
+        </a>
+        {% endif %}
         <a href="{{ url_for('login') }}" class="btn btn-outline-light">Sign In</a>
     </div>
+    {% if signup_invite_required %}
+    <p class="small mt-3 mb-0" style="color: rgba(255,255,255,.75)">
+        Closed beta &mdash; account creation requires an invite code. Try the demo to look around.
+    </p>
+    {% endif %}
 </div>
 
 {# ── How it works ── #}
@@ -272,7 +281,11 @@
     <p class="mb-0">Try the demo with sample data—no signup. Or create a free account to upload your own trades.</p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
         <a href="{{ url_for('demo_start') }}" class="btn btn-light btn-lg px-4 fw-semibold">Try Demo</a>
-        <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">Create Free Account</a>
+        {% if signup_enabled %}
+        <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">
+            {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
+        </a>
+        {% endif %}
     </div>
 </div>
 
@@ -283,7 +296,11 @@
     <div class="d-flex flex-wrap justify-content-center gap-4">
         <a href="{{ url_for('demo_start') }}">Try Demo</a>
         <a href="{{ url_for('login') }}">Sign In</a>
-        <a href="{{ url_for('signup') }}">Create Account</a>
+        {% if signup_enabled %}
+        <a href="{{ url_for('signup') }}">
+            {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
+        </a>
+        {% endif %}
         <a href="{{ url_for('pricing') }}">Pricing</a>
         <a href="{{ url_for('faq') }}">FAQ</a>
         <a href="{{ url_for('privacy') }}">Privacy</a>

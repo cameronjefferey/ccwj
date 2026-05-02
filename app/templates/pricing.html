@@ -80,7 +80,11 @@
                         <li>AI Coach (insights &amp; chat)</li>
                         <li>Schwab Connect or CSV upload</li>
                     </ul>
-                    <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">Create Free Account</a>
+                    {% if signup_enabled %}
+                    <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
+                        {% if signup_invite_required %}Sign Up (invite required){% else %}Create Free Account{% endif %}
+                    </a>
+                    {% endif %}
                     <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
                 </div>
             </div>
