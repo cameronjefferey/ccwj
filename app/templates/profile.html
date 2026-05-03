@@ -341,7 +341,7 @@
                     <ul class="list-unstyled mb-3">
                         {% for c in schwab_connections %}
                         <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="account-badge mb-0">{{ c.account_name or c.account_number }}</span>
+                            <span class="account-badge mb-0">{{ c.display_nickname or c.account_name or c.account_number }}</span>
                             <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="account_number" value="{{ c.account_number }}">
@@ -351,7 +351,7 @@
                         </li>
                         {% endfor %}
                     </ul>
-                    <a href="{{ url_for('schwab_accounts') }}" class="btn btn-outline-secondary btn-sm">Manage Schwab accounts</a>
+                    <a href="{{ url_for('schwab_accounts') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
                     {% else %}
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

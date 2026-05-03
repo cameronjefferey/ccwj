@@ -39,16 +39,27 @@
     .schwab-row:first-child { padding-top: 0; }
     .schwab-row .who { flex: 1 1 220px; }
     .schwab-row .who .name { font-weight: 600; color: #0f172a; }
+    .schwab-row .who .label { font-size: .8125rem; color: #475569; }
     .schwab-row .who .num { font-size: .8125rem; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .schwab-row .meta { font-size: .8125rem; color: #475569; }
     .schwab-row form { margin: 0; }
     .schwab-row .nick {
         flex: 1 1 220px;
+        display: flex;
+        gap: .4rem;
+        align-items: center;
     }
     .schwab-row .nick input {
-        width: 100%;
+        flex: 1 1 auto;
         font-size: .875rem;
         padding: .35rem .55rem;
+    }
+    .schwab-row .nick .btn { white-space: nowrap; }
+    .schwab-row .nick .nick-hint {
+        flex-basis: 100%;
+        font-size: .75rem;
+        color: #64748b;
+        margin: 0;
     }
     .empty-hint {
         color: #6b7280;
@@ -72,13 +83,33 @@
 
     <div class="schwab-card">
         <h2>Connected accounts</h2>
+        <p class="empty-hint mb-3">
+            Add a nickname (e.g. <em>Roth IRA</em>, <em>Joint brokerage</em>) so you
+            can tell your accounts apart. The nickname is just for display —
+            your synced data stays linked to the same account underneath.
+        </p>
         {% if connected_accounts %}
         {% for c in connected_accounts %}
+        {% set heading = c.display_nickname or c.account_name %}
+        {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
         <div class="schwab-row">
             <div class="who">
-                <div class="name">{{ c.account_name }}</div>
+                <div class="name">{{ heading }}</div>
+                {% if show_label %}
+                <div class="label">{{ c.account_name }}</div>
+                {% endif %}
                 <div class="num">{{ c.account_number }}</div>
             </div>
+            <form method="POST" action="{{ url_for('schwab_accounts_nickname') }}" class="nick">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="account_number" value="{{ c.account_number }}">
+                <input type="text" name="display_nickname" maxlength="80"
+                       class="form-control form-control-sm"
+                       placeholder="Add a nickname"
+                       value="{{ c.display_nickname or '' }}"
+                       aria-label="Nickname for {{ c.account_name }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+            </form>
             <div class="meta">
                 {% if c.first_sync_completed %}
                 <span class="badge text-bg-light">Synced before</span>

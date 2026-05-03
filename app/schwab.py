@@ -18,6 +18,7 @@ from app.models import (
     mark_schwab_first_sync_completed,
     save_schwab_connection,
     update_schwab_account_hash,
+    update_schwab_connection_nickname,
     update_schwab_token,
     update_schwab_tokens_for_user,
     add_account_for_user,
@@ -813,14 +814,18 @@ def schwab_accounts():
         if a["account_number"] and a["account_number"] not in connected_numbers
     ]
     # Decorate the connected list with default-display names so the template
-    # doesn't have to do that work.
+    # doesn't have to do that work. ``account_name`` stays as the BigQuery
+    # tenancy key; ``display_nickname`` is the user-editable label that the
+    # template shows as the primary heading.
     connected = []
     for row in connected_rows:
         number = str(row.get("account_number") or "")
         label = (row.get("account_name") or "").strip() or _schwab_default_account_label(number)
+        nickname = (row.get("display_nickname") or "").strip()
         connected.append({
             "account_number": number,
             "account_name": label,
+            "display_nickname": nickname,
             "first_sync_completed": bool(row.get("schwab_first_sync_completed")),
         })
 
@@ -917,6 +922,43 @@ def schwab_accounts_add():
         f"Added {label}. Use Sync now on this page to pull its history.",
         "success",
     )
+    return redirect(url_for("schwab_accounts"))
+
+
+@app.route("/schwab/accounts/nickname", methods=["POST"])
+@login_required
+def schwab_accounts_nickname():
+    """
+    Save (or clear) a display-only nickname for one of the user's Schwab
+    connections. The underlying ``account_name`` — which is the BigQuery
+    tenancy key — is intentionally untouched so existing warehouse rows
+    keep matching this user. The nickname only changes how the account
+    is labeled in the front end (manage page, sync card, etc.).
+    """
+    requested_number = (request.form.get("account_number") or "").strip()
+    nickname_raw = request.form.get("display_nickname", "")
+    if not requested_number:
+        flash("We couldn't tell which account you wanted to rename.", "warning")
+        return redirect(url_for("schwab_accounts"))
+
+    existing = get_schwab_connection(current_user.id, requested_number)
+    if not existing:
+        # Defense: only let a user rename a connection they actually own.
+        flash(
+            "That Schwab account isn't connected to your login. "
+            "Refresh this page and try again.",
+            "warning",
+        )
+        return redirect(url_for("schwab_accounts"))
+
+    update_schwab_connection_nickname(
+        current_user.id, requested_number, nickname_raw
+    )
+    cleaned = (nickname_raw or "").strip()
+    if cleaned:
+        flash(f"Saved nickname “{cleaned[:80]}”.", "success")
+    else:
+        flash("Cleared nickname.", "info")
     return redirect(url_for("schwab_accounts"))
 
 

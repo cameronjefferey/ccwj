@@ -108,7 +108,7 @@
                     {% if schwab_connections %}
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                         <span class="badge text-bg-success">
-                            Connected{% for c in schwab_connections %}: {{ c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
+                            Connected{% for c in schwab_connections %}: {{ c.display_nickname or c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
                         </span>
                     </div>
                     <p class="small text-muted mb-2">Use <strong>Profile → Accounts &amp; login</strong> to choose how far back the first sync goes, or run a one-time full history import.</p>
