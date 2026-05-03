@@ -135,8 +135,10 @@
             <a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="{{ url_for('profile', tab='overview') }}">Overview</a>
             <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>
             <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
+            {% if community_enabled %}
             <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">Community</a>
             <a class="nav-link {% if tab == 'published' %}active{% endif %}" href="{{ url_for('profile', tab='published') }}">Shared trades</a>
+            {% endif %}
         </nav>
 
         <div>

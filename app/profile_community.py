@@ -8,6 +8,39 @@ from flask import abort, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user, login_required
 
 from app import app
+
+# Endpoints that make up the community surface. When COMMUNITY_ENABLED is off
+# every one of these 404s and any leftover link in a template (or external
+# bookmark) becomes a hard "page not found" instead of an empty/broken page.
+# The /profile route itself is *not* in here: it stays usable for preferences,
+# account, security; only the community/published tabs inside profile.html are
+# hidden + redirected (handled below in the GET handler).
+_COMMUNITY_ENDPOINTS = frozenset({
+    "community",
+    "community_post_create",
+    "community_my_trades",
+    "community_post_delete",
+    "community_post_visibility",
+    "public_trader_profile",
+    "follow_trader",
+    "unfollow_trader",
+    "community_publish_trade_route",
+})
+
+
+@app.before_request
+def _require_community_feature():
+    """404 every community endpoint when the feature flag is off.
+
+    Mirrors the pattern used by /insights (`_require_insights_feature` in
+    app/insights.py) so behaviour stays consistent between the two
+    "behind-a-flag while we iterate" surfaces.
+    """
+    if app.config.get("COMMUNITY_ENABLED", False):
+        return None
+    if request.endpoint in _COMMUNITY_ENDPOINTS:
+        abort(404)
+    return None
 from app.bigquery_client import get_bigquery_client
 from app.utils import demo_block_writes
 from app.models import (
@@ -86,6 +119,8 @@ def profile():
     tab = request.args.get("tab", "overview")
     if tab not in ("overview", "preferences", "account", "community", "published"):
         tab = "overview"
+    if tab in ("community", "published") and not app.config.get("COMMUNITY_ENABLED", False):
+        return redirect(url_for("profile", tab="overview"))
 
     if request.method == "POST":
         blocked = demo_block_writes("profile and account settings")
@@ -142,6 +177,8 @@ def profile():
         if action == "save_profile":
             settings_tab = (request.form.get("settings_tab") or "").strip().lower()
             if settings_tab == "community":
+                if not app.config.get("COMMUNITY_ENABLED", False):
+                    abort(404)
                 visibility = (request.form.get("profile_visibility") or "private").strip().lower()
                 if visibility not in _ALLOWED_VISIBILITY:
                     visibility = "private"

@@ -1216,7 +1216,9 @@
                     <th>Strategy</th>
                     <th>Date</th>
                     <th class="text-end">P&amp;L</th>
+                    {% if community_enabled %}
                     <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -1242,6 +1244,7 @@
                     <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
                         {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
                     </td>
+                    {% if community_enabled %}
                     <td class="text-end">
                         {% if t.trade_fingerprint %}
                         <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
@@ -1261,6 +1264,7 @@
                         </button>
                         {% else %}<span class="small text-muted">—</span>{% endif %}
                     </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1619,7 +1623,9 @@
                     <th>Strategy</th>
                     <th>Status</th>
                     <th class="text-end">P&amp;L</th>
+                    {% if community_enabled %}
                     <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -1637,6 +1643,7 @@
                     <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
                         {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
                     </td>
+                    {% if community_enabled %}
                     <td class="text-end">
                         {% if t.trade_fingerprint %}
                         <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
@@ -1656,6 +1663,7 @@
                         </button>
                         {% else %}<span class="small text-muted">—</span>{% endif %}
                     </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1667,6 +1675,8 @@
 
 {% endif %}{# end midweek #}
 
+{% if community_enabled %}
 {% include "_community_trade_modal.html" %}
+{% endif %}
 
 {% endblock %}

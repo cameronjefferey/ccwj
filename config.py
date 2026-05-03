@@ -66,6 +66,17 @@ class Config:
     # dataset is still being backfilled/tuned.
     BEHAVIOR_INSIGHTS_ENABLED = _env_bool("BEHAVIOR_INSIGHTS_ENABLED", "true")
 
+    # Community surface (followers, posts, public profiles, "Show" trade publish).
+    # Default OFF: the trading-mirror identity is single-player and the community
+    # surface still needs notifications, moderation, seeding, and on-strategy
+    # redesign before it should ship to real users. Code, schema, and routes
+    # stay in the repo so iteration can continue behind the flag — set
+    # COMMUNITY_ENABLED=1 to turn it back on (e.g. local dev, internal preview).
+    # When OFF: the /community, /u/<username>, /community/* routes 404, the
+    # Community nav link + Profile tabs disappear, and the Weekly Review "Show"
+    # column + publish modal are not rendered. Tests force-enable in conftest.
+    COMMUNITY_ENABLED = _env_bool("COMMUNITY_ENABLED", "false")
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024

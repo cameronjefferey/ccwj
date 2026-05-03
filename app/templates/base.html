@@ -291,10 +291,12 @@
                         </li>
                     </ul>
                 </li>
+                {% if community_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'community' %}active{% endif %}"
                        href="{{ url_for('community') }}">Community</a>
                 </li>
+                {% endif %}
                 {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
