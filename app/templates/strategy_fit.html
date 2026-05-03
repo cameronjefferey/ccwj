@@ -445,12 +445,12 @@
 {% else %}
 
 {# ── AI-narrated insights ───────────────────────────────────────────
-   AI insight is currently keyed to sector/industry data only. On
+   AI insight is currently keyed to sector/subsector data only. On
    DTE / Moneyness / Market Cap dims we hide the card with a small
    note rather than offering a Generate button that would mismatch
    the matrix the user is looking at. (Per-dim insights = v2.)
 #}
-{% if ai_enabled and dim in ('sector', 'industry') %}
+{% if ai_enabled and dim in ('sector', 'subsector') %}
 {% if ai_summary %}
 <div class="ai-card" id="aiCard">
     <div class="ai-head">
@@ -535,16 +535,16 @@
 
 {# ── Controls: dimension switcher + metric toggle + visibility ── #}
 <div class="fit-controls">
-    {# "Slice by" dimension switcher. Industry isn't a top-level option —
+    {# "Slice by" dimension switcher. Subsector isn't a top-level option —
        it's reached by drilling a Sector cell — so we surface it here only
-       when the user is currently in industry-drill mode. #}
+       when the user is currently in subsector-drill mode. #}
     <div>
         <label class="lblh">Slice by</label>
         <div class="metric-toggle" id="dimSwitcher">
             <a href="{{ url_for('strategy_fit', dim='sector', account=selected_account) }}"
                class="{% if dim == 'sector' %}active{% endif %}">Sector</a>
-            {% if dim == 'industry' %}
-            <a href="#" class="active" aria-current="page">Industry</a>
+            {% if dim == 'subsector' %}
+            <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
             <a href="{{ url_for('strategy_fit', dim='dte', account=selected_account) }}"
                class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
@@ -593,7 +593,7 @@
     </form>
     {% endif %}
 
-    {% if dim == 'industry' %}
+    {% if dim == 'subsector' %}
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('strategy_fit', dim='sector', account=selected_account) }}">
         ← Back to all sectors
@@ -627,7 +627,7 @@
                 <th class="{% if col == 'Unknown' %}col-unknown{% endif %}">
                     {% if dim == 'sector' %}
                     <a href="{{ url_for('strategy_fit', sector=col, account=selected_account) }}"
-                       title="Drill into {{ col }} industries">{{ col }}</a>
+                       title="Drill into {{ col }} subsectors">{{ col }}</a>
                     {% else %}
                     {{ col }}
                     {% endif %}
@@ -645,7 +645,7 @@
             </tr>
         </thead>
         <tbody>
-            {% set positions_dim = dim in ('sector', 'industry') %}
+            {% set positions_dim = dim in ('sector', 'subsector') %}
             {% set equity_set = equity_strategies or [] %}
             {% for strat in row_labels %}
             {% set rt = row_totals.get(strat) %}
@@ -668,7 +668,7 @@
                     {% set c = cells.get(strat, {}).get(col) %}
                     {% if c and c.num_trades and c.num_trades > 0 %}
                         {% if positions_dim %}
-                            {% set drill_url = url_for('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), industry=('' if dim == 'sector' else col), account=selected_account) %}
+                            {% set drill_url = url_for('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), subsector=('' if dim == 'sector' else col), account=selected_account) %}
                         {% else %}
                             {% set drill_url = '' %}
                         {% endif %}
@@ -1008,7 +1008,7 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
               ' (of ' + (parseInt(td.dataset.numSymbols, 10) || symbols.length) + ')'
             : 'Symbols';
 
-        // The Positions page can filter by strategy + sector/industry, but
+        // The Positions page can filter by strategy + sector/subsector, but
         // not by DTE / Moneyness / Market Cap. Hide the CTA on those dims
         // rather than render a broken link — the symbol list above is the
         // actionable affordance there.

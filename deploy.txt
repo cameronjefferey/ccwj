@@ -14,12 +14,12 @@ New Updates
     - Built a 12-check internal audit that runs over the data and
       confirms every page agrees on every number. All 12 pass today.
 
-    Sector & industry reporting (new)
-    - New Industries page: P&L and win rate broken down by sector and
-      industry, with click-through to the underlying positions.
-    - Every position is now tagged with sector, industry, and company
+    Sector & subsector reporting (new)
+    - New Sectors page: P&L and win rate broken down by sector and
+      subsector, with click-through to the underlying positions.
+    - Every position is now tagged with sector, subsector, and company
       name, refreshed daily.
-    - Positions list has an Industry filter and an Industry column.
+    - Positions list has a Subsector filter and a Subsector column.
     - Strategy Fit insights are now organized as Strategy x Sector so
       it's easy to see which sectors a given strategy actually works in.
 

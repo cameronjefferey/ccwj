@@ -320,7 +320,7 @@ ERROR_DEFAULTS = dict(
     accounts=[],
     strategies=[],
     symbols=[],
-    industries=[],
+    subsectors=[],
     sectors=[],
     user_accounts=[],
     status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
@@ -328,7 +328,7 @@ ERROR_DEFAULTS = dict(
     selected_strategy="",
     selected_statuses=[],
     selected_symbol="",
-    selected_industry="",
+    selected_subsector="",
     selected_sector="",
     selected_start_date="",
     selected_end_date="",
@@ -622,7 +622,11 @@ def positions():
     # full book unless they explicitly narrow it.
     selected_statuses = request.args.getlist("status")
     selected_symbol = request.args.get("symbol", "")
-    selected_industry = request.args.get("industry", "")
+    # 'subsector' is the new param; 'industry' is the pre-rename alias and is
+    # still accepted so any old bookmarks / external links keep working.
+    selected_subsector = (
+        request.args.get("subsector", "") or request.args.get("industry", "")
+    )
     selected_sector = request.args.get("sector", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
@@ -686,9 +690,9 @@ def positions():
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
-    industries = (
-        sorted(df["industry"].dropna().unique())
-        if "industry" in df.columns else []
+    subsectors = (
+        sorted(df["subsector"].dropna().unique())
+        if "subsector" in df.columns else []
     )
     sectors = (
         sorted(df["sector"].dropna().unique())
@@ -711,8 +715,8 @@ def positions():
         filtered = filtered[filtered["status"].isin(selected_statuses)]
     if selected_symbol:
         filtered = filtered[filtered["symbol"] == selected_symbol]
-    if selected_industry and "industry" in filtered.columns:
-        filtered = filtered[filtered["industry"] == selected_industry]
+    if selected_subsector and "subsector" in filtered.columns:
+        filtered = filtered[filtered["subsector"] == selected_subsector]
     if selected_sector and "sector" in filtered.columns:
         filtered = filtered[filtered["sector"] == selected_sector]
 
@@ -754,8 +758,8 @@ def positions():
     # 7. Symbol-level summary (grouped by account + symbol)
     # ------------------------------------------------------------------
     if not filtered.empty:
-        # Carry sector / industry through the symbol-level rollup. Each
-        # (account, symbol) maps to a single sector/industry, so 'first' is
+        # Carry sector / subsector through the symbol-level rollup. Each
+        # (account, symbol) maps to a single sector/subsector, so 'first' is
         # safe and fast.
         agg_kwargs = dict(
             total_pnl=("total_pnl", "sum"),
@@ -772,8 +776,8 @@ def positions():
         )
         if "sector" in filtered.columns:
             agg_kwargs["sector"] = ("sector", "first")
-        if "industry" in filtered.columns:
-            agg_kwargs["industry"] = ("industry", "first")
+        if "subsector" in filtered.columns:
+            agg_kwargs["subsector"] = ("subsector", "first")
         symbol_agg = (
             filtered.groupby(["account", "symbol"])
             .agg(**agg_kwargs)
@@ -833,7 +837,7 @@ def positions():
         accounts=accounts,
         strategies=strategies,
         symbols=symbols,
-        industries=industries,
+        subsectors=subsectors,
         sectors=sectors,
         user_accounts=accounts,
         status_counts=status_counts,
@@ -841,7 +845,7 @@ def positions():
         selected_strategy=selected_strategy,
         selected_statuses=selected_statuses,
         selected_symbol=selected_symbol,
-        selected_industry=selected_industry,
+        selected_subsector=selected_subsector,
         selected_sector=selected_sector,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
@@ -1527,7 +1531,7 @@ def position_detail(symbol):
             chart_data_json="{}",
             has_underlying_price=False,
             symbol_sector="",
-            symbol_industry="",
+            symbol_subsector="",
             symbol_company="",
         )
 
@@ -2337,7 +2341,7 @@ def position_detail(symbol):
     else:
         all_accounts = []
 
-    # Sector / industry: take the first non-Unknown value we can find from
+    # Sector / subsector: take the first non-Unknown value we can find from
     # either summary or current. Both sources are joined to stg_symbol_metadata
     # in dbt, so they should agree — falling through is just defensive.
     def _first_nonempty(df_, col):
@@ -2353,7 +2357,7 @@ def position_detail(symbol):
         return vals.iloc[0]
 
     symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
-    symbol_industry = _first_nonempty(summary_df, "industry") or _first_nonempty(current_df, "industry")
+    symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
     return render_template(
@@ -2375,7 +2379,7 @@ def position_detail(symbol):
         accounts=all_accounts,
         selected_account=selected_account,
         symbol_sector=symbol_sector,
-        symbol_industry=symbol_industry,
+        symbol_subsector=symbol_subsector,
         symbol_company=symbol_company,
     )
 
@@ -3743,18 +3747,21 @@ def _build_strategy_time_chart(strat_df):
 
 
 # ======================================================================
-# Industries  (/industries)
+# Sectors  (/sectors)
 # ======================================================================
 #
-# Sector / industry rollup of positions_summary, scoped to the logged-in
-# user's accounts. Powers the new "Industries" page in the Portfolio nav.
+# Sector / subsector rollup of positions_summary, scoped to the logged-in
+# user's accounts. Powers the "Sectors" page in the Portfolio nav.
+# (Originally /industries — renamed to standardize on the finance term
+# "sector → subsector" hierarchy. The /industries URL still resolves via
+# a redirect for old bookmarks.)
 # Tenancy: positions_summary is multi-tenant -> we MUST scope the SQL with
 # _account_sql_and AND filter the resulting DataFrame with
 # _filter_df_by_accounts before aggregating, per
 # .cursor/rules/bigquery-tenant-isolation.mdc.
 # ----------------------------------------------------------------------
 
-INDUSTRIES_QUERY = """
+SECTORS_QUERY = """
     SELECT
         account,
         symbol,
@@ -3770,7 +3777,7 @@ INDUSTRIES_QUERY = """
         num_winners,
         num_losers,
         sector,
-        industry,
+        subsector,
         company_name
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
@@ -3780,7 +3787,15 @@ INDUSTRIES_QUERY = """
 
 @app.route("/industries")
 @login_required
-def industries():
+def industries_legacy():
+    """Backward-compatible redirect for the old /industries URL. The page
+    moved to /sectors when we renamed industry → subsector."""
+    return redirect(url_for("sectors", **request.args.to_dict(flat=True)), code=301)
+
+
+@app.route("/sectors")
+@login_required
+def sectors():
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     acct_filter = _account_sql_and(user_accounts)
@@ -3789,16 +3804,16 @@ def industries():
 
     try:
         df = client.query(
-            INDUSTRIES_QUERY.format(account_filter=acct_filter)
+            SECTORS_QUERY.format(account_filter=acct_filter)
         ).to_dataframe()
     except Exception as exc:
         return render_template(
-            "industries.html",
+            "sectors.html",
             error=str(exc),
             sectors=[],
             sector_rows=[],
-            industry_rows=[],
-            industries_by_sector={},
+            subsector_rows=[],
+            subsectors_by_sector={},
             unknown_count=0,
             kpis={},
             accounts=[],
@@ -3819,7 +3834,7 @@ def industries():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    for col in ("sector", "industry"):
+    for col in ("sector", "subsector"):
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
 
@@ -3827,16 +3842,16 @@ def industries():
 
     if df.empty:
         return render_template(
-            "industries.html",
+            "sectors.html",
             error=None,
             sectors=[],
             sector_rows=[],
-            industry_rows=[],
-            industries_by_sector={},
+            subsector_rows=[],
+            subsectors_by_sector={},
             unknown_count=0,
             kpis={
                 "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
-                "num_industries": 0, "num_symbols": 0, "num_trades": 0,
+                "num_subsectors": 0, "num_symbols": 0, "num_trades": 0,
                 "win_rate": 0.0,
             },
             accounts=accounts_for_filter,
@@ -3850,16 +3865,16 @@ def industries():
         "total_pnl": float(df["total_pnl"].sum()),
         "realized_pnl": float(df["realized_pnl"].sum()),
         "unrealized_pnl": float(df["unrealized_pnl"].sum()),
-        "num_industries": int(df["industry"].nunique()),
+        "num_subsectors": int(df["subsector"].nunique()),
         "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
     }
 
-    # Per-industry rollup: collapse strategy granularity, aggregate over the
-    # user's accounts. One row per (sector, industry).
-    industry_agg = (
-        df.groupby(["sector", "industry"], dropna=False)
+    # Per-subsector rollup: collapse strategy granularity, aggregate over the
+    # user's accounts. One row per (sector, subsector).
+    subsector_agg = (
+        df.groupby(["sector", "subsector"], dropna=False)
         .agg(
             total_pnl=("total_pnl", "sum"),
             realized_pnl=("realized_pnl", "sum"),
@@ -3874,39 +3889,39 @@ def industries():
         )
         .reset_index()
     )
-    closed = industry_agg["num_winners"] + industry_agg["num_losers"]
-    industry_agg["win_rate"] = industry_agg["num_winners"] / closed.replace(0, pd.NA)
-    industry_agg["win_rate"] = industry_agg["win_rate"].fillna(0)
+    closed = subsector_agg["num_winners"] + subsector_agg["num_losers"]
+    subsector_agg["win_rate"] = subsector_agg["num_winners"] / closed.replace(0, pd.NA)
+    subsector_agg["win_rate"] = subsector_agg["win_rate"].fillna(0)
 
-    # Top symbol per (sector, industry) by total_return — useful "what's
-    # actually carrying this industry?" tooltip on the card.
-    sym_in_ind = (
-        df.groupby(["sector", "industry", "symbol"], dropna=False)["total_return"]
+    # Top symbol per (sector, subsector) by total_return — useful "what's
+    # actually carrying this subsector?" tooltip on the card.
+    sym_in_sub = (
+        df.groupby(["sector", "subsector", "symbol"], dropna=False)["total_return"]
         .sum()
         .reset_index()
     )
-    if not sym_in_ind.empty:
-        sym_in_ind = sym_in_ind.sort_values(
-            ["sector", "industry", "total_return"], ascending=[True, True, False]
+    if not sym_in_sub.empty:
+        sym_in_sub = sym_in_sub.sort_values(
+            ["sector", "subsector", "total_return"], ascending=[True, True, False]
         )
         top_symbol_map = (
-            sym_in_ind.groupby(["sector", "industry"])
+            sym_in_sub.groupby(["sector", "subsector"])
             .first()
-            .reset_index()[["sector", "industry", "symbol", "total_return"]]
+            .reset_index()[["sector", "subsector", "symbol", "total_return"]]
             .rename(columns={"symbol": "top_symbol", "total_return": "top_symbol_return"})
         )
-        industry_agg = industry_agg.merge(
-            top_symbol_map, on=["sector", "industry"], how="left"
+        subsector_agg = subsector_agg.merge(
+            top_symbol_map, on=["sector", "subsector"], how="left"
         )
     else:
-        industry_agg["top_symbol"] = ""
-        industry_agg["top_symbol_return"] = 0.0
+        subsector_agg["top_symbol"] = ""
+        subsector_agg["top_symbol_return"] = 0.0
 
-    industry_agg = industry_agg.sort_values("total_return", ascending=False)
-    industry_rows = industry_agg.to_dict(orient="records")
+    subsector_agg = subsector_agg.sort_values("total_return", ascending=False)
+    subsector_rows = subsector_agg.to_dict(orient="records")
 
     # Sector rollup — this is now the primary view on the page, so it carries
-    # the same shape as industry_rows: realized / unrealized / premium /
+    # the same shape as subsector_rows: realized / unrealized / premium /
     # dividends / total_return so the sector cards have everything at a glance.
     sector_agg = (
         df.groupby(["sector"], dropna=False)
@@ -3917,7 +3932,7 @@ def industries():
             premium_received=("total_premium_received", "sum"),
             dividend_income=("total_dividend_income", "sum"),
             total_return=("total_return", "sum"),
-            num_industries=("industry", "nunique"),
+            num_subsectors=("subsector", "nunique"),
             num_symbols=("symbol", "nunique"),
             num_trades=("num_individual_trades", "sum"),
             num_winners=("num_winners", "sum"),
@@ -3957,31 +3972,31 @@ def industries():
 
     sector_agg = sector_agg.sort_values("total_pnl", ascending=False)
     sector_rows = sector_agg.to_dict(orient="records")
-    sectors = sector_agg["sector"].tolist()
+    sectors_list = sector_agg["sector"].tolist()
 
-    # Group industries under their sector for the collapsible drill-down on
-    # the page. Order each sector's industries by total_return desc.
-    industries_by_sector: dict[str, list[dict]] = {}
-    for r in industry_rows:
-        industries_by_sector.setdefault(r["sector"], []).append(r)
-    for sec in industries_by_sector:
-        industries_by_sector[sec].sort(
+    # Group subsectors under their sector for the collapsible drill-down on
+    # the page. Order each sector's subsectors by total_return desc.
+    subsectors_by_sector: dict[str, list[dict]] = {}
+    for r in subsector_rows:
+        subsectors_by_sector.setdefault(r["sector"], []).append(r)
+    for sec in subsectors_by_sector:
+        subsectors_by_sector[sec].sort(
             key=lambda x: x.get("total_return", 0), reverse=True
         )
 
     unknown_count = int(
-        ((df["sector"] == "Unknown") | (df["industry"] == "Unknown"))
+        ((df["sector"] == "Unknown") | (df["subsector"] == "Unknown"))
         .pipe(lambda s: s.groupby([df["account"], df["symbol"]]).any())
         .sum()
     )
 
     return render_template(
-        "industries.html",
+        "sectors.html",
         error=None,
-        sectors=sectors,
+        sectors=sectors_list,
         sector_rows=sector_rows,
-        industry_rows=industry_rows,
-        industries_by_sector=industries_by_sector,
+        subsector_rows=subsector_rows,
+        subsectors_by_sector=subsectors_by_sector,
         unknown_count=unknown_count,
         kpis=kpis,
         accounts=accounts_for_filter,
@@ -3993,9 +4008,9 @@ def industries():
 # Strategy fit  (/strategy-fit)
 # ======================================================================
 #
-# Cross-tab of strategy x sector (or strategy x industry when drilled into
+# Cross-tab of strategy x sector (or strategy x subsector when drilled into
 # a single sector) so users can see "what strategies work best in what
-# kinds of companies?". Same tenancy guarantees as /industries — query is
+# kinds of companies?". Same tenancy guarantees as /sectors — query is
 # scoped by _account_sql_and AND the DataFrame is _filter_df_by_accounts'd
 # before any aggregation.
 # ----------------------------------------------------------------------
@@ -4014,7 +4029,7 @@ STRATEGY_FIT_QUERY = """
         num_winners,
         num_losers,
         sector,
-        industry
+        subsector
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
     {account_filter}
@@ -4057,7 +4072,7 @@ DIM_FIXED_COL_ORDER = {
 # Map dim -> (column field in DataFrame, human label for headers/lede).
 DIM_META = {
     "sector":     ("sector",            "Sector",     "sectors"),
-    "industry":   ("industry",          "Industry",   "industries"),
+    "subsector":  ("subsector",         "Subsector",  "subsectors"),
     "dte":        ("dte_bucket",        "DTE",        "DTE buckets"),
     "moneyness":  ("moneyness_at_open", "Moneyness",  "moneyness buckets"),
 }
@@ -4347,9 +4362,9 @@ def _strategy_fit_render_payload(
     col_field, dim_label, dim_label_plural = DIM_META.get(
         dim, DIM_META["sector"]
     )
-    # AI insight payload was built for sector/industry — null it out on
+    # AI insight payload was built for sector/subsector — null it out on
     # other dims so the template's "AI Insight" card hides cleanly.
-    if dim not in ("sector", "industry"):
+    if dim not in ("sector", "subsector"):
         insight_ctx = {
             **insight_ctx,
             "ai_summary": None,
@@ -4376,7 +4391,7 @@ def _strategy_fit_render_payload(
         col_field=col_field,
         dim=dim,
         # mode is preserved for backward-compat in the template (it used
-        # to be sector|industry only); now mirrors dim 1:1.
+        # to be sector|subsector only); now mirrors dim 1:1.
         mode=dim,
         dim_label=dim_label,
         dim_label_plural=dim_label_plural,
@@ -4395,15 +4410,18 @@ def strategy_fit():
     acct_filter = _account_sql_and(user_accounts)
 
     selected_account = request.args.get("account", "")
-    drill_sector = request.args.get("sector", "")  # implies industry mode
+    drill_sector = request.args.get("sector", "")  # implies subsector mode
 
     # Resolve the column dimension. Drilling into a sector wins (for
-    # backward URL compat) and forces industry mode. Otherwise read ?dim=
-    # and validate against the supported set.
+    # backward URL compat) and forces subsector mode. Otherwise read ?dim=
+    # and validate against the supported set. 'industry' is the pre-rename
+    # alias for 'subsector' — accept it so old bookmarks keep working.
     requested_dim = (request.args.get("dim", "") or "").strip().lower()
+    if requested_dim == "industry":
+        requested_dim = "subsector"
     if drill_sector:
-        dim = "industry"
-    elif requested_dim in ("dte", "moneyness", "industry", "sector"):
+        dim = "subsector"
+    elif requested_dim in ("dte", "moneyness", "subsector", "sector"):
         dim = requested_dim
     else:
         dim = "sector"
@@ -4411,7 +4429,7 @@ def strategy_fit():
     insight_ctx = _strategy_fit_insight_context(selected_account)
 
     # Fan out the queries we need. positions_summary is always needed —
-    # for sector/industry it's the data source, and for dte/moneyness
+    # for sector/subsector it's the data source, and for dte/moneyness
     # it's where we discover the equity-only strategy set so the matrix
     # can show "N/A — equity" rows.
     queries = {"summary": STRATEGY_FIT_QUERY.format(account_filter=acct_filter)}
@@ -4446,7 +4464,7 @@ def strategy_fit():
                 "num_individual_trades", "num_winners", "num_losers"):
         if col in summary_df.columns:
             summary_df.loc[:, col] = pd.to_numeric(summary_df[col], errors="coerce").fillna(0)
-    for col in ("sector", "industry", "strategy"):
+    for col in ("sector", "subsector", "strategy"):
         if col in summary_df.columns:
             summary_df.loc[:, col] = (
                 summary_df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
@@ -4508,10 +4526,10 @@ def strategy_fit():
         )
     else:
         df = summary_df
-        if dim == "industry":
-            # Drill: filter to one sector, columns become industries.
+        if dim == "subsector":
+            # Drill: filter to one sector, columns become subsectors.
             df = df[df["sector"] == drill_sector]
-            col_field = "industry"
+            col_field = "subsector"
             col_order_override = None
         else:
             col_field = "sector"
