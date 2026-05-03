@@ -232,7 +232,7 @@
             {% set ep = request.endpoint or '' %}
             {% set selected_account = request.args.get('account', '') %}
             {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts') %}
-            {% set in_breakdowns = ep in ('strategies', 'industries', 'strategy_fit') %}
+            {% set in_breakdowns = ep in ('strategies', 'sectors', 'strategy_fit') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
@@ -265,8 +265,8 @@
                                href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
                         </li>
                         <li>
-                            <a class="dropdown-item {% if ep == 'industries' %}active{% endif %}"
-                               href="{{ url_for('industries', account=selected_account) if selected_account else url_for('industries') }}">Industries</a>
+                            <a class="dropdown-item {% if ep == 'sectors' %}active{% endif %}"
+                               href="{{ url_for('sectors', account=selected_account) if selected_account else url_for('sectors') }}">Sectors</a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>

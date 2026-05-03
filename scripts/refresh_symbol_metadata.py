@@ -1,7 +1,15 @@
 """
-Refresh symbol_metadata: pull sector / industry / market cap / company name
-from yfinance for every ticker that shows up in stg_history (plus SPY/QQQ
-benchmarks), and load it into ccwj-dbt.analytics.symbol_metadata.
+Refresh symbol_metadata: pull sector / subsector / market cap / company
+name from yfinance for every ticker that shows up in stg_history (plus
+SPY/QQQ benchmarks), and load it into ccwj-dbt.analytics.symbol_metadata.
+
+We use the finance-standard hierarchy "sector → subsector". yfinance
+exposes these under the keys 'sector' and 'industry' (and a friendlier
+'industryDisp' display string), but everywhere else in this codebase
+they're called sector / subsector — including the BigQuery table this
+script writes. yfinance keys → BigQuery columns:
+  - info['sector']                       → sector
+  - info['industryDisp'] or ['industry'] → subsector
 
 Mirrors the operational pattern of current_position_stock_price.py:
   - Read distinct symbols out of BigQuery
@@ -54,18 +62,19 @@ def _fetch_one(symbol: str) -> dict | None:
         return None
 
     sector = info.get("sector")
-    industry = info.get("industry")
-    industry_disp = info.get("industryDisp") or industry
-    if not sector and not industry:
+    # Prefer yfinance's display string ('industryDisp') over the slug
+    # ('industry'); it's the same hierarchy level but the human-readable
+    # version (e.g. "Software—Application" vs "software-application").
+    subsector = info.get("industryDisp") or info.get("industry")
+    if not sector and not subsector:
         # No metadata at all — likely a delisted / OTC / synthetic symbol.
         # Still record the row so we know we tried, with Unknown placeholders.
-        print(f"  - {symbol}: no sector/industry from yfinance")
+        print(f"  - {symbol}: no sector/subsector from yfinance")
 
     return {
         "symbol": symbol,
         "sector": sector or "Unknown",
-        "industry": industry or "Unknown",
-        "industry_group": industry_disp or industry or "Unknown",
+        "subsector": subsector or "Unknown",
         "country": info.get("country") or "Unknown",
         "market_cap": int(info["marketCap"]) if info.get("marketCap") else None,
         "long_name": info.get("longName") or info.get("shortName") or symbol,
@@ -97,8 +106,7 @@ def main() -> None:
     schema = [
         bigquery.SchemaField("symbol", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("sector", "STRING"),
-        bigquery.SchemaField("industry", "STRING"),
-        bigquery.SchemaField("industry_group", "STRING"),
+        bigquery.SchemaField("subsector", "STRING"),
         bigquery.SchemaField("country", "STRING"),
         bigquery.SchemaField("market_cap", "INT64"),
         bigquery.SchemaField("long_name", "STRING"),

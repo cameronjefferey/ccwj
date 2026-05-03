@@ -274,9 +274,9 @@ def main():
         print("PASS — every positions_summary row has total_pnl = realized + unrealized")
 
     # ====================================================================
-    # CHECK 6: Industries page — sum across sectors == positions total
+    # CHECK 6: Sectors page — sum across sectors == positions total
     # ====================================================================
-    section("CHECK 6: Industries (sector) total P&L vs positions total return")
+    section("CHECK 6: Sectors total P&L vs positions total return")
     sql6 = f"""
         SELECT
           account,

@@ -256,7 +256,7 @@ class TestStrategyFitQueryTenancy:
 
 class TestStrategyFitMatrixBuilder:
     """`_build_strategy_fit_matrix` is dimension-agnostic and is the shared
-    aggregation core for sector / industry / dte / moneyness / market-cap
+    aggregation core for sector / subsector / dte / moneyness / market-cap
     matrices. These tests pin down the contract so a future refactor can't
     silently change cell counts, ordering, or equity-N/A handling."""
 

@@ -242,14 +242,14 @@
             {% endfor %}
         </select>
     </div>
-    {% if industries %}
+    {% if subsectors %}
     <div>
-        <label class="lblh">Industry</label>
-        <select name="industry" class="form-select form-select-sm"
+        <label class="lblh">Subsector</label>
+        <select name="subsector" class="form-select form-select-sm"
                 onchange="this.form.submit()">
-            <option value="">All Industries</option>
-            {% for ind in industries %}
-            <option value="{{ ind }}" {{ 'selected' if ind == selected_industry }}>{{ ind }}</option>
+            <option value="">All Subsectors</option>
+            {% for sub in subsectors %}
+            <option value="{{ sub }}" {{ 'selected' if sub == selected_subsector }}>{{ sub }}</option>
             {% endfor %}
         </select>
     </div>
@@ -264,11 +264,11 @@
         <label class="lblh">Status</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _all_statuses }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
         </div>
         {# Mirror the chosen status into the form so a Symbol/Strategy
            change preserves it. Multi-status (rare path) still works
@@ -283,11 +283,11 @@
         <label class="lblh">Dates</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _is_alltime }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, status=selected_statuses) }}">All time</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses) }}">All time</a>
             <a class="{{ 'active' if _is_30d }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
             <a class="{{ 'active' if _is_ytd }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, industry=selected_industry, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
         </div>
         {# No hidden date inputs needed — the visible date inputs below
            are part of this form and carry the current values, so when
@@ -304,7 +304,7 @@
                    value="{{ selected_end_date }}" onchange="this.form.submit()" style="min-width: 8.5rem;">
         </div>
     </div>
-    {% if selected_account or selected_symbol or selected_strategy or selected_industry or selected_statuses or selected_start_date or selected_end_date %}
+    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_statuses or selected_start_date or selected_end_date %}
     <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
     {% endif %}
 </form>
@@ -411,7 +411,7 @@
                     <tr>
                         <th class="sortable" data-sort="str">Account</th>
                         <th class="sortable" data-sort="str">Symbol</th>
-                        <th class="sortable" data-sort="str">Industry</th>
+                        <th class="sortable" data-sort="str">Subsector</th>
                         <th>Strategies</th>
                         <th class="sortable" data-sort="num">Total P&amp;L</th>
                         <th class="sortable" data-sort="num">Realized</th>
@@ -434,10 +434,10 @@
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-                            title="{{ row.sector or '' }}{% if row.sector and row.industry %} / {% endif %}{{ row.industry or '' }}">
-                            {% if row.industry and row.industry != 'Unknown' %}
-                            <a href="{{ url_for('positions', industry=row.industry, account=selected_account) }}"
-                               class="text-decoration-none text-muted">{{ row.industry }}</a>
+                            title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
+                            {% if row.subsector and row.subsector != 'Unknown' %}
+                            <a href="{{ url_for('positions', subsector=row.subsector, account=selected_account) }}"
+                               class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
