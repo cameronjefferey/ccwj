@@ -391,7 +391,7 @@
                 <span class="cm-attached-kind transaction" style="margin-right:.35rem">Transaction</span>
                 <strong>{{ att.action_label or att.action }}</strong>
                 {% if att.symbol %} · <a href="{{ url_for('position_detail', symbol=att.symbol) }}" style="color:#57534e;text-decoration:none;border-bottom:1px dotted #d6d3d1">{{ att.symbol }}</a>{% endif %}
-                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c">{{ att.trade_symbol }}</span>{% endif %}
+                {% if att.trade_symbol and att.trade_symbol != att.symbol %} · <span style="color:#78716c" title="{{ att.trade_symbol }}">{{ att.trade_symbol|option_symbol }}</span>{% endif %}
             </div>
             <div class="cm-author-meta mt-1">
                 {% if att.trade_date %}{{ att.trade_date }}{% endif %}
@@ -614,7 +614,7 @@
                                 <div class="cm-trade-strat">
                                     <span class="cm-attached-kind leg" style="margin-right:.35rem">Position</span>
                                     <strong>{{ p.trade_strategy }}</strong>
-                                    {% if p.trade_symbol %} · {{ p.trade_symbol }}{% endif %}
+                                    {% if p.trade_symbol %} · <span title="{{ p.trade_symbol }}">{{ p.trade_symbol|option_symbol }}</span>{% endif %}
                                     {% if p.trade_status %} · <span style="color:#a8a29e">{{ p.trade_status }}</span>{% endif %}
                                 </div>
                                 <div class="cm-author-meta mt-1">

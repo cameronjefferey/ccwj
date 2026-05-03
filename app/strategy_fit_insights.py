@@ -51,7 +51,7 @@ STRATEGY_FIT_QUERY = """
         num_winners,
         num_losers,
         sector,
-        industry
+        subsector
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
     {account_filter}
@@ -110,7 +110,7 @@ def _build_strategy_fit_brief(client, user_accounts):
               "num_individual_trades", "num_winners", "num_losers"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    for c in ("sector", "industry", "symbol", "strategy"):
+    for c in ("sector", "subsector", "symbol", "strategy"):
         if c in df.columns:
             df[c] = df[c].fillna("Unknown").astype(str)
 
@@ -149,8 +149,15 @@ def _build_strategy_fit_brief(client, user_accounts):
     cell_agg["edge_expectancy"] = cell_agg["expectancy"] - baseline_expectancy
     cell_agg["edge_win_rate"]   = cell_agg["win_rate"]   - baseline_win_rate
 
-    # Sample-size guarded sweet/soft picks.
-    qualified = cell_agg[cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT].copy()
+    # Sample-size guarded sweet/soft picks. Cells in the "Unknown"
+    # sector bucket are excluded from the narrative — naming "Unknown"
+    # as a sweet or soft spot isn't actionable for the user, and the
+    # symbols in there are typically delisted/post-corp-action tickers
+    # that yfinance can't classify rather than a coherent group.
+    qualified = cell_agg[
+        (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        & (cell_agg["sector"].astype(str) != "Unknown")
+    ].copy()
 
     sweet_df = qualified[
         (qualified["expectancy"] > 0)
@@ -207,7 +214,8 @@ def _build_strategy_fit_brief(client, user_accounts):
 
     # Sector-level top symbols (across all strategies). Used so the LLM
     # can name actual tickers when it mentions a sector — most users
-    # don't memorize industry classifications, but they know their symbols.
+    # don't memorize sector / subsector classifications, but they know
+    # their symbols.
     sec_sym_agg = (
         df.groupby(["sector", "symbol"], dropna=False)
         .agg(
@@ -241,9 +249,13 @@ def _build_strategy_fit_brief(client, user_accounts):
 
     # Strategy-level rollup — answers "is this strategy concentrated or
     # broad?" If a strategy only works in 1 sector, that's narrower edge
-    # than one that works in 4.
+    # than one that works in 4. Exclude "Unknown" from the sector count
+    # so a strategy with trades in 2 real sectors + 1 Unknown bucket
+    # doesn't get falsely promoted to "works across 3 sectors" in the
+    # narrative.
+    cell_agg_named = cell_agg[cell_agg["sector"].astype(str) != "Unknown"].copy()
     strat_agg = (
-        cell_agg.groupby("strategy")
+        cell_agg_named.groupby("strategy")
         .agg(
             total_pnl=("total_pnl", "sum"),
             num_trades=("num_trades", "sum"),
@@ -458,8 +470,8 @@ Voice and structure:
   ("These are still small samples — keep watching.").
 
 CRITICAL — symbol attribution:
-- The trader does NOT memorize industry classifications, but they DO
-  remember every ticker they trade. Whenever you name a sector
+- The trader does NOT memorize sector / subsector classifications, but
+  they DO remember every ticker they trade. Whenever you name a sector
   (e.g. "Industrials", "Technology", "Healthcare"), you MUST cite the
   specific ticker symbols from the brief in parentheses immediately
   after the sector name.

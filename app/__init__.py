@@ -52,6 +52,11 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
+from app.option_formatting import format_option_symbol as _format_option_symbol
+
+app.add_template_filter(_format_option_symbol, name="option_symbol")
+
+
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app

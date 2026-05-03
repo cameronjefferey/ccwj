@@ -92,12 +92,12 @@
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
             {% endif %}
-            {% if symbol_industry and symbol_industry != 'Unknown' %}
+            {% if symbol_subsector and symbol_subsector != 'Unknown' %}
             <div class="mt-1">
-                <a href="{{ url_for('industries') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
+                <a href="{{ url_for('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
                    class="text-decoration-none"
                    style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
-                    {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_industry }}
+                    {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
                 </a>
             </div>
             {% endif %}
@@ -327,7 +327,7 @@
 <div class="chart-wrapper mb-4">
     <h6 class="fw-bold mb-3">Cumulative P&amp;L</h6>
     {% if prices_through_date and has_underlying_price %}
-    <p class="text-muted small mb-2">Stock prices through {{ prices_through_date }}. Run <code>python current_position_stock_price.py</code> (or your scheduled job) to refresh.</p>
+    <p class="text-muted small mb-2">Stock prices through {{ prices_through_date }}.</p>
     {% endif %}
     <div style="height: 300px;">
         <canvas id="pnlChart"></canvas>
@@ -429,9 +429,9 @@
             <table class="table table-sm table-bordered align-middle mb-0" style="font-size:.72rem;">
                 <thead>
                     <tr>
-                        <th class="bg-light" style="min-width:60px;">DTE</th>
+                        <th class="bg-light" style="min-width:60px;">DTE \ Strike Distance</th>
                         {% for col in mat.col_headers %}
-                        <th class="text-center bg-light" style="min-width:72px;">{{ "%+d"|format(col) if col != 0 else "ATM" }}</th>
+                        <th class="text-center bg-light" style="min-width:96px;">{{ col }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
@@ -519,7 +519,7 @@
                 <tr style="background:rgba(25,135,84,.04);">
                     <td><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
-                    <td class="fw-semibold small">{{ p.trade_symbol if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
+                    <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
                     <td class="text-muted small">{{ p.instrument_type }}</td>
                     <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
                     <td class="text-nowrap"></td>
@@ -558,8 +558,8 @@
                         {% endif %}
                     </td>
                     <td class="text-center text-muted small">{{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}</td>
-                    <td class="fw-semibold small">
-                        {{ o.trade_symbol }}
+                    <td class="fw-semibold small" {% if o.trade_symbol %}title="{{ o.trade_symbol }}"{% endif %}>
+                        {{ o.trade_symbol|option_symbol }}
                         {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
                         <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
                         {% endif %}

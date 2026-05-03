@@ -263,6 +263,7 @@ def init_db():
             for stmt in statements:
                 cur.execute(stmt)
     _migrate_schwab_first_sync_column()
+    _migrate_schwab_display_nickname_column()
     _migrate_community_posts_strategy_column()
     _migrate_account_name_unique_index()
     _migrate_users_email_column()
@@ -277,6 +278,22 @@ def _migrate_schwab_first_sync_column():
         )
     except Exception as e:
         _log.warning("schwab_connections migration skipped: %s", e)
+
+
+def _migrate_schwab_display_nickname_column():
+    """
+    Idempotent: add display_nickname column. This is a UI-only label that lets
+    a trader distinguish multiple Schwab accounts (e.g. "Roth IRA",
+    "Joint brokerage") on the front end *without* changing account_name —
+    account_name is the BigQuery tenancy key and renaming it would orphan
+    every existing row in the warehouse.
+    """
+    try:
+        execute(
+            "ALTER TABLE schwab_connections ADD COLUMN IF NOT EXISTS display_nickname TEXT"
+        )
+    except Exception as e:
+        _log.warning("schwab_connections display_nickname migration skipped: %s", e)
 
 
 def _migrate_community_posts_strategy_column():
@@ -734,6 +751,23 @@ def update_schwab_token(user_id, account_number, token_json):
     )
 
 
+def update_schwab_tokens_for_user(user_id, token_json):
+    """
+    Replace token_json on every Schwab connection a user owns.
+
+    A single Schwab OAuth grant authorizes all the accounts under one
+    customer login; the same access/refresh token works for each one.
+    When a refresh rotates the token (or the user re-authorizes), every
+    connection row needs the new token or the next sync of the un-updated
+    rows will 401 with a stale refresh_token.
+    """
+    execute(
+        "UPDATE schwab_connections SET token_json = %s, updated_at = NOW() "
+        "WHERE user_id = %s",
+        (token_json, user_id),
+    )
+
+
 def update_schwab_account_hash(user_id, account_number, account_hash):
     """Update account hash when Schwab rotates hashValue (avoids 401 on trader API)."""
     execute(
@@ -745,8 +779,8 @@ def update_schwab_account_hash(user_id, account_number, account_hash):
 
 def get_schwab_connections(user_id):
     return fetch_all(
-        "SELECT account_number, account_name, created_at FROM schwab_connections "
-        "WHERE user_id = %s",
+        "SELECT account_number, account_name, display_nickname, created_at "
+        "FROM schwab_connections WHERE user_id = %s",
         (user_id,),
     )
 
@@ -756,21 +790,63 @@ def get_schwab_connection(user_id, account_number=None):
     If account_number is None, returns the first connection."""
     if account_number:
         return fetch_one(
-            "SELECT account_hash, account_number, account_name, token_json, "
-            "schwab_first_sync_completed "
+            "SELECT account_hash, account_number, account_name, display_nickname, "
+            "token_json, schwab_first_sync_completed "
             "FROM schwab_connections WHERE user_id = %s AND account_number = %s",
             (user_id, account_number),
         )
     return fetch_one(
-        "SELECT account_hash, account_number, account_name, token_json, "
-        "schwab_first_sync_completed "
+        "SELECT account_hash, account_number, account_name, display_nickname, "
+        "token_json, schwab_first_sync_completed "
         "FROM schwab_connections WHERE user_id = %s LIMIT 1",
         (user_id,),
     )
 
 
-def mark_schwab_first_sync_completed(user_id):
-    """After a successful manual sync, stop defaulting the account tab to full-history."""
+_MAX_SCHWAB_NICKNAME_LEN = 80
+
+
+def update_schwab_connection_nickname(user_id, account_number, nickname):
+    """
+    Set or clear the *display-only* nickname for a Schwab connection.
+
+    `nickname` is trimmed; empty / whitespace clears the field (so the UI
+    falls back to account_name). `account_name` is intentionally NOT
+    touched — it is the warehouse tenancy key and renaming it would
+    detach every existing trade row from this user. Returns True if a
+    row was updated.
+    """
+    label = (nickname or "").strip()
+    if len(label) > _MAX_SCHWAB_NICKNAME_LEN:
+        label = label[:_MAX_SCHWAB_NICKNAME_LEN]
+    value = label or None
+    try:
+        execute(
+            "UPDATE schwab_connections SET display_nickname = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND account_number = %s",
+            (value, user_id, account_number),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("update_schwab_connection_nickname failed: %s", exc)
+        return False
+
+
+def mark_schwab_first_sync_completed(user_id, account_number=None):
+    """
+    After a successful manual sync, stop defaulting the account tab to
+    full-history. When ``account_number`` is given, mark just that
+    connection (so newly added accounts can still default to full
+    history on their own first sync); otherwise mark every row for the
+    user (legacy behavior).
+    """
+    if account_number:
+        execute(
+            "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
+            "WHERE user_id = %s AND account_number = %s",
+            (user_id, account_number),
+        )
+        return
     execute(
         "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
         "WHERE user_id = %s",

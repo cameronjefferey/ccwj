@@ -18,14 +18,15 @@ sources:
           - name: dividend
       - name: symbol_metadata
         description: >
-          Sector / industry / market cap / company name per symbol, fetched
+          Sector / subsector / market cap / company name per symbol, fetched
           via yfinance by scripts/refresh_symbol_metadata.py (runs in
           GitHub Actions). Symbol-only — no account column, safe to share.
+          'subsector' is the more specific bucket nested under 'sector'
+          (e.g. sector=Technology / subsector=Software-Application).
         columns:
           - name: symbol
           - name: sector
-          - name: industry
-          - name: industry_group
+          - name: subsector
           - name: country
           - name: market_cap
           - name: long_name

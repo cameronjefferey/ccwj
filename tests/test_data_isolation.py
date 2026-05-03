@@ -493,3 +493,138 @@ class TestAccountSqlFilter:
 
         sql = _account_sql_filter(["Schwab Account"])
         assert "TRIM(CAST(account AS STRING))" in sql
+
+
+class TestStrategyFitQueryTenancy:
+    """Strategy-fit reads from positions_summary AND int_option_trade_kinds —
+    both are multi-tenant marts. Each query template MUST carry an
+    {account_filter} placeholder (see .cursor/rules/bigquery-tenant-isolation.mdc)
+    so the dispatcher can scope by the user's accounts."""
+
+    def test_summary_query_has_account_filter_placeholder(self):
+        from app.routes import STRATEGY_FIT_QUERY
+        assert "{account_filter}" in STRATEGY_FIT_QUERY
+
+    def test_options_query_has_account_filter_placeholder(self):
+        from app.routes import STRATEGY_FIT_OPTIONS_QUERY
+        assert "{account_filter}" in STRATEGY_FIT_OPTIONS_QUERY
+
+    def test_options_query_selects_account_column(self):
+        # The DataFrame-side belt (`_filter_df_by_accounts`) needs an
+        # `account` column. If a future refactor drops it from SELECT
+        # the safety net silently disappears.
+        from app.routes import STRATEGY_FIT_OPTIONS_QUERY
+        assert "account" in STRATEGY_FIT_OPTIONS_QUERY.lower()
+
+
+class TestStrategyFitMatrixBuilder:
+    """`_build_strategy_fit_matrix` is dimension-agnostic and is the shared
+    aggregation core for sector / subsector / dte / moneyness / market-cap
+    matrices. These tests pin down the contract so a future refactor can't
+    silently change cell counts, ordering, or equity-N/A handling."""
+
+    def _df(self, rows):
+        import pandas as pd
+        return pd.DataFrame(rows)
+
+    def test_sector_aggregation_matches_synthetic_input(self):
+        from app.routes import _build_strategy_fit_matrix
+        df = self._df([
+            {"account": "A", "symbol": "AAPL", "strategy": "Wheel",
+             "sector": "Tech", "total_pnl": 500, "realized_pnl": 500,
+             "unrealized_pnl": 0, "num_individual_trades": 5,
+             "num_winners": 4, "num_losers": 1},
+            {"account": "A", "symbol": "XOM", "strategy": "Wheel",
+             "sector": "Energy", "total_pnl": -200, "realized_pnl": -200,
+             "unrealized_pnl": 0, "num_individual_trades": 3,
+             "num_winners": 1, "num_losers": 2},
+        ])
+        m = _build_strategy_fit_matrix(df, col_field="sector")
+        assert "Wheel" in m["row_labels"]
+        # Cols sorted by total P&L desc.
+        assert m["col_labels"] == ["Tech", "Energy"]
+        assert m["cells"]["Wheel"]["Tech"]["total_pnl"] == 500
+        # baseline_expectancy = total / trades.
+        assert round(m["baseline_expectancy"], 4) == round(300 / 8, 4)
+
+    def test_dte_uses_fixed_column_order_and_appends_equity_rows(self):
+        from app.routes import _build_strategy_fit_matrix, DIM_FIXED_COL_ORDER
+        df = self._df([
+            {"account": "A", "symbol": "AAPL", "strategy": "Wheel",
+             "dte_bucket": "31-60 DTE", "total_pnl": 100, "realized_pnl": 100,
+             "unrealized_pnl": 0, "num_individual_trades": 1,
+             "num_winners": 1, "num_losers": 0},
+            {"account": "A", "symbol": "AAPL", "strategy": "Wheel",
+             "dte_bucket": "0-7 DTE", "total_pnl": 50, "realized_pnl": 50,
+             "unrealized_pnl": 0, "num_individual_trades": 1,
+             "num_winners": 1, "num_losers": 0},
+        ])
+        m = _build_strategy_fit_matrix(
+            df, col_field="dte_bucket",
+            col_order_override=DIM_FIXED_COL_ORDER["dte"],
+            equity_strategies=["Buy and Hold"],
+        )
+        assert m["col_labels"] == ["0-7 DTE", "31-60 DTE"]
+        assert "Buy and Hold" in m["row_labels"]
+        assert "Buy and Hold" in m["equity_strategies"]
+        # Equity strategy must NOT have a row total (template renders N/A).
+        assert "Buy and Hold" not in m["row_totals"]
+
+    def test_empty_data_with_equity_still_lists_equity_rows(self):
+        import pandas as pd
+        from app.routes import _build_strategy_fit_matrix
+        empty = pd.DataFrame(columns=[
+            "account", "symbol", "strategy", "dte_bucket",
+            "total_pnl", "realized_pnl", "unrealized_pnl",
+            "num_individual_trades", "num_winners", "num_losers",
+        ])
+        m = _build_strategy_fit_matrix(
+            empty, col_field="dte_bucket",
+            equity_strategies=["Buy and Hold"],
+        )
+        assert m["row_labels"] == ["Buy and Hold"]
+        assert m["col_labels"] == []
+
+    def test_unknown_bucket_never_appears_in_sweet_or_soft_spots(self):
+        """The Unknown bucket holds delisted / unclassified tickers and
+        isn't actionable to call out — naming "Buy and Hold in Unknown"
+        as edge or "Long Call in Unknown" as a drag is just noise. The
+        cell stays in the matrix (user can toggle it visually) but must
+        NEVER show up in the sweet/soft narrative."""
+        from app.routes import _build_strategy_fit_matrix
+        df = self._df([
+            # Unknown sector: highest expectancy AND most negative — the
+            # winner if we didn't filter Unknown out.
+            {"account": "A", "symbol": "DWAC", "strategy": "Buy and Hold",
+             "sector": "Unknown", "total_pnl": 50_000, "realized_pnl": 50_000,
+             "unrealized_pnl": 0, "num_individual_trades": 10,
+             "num_winners": 10, "num_losers": 0},
+            {"account": "A", "symbol": "MGOL", "strategy": "Long Call",
+             "sector": "Unknown", "total_pnl": -20_000, "realized_pnl": -20_000,
+             "unrealized_pnl": 0, "num_individual_trades": 8,
+             "num_winners": 0, "num_losers": 8},
+            # Real, named sector — modest results, but should win sweet
+            # because Unknown is excluded from narratives.
+            {"account": "A", "symbol": "AAPL", "strategy": "Wheel",
+             "sector": "Technology", "total_pnl": 600, "realized_pnl": 600,
+             "unrealized_pnl": 0, "num_individual_trades": 6,
+             "num_winners": 5, "num_losers": 1},
+            {"account": "A", "symbol": "XOM", "strategy": "Long Call",
+             "sector": "Energy", "total_pnl": -300, "realized_pnl": -300,
+             "unrealized_pnl": 0, "num_individual_trades": 5,
+             "num_winners": 1, "num_losers": 4},
+        ])
+        m = _build_strategy_fit_matrix(df, col_field="sector")
+        sweet_sectors = {s["sector"] for s in m["sweet_spots"]}
+        soft_sectors = {s["sector"] for s in m["soft_spots"]}
+        assert "Unknown" not in sweet_sectors, (
+            "Unknown must never be celebrated as a sweet spot — it's noise."
+        )
+        assert "Unknown" not in soft_sectors, (
+            "Unknown must never be flagged as a soft spot — it's noise."
+        )
+        # Verify the named-sector winners actually surface.
+        assert "Technology" in sweet_sectors
+        assert "Energy" in soft_sectors
+        # Sanity: the Unknown cells are still IN the matrix (just not narrated).
+        assert "Unknown" in m["col_labels"]

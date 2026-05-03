@@ -53,6 +53,45 @@ def _user_account_list():
     return get_accounts_for_user(current_user.id)
 
 
+def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, strike):
+    """Return (itm: bool|None, distance: float|None) for an option vs the
+    current stock price.
+
+    Conventions:
+        - Call ITM when stock >= strike (right to BUY at strike < market).
+        - Put  ITM when stock <= strike (right to SELL at strike > market).
+        - `distance` is signed so the magnitude reads as "$X away from the
+          ITM/OTM boundary"; the template renders abs(distance).
+
+    Robust against either input string for the option side because the
+    pipeline carries two columns: the canonical full label
+    (`instrument_type` = 'Call' / 'Put', from stg_current's case statement)
+    and the OSI single-char (`option_type` = 'C' / 'P'). The original
+    implementation only checked one against the wrong literal and
+    silently inverted ITM/OTM for every call expiring soon — exactly
+    the bug a user spotted on a PLTR 141 Call with stock @ $137.92
+    showing as "ITM $3.08" instead of "OTM $3.08".
+    """
+    try:
+        sp = float(stock_price or 0)
+        k = float(strike or 0)
+    except (TypeError, ValueError):
+        return None, None
+    if sp <= 0 or k <= 0:
+        return None, None
+
+    instr = str(instrument_type or "").strip()
+    osi = str(option_type or "").strip().upper()
+    is_call = (instr == "Call") or osi.startswith("C")
+    is_put = (instr == "Put") or osi.startswith("P")
+    if not (is_call or is_put):
+        return None, None
+
+    if is_call:
+        return sp >= k, round(sp - k, 2)
+    return sp <= k, round(k - sp, 2)
+
+
 def _account_sql_and(accounts):
     if accounts is None:
         return ""
@@ -301,8 +340,8 @@ SELECT
     SUM(account_value) AS account_value,
     SUM(delta_1d) AS daily_change
 FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
-WHERE date >= @month_start
-  AND date <= @month_end
+WHERE date >= @start_date
+  AND date <= @end_date
   {account_filter}
 GROUP BY date
 ORDER BY date
@@ -1157,6 +1196,290 @@ def _auto_mode(today: date) -> str:
     return "midweek"
 
 
+_MODE_LABELS = {
+    "friday": "Friday Review",
+    "monday": "Monday Check",
+    "midweek": "Mid-Week",
+}
+
+
+def _build_behavior_sentence(review, behavior_mirror, mode):
+    """One-line behavior summary for the dual hero. Process-first, no money.
+
+    Falls back gracefully when there is no baseline yet.
+    """
+    review = review or {}
+    bm = behavior_mirror or {}
+    trades_closed = int(review.get("trades_closed", 0) or 0)
+
+    if mode == "midweek" and trades_closed == 0:
+        return "Mid-week check-in. No closed trades yet — your week is still being written."
+    if mode == "monday" and trades_closed == 0:
+        return "New week, clean slate. Look at what you carried in before you trade."
+    if trades_closed == 0:
+        return "Nothing closed this week — your open positions are still in play."
+
+    # Volume baseline shapes the strongest signal: are you trading more / less than usual?
+    has_baseline = bool(bm.get("has_baseline"))
+    if has_baseline:
+        vol = bm.get("volume", {})
+        vol_val = float(vol.get("value") or 0)
+        vol_base = float(vol.get("baseline") or 0)
+        wr = bm.get("win_rate", {})
+        wr_val = wr.get("value")
+        wr_base = wr.get("baseline")
+        wr_diff = wr.get("diff")
+
+        # Volume deviation comes first (it changes the shape of the week).
+        if vol_base > 0 and vol_val > 0:
+            ratio = vol_val / vol_base
+            if ratio >= 1.6:
+                return (
+                    f"More active than usual — {int(vol_val)} closes vs your "
+                    f"typical {vol_base:.1f}/week."
+                )
+            if ratio <= 0.5:
+                return (
+                    f"More selective than usual — {int(vol_val)} closes vs your "
+                    f"typical {vol_base:.1f}/week."
+                )
+
+        # Win-rate deviation second.
+        if wr_val is not None and wr_base is not None and wr_diff is not None:
+            if wr_diff >= 15:
+                return f"Sharper than usual — {wr_val:.0f}% wins vs your {wr_base:.0f}% baseline."
+            if wr_diff <= -15:
+                return f"Tougher week — {wr_val:.0f}% wins vs your {wr_base:.0f}% baseline."
+
+        return "You traded like you usually do this week."
+
+    # No baseline yet (early account / sparse history).
+    if trades_closed == 1:
+        return "One trade closed — building the baseline you'll be compared to."
+    return f"{trades_closed} trades closed — building the baseline you'll be compared to."
+
+
+def _neutral_market_line(market):
+    """Neutral one-liner about market context. No 'beating'/'trailing' judgment."""
+    if not market:
+        return None
+    spy = market.get("spy_week_pct")
+    qqq = market.get("qqq_week_pct")
+    parts = []
+    if spy is not None:
+        parts.append(f"SPY {'+' if spy >= 0 else ''}{spy:.1f}%")
+    if qqq is not None:
+        parts.append(f"QQQ {'+' if qqq >= 0 else ''}{qqq:.1f}%")
+    if not parts:
+        return None
+    return f"Market context this week: {' · '.join(parts)}."
+
+
+def _build_week_diary(*, week_start, today, trades, daily_changes, expiring_options):
+    """Build a Mon→Fri diary of activity for the current week.
+
+    A "trading mirror" should read like a diary, not a dashboard. One row per
+    weekday with a one-line natural-language summary plus structured event
+    chips so the template can render expandable details if needed.
+
+    Args:
+        week_start: date — Monday of the week being reviewed.
+        today: date — user-local today.
+        trades: list of dicts (the same `trades_this_week` shape we already build).
+        daily_changes: dict[date → float] — account value daily change from the
+            calendar query, used as a per-day P&L glance.
+        expiring_options: list of dicts — used to surface weekday expiries.
+
+    Returns:
+        list[dict] of length 5 (Mon..Fri). Weekend is skipped — markets are closed.
+    """
+    diary = []
+    # Bucket trades by their relevant date for each weekday.
+    opens_by_date = {}
+    closes_by_date = {}
+    for t in trades or []:
+        od = t.get("open_date") or ""
+        cd = t.get("close_date") or ""
+        try:
+            if od:
+                d = date.fromisoformat(od[:10])
+                if week_start <= d <= week_start + timedelta(days=6):
+                    opens_by_date.setdefault(d, []).append(t)
+        except (TypeError, ValueError):
+            pass
+        try:
+            if cd and cd != od:
+                d = date.fromisoformat(cd[:10])
+                if week_start <= d <= week_start + timedelta(days=6):
+                    closes_by_date.setdefault(d, []).append(t)
+        except (TypeError, ValueError):
+            pass
+
+    # Bucket expirations by their expiry date.
+    exps_by_date = {}
+    for e in expiring_options or []:
+        try:
+            d = date.fromisoformat((e.get("expiry") or "")[:10])
+            if week_start <= d <= week_start + timedelta(days=6):
+                exps_by_date.setdefault(d, []).append(e)
+        except (TypeError, ValueError):
+            pass
+
+    for i in range(5):
+        d = week_start + timedelta(days=i)
+        opens = opens_by_date.get(d, [])
+        closes = closes_by_date.get(d, [])
+        exps = exps_by_date.get(d, [])
+
+        # Build natural-language summary.
+        bits = []
+        if closes:
+            wins = sum(1 for t in closes if (t.get("current_pnl") or 0) > 0)
+            losses = sum(1 for t in closes if (t.get("current_pnl") or 0) < 0)
+            if len(closes) == 1:
+                t = closes[0]
+                pnl = float(t.get("current_pnl") or 0)
+                sign = "+" if pnl >= 0 else "-"
+                bits.append(
+                    f"Closed {t.get('strategy') or 'trade'} on "
+                    f"{t.get('symbol') or ''} ({sign}${abs(pnl):,.0f})"
+                )
+            else:
+                if wins == len(closes):
+                    bits.append(f"Closed {len(closes)} trades (all winners)")
+                elif losses == len(closes):
+                    bits.append(f"Closed {len(closes)} trades (all losers)")
+                else:
+                    bits.append(f"Closed {len(closes)} trades ({wins}W / {losses}L)")
+        if opens:
+            if len(opens) == 1:
+                o = opens[0]
+                bits.append(f"Opened {o.get('strategy') or 'trade'} on {o.get('symbol') or ''}")
+            else:
+                # Group by strategy for compactness.
+                strats = {}
+                for o in opens:
+                    s = o.get("strategy") or "trade"
+                    strats[s] = strats.get(s, 0) + 1
+                strat_bits = ", ".join(
+                    f"{n} {s}" + ("s" if n != 1 else "") for s, n in strats.items()
+                )
+                bits.append(f"Opened {strat_bits}")
+        if exps and not closes and not opens:
+            sym_count = len(exps)
+            bits.append(f"{sym_count} option{'s' if sym_count != 1 else ''} expiring")
+
+        is_today = (d == today)
+        is_future = (d > today)
+        if not bits:
+            if is_future:
+                summary = ""
+            elif is_today:
+                summary = "Today — nothing closed yet."
+            else:
+                summary = "Quiet day."
+        else:
+            summary = " · ".join(bits)
+
+        diary.append({
+            "date": d,
+            "weekday": d.weekday(),
+            "label": d.strftime("%a"),
+            "long_label": d.strftime("%a %b %-d"),
+            "is_today": is_today,
+            "is_future": is_future,
+            "daily_change": daily_changes.get(d) if daily_changes else None,
+            "num_opens": len(opens),
+            "num_closes": len(closes),
+            "num_expirations": len(exps),
+            "summary": summary,
+        })
+    return diary
+
+
+def _build_noticed(key_observation, patterns, coaching_take):
+    """Merge Key Observation + Patterns + Coach's Take into a single 'What we
+    noticed' panel of up to 3 cards. Process-first ordering.
+
+    Returns: list of dicts {severity, headline, detail, icon?}
+    """
+    cards = []
+
+    # 1) Key observation gets the top slot when present (it's the strongest single signal).
+    if key_observation:
+        cards.append({
+            "severity": key_observation.get("type") or "neutral",
+            "icon": key_observation.get("icon") or "",
+            "headline": "This week",
+            "detail": key_observation.get("text") or "",
+        })
+
+    # 2) Patterns from history (streaks, post-loss clusters, DTE sensitivity).
+    for p in patterns or []:
+        cards.append({
+            "severity": p.get("severity") or "neutral",
+            "icon": "",
+            "headline": p.get("headline") or "",
+            "detail": p.get("detail") or "",
+        })
+
+    # 3) Coach's Take — exit timing — only if there's a real story.
+    if coaching_take and coaching_take.get("coaching_signals"):
+        for sig in coaching_take["coaching_signals"][:1]:
+            cards.append({
+                "severity": "warning",
+                "icon": "",
+                "headline": "Exit timing",
+                "detail": sig,
+            })
+    elif coaching_take and coaching_take.get("total_given_back", 0) > 50:
+        cards.append({
+            "severity": "warning",
+            "icon": "",
+            "headline": "Exit timing",
+            "detail": (
+                f"Left ${coaching_take['total_given_back']:,.0f} on the table this week "
+                f"by holding past peak profit."
+            ),
+        })
+
+    # Cap at 3. The page should not become a wall of cards.
+    return cards[:3]
+
+
+def _build_calendar_grid(daily_changes, today):
+    """Rolling 4-weeks-ending-today calendar (4 ISO weeks × Mon-Fri = 20 cells).
+
+    Always populated regardless of where we are in the calendar month, which is
+    a much better default than "current month so far".
+    """
+    # Anchor on the Monday of the current week and walk 3 weeks back.
+    week_mon = today - timedelta(days=today.weekday())
+    rows = []
+    for w in range(3, -1, -1):
+        row_start = week_mon - timedelta(days=w * 7)
+        row_cells = []
+        for i in range(5):
+            d = row_start + timedelta(days=i)
+            change = daily_changes.get(d) if daily_changes else None
+            row_cells.append({
+                "date": d,
+                "day": d.day,
+                "month_short": d.strftime("%b"),
+                "is_today": d == today,
+                "is_future": d > today,
+                "weekday": d.weekday(),
+                "daily_change": change,
+                "has_data": change is not None,
+            })
+        rows.append({
+            "week_label": row_start.strftime("%b %-d"),
+            "week_start": row_start,
+            "cells": row_cells,
+        })
+    return rows
+
+
 def _aggregate_weekly_rows(rows):
     """Aggregate multiple account rows from mart_weekly_summary into one summary."""
     if not rows:
@@ -1320,6 +1643,11 @@ def weekly_review():
         "since_last_looked": None,
     }
 
+    # Daily P&L lookup, populated from BigQuery if available. Initialized here
+    # so the diary builder at the bottom of the function can read it even when
+    # the outer BigQuery try-block fails.
+    daily_changes_map = {}
+
     try:
         client = get_bigquery_client()
 
@@ -1377,11 +1705,11 @@ def weekly_review():
         week_end = this_week + timedelta(days=6)
 
         # ── Parallel batch: all independent queries after week is determined ──
-        month_start = today.replace(day=1)
-        if today.month == 12:
-            month_end_date = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
-        else:
-            month_end_date = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+        # Calendar shows a rolling 4-week window ending at the Monday of the
+        # current week + Friday so it's always populated (the old "current
+        # calendar month" version was empty on the 1st of every month).
+        cal_start = this_week - timedelta(days=21)  # 3 weeks before this Monday
+        cal_end = this_week + timedelta(days=4)     # this Friday
 
         week_cfg = bigquery.QueryJobConfig(
             query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
@@ -1394,8 +1722,8 @@ def weekly_review():
         )
         cal_cfg = bigquery.QueryJobConfig(
             query_parameters=[
-                bigquery.ScalarQueryParameter("month_start", "DATE", month_start),
-                bigquery.ScalarQueryParameter("month_end", "DATE", month_end_date),
+                bigquery.ScalarQueryParameter("start_date", "DATE", cal_start),
+                bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
             ]
         )
 
@@ -1812,22 +2140,18 @@ def weekly_review():
                     for _, row in expiring.iterrows():
                         sym = str(row.get("symbol", ""))
                         strike = float(row.get("option_strike") or 0)
-                        opt_type = str(row.get("option_type") or "")
+                        opt_type = str(row.get("option_type") or "")  # raw OSI char ("C"/"P") for the $141.0 C meta line
                         stock_price = float(eq_prices.get(sym, 0)) or float(row.get("latest_stock_price") or 0)
                         expiry = row.get("option_expiry")
                         expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else str(expiry)[:10]
                         days_to_exp = (expiry.date() - today).days if hasattr(expiry, "date") else None
 
-                        if stock_price > 0 and strike > 0:
-                            if opt_type == "Call":
-                                itm = stock_price >= strike
-                                distance = round(stock_price - strike, 2)
-                            else:
-                                itm = stock_price <= strike
-                                distance = round(strike - stock_price, 2)
-                        else:
-                            itm = None
-                            distance = None
+                        itm, distance = _classify_expiring_moneyness(
+                            instrument_type=row.get("instrument_type"),
+                            option_type=opt_type,
+                            stock_price=stock_price,
+                            strike=strike,
+                        )
 
                         context["expiring_options"].append({
                             "symbol": sym,
@@ -1954,14 +2278,14 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Position impact processing failed: %s", e)
 
-        # ── Process: Daily P&L Calendar Heatmap ──
+        # ── Process: Daily P&L — rolling 4-week grid ──
         context["daily_calendar"] = []
-        context["calendar_month_label"] = today.strftime("%B %Y")
+        context["calendar_grid"] = []
+        context["calendar_month_label"] = "Last 4 weeks"
         context["daily_calendar_no_query_rows"] = True
+        daily_changes_map = {}
         try:
             cal_df = batch.get("calendar", pd.DataFrame())
-            # Build lookup of data by date
-            data_by_date = {}
             if not cal_df.empty:
                 for col in ["account_value", "daily_change"]:
                     if col in cal_df.columns:
@@ -1969,27 +2293,15 @@ def weekly_review():
                 if "date" in cal_df.columns:
                     cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
                 for _, row in cal_df.iterrows():
-                    data_by_date[row["date"]] = round(float(row.get("daily_change") or 0), 2)
+                    daily_changes_map[row["date"]] = round(float(row.get("daily_change") or 0), 2)
 
             context["daily_calendar_no_query_rows"] = cal_df.empty
-
-            # Generate all days of the month up to today
-            d = month_start
-            end_day = min(month_end_date, today)
-            while d <= end_day:
-                context["daily_calendar"].append({
-                    "date": str(d),
-                    "day": d.day,
-                    "weekday": d.weekday(),
-                    "daily_change": data_by_date.get(d, 0),
-                    "has_data": d in data_by_date,
-                    "is_today": d == today,
-                })
-                d += timedelta(days=1)
+            context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)
         except Exception as e:
             if app.debug:
                 app.logger.warning("Daily calendar query failed: %s", e)
             context["daily_calendar_no_query_rows"] = True
+            context["calendar_grid"] = _build_calendar_grid({}, today)
 
         # Mode-specific data
         # AI Insight summary (for Friday review)
@@ -2055,6 +2367,24 @@ def weekly_review():
         strategy_breakdown=context.get("strategy_breakdown_week", []),
     )
     context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
+
+    # Dual-hero behavior sentence: process-first 1-liner that anchors the page
+    # for a Trading Mirror (vs the old P&L-first hero).
+    context["behavior_sentence"] = _build_behavior_sentence(
+        review=context.get("review"),
+        behavior_mirror=context.get("behavior_mirror"),
+        mode=mode,
+    )
+
+    # Neutral market context: replaces the "Outperforming/Trailing both indexes"
+    # badge that scored the user against the market on first paint. The product
+    # manifesto explicitly says "the market is framing, not scoring."
+    context["market_neutral_line"] = _neutral_market_line(context.get("market"))
+
+    # Auto-mode UI: surface that the page picked your mode from the day, but
+    # let advanced users override via the chip.
+    context["mode_label"] = _MODE_LABELS.get(mode, "Weekly Review")
+    context["mode_was_auto"] = (request.args.get("mode") in (None, ""))
 
     # ── Pattern detection (all modes) ──
     context["patterns"] = []
@@ -2167,6 +2497,34 @@ def weekly_review():
                 break
         if watch_items:
             context["watch_next_week"] = watch_items
+
+    # Diary: Mon→Fri timeline of activity. Centerpiece of the redesigned
+    # Weekly Review — turns the page from a dashboard into a trading journal.
+    try:
+        context["diary"] = _build_week_diary(
+            week_start=this_week,
+            today=today,
+            trades=context.get("trades_this_week") or [],
+            daily_changes=daily_changes_map,
+            expiring_options=context.get("expiring_options") or [],
+        )
+    except Exception as e:
+        if app.debug:
+            app.logger.warning("Week diary build failed: %s", e)
+        context["diary"] = []
+
+    # "What we noticed" merges Key Observation + Patterns + Coach's Take into
+    # a single panel of up to 3 cards (was 3 separate sections).
+    try:
+        context["noticed"] = _build_noticed(
+            key_observation=context.get("key_observation"),
+            patterns=context.get("patterns") or [],
+            coaching_take=context.get("coaching_take"),
+        )
+    except Exception as e:
+        if app.debug:
+            app.logger.warning("Noticed panel build failed: %s", e)
+        context["noticed"] = []
 
     _prof = get_user_profile(current_user.id)
     _vis = (_prof.get("profile_visibility") or "private").lower()

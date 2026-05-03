@@ -1,10 +1,4 @@
 Account,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Schwab Account,PLTR  260424C00141000,PALANTIR TECHNOLOGIES INC 04/24/2026 $141 Call,-2.0,0.98,,,-280.0,,,196.0,-476.0,-242.8571,,,,,,,,,,,,,,,,,Option,
-Schwab Account,QTUM,Defiance Quantum ETF,100.0,95.9,,,13260.0,,,9590.0,3670.0,38.269,,,,,,,,,,,,,,,,,ETFs & Closed End Funds,
-Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,55.7766,,,7985.0,,,11155.32,-3170.32,-28.4198,,,,,,,,,,,,,,,,,Option,
-Schwab Account,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,38.5866,,,4547.5,,,3858.66,688.84,17.8518,,,,,,,,,,,,,,,,,Option,
-Schwab Account,QBTS,QBTS,100.0,28.3117,,,1853.5,,,2831.1699999999996,-977.67,-34.5324,,,,,,,,,,,,,,,,,Equity,
-Schwab Account,ASTS,ASTS,11.0,90.1727272727,,,861.96,,,991.8999999997,-129.94,-13.1001,,,,,,,,,,,,,,,,,Equity,
 investment1,ASTS,AST SPACEMOBILE INC CLASS CLASS A,11,76.40,-2.35,-2.98%,$840.40,-$25.85,-2.98%,$991.90,-$151.50,-15.27%,F,No,,2.47%,-,$90.17,03/02/2026,,,,-58.95,$22.07,$129.89,"11,757,700",-,-,Equity,$420.00
 investment1,QBTS,D-WAVE QUANTUM INC,100,18.49,-0.82,-4.25%,"$1,849.00",-$82.00,-4.25%,"$2,831.17",-$982.17,-34.69%,F,No,,5.44%,-,$28.31,02/26/2026,,,,-17.47,$6.52,$46.75,"23,756,895",-,-,Equity,"$1,294.00"
 investment1,QTUM,DEFIANCE QUANTUM ETF,100,132.79,3.04,2.34%,"$13,279.00",$304.00,2.34%,"$9,590.00","$3,689.00",38.47%,--,No,,39.1%,-,$95.90,,0.69%,0.2236,03/25/2026,,$71.72,$132.99,"503,291",-,-,ETFs & Closed End Funds,"$3,984.00"
@@ -40,3 +34,11 @@ Schwab ••••0044,DXCM,DXCM,2000.0,16.497745,,,121680.0,,,32995.49,88684.5
 Schwab ••••0044,ABT,ABT,1000.0,106.49415,,,89970.0,,,106494.15000000001,-16524.15,-15.5165,,,,,,,,,,,,,,,,,Equity,
 Schwab ••••0044,DELL  260515C00220000,DELL TECHNOLOGIES INC 05/15/2026 $220 Call,-3.0,8.2756666667,,,-1440.0,,,2482.70000001,-3922.7,-158.0014,,,,,,,,,,,,,,,,,Option,
 Schwab ••••0044,ABT   260522C00095000,ABBOTT LABS 05/22/2026 $95 Call,-10.0,1.49582,,,-500.0,,,1495.82,-1995.82,-133.4265,,,,,,,,,,,,,,,,,Option,
+Schwab Account,QTUM,Defiance Quantum ETF,100.0,95.9,,,13517.0,,,9590.0,3927.0,40.9489,,,,,,,,,,,,,,,,,ETFs & Closed End Funds,
+Schwab Account,PLTR  270115C00120000,PALANTIR TECHNOLOGIES INC 01/15/2027 $120 Call,2.0,55.7766,,,8175.0,,,11155.32,-2980.32,-26.7166,,,,,,,,,,,,,,,,,Option,
+Schwab Account,RDDT  261218C00135000,REDDIT INC 12/18/2026 $135 Call,1.0,38.5866,,,5387.5,,,3858.66,1528.84,39.621,,,,,,,,,,,,,,,,,Option,
+Schwab Account,PLTR  260508C00147000,PALANTIR TECHNOLOGIES INC 05/08/2026 $147 Call,-2.0,5.97325,,,-1155.0,,,1194.65,-2349.65,-196.681,,,,,,,,,,,,,,,,,Option,
+Schwab Account,QBTS,QBTS,100.0,28.3117,,,2049.0,,,2831.1699999999996,-782.17,-27.6271,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,ASTS,ASTS,11.0,90.1727272727,,,779.79,,,991.8999999997,-212.11,-21.3842,,,,,,,,,,,,,,,,,Equity,
+Schwab ••••9437,QTUM,Defiance Quantum ETF,196.0,112.045,,,26493.32,,,21960.82,4532.5,20.639,,,,,,,,,,,,,,,,,ETFs & Closed End Funds,
+Schwab ••••9437,RGTI,RGTI,1.0,16.3,,,17.5,,,16.3,1.2,7.362,,,,,,,,,,,,,,,,,Equity,

@@ -359,7 +359,7 @@ ERROR_DEFAULTS = dict(
     accounts=[],
     strategies=[],
     symbols=[],
-    industries=[],
+    subsectors=[],
     sectors=[],
     user_accounts=[],
     status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
@@ -367,7 +367,7 @@ ERROR_DEFAULTS = dict(
     selected_strategy="",
     selected_statuses=[],
     selected_symbol="",
-    selected_industry="",
+    selected_subsector="",
     selected_sector="",
     selected_start_date="",
     selected_end_date="",
@@ -738,7 +738,11 @@ def positions():
     # full book unless they explicitly narrow it.
     selected_statuses = request.args.getlist("status")
     selected_symbol = request.args.get("symbol", "")
-    selected_industry = request.args.get("industry", "")
+    # 'subsector' is the new param; 'industry' is the pre-rename alias and is
+    # still accepted so any old bookmarks / external links keep working.
+    selected_subsector = (
+        request.args.get("subsector", "") or request.args.get("industry", "")
+    )
     selected_sector = request.args.get("sector", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
@@ -802,9 +806,9 @@ def positions():
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
-    industries = (
-        sorted(df["industry"].dropna().unique())
-        if "industry" in df.columns else []
+    subsectors = (
+        sorted(df["subsector"].dropna().unique())
+        if "subsector" in df.columns else []
     )
     sectors = (
         sorted(df["sector"].dropna().unique())
@@ -827,8 +831,8 @@ def positions():
         filtered = filtered[filtered["status"].isin(selected_statuses)]
     if selected_symbol:
         filtered = filtered[filtered["symbol"] == selected_symbol]
-    if selected_industry and "industry" in filtered.columns:
-        filtered = filtered[filtered["industry"] == selected_industry]
+    if selected_subsector and "subsector" in filtered.columns:
+        filtered = filtered[filtered["subsector"] == selected_subsector]
     if selected_sector and "sector" in filtered.columns:
         filtered = filtered[filtered["sector"] == selected_sector]
 
@@ -870,8 +874,8 @@ def positions():
     # 7. Symbol-level summary (grouped by account + symbol)
     # ------------------------------------------------------------------
     if not filtered.empty:
-        # Carry sector / industry through the symbol-level rollup. Each
-        # (account, symbol) maps to a single sector/industry, so 'first' is
+        # Carry sector / subsector through the symbol-level rollup. Each
+        # (account, symbol) maps to a single sector/subsector, so 'first' is
         # safe and fast.
         agg_kwargs = dict(
             total_pnl=("total_pnl", "sum"),
@@ -888,8 +892,8 @@ def positions():
         )
         if "sector" in filtered.columns:
             agg_kwargs["sector"] = ("sector", "first")
-        if "industry" in filtered.columns:
-            agg_kwargs["industry"] = ("industry", "first")
+        if "subsector" in filtered.columns:
+            agg_kwargs["subsector"] = ("subsector", "first")
         symbol_agg = (
             filtered.groupby(["account", "symbol"])
             .agg(**agg_kwargs)
@@ -949,7 +953,7 @@ def positions():
         accounts=accounts,
         strategies=strategies,
         symbols=symbols,
-        industries=industries,
+        subsectors=subsectors,
         sectors=sectors,
         user_accounts=accounts,
         status_counts=status_counts,
@@ -957,7 +961,7 @@ def positions():
         selected_strategy=selected_strategy,
         selected_statuses=selected_statuses,
         selected_symbol=selected_symbol,
-        selected_industry=selected_industry,
+        selected_subsector=selected_subsector,
         selected_sector=selected_sector,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
@@ -1098,6 +1102,7 @@ POSITION_MATRIX_QUERY = """
         dte_at_open,
         dte_bucket,
         strike_distance,
+        underlying_price_at_open,
         pnl_pct,
         total_pnl,
         direction,
@@ -1645,7 +1650,7 @@ def position_detail(symbol):
             chart_data_json="{}",
             has_underlying_price=False,
             symbol_sector="",
-            symbol_industry="",
+            symbol_subsector="",
             symbol_company="",
         )
 
@@ -2455,7 +2460,7 @@ def position_detail(symbol):
     else:
         all_accounts = []
 
-    # Sector / industry: take the first non-Unknown value we can find from
+    # Sector / subsector: take the first non-Unknown value we can find from
     # either summary or current. Both sources are joined to stg_symbol_metadata
     # in dbt, so they should agree — falling through is just defensive.
     def _first_nonempty(df_, col):
@@ -2471,7 +2476,7 @@ def position_detail(symbol):
         return vals.iloc[0]
 
     symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
-    symbol_industry = _first_nonempty(summary_df, "industry") or _first_nonempty(current_df, "industry")
+    symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
     return render_template(
@@ -2493,7 +2498,7 @@ def position_detail(symbol):
         accounts=all_accounts,
         selected_account=selected_account,
         symbol_sector=symbol_sector,
-        symbol_industry=symbol_industry,
+        symbol_subsector=symbol_subsector,
         symbol_company=symbol_company,
     )
 
@@ -2632,19 +2637,41 @@ def _build_option_matrices(matrix_df, account, symbol):
                 return lbl
         return "61+"
 
-    def strike_bucket(dist):
-        """Round strike distance to nearest integer for column headers."""
-        return int(round(dist))
+    # Bucket strike distance as % of the underlying at open so the matrix
+    # is readable across symbols of any price (a $50 distance means very
+    # different things on a $50 stock vs a $500 stock). Buckets are signed
+    # to preserve ITM vs OTM directionality.
+    PCT_BINS = [
+        (-9999, -10, "<-10%"),
+        (-10, -5, "-10 to -5%"),
+        (-5, -2, "-5 to -2%"),
+        (-2, 2, "ATM ±2%"),
+        (2, 5, "+2 to +5%"),
+        (5, 10, "+5 to +10%"),
+        (10, 9999, ">+10%"),
+    ]
+
+    def strike_bucket(row):
+        dist = row.get("strike_distance")
+        underlying = row.get("underlying_price_at_open")
+        if dist is None or not underlying or underlying <= 0:
+            return "—"
+        pct = (dist / underlying) * 100
+        for lo, hi, lbl in PCT_BINS:
+            if lo <= pct < hi:
+                return lbl
+        return "—"
 
     matrices = []
     for strategy, grp in df.groupby("strategy"):
         grp = grp.copy()
         grp["dte_label"] = grp["dte_at_open"].apply(dte_label)
-        grp["strike_col"] = grp["strike_distance"].apply(strike_bucket)
+        grp["strike_col"] = grp.apply(strike_bucket, axis=1)
 
-        min_col = grp["strike_col"].min()
-        max_col = grp["strike_col"].max()
-        col_range = list(range(min_col, max_col + 1))
+        # Preserve PCT_BINS order so columns read left-to-right ITM → OTM
+        col_range = [lbl for _, _, lbl in PCT_BINS if lbl in grp["strike_col"].values]
+        if "—" in grp["strike_col"].values and "—" not in col_range:
+            col_range.append("—")
 
         dte_order = [lbl for _, _, lbl in DTE_BINS if lbl in grp["dte_label"].values]
 
@@ -3842,18 +3869,21 @@ def _build_strategy_time_chart(strat_df):
 
 
 # ======================================================================
-# Industries  (/industries)
+# Sectors  (/sectors)
 # ======================================================================
 #
-# Sector / industry rollup of positions_summary, scoped to the logged-in
-# user's accounts. Powers the new "Industries" page in the Portfolio nav.
+# Sector / subsector rollup of positions_summary, scoped to the logged-in
+# user's accounts. Powers the "Sectors" page in the Portfolio nav.
+# (Originally /industries — renamed to standardize on the finance term
+# "sector → subsector" hierarchy. The /industries URL still resolves via
+# a redirect for old bookmarks.)
 # Tenancy: positions_summary is multi-tenant -> we MUST scope the SQL with
 # _account_sql_and AND filter the resulting DataFrame with
 # _filter_df_by_accounts before aggregating, per
 # .cursor/rules/bigquery-tenant-isolation.mdc.
 # ----------------------------------------------------------------------
 
-INDUSTRIES_QUERY = """
+SECTORS_QUERY = """
     SELECT
         account,
         symbol,
@@ -3869,7 +3899,7 @@ INDUSTRIES_QUERY = """
         num_winners,
         num_losers,
         sector,
-        industry,
+        subsector,
         company_name
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
@@ -3879,7 +3909,15 @@ INDUSTRIES_QUERY = """
 
 @app.route("/industries")
 @login_required
-def industries():
+def industries_legacy():
+    """Backward-compatible redirect for the old /industries URL. The page
+    moved to /sectors when we renamed industry → subsector."""
+    return redirect(url_for("sectors", **request.args.to_dict(flat=True)), code=301)
+
+
+@app.route("/sectors")
+@login_required
+def sectors():
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce
@@ -3891,16 +3929,16 @@ def industries():
 
     try:
         df = client.query(
-            INDUSTRIES_QUERY.format(account_filter=acct_filter)
+            SECTORS_QUERY.format(account_filter=acct_filter)
         ).to_dataframe()
     except Exception as exc:
         return render_template(
-            "industries.html",
+            "sectors.html",
             error=str(exc),
             sectors=[],
             sector_rows=[],
-            industry_rows=[],
-            industries_by_sector={},
+            subsector_rows=[],
+            subsectors_by_sector={},
             unknown_count=0,
             kpis={},
             accounts=[],
@@ -3921,7 +3959,7 @@ def industries():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    for col in ("sector", "industry"):
+    for col in ("sector", "subsector"):
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
 
@@ -3929,16 +3967,16 @@ def industries():
 
     if df.empty:
         return render_template(
-            "industries.html",
+            "sectors.html",
             error=None,
             sectors=[],
             sector_rows=[],
-            industry_rows=[],
-            industries_by_sector={},
+            subsector_rows=[],
+            subsectors_by_sector={},
             unknown_count=0,
             kpis={
                 "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
-                "num_industries": 0, "num_symbols": 0, "num_trades": 0,
+                "num_subsectors": 0, "num_symbols": 0, "num_trades": 0,
                 "win_rate": 0.0,
             },
             accounts=accounts_for_filter,
@@ -3952,16 +3990,16 @@ def industries():
         "total_pnl": float(df["total_pnl"].sum()),
         "realized_pnl": float(df["realized_pnl"].sum()),
         "unrealized_pnl": float(df["unrealized_pnl"].sum()),
-        "num_industries": int(df["industry"].nunique()),
+        "num_subsectors": int(df["subsector"].nunique()),
         "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
     }
 
-    # Per-industry rollup: collapse strategy granularity, aggregate over the
-    # user's accounts. One row per (sector, industry).
-    industry_agg = (
-        df.groupby(["sector", "industry"], dropna=False)
+    # Per-subsector rollup: collapse strategy granularity, aggregate over the
+    # user's accounts. One row per (sector, subsector).
+    subsector_agg = (
+        df.groupby(["sector", "subsector"], dropna=False)
         .agg(
             total_pnl=("total_pnl", "sum"),
             realized_pnl=("realized_pnl", "sum"),
@@ -3976,39 +4014,39 @@ def industries():
         )
         .reset_index()
     )
-    closed = industry_agg["num_winners"] + industry_agg["num_losers"]
-    industry_agg["win_rate"] = industry_agg["num_winners"] / closed.replace(0, pd.NA)
-    industry_agg["win_rate"] = industry_agg["win_rate"].fillna(0)
+    closed = subsector_agg["num_winners"] + subsector_agg["num_losers"]
+    subsector_agg["win_rate"] = subsector_agg["num_winners"] / closed.replace(0, pd.NA)
+    subsector_agg["win_rate"] = subsector_agg["win_rate"].fillna(0)
 
-    # Top symbol per (sector, industry) by total_return — useful "what's
-    # actually carrying this industry?" tooltip on the card.
-    sym_in_ind = (
-        df.groupby(["sector", "industry", "symbol"], dropna=False)["total_return"]
+    # Top symbol per (sector, subsector) by total_return — useful "what's
+    # actually carrying this subsector?" tooltip on the card.
+    sym_in_sub = (
+        df.groupby(["sector", "subsector", "symbol"], dropna=False)["total_return"]
         .sum()
         .reset_index()
     )
-    if not sym_in_ind.empty:
-        sym_in_ind = sym_in_ind.sort_values(
-            ["sector", "industry", "total_return"], ascending=[True, True, False]
+    if not sym_in_sub.empty:
+        sym_in_sub = sym_in_sub.sort_values(
+            ["sector", "subsector", "total_return"], ascending=[True, True, False]
         )
         top_symbol_map = (
-            sym_in_ind.groupby(["sector", "industry"])
+            sym_in_sub.groupby(["sector", "subsector"])
             .first()
-            .reset_index()[["sector", "industry", "symbol", "total_return"]]
+            .reset_index()[["sector", "subsector", "symbol", "total_return"]]
             .rename(columns={"symbol": "top_symbol", "total_return": "top_symbol_return"})
         )
-        industry_agg = industry_agg.merge(
-            top_symbol_map, on=["sector", "industry"], how="left"
+        subsector_agg = subsector_agg.merge(
+            top_symbol_map, on=["sector", "subsector"], how="left"
         )
     else:
-        industry_agg["top_symbol"] = ""
-        industry_agg["top_symbol_return"] = 0.0
+        subsector_agg["top_symbol"] = ""
+        subsector_agg["top_symbol_return"] = 0.0
 
-    industry_agg = industry_agg.sort_values("total_return", ascending=False)
-    industry_rows = industry_agg.to_dict(orient="records")
+    subsector_agg = subsector_agg.sort_values("total_return", ascending=False)
+    subsector_rows = subsector_agg.to_dict(orient="records")
 
     # Sector rollup — this is now the primary view on the page, so it carries
-    # the same shape as industry_rows: realized / unrealized / premium /
+    # the same shape as subsector_rows: realized / unrealized / premium /
     # dividends / total_return so the sector cards have everything at a glance.
     sector_agg = (
         df.groupby(["sector"], dropna=False)
@@ -4019,7 +4057,7 @@ def industries():
             premium_received=("total_premium_received", "sum"),
             dividend_income=("total_dividend_income", "sum"),
             total_return=("total_return", "sum"),
-            num_industries=("industry", "nunique"),
+            num_subsectors=("subsector", "nunique"),
             num_symbols=("symbol", "nunique"),
             num_trades=("num_individual_trades", "sum"),
             num_winners=("num_winners", "sum"),
@@ -4059,31 +4097,31 @@ def industries():
 
     sector_agg = sector_agg.sort_values("total_pnl", ascending=False)
     sector_rows = sector_agg.to_dict(orient="records")
-    sectors = sector_agg["sector"].tolist()
+    sectors_list = sector_agg["sector"].tolist()
 
-    # Group industries under their sector for the collapsible drill-down on
-    # the page. Order each sector's industries by total_return desc.
-    industries_by_sector: dict[str, list[dict]] = {}
-    for r in industry_rows:
-        industries_by_sector.setdefault(r["sector"], []).append(r)
-    for sec in industries_by_sector:
-        industries_by_sector[sec].sort(
+    # Group subsectors under their sector for the collapsible drill-down on
+    # the page. Order each sector's subsectors by total_return desc.
+    subsectors_by_sector: dict[str, list[dict]] = {}
+    for r in subsector_rows:
+        subsectors_by_sector.setdefault(r["sector"], []).append(r)
+    for sec in subsectors_by_sector:
+        subsectors_by_sector[sec].sort(
             key=lambda x: x.get("total_return", 0), reverse=True
         )
 
     unknown_count = int(
-        ((df["sector"] == "Unknown") | (df["industry"] == "Unknown"))
+        ((df["sector"] == "Unknown") | (df["subsector"] == "Unknown"))
         .pipe(lambda s: s.groupby([df["account"], df["symbol"]]).any())
         .sum()
     )
 
     return render_template(
-        "industries.html",
+        "sectors.html",
         error=None,
-        sectors=sectors,
+        sectors=sectors_list,
         sector_rows=sector_rows,
-        industry_rows=industry_rows,
-        industries_by_sector=industries_by_sector,
+        subsector_rows=subsector_rows,
+        subsectors_by_sector=subsectors_by_sector,
         unknown_count=unknown_count,
         kpis=kpis,
         accounts=accounts_for_filter,
@@ -4095,9 +4133,9 @@ def industries():
 # Strategy fit  (/strategy-fit)
 # ======================================================================
 #
-# Cross-tab of strategy x sector (or strategy x industry when drilled into
+# Cross-tab of strategy x sector (or strategy x subsector when drilled into
 # a single sector) so users can see "what strategies work best in what
-# kinds of companies?". Same tenancy guarantees as /industries — query is
+# kinds of companies?". Same tenancy guarantees as /sectors — query is
 # scoped by _account_sql_and AND the DataFrame is _filter_df_by_accounts'd
 # before any aggregation.
 # ----------------------------------------------------------------------
@@ -4116,11 +4154,293 @@ STRATEGY_FIT_QUERY = """
         num_winners,
         num_losers,
         sector,
-        industry
+        subsector
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
     {account_filter}
 """
+
+# Per-option-contract grain for the DTE / Moneyness slices. Shaped so the
+# matrix builder can consume it identically to the positions_summary path:
+# realized = closed contracts, unrealized = open contracts; winners/losers
+# only counted on closed contracts so win-rate semantics match the rest of
+# the app. underlying_symbol is exposed as `symbol` to keep the per-cell
+# symbol drill-down code path uniform.
+STRATEGY_FIT_OPTIONS_QUERY = """
+    SELECT
+        account,
+        UPPER(TRIM(underlying_symbol)) AS symbol,
+        COALESCE(strategy, 'Other Option') AS strategy,
+        status,
+        dte_bucket,
+        moneyness_at_open,
+        total_pnl,
+        CASE WHEN status = 'Closed' THEN total_pnl ELSE 0 END AS realized_pnl,
+        CASE WHEN status = 'Open'   THEN total_pnl ELSE 0 END AS unrealized_pnl,
+        num_trades AS num_individual_trades,
+        CASE WHEN status = 'Closed' AND total_pnl >  0 THEN 1 ELSE 0 END AS num_winners,
+        CASE WHEN status = 'Closed' AND total_pnl <= 0 THEN 1 ELSE 0 END AS num_losers
+    FROM `ccwj-dbt.analytics.int_option_trade_kinds`
+    WHERE 1=1
+    {account_filter}
+"""
+
+# Fixed display order for non-categorical buckets so the dimension reads
+# left-to-right naturally regardless of P&L. Anything not listed here
+# (e.g. an unexpected bucket value) falls through and is appended after,
+# sorted by total P&L desc, by the matrix builder.
+DIM_FIXED_COL_ORDER = {
+    "dte":        ["0-7 DTE", "8-30 DTE", "31-60 DTE", "61-90 DTE", "91+ DTE", "Unknown"],
+    "moneyness":  ["ITM", "ATM", "OTM", "Unknown"],
+}
+
+# Map dim -> (column field in DataFrame, human label for headers/lede).
+DIM_META = {
+    "sector":     ("sector",            "Sector",     "sectors"),
+    "subsector":  ("subsector",         "Subsector",  "subsectors"),
+    "dte":        ("dte_bucket",        "DTE",        "DTE buckets"),
+    "moneyness":  ("moneyness_at_open", "Moneyness",  "moneyness buckets"),
+}
+
+
+def _build_strategy_fit_matrix(
+    df,
+    *,
+    col_field: str,
+    col_order_override: list | None = None,
+    equity_strategies: list | None = None,
+):
+    """Aggregate a normalized trade DataFrame into the dict of template
+    variables that strategy_fit.html consumes (cells, row/col totals,
+    sweet/soft callouts, baselines, color scales).
+
+    Pure aggregation — no I/O, no tenancy logic. The caller is responsible
+    for scoping `df` to the user's accounts (SQL `account_filter` AND
+    `_filter_df_by_accounts(df, user_accounts)`) BEFORE handing it in.
+
+    Required columns on `df`:
+        account, symbol, strategy, <col_field>,
+        total_pnl, realized_pnl, unrealized_pnl,
+        num_individual_trades, num_winners, num_losers
+
+    Args:
+        col_field:           name of the column that becomes the matrix
+                             columns (e.g. "sector", "dte_bucket").
+        col_order_override:  fixed left-to-right column order (e.g. for
+                             DTE buckets). Unknown bucket values that
+                             show up in the data but aren't in the
+                             override are appended after, P&L-sorted.
+        equity_strategies:   strategies that have no rows in `df` (e.g.
+                             equity-only Buy and Hold on the DTE slice)
+                             but should still appear as N/A rows so the
+                             user can see why nothing's there.
+    """
+    empty = {
+        "row_labels": [],
+        "col_labels": [],
+        "cells": {},
+        "cell_symbols_map": {},
+        "row_totals": {},
+        "col_totals": {},
+        "grand_total": None,
+        "max_abs_pnl": 1.0,
+        "max_abs_expectancy": 1.0,
+        "max_abs_edge": 1.0,
+        "baseline_expectancy": 0.0,
+        "baseline_win_rate": 0.0,
+        "sweet_spots": [],
+        "soft_spots": [],
+        "equity_strategies": sorted(equity_strategies or []),
+    }
+    if df is None or df.empty:
+        # Even with no cell data we still want equity-N/A rows visible so
+        # the user sees the dimension is meaningful but doesn't apply.
+        if equity_strategies:
+            empty["row_labels"] = sorted(equity_strategies)
+        return empty
+
+    cell_agg = (
+        df.groupby(["strategy", col_field], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("symbol", "nunique"),
+        )
+        .reset_index()
+    )
+    closed = cell_agg["num_winners"] + cell_agg["num_losers"]
+    cell_agg["win_rate"] = cell_agg["num_winners"] / closed.replace(0, pd.NA)
+    cell_agg["win_rate"] = cell_agg["win_rate"].fillna(0)
+
+    # Expectancy = avg P&L per trade. The single most decision-relevant metric
+    # because it normalizes for volume — "per trade I take, am I making money?"
+    cell_agg["expectancy"] = cell_agg["total_pnl"] / cell_agg["num_trades"].replace(0, pd.NA)
+    cell_agg["expectancy"] = cell_agg["expectancy"].fillna(0)
+
+    overall_total_pnl = float(df["total_pnl"].sum())
+    overall_trades = int(df["num_individual_trades"].sum())
+    overall_winners = int(df["num_winners"].sum())
+    overall_losers = int(df["num_losers"].sum())
+    overall_closed = overall_winners + overall_losers
+    baseline_expectancy = (overall_total_pnl / overall_trades) if overall_trades else 0.0
+    baseline_win_rate = (overall_winners / overall_closed) if overall_closed else 0.0
+    cell_agg["edge_expectancy"] = cell_agg["expectancy"] - baseline_expectancy
+    cell_agg["edge_win_rate"] = cell_agg["win_rate"] - baseline_win_rate
+
+    # Row order: best-performing strategies on top.
+    row_order = (
+        cell_agg.groupby("strategy")["total_pnl"].sum().sort_values(ascending=False)
+        .index.tolist()
+    )
+    # Equity-only strategies (e.g. Buy and Hold on a DTE slice) trail the
+    # data rows so the matrix still shows "you traded these too, just not
+    # in this dimension." Sorted alphabetically for stable ordering.
+    extra_equity = sorted(
+        s for s in (equity_strategies or []) if s not in set(row_order)
+    )
+    row_order = list(row_order) + extra_equity
+
+    # Column order: fixed where the dimension is categorical (DTE,
+    # moneyness, market cap), P&L-sorted otherwise.
+    if col_order_override is not None:
+        present_cols = set(cell_agg[col_field].dropna().unique().tolist())
+        col_order = [c for c in col_order_override if c in present_cols]
+        # Anything new the data shows that we didn't anticipate — append
+        # P&L-sorted so we don't silently drop columns.
+        leftover = (
+            cell_agg[~cell_agg[col_field].isin(col_order)]
+            .groupby(col_field)["total_pnl"].sum().sort_values(ascending=False)
+            .index.tolist()
+        )
+        col_order = col_order + [c for c in leftover if c not in col_order]
+    else:
+        col_order = (
+            cell_agg.groupby(col_field)["total_pnl"].sum().sort_values(ascending=False)
+            .index.tolist()
+        )
+
+    cells: dict = {}
+    for r in cell_agg.to_dict(orient="records"):
+        cells.setdefault(r["strategy"], {})[r[col_field]] = r
+
+    # Per-cell symbol breakdown (top 5 by P&L) — the drill-panel uses this
+    # so users can answer "what symbols are carrying this cell?" without
+    # leaving the page.
+    cell_sym_agg = (
+        df.groupby(["strategy", col_field, "symbol"], dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+        )
+        .reset_index()
+        .sort_values("total_pnl", ascending=False)
+    )
+    cell_symbols_map: dict = {}
+    for _, r in cell_sym_agg.iterrows():
+        key = f"{r['strategy']}||{r[col_field]}"
+        cell_symbols_map.setdefault(key, []).append({
+            "symbol": str(r["symbol"]),
+            "total_pnl": float(r["total_pnl"]),
+            "num_trades": int(r["num_trades"]),
+            "num_winners": int(r["num_winners"]),
+            "num_losers": int(r["num_losers"]),
+        })
+    cell_symbols_map = {k: v[:5] for k, v in cell_symbols_map.items()}
+
+    row_totals_agg = (
+        cell_agg.groupby("strategy")
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("num_symbols", "sum"),
+        )
+        .reset_index()
+    )
+    rclosed = row_totals_agg["num_winners"] + row_totals_agg["num_losers"]
+    row_totals_agg["win_rate"] = (row_totals_agg["num_winners"] / rclosed.replace(0, pd.NA)).fillna(0)
+    row_totals = {r["strategy"]: r for r in row_totals_agg.to_dict(orient="records")}
+
+    col_totals_agg = (
+        cell_agg.groupby(col_field)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            num_trades=("num_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            num_symbols=("num_symbols", "sum"),
+        )
+        .reset_index()
+    )
+    cclosed = col_totals_agg["num_winners"] + col_totals_agg["num_losers"]
+    col_totals_agg["win_rate"] = (col_totals_agg["num_winners"] / cclosed.replace(0, pd.NA)).fillna(0)
+    col_totals = {r[col_field]: r for r in col_totals_agg.to_dict(orient="records")}
+
+    grand = {
+        "total_pnl": float(cell_agg["total_pnl"].sum()),
+        "num_trades": int(cell_agg["num_trades"].sum()),
+        "num_winners": int(cell_agg["num_winners"].sum()),
+        "num_losers": int(cell_agg["num_losers"].sum()),
+        "expectancy": baseline_expectancy,
+        "win_rate": baseline_win_rate,
+    }
+
+    records = cell_agg.to_dict(orient="records")
+    abs_pnls = [abs(c["total_pnl"]) for c in records if c["total_pnl"]]
+    abs_exps = [abs(c["expectancy"]) for c in records if c["expectancy"]]
+    abs_edges = [abs(c["edge_expectancy"]) for c in records if c["edge_expectancy"]]
+    max_abs_pnl = max(abs_pnls) if abs_pnls else 1.0
+    max_abs_expectancy = max(abs_exps) if abs_exps else 1.0
+    max_abs_edge = max(abs_edges) if abs_edges else 1.0
+
+    # Sample-size and win-rate guarded callouts so we don't celebrate a
+    # 1-trade fluke or a coin-flip strategy that lucked into R:R. Cells
+    # whose column value is "Unknown" are excluded from the narrative
+    # surface (sweet/soft callouts) — naming "Unknown" as edge isn't
+    # actionable. The cell stays in the matrix and the user can toggle
+    # the Unknown column on/off; we just don't editorialize about it.
+    MIN_TRADES_FOR_CALLOUT = 5
+    qualified = cell_agg[
+        (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        & (cell_agg[col_field].astype(str) != "Unknown")
+    ].copy()
+
+    sweet_spots: list = []
+    soft_spots: list = []
+    if not qualified.empty:
+        sweet_df = qualified[
+            (qualified["expectancy"] > 0) & (qualified["win_rate"] >= 0.45)
+        ].sort_values("expectancy", ascending=False).head(3)
+        soft_df = qualified[qualified["expectancy"] < 0].sort_values(
+            "expectancy", ascending=True
+        ).head(2)
+        sweet_spots = sweet_df.to_dict(orient="records")
+        soft_spots = soft_df.to_dict(orient="records")
+
+    return {
+        "row_labels": row_order,
+        "col_labels": col_order,
+        "cells": cells,
+        "cell_symbols_map": cell_symbols_map,
+        "row_totals": row_totals,
+        "col_totals": col_totals,
+        "grand_total": grand,
+        "max_abs_pnl": max_abs_pnl,
+        "max_abs_expectancy": max_abs_expectancy,
+        "max_abs_edge": max_abs_edge,
+        "baseline_expectancy": baseline_expectancy,
+        "baseline_win_rate": baseline_win_rate,
+        "sweet_spots": sweet_spots,
+        "soft_spots": soft_spots,
+        "equity_strategies": sorted(equity_strategies or []),
+    }
 
 
 def _strategy_fit_insight_context(selected_account: str) -> dict:
@@ -4152,6 +4472,61 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
     return ctx
 
 
+def _strategy_fit_render_payload(
+    *,
+    matrix: dict,
+    dim: str,
+    drill_sector: str,
+    accounts: list,
+    selected_account: str,
+    insight_ctx: dict,
+    error: str | None = None,
+) -> dict:
+    """Compose the kwargs to render strategy_fit.html. Centralized so the
+    error/empty/data paths share one shape and can't drift."""
+    col_field, dim_label, dim_label_plural = DIM_META.get(
+        dim, DIM_META["sector"]
+    )
+    # AI insight payload was built for sector/subsector — null it out on
+    # other dims so the template's "AI Insight" card hides cleanly.
+    if dim not in ("sector", "subsector"):
+        insight_ctx = {
+            **insight_ctx,
+            "ai_summary": None,
+            "ai_full_html": None,
+            "ai_generated_at": None,
+        }
+    return dict(
+        error=error,
+        row_labels=matrix.get("row_labels", []),
+        col_labels=matrix.get("col_labels", []),
+        cells=matrix.get("cells", {}),
+        cell_symbols_json=json.dumps(matrix.get("cell_symbols_map", {})),
+        row_totals=matrix.get("row_totals", {}),
+        col_totals=matrix.get("col_totals", {}),
+        grand_total=matrix.get("grand_total"),
+        max_abs_pnl=matrix.get("max_abs_pnl", 1.0),
+        max_abs_expectancy=matrix.get("max_abs_expectancy", 1.0),
+        max_abs_edge=matrix.get("max_abs_edge", 1.0),
+        baseline_expectancy=matrix.get("baseline_expectancy", 0.0),
+        baseline_win_rate=matrix.get("baseline_win_rate", 0.0),
+        sweet_spots=matrix.get("sweet_spots", []),
+        soft_spots=matrix.get("soft_spots", []),
+        equity_strategies=matrix.get("equity_strategies", []),
+        col_field=col_field,
+        dim=dim,
+        # mode is preserved for backward-compat in the template (it used
+        # to be sector|subsector only); now mirrors dim 1:1.
+        mode=dim,
+        dim_label=dim_label,
+        dim_label_plural=dim_label_plural,
+        drill_sector=drill_sector,
+        accounts=accounts,
+        selected_account=selected_account,
+        **insight_ctx,
+    )
+
+
 @app.route("/strategy-fit")
 @login_required
 def strategy_fit():
@@ -4163,259 +4538,147 @@ def strategy_fit():
     acct_filter = _account_sql_and(user_accounts)
 
     selected_account = request.args.get("account", "")
-    drill_sector = request.args.get("sector", "")  # optional — drill into industries
+    drill_sector = request.args.get("sector", "")  # implies subsector mode
+
+    # Resolve the column dimension. Drilling into a sector wins (for
+    # backward URL compat) and forces subsector mode. Otherwise read ?dim=
+    # and validate against the supported set. 'industry' is the pre-rename
+    # alias for 'subsector' — accept it so old bookmarks keep working.
+    requested_dim = (request.args.get("dim", "") or "").strip().lower()
+    if requested_dim == "industry":
+        requested_dim = "subsector"
+    if drill_sector:
+        dim = "subsector"
+    elif requested_dim in ("dte", "moneyness", "subsector", "sector"):
+        dim = requested_dim
+    else:
+        dim = "sector"
 
     insight_ctx = _strategy_fit_insight_context(selected_account)
 
+    # Fan out the queries we need. positions_summary is always needed —
+    # for sector/subsector it's the data source, and for dte/moneyness
+    # it's where we discover the equity-only strategy set so the matrix
+    # can show "N/A — equity" rows.
+    queries = {"summary": STRATEGY_FIT_QUERY.format(account_filter=acct_filter)}
+    if dim in ("dte", "moneyness"):
+        queries["options"] = STRATEGY_FIT_OPTIONS_QUERY.format(account_filter=acct_filter)
+
     try:
-        df = client.query(
-            STRATEGY_FIT_QUERY.format(account_filter=acct_filter)
-        ).to_dataframe()
+        dfs = _bq_parallel(client, queries)
     except Exception as exc:
+        # Don't swallow this silently — a schema drift here once shipped a red
+        # banner to every Strategy Fit visitor for hours before anyone noticed.
+        app.logger.exception("strategy_fit: BigQuery query failed: %s", exc)
         return render_template(
             "strategy_fit.html",
-            error=str(exc),
-            **insight_ctx,
-            row_labels=[],
-            col_labels=[],
-            cells={},
-            cell_symbols_json="{}",
-            row_totals={},
-            col_totals={},
-            grand_total=None,
-            max_abs_pnl=1.0, max_abs_expectancy=1.0, max_abs_edge=1.0,
-            baseline_expectancy=0.0, baseline_win_rate=0.0,
-            sweet_spots=[], soft_spots=[],
-            col_field="sector",
-            mode="sector",
-            drill_sector="",
-            accounts=[],
-            selected_account="",
+            **_strategy_fit_render_payload(
+                matrix={},
+                dim=dim,
+                drill_sector=drill_sector,
+                accounts=[],
+                selected_account="",
+                insight_ctx=insight_ctx,
+                error=str(exc),
+            ),
         )
 
-    df = _df_normalize_account_column(df)
-    df = _filter_df_by_accounts(df, user_accounts)
-
-    if selected_account:
-        df = df[df["account"] == selected_account]
-
-    accounts_for_filter = sorted(df["account"].dropna().unique().tolist()) if not df.empty else []
+    summary_df = _df_normalize_account_column(dfs["summary"])
+    summary_df = _filter_df_by_accounts(summary_df, user_accounts)
+    if selected_account and not summary_df.empty:
+        summary_df = summary_df[summary_df["account"] == selected_account].copy()
 
     for col in ("total_pnl", "realized_pnl", "unrealized_pnl", "total_return",
                 "num_individual_trades", "num_winners", "num_losers"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    for col in ("sector", "industry", "strategy"):
-        if col in df.columns:
-            df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+        if col in summary_df.columns:
+            summary_df.loc[:, col] = pd.to_numeric(summary_df[col], errors="coerce").fillna(0)
+    for col in ("sector", "subsector", "strategy"):
+        if col in summary_df.columns:
+            summary_df.loc[:, col] = (
+                summary_df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+            )
 
-    if df.empty:
+    accounts_for_filter = (
+        sorted(summary_df["account"].dropna().unique().tolist())
+        if not summary_df.empty else []
+    )
+
+    if summary_df.empty:
         return render_template(
             "strategy_fit.html",
-            error=None,
-            row_labels=[],
-            col_labels=[],
-            cells={},
-            cell_symbols_json="{}",
-            row_totals={},
-            col_totals={},
-            grand_total=None,
-            max_abs_pnl=1.0, max_abs_expectancy=1.0, max_abs_edge=1.0,
-            baseline_expectancy=0.0, baseline_win_rate=0.0,
-            sweet_spots=[], soft_spots=[],
-            col_field="sector",
-            mode="sector",
-            drill_sector="",
-            accounts=accounts_for_filter,
-            selected_account=selected_account,
-            **insight_ctx,
+            **_strategy_fit_render_payload(
+                matrix={},
+                dim=dim,
+                drill_sector=drill_sector,
+                accounts=accounts_for_filter,
+                selected_account=selected_account,
+                insight_ctx=insight_ctx,
+            ),
         )
 
-    # If a sector was passed, drill into industries within that sector.
-    # Otherwise the columns are sectors.
-    mode = "industry" if drill_sector else "sector"
-    if mode == "industry":
-        df = df[df["sector"] == drill_sector]
-        col_field = "industry"
+    if dim in ("dte", "moneyness"):
+        options_df = _df_normalize_account_column(dfs["options"])
+        # Tenancy belt-and-braces: re-filter the per-contract frame by
+        # the user's accounts BEFORE any grouping so a SQL regression
+        # can't leak another tenant's contracts into the matrix.
+        options_df = _filter_df_by_accounts(options_df, user_accounts)
+        if selected_account and not options_df.empty:
+            options_df = options_df[options_df["account"] == selected_account].copy()
+
+        for col in ("total_pnl", "realized_pnl", "unrealized_pnl",
+                    "num_individual_trades", "num_winners", "num_losers"):
+            if col in options_df.columns:
+                options_df.loc[:, col] = pd.to_numeric(options_df[col], errors="coerce").fillna(0)
+        for col in ("strategy", "dte_bucket", "moneyness_at_open", "symbol"):
+            if col in options_df.columns:
+                options_df.loc[:, col] = (
+                    options_df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+                )
+
+        col_field = DIM_META[dim][0]
+        # Equity-only strategies = strategies the user has in
+        # positions_summary but that have NO option contracts. We mark
+        # these as full N/A rows in the template so users see why their
+        # equity strategy doesn't appear in the data area.
+        all_strategies = set(summary_df["strategy"].dropna().astype(str).unique().tolist())
+        option_strategies = set(
+            options_df["strategy"].dropna().astype(str).unique().tolist()
+        ) if not options_df.empty else set()
+        equity_strategies = sorted(all_strategies - option_strategies)
+
+        matrix = _build_strategy_fit_matrix(
+            options_df,
+            col_field=col_field,
+            col_order_override=DIM_FIXED_COL_ORDER[dim],
+            equity_strategies=equity_strategies,
+        )
     else:
-        col_field = "sector"
+        df = summary_df
+        if dim == "subsector":
+            # Drill: filter to one sector, columns become subsectors.
+            df = df[df["sector"] == drill_sector]
+            col_field = "subsector"
+            col_order_override = None
+        else:
+            col_field = "sector"
+            col_order_override = None
 
-    # Aggregate to (strategy, col_field). One cell per intersection.
-    cell_agg = (
-        df.groupby(["strategy", col_field], dropna=False)
-        .agg(
-            total_pnl=("total_pnl", "sum"),
-            realized_pnl=("realized_pnl", "sum"),
-            unrealized_pnl=("unrealized_pnl", "sum"),
-            num_trades=("num_individual_trades", "sum"),
-            num_winners=("num_winners", "sum"),
-            num_losers=("num_losers", "sum"),
-            num_symbols=("symbol", "nunique"),
+        matrix = _build_strategy_fit_matrix(
+            df,
+            col_field=col_field,
+            col_order_override=col_order_override,
         )
-        .reset_index()
-    )
-    closed = cell_agg["num_winners"] + cell_agg["num_losers"]
-    cell_agg["win_rate"] = cell_agg["num_winners"] / closed.replace(0, pd.NA)
-    cell_agg["win_rate"] = cell_agg["win_rate"].fillna(0)
-
-    # Expectancy = avg P&L per trade. The single most decision-relevant metric
-    # because it normalizes for volume — "per trade I take, am I making money?"
-    cell_agg["expectancy"] = cell_agg["total_pnl"] / cell_agg["num_trades"].replace(0, pd.NA)
-    cell_agg["expectancy"] = cell_agg["expectancy"].fillna(0)
-
-    # Baselines: your overall expectancy and your overall win rate. Edge is
-    # then (cell - your_avg) — positive means you do BETTER than your usual
-    # self in that cell, negative means worse. Way more meaningful than raw
-    # numbers because it answers "where do I have edge?" not "what made money?"
-    overall_total_pnl = float(df["total_pnl"].sum())
-    overall_trades = int(df["num_individual_trades"].sum())
-    overall_winners = int(df["num_winners"].sum())
-    overall_losers = int(df["num_losers"].sum())
-    overall_closed = overall_winners + overall_losers
-    baseline_expectancy = (overall_total_pnl / overall_trades) if overall_trades else 0.0
-    baseline_win_rate = (overall_winners / overall_closed) if overall_closed else 0.0
-    cell_agg["edge_expectancy"] = cell_agg["expectancy"] - baseline_expectancy
-    cell_agg["edge_win_rate"] = cell_agg["win_rate"] - baseline_win_rate
-
-    # Row order: by strategy total P&L desc (best-performing strategies on top)
-    row_order = (
-        cell_agg.groupby("strategy")["total_pnl"].sum().sort_values(ascending=False)
-        .index.tolist()
-    )
-    # Column order: by column total P&L desc (best-performing sectors first)
-    col_order = (
-        cell_agg.groupby(col_field)["total_pnl"].sum().sort_values(ascending=False)
-        .index.tolist()
-    )
-
-    # Build a nested {strategy: {col: cell_dict}} lookup. Nested is friendlier
-    # for Jinja than tuple keys.
-    cells: dict = {}
-    for r in cell_agg.to_dict(orient="records"):
-        cells.setdefault(r["strategy"], {})[r[col_field]] = r
-
-    # Per-cell symbol breakdown — used by the drill-down panel so users can
-    # answer "what symbols are carrying this cell?" without leaving the page.
-    # Top 5 by total P&L per cell to keep the payload tight.
-    cell_sym_agg = (
-        df.groupby(["strategy", col_field, "symbol"], dropna=False)
-        .agg(
-            total_pnl=("total_pnl", "sum"),
-            num_trades=("num_individual_trades", "sum"),
-            num_winners=("num_winners", "sum"),
-            num_losers=("num_losers", "sum"),
-        )
-        .reset_index()
-        .sort_values("total_pnl", ascending=False)
-    )
-    cell_symbols_map: dict = {}
-    for _, r in cell_sym_agg.iterrows():
-        key = f"{r['strategy']}||{r[col_field]}"
-        cell_symbols_map.setdefault(key, []).append({
-            "symbol": str(r["symbol"]),
-            "total_pnl": float(r["total_pnl"]),
-            "num_trades": int(r["num_trades"]),
-            "num_winners": int(r["num_winners"]),
-            "num_losers": int(r["num_losers"]),
-        })
-    cell_symbols_map = {k: v[:5] for k, v in cell_symbols_map.items()}
-
-    # Row totals (one per strategy)
-    row_totals_agg = (
-        cell_agg.groupby("strategy")
-        .agg(
-            total_pnl=("total_pnl", "sum"),
-            num_trades=("num_trades", "sum"),
-            num_winners=("num_winners", "sum"),
-            num_losers=("num_losers", "sum"),
-            num_symbols=("num_symbols", "sum"),
-        )
-        .reset_index()
-    )
-    rclosed = row_totals_agg["num_winners"] + row_totals_agg["num_losers"]
-    row_totals_agg["win_rate"] = (row_totals_agg["num_winners"] / rclosed.replace(0, pd.NA)).fillna(0)
-    row_totals = {r["strategy"]: r for r in row_totals_agg.to_dict(orient="records")}
-
-    # Column totals (one per sector / industry)
-    col_totals_agg = (
-        cell_agg.groupby(col_field)
-        .agg(
-            total_pnl=("total_pnl", "sum"),
-            num_trades=("num_trades", "sum"),
-            num_winners=("num_winners", "sum"),
-            num_losers=("num_losers", "sum"),
-            num_symbols=("num_symbols", "sum"),
-        )
-        .reset_index()
-    )
-    cclosed = col_totals_agg["num_winners"] + col_totals_agg["num_losers"]
-    col_totals_agg["win_rate"] = (col_totals_agg["num_winners"] / cclosed.replace(0, pd.NA)).fillna(0)
-    col_totals = {r[col_field]: r for r in col_totals_agg.to_dict(orient="records")}
-
-    grand = {
-        "total_pnl": float(cell_agg["total_pnl"].sum()),
-        "num_trades": int(cell_agg["num_trades"].sum()),
-        "num_winners": int(cell_agg["num_winners"].sum()),
-        "num_losers": int(cell_agg["num_losers"].sum()),
-        "expectancy": baseline_expectancy,
-    }
-    g_closed = grand["num_winners"] + grand["num_losers"]
-    grand["win_rate"] = baseline_win_rate
-
-    # Magnitude scales for each color metric — template uses these to size
-    # cell tints. Compute against ALL cells, not just sweet/soft, so cells
-    # with low N still get correct relative tint.
-    records = cell_agg.to_dict(orient="records")
-    abs_pnls = [abs(c["total_pnl"]) for c in records if c["total_pnl"]]
-    abs_exps = [abs(c["expectancy"]) for c in records if c["expectancy"]]
-    abs_edges = [abs(c["edge_expectancy"]) for c in records if c["edge_expectancy"]]
-    max_abs_pnl = max(abs_pnls) if abs_pnls else 1.0
-    max_abs_expectancy = max(abs_exps) if abs_exps else 1.0
-    max_abs_edge = max(abs_edges) if abs_edges else 1.0
-
-    # Smarter sweet/soft picks — sample-size and win-rate guarded so we don't
-    # celebrate a 1-trade fluke or a coin-flip strategy that lucked into R:R.
-    MIN_TRADES_FOR_CALLOUT = 5
-    qualified = cell_agg[cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT].copy()
-
-    sweet_spots: list[dict] = []
-    soft_spots: list[dict] = []
-    if not qualified.empty:
-        # Sweet: positive expectancy AND win rate ≥ 45% (so we don't glorify
-        # high R:R but coin-flip-y setups). Sort by expectancy desc.
-        sweet_df = qualified[
-            (qualified["expectancy"] > 0) & (qualified["win_rate"] >= 0.45)
-        ].sort_values("expectancy", ascending=False).head(3)
-        # Soft: negative expectancy. Sort by expectancy asc (most negative first).
-        soft_df = qualified[qualified["expectancy"] < 0].sort_values(
-            "expectancy", ascending=True
-        ).head(2)
-        sweet_spots = sweet_df.to_dict(orient="records")
-        soft_spots = soft_df.to_dict(orient="records")
 
     return render_template(
         "strategy_fit.html",
-        error=None,
-        row_labels=row_order,
-        col_labels=col_order,
-        cells=cells,
-        cell_symbols_json=json.dumps(cell_symbols_map),
-        row_totals=row_totals,
-        col_totals=col_totals,
-        grand_total=grand,
-        max_abs_pnl=max_abs_pnl,
-        max_abs_expectancy=max_abs_expectancy,
-        max_abs_edge=max_abs_edge,
-        baseline_expectancy=baseline_expectancy,
-        baseline_win_rate=baseline_win_rate,
-        sweet_spots=sweet_spots,
-        soft_spots=soft_spots,
-        col_field=col_field,
-        mode=mode,
-        drill_sector=drill_sector,
-        accounts=accounts_for_filter,
-        selected_account=selected_account,
-        **insight_ctx,
+        **_strategy_fit_render_payload(
+            matrix=matrix,
+            dim=dim,
+            drill_sector=drill_sector,
+            accounts=accounts_for_filter,
+            selected_account=selected_account,
+            insight_ctx=insight_ctx,
+        ),
     )
 
 
@@ -4508,12 +4771,23 @@ def accounts():
     cash_balance = float(cash_rows["market_value"].sum())
     account_value = float(total_rows["market_value"].sum())
     invested_value = account_value - cash_balance
-    acct_unrealized = float(total_rows["unrealized_pnl"].sum())
     acct_cost_basis = float(total_rows["cost_basis"].sum())
 
-    # Realized P&L from positions_summary
+    # Realized + unrealized + total_return all come from the same source
+    # (positions_summary) so the three KPIs reconcile: total_return =
+    # realized + unrealized + dividends. Mixing the snapshot's unrealized
+    # with positions_summary's realized has shipped a $300+ discrepancy.
     realized_pnl = float(strat_summary_df["realized_pnl"].sum())
+    acct_unrealized = float(strat_summary_df["unrealized_pnl"].sum())
     total_return = float(strat_summary_df["total_return"].sum())
+    # Surfacing dividends as its own KPI so the math reconciles for the
+    # reader: realized + unrealized + dividends = total return. Without
+    # this card the row silently failed by ~$200-300 (the missing piece
+    # was always dividends), and investors / power users noticed.
+    dividend_income = (
+        float(strat_summary_df["dividend_income"].sum())
+        if "dividend_income" in strat_summary_df.columns else 0.0
+    )
 
     kpis = {
         "account_value": account_value,
@@ -4521,6 +4795,7 @@ def accounts():
         "invested_value": invested_value,
         "realized_pnl": realized_pnl,
         "unrealized_pnl": acct_unrealized,
+        "dividend_income": dividend_income,
         "total_return": total_return,
     }
 

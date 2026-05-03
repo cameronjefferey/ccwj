@@ -33,9 +33,12 @@ def main():
         try:
             client = _get_schwab_client(user_id, account_number)
             if client:
-                result = _run_sync(user_id, client)
+                result = _run_sync(
+                    user_id, client, account_number=account_number
+                )
                 line = (
-                    f"User {user_id}: {result.get('history_rows', 0)} history, "
+                    f"User {user_id} ({account_number}): "
+                    f"{result.get('history_rows', 0)} history, "
                     f"{result.get('current_rows', 0)} positions"
                 )
                 if result.get("github_pushed"):
@@ -46,9 +49,15 @@ def main():
                     line += " (GitHub skipped: set GITHUB_PAT to push seeds)"
                 print(line)
             else:
-                print(f"User {user_id}: No valid client (token expired? re-connect in app)")
+                print(
+                    f"User {user_id} ({account_number}): "
+                    "No valid client (token expired? re-connect in app)"
+                )
         except Exception as e:
-            print(f"User {user_id}: Sync failed: {e}", file=sys.stderr)
+            print(
+                f"User {user_id} ({account_number}): Sync failed: {e}",
+                file=sys.stderr,
+            )
 
     return 0
 

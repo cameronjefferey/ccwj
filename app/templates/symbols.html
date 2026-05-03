@@ -132,49 +132,65 @@
 {% else %}
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
-<form method="get" class="row g-2 mb-3 align-items-end">
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
+<form method="get" class="filter-bar">
+    {% if accounts and accounts|length > 1 %}
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-auto d-flex align-items-center pt-2">
-        <div class="form-check me-3">
-            <input type="checkbox" class="form-check-input" name="open_only" id="openOnlyFilter" value="1"
-                   {{ 'checked' if open_only|default(false) }}>
-            <label class="form-check-label small" for="openOnlyFilter">Symbols with open positions</label>
-        </div>
-        <div class="form-check">
-            <input type="checkbox" class="form-check-input" name="positions_only" id="positionsOnlyFilter" value="1"
-                   {{ 'checked' if positions_only|default(false) }}>
-            <label class="form-check-label small" for="positionsOnlyFilter">Open positions only</label>
+    {% endif %}
+    <div>
+        <label class="lblh">Show</label>
+        <div class="vis-toggles">
+            <div class="form-check form-check-inline">
+                <input type="checkbox" class="form-check-input" name="open_only"
+                       id="openOnlyFilter" value="1"
+                       onchange="this.form.submit()"
+                       {{ 'checked' if open_only|default(false) }}>
+                <label class="form-check-label" for="openOnlyFilter">Symbols with open positions</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input type="checkbox" class="form-check-input" name="positions_only"
+                       id="positionsOnlyFilter" value="1"
+                       onchange="this.form.submit()"
+                       {{ 'checked' if positions_only|default(false) }}>
+                <label class="form-check-label" for="positionsOnlyFilter">Open positions only</label>
+            </div>
         </div>
     </div>
-    <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="/symbols" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
+    {% if selected_account or open_only or positions_only %}
+    <a class="filter-reset" href="{{ url_for('symbols') }}">Reset</a>
+    {% endif %}
 </form>
 
 {# ── Search + Sort controls ───────────────────────────────────────── #}
-<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
-    <input type="text" id="symbolFilter" class="form-control form-control-sm"
-           style="max-width:220px" placeholder="Filter symbols...">
-    <div class="d-flex align-items-center gap-1">
-        <span class="text-muted small me-1">Sort:</span>
-        <button class="btn btn-sm btn-outline-secondary sort-btn active" id="sortPnl" data-dir="desc">
-            P&amp;L <span class="arrow">&#9660;</span>
-        </button>
-        <button class="btn btn-sm btn-outline-secondary sort-btn" id="sortSymbol" data-dir="none">
-            Symbol
-        </button>
-        <button class="btn btn-sm btn-outline-secondary sort-btn" id="sortTrades" data-dir="none">
-            Trades
-        </button>
+{# Sort is client-side (no form submit) so we use a .seg-toggle for the
+   buttons but keep them as plain <button> elements with sortBtn JS. #}
+<div class="filter-bar">
+    <div>
+        <label class="lblh">Filter</label>
+        <input type="text" id="symbolFilter" class="form-control form-control-sm"
+               style="min-width: 14rem;" placeholder="Filter symbols...">
+    </div>
+    <div>
+        <label class="lblh">Sort by</label>
+        <div class="seg-toggle">
+            <button type="button" class="sort-btn active" id="sortPnl" data-dir="desc">
+                P&amp;L <span class="arrow">&#9660;</span>
+            </button>
+            <button type="button" class="sort-btn" id="sortSymbol" data-dir="none">
+                Symbol
+            </button>
+            <button type="button" class="sort-btn" id="sortTrades" data-dir="none">
+                Trades
+            </button>
+        </div>
     </div>
 </div>
 
@@ -314,7 +330,7 @@
                         <div class="stat-card text-start">
                             <div class="stat-label">Best leg in this position</div>
                             <div class="small mt-1">
-                                <strong>{{ sym.story_best_leg.trade_symbol }}</strong>
+                                <strong title="{{ sym.story_best_leg.trade_symbol }}">{{ sym.story_best_leg.trade_symbol|option_symbol }}</strong>
                                 {% if sym.story_best_leg.strategy %}<span class="text-muted">({{ sym.story_best_leg.strategy }})</span>{% endif %}<br>
                                 Closed {{ sym.story_best_leg.close_date }} for
                                 <span class="{{ 'text-positive' if sym.story_best_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
@@ -329,7 +345,7 @@
                         <div class="stat-card text-start">
                             <div class="stat-label">Toughest leg in this position</div>
                             <div class="small mt-1">
-                                <strong>{{ sym.story_worst_leg.trade_symbol }}</strong>
+                                <strong title="{{ sym.story_worst_leg.trade_symbol }}">{{ sym.story_worst_leg.trade_symbol|option_symbol }}</strong>
                                 {% if sym.story_worst_leg.strategy %}<span class="text-muted">({{ sym.story_worst_leg.strategy }})</span>{% endif %}<br>
                                 Closed {{ sym.story_worst_leg.close_date }} for
                                 <span class="{{ 'text-positive' if sym.story_worst_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
@@ -374,7 +390,7 @@
                                     <span class="badge bg-light text-muted" style="font-size:.65rem;">{{ pos.status }}</span>
                                     {% endif %}
                                 </td>
-                                <td class="fw-semibold small">{{ pos.trade_symbol }}</td>
+                                <td class="fw-semibold small" {% if pos.trade_symbol %}title="{{ pos.trade_symbol }}"{% endif %}>{{ pos.trade_symbol|option_symbol }}</td>
                                 <td class="text-muted small">{{ pos.description }}</td>
                                 <td class="text-nowrap">
                                     {{ pos.open_date if pos.open_date is defined and pos.open_date }}

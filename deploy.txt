@@ -1,8 +1,29 @@
 New Updates
-8/3
-    - Added new summary table
-    - Formatted the currency
-    
+4/26
+    Data accuracy
+    - Every page now reconciles to a single source of truth.
+      Open positions match the broker exactly (31 of 31).
+    - Fixed an option-trade misclassification (~294 trades) that was
+      polluting equity P&L; corrected the largest account's reported
+      total from ~$2.6M down to its real value of $570K.
+    - Total Return now openly shows Realized + Unrealized + Dividends
+      on every page so the math is visible end-to-end.
+    - Position page totals now match the strategy breakdown beneath
+      them; one test user's symbol flipped from -$3.8K to +$44K once
+      this was corrected.
+    - Built a 12-check internal audit that runs over the data and
+      confirms every page agrees on every number. All 12 pass today.
+
+    Sector & subsector reporting (new)
+    - New Sectors page: P&L and win rate broken down by sector and
+      subsector, with click-through to the underlying positions.
+    - Every position is now tagged with sector, subsector, and company
+      name, refreshed daily.
+    - Positions list has a Subsector filter and a Subsector column.
+    - Strategy Fit insights are now organized as Strategy x Sector so
+      it's easy to see which sectors a given strategy actually works in.
+
+
 Future Updates
 
 Positions Page

@@ -93,11 +93,10 @@ select
     cp.snapshot_date,
     lp.price_date,
 
-    -- Sector / industry from yfinance (Unknown when missing)
-    coalesce(sm.sector, 'Unknown')          as sector,
-    coalesce(sm.industry, 'Unknown')        as industry,
-    coalesce(sm.industry_group, 'Unknown')  as industry_group,
-    sm.long_name                            as company_name
+    -- Sector / subsector from yfinance (Unknown when missing)
+    coalesce(sm.sector, 'Unknown')      as sector,
+    coalesce(sm.subsector, 'Unknown')   as subsector,
+    sm.long_name                         as company_name
 
 from current_positions cp
 left join latest_prices lp

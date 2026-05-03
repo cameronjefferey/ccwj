@@ -192,101 +192,121 @@
 </div>
 {% else %}
 
-{# ── Filters ──────────────────────────────────────────────────────── #}
-<form method="get" class="row g-2 mb-4 align-items-end">
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Account</label>
-        <select name="account" class="form-select form-select-sm">
+{# ── Filters ──────────────────────────────────────────────────────────
+   Pattern matches /strategy-fit:
+     - selects auto-submit on change (no Apply button)
+     - Status & Date presets are pill segmented controls (.seg-toggle)
+     - Reset link instead of Reset button
+   The form preserves multi-control state: changing the Strategy select
+   fires a submit that includes whatever account / status / date values
+   are also in the form. ────────────────────────────────────────────── #}
+{% set _all_statuses = (not selected_statuses) or (selected_statuses|length >= 3) %}
+{% set _is_30d = selected_start_date and selected_end_date
+                 and selected_start_date == (today - timedelta(days=30)).strftime('%Y-%m-%d')
+                 and selected_end_date == today.strftime('%Y-%m-%d') %}
+{% set _is_ytd = selected_start_date and selected_end_date
+                 and selected_start_date == today.replace(month=1, day=1).strftime('%Y-%m-%d')
+                 and selected_end_date == today.strftime('%Y-%m-%d') %}
+{% set _is_alltime = (not selected_start_date) and (not selected_end_date) %}
+
+<form method="get" class="filter-bar">
+    {% if accounts and accounts|length > 1 %}
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Symbol</label>
-        <select name="symbol" class="form-select form-select-sm">
+    {% endif %}
+    <div>
+        <label class="lblh">Symbol</label>
+        <select name="symbol" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Symbols</option>
             {% for sym in symbols %}
             <option value="{{ sym }}" {{ 'selected' if sym == selected_symbol }}>{{ sym }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Strategy</label>
-        <select name="strategy" class="form-select form-select-sm">
+    <div>
+        <label class="lblh">Strategy</label>
+        <select name="strategy" class="form-select form-select-sm"
+                onchange="this.form.submit()">
             <option value="">All Strategies</option>
             {% for s in strategies %}
             <option value="{{ s }}" {{ 'selected' if s == selected_strategy }}>{{ s }}</option>
             {% endfor %}
         </select>
     </div>
-    {% if industries %}
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">Industry</label>
-        <select name="industry" class="form-select form-select-sm">
-            <option value="">All Industries</option>
-            {% for ind in industries %}
-            <option value="{{ ind }}" {{ 'selected' if ind == selected_industry }}>{{ ind }}</option>
+    {% if subsectors %}
+    <div>
+        <label class="lblh">Subsector</label>
+        <select name="subsector" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+            <option value="">All Subsectors</option>
+            {% for sub in subsectors %}
+            <option value="{{ sub }}" {{ 'selected' if sub == selected_subsector }}>{{ sub }}</option>
             {% endfor %}
         </select>
     </div>
     {% endif %}
-    {% set status_label = 'All statuses' if not selected_statuses or selected_statuses|length >= 3 else selected_statuses|join(', ') %}
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1 d-block">Status</label>
-        <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start"
-                    type="button" id="statusDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                {{ status_label }}
-            </button>
-            <div class="dropdown-menu p-2" aria-labelledby="statusDropdown" style="min-width: 10rem;">
-                <div class="form-check small">
-                    <input class="form-check-input" type="checkbox" name="status" id="status-open"
-                           value="Open" {% if 'Open' in selected_statuses %}checked{% endif %}>
-                    <label class="form-check-label" for="status-open">Open</label>
-                </div>
-                <div class="form-check small">
-                    <input class="form-check-input" type="checkbox" name="status" id="status-closed"
-                           value="Closed" {% if 'Closed' in selected_statuses %}checked{% endif %}>
-                    <label class="form-check-label" for="status-closed">Closed</label>
-                </div>
-                <div class="form-check small">
-                    <input class="form-check-input" type="checkbox" name="status" id="status-mixed"
-                           value="Mixed" {% if 'Mixed' in selected_statuses %}checked{% endif %}>
-                    <label class="form-check-label" for="status-mixed">Mixed</label>
-                </div>
-            </div>
+    {# Status as a pill toggle. The previous dropdown supported any
+       arbitrary subset (e.g. Open + Mixed) but in practice users only
+       ever flipped between All / Open only / Closed only — so the pill
+       is more legible and matches Strategy Fit's pattern. The
+       <input type="hidden"> values stay in the form so account/symbol
+       changes preserve the current status filter. #}
+    <div>
+        <label class="lblh">Status</label>
+        <div class="seg-toggle">
+            <a class="{{ 'active' if _all_statuses }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+            <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+            <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+        </div>
+        {# Mirror the chosen status into the form so a Symbol/Strategy
+           change preserves it. Multi-status (rare path) still works
+           because we emit one hidden input per selected status. #}
+        {% if selected_statuses %}
+            {% for st in selected_statuses %}
+            <input type="hidden" name="status" value="{{ st }}">
+            {% endfor %}
+        {% endif %}
+    </div>
+    <div>
+        <label class="lblh">Dates</label>
+        <div class="seg-toggle">
+            <a class="{{ 'active' if _is_alltime }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses) }}">All time</a>
+            <a class="{{ 'active' if _is_30d }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+            <a class="{{ 'active' if _is_ytd }}"
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+        </div>
+        {# No hidden date inputs needed — the visible date inputs below
+           are part of this form and carry the current values, so when
+           account/symbol/strategy onchange submits the form the date
+           range is preserved automatically. #}
+    </div>
+    <div>
+        <label class="lblh">Custom range</label>
+        <div class="d-flex gap-1 align-items-center">
+            <input type="date" name="start_date" class="form-control form-control-sm"
+                   value="{{ selected_start_date }}" onchange="this.form.submit()" style="min-width: 8.5rem;">
+            <span class="text-muted small">→</span>
+            <input type="date" name="end_date" class="form-control form-control-sm"
+                   value="{{ selected_end_date }}" onchange="this.form.submit()" style="min-width: 8.5rem;">
         </div>
     </div>
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">From</label>
-        <input type="date" name="start_date" class="form-control form-control-sm"
-               value="{{ selected_start_date }}">
-    </div>
-    <div class="col-auto">
-        <label class="form-label small fw-bold mb-1">To</label>
-        <input type="date" name="end_date" class="form-control form-control-sm"
-               value="{{ selected_end_date }}">
-    </div>
-    <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
-        <a href="/positions" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
-    </div>
-    <div class="col-12 d-flex flex-wrap gap-1 mt-1">
-        {% set _all_statuses = (not selected_statuses) or (selected_statuses|length >= 3) %}
-        <span class="small text-muted align-self-center me-1">Status:</span>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) }}"
-           class="btn btn-sm py-0 {{ 'btn-primary' if _all_statuses else 'btn-outline-secondary' }}">All</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}"
-           class="btn btn-sm py-0 {{ 'btn-primary' if (not _all_statuses and selected_statuses == ['Open']) else 'btn-outline-secondary' }}">Open only</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}"
-           class="btn btn-sm py-0 {{ 'btn-primary' if (not _all_statuses and selected_statuses == ['Closed']) else 'btn-outline-secondary' }}">History</a>
-        <span class="small text-muted align-self-center ms-3 me-1">Dates:</span>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">Last 30 days</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=(today.replace(month=1, day=1)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-secondary py-0">YTD</a>
-        <a href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol) }}" class="btn btn-sm btn-outline-secondary py-0">All time</a>
-    </div>
+    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_statuses or selected_start_date or selected_end_date %}
+    <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+    {% endif %}
 </form>
 
 {% if date_filtered %}
@@ -391,7 +411,7 @@
                     <tr>
                         <th class="sortable" data-sort="str">Account</th>
                         <th class="sortable" data-sort="str">Symbol</th>
-                        <th class="sortable" data-sort="str">Industry</th>
+                        <th class="sortable" data-sort="str">Subsector</th>
                         <th>Strategies</th>
                         <th class="sortable" data-sort="num">Total P&amp;L</th>
                         <th class="sortable" data-sort="num">Realized</th>
@@ -414,10 +434,10 @@
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-                            title="{{ row.sector or '' }}{% if row.sector and row.industry %} / {% endif %}{{ row.industry or '' }}">
-                            {% if row.industry and row.industry != 'Unknown' %}
-                            <a href="{{ url_for('positions', industry=row.industry, account=selected_account) }}"
-                               class="text-decoration-none text-muted">{{ row.industry }}</a>
+                            title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
+                            {% if row.subsector and row.subsector != 'Unknown' %}
+                            <a href="{{ url_for('positions', subsector=row.subsector, account=selected_account) }}"
+                               class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
