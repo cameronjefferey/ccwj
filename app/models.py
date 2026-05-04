@@ -45,13 +45,12 @@ def init_db():
             email         TEXT
         )
         """,
-        # Email is optional for legacy rows but unique when present, so two
-        # users can never share a recovery address. Index uses lower(email)
-        # so 'Foo@bar.com' and 'foo@bar.com' collide on signup.
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower
-        ON users (lower(email)) WHERE email IS NOT NULL
-        """,
+        # NB: the unique index on lower(email) is created inside
+        # _migrate_users_email_column() *after* the ALTER TABLE that
+        # backfills the column on legacy schemas. CREATE TABLE IF NOT
+        # EXISTS does not add new columns to a pre-existing table, so
+        # putting the index in this list crashed startup on the prod DB
+        # (UndefinedColumn: column "email" does not exist).
         """
         CREATE TABLE IF NOT EXISTS password_reset_tokens (
             id          SERIAL PRIMARY KEY,
@@ -312,12 +311,37 @@ def _migrate_community_posts_strategy_column():
 
 def _migrate_users_email_column():
     """Idempotent: add users.email column on databases created before
-    self-serve password recovery existed. The CREATE TABLE above already
-    declares it, so this only runs on legacy schemas."""
+    self-serve password recovery existed, then create the partial unique
+    index on lower(email).
+
+    Order matters: the index references the email column, so on a legacy
+    DB where CREATE TABLE IF NOT EXISTS users was a no-op (table already
+    existed without email) the column has to be added first. This used to
+    live in init_db()'s statements list and crashed boot with
+    UndefinedColumn: column "email" does not exist.
+    """
     try:
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
     except Exception as exc:
         _log.warning("users.email migration skipped: %s", exc)
+        return  # no email column ⇒ no index to create
+
+    # Email is optional for legacy rows but unique when present, so two
+    # users can never share a recovery address. Index uses lower(email)
+    # so 'Foo@bar.com' and 'foo@bar.com' collide on signup.
+    try:
+        execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower
+               ON users (lower(email)) WHERE email IS NOT NULL"""
+        )
+    except Exception as exc:
+        _log.warning(
+            "uniq_users_email_lower index not created (likely duplicate "
+            "emails on legacy rows): %s. Resolve with: SELECT lower(email), "
+            "count(*) FROM users WHERE email IS NOT NULL GROUP BY 1 HAVING "
+            "count(*) > 1;",
+            exc,
+        )
 
 
 def _migrate_account_name_unique_index():
