@@ -45,13 +45,13 @@ def init_db():
             email         TEXT
         )
         """,
-        # Email is optional for legacy rows but unique when present, so two
-        # users can never share a recovery address. Index uses lower(email)
-        # so 'Foo@bar.com' and 'foo@bar.com' collide on signup.
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower
-        ON users (lower(email)) WHERE email IS NOT NULL
-        """,
+        # NOTE: the matching `uniq_users_email_lower` UNIQUE INDEX on
+        # lower(email) is created in `_migrate_users_email_column()` below.
+        # It must run AFTER the ALTER TABLE that adds `email` for legacy
+        # databases that pre-date password recovery — otherwise the index
+        # references a column that doesn't exist yet and the whole
+        # init_db() transaction aborts (which is exactly the cron crash we
+        # debugged: "column \"email\" does not exist").
         """
         CREATE TABLE IF NOT EXISTS password_reset_tokens (
             id          SERIAL PRIMARY KEY,
@@ -311,13 +311,32 @@ def _migrate_community_posts_strategy_column():
 
 
 def _migrate_users_email_column():
-    """Idempotent: add users.email column on databases created before
-    self-serve password recovery existed. The CREATE TABLE above already
-    declares it, so this only runs on legacy schemas."""
+    """Idempotent: add users.email column + lower(email) unique index on
+    databases created before self-serve password recovery existed.
+
+    The CREATE TABLE in init_db() declares `email` for fresh DBs, but on
+    legacy schemas the table already exists without it, so the column
+    must be added by ALTER TABLE here. The matching unique index on
+    lower(email) lives in this function (rather than in init_db()'s big
+    statements list) so the column is guaranteed to exist before the
+    index references it. Otherwise the whole init_db() transaction
+    aborts on legacy DBs with `column "email" does not exist`.
+    """
     try:
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
     except Exception as exc:
         _log.warning("users.email migration skipped: %s", exc)
+        return
+    # Email is optional for legacy rows but unique when present, so two
+    # users can never share a recovery address. Index uses lower(email)
+    # so 'Foo@bar.com' and 'foo@bar.com' collide on signup.
+    try:
+        execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower "
+            "ON users (lower(email)) WHERE email IS NOT NULL"
+        )
+    except Exception as exc:
+        _log.warning("users.email unique index skipped: %s", exc)
 
 
 def _migrate_account_name_unique_index():
