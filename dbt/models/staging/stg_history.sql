@@ -7,10 +7,26 @@
 -- Schwab sync and manual upload both merge into trade_history.csv, so
 -- there's a single trade history seed to read from. Normalize demo seeds
 -- to STRING to match (BigQuery CSV autodetect infers numerics).
+--
+-- ``user_id`` is the new tenant key (see ``docs/USER_ID_TENANCY.md``).
+-- Detected via ``adapter.get_columns_in_relation`` so this model keeps
+-- building during the deploy gap when the BQ seed table hasn't been
+-- rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
+-- silently dropping the all-empty user_id column on first deploy).
+{%- if execute -%}
+    {%- set _hist_cols = adapter.get_columns_in_relation(ref('trade_history')) | map(attribute='name') | list -%}
+    {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_history')) | map(attribute='name') | list -%}
+{%- else -%}
+    {%- set _hist_cols = [] -%}
+    {%- set _demo_cols = [] -%}
+{%- endif -%}
+{%- set _hist_user_id_expr = "cast(user_id as string)" if 'user_id' in _hist_cols else "cast(null as string)" -%}
+{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
+
 with trade_history_as_strings as (
     select
         cast(Account as string) as Account,
-        cast(user_id as string) as user_id,
+        {{ _hist_user_id_expr }} as user_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
@@ -25,7 +41,7 @@ with trade_history_as_strings as (
 demo_as_strings as (
     select
         cast(Account as string) as Account,
-        cast(user_id as string) as user_id,
+        {{ _demo_user_id_expr }} as user_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
