@@ -14,6 +14,18 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+# Schwab sync (especially the multi-account "Sync all" button) and the
+# nightly Render cron can each push several seed commits within a few
+# seconds. Without this, every commit kicks off its own full dbt build
+# even though only the last one's BigQuery output matters. Cancelling
+# the in-flight run when a newer commit lands collapses N back-to-back
+# rebuilds into a single build of the latest seeds — which is what we
+# want, since `merge_and_push_seeds` is monotonic: each push already
+# carries every prior account's data merged in.
+concurrency:
+  group: bq-update-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-performance:
     runs-on: ubuntu-latest
