@@ -31,7 +31,12 @@ def main():
         print("No Schwab connections to sync.")
         return 0
 
-    from app.schwab import _get_schwab_client, _run_sync
+    from app.schwab import (
+        _get_schwab_client,
+        _is_schwab_refresh_token_invalid,
+        _run_sync,
+    )
+    from app.models import mark_schwab_refresh_token_invalid
 
     total = len(rows)
     succeeded = 0
@@ -78,6 +83,13 @@ def main():
                 )
         except Exception as e:
             errors += 1
+            # Mark the connection so the next time the user opens the
+            # app they see a "Reconnect Schwab" banner instead of just
+            # silently-stale data. Schwab's refresh token has a 7-day
+            # life and only the user can mint a new one through the
+            # OAuth flow.
+            if _is_schwab_refresh_token_invalid(e):
+                mark_schwab_refresh_token_invalid(user_id, account_number)
             print(
                 f"User {user_id} ({account_number}): Sync failed: {e}",
                 file=sys.stderr,

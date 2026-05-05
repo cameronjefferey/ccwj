@@ -18,6 +18,7 @@ from app.models import (
     get_schwab_connection,
     get_schwab_connections,
     mark_schwab_first_sync_completed,
+    mark_schwab_refresh_token_invalid,
     save_schwab_connection,
     update_schwab_account_hash,
     update_schwab_connection_nickname,
@@ -343,6 +344,28 @@ def _schwab_config():
     if not key or not secret or not callback:
         return None
     return (key, secret, callback)
+
+
+def _is_schwab_refresh_token_invalid(exc):
+    """True when the exception came from Schwab rejecting our stored
+    refresh token. Both spellings appear in real production logs:
+
+      - ``refresh_token_authentication_error`` — Schwab's OAuth error
+        code returned in the JSON body of a 400.
+      - ``Failed refresh token authentication`` — phrase from the
+        exception message that schwab-py raises with the error body
+        embedded.
+
+    Matching either is enough to flip the connection's ``Reconnect
+    Schwab`` banner. We deliberately don't include 401 here because
+    those are usually stale account-hash issues that
+    ``_sync_account_hash_from_numbers`` recovers from on retry.
+    """
+    msg = str(exc)
+    return (
+        "refresh_token_authentication_error" in msg
+        or "Failed refresh token authentication" in msg
+    )
 
 
 def _schwab_sync_config():
@@ -718,7 +741,10 @@ def _sync_one_connection(user_id, conn_row, *, lookback_days):
         })
     except Exception as e:
         msg = str(e)
-        if "401" in msg or "Unauthorized" in msg:
+        if _is_schwab_refresh_token_invalid(e):
+            mark_schwab_refresh_token_invalid(user_id, account_number)
+            out["error"] = "refresh_token_invalid"
+        elif "401" in msg or "Unauthorized" in msg:
             out["error"] = "unauthorized"
         else:
             from app import app as _app
@@ -796,6 +822,13 @@ def schwab_sync():
             "warning",
         )
         return redirect(url_for("profile", tab="account"))
+    if res["error"] == "refresh_token_invalid":
+        flash(
+            "Your Schwab connection expired (Schwab refresh tokens last 7 days). "
+            "Click Connect Schwab to re-authorize and resume syncing.",
+            "warning",
+        )
+        return redirect(url_for("schwab_connect"))
     if res["error"] == "unauthorized":
         flash(
             "Schwab returned 401 (session expired or account key out of date). "

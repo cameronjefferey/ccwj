@@ -263,6 +263,7 @@ def init_db():
                 cur.execute(stmt)
     _migrate_schwab_first_sync_column()
     _migrate_schwab_display_nickname_column()
+    _migrate_schwab_refresh_token_invalid_at_column()
     _migrate_community_posts_strategy_column()
     _migrate_account_name_unique_index()
     _migrate_users_email_column()
@@ -277,6 +278,25 @@ def _migrate_schwab_first_sync_column():
         )
     except Exception as e:
         _log.warning("schwab_connections migration skipped: %s", e)
+
+
+def _migrate_schwab_refresh_token_invalid_at_column():
+    """Idempotent: add ``refresh_token_invalid_at`` so we can flag a
+    connection whose refresh token Schwab has rejected (e.g. user
+    hasn't synced in >7 days, OAuth grant revoked). Templates surface
+    a "Reconnect Schwab" banner whenever this is non-NULL — without
+    it, a user just sees stale data with no signal that anything is
+    wrong, since cron failures are invisible to the trader.
+    """
+    try:
+        execute(
+            "ALTER TABLE schwab_connections "
+            "ADD COLUMN IF NOT EXISTS refresh_token_invalid_at TIMESTAMPTZ"
+        )
+    except Exception as e:
+        _log.warning(
+            "schwab_connections refresh_token_invalid_at migration skipped: %s", e,
+        )
 
 
 def _migrate_schwab_display_nickname_column():
@@ -807,16 +827,23 @@ def get_mirror_score_history(user_id, limit=8):
 # ------------------------------------------------------------------
 
 def save_schwab_connection(user_id, account_hash, account_number, account_name, token_json):
-    """Save or update a Schwab connection."""
+    """Save or update a Schwab connection.
+
+    Clears ``refresh_token_invalid_at`` on every upsert so completing
+    OAuth (which always lands here with a fresh token) automatically
+    dismisses the "Reconnect Schwab" banner without each callsite
+    having to remember.
+    """
     execute(
         """INSERT INTO schwab_connections
            (user_id, account_hash, account_number, account_name, token_json, updated_at)
            VALUES (%s, %s, %s, %s, %s, NOW())
            ON CONFLICT (user_id, account_number) DO UPDATE SET
-               account_hash = EXCLUDED.account_hash,
-               account_name = EXCLUDED.account_name,
-               token_json   = EXCLUDED.token_json,
-               updated_at   = NOW()""",
+               account_hash             = EXCLUDED.account_hash,
+               account_name             = EXCLUDED.account_name,
+               token_json               = EXCLUDED.token_json,
+               refresh_token_invalid_at = NULL,
+               updated_at               = NOW()""",
         (user_id, account_hash, account_number, account_name or account_number, token_json),
     )
 
@@ -976,6 +1003,45 @@ def remove_schwab_connection(user_id, account_number):
         "DELETE FROM schwab_connections WHERE user_id = %s AND account_number = %s",
         (user_id, account_number),
     )
+
+
+def mark_schwab_refresh_token_invalid(user_id, account_number):
+    """Flag a connection as needing re-auth because Schwab rejected
+    the stored refresh token. Idempotent: keeps the *original*
+    detection timestamp so the banner doesn't reset every cron run.
+    """
+    try:
+        execute(
+            "UPDATE schwab_connections "
+            "SET refresh_token_invalid_at = COALESCE(refresh_token_invalid_at, NOW()) "
+            "WHERE user_id = %s AND account_number = %s",
+            (user_id, account_number),
+        )
+    except Exception as exc:
+        _log.warning("mark_schwab_refresh_token_invalid failed: %s", exc)
+
+
+def get_expired_schwab_connections(user_id):
+    """Return the user's Schwab connections that need re-auth (rows
+    with ``refresh_token_invalid_at`` set). Returned shape mirrors
+    ``get_schwab_connections`` so the banner template can render the
+    same ``display_nickname or account_name`` label users see in the
+    rest of the UI.
+    """
+    if user_id is None:
+        return []
+    try:
+        return fetch_all(
+            "SELECT account_number, account_name, display_nickname, "
+            "refresh_token_invalid_at "
+            "FROM schwab_connections "
+            "WHERE user_id = %s AND refresh_token_invalid_at IS NOT NULL "
+            "ORDER BY created_at",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_expired_schwab_connections failed: %s", exc)
+        return []
 
 
 # ------------------------------------------------------------------

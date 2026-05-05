@@ -133,6 +133,27 @@ def _inject_account_conflicts():
         return {"account_conflicts": []}
 
 
+@app.context_processor
+def _inject_schwab_reauth_needed():
+    """Surface Schwab connections whose refresh token Schwab has rejected.
+
+    When the cron (or in-app sync) hits ``refresh_token_authentication_error``
+    we set ``schwab_connections.refresh_token_invalid_at``. Reading the
+    flag here makes the "Reconnect Schwab" banner in ``base.html``
+    show up on the next page load — otherwise an expired connection
+    just produces silently-stale data with no signal to the trader.
+    """
+    try:
+        from flask_login import current_user
+        if not getattr(current_user, "is_authenticated", False):
+            return {"schwab_reauth_needed": []}
+        from app.models import get_expired_schwab_connections
+        rows = get_expired_schwab_connections(current_user.id) or []
+        return {"schwab_reauth_needed": rows}
+    except Exception:
+        return {"schwab_reauth_needed": []}
+
+
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
