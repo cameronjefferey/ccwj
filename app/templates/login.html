@@ -106,12 +106,12 @@
                            placeholder="Enter your username" required autofocus>
                 </div>
                 <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <label for="password" class="form-label fw-semibold small mb-0">Password</label>
-                        <a href="{{ url_for('forgot_password') }}" class="small text-decoration-none">Forgot?</a>
-                    </div>
-                    <input type="password" class="form-control mt-1" id="password" name="password"
+                    <label for="password" class="form-label fw-semibold small">Password</label>
+                    <input type="password" class="form-control" id="password" name="password"
                            placeholder="Enter your password" required>
+                    <div class="text-end mt-1">
+                        <a href="{{ url_for('forgot_password') }}" class="small text-decoration-none">Forgot password?</a>
+                    </div>
                 </div>
                 <div class="mb-3 form-check">
                     <input type="checkbox" class="form-check-input" id="remember" name="remember">
