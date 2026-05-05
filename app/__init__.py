@@ -181,3 +181,4 @@ from app import schwab
 from app import first_look
 from app import strategies
 from app import profile_community
+from app import wealth

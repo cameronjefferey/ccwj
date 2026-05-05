@@ -118,6 +118,10 @@
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
                        href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Review</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'wealth' %}active{% endif %}"
+                       href="{{ url_for('wealth', account=selected_account) if selected_account else url_for('wealth') }}">Wealth</a>
+                </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
                        id="navPortfolio" data-bs-toggle="dropdown" aria-expanded="false">Portfolio</a>
