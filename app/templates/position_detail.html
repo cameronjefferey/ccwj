@@ -138,7 +138,7 @@
                 onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }} style="color:#000">{{ a }}</option>
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }} style="color:#000">{{ a | account_label }}</option>
             {% endfor %}
         </select>
     </form>

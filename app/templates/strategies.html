@@ -117,7 +117,7 @@
                 onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
             {% endfor %}
         </select>
     </div>

@@ -586,7 +586,7 @@
             <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
                 <option value="">All Accounts</option>
                 {% for a in accounts %}
-                <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a }}</option>
+                <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a | account_label }}</option>
                 {% endfor %}
             </select>
         </div>

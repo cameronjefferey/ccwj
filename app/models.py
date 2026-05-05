@@ -809,6 +809,44 @@ def get_schwab_connections(user_id):
     )
 
 
+def get_account_nicknames(user_id):
+    """Return ``{account_name: display_label}`` for every Schwab connection
+    the user owns.
+
+    ``display_label`` is the user-set ``display_nickname`` when present,
+    otherwise the raw ``account_name``. The dict is keyed on
+    ``account_name`` (the BigQuery tenancy key) so callers can render a
+    nicer label without changing the underlying value used for filtering
+    or storage. Renaming ``account_name`` is unsafe — it detaches every
+    existing trade row from this user — which is why nicknames live on
+    a separate column.
+
+    Used by the request-scoped ``account_label`` Jinja filter so every
+    template (positions hero, account dropdowns, profile badges, upload
+    picker, etc.) reflects the nickname the user set in
+    ``/profile?tab=account``.
+    """
+    if user_id is None:
+        return {}
+    try:
+        rows = fetch_all(
+            "SELECT account_name, display_nickname "
+            "FROM schwab_connections WHERE user_id = %s",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_account_nicknames failed: %s", exc)
+        return {}
+    out = {}
+    for r in rows:
+        name = (r.get("account_name") or "").strip()
+        if not name:
+            continue
+        nick = (r.get("display_nickname") or "").strip()
+        out[name] = nick or name
+    return out
+
+
 def get_schwab_connection(user_id, account_number=None):
     """Return a user's Schwab connection (token_json + account_hash).
     If account_number is None, returns the first connection."""

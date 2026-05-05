@@ -57,6 +57,41 @@ from app.option_formatting import format_option_symbol as _format_option_symbol
 app.add_template_filter(_format_option_symbol, name="option_symbol")
 
 
+def _account_label_filter(account_name):
+    """Render an ``account_name`` with the user's Schwab ``display_nickname``
+    when one is set, otherwise the raw account_name.
+
+    Lives in the application factory rather than next to the data layer so
+    every template — positions hero, account dropdowns on every page,
+    profile badges, upload picker — can use ``{{ a | account_label }}``
+    (or ``user_accounts | map('account_label') | join(', ')``) without
+    each route having to remember to pass a nickname dict.
+
+    Looks up the per-user mapping once per request via ``flask.g`` so a
+    page with several account dropdowns doesn't fan out into one DB
+    query per cell. Falls back to the raw value on any error so a DB
+    hiccup never blanks an account label.
+    """
+    if not account_name:
+        return account_name
+    try:
+        from flask import g
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return account_name
+        nicknames = getattr(g, "_account_nicknames", None)
+        if nicknames is None:
+            from app.models import get_account_nicknames
+            nicknames = get_account_nicknames(current_user.id)
+            g._account_nicknames = nicknames
+        return nicknames.get(account_name, account_name)
+    except Exception:
+        return account_name
+
+
+app.add_template_filter(_account_label_filter, name="account_label")
+
+
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app

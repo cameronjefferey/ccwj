@@ -199,3 +199,76 @@ def test_update_schwab_nickname_returns_false_on_db_error(monkeypatch):
 
     monkeypatch.setattr(_models, "execute", _boom)
     assert _models.update_schwab_connection_nickname(7, "11111", "Roth IRA") is False
+
+
+# ---------------------------------------------------------------------------
+# get_account_nicknames — feeds the global `account_label` Jinja filter so
+# the user-set Schwab nickname propagates to every surface that renders an
+# account label (positions hero, account dropdowns, profile badges, etc.).
+# Renaming `account_name` is unsafe (BigQuery tenancy key); the dict
+# returned here MUST be keyed on the raw account_name so callers can swap
+# in the display label without changing what gets queried.
+# ---------------------------------------------------------------------------
+
+
+def test_account_nicknames_uses_nickname_when_present(monkeypatch):
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql, params: [
+            {"account_name": "Schwab Account", "display_nickname": "Investment"},
+            {"account_name": "Schwab \u20229437", "display_nickname": "401k"},
+        ],
+    )
+    out = _models.get_account_nicknames(7)
+    assert out == {"Schwab Account": "Investment", "Schwab \u20229437": "401k"}
+
+
+def test_account_nicknames_falls_back_to_account_name(monkeypatch):
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql, params: [
+            {"account_name": "Schwab Account", "display_nickname": None},
+            {"account_name": "Manual Upload", "display_nickname": "   "},
+        ],
+    )
+    out = _models.get_account_nicknames(7)
+    # Null AND whitespace-only nicknames both fall back to the raw label so
+    # the UI never renders a blank pill.
+    assert out == {"Schwab Account": "Schwab Account", "Manual Upload": "Manual Upload"}
+
+
+def test_account_nicknames_skips_blank_account_names(monkeypatch):
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql, params: [
+            {"account_name": "", "display_nickname": "Ghost"},
+            {"account_name": None, "display_nickname": "Phantom"},
+            {"account_name": "Real", "display_nickname": "Nice"},
+        ],
+    )
+    # Defensive: the BQ key would be unusable so we don't index by an empty
+    # string — that would hand any blank label the same nickname.
+    assert _models.get_account_nicknames(7) == {"Real": "Nice"}
+
+
+def test_account_nicknames_returns_empty_for_none_user(monkeypatch):
+    # Anonymous request short-circuits before hitting the DB.
+    called = {"n": 0}
+
+    def _spy(sql, params):
+        called["n"] += 1
+        return []
+
+    monkeypatch.setattr(_models, "fetch_all", _spy)
+    assert _models.get_account_nicknames(None) == {}
+    assert called["n"] == 0
+
+
+def test_account_nicknames_swallows_db_errors(monkeypatch):
+    def _boom(sql, params):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_models, "fetch_all", _boom)
+    # A transient DB hiccup must not blank account labels app-wide; the
+    # filter falls back to raw account_name when the dict is empty.
+    assert _models.get_account_nicknames(7) == {}

@@ -88,7 +88,7 @@
                     {% if accounts %}
                     <div class="mt-2">
                         {% for acct in accounts %}
-                        <span class="account-badge">{{ acct }}</span>
+                        <span class="account-badge">{{ acct | account_label }}</span>
                         {% endfor %}
                     </div>
                     {% else %}

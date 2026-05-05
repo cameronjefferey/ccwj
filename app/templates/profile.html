@@ -244,7 +244,7 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Accounts you’ve linked</div>
                 <div class="atlas-card-b">
-                    <div>{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
+                    <div>{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
                     <p class="atlas-hint mb-0 mt-2">These labels tie uploads and Schwab sync to the rows you see across the app. Manage them under <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.</p>
                 </div>
             </div>
@@ -394,7 +394,7 @@
                 <div class="atlas-card-b">
                     <p class="atlas-hint">These labels tie your uploads and syncs to the rows you see across the app.</p>
                     {% if accounts %}
-                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct }}</span>{% endfor %}</div>
+                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
                     {% else %}
                     <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled %} or connect Schwab{% endif %}.</p>
                     {% endif %}

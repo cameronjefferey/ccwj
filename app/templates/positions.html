@@ -104,11 +104,11 @@
                     <a href="{{ url_for('profile') }}#schwab-sync" class="text-white text-decoration-underline">connect Schwab</a>
                     or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
                 {% elif _acct_count == 1 %}
-                    {{ user_accounts[0] }}
+                    {{ user_accounts[0] | account_label }}
                     &middot; your current and historical options strategies.
                 {% else %}
                     Across {{ _acct_count }} account{{ '' if _acct_count == 1 else 's' }}:
-                    {{ user_accounts | join(', ') }}.
+                    {{ user_accounts | map('account_label') | join(', ') }}.
                 {% endif %}
             </div>
             {% if _acct_count > 0 %}
@@ -217,7 +217,7 @@
                 onchange="this.form.submit()">
             <option value="">All Accounts</option>
             {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a }}</option>
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
             {% endfor %}
         </select>
     </div>
