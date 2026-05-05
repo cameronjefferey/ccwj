@@ -330,7 +330,13 @@ def _wrap_schwab_token_for_py(raw):
 
 
 def _schwab_config():
-    """Return (app_key, app_secret, callback_url) or None if not configured."""
+    """Return (app_key, app_secret, callback_url) or None if not configured.
+
+    Used by OAuth-grant paths (``/schwab/connect`` and ``/schwab/callback``)
+    which need the callback URL to build the redirect. The sync path uses
+    :func:`_schwab_sync_config` instead because it only needs the API key
+    and secret to refresh tokens.
+    """
     key = os.environ.get("SCHWAB_APP_KEY", "").strip()
     secret = os.environ.get("SCHWAB_APP_SECRET", "").strip()
     callback = os.environ.get("SCHWAB_CALLBACK_URL", "").strip()
@@ -339,20 +345,52 @@ def _schwab_config():
     return (key, secret, callback)
 
 
+def _schwab_sync_config():
+    """Return ``(app_key, app_secret)`` or ``None`` if not configured.
+
+    The Render cron runs ``app.schwab_sync_cli`` in an environment that
+    only carries ``SCHWAB_APP_KEY`` and ``SCHWAB_APP_SECRET`` — the
+    callback URL is a web-only env var. Reusing the full
+    :func:`_schwab_config` here used to silently turn every cron run
+    into a 5/5 "No valid client" no-op even though the tokens were
+    fine, because the missing callback URL forced the helper to return
+    ``None``.
+    """
+    key = os.environ.get("SCHWAB_APP_KEY", "").strip()
+    secret = os.environ.get("SCHWAB_APP_SECRET", "").strip()
+    if not key or not secret:
+        return None
+    return (key, secret)
+
+
 def _get_schwab_client(user_id, account_number=None):
     """
     Create a schwab-py client using stored token.
     Uses client_from_access_functions with DB-backed token read/write.
+
+    Returns ``None`` when the connection row, API credentials, or
+    schwab-py client init fails. Each branch logs at WARNING so cron
+    log readers can tell "missing env var" from "expired refresh
+    token" — both used to look identical from the CLI.
     """
     conn_data = get_schwab_connection(user_id, account_number)
     if not conn_data:
+        app.logger.warning(
+            "Schwab client: no DB row (user_id=%s, account_number=%s)",
+            user_id, account_number,
+        )
         return None
 
-    cfg = _schwab_config()
+    cfg = _schwab_sync_config()
     if not cfg:
+        app.logger.warning(
+            "Schwab client: SCHWAB_APP_KEY/SECRET missing in env "
+            "(user_id=%s) — re-check the cron service env vars",
+            user_id,
+        )
         return None
 
-    app_key, app_secret, _ = cfg
+    app_key, app_secret = cfg
 
     def token_read():
         c = get_schwab_connection(user_id, conn_data["account_number"])
