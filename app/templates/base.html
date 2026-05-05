@@ -300,7 +300,7 @@
                 {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
-                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">AI Coach</a>
+                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">AI Insights</a>
                 </li>
                 {% endif %}
                 {% if is_admin_user %}

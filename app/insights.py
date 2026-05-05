@@ -438,10 +438,14 @@ STRATEGY BREAKDOWN
 # AI prompts — the AI narrates pre-computed signals
 # ------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are narrating a trader's behavioral coaching report. The data below
+SYSTEM_PROMPT = """You are narrating a trader's behavioral insights report. The data below
 contains PRE-COMPUTED signals about their option trading behavior — exit timing,
 roll patterns, and DTE performance. These signals come from daily option
 mark-to-market data that no other retail tool tracks.
+
+You surface OBSERVATIONS, not financial advice. Never recommend trades,
+strikes, expirations, position sizes, or strategies; describe the patterns
+the data shows.
 
 IMPORTANT — DATA COVERAGE: The signals are computed only from contracts with
 sufficient daily snapshot data (at least 40% of hold days covered, minimum 3
@@ -458,7 +462,8 @@ Your job:
    not "you lost money." Say "Your rolls at 7+ DTE succeed 80% of the time"
    not "you should roll earlier."
 4. Write 3-4 concise paragraphs. No section headings. No bullet lists.
-   Write like a coach talking after a game — direct, specific, constructive.
+   Write like an analyst summarizing a game film — direct, specific,
+   observational, never prescriptive.
 5. End with ONE concrete thing to watch next week.
 
 Rules:
@@ -481,24 +486,26 @@ IMPORTANT: Start with a 2-sentence summary under "## Summary" that captures
 the single most important behavioral insight. Then write the full analysis."""
 
 
-QA_SYSTEM_PROMPT = """You are a trading coach with access to detailed behavioral data about
-this trader's option trading — including daily mark-to-market curves, exit
-timing analysis, roll patterns, and DTE performance breakdowns.
+QA_SYSTEM_PROMPT = """You are a trading-data analyst with access to detailed behavioral
+data about this trader's option trading — including daily mark-to-market curves,
+exit timing analysis, roll patterns, and DTE performance breakdowns. You answer
+questions with OBSERVATIONS grounded in the data; you do NOT give financial
+advice or recommend trades.
 
 You will receive:
-- COACHING SIGNALS: Pre-computed behavioral metrics (exit timing, roll behavior, DTE patterns)
+- BEHAVIORAL SIGNALS: Pre-computed metrics (exit timing, roll behavior, DTE patterns)
 - PORTFOLIO OVERVIEW: Lifetime strategy performance
 - Optionally: RECENT EXITS showing specific trades where profit was left on the table
 - Optionally: LAST WEEK performance summary
 
-The coaching signals only include contracts with reliable daily data (40%+
+The behavioral signals only include contracts with reliable daily data (40%+
 snapshot density). If the data mentions "X of Y contracts," the remaining
 contracts lacked sufficient daily data. Do not extrapolate beyond what the
 data covers.
 
 Answer the user's question in 3-6 short paragraphs. Be specific — use exact
 numbers, trade symbols, and dates from the data. If the question asks about
-exit timing, rolls, or holding behavior, lean heavily on the coaching signals.
+exit timing, rolls, or holding behavior, lean heavily on the behavioral signals.
 
 Rules:
 - Do NOT give financial advice or trade recommendations.
@@ -544,8 +551,8 @@ def _call_gemini(data_text):
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        app.logger.warning("AI Coach generate requested but GEMINI_API_KEY is not configured")
-        return None, "AI Coach is temporarily unavailable. Try again in a few minutes."
+        app.logger.warning("AI Insights generate requested but GEMINI_API_KEY is not configured")
+        return None, "AI Insights is temporarily unavailable. Try again in a few minutes."
 
     try:
         client = genai.Client(api_key=api_key)
@@ -592,14 +599,14 @@ def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        app.logger.warning("AI Coach Q&A requested but GEMINI_API_KEY is not configured")
-        return None, "AI Coach is temporarily unavailable. Try again in a few minutes."
+        app.logger.warning("AI Insights Q&A requested but GEMINI_API_KEY is not configured")
+        return None, "AI Insights is temporarily unavailable. Try again in a few minutes."
 
     try:
         client = genai.Client(api_key=api_key)
         parts = [QA_SYSTEM_PROMPT]
         if coaching_text:
-            parts.append("COACHING SIGNALS:\n" + coaching_text)
+            parts.append("BEHAVIORAL SIGNALS:\n" + coaching_text)
         if weekly_text:
             parts.append("LAST WEEK DATA:\n" + weekly_text)
         if portfolio_text:
@@ -732,7 +739,7 @@ def insights():
 
     return render_template(
         "insights.html",
-        title="AI Coach",
+        title="AI Insights",
         insight=cached,
         gemini_available=gemini_available,
         accounts=accounts,
@@ -752,7 +759,7 @@ def generate_insights():
     refresh, so even an over-eager tester hits a generous ceiling without
     burning Gemini quota for the rest of the beta.
     """
-    blocked = demo_block_writes("regenerating AI Coach insights")
+    blocked = demo_block_writes("regenerating AI Insights")
     if blocked:
         return blocked
     selected_account = request.args.get("account", "")
@@ -785,10 +792,10 @@ def generate_insights():
 
         summary, full_analysis = result
         save_insight(current_user.id, summary, full_analysis)
-        flash("AI coaching analysis generated.", "success")
+        flash("AI Insights analysis generated.", "success")
 
     except Exception as exc:
-        app.logger.exception("AI coach insight generation failed: %s", exc)
+        app.logger.exception("AI Insights generation failed: %s", exc)
         flash("Couldn't generate insights right now. Try again in a moment.", "danger")
 
     return redirect(redir)
@@ -807,7 +814,7 @@ def insights_ask():
     # The demo's pre-seeded insight is its showcase; live Q&A would burn
     # Gemini quota for every stranger that pokes at the chat box. Block
     # at the JSON layer with a 403 so the chat UI can render a banner.
-    blocked = demo_block_writes("asking the AI Coach questions")
+    blocked = demo_block_writes("asking AI Insights questions")
     if blocked:
         return blocked
     payload = request.get_json(silent=True) or {}

@@ -101,11 +101,12 @@
 <div class="row justify-content-center">
     <div class="col-lg-9">
         <div class="insights-hero">
-            <h1>AI Coach</h1>
+            <h1>AI Insights</h1>
             <p class="mb-0 opacity-90">
                 Your trading behavior analyzed through data no other tool tracks —
                 daily option mark-to-market, exit timing, and roll patterns.
                 The numbers below are computed directly from your data. The AI narrates what they mean.
+                These are observations, not financial advice.
             </p>
         </div>
 
@@ -314,35 +315,35 @@
             </div>
         </div>
 
-        {# ── Ask the Coach ── #}
+        {# ── Ask AI ── #}
         {% if gemini_available and not is_demo_user %}
         <div class="coaching-section">
-            <div class="section-label">Ask the Coach</div>
+            <div class="section-label">Ask AI</div>
             <p class="small text-muted mb-3">
                 Ask about your exit timing, roll patterns, DTE preferences, or any behavioral pattern.
-                Grounded in your actual trading data.
+                Grounded in your actual trading data. Responses are observations, not financial advice.
             </p>
             <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;"></div>
             <form id="coachForm" class="d-flex gap-2">
                 <input type="text" id="coachInput" class="form-control form-control-sm"
-                       placeholder="e.g. 'Should I be rolling my covered calls earlier?'" required>
+                       placeholder="e.g. 'Am I rolling my covered calls earlier than usual?'" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
             </form>
             <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
         </div>
         {% elif is_demo_user %}
         <div class="coaching-section">
-            <div class="section-label">Ask the Coach</div>
+            <div class="section-label">Ask AI</div>
             <p class="text-muted small mb-0 fst-italic">
-                Live Q&amp;A is disabled in demo mode. Sign up to ask the Coach
-                questions about your own trading.
+                Live Q&amp;A is disabled in demo mode. Sign up to ask questions
+                about your own trading.
             </p>
         </div>
         {% endif %}
 
         {% elif gemini_available %}
         <div class="generate-card">
-            <h5>Get Your Behavioral Coaching Report</h5>
+            <h5>Get Your Behavioral Insights Report</h5>
             <div class="mx-auto mb-4" style="max-width: 480px;">
                 <p>
                     The AI will analyze your exit timing, roll patterns, and DTE preferences —
@@ -363,7 +364,7 @@
             <form method="POST" action="{{ url_for('generate_insights') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
-                    Generate Coaching Report
+                    Generate Insights Report
                 </button>
             </form>
             {% endif %}
@@ -371,14 +372,14 @@
 
         {% else %}
         <div class="generate-card">
-            <h5>AI Coach is warming up</h5>
+            <h5>AI Insights is warming up</h5>
             <p>
-                Your Coach is still being trained on the patterns we see across the platform.
+                The model is still being trained on the patterns we see across the platform.
                 It'll be available here as soon as it's ready — no setup on your end.
             </p>
             {% if coaching and coaching.has_data %}
             <p class="small text-muted">
-                In the meantime, the data-driven coaching insights above are based on your own trades.
+                In the meantime, the data-driven insights above are based on your own trades.
             </p>
             {% endif %}
         </div>
@@ -421,7 +422,7 @@
 
             const loading = document.createElement('div');
             loading.className = 'mb-2 small text-muted';
-            loading.textContent = 'AI Coach is thinking...';
+            loading.textContent = 'AI is thinking...';
             coachThread.appendChild(loading);
             coachThread.scrollTop = coachThread.scrollHeight;
 
@@ -447,7 +448,7 @@
 
                 const coachBlock = document.createElement('div');
                 coachBlock.className = 'mb-3';
-                coachBlock.innerHTML = '<div class="small text-muted">AI Coach</div>' + data.answer_html;
+                coachBlock.innerHTML = '<div class="small text-muted">AI Insights</div>' + data.answer_html;
                 coachThread.appendChild(coachBlock);
                 coachThread.scrollTop = coachThread.scrollHeight;
             } catch (err) {

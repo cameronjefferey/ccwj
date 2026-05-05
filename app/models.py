@@ -1798,12 +1798,12 @@ You trade like someone who's been at this for years. Covered Calls and Cash-Secu
 
 ## What This Demo Shows
 
-This profile is built to show what the platform looks like when it's full: weekly review with real numbers, Mirror Score history, strategy breakdowns, and AI coaching. Every section is populated so you can see the full experience.
+This profile is built to show what the platform looks like when it's full: weekly review with real numbers, Mirror Score history, strategy breakdowns, and AI Insights. Every section is populated so you can see the full experience.
 
 ## Next Steps for You
 
 1. **Upload your own data** — Replace this demo with your real accounts and watch your own trends.
-2. **Use the Coach** — Ask questions about your trades; the AI uses only your data.
+2. **Use AI Insights** — Ask questions about your trades; the AI reads only your data and surfaces patterns, not advice.
 3. **Track over time** — The more you upload, the more accurate your snapshots and Mirror Score become."""
     save_insight(demo_user_id, summary, full_analysis)
 

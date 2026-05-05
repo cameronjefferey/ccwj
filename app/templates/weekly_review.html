@@ -1297,10 +1297,10 @@
 </div>
 {% endif %}
 
-{# ── Coach's Take: exit timing insight ── #}
+{# ── Pattern Insight: exit timing observation ── #}
 {% if coaching_take %}
 <div class="review-section">
-    <div class="section-label">Coach's Take — Exit Timing</div>
+    <div class="section-label">Pattern Insight — Exit Timing</div>
     <p class="small text-muted mb-3" style="margin-top:-.5rem">Based on contracts with daily snapshot data (40%+ coverage).</p>
     {% if coaching_take.total_exits > 0 %}
     <div class="d-flex flex-wrap gap-3 mb-3">
@@ -1360,7 +1360,7 @@
     </div>
     {% endif %}
     {% if insights_enabled %}
-    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="small d-block mt-2">Full coaching analysis &rarr;</a>
+    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="small d-block mt-2">Full insights analysis &rarr;</a>
     {% endif %}
 </div>
 {% endif %}

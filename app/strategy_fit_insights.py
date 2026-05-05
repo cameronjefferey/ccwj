@@ -454,9 +454,10 @@ def _build_strategy_fit_brief(client, user_accounts):
 # --------------------------------------------------------------------
 
 
-SYSTEM_PROMPT = """You are a quantitative trading coach. You will receive a structured brief
-of a trader's strategy-by-sector performance. Your job is to surface the
+SYSTEM_PROMPT = """You are a quantitative trading-data analyst. You will receive a structured
+brief of a trader's strategy-by-sector performance. Your job is to surface the
 3-5 most decision-relevant observations as short, evidence-grounded bullets.
+You describe patterns; you do NOT give financial advice or recommend trades.
 
 Voice and structure:
 - Open with a single 1-sentence summary under "## Summary" — the most
@@ -517,7 +518,7 @@ def _call_gemini_strategy_fit(brief_text):
             model="gemini-2.0-flash",
             contents=SYSTEM_PROMPT + "\n\nBRIEF:\n\n" + brief_text,
             config=types.GenerateContentConfig(
-                temperature=0.4,  # lower than the coach — we want fewer flourishes
+                temperature=0.4,  # lower than insights.py — we want fewer flourishes
                 max_output_tokens=1400,  # slight bump to fit symbol parentheticals
             ),
         )
@@ -570,10 +571,10 @@ def generate_strategy_fit_insights():
     redir = url_for("strategy_fit", **redir_kwargs)
 
     if not app.config.get("INSIGHTS_ENABLED", True):
-        flash("AI Coach is currently disabled.", "warning")
+        flash("AI Insights is currently disabled.", "warning")
         return redirect(redir)
     if not os.environ.get("GEMINI_API_KEY", "").strip():
-        flash("AI Coach is warming up — try again in a few minutes.", "info")
+        flash("AI Insights is warming up — try again in a few minutes.", "info")
         return redirect(redir)
 
     try:

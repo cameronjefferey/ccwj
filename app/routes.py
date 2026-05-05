@@ -642,8 +642,8 @@ FEATURES = {
         "subtitle": "Personalized analysis of your trading style and performance.",
         "demo_partial": "features/_demo_insights.html",
         "value_bullets": [
-            "Get a coach-style overview: what you do well, what needs work, and why.",
-            "Actionable suggestions based on your actual data—not generic advice.",
+            "Get a data-driven overview: what's working, what's leaking, and why.",
+            "Observations grounded in your actual trades—not generic advice.",
             "The 'wow' moment when the app shows it truly understands your trading.",
         ],
     },
