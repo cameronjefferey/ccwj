@@ -9,6 +9,7 @@
 -- STRING so the demo union works regardless of BigQuery CSV type inference.
 {%- set current_string_cols -%}
         cast(Account as string) as Account,
+        cast(user_id as string) as user_id,
         cast(Symbol as string) as Symbol,
         cast(Description as string) as Description,
         cast(Quantity as string) as Quantity,
@@ -89,6 +90,9 @@ osi_split as (
 cleaned as (
     select
         trim(account) as account,
+
+        -- Tenant key — see docs/USER_ID_TENANCY.md. Stage 0: nullable.
+        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
 
         -- Full trade symbol
         trim(symbol) as trade_symbol,

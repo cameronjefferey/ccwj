@@ -9,30 +9,38 @@ client = bigquery.Client()
 # Step 2: Query BigQuery to get all traded underlyings (equity AND option positions)
 # so we also have stock prices for symbols held only as options.
 query = """
-    SELECT account, underlying_symbol AS symbol, MIN(trade_date) AS position_open_date
+    SELECT account, user_id, underlying_symbol AS symbol, MIN(trade_date) AS position_open_date
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE underlying_symbol IS NOT NULL
-    GROUP BY 1, 2
+    GROUP BY 1, 2, 3
 """
 positions = client.query(query).result()
 positions_df = pd.DataFrame([dict(row.items()) for row in positions])
 
-# Step 2b: Add benchmark tickers (SPY, QQQ) so weekly review can skip live yfinance
+# Step 2b: Add benchmark tickers (SPY, QQQ) so weekly review can skip live yfinance.
+# We mint one benchmark row per (account, user_id) so prices propagate to every
+# tenant — see docs/USER_ID_TENANCY.md.
 BENCHMARK_TICKERS = ["SPY", "QQQ"]
 benchmark_start = date(date.today().year, 1, 1)
 benchmark_rows = []
-accounts_seen = set(positions_df["account"].unique()) if not positions_df.empty else set()
-benchmark_account = list(accounts_seen)[0] if accounts_seen else "_benchmark"
-for sym in BENCHMARK_TICKERS:
-    already_present = not positions_df.empty and (
-        (positions_df["symbol"] == sym) & (positions_df["account"] == benchmark_account)
-    ).any()
-    if not already_present:
-        benchmark_rows.append({
-            "account": benchmark_account,
-            "symbol": sym,
-            "position_open_date": benchmark_start,
-        })
+if not positions_df.empty:
+    tenant_pairs = positions_df[["account", "user_id"]].drop_duplicates().to_records(index=False)
+else:
+    tenant_pairs = [("_benchmark", None)]
+for account, user_id in tenant_pairs:
+    for sym in BENCHMARK_TICKERS:
+        already_present = not positions_df.empty and (
+            (positions_df["symbol"] == sym)
+            & (positions_df["account"] == account)
+            & (positions_df["user_id"].astype("object") == user_id)
+        ).any()
+        if not already_present:
+            benchmark_rows.append({
+                "account": account,
+                "user_id": user_id,
+                "symbol": sym,
+                "position_open_date": benchmark_start,
+            })
 if benchmark_rows:
     positions_df = pd.concat(
         [positions_df, pd.DataFrame(benchmark_rows)], ignore_index=True
@@ -46,6 +54,7 @@ all_data = []
 
 for _, row in positions_df.iterrows():
     account = row["account"]
+    user_id = row["user_id"] if "user_id" in row else None
     symbol = row["symbol"]
     start_date = row["position_open_date"].isoformat()
 
@@ -54,6 +63,7 @@ for _, row in positions_df.iterrows():
         hist = ticker.history(start=start_date, end=end_date)
         hist = hist[["Close", "Dividends"]].reset_index()
         hist["account"] = account
+        hist["user_id"] = user_id
         hist["symbol"] = symbol
         hist.rename(columns={"Date": "date", "Close": "close_price", "Dividends": "dividend"}, inplace=True)
 
@@ -67,7 +77,10 @@ for _, row in positions_df.iterrows():
 # Step 4: Upload results to BigQuery
 if all_data:
     final_df = pd.concat(all_data, ignore_index=True)
-    final_df = final_df[["account", "symbol", "date", "close_price", "dividend"]]
+    # user_id round-trips through pandas as object/Int64; coerce to nullable Int64
+    # so BigQuery loads it cleanly as INT64 NULLABLE alongside legacy NULL rows.
+    final_df["user_id"] = pd.to_numeric(final_df["user_id"], errors="coerce").astype("Int64")
+    final_df = final_df[["account", "user_id", "symbol", "date", "close_price", "dividend"]]
 
     table_id = "ccwj-dbt.analytics.daily_position_performance"
     final_df = final_df.drop_duplicates()

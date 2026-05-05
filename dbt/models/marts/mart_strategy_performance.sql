@@ -16,6 +16,7 @@
 with base as (
     select
         account,
+        user_id,
         strategy,
         sum(total_pnl)              as total_pnl,
         sum(realized_pnl)           as realized_pnl,
@@ -33,7 +34,7 @@ with base as (
         avg(avg_days_in_trade)      as avg_days_in_trade
     from {{ ref('positions_summary') }}
     where strategy is not null and trim(strategy) != ''
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 with_win_rate as (
@@ -45,6 +46,7 @@ with_win_rate as (
 
 select
     account,
+    user_id,
     strategy,
     round(total_pnl, 2)           as total_pnl,
     round(realized_pnl, 2)        as realized_pnl,

@@ -102,6 +102,11 @@ shaped as (
 
 select
     'Demo Account' as account,
+    -- Demo synthetic data has no Postgres user_id (the demo user's id varies
+    -- per environment). Stage 3's app code special-cases the demo user to
+    -- filter by ``account = 'Demo Account'`` rather than ``user_id``, so the
+    -- NULL here is intentional — see docs/USER_ID_TENANCY.md.
+    cast(null as int64)                                  as user_id,
     date,
     cast(account_value_raw * (1 - 0.05 - 0.12) as int64) as equity_value,
     cast(account_value_raw * 0.12 as int64)              as option_value,

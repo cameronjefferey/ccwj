@@ -14,6 +14,7 @@
 with option_contracts as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -36,13 +37,16 @@ with option_contracts as (
 strat as (
     select
         account,
+        user_id,
         trade_symbol,
         strategy
     from {{ ref('int_strategy_classification') }}
     where trade_group_type = 'option_contract'
 ),
 
--- Underlying price on open_date for moneyness (optional: may be null if no daily price that day)
+-- Underlying price on open_date for moneyness. stg_daily_prices is market
+-- data (no user_id) — the join key is (account, symbol, date), not
+-- per-tenant. Same close_price regardless of which user owned the symbol.
 prices as (
     select account, symbol, date, close_price
     from {{ ref('stg_daily_prices') }}
@@ -51,6 +55,7 @@ prices as (
 enriched as (
     select
         oc.account,
+        oc.user_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         oc.option_expiry,
@@ -88,6 +93,7 @@ enriched as (
     from option_contracts oc
     left join strat s
         on oc.account = s.account
+        and (oc.user_id is not distinct from s.user_id)
         and oc.trade_symbol = s.trade_symbol
     left join prices p
         on oc.account = p.account

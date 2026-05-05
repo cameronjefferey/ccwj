@@ -20,6 +20,7 @@
 with daily as (
     select
         account,
+        user_id,
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
@@ -28,21 +29,24 @@ with daily as (
 ordered as (
     select
         account,
+        user_id,
         date,
         account_value,
-        lag(account_value) over (partition by account order by date) as prev_value,
-        lag(date)          over (partition by account order by date) as prev_date
+        lag(account_value) over (partition by account, user_id order by date) as prev_value,
+        lag(date)          over (partition by account, user_id order by date) as prev_date
     from daily
 ),
 
 one_week_base as (
     select
         account,
+        user_id,
         d.date,
         (
             select max(d2.date)
             from daily d2
             where d2.account = d.account
+              and (d2.user_id is not distinct from d.user_id)
               and d2.date <= date_sub(d.date, interval 7 day)
         ) as base_1w_date
     from daily d
@@ -51,11 +55,13 @@ one_week_base as (
 one_month_base as (
     select
         account,
+        user_id,
         d.date,
         (
             select max(d2.date)
             from daily d2
             where d2.account = d.account
+              and (d2.user_id is not distinct from d.user_id)
               and d2.date <= date_sub(d.date, interval 30 day)
         ) as base_1m_date
     from daily d
@@ -64,6 +70,7 @@ one_month_base as (
 joined as (
     select
         o.account,
+        o.user_id,
         o.date,
         o.account_value,
         o.prev_date      as base_1d_date,
@@ -74,17 +81,26 @@ joined as (
         mm.account_value as base_1m_value
     from ordered o
     left join one_week_base w
-      on o.account = w.account and o.date = w.date
+      on o.account = w.account
+     and (o.user_id is not distinct from w.user_id)
+     and o.date = w.date
     left join daily mw
-      on w.account = mw.account and w.base_1w_date = mw.date
+      on w.account = mw.account
+     and (w.user_id is not distinct from mw.user_id)
+     and w.base_1w_date = mw.date
     left join one_month_base m
-      on o.account = m.account and o.date = m.date
+      on o.account = m.account
+     and (o.user_id is not distinct from m.user_id)
+     and o.date = m.date
     left join daily mm
-      on m.account = mm.account and m.base_1m_date = mm.date
+      on m.account = mm.account
+     and (m.user_id is not distinct from mm.user_id)
+     and m.base_1m_date = mm.date
 )
 
 select
     account,
+    user_id,
     date,
     account_value,
 
@@ -113,4 +129,4 @@ select
     end as delta_1m_pct
 
 from joined
-order by account, date
+order by account, user_id, date

@@ -22,6 +22,7 @@
 with base as (
     select
         account,
+        user_id,
         week_start,
         trades_closed,
         total_pnl,
@@ -34,6 +35,7 @@ with base as (
 with_baseline as (
     select
         account,
+        user_id,
         week_start,
         trades_closed,
         total_pnl,
@@ -41,27 +43,29 @@ with_baseline as (
         num_losers,
         win_rate_week,
 
-        -- Rolling baseline over the previous 8 weeks (per account), excluding the current week
+        -- Rolling baseline over the previous 8 weeks (per tenant),
+        -- excluding the current week. Window keyed by (account, user_id)
+        -- so two users with the same account label never share a baseline.
         avg(trades_closed) over (
-            partition by account
+            partition by account, user_id
             order by week_start
             rows between 8 preceding and 1 preceding
         ) as avg_trades_closed_8w,
 
         avg(total_pnl) over (
-            partition by account
+            partition by account, user_id
             order by week_start
             rows between 8 preceding and 1 preceding
         ) as avg_total_pnl_8w,
 
         avg(win_rate_week) over (
-            partition by account
+            partition by account, user_id
             order by week_start
             rows between 8 preceding and 1 preceding
         ) as avg_win_rate_8w,
 
         count(trades_closed) over (
-            partition by account
+            partition by account, user_id
             order by week_start
             rows between 8 preceding and 1 preceding
         ) as baseline_weeks_8w
@@ -70,6 +74,7 @@ with_baseline as (
 
 select
     account,
+    user_id,
     week_start,
     trades_closed,
     total_pnl,
@@ -81,5 +86,5 @@ select
     avg_win_rate_8w,
     baseline_weeks_8w
 from with_baseline
-order by account, week_start
+order by account, user_id, week_start
 

@@ -22,6 +22,7 @@ with option_contracts as (
 calls as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         direction,
@@ -56,6 +57,7 @@ short_calls as (
 paired as (
     select
         short.account,
+        short.user_id,
         short.underlying_symbol,
         short.trade_symbol   as short_trade_symbol,
         long.trade_symbol    as long_trade_symbol,
@@ -84,6 +86,7 @@ paired as (
     from short_calls short
     inner join long_calls long
         on short.account = long.account
+        and (short.user_id is not distinct from long.user_id)
         and short.underlying_symbol = long.underlying_symbol
         and short.trade_symbol != long.trade_symbol
         and short.option_strike > long.option_strike
@@ -95,6 +98,7 @@ paired as (
 
 select
     account,
+    user_id,
     underlying_symbol,
     long_trade_symbol,
     short_trade_symbol,

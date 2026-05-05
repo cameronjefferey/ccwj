@@ -12,6 +12,7 @@
 with option_trades as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -26,10 +27,14 @@ with option_trades as (
     where instrument_type in ('Call', 'Put')
 ),
 
--- Predominant direction per contract (for signing expired / assigned quantities)
+-- Predominant direction per contract (for signing expired / assigned quantities).
+-- Keyed on (account, user_id, trade_symbol) so two users with the same
+-- account label and the same option contract symbol don't get their
+-- direction collapsed together.
 direction_lookup as (
     select
         account,
+        user_id,
         trade_symbol,
         sum(case when action = 'option_sell_to_open' then quantity else 0 end) as total_sto_qty,
         sum(case when action = 'option_buy_to_open'  then quantity else 0 end) as total_bto_qty,
@@ -40,12 +45,13 @@ direction_lookup as (
             else 'Bought'
         end as direction
     from option_trades
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 contract_summary as (
     select
         o.account,
+        o.user_id,
         o.trade_symbol,
         o.underlying_symbol,
         max(o.option_expiry)  as option_expiry,
@@ -86,8 +92,9 @@ contract_summary as (
     from option_trades o
     join direction_lookup d
         on o.account = d.account
+        and (o.user_id is not distinct from d.user_id)
         and o.trade_symbol = d.trade_symbol
-    group by o.account, o.trade_symbol, o.underlying_symbol, d.direction
+    group by o.account, o.user_id, o.trade_symbol, o.underlying_symbol, d.direction
 ),
 
 -- Open options that appear in stg_current (e.g. Schwab snapshot) but have no
@@ -95,6 +102,7 @@ contract_summary as (
 snapshot_only_options as (
     select
         c.account,
+        c.user_id,
         c.trade_symbol,
         c.underlying_symbol,
         c.option_expiry,
@@ -130,6 +138,7 @@ snapshot_only_options as (
           select 1
           from contract_summary x
           where x.account = c.account
+            and (x.user_id is not distinct from c.user_id)
             and x.trade_symbol = c.trade_symbol
       )
 ),
@@ -175,5 +184,6 @@ select
 from all_contracts c
 left join {{ ref('stg_current') }} cur
     on c.account = cur.account
+    and (c.user_id is not distinct from cur.user_id)
     and c.trade_symbol = cur.trade_symbol
     and cur.instrument_type in ('Call', 'Put')

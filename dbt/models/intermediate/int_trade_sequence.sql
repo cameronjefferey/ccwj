@@ -19,6 +19,7 @@
 with closed as (
     select
         account,
+        user_id,
         symbol,
         trade_symbol,
         strategy,
@@ -34,25 +35,28 @@ with closed as (
       and close_date is not null
 ),
 
+-- Window partitioned by (account, user_id) so two users with the same
+-- account label can never share a trade-sequence numbering.
 sequenced as (
     select
         *,
         row_number() over (
-            partition by account order by close_date, trade_symbol
+            partition by account, user_id order by close_date, trade_symbol
         ) as trade_sequence_num,
 
         lag(case when is_winner then 'Winner' else 'Loser' end) over (
-            partition by account order by close_date, trade_symbol
+            partition by account, user_id order by close_date, trade_symbol
         ) as prev_trade_outcome,
 
         lag(total_pnl) over (
-            partition by account order by close_date, trade_symbol
+            partition by account, user_id order by close_date, trade_symbol
         ) as prev_trade_pnl
     from closed
 )
 
 select
     account,
+    user_id,
     symbol,
     trade_symbol,
     strategy,

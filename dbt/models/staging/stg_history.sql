@@ -10,6 +10,7 @@
 with trade_history_as_strings as (
     select
         cast(Account as string) as Account,
+        cast(user_id as string) as user_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
@@ -24,6 +25,7 @@ with trade_history_as_strings as (
 demo_as_strings as (
     select
         cast(Account as string) as Account,
+        cast(user_id as string) as user_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
@@ -73,6 +75,11 @@ osi_split as (
 cleaned as (
     select
         trim(account) as account,
+
+        -- Tenant key — see docs/USER_ID_TENANCY.md. Stage 0 keeps user_id
+        -- nullable so legacy rows (empty string in the seed CSV) survive
+        -- the load. safe_cast → NULL on empty / non-numeric values.
+        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
 
         -- Parse the effective date: use the "as of" date when present, otherwise the main date
         safe.parse_date(
@@ -212,7 +219,7 @@ amount_signed as (
 )
 
 select
-    account, trade_date, action_raw, action, trade_symbol, underlying_symbol,
+    account, user_id, trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
 from amount_signed

@@ -29,6 +29,7 @@ symbol_meta as (
 
 select
     cp.account,
+    cp.user_id,
     cp.trade_symbol,
     cp.underlying_symbol,
     cp.option_expiry,

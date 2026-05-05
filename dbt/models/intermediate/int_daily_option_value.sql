@@ -14,6 +14,7 @@
 with opt_snapshot as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         market_value,
@@ -27,6 +28,7 @@ with opt_snapshot as (
 latest_per_option_day as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         market_value,
@@ -36,7 +38,7 @@ latest_per_option_day as (
         select
             *,
             row_number() over (
-                partition by account, trade_symbol, snapshot_date
+                partition by account, user_id, trade_symbol, snapshot_date
                 order by dbt_valid_from desc
             ) as rn
         from opt_snapshot
@@ -46,11 +48,12 @@ latest_per_option_day as (
 
 select
     account,
+    user_id,
     underlying_symbol as symbol,
     snapshot_date     as date,
     sum(market_value) as option_market_value,
     sum(cost_basis)   as option_cost_basis
 from latest_per_option_day
 where underlying_symbol is not null and trim(underlying_symbol) != ''
-group by 1, 2, 3
-order by 1, 2, 3
+group by 1, 2, 3, 4
+order by 1, 2, 3, 4

@@ -17,6 +17,7 @@
 with opt_snapshot as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -33,12 +34,14 @@ with opt_snapshot as (
     where snapshot_date is not null
 ),
 
--- Dedup to latest snapshot row per (account, trade_symbol, snapshot_date)
+-- Dedup to latest snapshot row per (account, user_id, trade_symbol, snapshot_date).
+-- Including user_id keeps two users with the same account label and
+-- same option contract from collapsing into one row.
 deduped as (
     select
         *,
         row_number() over (
-            partition by account, trade_symbol, snapshot_date
+            partition by account, user_id, trade_symbol, snapshot_date
             order by dbt_valid_from desc
         ) as rn
     from opt_snapshot
@@ -47,6 +50,7 @@ deduped as (
 daily as (
     select
         account,
+        user_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -66,6 +70,7 @@ daily as (
 contracts as (
     select
         account,
+        user_id,
         trade_symbol,
         direction,
         open_date,
@@ -78,13 +83,14 @@ contracts as (
 ),
 
 strat as (
-    select account, trade_symbol, strategy
+    select account, user_id, trade_symbol, strategy
     from {{ ref('int_strategy_classification') }}
     where trade_group_type = 'option_contract'
 )
 
 select
     d.account,
+    d.user_id,
     d.trade_symbol,
     d.underlying_symbol,
     d.option_expiry,
@@ -108,9 +114,10 @@ select
 
     date_diff(d.snapshot_date, c.open_date, day) as day_in_trade,
 
-    -- Running peak P&L: the best unrealized P&L seen up to this snapshot
+    -- Running peak P&L: the best unrealized P&L seen up to this snapshot.
+    -- Window keyed by (account, user_id, trade_symbol) to keep tenants apart.
     max(d.unrealized_pnl) over (
-        partition by d.account, d.trade_symbol
+        partition by d.account, d.user_id, d.trade_symbol
         order by d.snapshot_date
         rows between unbounded preceding and current row
     ) as peak_pnl_to_date,
@@ -125,7 +132,9 @@ select
 from daily d
 join contracts c
     on d.account = c.account
+    and (d.user_id is not distinct from c.user_id)
     and d.trade_symbol = c.trade_symbol
 left join strat s
     on d.account = s.account
+    and (d.user_id is not distinct from s.user_id)
     and d.trade_symbol = s.trade_symbol

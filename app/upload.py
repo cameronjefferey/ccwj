@@ -67,13 +67,21 @@ CURRENT_COL_RENAMES = {
     "asset type": "security_type",   # Schwab export uses "Asset Type"
 }
 
-# Exact column order for each seed file
+# Exact column order for each seed file.
+#
+# `user_id` follows `Account` so the per-row tenant key is co-located with
+# the (legacy, free-form) account label. Two users picking the same
+# `Account` string are now disambiguated by `user_id` — see
+# ``docs/USER_ID_TENANCY.md``. Stage 0 keeps `user_id` nullable so legacy
+# rows in already-pushed seeds load fine; Stage 1's
+# ``scripts/backfill_seed_user_ids.py`` fills them in; Stage 3 flips the
+# Flask BQ filter to require ``WHERE user_id = current_user.id``.
 HISTORY_SEED_COLUMNS = [
-    "Account", "Date", "Action", "Symbol", "Description",
+    "Account", "user_id", "Date", "Action", "Symbol", "Description",
     "Quantity", "Price", "fees_and_comm", "Amount",
 ]
 CURRENT_SEED_COLUMNS = [
-    "Account", "Symbol", "Description", "Quantity", "Price",
+    "Account", "user_id", "Symbol", "Description", "Quantity", "Price",
     "price_change_dollar", "price_change_percent", "market_value",
     "day_change_dollar", "day_change_percent", "cost_bases",
     "gain_or_loss_dollat", "gain_or_loss_percent", "rating",
@@ -96,6 +104,7 @@ SCHWAB_ACCOUNT_BALANCES_PATH = "dbt/seeds/schwab_account_balances.csv"
 
 SCHWAB_BALANCE_COLUMNS = [
     "account",
+    "user_id",
     "row_type",
     "market_value",
     "cost_basis",
@@ -336,8 +345,17 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
             combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
 
             # Normalize key columns so duplicates match: NaN != NaN in pandas,
-            # so fill nulls with a sentinel before dedupe.
-            key_cols = [c for c in seed_columns if str(c).lower() != "account"]
+            # so fill nulls with a sentinel before dedupe. ``user_id`` is
+            # excluded from the dedupe key because it's tenant metadata,
+            # not part of the trade's identity — without this exclusion a
+            # legacy row (``user_id=""``) and the same-trade re-sync row
+            # (``user_id=5``) would both be kept, double-counting the
+            # trade. Sorting old-first and keep="last" then makes the new
+            # row's populated user_id win.
+            key_cols = [
+                c for c in seed_columns
+                if str(c).lower() not in ("account", "user_id")
+            ]
             for c in key_cols:
                 if c in combined.columns:
                     combined[c] = combined[c].astype(str).replace("nan", "").replace("None", "").str.strip()
@@ -498,15 +516,26 @@ def _upload_github_config_ok():
     return True, None
 
 
-def _prepare_seed_df(df, account_name, columns, account_col="Account"):
-    """Align a DataFrame to the seed's column set and set the Account column."""
+def _prepare_seed_df(df, account_name, columns, account_col="Account", user_id=None):
+    """Align a DataFrame to the seed's column set and set the tenant columns.
+
+    Tenant columns (``Account``/``account`` and ``user_id``) are forcibly
+    set on every row so a writer can never accidentally ship rows under
+    the wrong tenant. ``user_id`` may be ``None`` (legacy callers); the
+    column is still emitted so the seed shape matches
+    ``schema.yml``.
+    """
     if df is None:
         return pd.DataFrame(columns=columns)
     out = df.copy()
     acct_cols = [c for c in out.columns if str(c).lower() == "account"]
     for c in acct_cols:
         out.drop(columns=[c], inplace=True)
+    uid_cols = [c for c in out.columns if str(c).lower() == "user_id"]
+    for c in uid_cols:
+        out.drop(columns=[c], inplace=True)
     out.insert(0, account_col, account_name)
+    out.insert(1, "user_id", "" if user_id is None else int(user_id))
     for col in columns:
         if col not in out.columns:
             out[col] = ""
@@ -519,7 +548,7 @@ def merge_and_push_seeds(
     current_df,
     *,
     commit_message,
-    user_id=None,
+    user_id,
     skip_history=False,
     balances_df=None,
 ):
@@ -531,6 +560,10 @@ def merge_and_push_seeds(
     Args:
         history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
         current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
+        user_id: required Postgres ``users.id`` of the row owner. Stamped
+            into every emitted row's ``user_id`` column so BigQuery rows
+            are tenant-keyed by ``(user_id, account_name)`` rather than
+            by ``account_name`` alone. See ``docs/USER_ID_TENANCY.md``.
         balances_df: optional Schwab cash + account_total rows shaped for
             SCHWAB_BALANCE_COLUMNS. Committed atomically with the others.
         skip_history: when True, commit positions only (and balances if given).
@@ -542,6 +575,12 @@ def merge_and_push_seeds(
     """
     if current_df is None:
         return False, "current_df is required.", 0, 0, None
+    if user_id is None:
+        # Stage 0+ never wants an unowned write — the cross-tenant guard
+        # only works if every row carries the right user_id from day one.
+        return False, "user_id is required.", 0, 0, None
+
+    user_id_int = int(user_id)
 
     if history_df is not None:
         history_df = history_df.copy()
@@ -553,7 +592,11 @@ def merge_and_push_seeds(
         acct_cols = [c for c in df.columns if c.lower() == "account"]
         if acct_cols:
             df.drop(columns=acct_cols, inplace=True)
+        uid_cols = [c for c in df.columns if c.lower() == "user_id"]
+        if uid_cols:
+            df.drop(columns=uid_cols, inplace=True)
         df.insert(0, "Account", account_name)
+        df.insert(1, "user_id", user_id_int)
 
     if history_df is not None:
         history_standard = {
@@ -602,7 +645,11 @@ def merge_and_push_seeds(
 
     if balances_df is not None and len(balances_df) > 0:
         balances_prepared = _prepare_seed_df(
-            balances_df, account_name, SCHWAB_BALANCE_COLUMNS, account_col="account"
+            balances_df,
+            account_name,
+            SCHWAB_BALANCE_COLUMNS,
+            account_col="account",
+            user_id=user_id_int,
         )
         bal_content = _merge_seed_with_existing(
             SCHWAB_ACCOUNT_BALANCES_PATH,
@@ -622,9 +669,8 @@ def merge_and_push_seeds(
     except Exception as exc:
         return False, str(exc), history_rows, current_rows, None
 
-    if user_id is not None:
-        add_account_for_user(user_id, account_name)
-        record_upload(user_id, account_name, history_rows, current_rows)
+    add_account_for_user(user_id_int, account_name)
+    record_upload(user_id_int, account_name, history_rows, current_rows)
 
     return True, None, history_rows, current_rows, head_sha
 

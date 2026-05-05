@@ -22,6 +22,7 @@
 with joined as (
     select
         f.account,
+        f.user_id,
         f.trade_symbol,
         f.underlying_symbol,
         f.strategy,
@@ -54,6 +55,7 @@ with joined as (
     from {{ ref('int_trade_features') }} f
     left join {{ ref('int_trade_baselines') }} b
         on f.account = b.account
+        and (f.user_id is not distinct from b.user_id)
         and f.trade_symbol = b.trade_symbol
 ),
 

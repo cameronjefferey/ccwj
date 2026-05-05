@@ -15,6 +15,7 @@
 with equity_trades as (
     select
         account,
+        user_id,
         underlying_symbol as symbol,
         trade_date,
         trade_symbol,
@@ -31,11 +32,14 @@ with equity_trades as (
     where instrument_type = 'Equity'
 ),
 
+-- Window keyed by (account, user_id, symbol) so cross-tenant rows with
+-- the same account label can never share a running quantity series. See
+-- docs/USER_ID_TENANCY.md.
 running as (
     select
         *,
         sum(signed_quantity) over (
-            partition by account, symbol
+            partition by account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as running_qty
@@ -47,7 +51,7 @@ with_prev as (
         *,
         coalesce(
             lag(running_qty) over (
-                partition by account, symbol
+                partition by account, user_id, symbol
                 order by trade_date, action
             ),
             0
@@ -61,7 +65,7 @@ sessions as (
         sum(
             case when prev_running_qty = 0 and running_qty > 0 then 1 else 0 end
         ) over (
-            partition by account, symbol
+            partition by account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as session_id
@@ -71,6 +75,7 @@ sessions as (
 session_avg_cost as (
     select
         account,
+        user_id,
         symbol,
         session_id,
         min(trade_date) as session_open_date,
@@ -80,7 +85,7 @@ session_avg_cost as (
                  then quantity else 0 end)                                as total_sell_qty
     from sessions
     where session_id > 0
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 -- Avg cost per share. Use the LARGER of total_buy_qty and total_sell_qty as
@@ -91,6 +96,7 @@ session_avg_cost as (
 sell_events as (
     select
         s.account,
+        s.user_id,
         s.symbol,
         s.trade_symbol,
         s.session_id,
@@ -120,6 +126,7 @@ sell_events as (
     from sessions s
     join session_avg_cost sac
         on  s.account    = sac.account
+        and (s.user_id is not distinct from sac.user_id)
         and s.symbol     = sac.symbol
         and s.session_id = sac.session_id
     where s.action in ('equity_sell', 'equity_sell_short')
@@ -133,13 +140,14 @@ sell_events as (
 -- is needed so the sum of realized P&L per leg reconciles to the session's
 -- actual net cash flow (which is what positions_summary reports).
 session_status as (
-    select account, symbol, session_id, status, last_trade_date
+    select account, user_id, symbol, session_id, status, last_trade_date
     from {{ ref('int_equity_sessions') }}
 ),
 
 writeoffs as (
     select
         sac.account,
+        sac.user_id,
         sac.symbol,
         sac.symbol                                                      as trade_symbol,
         sac.session_id,
@@ -165,6 +173,7 @@ writeoffs as (
     from session_avg_cost sac
     join session_status ss
         on sac.account    = ss.account
+        and (sac.user_id is not distinct from ss.user_id)
         and sac.symbol     = ss.symbol
         and sac.session_id = ss.session_id
     where ss.status = 'Closed'
@@ -174,14 +183,14 @@ writeoffs as (
 
 all_legs as (
     select
-        account, symbol, trade_symbol, session_id, open_date, close_date,
+        account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
         sell_qty as quantity, sale_price_per_share, sell_proceeds,
         cost_basis, realized_pnl,
         'Closed' as status, 'Equity Sold' as description
     from sell_events
     union all
     select
-        account, symbol, trade_symbol, session_id, open_date, close_date,
+        account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
         sell_qty as quantity, sale_price_per_share, sell_proceeds,
         cost_basis, realized_pnl,
         'Closed' as status, 'Cost Written Off' as description
