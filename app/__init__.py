@@ -108,6 +108,7 @@ def _inject_feature_flags():
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
+        "community_enabled": current_app.config.get("COMMUNITY_ENABLED", False),
         "is_admin_user": is_admin_user,
         "is_demo_user": is_demo_user(),
         "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
