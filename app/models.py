@@ -544,6 +544,61 @@ def account_is_claimed_by_other(user_id, account_name):
     return owner is not None and owner != user_id
 
 
+def find_cross_tenant_account_conflicts(account_names):
+    """Return the subset of ``account_names`` that more than one user claims.
+
+    Used as defense-in-depth at request time. The unique index
+    ``uniq_user_accounts_global_account_name`` (installed by
+    ``_migrate_account_name_unique_index``) is supposed to make multi-owner
+    labels impossible, but on prod databases that pre-date the constraint
+    the index can fail to install while legacy duplicates still sit in
+    ``user_accounts``. Without this guard, two users sharing the same
+    ``account_name`` would each see the other's BigQuery rows on every
+    user-facing page (positions, weekly review, position detail, etc.) —
+    the exact failure mode called out in
+    ``.cursor/rules/bigquery-tenant-isolation.mdc``.
+
+    Comparison normalizes ``lower(trim(account_name))`` to mirror the
+    intended unique index, so 'Brokerage', ' brokerage ', and 'BROKERAGE'
+    all collide. Returns the *original-case* names that conflict (so the
+    caller can log them and strip them from a list without re-normalizing).
+    """
+    if not account_names:
+        return set()
+    norm_to_originals = {}
+    for n in account_names:
+        if not n:
+            continue
+        k = str(n).strip().lower()
+        if not k:
+            continue
+        norm_to_originals.setdefault(k, []).append(n)
+    if not norm_to_originals:
+        return set()
+    keys = list(norm_to_originals.keys())
+    placeholders = ",".join(["%s"] * len(keys))
+    try:
+        rows = fetch_all(
+            f"SELECT lower(trim(account_name)) AS k, "
+            f"       COUNT(DISTINCT user_id) AS owners "
+            f"FROM user_accounts "
+            f"WHERE lower(trim(account_name)) IN ({placeholders}) "
+            f"GROUP BY 1 "
+            f"HAVING COUNT(DISTINCT user_id) > 1",
+            tuple(keys),
+        )
+    except Exception as exc:
+        # Fail closed — if we can't tell whether there's a conflict, the
+        # safe stance is to block the data path. The caller will treat
+        # an empty allowed-list as "no rows" rather than risk a leak.
+        _log.error("find_cross_tenant_account_conflicts query failed: %s", exc)
+        return {n for names in norm_to_originals.values() for n in names}
+    bad_keys = {r["k"] for r in rows}
+    if not bad_keys:
+        return set()
+    return {n for k in bad_keys for n in norm_to_originals.get(k, [])}
+
+
 def remove_account_for_user(user_id, account_name):
     execute(
         "DELETE FROM user_accounts WHERE user_id = %s AND account_name = %s",

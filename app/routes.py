@@ -11,6 +11,7 @@ from app.schwab import (
 from app.models import (
     AccountClaimedError,
     add_account_for_user,
+    find_cross_tenant_account_conflicts,
     get_accounts_for_user,
     get_schwab_connections,
     get_strategy_fit_insight_for_user,
@@ -79,6 +80,18 @@ def _user_account_list():
     rows so BigQuery filters match the Account column in seeds. If Schwab is
     connected but user_accounts was never populated, we add the Schwab labels
     here (idempotent) so queries are not forced to AND 1=0.
+
+    Cross-tenant guard: if any candidate label is also claimed by a
+    different user_id (legacy duplicates that predate
+    ``uniq_user_accounts_global_account_name``), it is stripped from the
+    returned list before BigQuery ever sees it. Without this guard, two
+    users sharing the same ``account_name`` would each see the other's
+    rows on every page — the exact failure mode called out in
+    ``.cursor/rules/bigquery-tenant-isolation.mdc``. We fail-closed:
+    when in doubt, hide. Stripped labels are recorded on
+    ``flask.g._account_conflicts`` so a banner can tell the legitimate
+    owner what happened and prompt them to contact support, instead of
+    silently rendering an empty page.
     """
     if is_admin(current_user.username):
         return None                     # admin → no restriction
@@ -110,6 +123,38 @@ def _user_account_list():
                 continue
             have.add(label)
             names.append(label)
+
+    # Defense in depth: drop any label that more than one user_id owns
+    # (legacy duplicates that the unique index would have prevented).
+    # We do this AFTER folding in Schwab labels so a freshly-claimed
+    # name is also checked.
+    if names:
+        try:
+            conflicts = find_cross_tenant_account_conflicts(names)
+        except Exception as exc:
+            # Fail-closed: if the conflict check itself errors, hide
+            # everything rather than risk a leak. The user sees the
+            # banner and the operator sees the log.
+            app.logger.error(
+                "Cross-tenant guard query failed for user_id=%s: %s — "
+                "hiding all account data this request as a precaution.",
+                current_user.id, exc,
+            )
+            from flask import g
+            g._account_conflicts = sorted(set(names))
+            return []
+        if conflicts:
+            from flask import g
+            g._account_conflicts = sorted(conflicts)
+            app.logger.error(
+                "Cross-tenant guard: hiding %d account label(s) for "
+                "user_id=%s because they are also claimed by another "
+                "user: %s. Resolve duplicates with: SELECT lower(trim("
+                "account_name)) AS k, count(*) FROM user_accounts "
+                "GROUP BY 1 HAVING count(*) > 1;",
+                len(conflicts), current_user.id, sorted(conflicts),
+            )
+            names = [n for n in names if n not in conflicts]
     return sorted(names)
 
 

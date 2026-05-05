@@ -115,6 +115,24 @@ def _inject_feature_flags():
     }
 
 
+@app.context_processor
+def _inject_account_conflicts():
+    """Surface any account labels the cross-tenant guard hid this request.
+
+    ``_user_account_list()`` (in ``app/routes.py``) sets
+    ``flask.g._account_conflicts`` to the labels it stripped because
+    more than one user_id owns them. We expose that to every template so
+    ``base.html`` can render a banner — without it, the legitimate owner
+    of a duplicated label would just see an empty page with no
+    explanation. Defaults to ``[]`` so templates can safely loop.
+    """
+    try:
+        from flask import g
+        return {"account_conflicts": list(getattr(g, "_account_conflicts", []) or [])}
+    except Exception:
+        return {"account_conflicts": []}
+
+
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)

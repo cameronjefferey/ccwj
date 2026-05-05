@@ -187,6 +187,118 @@ class TestAccountNameClaim:
             add_account_for_user(intruder_id, f"BROKERAGE{suffix}")
 
 
+class TestCrossTenantAccountConflictGuard:
+    """Defense-in-depth: even when the unique index is missing and two users
+    end up sharing the same ``account_name`` (legacy duplicates that pre-date
+    ``uniq_user_accounts_global_account_name``), the request-time guard must
+    strip the conflicting label so neither user can read the other's BigQuery
+    rows on positions / weekly review / position detail / etc.
+
+    These tests bypass the unique-index-enforced ``add_account_for_user`` and
+    write the conflicting rows directly through the same connection the
+    fixture yields, so the rollback at the end of the test still cleans up
+    even if the prod migration eventually installs the index.
+    """
+
+    def _force_dup_row(self, conn, user_id, label):
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "INSERT INTO user_accounts (user_id, account_name) "
+                    "VALUES (%s, %s) "
+                    "ON CONFLICT (user_id, account_name) DO NOTHING",
+                    (user_id, label),
+                )
+            except Exception:
+                # If the unique index already exists, we can't simulate the
+                # pre-index state. Skip the test so it doesn't false-fail.
+                pytest.skip(
+                    "uniq_user_accounts_global_account_name is installed; "
+                    "cannot simulate legacy duplicate state"
+                )
+
+    def test_returns_label_when_only_one_owner(self, db_conn):
+        from app.models import (
+            add_account_for_user,
+            find_cross_tenant_account_conflicts,
+        )
+        owner_id = _create_user(db_conn, _unique_username("safe_owner"))
+        label = f"Solo_{uuid.uuid4().hex[:6]}"
+        add_account_for_user(owner_id, label)
+        # Single-owner labels are NEVER stripped — that's the legitimate case.
+        assert find_cross_tenant_account_conflicts([label]) == set()
+
+    def test_flags_label_owned_by_two_users(self, db_conn):
+        from app.models import find_cross_tenant_account_conflicts
+
+        a = _create_user(db_conn, _unique_username("dup_a"))
+        b = _create_user(db_conn, _unique_username("dup_b"))
+        label = f"Investment_{uuid.uuid4().hex[:6]}"
+        self._force_dup_row(db_conn, a, label)
+        self._force_dup_row(db_conn, b, label)
+
+        # Whoever is asking, the conflict surfaces and the original-case
+        # label is returned so the caller can strip it from their list.
+        flagged = find_cross_tenant_account_conflicts([label])
+        assert flagged == {label}
+
+    def test_normalization_matches_intended_unique_index(self, db_conn):
+        """ 'Investment', '  investment  ', 'INVESTMENT' all collide."""
+        from app.models import find_cross_tenant_account_conflicts
+
+        a = _create_user(db_conn, _unique_username("norm_a"))
+        b = _create_user(db_conn, _unique_username("norm_b"))
+        suffix = uuid.uuid4().hex[:6]
+        self._force_dup_row(db_conn, a, f"Investment_{suffix}")
+        self._force_dup_row(db_conn, b, f"  INVESTMENT_{suffix}  ")
+
+        # Either case-form passed in returns flagged. The match key is
+        # ``lower(trim(...))`` to mirror the unique index.
+        assert find_cross_tenant_account_conflicts([f"Investment_{suffix}"]) == {
+            f"Investment_{suffix}"
+        }
+        assert find_cross_tenant_account_conflicts([f"investment_{suffix}"]) == {
+            f"investment_{suffix}"
+        }
+
+    def test_user_account_list_strips_conflict_at_request_time(self, app, db_conn):
+        """``_user_account_list()`` is THE gate to multi-tenant data — every
+        BQ query template scopes to whatever it returns. Pin the contract:
+        when a user's label collides with another user's label, that label
+        MUST NOT appear in the returned list, AND the stripped label is
+        recorded on ``flask.g`` so the banner can render. Without this
+        guarantee, two users sharing 'investment1' would each see the
+        other's BigQuery rows on every page.
+        """
+        from app.models import User, add_account_for_user
+        from app.routes import _user_account_list
+        from flask import g
+        from flask_login import login_user
+
+        legit_id = _create_user(db_conn, _unique_username("legit"))
+        intruder_id = _create_user(db_conn, _unique_username("intruder"))
+        shared = f"Shared_{uuid.uuid4().hex[:6]}"
+        solo_legit = f"SoloLegit_{uuid.uuid4().hex[:6]}"
+
+        add_account_for_user(legit_id, solo_legit)
+        self._force_dup_row(db_conn, legit_id, shared)
+        self._force_dup_row(db_conn, intruder_id, shared)
+
+        with app.test_request_context("/positions"):
+            login_user(User.get_by_id(legit_id))
+            allowed = _user_account_list()
+            assert solo_legit in allowed, "non-conflicting label was wrongly stripped"
+            assert shared not in allowed, (
+                "cross-tenant guard FAILED — shared label leaked into the "
+                "user's allowed-account list and would be passed to BQ"
+            )
+            recorded = list(getattr(g, "_account_conflicts", []) or [])
+            assert shared in recorded, (
+                "conflict not recorded on flask.g — the banner would not "
+                "explain to the user why their data is hidden"
+            )
+
+
 class TestPasswordResetTokens:
     """One-time password reset tokens: single-use, expiring, hashed at rest."""
 

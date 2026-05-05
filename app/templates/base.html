@@ -405,6 +405,33 @@
     </div>
 
     <div class="container-fluid px-4">
+        {# Cross-tenant account-label conflict banner.
+           ``_user_account_list()`` strips any account_name also owned by
+           another user_id (legacy duplicates that pre-date the unique
+           index). Without this banner the legitimate owner would just
+           see empty pages with no explanation. The fix is on the operator
+           side — they need to delete the offending row in user_accounts —
+           so we tell the user to contact support rather than presenting
+           a self-serve "rename" CTA that they can't actually act on. #}
+        {% if account_conflicts %}
+        <div class="alert alert-danger d-flex align-items-start gap-3 mt-3 mb-3" role="alert">
+            <div class="flex-grow-1">
+                <strong>Some of your accounts are temporarily hidden.</strong>
+                <div class="small mt-1">
+                    The label{{ '' if account_conflicts|length == 1 else 's' }}
+                    {% for c in account_conflicts %}
+                        <code>{{ c }}</code>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                    {{ 'is' if account_conflicts|length == 1 else 'are' }} also
+                    linked to another account on HappyTrader. To keep your
+                    data private, we&rsquo;ve hidden the affected rows on this
+                    page. <a href="{{ url_for('contact') }}">Contact support</a>
+                    so we can resolve the conflict — your other accounts are
+                    still working as normal.
+                </div>
+            </div>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </div>
 
