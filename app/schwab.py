@@ -688,6 +688,7 @@ def _sync_one_connection(user_id, conn_row, *, lookback_days):
         "github_head_sha": None,
         "github_error": None,
         "github_seed_push_skipped": False,
+        "github_skip_reason": None,
         "error": None,
     }
 
@@ -713,6 +714,7 @@ def _sync_one_connection(user_id, conn_row, *, lookback_days):
             "github_head_sha": (result.get("github_head_sha") or None),
             "github_error": result.get("github_error"),
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
+            "github_skip_reason": result.get("github_skip_reason"),
         })
     except Exception as e:
         msg = str(e)
@@ -1347,9 +1349,21 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
     github_error = None
     github_head_sha = None
     ok_cfg = False
+    github_skip_reason = None
     from app.upload import merge_and_push_seeds, _upload_github_config_ok
 
     ok_cfg, _cfg_err = _upload_github_config_ok()
+    if not ok_cfg:
+        github_skip_reason = _cfg_err or "GitHub seed push not configured."
+        # WARNING (not INFO) so cron/web logs surface a misconfig that
+        # would otherwise look identical to a successful no-op. We hit
+        # this on the Render cron when GITHUB_PAT is set but
+        # GITHUB_REPO is malformed (or vice versa) — the difference
+        # used to be invisible in the CLI summary.
+        app.logger.warning(
+            "Schwab sync: skipping GitHub push for user_id=%s account=%s — %s",
+            user_id, account_name, github_skip_reason,
+        )
     if ok_cfg:
         uname = "user"
         u = User.get_by_id(user_id)
@@ -1409,6 +1423,7 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
         "github_error": github_error,
         "github_head_sha": github_head_sha,
         "github_seed_push_skipped": not ok_cfg,
+        "github_skip_reason": github_skip_reason,
     }
 
 

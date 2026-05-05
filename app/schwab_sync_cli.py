@@ -38,6 +38,8 @@ def main():
     pushed = 0
     expired = 0
     errors = 0
+    push_skipped = 0
+    last_skip_reason = None
 
     for row in rows:
         user_id = row["user_id"]
@@ -60,7 +62,13 @@ def main():
                 elif result.get("github_error"):
                     line += f" (GitHub: {result['github_error'][:120]})"
                 elif result.get("github_seed_push_skipped"):
-                    line += " (GitHub skipped: set GITHUB_PAT to push seeds)"
+                    push_skipped += 1
+                    reason = (
+                        result.get("github_skip_reason")
+                        or "GitHub seed push not configured."
+                    )
+                    last_skip_reason = reason
+                    line += f" (GitHub skipped: {reason})"
                 print(line)
             else:
                 expired += 1
@@ -82,6 +90,17 @@ def main():
         f"{pushed} pushed to GitHub, "
         f"{expired} invalid clients, {errors} errors"
     )
+    if push_skipped and not pushed:
+        # Every successful sync skipped the GitHub push for the same
+        # config reason — surface it loudly so the operator doesn't
+        # have to guess which env var is wrong. (We saw this when
+        # GITHUB_PAT looked correct on the cron service but
+        # GITHUB_REPO had a typo.)
+        print(
+            f"WARNING: {push_skipped} successful sync(s) did not reach GitHub. "
+            f"Reason: {last_skip_reason}",
+            file=sys.stderr,
+        )
 
     # Exit non-zero only when *every* connection failed. A single
     # expired user among many is normal (they'll reconnect when they
