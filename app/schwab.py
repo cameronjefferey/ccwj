@@ -623,19 +623,91 @@ def schwab_callback():
     return redirect(url_for("profile", tab="account"))
 
 
+def _sync_one_connection(user_id, conn_row, *, lookback_days):
+    """Run ``_run_sync`` for a single Schwab connection and return a
+    structured result. Wraps token-fetch, sync, and first-sync marking
+    so both the per-account and "sync all" paths share the same
+    semantics. Never raises — failures come back as ``{"ok": False,
+    "error": "..."}`` so a multi-account loop can keep going past one
+    bad connection.
+    """
+    label = (
+        conn_row.get("display_nickname")
+        or conn_row.get("account_name")
+        or conn_row["account_number"]
+    )
+    account_number = conn_row["account_number"]
+    first_done = bool(conn_row.get("schwab_first_sync_completed"))
+    out = {
+        "ok": False,
+        "label": label,
+        "account_number": account_number,
+        "first_done_before": first_done,
+        "history_rows": 0,
+        "current_rows": 0,
+        "lookback_days": lookback_days,
+        "github_pushed": False,
+        "github_head_sha": None,
+        "github_error": None,
+        "github_seed_push_skipped": False,
+        "error": None,
+    }
+
+    client = _get_schwab_client(user_id, account_number)
+    if not client:
+        out["error"] = "session_expired"
+        return out
+
+    try:
+        result = _run_sync(
+            user_id,
+            client,
+            account_number=account_number,
+            transaction_lookback_days=lookback_days,
+        )
+        mark_schwab_first_sync_completed(user_id, account_number=account_number)
+        out.update({
+            "ok": True,
+            "history_rows": int(result.get("history_rows", 0) or 0),
+            "current_rows": int(result.get("current_rows", 0) or 0),
+            "lookback_days": int(result.get("lookback_days", lookback_days) or lookback_days),
+            "github_pushed": bool(result.get("github_pushed")),
+            "github_head_sha": (result.get("github_head_sha") or None),
+            "github_error": result.get("github_error"),
+            "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
+        })
+    except Exception as e:
+        msg = str(e)
+        if "401" in msg or "Unauthorized" in msg:
+            out["error"] = "unauthorized"
+        else:
+            from app import app as _app
+            _app.logger.exception(
+                "Schwab sync failed for user_id=%s account_number=%s: %s",
+                user_id, account_number, e,
+            )
+            out["error"] = "unknown"
+    return out
+
+
 @app.route("/schwab/sync", methods=["POST"])
 @login_required
 def schwab_sync():
     """Sync positions and transactions from Schwab to our data store.
 
     Form fields:
-        account_number (optional): when provided, sync only that connection.
-            If omitted, the user's first connection is synced (legacy
-            single-account behaviour).
-        sync_scope: "full" or "rolling" (only used on the first sync per
-            connection — see `schwab_first_sync_completed`).
-        full_history_again: "1" to do a one-off full re-import after the
-            first sync.
+        sync_all: "1" to sync every linked Schwab connection in one
+            click. Uses the routine (rolling) lookback for each so the
+            request stays bounded; per-account "Sync this account" is
+            still where users go for a one-off full-history refresh.
+        account_number (optional, ignored when ``sync_all=1``): when
+            provided, sync only that connection. If omitted and
+            ``sync_all`` is not set, the user's first connection is
+            synced (legacy single-account behaviour).
+        sync_scope: "full" or "rolling" (only used on the first sync
+            per connection — see ``schwab_first_sync_completed``).
+        full_history_again: "1" to do a one-off full re-import after
+            the first sync.
     """
     blocked = demo_block_writes("syncing Schwab data")
     if blocked:
@@ -644,6 +716,11 @@ def schwab_sync():
     if not cfg:
         flash("Schwab API is not configured.", "danger")
         return redirect(url_for("profile", tab="account"))
+
+    sync_all = request.form.get("sync_all") == "1"
+
+    if sync_all:
+        return _schwab_sync_all_for_user(current_user.id)
 
     requested_account = (request.form.get("account_number") or "").strip() or None
     conn_row = get_schwab_connection(current_user.id, requested_account)
@@ -658,16 +735,6 @@ def schwab_sync():
         flash("No Schwab connection. Connect your account first.", "warning")
         return redirect(url_for("profile", tab="account"))
 
-    account_number = conn_row["account_number"]
-    client = _get_schwab_client(current_user.id, account_number)
-    if not client:
-        flash(
-            "Could not open your Schwab session (invalid token or app credentials). "
-            "Click Connect Schwab again to re-authorize. If it keeps failing, check Render logs.",
-            "warning",
-        )
-        return redirect(url_for("profile", tab="account"))
-
     first_done = bool(conn_row.get("schwab_first_sync_completed"))
     if not first_done:
         scope = (request.form.get("sync_scope") or "full").strip().lower()
@@ -680,63 +747,139 @@ def schwab_sync():
     else:
         lookback_days = _schwab_transaction_lookback_days()
 
-    try:
-        result = _run_sync(
-            current_user.id,
-            client,
-            account_number=account_number,
-            transaction_lookback_days=lookback_days,
+    res = _sync_one_connection(current_user.id, conn_row, lookback_days=lookback_days)
+
+    if res["error"] == "session_expired":
+        flash(
+            "Could not open your Schwab session (invalid token or app credentials). "
+            "Click Connect Schwab again to re-authorize. If it keeps failing, check Render logs.",
+            "warning",
         )
-        hr = result.get("history_rows", 0)
-        cr = result.get("current_rows", 0)
-        lb = result.get("lookback_days", lookback_days)
-        mark_schwab_first_sync_completed(
-            current_user.id, account_number=account_number
+        return redirect(url_for("profile", tab="account"))
+    if res["error"] == "unauthorized":
+        flash(
+            "Schwab returned 401 (session expired or account key out of date). "
+            "Try Sync now again; if it persists, use Connect Schwab in Settings to re-authorize.",
+            "danger",
         )
-        scope_phrase = (
-            "This run included the longest history we request (up to about five years)."
-            if lb >= SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
-            else f"This run included trades from the last {lb} days."
+        return redirect(url_for("profile", tab="account"))
+    if res["error"]:
+        flash(
+            "Schwab sync didn't finish. Try again in a minute, or reconnect Schwab in Settings if it keeps happening.",
+            "danger",
         )
-        trade_word = "trade" if hr == 1 else "trades"
-        pos_word = "position" if cr == 1 else "positions"
-        summary = (
-            f"Sync complete. We pulled {hr:,} {trade_word} and {cr} open {pos_word}. {scope_phrase}"
+        return redirect(url_for("profile", tab="account"))
+
+    hr = res["history_rows"]
+    cr = res["current_rows"]
+    lb = res["lookback_days"]
+    scope_phrase = (
+        "This run included the longest history we request (up to about five years)."
+        if lb >= SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
+        else f"This run included trades from the last {lb} days."
+    )
+    trade_word = "trade" if hr == 1 else "trades"
+    pos_word = "position" if cr == 1 else "positions"
+    summary = (
+        f"Sync complete. We pulled {hr:,} {trade_word} and {cr} open {pos_word}. {scope_phrase}"
+    )
+    if res["github_pushed"]:
+        flash(
+            f"{summary} We’re processing your data now—this page will move along when it’s ready.",
+            "success",
         )
-        if result.get("github_pushed"):
-            flash(
-                f"{summary} We’re processing your data now—this page will move along when it’s ready.",
-                "success",
-            )
-            h = (result.get("github_head_sha") or "").strip()
-            qp = {}
-            if h:
-                qp["sha"] = h
-            if not first_done:
-                qp["first"] = 1
-            return redirect(url_for("sync_processing", **qp))
-        if result.get("github_error"):
-            flash(
-                f"{summary} We could not save this to the cloud: {result['github_error']}",
-                "warning",
-            )
-        elif result.get("github_seed_push_skipped"):
-            flash(
-                f"{summary} Live dashboard updates are not turned on for this environment.",
-                "info",
-            )
-    except Exception as e:
-        msg = str(e)
-        if "401" in msg or "Unauthorized" in msg:
-            flash(
-                "Schwab returned 401 (session expired or account key out of date). "
-                "Try Sync now again; if it persists, use Connect Schwab in Settings to re-authorize.",
-                "danger",
-            )
+        qp = {}
+        h = (res["github_head_sha"] or "").strip()
+        if h:
+            qp["sha"] = h
+        if not first_done:
+            qp["first"] = 1
+        return redirect(url_for("sync_processing", **qp))
+    if res["github_error"]:
+        flash(
+            f"{summary} We could not save this to the cloud: {res['github_error']}",
+            "warning",
+        )
+    elif res["github_seed_push_skipped"]:
+        flash(
+            f"{summary} Live dashboard updates are not turned on for this environment.",
+            "info",
+        )
+
+    return redirect(url_for("profile", tab="account"))
+
+
+def _schwab_sync_all_for_user(user_id):
+    """Iterate every Schwab connection for ``user_id`` and run a routine
+    sync for each. Each connection commits to GitHub independently
+    (one CSV merge + push per account); the GitHub Action workflow
+    debounces the rebuilds so trailing pushes catch up. Surfaces a
+    combined flash summary and redirects to ``sync_processing`` when
+    at least one connection landed a push to GitHub.
+    """
+    rows = get_schwab_connections(user_id)
+    if not rows:
+        flash("No Schwab connection. Connect your account first.", "warning")
+        return redirect(url_for("profile", tab="account"))
+
+    lookback_days = _schwab_transaction_lookback_days()
+    successes = []
+    failures = []
+    last_pushed_sha = None
+    any_push_skipped = False
+    any_first_run = False
+
+    for conn_meta in rows:
+        # ``get_schwab_connections`` returns lightweight metadata; we need
+        # the token + account_hash from ``get_schwab_connection``.
+        full = get_schwab_connection(user_id, conn_meta["account_number"])
+        if not full:
+            failures.append({"label": conn_meta.get("account_name") or conn_meta["account_number"], "reason": "missing"})
+            continue
+        if not full.get("schwab_first_sync_completed"):
+            any_first_run = True
+        res = _sync_one_connection(user_id, full, lookback_days=lookback_days)
+        if res["ok"]:
+            successes.append(res)
+            if res["github_pushed"] and res["github_head_sha"]:
+                last_pushed_sha = res["github_head_sha"]
+            if res["github_seed_push_skipped"]:
+                any_push_skipped = True
         else:
-            from app import app as _app
-            _app.logger.exception("Schwab sync failed: %s", e)
-            flash("Schwab sync didn't finish. Try again in a minute, or reconnect Schwab in Settings if it keeps happening.", "danger")
+            failures.append({"label": res["label"], "reason": res["error"] or "unknown"})
+
+    parts = []
+    if successes:
+        per_account = ", ".join(
+            f"{s['label']}: {s['history_rows']:,} {'trade' if s['history_rows'] == 1 else 'trades'}, "
+            f"{s['current_rows']} open {'position' if s['current_rows'] == 1 else 'positions'}"
+            for s in successes
+        )
+        parts.append(f"Sync complete. {per_account}.")
+    if failures:
+        per_failure = ", ".join(f"{f['label']} ({f['reason']})" for f in failures)
+        parts.append(f"These didn't finish: {per_failure}.")
+    summary = " ".join(parts) if parts else "Sync ran but nothing landed."
+
+    any_pushed = any(s["github_pushed"] for s in successes)
+    if any_pushed:
+        flash(
+            f"{summary} We’re processing your data now—this page will move along when it’s ready.",
+            "success" if not failures else "warning",
+        )
+        qp = {}
+        if last_pushed_sha:
+            qp["sha"] = last_pushed_sha
+        if any_first_run:
+            qp["first"] = 1
+        return redirect(url_for("sync_processing", **qp))
+
+    if failures and not successes:
+        flash(summary, "danger")
+    elif any_push_skipped:
+        flash(f"{summary} Live dashboard updates are not turned on for this environment.", "info")
+    else:
+        flash(summary, "warning" if failures else "info")
 
     return redirect(url_for("profile", tab="account"))
 

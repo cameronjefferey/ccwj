@@ -337,7 +337,14 @@
                     <p class="atlas-hint">Connect once and every sync stays in sync with your Schwab account automatically.</p>
                     {% if schwab_connected %}
                     {% if schwab_connections|length > 1 %}
-                    <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked. Pick one to sync.</p>
+                    <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked.</p>
+                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form mb-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="sync_all" value="1">
+                        <button type="submit" class="btn btn-primary">Sync all accounts</button>
+                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab for every linked account. This can take a minute or two — keep this tab open.</p>
+                    </form>
+                    <p class="atlas-hint small mb-2">Or sync just one:</p>
                     <ul class="list-unstyled mb-3">
                         {% for c in schwab_connections %}
                         <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
