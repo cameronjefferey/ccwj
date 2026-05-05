@@ -629,6 +629,73 @@ class TestStrategyFitQueryTenancy:
         assert "account" in STRATEGY_FIT_OPTIONS_QUERY.lower()
 
 
+class TestWealthQueryTenancy:
+    """The /wealth page reads from ``mart_wealth_daily`` which is shared
+    across tenants in BigQuery. The query template must carry the
+    standard ``{account_filter}`` placeholder so the dispatcher can
+    scope by the caller's accounts; the route must then run a
+    DataFrame-side filter for defense-in-depth (per
+    ``.cursor/rules/bigquery-tenant-isolation.mdc``)."""
+
+    def test_query_has_account_filter_placeholder(self):
+        from app.wealth import WEALTH_DAILY_QUERY
+        assert "{account_filter}" in WEALTH_DAILY_QUERY
+
+    def test_query_selects_account_and_user_id_columns(self):
+        # Both columns are required for ``_filter_df_by_accounts`` to
+        # apply its user_id-aware filter. Dropping either silently
+        # removes the safety net.
+        from app.wealth import WEALTH_DAILY_QUERY
+        sql = WEALTH_DAILY_QUERY.lower()
+        assert "account" in sql
+        assert "user_id" in sql
+
+    def test_chart_payload_aggregates_per_date_only_within_scope(self):
+        """``_build_chart_payload`` is what feeds the chart JSON. If a
+        cross-tenant row ever slipped through to the route, the chart
+        would inflate. The route already filters by account before
+        calling this helper, so we verify the helper correctly sums
+        only the rows it's handed (rather than e.g. dropping the
+        account column and pulling extra rows from somewhere else)."""
+        import pandas as pd
+        from datetime import date
+
+        from app.wealth import _build_chart_payload
+
+        df = pd.DataFrame({
+            "account": ["A", "A", "B", "B"],
+            "user_id": [1, 1, 1, 1],
+            "date": [date(2025, 1, 2), date(2025, 1, 3),
+                     date(2025, 1, 2), date(2025, 1, 3)],
+            "account_value": [100.0, 110.0, 200.0, 220.0],
+            "cash_value":    [10.0,  10.0,  20.0,  20.0],
+            "equity_value":  [80.0,  90.0,  170.0, 180.0],
+            "option_value":  [10.0,  10.0,  10.0,  20.0],
+        })
+        payload = _build_chart_payload(df)
+        # Two distinct dates, sums combine A+B because we already
+        # trust the upstream filter to have stripped foreign rows.
+        assert payload["dates"] == ["2025-01-02", "2025-01-03"]
+        assert payload["account_value"] == [300.0, 330.0]
+        assert payload["cash"] == [30.0, 30.0]
+        assert payload["equity"] == [250.0, 270.0]
+        assert payload["options"] == [20.0, 30.0]
+
+    def test_route_uses_filter_df_by_accounts(self):
+        """Defense-in-depth: the route must call ``_filter_df_by_accounts``
+        on every BQ DataFrame before render. Source-level check so a
+        future refactor can't silently drop the post-filter."""
+        import inspect
+        from app import wealth
+
+        src = inspect.getsource(wealth)
+        assert "_filter_df_by_accounts" in src, (
+            "wealth.py must call _filter_df_by_accounts on the BQ "
+            "DataFrame before render — see "
+            ".cursor/rules/bigquery-tenant-isolation.mdc"
+        )
+
+
 class TestUserIdTenancyHelpers:
     """``account_name`` alone is not a security boundary — two users can
     register the same nickname (the original ``investment1`` leak).

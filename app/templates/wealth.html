@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    /* ── Hero ───────────────────────────────────────────────────── */
+    .wealth-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 14px;
+        padding: 1.6rem 1.75rem;
+        color: #fff;
+        margin-bottom: 1.25rem;
+    }
+    .wealth-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 .35rem; letter-spacing: -0.01em; }
+    .wealth-hero .lede { color: rgba(255,255,255,.85); margin: 0; font-size: .92rem; line-height: 1.5; }
+    @media (max-width: 640px) {
+        .wealth-hero { padding: 1.1rem 1.1rem; border-radius: 12px; }
+        .wealth-hero h1 { font-size: 1.2rem; }
+        .wealth-hero .lede { font-size: .85rem; }
+    }
+
+    /* ── Filters ────────────────────────────────────────────────── */
+    .range-toggle {
+        display: inline-flex;
+        gap: .25rem;
+        background: #f1f5f9;
+        padding: .25rem;
+        border-radius: 8px;
+    }
+    .range-toggle a {
+        padding: .35rem .75rem;
+        border-radius: 6px;
+        font-size: .82rem;
+        font-weight: 500;
+        color: #475569;
+        text-decoration: none;
+        transition: background-color .15s;
+    }
+    .range-toggle a:hover { background: rgba(15,52,96,.08); color: #0f3460; }
+    .range-toggle a.active { background: #0f3460; color: #fff; }
+
+    /* ── KPI cards ─────────────────────────────────────────────── */
+    .kpi-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+    }
+    .kpi-label {
+        font-size: .72rem;
+        font-weight: 600;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin-bottom: .35rem;
+    }
+    .kpi-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #0f172a;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.1;
+    }
+    .kpi-meta {
+        font-size: .78rem;
+        color: #64748b;
+        margin-top: .35rem;
+    }
+    .kpi-delta-pos { color: #16a34a; font-weight: 600; }
+    .kpi-delta-neg { color: #dc2626; font-weight: 600; }
+    .kpi-delta-flat { color: #64748b; }
+
+    /* ── Allocation breakdown sub-bar ───────────────────────── */
+    .alloc-bar {
+        display: flex;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: .5rem;
+        background: #e2e8f0;
+    }
+    .alloc-bar-segment { height: 100%; }
+    .alloc-bar-cash    { background: #94a3b8; }
+    .alloc-bar-equity  { background: #0f3460; }
+    .alloc-bar-options { background: #f59e0b; }
+
+    .alloc-legend {
+        display: flex;
+        gap: 1rem;
+        margin-top: .55rem;
+        font-size: .78rem;
+        color: #475569;
+        flex-wrap: wrap;
+    }
+    .alloc-dot {
+        display: inline-block;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        margin-right: .35rem;
+        vertical-align: middle;
+    }
+    .alloc-dot-cash    { background: #94a3b8; }
+    .alloc-dot-equity  { background: #0f3460; }
+    .alloc-dot-options { background: #f59e0b; }
+
+    /* ── Chart wrapper ─────────────────────────────────────────── */
+    .chart-wrapper {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+    .chart-wrapper h2 {
+        font-size: .95rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin: 0 0 .25rem;
+    }
+    .chart-wrapper .chart-sub {
+        font-size: .8rem;
+        color: #64748b;
+        margin: 0 0 .9rem;
+    }
+
+    /* ── Income panel ─────────────────────────────────────────── */
+    .income-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+    }
+    .income-card .income-label {
+        font-size: .8rem;
+        font-weight: 500;
+        color: #475569;
+    }
+    .income-card .income-value {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #0f172a;
+        font-variant-numeric: tabular-nums;
+        margin-top: .3rem;
+    }
+    .income-card .income-meta {
+        font-size: .72rem;
+        color: #94a3b8;
+        margin-top: .2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wealth-hero">
+    <h1>Wealth</h1>
+    <p class="lede">
+        Daily account value over time, broken into cash, equity, and option positions.
+        Snapshots come from your end-of-day balances; days without a snapshot are simply not plotted.
+    </p>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">
+    <strong>We couldn't load your wealth data.</strong>
+    <p class="mb-0 mt-2 small">{{ error }} If it keeps failing, try
+        <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or
+        <a href="{{ url_for('upload') }}">uploading your trade history</a>.</p>
+</div>
+{% elif not summary %}
+<div class="alert alert-info">
+    <strong>No daily balance snapshots yet.</strong>
+    <p class="mb-0 mt-2 small">Once your data has a few daily snapshots, this page will plot how your balance has moved.
+        Connect Schwab so the daily sync starts capturing them, or upload a CSV with the latest balance.</p>
+    <div class="mt-2 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
+    </div>
+</div>
+{% else %}
+
+{# ── Filters ──────────────────────────────────────────────────────── #}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    {% if accounts and accounts|length > 1 %}
+    <form method="get" class="d-inline-flex align-items-center gap-2 mb-0">
+        <label class="form-label small mb-0 text-muted">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                style="min-width: 200px;"
+                onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="range" value="{{ selected_range }}">
+    </form>
+    {% endif %}
+
+    <div class="range-toggle ms-auto">
+        {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
+        {% for value, label in ranges %}
+        <a href="{{ url_for('wealth', account=selected_account, range=value) }}"
+           class="{{ 'active' if selected_range == value }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+</div>
+
+{# ── KPI row ─────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="kpi-card">
+            <div class="kpi-label">Total value · as of {{ summary.as_of }}</div>
+            <div class="kpi-value">${{ "{:,.0f}".format(summary.account_value) }}</div>
+            {# Sub-bar visualizes the cash / equity / options split. We
+               compute widths inline so the bar reflects today's state
+               without sending another data payload. Falls back to a
+               flat fully-cash bar when the account is 100% cash. #}
+            {% set total = summary.account_value if summary.account_value > 0 else 1 %}
+            {% set cash_pct = (summary.cash_value / total * 100) if summary.cash_value > 0 else 0 %}
+            {% set equity_pct = (summary.equity_value / total * 100) if summary.equity_value > 0 else 0 %}
+            {% set option_pct = (summary.option_value / total * 100) if summary.option_value > 0 else 0 %}
+            <div class="alloc-bar">
+                <div class="alloc-bar-segment alloc-bar-cash" style="width: {{ cash_pct }}%;"></div>
+                <div class="alloc-bar-segment alloc-bar-equity" style="width: {{ equity_pct }}%;"></div>
+                <div class="alloc-bar-segment alloc-bar-options" style="width: {{ option_pct }}%;"></div>
+            </div>
+            <div class="alloc-legend">
+                <span><span class="alloc-dot alloc-dot-cash"></span>Cash ${{ "{:,.0f}".format(summary.cash_value) }}</span>
+                <span><span class="alloc-dot alloc-dot-equity"></span>Equity ${{ "{:,.0f}".format(summary.equity_value) }}</span>
+                <span><span class="alloc-dot alloc-dot-options"></span>Options ${{ "{:,.0f}".format(summary.option_value) }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 col-6">
+        <div class="kpi-card h-100">
+            <div class="kpi-label">Change in range</div>
+            {% if summary.change_in_range %}
+            <div class="kpi-value
+                {% if summary.change_in_range.abs > 0 %}kpi-delta-pos
+                {% elif summary.change_in_range.abs < 0 %}kpi-delta-neg
+                {% else %}kpi-delta-flat{% endif %}">
+                {{ '+' if summary.change_in_range.abs > 0 }}${{ "{:,.0f}".format(summary.change_in_range.abs) }}
+            </div>
+            <div class="kpi-meta">
+                {% if summary.change_in_range.pct is not none %}
+                {{ '+' if summary.change_in_range.pct > 0 }}{{ "{:.1f}".format(summary.change_in_range.pct) }}%
+                {% else %}—{% endif %}
+                from start of window
+            </div>
+            {% else %}
+            <div class="kpi-value kpi-delta-flat">—</div>
+            <div class="kpi-meta">Not enough history</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-md-3 col-6">
+        <div class="kpi-card h-100">
+            <div class="kpi-label">vs 90d ago</div>
+            {% if summary.change_90d %}
+            <div class="kpi-value
+                {% if summary.change_90d.abs > 0 %}kpi-delta-pos
+                {% elif summary.change_90d.abs < 0 %}kpi-delta-neg
+                {% else %}kpi-delta-flat{% endif %}">
+                {{ '+' if summary.change_90d.abs > 0 }}${{ "{:,.0f}".format(summary.change_90d.abs) }}
+            </div>
+            <div class="kpi-meta">
+                {% if summary.change_90d.pct is not none %}
+                {{ '+' if summary.change_90d.pct > 0 }}{{ "{:.1f}".format(summary.change_90d.pct) }}%
+                {% else %}—{% endif %}
+            </div>
+            {% else %}
+            <div class="kpi-value kpi-delta-flat">—</div>
+            <div class="kpi-meta">Not enough history</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{# ── Chart ──────────────────────────────────────────────────────── #}
+<div class="chart-wrapper">
+    <h2>Account value over time</h2>
+    <p class="chart-sub">
+        Stacked: cash, equity, options. The black line is total account value.
+        Hover for daily numbers.
+    </p>
+    <div style="position: relative; height: 360px;">
+        <canvas id="wealthChart"></canvas>
+    </div>
+</div>
+
+{# ── Income panel ─────────────────────────────────────────────── #}
+{% if income_panel %}
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <h2 class="h6 fw-semibold text-muted mb-2 mt-1" style="letter-spacing: .02em;">
+            Where it came from in this window
+        </h2>
+        <p class="small text-muted mb-2">
+            Cash flows recorded in your trade history during the selected range.
+            We don't currently tag deposits or withdrawals separately, so anything
+            that isn't a trade, dividend, interest, or fee just changes total
+            account value without showing up below.
+        </p>
+    </div>
+
+    <div class="col-md-4 col-6">
+        <div class="income-card">
+            <div class="income-label">Dividends received</div>
+            <div class="income-value
+                {% if income_panel.dividends > 0 %}kpi-delta-pos
+                {% elif income_panel.dividends < 0 %}kpi-delta-neg{% endif %}">
+                {{ '+' if income_panel.dividends > 0 }}${{ "{:,.2f}".format(income_panel.dividends) }}
+            </div>
+            <div class="income-meta">From cash &amp; special dividends</div>
+        </div>
+    </div>
+
+    <div class="col-md-4 col-6">
+        <div class="income-card">
+            <div class="income-label">Interest (net)</div>
+            <div class="income-value
+                {% if income_panel.interest_net > 0 %}kpi-delta-pos
+                {% elif income_panel.interest_net < 0 %}kpi-delta-neg{% endif %}">
+                {{ '+' if income_panel.interest_net > 0 }}${{ "{:,.2f}".format(income_panel.interest_net) }}
+            </div>
+            <div class="income-meta">Credit interest minus margin interest</div>
+        </div>
+    </div>
+
+    <div class="col-md-4 col-12">
+        <div class="income-card">
+            <div class="income-label">Fees</div>
+            <div class="income-value
+                {% if income_panel.fees < 0 %}kpi-delta-neg
+                {% elif income_panel.fees > 0 %}kpi-delta-pos{% endif %}">
+                ${{ "{:,.2f}".format(income_panel.fees) }}
+            </div>
+            <div class="income-meta">ADR management fees</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %} {# /summary #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const data = {{ chart_json | safe }};
+    if (!data || !data.dates || data.dates.length === 0) {
+        return;
+    }
+
+    const ctx = document.getElementById('wealthChart');
+    if (!ctx) return;
+
+    /* Stacked area: cash, equity, options. Plot total as a non-stacked
+       line on top so the user can see the total clearly even when the
+       three components add up to it (which they should). */
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [
+                {
+                    label: 'Cash',
+                    data: data.cash,
+                    backgroundColor: 'rgba(148, 163, 184, .55)',
+                    borderColor: '#94a3b8',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                    tension: 0.25,
+                    fill: 'origin',
+                    stack: 'components'
+                },
+                {
+                    label: 'Equity',
+                    data: data.equity,
+                    backgroundColor: 'rgba(15, 52, 96, .55)',
+                    borderColor: '#0f3460',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                    tension: 0.25,
+                    fill: '-1',
+                    stack: 'components'
+                },
+                {
+                    label: 'Options',
+                    data: data.options,
+                    backgroundColor: 'rgba(245, 158, 11, .55)',
+                    borderColor: '#f59e0b',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                    tension: 0.25,
+                    fill: '-1',
+                    stack: 'components'
+                },
+                {
+                    label: 'Total',
+                    data: data.account_value,
+                    borderColor: '#0f172a',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2.5,
+                    pointRadius: 0,
+                    pointHitRadius: 6,
+                    tension: 0.25,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 14, padding: 14 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            const v = ctx.parsed.y;
+                            return ctx.dataset.label + ': $' + (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { maxTicksLimit: 12, maxRotation: 0, autoSkip: true },
+                    grid: { display: false }
+                },
+                y: {
+                    stacked: false,
+                    ticks: {
+                        callback: function (v) {
+                            if (Math.abs(v) >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M';
+                            if (Math.abs(v) >= 1_000) return '$' + (v / 1_000).toFixed(0) + 'k';
+                            return '$' + v.toFixed(0);
+                        }
+                    },
+                    grid: { color: '#e9ecef' }
+                }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

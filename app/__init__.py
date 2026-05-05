@@ -338,6 +338,7 @@ from app import upload
 from app import insights
 from app import strategy_fit_insights  # noqa: F401  registers /strategy-fit/insights/* routes
 from app import weekly_review
+from app import wealth  # noqa: F401  registers /wealth route
 from app import admin  # noqa: F401  registers /admin/* routes
 from app import schwab
 from app import first_look

@@ -247,7 +247,7 @@
             {% if current_user.is_authenticated %}
             {% set ep = request.endpoint or '' %}
             {% set selected_account = request.args.get('account', '') %}
-            {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts') %}
+            {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts', 'wealth') %}
             {% set in_breakdowns = ep in ('strategies', 'sectors', 'strategy_fit') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
@@ -269,6 +269,10 @@
                         <li>
                             <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
                                href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'wealth' %}active{% endif %}"
+                               href="{{ url_for('wealth', account=selected_account) if selected_account else url_for('wealth') }}">Wealth</a>
                         </li>
                     </ul>
                 </li>
