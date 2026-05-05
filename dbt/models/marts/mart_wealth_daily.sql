@@ -60,16 +60,21 @@ with equity as (
 -- Daily history aggregates. Bucketed by trade_date so the join below
 -- is a tight equi-join; rows where no history exists for the day stay
 -- NULL and get coalesced to 0 at the final select.
+-- ``stg_history.amount`` is the signed-by-action cash flow ("negative =
+-- cash out, positive = cash in" — see the ``amount_signed`` CTE in
+-- stg_history.sql). credit_interest is positive and margin_interest is
+-- negative there, so summing them gives a true net interest figure.
+-- adr_fee is also negative, so summing it directly preserves the sign.
 history_by_day as (
     select
         account,
         user_id,
         trade_date as date,
-        sum(case when action = 'dividend'        then amount_signed else 0 end) as dividend_today,
-        sum(case when action = 'credit_interest' then amount_signed else 0 end)
-            + sum(case when action = 'margin_interest' then amount_signed else 0 end)
+        sum(case when action = 'dividend'        then amount else 0 end) as dividend_today,
+        sum(case when action = 'credit_interest' then amount else 0 end)
+            + sum(case when action = 'margin_interest' then amount else 0 end)
             as interest_net_today,
-        sum(case when action = 'adr_fee'         then amount_signed else 0 end) as fees_today
+        sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today
     from {{ ref('stg_history') }}
     where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee')
     group by 1, 2, 3
