@@ -10,7 +10,25 @@
     Pulls the rows that stg_current intentionally filters out:
       - Cash & Money Market balances
       - Account Total summary rows
+
+    ``user_id`` is the new tenant key (see ``docs/USER_ID_TENANCY.md``).
+    Detected via ``adapter.get_columns_in_relation`` so this model keeps
+    building during the deploy gap when the BQ seed table hasn't been
+    rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
+    silently dropping the all-empty user_id column on first deploy).
 */
+{%- if execute -%}
+    {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
+    {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
+    {%- set _bal_cols  = adapter.get_columns_in_relation(ref('schwab_account_balances')) | map(attribute='name') | list -%}
+{%- else -%}
+    {%- set _curr_cols = [] -%}
+    {%- set _demo_cols = [] -%}
+    {%- set _bal_cols  = [] -%}
+{%- endif -%}
+{%- set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" -%}
+{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
+{%- set _bal_user_id_expr  = "cast(user_id as string)" if 'user_id' in _bal_cols  else "cast(null as string)" -%}
 
 with export_source as (
     -- Cast every column we touch to STRING so this model is resilient to the
@@ -19,7 +37,7 @@ with export_source as (
     -- which breaks UNION ALL). stg_current does the same via a macro.
     select
         cast(account as string) as account,
-        cast(user_id as string) as user_id,
+        {{ _curr_user_id_expr }} as user_id,
         cast(symbol as string) as symbol,
         cast(security_type as string) as security_type,
         cast(market_value as string) as market_value,
@@ -31,7 +49,7 @@ with export_source as (
     union all
     select
         cast(account as string) as account,
-        cast(user_id as string) as user_id,
+        {{ _demo_user_id_expr }} as user_id,
         cast(symbol as string) as symbol,
         cast(security_type as string) as security_type,
         cast(market_value as string) as market_value,
@@ -76,7 +94,7 @@ account_total_rows as (
 schwab_bal_rows as (
     select
         trim(cast(account as string)) as account,
-        safe_cast(nullif(trim(cast(user_id as string)), '') as int64) as user_id,
+        safe_cast(nullif(trim({{ _bal_user_id_expr }}), '') as int64) as user_id,
         case lower(trim(cast(row_type as string)))
             when 'cash' then 'cash'
             when 'account_total' then 'account_total'

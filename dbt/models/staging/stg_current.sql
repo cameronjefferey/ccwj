@@ -7,9 +7,25 @@
 -- Schwab sync and manual upload both merge into current_positions.csv, so
 -- there's a single positions seed to read from. Normalize everything to
 -- STRING so the demo union works regardless of BigQuery CSV type inference.
-{%- set current_string_cols -%}
+--
+-- ``user_id`` is the new tenant key (see ``docs/USER_ID_TENANCY.md``).
+-- Detected via ``adapter.get_columns_in_relation`` so this model keeps
+-- building during the deploy gap when the BQ seed table hasn't been
+-- rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
+-- silently dropping the all-empty user_id column on first deploy).
+-- Once the seed reload picks up user_id, we read the real column.
+{%- if execute -%}
+    {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
+    {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
+{%- else -%}
+    {%- set _curr_cols = [] -%}
+    {%- set _demo_cols = [] -%}
+{%- endif -%}
+{%- set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" -%}
+{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
+
+{%- set common_string_cols -%}
         cast(Account as string) as Account,
-        cast(user_id as string) as user_id,
         cast(Symbol as string) as Symbol,
         cast(Description as string) as Description,
         cast(Quantity as string) as Quantity,
@@ -43,12 +59,16 @@
 {%- endset %}
 
 with current_as_strings as (
-    select {{ current_string_cols }}
+    select
+        {{ _curr_user_id_expr }} as user_id,
+        {{ common_string_cols }}
     from {{ ref('current_positions') }}
 ),
 
 demo_as_strings as (
-    select {{ current_string_cols }}
+    select
+        {{ _demo_user_id_expr }} as user_id,
+        {{ common_string_cols }}
     from {{ ref('demo_current') }}
 ),
 
