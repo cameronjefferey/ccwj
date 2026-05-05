@@ -29,6 +29,7 @@
 with base as (
     select
         account,
+        user_id,
         symbol,
         strategy,
         trade_symbol,
@@ -47,6 +48,7 @@ with base as (
 calc as (
     select
         account,
+        user_id,
         symbol,
         strategy,
         trade_symbol,
@@ -71,5 +73,5 @@ calc as (
 
 select *
 from calc
-order by account, week_start, symbol, trade_symbol
+order by account, user_id, week_start, symbol, trade_symbol
 

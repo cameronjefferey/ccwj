@@ -7,10 +7,17 @@ seeds:
   # seed → INT64, next load with "100.0"/"-2.0" values → load job fails).
   # stg_history / stg_current already cast to string on the way in, then
   # safe_cast to numeric, so this costs nothing downstream.
+  # ``user_id`` is the new tenant key (Postgres ``users.id``) — see
+  # ``docs/USER_ID_TENANCY.md``. Loaded as STRING so empty cells in
+  # legacy rows survive the seed load (BigQuery rejects "" as INT64).
+  # Staging models do ``safe_cast(user_id as int64)`` to recover NULL
+  # for empty values and a real int otherwise. Stage 4 will tighten to
+  # ``int64`` + NOT NULL once the backfill is verified zero-NULL.
   - name: trade_history
     config:
       column_types:
         Account: string
+        user_id: string
         Date: string
         Action: string
         Symbol: string
@@ -24,6 +31,7 @@ seeds:
     config:
       column_types:
         Account: string
+        user_id: string
         Symbol: string
         Description: string
         Quantity: string
@@ -63,6 +71,7 @@ seeds:
     config:
       column_types:
         account: string
+        user_id: string
         row_type: string
         market_value: float64
         cost_basis: float64

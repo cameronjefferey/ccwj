@@ -17,6 +17,7 @@
 with trade_daily as (
     select
         account,
+        user_id,
         underlying_symbol as symbol,
         trade_date as date,
 
@@ -46,7 +47,7 @@ with trade_daily as (
     from {{ ref('stg_history') }}
     where trade_date is not null
       and underlying_symbol is not null
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 prices as (
@@ -54,24 +55,40 @@ prices as (
     from {{ ref('stg_daily_prices') }}
 ),
 
+-- Build the per-tenant date spine from rows that have user_id
+-- (trade_daily, daily_option). prices have no user_id so we expand them
+-- per-tenant via a join to known (account, user_id) pairs from
+-- trade_daily; without that the price-only rows would produce NULL
+-- user_id rows that the app filter would drop.
+known_tenants as (
+    select distinct account, user_id, symbol from trade_daily
+    union distinct
+    select distinct account, user_id, symbol from {{ ref('int_daily_option_value') }}
+),
+
 all_dates as (
-    select distinct account, symbol, date from (
-        select account, symbol, date from trade_daily
+    select distinct account, user_id, symbol, date from (
+        select account, user_id, symbol, date from trade_daily
         union distinct
-        select account, symbol, date from prices
+        select account, user_id, symbol, date from {{ ref('int_daily_option_value') }}
         union distinct
-        select account, symbol, date from {{ ref('int_daily_option_value') }}
+        select kt.account, kt.user_id, kt.symbol, p.date
+        from known_tenants kt
+        join prices p
+            on kt.account = p.account
+            and kt.symbol = p.symbol
     )
 ),
 
 daily_option as (
-    select account, symbol, date, option_market_value, option_cost_basis
+    select account, user_id, symbol, date, option_market_value, option_cost_basis
     from {{ ref('int_daily_option_value') }}
 ),
 
 joined as (
     select
         ad.account,
+        ad.user_id,
         ad.symbol,
         ad.date,
         coalesce(td.options_amount, 0)        as options_amount,
@@ -91,6 +108,7 @@ joined as (
     from all_dates ad
     left join trade_daily td
         on ad.account = td.account
+        and (ad.user_id is not distinct from td.user_id)
         and ad.symbol = td.symbol
         and ad.date = td.date
     left join prices p
@@ -99,14 +117,18 @@ joined as (
         and ad.date = p.date
     left join daily_option o
         on ad.account = o.account
+        and (ad.user_id is not distinct from o.user_id)
         and ad.symbol = o.symbol
         and ad.date = o.date
 ),
 
--- Carry forward latest snapshot option values so every date (on or after first snapshot) has option P&L from snapshots
+-- Carry forward latest snapshot option values so every date (on or
+-- after first snapshot) has option P&L from snapshots. Window keyed
+-- by (account, user_id, symbol) so two tenants can't share a fill.
 filled as (
     select
         account,
+        user_id,
         symbol,
         date,
         options_amount,
@@ -117,27 +139,28 @@ filled as (
         equity_sell_qty,
         other_amount,
         last_value(close_price ignore nulls) over (
-            partition by account, symbol order by date
+            partition by account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as close_price,
         has_trade,
         last_value(option_market_value ignore nulls) over (
-            partition by account, symbol order by date
+            partition by account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as option_market_value,
         last_value(option_cost_basis ignore nulls) over (
-            partition by account, symbol order by date
+            partition by account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as option_cost_basis,
         sum(options_amount) over w    as cumulative_options_pnl,
         sum(dividends_amount) over w  as cumulative_dividends_pnl,
         sum(other_amount) over w      as cumulative_other_pnl
     from joined
-    window w as (partition by account, symbol order by date)
+    window w as (partition by account, user_id, symbol order by date)
 )
 
 select
     account,
+    user_id,
     symbol,
     date,
     options_amount,
@@ -155,4 +178,4 @@ select
     cumulative_dividends_pnl,
     cumulative_other_pnl
 from filled
-order by account, symbol, date
+order by account, user_id, symbol, date

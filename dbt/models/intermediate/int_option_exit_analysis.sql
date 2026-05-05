@@ -22,6 +22,7 @@
 with contracts as (
     select
         oc.account,
+        oc.user_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         oc.direction,
@@ -41,10 +42,12 @@ with contracts as (
     from {{ ref('int_option_contracts') }} oc
     left join {{ ref('int_strategy_classification') }} s
         on oc.account = s.account
+        and (oc.user_id is not distinct from s.user_id)
         and oc.trade_symbol = s.trade_symbol
         and s.trade_group_type = 'option_contract'
     left join {{ ref('int_option_trade_kinds') }} tk
         on oc.account = tk.account
+        and (oc.user_id is not distinct from tk.user_id)
         and oc.trade_symbol = tk.trade_symbol
     where oc.status = 'Closed'
       and oc.close_date is not null
@@ -53,6 +56,7 @@ with contracts as (
 peak_stats as (
     select
         account,
+        user_id,
         trade_symbol,
         max(unrealized_pnl)  as peak_unrealized_pnl,
         min(unrealized_pnl)  as trough_unrealized_pnl,
@@ -60,24 +64,27 @@ peak_stats as (
         min(snapshot_date)   as first_snapshot,
         max(snapshot_date)   as last_snapshot
     from {{ ref('int_option_pnl_series') }}
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 peak_dates as (
     select
         ps.account,
+        ps.user_id,
         ps.trade_symbol,
         min(pnl.snapshot_date) as peak_date
     from peak_stats ps
     join {{ ref('int_option_pnl_series') }} pnl
         on ps.account = pnl.account
+        and (ps.user_id is not distinct from pnl.user_id)
         and ps.trade_symbol = pnl.trade_symbol
         and pnl.unrealized_pnl = ps.peak_unrealized_pnl
-    group by 1, 2
+    group by 1, 2, 3
 )
 
 select
     c.account,
+    c.user_id,
     c.trade_symbol,
     c.underlying_symbol,
     c.strategy,
@@ -152,7 +159,9 @@ select
 from contracts c
 left join peak_stats ps
     on c.account = ps.account
+    and (c.user_id is not distinct from ps.user_id)
     and c.trade_symbol = ps.trade_symbol
 left join peak_dates pd
     on c.account = pd.account
+    and (c.user_id is not distinct from pd.user_id)
     and c.trade_symbol = pd.trade_symbol

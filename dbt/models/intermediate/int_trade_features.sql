@@ -22,6 +22,7 @@
 with strat as (
     select
         account,
+        user_id,
         trade_symbol,
         strategy
     from {{ ref('int_strategy_classification') }}
@@ -30,6 +31,7 @@ with strat as (
 option_kinds as (
     select
         account,
+        user_id,
         trade_symbol,
         dte_at_open,
         dte_bucket
@@ -39,6 +41,7 @@ option_kinds as (
 options as (
     select
         oc.account,
+        oc.user_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         s.strategy,
@@ -78,9 +81,11 @@ options as (
     from {{ ref('int_option_contracts') }} oc
     left join strat s
         on oc.account = s.account
+        and (oc.user_id is not distinct from s.user_id)
         and oc.trade_symbol = s.trade_symbol
     left join option_kinds ok
         on oc.account = ok.account
+        and (oc.user_id is not distinct from ok.user_id)
         and oc.trade_symbol = ok.trade_symbol
     where oc.status = 'Closed'
       and oc.close_date is not null
@@ -89,6 +94,7 @@ options as (
 equity as (
     select
         es.account,
+        es.user_id,
         concat(es.symbol, '_session_', cast(es.session_id as string)) as trade_symbol,
         es.symbol                                                 as underlying_symbol,
         coalesce(s.strategy, 'Buy and Hold')                      as strategy,
@@ -116,6 +122,7 @@ equity as (
     from {{ ref('int_equity_sessions') }} es
     left join strat s
         on es.account = s.account
+        and (es.user_id is not distinct from s.user_id)
         and concat(es.symbol, '_session_', cast(es.session_id as string)) = s.trade_symbol
     where es.status = 'Closed'
       and es.last_trade_date is not null
@@ -129,6 +136,7 @@ unioned as (
 
 select
     account,
+    user_id,
     trade_symbol,
     underlying_symbol,
     coalesce(strategy, 'Other')                       as strategy,

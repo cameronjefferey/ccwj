@@ -15,28 +15,15 @@ from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
 )
-from app.routes import _filter_df_by_accounts
+# Tenant-scoped query helpers live in app.routes so the same user_id
+# predicate and Stage 0/1 NULL-leniency apply everywhere. See
+# docs/USER_ID_TENANCY.md.
+from app.routes import (
+    _account_sql_filter,
+    _account_sql_and,
+    _filter_df_by_accounts,
+)
 from app.utils import demo_block_writes
-
-
-def _account_sql_filter(accounts):
-    """Build a SQL WHERE clause for filtering by account."""
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "WHERE 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"WHERE account IN ({quoted})"
-
-
-def _account_sql_and(accounts):
-    """Build a SQL AND clause for queries that already have a WHERE."""
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "AND 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND account IN ({quoted})"
 
 
 # ------------------------------------------------------------------

@@ -1,7 +1,7 @@
-account,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
-Schwab ••••0044,cash,0.0,,,,0.0
-Schwab ••••0044,account_total,1847070.91,1467491.60999986,379579.30000014,25.865858,
-Schwab Account,cash,5955.47,,,,16.9669
-Schwab Account,account_total,35100.52,29621.6999999997,5478.820000000298,18.495967,
-Schwab ••••9437,cash,25838.36,,,,49.26162
-Schwab ••••9437,account_total,52451.3,21977.12,30474.180000000004,138.66321,
+account,user_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
+Schwab ••••0044,,cash,0.0,,,,0.0
+Schwab ••••0044,,account_total,1847070.91,1467491.60999986,379579.30000014,25.865858,
+Schwab Account,,cash,5955.47,,,,16.9669
+Schwab Account,,account_total,35100.52,29621.6999999997,5478.820000000298,18.495967,
+Schwab ••••9437,,cash,25838.36,,,,49.26162
+Schwab ••••9437,,account_total,52451.3,21977.12,30474.180000000004,138.66321,

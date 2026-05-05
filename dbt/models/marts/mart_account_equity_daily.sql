@@ -18,6 +18,7 @@
 with raw as (
     select
         account,
+        user_id,
         row_type,
         market_value,
         snapshot_date,
@@ -29,6 +30,7 @@ with raw as (
 latest_per_day as (
     select
         account,
+        user_id,
         row_type,
         market_value,
         snapshot_date,
@@ -36,12 +38,13 @@ latest_per_day as (
     from (
         select
             account,
+            user_id,
             row_type,
             market_value,
             snapshot_date,
             dbt_valid_from,
             row_number() over (
-                partition by account, row_type, snapshot_date
+                partition by account, user_id, row_type, snapshot_date
                 order by dbt_valid_from desc
             ) as rn
         from raw
@@ -53,6 +56,7 @@ latest_per_day as (
 option_raw as (
     select
         account,
+        user_id,
         trade_symbol,
         market_value,
         snapshot_date,
@@ -64,6 +68,7 @@ option_raw as (
 option_latest_per_day as (
     select
         account,
+        user_id,
         trade_symbol,
         market_value,
         snapshot_date,
@@ -71,12 +76,13 @@ option_latest_per_day as (
     from (
         select
             account,
+            user_id,
             trade_symbol,
             market_value,
             snapshot_date,
             dbt_valid_from,
             row_number() over (
-                partition by account, trade_symbol, snapshot_date
+                partition by account, user_id, trade_symbol, snapshot_date
                 order by dbt_valid_from desc
             ) as rn
         from option_raw
@@ -88,25 +94,28 @@ option_latest_per_day as (
 options_by_account_day as (
     select
         account,
+        user_id,
         snapshot_date as date,
         sum(market_value) as option_value
     from option_latest_per_day
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 by_account_day as (
     select
         account,
+        user_id,
         snapshot_date as date,
         sum(case when row_type = 'account_total' then market_value else 0 end) as account_value,
         sum(case when row_type = 'cash'          then market_value else 0 end) as cash_value
     from latest_per_day
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 snapshot_result as (
     select
         b.account,
+        b.user_id,
         b.date,
         b.account_value - b.cash_value - coalesce(o.option_value, 0) as equity_value,
         coalesce(o.option_value, 0)                                  as option_value,
@@ -115,13 +124,18 @@ snapshot_result as (
     from by_account_day b
     left join options_by_account_day o
       on b.account = o.account
+     and (b.user_id is not distinct from o.user_id)
      and b.date    = o.date
 )
 
 select * from snapshot_result
 where account_value > 0
 union all
-select account, date, equity_value, option_value, cash_value, account_value
+-- int_demo_equity_daily emits user_id NULL by design (the demo user_id
+-- is environment-specific). The app's demo path filters by
+-- ``account = 'Demo Account'`` rather than user_id — see
+-- docs/USER_ID_TENANCY.md.
+select account, user_id, date, equity_value, option_value, cash_value, account_value
 from {{ ref('int_demo_equity_daily') }}
-order by account, date
+order by account, user_id, date
 

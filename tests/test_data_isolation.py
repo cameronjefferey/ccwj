@@ -629,6 +629,152 @@ class TestStrategyFitQueryTenancy:
         assert "account" in STRATEGY_FIT_OPTIONS_QUERY.lower()
 
 
+class TestUserIdTenancyHelpers:
+    """``account_name`` alone is not a security boundary — two users can
+    register the same nickname (the original ``investment1`` leak).
+    The user_id tenancy helpers add a ``user_id`` predicate so a row
+    is only returned when **both** ``user_id`` and ``account_name``
+    match. See docs/USER_ID_TENANCY.md.
+    """
+
+    def test_user_scoped_filter_emits_user_id_predicate(self):
+        from app.routes import _user_scoped_filter
+
+        sql = _user_scoped_filter(7, ["Acct A"])
+        # The user_id predicate is the actual security boundary.
+        assert "user_id = 7" in sql
+        # OR (user_id IS NULL) is the Stage 0/1 leniency leg for
+        # legacy rows that have not been backfilled yet.
+        assert "user_id IS NULL" in sql
+        # Account predicate must still be present (defense in depth).
+        assert "Acct A" in sql
+
+    def test_user_scoped_filter_admin_skips_user_id(self):
+        """user_id=None means admin → no user_id predicate."""
+        from app.routes import _user_scoped_filter
+
+        sql = _user_scoped_filter(None, ["Acct A"])
+        assert "user_id" not in sql
+        assert "Acct A" in sql
+
+    def test_user_scoped_filter_qualifies_alias_in_join_context(self):
+        """When the column is qualified (``sc.account``), the helper must
+        prefix ``user_id`` with the same alias so JOINs aren't
+        ambiguous."""
+        from app.routes import _user_scoped_filter
+
+        sql = _user_scoped_filter(11, ["Acct"], col="sc.account")
+        assert "sc.user_id = 11" in sql
+        assert "sc.user_id IS NULL" in sql
+
+    def test_user_scoped_filter_empty_accounts_fails_closed(self):
+        from app.routes import _user_scoped_filter
+
+        sql = _user_scoped_filter(7, [])
+        assert "1 = 0" in sql
+
+    def test_filter_df_by_user_drops_rows_owned_by_other_users(self):
+        """The actual ``investment1`` leak: two users register the same
+        account label, BQ returns rows for both, and account-only
+        filtering passes everything through. ``_filter_df_by_user`` must
+        drop rows whose ``user_id`` is a different populated id."""
+        import pandas as pd
+
+        from app.routes import _filter_df_by_user
+
+        df = pd.DataFrame(
+            {
+                "account": ["investment1", "investment1", "investment1"],
+                "user_id": [7, 8, 7],
+                "total_pnl": [100, -200, 50],
+            }
+        )
+        out = _filter_df_by_user(df, 7, ["investment1"])
+        # User 8's row must be dropped even though account_name matches.
+        assert sorted(out["total_pnl"].tolist()) == [50, 100]
+
+    def test_filter_df_by_user_keeps_legacy_null_rows_for_owned_account(self):
+        """Stage 0/1 leniency: legacy rows with NULL user_id are kept
+        as long as the account belongs to the current user. This is the
+        bridge that lets the migration land before backfill."""
+        import pandas as pd
+
+        from app.routes import _filter_df_by_user
+
+        df = pd.DataFrame(
+            {
+                "account": ["Acct A", "Acct A", "Acct B"],
+                "user_id": [None, 7, None],
+                "total_pnl": [10, 20, 30],
+            }
+        )
+        out = _filter_df_by_user(df, 7, ["Acct A"])
+        assert sorted(out["total_pnl"].tolist()) == [10, 20]
+
+    def test_filter_df_by_user_drops_legacy_null_for_unowned_account(self):
+        """A NULL user_id row whose account is NOT in the user's allowed
+        list must still be dropped. Otherwise the leniency leg becomes
+        a leak."""
+        import pandas as pd
+
+        from app.routes import _filter_df_by_user
+
+        df = pd.DataFrame(
+            {
+                "account": ["other_user_acct"],
+                "user_id": [None],
+                "total_pnl": [999],
+            }
+        )
+        out = _filter_df_by_user(df, 7, ["my_acct"])
+        assert out.empty
+
+    def test_filter_df_by_user_admin_bypasses_user_check(self):
+        import pandas as pd
+
+        from app.routes import _filter_df_by_user
+
+        df = pd.DataFrame(
+            {
+                "account": ["A", "B"],
+                "user_id": [1, 2],
+                "x": [10, 20],
+            }
+        )
+        out = _filter_df_by_user(df, None, None)
+        assert len(out) == 2
+
+    def test_two_users_sharing_account_name_no_longer_leak(self):
+        """The end-to-end regression for the ``investment1`` leak: User
+        7 and User 8 both have an account labeled ``investment1``. BQ
+        returns rows for both users. The frame coming back must contain
+        ONLY rows whose ``user_id`` matches the caller — even though
+        ``account_name`` is identical."""
+        import pandas as pd
+
+        from app.routes import _filter_df_by_user
+
+        df = pd.DataFrame(
+            {
+                "account": ["investment1"] * 4,
+                "user_id": [7, 8, 7, 8],
+                "symbol": ["AAPL", "AAPL", "TSLA", "TSLA"],
+                "total_pnl": [100, 999, 50, -777],
+            }
+        )
+
+        u7 = _filter_df_by_user(df, 7, ["investment1"])
+        u8 = _filter_df_by_user(df, 8, ["investment1"])
+
+        assert sorted(u7["total_pnl"].tolist()) == [50, 100]
+        assert sorted(u8["total_pnl"].tolist()) == [-777, 999]
+        # Critical: neither user's frame contains the other's rows.
+        assert 999 not in u7["total_pnl"].tolist()
+        assert -777 not in u7["total_pnl"].tolist()
+        assert 100 not in u8["total_pnl"].tolist()
+        assert 50 not in u8["total_pnl"].tolist()
+
+
 class TestStrategyFitMatrixBuilder:
     """`_build_strategy_fit_matrix` is dimension-agnostic and is the shared
     aggregation core for sector / subsector / dte / moneyness / market-cap

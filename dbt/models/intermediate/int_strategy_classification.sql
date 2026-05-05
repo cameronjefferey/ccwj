@@ -31,6 +31,7 @@ option_contracts as (
 equity_options_summary as (
     select
         e.account,
+        e.user_id,
         e.symbol,
         e.session_id,
         count(distinct case
@@ -48,8 +49,9 @@ equity_options_summary as (
     from equity_sessions e
     left join option_contracts oc
         on e.account = oc.account
+        and (e.user_id is not distinct from oc.user_id)
         and e.symbol = oc.underlying_symbol
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 ---------------------------------------------------------------------
@@ -58,6 +60,7 @@ equity_options_summary as (
 put_assignments as (
     select
         account,
+        user_id,
         underlying_symbol,
         trade_symbol,
         close_date as assignment_date
@@ -69,11 +72,13 @@ put_assignments as (
 equity_from_assignment as (
     select distinct
         e.account,
+        e.user_id,
         e.symbol,
         e.session_id
     from equity_sessions e
     join put_assignments pa
         on e.account = pa.account
+        and (e.user_id is not distinct from pa.user_id)
         and e.symbol = pa.underlying_symbol
         and abs(date_diff(e.open_date, pa.assignment_date, day)) <= 5
 ),
@@ -82,11 +87,15 @@ equity_from_assignment as (
 -- 3. Detect spread pairs (bought + sold, same underlying / expiry / type)
 ---------------------------------------------------------------------
 spread_legs as (
-    -- All trade_symbols that are part of a spread
-    select distinct a.account, a.trade_symbol
+    -- All trade_symbols that are part of a spread.
+    -- Self-join keyed on (account, user_id) so two users with the same
+    -- account label and similar option positions don't get classified
+    -- as spreading against each other.
+    select distinct a.account, a.user_id, a.trade_symbol
     from option_contracts a
     join option_contracts b
         on a.account           = b.account
+        and (a.user_id is not distinct from b.user_id)
         and a.underlying_symbol = b.underlying_symbol
         and a.option_expiry     = b.option_expiry
         and a.option_type       = b.option_type
@@ -96,10 +105,11 @@ spread_legs as (
 
     union distinct
 
-    select distinct b.account, b.trade_symbol
+    select distinct b.account, b.user_id, b.trade_symbol
     from option_contracts a
     join option_contracts b
         on a.account           = b.account
+        and (a.user_id is not distinct from b.user_id)
         and a.underlying_symbol = b.underlying_symbol
         and a.option_expiry     = b.option_expiry
         and a.option_type       = b.option_type
@@ -116,6 +126,7 @@ spread_legs as (
 pmcc_short_calls as (
     select distinct
         account,
+        user_id,
         short_trade_symbol as trade_symbol
     from {{ ref('int_pmcc_pairs') }}
 ),
@@ -126,6 +137,7 @@ pmcc_short_calls as (
 options_classified as (
     select
         oc.account,
+        oc.user_id,
         oc.underlying_symbol                 as symbol,
         oc.trade_symbol,
         'option_contract'                    as trade_group_type,
@@ -194,14 +206,17 @@ options_classified as (
     -- Check for spread membership
     left join spread_legs sl
         on oc.account = sl.account
+        and (oc.user_id is not distinct from sl.user_id)
         and oc.trade_symbol = sl.trade_symbol
     -- Check for PMCC (short call covered by long call on same underlying)
     left join pmcc_short_calls pmcc
         on oc.account = pmcc.account
+        and (oc.user_id is not distinct from pmcc.user_id)
         and oc.trade_symbol = pmcc.trade_symbol
     -- Check for overlapping equity session (Covered Call / Protective Put detection)
     left join equity_sessions e
         on oc.account = e.account
+        and (oc.user_id is not distinct from e.user_id)
         and oc.underlying_symbol = e.symbol
         and oc.open_date >= e.open_date
         and oc.open_date <= case
@@ -220,16 +235,18 @@ options_classified as (
 session_realized as (
     select
         account,
+        user_id,
         symbol,
         session_id,
         sum(realized_pnl) as realized_pnl
     from {{ ref('int_closed_equity_legs') }}
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 equity_classified as (
     select
         e.account,
+        e.user_id,
         e.symbol,
         concat(e.symbol, '_session_', cast(e.session_id as string)) as trade_symbol,
         'equity_session'                       as trade_group_type,
@@ -275,14 +292,17 @@ equity_classified as (
     from equity_sessions e
     left join equity_options_summary eos
         on e.account = eos.account
+        and (e.user_id is not distinct from eos.user_id)
         and e.symbol = eos.symbol
         and e.session_id = eos.session_id
     left join equity_from_assignment efa
         on e.account = efa.account
+        and (e.user_id is not distinct from efa.user_id)
         and e.symbol = efa.symbol
         and e.session_id = efa.session_id
     left join session_realized sr
         on e.account = sr.account
+        and (e.user_id is not distinct from sr.user_id)
         and e.symbol = sr.symbol
         and e.session_id = sr.session_id
 )

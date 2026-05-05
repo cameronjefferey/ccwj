@@ -20,13 +20,9 @@ def _user_account_list():
     return get_accounts_for_user(current_user.id)
 
 
-def _account_sql_and(accounts):
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "AND 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND account IN ({quoted})"
+# Use the tenant-scoped helper from app.routes so we pick up user_id
+# filtering automatically. See docs/USER_ID_TENANCY.md.
+from app.routes import _account_sql_and  # noqa: E402,F401
 
 
 STRATEGY_PERFORMANCE_QUERY = """

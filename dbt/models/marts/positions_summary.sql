@@ -27,6 +27,7 @@ symbol_meta as (
 strategy_summary as (
     select
         account,
+        user_id,
         symbol,
         strategy,
 
@@ -74,17 +75,19 @@ strategy_summary as (
         max(coalesce(close_date, current_date())) as last_trade_date
 
     from classified
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 ---------------------------------------------------------------------
--- Attach dividend income (once per account × symbol, to the primary equity strategy)
+-- Attach dividend income (once per account × symbol, to the primary equity strategy).
+-- Window partitioned by (account, user_id, symbol) so the dividend
+-- ranking can't bleed across tenants who happen to share a label.
 ---------------------------------------------------------------------
 with_dividend_rank as (
     select
         ss.*,
         row_number() over (
-            partition by ss.account, ss.symbol
+            partition by ss.account, ss.user_id, ss.symbol
             order by
                 case ss.strategy
                     when 'Wheel'        then 1
@@ -99,6 +102,7 @@ with_dividend_rank as (
 final as (
     select
         wdr.account,
+        wdr.user_id,
         wdr.symbol,
         wdr.strategy,
         wdr.status,
@@ -152,10 +156,11 @@ final as (
     from with_dividend_rank wdr
     left join dividends d
         on wdr.account = d.account
+        and (wdr.user_id is not distinct from d.user_id)
         and wdr.symbol = d.symbol
     left join symbol_meta sm
         on upper(trim(wdr.symbol)) = sm.symbol
 )
 
 select * from final
-order by account, symbol, strategy
+order by account, user_id, symbol, strategy

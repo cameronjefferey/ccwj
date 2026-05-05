@@ -12,6 +12,7 @@
 with equity_trades as (
     select
         account,
+        user_id,
         underlying_symbol as symbol,
         trade_date,
         action,
@@ -27,12 +28,14 @@ with equity_trades as (
     where instrument_type = 'Equity'
 ),
 
--- Running share count
+-- Running share count.
+-- Window partitioned by (account, user_id, symbol) so two users with the
+-- same account_name + symbol never share a running quantity series.
 running as (
     select
         *,
         sum(signed_quantity) over (
-            partition by account, symbol
+            partition by account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as running_qty
@@ -45,7 +48,7 @@ with_prev as (
         *,
         coalesce(
             lag(running_qty) over (
-                partition by account, symbol
+                partition by account, user_id, symbol
                 order by trade_date, action
             ),
             0
@@ -60,7 +63,7 @@ sessions as (
         sum(
             case when prev_running_qty = 0 and running_qty > 0 then 1 else 0 end
         ) over (
-            partition by account, symbol
+            partition by account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as session_id
@@ -71,6 +74,7 @@ sessions as (
 trade_session_summary as (
     select
         account,
+        user_id,
         symbol,
         session_id,
         min(trade_date)  as open_date,
@@ -80,13 +84,14 @@ trade_session_summary as (
         count(*)         as num_trades
     from sessions
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 -- Equity rows in current snapshot with no equity trade history (e.g. Schwab-only)
 snapshot_equity_sessions as (
     select
         c.account,
+        c.user_id,
         c.underlying_symbol as symbol,
         1 as session_id,
         coalesce(c.snapshot_date, current_date()) as open_date,
@@ -102,6 +107,13 @@ snapshot_equity_sessions as (
           select 1
           from trade_session_summary t
           where t.account = c.account
+            -- Match user_id with a NULL-safe comparison: both NULL is a
+            -- legacy-row match (Stage 0 backfill state); both non-NULL
+            -- compares strictly. Without the NULL-safe equality
+            -- ``t.user_id = c.user_id`` would silently miss legacy rows
+            -- and we'd double-count snapshot sessions on top of trade
+            -- sessions for the same holding.
+            and (t.user_id is not distinct from c.user_id)
             and t.symbol = c.underlying_symbol
       )
 ),
@@ -116,15 +128,17 @@ session_summary as (
 latest_session as (
     select
         account,
+        user_id,
         symbol,
         max(session_id) as latest_session_id
     from session_summary
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 final as (
     select
         s.account,
+        s.user_id,
         s.symbol,
         s.session_id,
         s.open_date,
@@ -171,9 +185,11 @@ final as (
     from session_summary s
     join latest_session ls
         on s.account = ls.account
+        and (s.user_id is not distinct from ls.user_id)
         and s.symbol = ls.symbol
     left join {{ ref('stg_current') }} c
         on s.account = c.account
+        and (s.user_id is not distinct from c.user_id)
         and s.symbol = c.underlying_symbol
         and c.instrument_type = 'Equity'
 )

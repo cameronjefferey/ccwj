@@ -16,6 +16,7 @@
 with daily as (
     select
         account,
+        user_id,
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
@@ -24,6 +25,7 @@ with daily as (
 with_weeks as (
     select
         account,
+        user_id,
         date_trunc(date, isoweek) as week_start,
         date,
         account_value
@@ -33,26 +35,29 @@ with_weeks as (
 week_bounds as (
     select
         account,
+        user_id,
         week_start,
         min_by(account_value, date) as start_value,
         max_by(account_value, date) as end_value
     from (
         select
             account,
+            user_id,
             week_start,
             date,
             account_value
         from with_weeks
     )
-    group by account, week_start
+    group by account, user_id, week_start
 )
 
 select
     account,
+    user_id,
     week_start,
     start_value,
     end_value,
     safe_divide(end_value - start_value, nullif(start_value, 0)) * 100 as weekly_return_pct
 from week_bounds
-order by account, week_start
+order by account, user_id, week_start
 

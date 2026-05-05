@@ -20,6 +20,7 @@
 with base as (
     select
         account,
+        user_id,
         trade_symbol,
         strategy,
         open_date,
@@ -33,16 +34,18 @@ with base as (
 ------------------------------------------------------------------
 -- Build a per-account chronological stream of CLOSED trades, used
 -- to compute "loss streak ending at this close" via gaps-and-islands.
--- stream_id is a stable ordering key within an account.
+-- Partitions are keyed by (account, user_id) so two users with the
+-- same account label never share a streak.
 ------------------------------------------------------------------
 closed_stream as (
     select
         account,
+        user_id,
         trade_symbol,
         close_date,
         is_winner,
         row_number() over (
-            partition by account
+            partition by account, user_id
             order by close_date, trade_symbol
         ) as stream_id
     from base
@@ -53,12 +56,13 @@ closed_stream as (
 with_group as (
     select
         account,
+        user_id,
         trade_symbol,
         close_date,
         is_winner,
         stream_id,
         sum(case when is_winner then 1 else 0 end) over (
-            partition by account
+            partition by account, user_id
             order by stream_id
             rows between unbounded preceding and current row
         ) as win_group_id
@@ -70,13 +74,14 @@ with_group as (
 loss_streak_at_close as (
     select
         account,
+        user_id,
         trade_symbol,
         close_date,
         is_winner,
         case
             when is_winner then 0
             else sum(case when is_winner then 0 else 1 end) over (
-                partition by account, win_group_id
+                partition by account, user_id, win_group_id
                 order by stream_id
                 rows between unbounded preceding and current row
             )
@@ -98,33 +103,38 @@ loss_streak_at_close as (
 prior_close_streak as (
     select
         b.account,
+        b.user_id,
         b.trade_symbol,
         b.open_date,
         max_by(ls.loss_streak_at_close, ls.stream_id) as consecutive_losses_before
     from base b
     left join loss_streak_at_close ls
         on ls.account = b.account
+        and (ls.user_id is not distinct from b.user_id)
         and ls.close_date < b.open_date
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 prior_last_loss as (
     select
         b.account,
+        b.user_id,
         b.trade_symbol,
         b.open_date,
         date_diff(b.open_date, max(ls.close_date), day) as days_since_last_loss
     from base b
     left join loss_streak_at_close ls
         on ls.account = b.account
+        and (ls.user_id is not distinct from b.user_id)
         and ls.close_date < b.open_date
         and ls.is_winner = false
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 trade_with_prior_close as (
     select
         b.account,
+        b.user_id,
         b.trade_symbol,
         b.strategy,
         b.open_date,
@@ -138,9 +148,11 @@ trade_with_prior_close as (
     from base b
     left join prior_close_streak pcs
         on b.account = pcs.account
+        and (b.user_id is not distinct from pcs.user_id)
         and b.trade_symbol = pcs.trade_symbol
     left join prior_last_loss pll
         on b.account = pll.account
+        and (b.user_id is not distinct from pll.user_id)
         and b.trade_symbol = pll.trade_symbol
 ),
 
@@ -151,6 +163,7 @@ trade_with_prior_close as (
 prior_notional as (
     select
         b.account,
+        b.user_id,
         b.trade_symbol,
         b.open_date,
         avg(case
@@ -164,14 +177,16 @@ prior_notional as (
     from base b
     left join base h
         on h.account = b.account
+        and (h.user_id is not distinct from b.user_id)
         and h.close_date < b.open_date
         and h.close_date >= date_sub(b.open_date, interval 90 day)
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 prior_strategy_wr as (
     select
         b.account,
+        b.user_id,
         b.trade_symbol,
         if(count(h.trade_symbol) >= 10,
            safe_divide(countif(h.is_winner), count(h.trade_symbol)),
@@ -180,14 +195,16 @@ prior_strategy_wr as (
     from base b
     left join base h
         on h.account = b.account
+        and (h.user_id is not distinct from b.user_id)
         and h.strategy = b.strategy
         and h.close_date < b.open_date
         and h.close_date >= date_sub(b.open_date, interval 180 day)
-    group by 1, 2
+    group by 1, 2, 3
 )
 
 select
     t.account,
+    t.user_id,
     t.trade_symbol,
     t.strategy,
     t.open_date,
@@ -219,7 +236,9 @@ select
 from trade_with_prior_close t
 left join prior_notional pn
     on t.account = pn.account
+    and (t.user_id is not distinct from pn.user_id)
     and t.trade_symbol = pn.trade_symbol
 left join prior_strategy_wr psw
     on t.account = psw.account
+    and (t.user_id is not distinct from psw.user_id)
     and t.trade_symbol = psw.trade_symbol

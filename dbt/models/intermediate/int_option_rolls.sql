@@ -22,6 +22,7 @@
 with closers as (
     select
         account,
+        user_id,
         trade_symbol          as old_trade_symbol,
         underlying_symbol,
         option_type,
@@ -44,6 +45,7 @@ with closers as (
 openers as (
     select
         oc.account,
+        oc.user_id,
         oc.trade_symbol       as new_trade_symbol,
         oc.underlying_symbol,
         oc.option_type,
@@ -58,6 +60,7 @@ openers as (
     from {{ ref('int_option_contracts') }} oc
     left join {{ ref('int_option_trade_kinds') }} tk
         on oc.account = tk.account
+        and (oc.user_id is not distinct from tk.user_id)
         and oc.trade_symbol = tk.trade_symbol
 ),
 
@@ -75,13 +78,14 @@ candidates as (
         o.new_outcome,
         date_diff(o.new_open_date, c.old_close_date, day) as days_between,
         row_number() over (
-            partition by c.account, c.old_trade_symbol
+            partition by c.account, c.user_id, c.old_trade_symbol
             order by abs(date_diff(o.new_open_date, c.old_close_date, day)),
                      o.new_open_date
         ) as match_rank
     from closers c
     join openers o
         on c.account = o.account
+        and (c.user_id is not distinct from o.user_id)
         and c.underlying_symbol = o.underlying_symbol
         and c.option_type = o.option_type
         -- Same direction: both sold or both bought
@@ -96,6 +100,7 @@ candidates as (
 
 select
     account,
+    user_id,
     underlying_symbol,
     option_type,
 

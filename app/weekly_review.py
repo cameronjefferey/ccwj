@@ -92,23 +92,13 @@ def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, s
     return sp <= k, round(k - sp, 2)
 
 
-def _account_sql_and(accounts):
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "AND 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"AND account IN ({quoted})"
-
-
-def _account_sql_where(accounts):
-    """Build a SQL WHERE clause for queries that have no prior WHERE."""
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "WHERE 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    return f"WHERE account IN ({quoted})"
+# Tenant-scoped query helpers live in app.routes so the same user_id
+# predicate and Stage 0/1 NULL-leniency apply everywhere. See
+# docs/USER_ID_TENANCY.md.
+from app.routes import (
+    _account_sql_and,  # noqa: E402,F401  -- re-exported for local SQL formatters
+    _account_sql_filter as _account_sql_where,  # noqa: E402,F401
+)
 
 
 MARKET_PERF_QUERY = """

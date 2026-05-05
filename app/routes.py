@@ -158,56 +158,242 @@ def _user_account_list():
     return sorted(names)
 
 
-def _account_sql_filter(accounts, col="account"):
+def _resolve_filter_user_id():
+    """Return the ``user_id`` to scope BigQuery reads by for the current
+    request, or ``None`` for admin / unauthenticated paths (no scoping).
+
+    The legacy ``_account_sql_*`` and ``_filter_df_by_accounts`` helpers
+    use this to automatically add a ``user_id`` predicate to every read
+    they shape, so two users sharing an ``account_name`` cannot see each
+    other's rows. See ``docs/USER_ID_TENANCY.md`` for the full story.
     """
-    Build a SQL WHERE clause fragment for filtering by account.
-    accounts: list of account names, or None for no filter (admin).
-    Returns a string like "WHERE account IN ('Foo', 'Bar')" or "".
-    """
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "WHERE 1 = 0"            # user has no accounts → return nothing
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    expr = f"TRIM(CAST({col} AS STRING))"
-    return f"WHERE {expr} IN ({quoted})"
-
-
-def _account_sql_and(accounts, col="account"):
-    """Return AND clause for account filter when already in a WHERE. Empty string if no filter.
-
-    BigQuery may store `account` as INT (e.g. Schwab #) while the app uses string
-    labels from user_accounts. Compare as strings so `IN (...)` is not silently empty.
-    """
-    if accounts is None:
-        return ""
-    if not accounts:
-        return "AND 1 = 0"
-    quoted = ", ".join(f"'{a.replace(chr(39), chr(39)+chr(39))}'" for a in accounts)
-    expr = f"TRIM(CAST({col} AS STRING))"
-    return f"AND {expr} IN ({quoted})"
-
-
-def _filter_df_by_accounts(df, accounts, col="account"):
-    """Filter a DataFrame to only rows matching the user's accounts.
-    accounts=None means admin → return unfiltered. Values compared as trimmed
-    strings so BQ int/float account ids still match app-side string labels.
-    """
-    if accounts is None:
-        return df
-    if not accounts:
-        return df.iloc[0:0]             # empty frame
-    if col not in df.columns:
-        return df
-    want = {str(a).strip() for a in accounts if a is not None and str(a).strip() != ""}
-
-    def _norm_acc(v):
-        if v is None or (isinstance(v, float) and pd.isna(v)):
+    try:
+        from flask_login import current_user
+        if not getattr(current_user, "is_authenticated", False):
             return None
-        return str(v).strip()
+        if is_admin(current_user.username):
+            return None
+        return int(current_user.id)
+    except Exception:
+        return None
 
-    m = df[col].map(_norm_acc).isin(want)
-    return df[m]
+
+def _account_sql_filter(accounts, col="account", user_col="user_id"):
+    """Build a ``WHERE`` clause that scopes a BigQuery read to the current
+    tenant. ``accounts=None`` means admin (no account filter).
+
+    Despite the name, this helper now adds a ``user_id`` predicate too —
+    that's the actual security boundary; ``account_name`` alone leaks
+    across tenants when two users share a label. The legacy name is
+    kept so existing call sites pick up the security upgrade for free.
+    See ``docs/USER_ID_TENANCY.md``.
+    """
+    return _user_scoped_filter(
+        _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
+    )
+
+
+def _account_sql_and(accounts, col="account", user_col="user_id"):
+    """``AND``-shaped sibling of ``_account_sql_filter`` for joining onto an
+    existing ``WHERE``. Adds the user_id predicate too. See
+    ``docs/USER_ID_TENANCY.md``.
+    """
+    return _user_scoped_and(
+        _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
+    )
+
+
+def _filter_df_by_accounts(df, accounts, col="account", user_col="user_id"):
+    """Filter a DataFrame to rows owned by the current tenant.
+
+    Like the SQL helpers above, this now drops rows whose ``user_id`` is
+    a different populated id than the current user's. Stage 0/1
+    leniency: rows with NULL ``user_id`` are kept when their ``account``
+    is in the user's allowed list. Admin / unauthenticated bypass the
+    user check. See ``docs/USER_ID_TENANCY.md``.
+    """
+    return _filter_df_by_user(
+        df, _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
+    )
+
+
+# ------------------------------------------------------------------
+# User-id-aware tenancy helpers — see docs/USER_ID_TENANCY.md.
+#
+# These are the security boundary going forward. The legacy
+# ``_account_sql_*`` and ``_filter_df_by_accounts`` helpers above filter
+# only by ``account`` (a free-form label) — and that string can collide
+# across users. Two users with ``account_name = 'investment1'`` would
+# each see the other's rows on every page. The cross-tenant guard in
+# ``_user_account_list`` hides the conflict at request time, but the
+# correct fix is to scope every BigQuery read by the row owner's
+# ``user_id`` (Postgres ``users.id``), which is now stamped onto every
+# user-tied row through the dbt pipeline.
+#
+# Stage 0 / 1 leniency: legacy rows in BigQuery still have
+# ``user_id IS NULL`` until the operator runs
+# ``scripts/backfill_seed_user_ids.py``. The helpers below admit
+# ``user_id IS NULL`` rows whose ``account`` matches the user's allowed
+# list so the app keeps working during the backfill window. Stage 4
+# drops the NULL leg once every seed cell is populated.
+# ------------------------------------------------------------------
+
+
+def _qualified_user_col(col, user_col):
+    """If ``col`` is qualified (e.g. ``sc.account``) and ``user_col`` is
+    the bare default ``user_id``, prefix ``user_col`` with the same alias
+    so the predicate isn't ambiguous in JOINs. Callers can still pass an
+    explicit ``user_col`` to override.
+    """
+    if user_col != "user_id":
+        return user_col
+    if "." not in col:
+        return user_col
+    alias = col.rsplit(".", 1)[0]
+    return f"{alias}.user_id"
+
+
+def _user_scoped_filter(user_id, accounts, *, col="account", user_col="user_id"):
+    """Return a ``WHERE``-prefixed clause that scopes a BQ read to a tenant.
+
+    Tenant = ``(user_id, account_name)``. ``account_name`` alone is not
+    a security boundary — see ``docs/USER_ID_TENANCY.md``.
+
+    Args:
+        user_id: ``int`` Postgres ``users.id`` of the current user.
+            ``None`` means admin (no user_id predicate).
+        accounts: list of account labels the user is allowed to see, or
+            ``None`` for admin (no account predicate).
+        col: BQ column for ``account``. Defaults to ``account``.
+        user_col: BQ column for ``user_id``. Defaults to the alias of
+            ``col`` (``sc.user_id`` when ``col="sc.account"``).
+
+    Returns ``""`` when both filters are skipped (admin), else a string
+    starting with ``WHERE``.
+    """
+    user_col = _qualified_user_col(col, user_col)
+    parts = []
+    if user_id is not None:
+        # OR (user_id IS NULL) is the Stage 0/1 leniency leg — drops in
+        # Stage 4 once all legacy rows are backfilled.
+        parts.append(f"({user_col} = {int(user_id)} OR {user_col} IS NULL)")
+    if accounts is None:
+        pass
+    elif not accounts:
+        parts.append("1 = 0")
+    else:
+        quoted = ", ".join(
+            f"'{a.replace(chr(39), chr(39) + chr(39))}'" for a in accounts
+        )
+        expr = f"TRIM(CAST({col} AS STRING))"
+        parts.append(f"{expr} IN ({quoted})")
+    if not parts:
+        return ""
+    return "WHERE " + " AND ".join(parts)
+
+
+def _user_scoped_and(user_id, accounts, *, col="account", user_col="user_id"):
+    """Same shape as ``_user_scoped_filter`` but as an ``AND`` clause for
+    joining onto an existing ``WHERE``. Returns ``""`` when both filters
+    are skipped.
+    """
+    user_col = _qualified_user_col(col, user_col)
+    parts = []
+    if user_id is not None:
+        parts.append(f"({user_col} = {int(user_id)} OR {user_col} IS NULL)")
+    if accounts is None:
+        pass
+    elif not accounts:
+        parts.append("1 = 0")
+    else:
+        quoted = ", ".join(
+            f"'{a.replace(chr(39), chr(39) + chr(39))}'" for a in accounts
+        )
+        expr = f"TRIM(CAST({col} AS STRING))"
+        parts.append(f"{expr} IN ({quoted})")
+    if not parts:
+        return ""
+    return "AND " + " AND ".join(parts)
+
+
+def _filter_df_by_user(df, user_id, accounts, *, col="account", user_col="user_id"):
+    """DataFrame analogue of ``_user_scoped_filter``.
+
+    Drops rows whose ``user_col`` is a populated id different from
+    ``user_id``. Rows with ``user_col`` NULL are kept *only* when their
+    ``col`` matches one of ``accounts`` (Stage 0/1 leniency for legacy
+    rows in BigQuery that haven't been backfilled yet). Admin
+    (``user_id is None``) bypasses the user check.
+    """
+    if df is None:
+        return df
+    if df.empty:
+        return df
+    if user_id is None and accounts is None:
+        return df
+
+    out = df
+
+    if user_id is not None and user_col in out.columns:
+        target = int(user_id)
+
+        def _norm_uid(v):
+            if v is None:
+                return None
+            if isinstance(v, float) and pd.isna(v):
+                return None
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                s = str(v).strip()
+                if not s:
+                    return None
+                try:
+                    return int(float(s))
+                except (TypeError, ValueError):
+                    return None
+
+        norm = out[user_col].map(_norm_uid)
+        # Keep rows where user_id matches, OR where user_id is NULL AND
+        # the row's account is in the user's allowed list (legacy lenience).
+        match_user = norm == target
+        if accounts is None:
+            keep_null = norm.isna()
+        else:
+            want = {
+                str(a).strip()
+                for a in accounts
+                if a is not None and str(a).strip() != ""
+            }
+            if col in out.columns:
+                acc_str = out[col].map(
+                    lambda v: None
+                    if v is None or (isinstance(v, float) and pd.isna(v))
+                    else str(v).strip()
+                )
+                keep_null = norm.isna() & acc_str.isin(want)
+            else:
+                keep_null = norm.isna()
+        out = out[match_user | keep_null]
+
+    if accounts is not None and col in out.columns:
+        if not accounts:
+            return out.iloc[0:0]
+        want = {
+            str(a).strip()
+            for a in accounts
+            if a is not None and str(a).strip() != ""
+        }
+
+        def _norm_acc(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return None
+            return str(v).strip()
+
+        m = out[col].map(_norm_acc).isin(want)
+        out = out[m]
+
+    return out
 
 
 def _df_normalize_account_column(df):
@@ -1094,7 +1280,9 @@ POSITION_CLOSED_LEGS_QUERY = """
         oc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
     JOIN `ccwj-dbt.analytics.int_option_contracts` oc
-      ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
+      ON sc.account = oc.account
+     AND sc.trade_symbol = oc.trade_symbol
+     AND sc.user_id IS NOT DISTINCT FROM oc.user_id
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
@@ -2605,7 +2793,9 @@ CLOSED_LEGS_QUERY = """
         oc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
     JOIN `ccwj-dbt.analytics.int_option_contracts` oc
-      ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
+      ON sc.account = oc.account
+     AND sc.trade_symbol = oc.trade_symbol
+     AND sc.user_id IS NOT DISTINCT FROM oc.user_id
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       {closed_legs_account_filter}

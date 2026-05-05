@@ -15,6 +15,7 @@
 with daily_equity as (
     select
         account,
+        user_id,
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
@@ -23,6 +24,7 @@ with daily_equity as (
 with_weeks as (
     select
         account,
+        user_id,
         date_trunc(date, isoweek) as week_start,
         account_value
     from daily_equity
@@ -31,30 +33,34 @@ with_weeks as (
 week_bounds as (
     select
         account,
+        user_id,
         week_start,
         min_by(account_value, date) as account_value_start,
         max_by(account_value, date) as account_value_end
     from (
         select
             account,
+            user_id,
             week_start,
             date,
             account_value
         from (
             select
                 account,
+                user_id,
                 date,
                 date_trunc(date, isoweek) as week_start,
                 account_value
             from daily_equity
         )
     )
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 closed_trades as (
     select
         account,
+        user_id,
         week_start,
         total_pnl as pnl_closed_trades
     from {{ ref('mart_weekly_summary') }}
@@ -63,14 +69,16 @@ closed_trades as (
 dividends_other as (
     select
         account,
+        user_id,
         date_trunc(date, isoweek) as week_start,
         sum(dividends_amount + other_amount) as pnl_dividends_other
     from {{ ref('mart_daily_pnl') }}
-    group by 1, 2
+    group by 1, 2, 3
 )
 
 select
     wb.account,
+    wb.user_id,
     wb.week_start,
     wb.account_value_start,
     wb.account_value_end,
@@ -83,9 +91,11 @@ select
 from week_bounds wb
 left join closed_trades ct
   on wb.account = ct.account
+ and (wb.user_id is not distinct from ct.user_id)
  and wb.week_start = ct.week_start
 left join dividends_other do
   on wb.account = do.account
+ and (wb.user_id is not distinct from do.user_id)
  and wb.week_start = do.week_start
-order by wb.account, wb.week_start
+order by wb.account, wb.user_id, wb.week_start
 

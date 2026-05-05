@@ -19,6 +19,7 @@ with export_source as (
     -- which breaks UNION ALL). stg_current does the same via a macro.
     select
         cast(account as string) as account,
+        cast(user_id as string) as user_id,
         cast(symbol as string) as symbol,
         cast(security_type as string) as security_type,
         cast(market_value as string) as market_value,
@@ -30,6 +31,7 @@ with export_source as (
     union all
     select
         cast(account as string) as account,
+        cast(user_id as string) as user_id,
         cast(symbol as string) as symbol,
         cast(security_type as string) as security_type,
         cast(market_value as string) as market_value,
@@ -46,6 +48,7 @@ with export_source as (
 cash_rows as (
     select
         trim(account) as account,
+        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
         'cash' as row_type,
         safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
         cast(null as float64) as cost_basis,
@@ -59,6 +62,7 @@ cash_rows as (
 account_total_rows as (
     select
         trim(account) as account,
+        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
         'account_total' as row_type,
         safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
         safe_cast(trim(replace(replace(cost_bases, '$', ''), ',', '')) as float64) as cost_basis,
@@ -72,6 +76,7 @@ account_total_rows as (
 schwab_bal_rows as (
     select
         trim(cast(account as string)) as account,
+        safe_cast(nullif(trim(cast(user_id as string)), '') as int64) as user_id,
         case lower(trim(cast(row_type as string)))
             when 'cash' then 'cash'
             when 'account_total' then 'account_total'

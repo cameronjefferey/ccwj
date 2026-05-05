@@ -4,6 +4,7 @@
 
 select
     account,
+    user_id,
     underlying_symbol as symbol,
     sum(amount)       as total_dividend_income,
     count(*)          as dividend_count,
@@ -11,4 +12,4 @@ select
     max(trade_date)   as last_dividend_date
 from {{ ref('stg_history') }}
 where action = 'dividend'
-group by 1, 2
+group by 1, 2, 3

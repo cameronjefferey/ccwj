@@ -7,6 +7,7 @@
 with positions as (
     select
         account,
+        user_id,
         symbol,
         strategy,
         status,
@@ -19,22 +20,27 @@ with positions as (
 equity_cost as (
     select
         account,
+        user_id,
         underlying_symbol as symbol,
         sum(abs(cast(amount as float64))) as equity_cost
     from {{ ref('stg_history') }}
     where instrument_type = 'Equity'
       and action = 'equity_buy'
       and cast(amount as float64) < 0
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
+-- Entry/exit prices come from stg_daily_prices (market data, no user_id).
+-- The (account, symbol) join key is incidental — close_price is identical
+-- regardless of which tenant owned the symbol — so we keep the join keys
+-- as-is here and don't add user_id to the price side.
 entry_prices as (
-    select account, symbol, close_price as entry_price
+    select account, user_id, symbol, close_price as entry_price
     from (
         select
-            p.account, p.symbol, dp.close_price,
+            p.account, p.user_id, p.symbol, dp.close_price,
             row_number() over (
-                partition by p.account, p.symbol
+                partition by p.account, p.user_id, p.symbol
                 order by dp.date asc
             ) as rn
         from positions p
@@ -48,12 +54,12 @@ entry_prices as (
 ),
 
 exit_prices as (
-    select account, symbol, close_price as exit_price
+    select account, user_id, symbol, close_price as exit_price
     from (
         select
-            p.account, p.symbol, dp.close_price,
+            p.account, p.user_id, p.symbol, dp.close_price,
             row_number() over (
-                partition by p.account, p.symbol
+                partition by p.account, p.user_id, p.symbol
                 order by dp.date desc
             ) as rn
         from positions p
@@ -68,6 +74,7 @@ exit_prices as (
 
 select
     p.account,
+    p.user_id,
     p.symbol,
     p.strategy,
     p.status,
@@ -85,6 +92,15 @@ select
     , 2) as hold_pnl
 
 from positions p
-left join equity_cost ec on p.account = ec.account and p.symbol = ec.symbol
-left join entry_prices ep on p.account = ep.account and p.symbol = ep.symbol
-left join exit_prices xp  on p.account = xp.account and p.symbol = xp.symbol
+left join equity_cost ec
+    on p.account = ec.account
+    and (p.user_id is not distinct from ec.user_id)
+    and p.symbol = ec.symbol
+left join entry_prices ep
+    on p.account = ep.account
+    and (p.user_id is not distinct from ep.user_id)
+    and p.symbol = ep.symbol
+left join exit_prices xp
+    on p.account = xp.account
+    and (p.user_id is not distinct from xp.user_id)
+    and p.symbol = xp.symbol
