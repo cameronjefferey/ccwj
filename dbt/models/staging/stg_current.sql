@@ -14,15 +14,15 @@
 -- rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
 -- silently dropping the all-empty user_id column on first deploy).
 -- Once the seed reload picks up user_id, we read the real column.
-{%- if execute -%}
+{% if execute %}
     {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
-{%- else -%}
+{% else %}
     {%- set _curr_cols = [] -%}
     {%- set _demo_cols = [] -%}
-{%- endif -%}
-{%- set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" -%}
-{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
+{% endif %}
+{% set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" %}
+{% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
 
 {%- set common_string_cols -%}
         cast(Account as string) as Account,

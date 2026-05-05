@@ -17,18 +17,18 @@
     rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
     silently dropping the all-empty user_id column on first deploy).
 */
-{%- if execute -%}
+{% if execute %}
     {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
     {%- set _bal_cols  = adapter.get_columns_in_relation(ref('schwab_account_balances')) | map(attribute='name') | list -%}
-{%- else -%}
+{% else %}
     {%- set _curr_cols = [] -%}
     {%- set _demo_cols = [] -%}
     {%- set _bal_cols  = [] -%}
-{%- endif -%}
-{%- set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" -%}
-{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
-{%- set _bal_user_id_expr  = "cast(user_id as string)" if 'user_id' in _bal_cols  else "cast(null as string)" -%}
+{% endif %}
+{% set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" %}
+{% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
+{% set _bal_user_id_expr  = "cast(user_id as string)" if 'user_id' in _bal_cols  else "cast(null as string)" %}
 
 with export_source as (
     -- Cast every column we touch to STRING so this model is resilient to the

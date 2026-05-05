@@ -13,15 +13,15 @@
 -- building during the deploy gap when the BQ seed table hasn't been
 -- rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
 -- silently dropping the all-empty user_id column on first deploy).
-{%- if execute -%}
+{% if execute %}
     {%- set _hist_cols = adapter.get_columns_in_relation(ref('trade_history')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_history')) | map(attribute='name') | list -%}
-{%- else -%}
+{% else %}
     {%- set _hist_cols = [] -%}
     {%- set _demo_cols = [] -%}
-{%- endif -%}
-{%- set _hist_user_id_expr = "cast(user_id as string)" if 'user_id' in _hist_cols else "cast(null as string)" -%}
-{%- set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" -%}
+{% endif %}
+{% set _hist_user_id_expr = "cast(user_id as string)" if 'user_id' in _hist_cols else "cast(null as string)" %}
+{% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
 
 with trade_history_as_strings as (
     select

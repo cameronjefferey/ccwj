@@ -2,19 +2,26 @@
   Daily snapshot of account-level balances (cash + account total).
   Source: stg_account_balances (export seeds + schwab_account_balances seed).
   Run after each upload so we never lose history; full-refresh does not wipe this table.
+
+  user_id is carried as a payload column (not part of unique_key) so we
+  preserve the existing snapshot table schema during the user_id-tenancy
+  migration — adding user_id to unique_key would invalidate the existing
+  snapshot's MERGE predicate and lose every row of history.
+
+  Tenant scoping for snapshot reads is enforced in the app via
+  ``_user_scoped_filter`` / ``_filter_df_by_user`` (see
+  ``docs/USER_ID_TENANCY.md``). The cross-tenant guard prevents two
+  users from simultaneously claiming the same ``account_name`` so the
+  ``(account, row_type)`` unique_key remains a valid grain in
+  practice. A Stage 4 follow-up can promote ``user_id`` into the
+  unique_key once the cross-tenant guard is removed.
 #}
 {% snapshot snapshot_account_balances_daily %}
-{#
-  user_id is part of the unique_key so two users with the same account
-  label keep separate balance histories — see docs/USER_ID_TENANCY.md.
-  coalesce-to-0 keeps Stage 0 legacy rows (user_id NULL pre-backfill)
-  from clobbering each other on the snapshot's grain check.
-#}
 {{
     config(
         target_schema='analytics',
         target_database=target.database,
-        unique_key=['account', 'user_id_key', 'row_type'],
+        unique_key=['account', 'row_type'],
         strategy='check',
         check_cols=['market_value', 'cost_basis', 'unrealized_pnl', 'percent_of_account'],
         invalidate_hard_deletes=True,
@@ -24,7 +31,6 @@
 select
     account,
     user_id,
-    coalesce(user_id, -1) as user_id_key,
     row_type,
     market_value,
     cost_basis,
