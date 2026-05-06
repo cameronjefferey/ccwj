@@ -366,37 +366,31 @@ def _migrate_users_email_column():
 
 def _migrate_account_name_unique_index():
     """
-    Idempotent: enforce that a normalized account label can be claimed by at
-    most one user. Two users with the SAME `account_name` row collide on
-    BigQuery seed reads (the dataset is multi-tenant; the only filter is the
-    account string), which is exactly the leak called out in
-    .cursor/rules/bigquery-tenant-isolation.mdc.
+    Drop the legacy global-unique index on user_accounts.account_name.
 
-    The unique index is on lower(trim(account_name)) so case + leading/
-    trailing-space variants of the same label all collide. The trade-off:
-    one user types 'Brokerage' and a second tester later types 'brokerage';
-    the second one gets a clean 'already taken' error path instead of
-    silently inheriting the first user's BigQuery rows.
-
-    Existing data: if the prod DB already has duplicate labels across
-    different user_id rows from the open-signup era, CREATE UNIQUE INDEX
-    will fail. We log the failure (don't crash app boot) — the operator
-    can resolve the conflict manually with the SELECT below before the
-    next deploy. Most prod rows today are admin / single-user.
+    Earlier in the app's life this index enforced "one user per
+    normalized account label" because ``account_name`` was the only
+    BigQuery scoping key — sharing a label leaked rows across tenants.
+    We've since switched to ``user_id`` as the row-level tenant key on
+    every BQ read (see docs/USER_ID_TENANCY.md and the
+    bigquery-tenant-isolation rule), so two users (e.g. a parent and
+    a child) can legitimately share a label like "Schwab Account".
+    This migration removes the global-unique index from any DB where
+    it actually got installed; its absence on most prod DBs (the
+    install commonly failed during open-beta because pre-existing
+    duplicates blocked it) is also fine. The per-user uniqueness is
+    still enforced by the table's ``(user_id, account_name)``
+    primary/unique key combined with ``ON CONFLICT (user_id,
+    account_name) DO NOTHING`` in ``add_account_for_user``.
     """
     try:
-        execute(
-            """CREATE UNIQUE INDEX IF NOT EXISTS
-               uniq_user_accounts_global_account_name
-               ON user_accounts (lower(trim(account_name)))"""
-        )
-    except Exception as e:
+        execute("DROP INDEX IF EXISTS uniq_user_accounts_global_account_name")
+    except Exception as exc:
         _log.warning(
-            "user_accounts global-unique index not created (likely existing "
-            "duplicates from open-beta era): %s. Resolve with: "
-            "SELECT lower(trim(account_name)) AS k, count(*) FROM user_accounts "
-            "GROUP BY 1 HAVING count(*) > 1;",
-            e,
+            "Could not drop legacy uniq_user_accounts_global_account_name "
+            "index: %s. The app no longer relies on it; you can drop it "
+            "manually if it still exists.",
+            exc,
         )
 
 
@@ -494,45 +488,33 @@ def get_accounts_for_user(user_id):
 def add_account_for_user(user_id, account_name):
     """Link an account label to a user.
 
-    Idempotent for the same (user_id, account_name). Raises
-    ``AccountClaimedError`` when the label already belongs to a DIFFERENT
-    user — the global-unique index on lower(trim(account_name)) is what
-    enforces this. Callers (upload, Schwab connect) MUST handle that
-    exception so the user sees an actionable message instead of a 500.
-
-    Re-raises any other database error so the caller can decide whether
-    to retry or surface a generic failure.
+    Idempotent for the same ``(user_id, account_name)`` via the
+    table's primary/unique key on that pair. Two **different** users
+    can both claim the same label (e.g. a parent and a child both
+    calling their account "Schwab Account") — tenant isolation is
+    enforced at the row level by ``user_id`` everywhere downstream
+    (every BQ query passes through ``_account_sql_and`` and every
+    DataFrame through ``_filter_df_by_accounts``). See
+    ``docs/USER_ID_TENANCY.md``.
     """
-    try:
-        execute(
-            "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s) "
-            "ON CONFLICT (user_id, account_name) DO NOTHING",
-            (user_id, account_name),
-        )
-    except Exception as exc:
-        # Catch by SQLSTATE (23505 = unique_violation) when available; fall
-        # back to a string match for environments where the underlying
-        # driver doesn't surface the code on the wrapped exception. We've
-        # already swallowed (user_id, name) duplicates via ON CONFLICT, so
-        # any unique-violation here is the GLOBAL index — i.e. another
-        # user already claimed this label.
-        sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
-        msg = str(exc).lower()
-        if (
-            sqlstate == "23505"
-            or "uniq_user_accounts_global_account_name" in msg
-            or "duplicate key" in msg
-        ):
-            owner = _account_owner_id(account_name)
-            if owner is not None and owner != user_id:
-                raise AccountClaimedError(account_name, owner) from exc
-        raise
+    execute(
+        "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s) "
+        "ON CONFLICT (user_id, account_name) DO NOTHING",
+        (user_id, account_name),
+    )
 
 
 class AccountClaimedError(Exception):
-    """Raised when add_account_for_user is asked to link a label that's
-    already claimed by a different user. The Schwab nickname / CSV upload
-    flow surfaces this with a clear 'pick a different name' UX."""
+    """Deprecated.
+
+    Used to be raised when a label was already linked to a different
+    user, back when ``account_name`` was the BigQuery tenancy key. With
+    ``user_id`` as the tenant key, two users can share a label safely,
+    so this is never raised anymore. The class is kept so existing
+    ``except AccountClaimedError`` blocks in ``app/upload.py`` and
+    ``app/schwab.py`` continue to compile; they're now harmless dead
+    branches that can be removed in a follow-up cleanup.
+    """
 
     def __init__(self, account_name: str, owner_user_id: int):
         super().__init__(
@@ -543,80 +525,23 @@ class AccountClaimedError(Exception):
         self.owner_user_id = owner_user_id
 
 
-def _account_owner_id(account_name):
-    """Return the user_id that already owns this label, or None.
+def account_is_claimed_by_other(user_id, account_name):  # noqa: ARG001
+    """Deprecated — always returns False.
 
-    Match is case- and whitespace-insensitive to mirror the unique index
-    so the human-readable error matches the constraint that fired.
+    Sharing account labels across users is allowed now that ``user_id``
+    is the tenant key on every BQ read. Kept as a callable so existing
+    pre-flight checks in ``upload.py`` / ``schwab.py`` keep compiling
+    and become no-ops.
     """
-    row = fetch_one(
-        "SELECT user_id FROM user_accounts "
-        "WHERE lower(trim(account_name)) = lower(trim(%s)) "
-        "LIMIT 1",
-        (account_name,),
-    )
-    return int(row["user_id"]) if row else None
+    return False
 
 
-def account_is_claimed_by_other(user_id, account_name):
-    """True iff some other user already owns this label."""
-    owner = _account_owner_id(account_name)
-    return owner is not None and owner != user_id
+def find_cross_tenant_account_conflicts(account_names):  # noqa: ARG001
+    """Deprecated — always returns an empty set.
 
-
-def find_cross_tenant_account_conflicts(account_names):
-    """Return the subset of ``account_names`` that more than one user claims.
-
-    Used as defense-in-depth at request time. The unique index
-    ``uniq_user_accounts_global_account_name`` (installed by
-    ``_migrate_account_name_unique_index``) is supposed to make multi-owner
-    labels impossible, but on prod databases that pre-date the constraint
-    the index can fail to install while legacy duplicates still sit in
-    ``user_accounts``. Without this guard, two users sharing the same
-    ``account_name`` would each see the other's BigQuery rows on every
-    user-facing page (positions, weekly review, position detail, etc.) —
-    the exact failure mode called out in
-    ``.cursor/rules/bigquery-tenant-isolation.mdc``.
-
-    Comparison normalizes ``lower(trim(account_name))`` to mirror the
-    intended unique index, so 'Brokerage', ' brokerage ', and 'BROKERAGE'
-    all collide. Returns the *original-case* names that conflict (so the
-    caller can log them and strip them from a list without re-normalizing).
+    See ``account_is_claimed_by_other`` and ``docs/USER_ID_TENANCY.md``.
     """
-    if not account_names:
-        return set()
-    norm_to_originals = {}
-    for n in account_names:
-        if not n:
-            continue
-        k = str(n).strip().lower()
-        if not k:
-            continue
-        norm_to_originals.setdefault(k, []).append(n)
-    if not norm_to_originals:
-        return set()
-    keys = list(norm_to_originals.keys())
-    placeholders = ",".join(["%s"] * len(keys))
-    try:
-        rows = fetch_all(
-            f"SELECT lower(trim(account_name)) AS k, "
-            f"       COUNT(DISTINCT user_id) AS owners "
-            f"FROM user_accounts "
-            f"WHERE lower(trim(account_name)) IN ({placeholders}) "
-            f"GROUP BY 1 "
-            f"HAVING COUNT(DISTINCT user_id) > 1",
-            tuple(keys),
-        )
-    except Exception as exc:
-        # Fail closed — if we can't tell whether there's a conflict, the
-        # safe stance is to block the data path. The caller will treat
-        # an empty allowed-list as "no rows" rather than risk a leak.
-        _log.error("find_cross_tenant_account_conflicts query failed: %s", exc)
-        return {n for names in norm_to_originals.values() for n in names}
-    bad_keys = {r["k"] for r in rows}
-    if not bad_keys:
-        return set()
-    return {n for k in bad_keys for n in norm_to_originals.get(k, [])}
+    return set()
 
 
 def remove_account_for_user(user_id, account_name):
@@ -1756,18 +1681,9 @@ def ensure_demo_user():
         demo = User.get_by_username("demo")
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
-        try:
-            add_account_for_user(demo.id, DEMO_ACCOUNT)
-        except AccountClaimedError:
-            # Demo Account was claimed by some other user during a prior
-            # mis-configuration. The demo only ever uses the seed dataset
-            # named exactly DEMO_ACCOUNT, so this requires manual cleanup —
-            # log it and skip rather than crash app boot.
-            _log.error(
-                "ensure_demo_user: %r is owned by a non-demo user; demo will "
-                "have no linked accounts until an admin rebinds the label.",
-                DEMO_ACCOUNT,
-            )
+        # Sharing labels across users is allowed (see
+        # docs/USER_ID_TENANCY.md), so this just upserts.
+        add_account_for_user(demo.id, DEMO_ACCOUNT)
         ensure_user_profile(demo.id)
         _ensure_demo_insight(demo.id)
         _seed_demo_mirror_scores(demo.id)
