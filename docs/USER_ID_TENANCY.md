@@ -14,12 +14,16 @@ isolation: enforce one account label = one user` and the Render cron logs that
 exposed `investment1` claimed by more than one `user_id` row in
 `user_accounts`.
 
-The Postgres unique index `uniq_user_accounts_global_account_name`
-(installed by `_migrate_account_name_unique_index` in `app/models.py`)
-prevents the **claim** of a duplicate label, and the request-time
-`find_cross_tenant_account_conflicts` check (in `_user_account_list`) hides
-the data path when a duplicate sneaks through. Both are belt-and-suspenders
-hacks around the underlying flaw: `account_name` is not a tenant key.
+Earlier interim mitigations — the Postgres unique index
+`uniq_user_accounts_global_account_name` and the request-time
+`find_cross_tenant_account_conflicts` guard in `_user_account_list` —
+worked around the symptom but didn't address the underlying flaw:
+`account_name` is not a tenant key. Both have now been removed (see
+"Stage 4 — Clean up" below) because the row-level `user_id`
+predicates added in Stage 3 made them belt-on-belt. Sharing a label
+across users is now allowed (e.g. a parent and a kid both calling
+their account "Schwab Account") because the data filters keep them
+separate at the row level.
 
 ## Goal
 
@@ -98,11 +102,31 @@ filtered on.
   strip) — at the data layer the user-id predicate makes
   `account_name` collisions a non-event.
 
-### Stage 4 — Clean up
-- Drop the cross-tenant request-time guard (it's belt-on-belt now).
-- Optionally drop `uniq_user_accounts_global_account_name` (still useful
-  for UX so two users don't pick the same display label, but no longer
-  load-bearing for security).
+### Stage 4 — Clean up (completed)
+- Cross-tenant request-time guard removed: `_user_account_list` no
+  longer strips conflicting labels and the
+  `find_cross_tenant_account_conflicts` / `account_is_claimed_by_other`
+  helpers are now deprecated no-ops kept callable for backward
+  compatibility.
+- The "Some of your accounts are temporarily hidden" banner in
+  `base.html` (and its `_inject_account_conflicts` context processor)
+  has been removed.
+- `_migrate_account_name_unique_index` now drops the legacy
+  `uniq_user_accounts_global_account_name` index instead of trying
+  to install it. Per-user uniqueness on `(user_id, account_name)` is
+  still enforced by the table's primary/unique key plus
+  `ON CONFLICT (user_id, account_name) DO NOTHING` in
+  `add_account_for_user`.
+- `app/upload.py` and `app/schwab.py` no longer pre-flight against the
+  old global-unique constraint or catch `AccountClaimedError`. The
+  Schwab connect flow no longer auto-suffixes a colliding label —
+  it just stores whatever Schwab gave us.
+
+The result: two users sharing a label (legitimately, e.g. a family
+member, or accidentally because everybody types "Brokerage") is now a
+non-event. The user_id-aware SQL fragment from `_account_sql_and` and
+the `_filter_df_by_accounts` DataFrame guard are what keep the data
+streams disjoint.
 
 ## Why nullable user_id (during Stage 0/1)
 

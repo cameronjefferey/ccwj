@@ -9,8 +9,6 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.models import (
-    AccountClaimedError,
-    account_is_claimed_by_other,
     get_accounts_for_user, add_account_for_user,
     remove_account_for_user, is_admin,
     record_upload, get_uploads_for_user, count_uploads_for_user,
@@ -757,21 +755,12 @@ def upload():
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
-    # Tenant isolation: a label can be claimed by exactly one user. If the
-    # tester typed a "+ Create new account…" name that another HappyTrader
-    # user already owns, we MUST refuse before merging seed CSVs — the
-    # downstream BigQuery filter is just a string match on this label, so
-    # silently writing into a colliding label would mix two users' trades
-    # into one logical account.
+    # Sharing labels across users is allowed — tenant isolation is
+    # enforced at the BQ row level by ``user_id`` everywhere downstream
+    # (``_account_sql_and`` adds the user_id predicate to every query;
+    # ``_filter_df_by_accounts`` re-filters every DataFrame). See
+    # docs/USER_ID_TENANCY.md.
     # ------------------------------------------------------------------
-    if account_is_claimed_by_other(current_user.id, account_name):
-        flash(
-            f"That account name ({account_name!r}) is already in use by another "
-            "HappyTrader account. Pick a different name (e.g. add your last "
-            "name or 'roth') and try again.",
-            "danger",
-        )
-        return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
     # Merge into GitHub seeds (same path as Schwab sync)
@@ -794,33 +783,14 @@ def upload():
     except Exception:
         is_first_upload = False
 
-    try:
-        ok, err, history_rows, current_rows, head_sha = merge_and_push_seeds(
-            account_name,
-            history_df,
-            current_df,
-            commit_message=commit_msg,
-            user_id=current_user.id,
-            skip_history=skip_history,
-        )
-    except AccountClaimedError:
-        # Race between the pre-flight account_is_claimed_by_other() check
-        # above and add_account_for_user() inside merge_and_push_seeds:
-        # another user grabbed this label while we were committing seeds.
-        # We still pushed seed rows to GitHub, but Postgres rejected the
-        # claim, so this user wouldn't be allowed to read them anyway —
-        # surface a clear error instead of a 500 and tell them to rename.
-        from app import app as _app
-        _app.logger.warning(
-            "Account claim race during upload for user_id=%s on %r",
-            current_user.id, account_name,
-        )
-        flash(
-            f"That account name ({account_name!r}) was just claimed by "
-            "another user. Pick a different name and re-upload.",
-            "danger",
-        )
-        return redirect(url_for("upload"))
+    ok, err, history_rows, current_rows, head_sha = merge_and_push_seeds(
+        account_name,
+        history_df,
+        current_df,
+        commit_message=commit_msg,
+        user_id=current_user.id,
+        skip_history=skip_history,
+    )
     if not ok:
         from app import app as _app
         _app.logger.error("Upload seeds update failed: %s", err)

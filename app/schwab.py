@@ -12,9 +12,7 @@ from flask_login import login_required, current_user
 
 from app import app
 from app.models import (
-    AccountClaimedError,
     User,
-    account_is_claimed_by_other,
     get_schwab_connection,
     get_schwab_connections,
     mark_schwab_first_sync_completed,
@@ -613,30 +611,12 @@ def schwab_callback():
         else:
             account_name = "Schwab Account"
 
-    # Tenant isolation: BigQuery seed data is keyed by account label, so two
-    # users with the same Schwab nickname (e.g. 'Brokerage') would silently
-    # see each other's rows. The unique index in user_accounts forbids that
-    # collision; we resolve it here by suffixing this user's username so the
-    # downstream seed/dbt rows stay disjoint. The user can rename later.
+    # Sharing labels across users is allowed — e.g. a parent and a child
+    # both calling their account "Schwab Account". Tenant isolation is
+    # enforced at the row level by ``user_id`` everywhere downstream
+    # (every BQ query and every DataFrame is filtered by user_id), so a
+    # legitimate name collision is fine. See docs/USER_ID_TENANCY.md.
     final_account_name = account_name or account_number
-    if account_is_claimed_by_other(current_user.id, final_account_name):
-        candidate = f"{final_account_name} ({current_user.username})"
-        # Cap fallback collisions too — if even the suffixed name is taken,
-        # append the user_id which is globally unique.
-        if account_is_claimed_by_other(current_user.id, candidate):
-            candidate = f"{final_account_name} (u{current_user.id})"
-        app.logger.info(
-            "Schwab account label collision: %r already linked to a different "
-            "user; using %r for user_id=%s instead.",
-            final_account_name, candidate, current_user.id,
-        )
-        flash(
-            f"That Schwab nickname ({final_account_name!r}) is already in use "
-            f"by another HappyTrader account, so we linked yours as "
-            f"{candidate!r}. You can rename it later.",
-            "info",
-        )
-        final_account_name = candidate
 
     save_schwab_connection(
         current_user.id,
@@ -645,26 +625,7 @@ def schwab_callback():
         account_name=final_account_name,
         token_json=token_json,
     )
-    try:
-        add_account_for_user(current_user.id, final_account_name)
-    except AccountClaimedError:
-        # Race: another connect-callback between our check and insert took
-        # this exact label. Bail to a guaranteed-unique fallback. We do not
-        # silently inherit another user's BQ rows.
-        fallback = f"{final_account_name} (u{current_user.id})"
-        app.logger.warning(
-            "Schwab account claim race for user_id=%s on %r; falling back to %r",
-            current_user.id, final_account_name, fallback,
-        )
-        save_schwab_connection(
-            current_user.id,
-            account_hash=account_hash,
-            account_number=account_number,
-            account_name=fallback,
-            token_json=token_json,
-        )
-        add_account_for_user(current_user.id, fallback)
-        final_account_name = fallback
+    add_account_for_user(current_user.id, final_account_name)
 
     # Re-auth covers every account under this Schwab login. Refresh tokens
     # on any pre-existing rows so a sync that targets a sibling connection

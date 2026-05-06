@@ -9,9 +9,7 @@ from app.schwab import (
     _schwab_transaction_lookback_days,
 )
 from app.models import (
-    AccountClaimedError,
     add_account_for_user,
-    find_cross_tenant_account_conflicts,
     get_accounts_for_user,
     get_schwab_connections,
     get_strategy_fit_insight_for_user,
@@ -81,17 +79,15 @@ def _user_account_list():
     connected but user_accounts was never populated, we add the Schwab labels
     here (idempotent) so queries are not forced to AND 1=0.
 
-    Cross-tenant guard: if any candidate label is also claimed by a
-    different user_id (legacy duplicates that predate
-    ``uniq_user_accounts_global_account_name``), it is stripped from the
-    returned list before BigQuery ever sees it. Without this guard, two
-    users sharing the same ``account_name`` would each see the other's
-    rows on every page — the exact failure mode called out in
-    ``.cursor/rules/bigquery-tenant-isolation.mdc``. We fail-closed:
-    when in doubt, hide. Stripped labels are recorded on
-    ``flask.g._account_conflicts`` so a banner can tell the legitimate
-    owner what happened and prompt them to contact support, instead of
-    silently rendering an empty page.
+    Sharing labels across users is allowed — e.g. a parent and a child
+    can both call their account "Schwab Account". Tenant isolation is
+    enforced at the row level by ``user_id`` everywhere downstream
+    (every BQ query passes through ``_account_sql_and`` / its sibling
+    that adds a ``user_id IS NOT DISTINCT FROM`` predicate, and every
+    DataFrame is then re-filtered by ``_filter_df_by_accounts`` which
+    drops rows whose ``user_id`` is a different populated id). See
+    ``docs/USER_ID_TENANCY.md`` and
+    ``.cursor/rules/bigquery-tenant-isolation.mdc``.
     """
     if is_admin(current_user.username):
         return None                     # admin → no restriction
@@ -104,57 +100,9 @@ def _user_account_list():
         if not label:
             continue
         if label not in have:
-            try:
-                add_account_for_user(current_user.id, label)
-            except AccountClaimedError:
-                # Another user owns this label. We must NOT add it to this
-                # user's allowed list — that's exactly the cross-tenant
-                # leak the unique index exists to prevent. The Schwab
-                # connect callback re-suffixes on collision, so we should
-                # only land here for legacy connections that predate the
-                # unique index. Surface in logs but keep going so the rest
-                # of the user's accounts still load.
-                app.logger.warning(
-                    "Stale Schwab account label %r already owned by another "
-                    "user; skipping for user_id=%s. The user should "
-                    "reconnect Schwab to get a renamed label.",
-                    label, current_user.id,
-                )
-                continue
+            add_account_for_user(current_user.id, label)
             have.add(label)
             names.append(label)
-
-    # Defense in depth: drop any label that more than one user_id owns
-    # (legacy duplicates that the unique index would have prevented).
-    # We do this AFTER folding in Schwab labels so a freshly-claimed
-    # name is also checked.
-    if names:
-        try:
-            conflicts = find_cross_tenant_account_conflicts(names)
-        except Exception as exc:
-            # Fail-closed: if the conflict check itself errors, hide
-            # everything rather than risk a leak. The user sees the
-            # banner and the operator sees the log.
-            app.logger.error(
-                "Cross-tenant guard query failed for user_id=%s: %s — "
-                "hiding all account data this request as a precaution.",
-                current_user.id, exc,
-            )
-            from flask import g
-            g._account_conflicts = sorted(set(names))
-            return []
-        if conflicts:
-            from flask import g
-            g._account_conflicts = sorted(conflicts)
-            app.logger.error(
-                "Cross-tenant guard: hiding %d account label(s) for "
-                "user_id=%s because they are also claimed by another "
-                "user: %s. Resolve duplicates with: SELECT lower(trim("
-                "account_name)) AS k, count(*) FROM user_accounts "
-                "GROUP BY 1 HAVING count(*) > 1;",
-                len(conflicts), current_user.id, sorted(conflicts),
-            )
-            names = [n for n in names if n not in conflicts]
     return sorted(names)
 
 
@@ -3288,6 +3236,23 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     if daily_df.empty:
         return empty
 
+    # Same dedup as _build_account_chart_from_daily_pnl. mart_daily_pnl is
+    # keyed on (account, user_id, symbol, date); during user_id backfill
+    # windows, both NULL- and populated-user_id rows for the same
+    # business key can pass through ``_filter_df_by_user``'s Stage 0/1
+    # leniency and double-process the buy/sell ledger here. Prefer the
+    # populated-user_id row when both exist.
+    if {"account", "symbol", "date"}.issubset(daily_df.columns):
+        sort_keys = ["account", "symbol", "date"]
+        if "user_id" in daily_df.columns:
+            sort_keys.append("user_id")
+            daily_df = daily_df.sort_values(sort_keys, na_position="last")
+        else:
+            daily_df = daily_df.sort_values(sort_keys)
+        daily_df = daily_df.drop_duplicates(
+            subset=["account", "symbol", "date"], keep="first"
+        )
+
     daily_df = daily_df.sort_values("date")
 
     shares_held = 0.0
@@ -3991,6 +3956,30 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     empty = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
     if daily_df.empty:
         return empty
+
+    # Defense against duplicate (account, symbol, date) rows in
+    # mart_daily_pnl. The mart's natural grain is
+    # (account, user_id, symbol, date) — when the same business key has
+    # both a legacy NULL-user_id row AND a populated-user_id row (which
+    # can sit side-by-side during a user_id backfill window because
+    # ``_filter_df_by_user`` Stage 0/1 keeps NULLs as a leniency leg),
+    # both rows reach this helper. The buy/sell loops below would then
+    # accumulate buy_qty / buy_cost N times AND the unrealized loop
+    # would run N times, giving N**2-shaped amplification of equity P&L
+    # (a real ~$700k LEAP spike with 5 dups rendered as $17M on /accounts).
+    # Dedup here so the chart is correct regardless of upstream backfill
+    # state. Prefer rows with populated user_id so we keep the
+    # tenant-tagged version.
+    if {"account", "symbol", "date"}.issubset(daily_df.columns):
+        sort_keys = ["account", "symbol", "date"]
+        if "user_id" in daily_df.columns:
+            sort_keys.append("user_id")
+            daily_df = daily_df.sort_values(sort_keys, na_position="last")
+        else:
+            daily_df = daily_df.sort_values(sort_keys)
+        daily_df = daily_df.drop_duplicates(
+            subset=["account", "symbol", "date"], keep="first"
+        )
 
     daily_df = daily_df.sort_values("date")
     all_dates = sorted(daily_df["date"].dropna().unique())

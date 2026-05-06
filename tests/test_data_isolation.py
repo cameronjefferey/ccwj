@@ -130,172 +130,89 @@ class TestMirrorScoreDataIsolation:
         assert b"User A mirror diagnostic" not in r.data
 
 
-class TestAccountNameClaim:
-    """An account label can be linked to at most one user."""
+class TestSharedAccountLabel:
+    """Two users CAN share an account label — common case is family
+    members (a parent and a kid both calling theirs "Schwab Account").
+    The security boundary is ``user_id``, not ``account_name``: every
+    BQ query / DataFrame is scoped by ``user_id`` (see
+    docs/USER_ID_TENANCY.md), so neither user can see the other's
+    rows even when the label is identical.
 
-    def test_second_user_cannot_claim_same_label(self, db_conn):
-        from app.models import (
-            AccountClaimedError,
-            account_is_claimed_by_other,
-            add_account_for_user,
-        )
+    These tests pin the new contract so a future regression that
+    re-introduces a ``account_name`` global-unique index is caught.
+    """
 
-        owner = _unique_username("acct_owner")
-        intruder = _unique_username("acct_intruder")
-        owner_id = _create_user(db_conn, owner)
-        intruder_id = _create_user(db_conn, intruder)
-
-        label = f"Brokerage_{uuid.uuid4().hex[:6]}"
-        add_account_for_user(owner_id, label)
-
-        # The challenger sees the label as claimed before they try.
-        assert account_is_claimed_by_other(intruder_id, label) is True
-
-        # And actually trying to insert raises.
-        with pytest.raises(AccountClaimedError):
-            add_account_for_user(intruder_id, label)
-
-    def test_same_user_can_re_link_same_label(self, db_conn):
-        """Idempotent for the same user — re-linking is a no-op, not an error."""
+    def test_two_users_can_claim_same_label(self, db_conn):
         from app.models import add_account_for_user, get_accounts_for_user
 
-        user = _unique_username("acct_repeat")
-        user_id = _create_user(db_conn, user)
+        a = _unique_username("share_a")
+        b = _unique_username("share_b")
+        a_id = _create_user(db_conn, a)
+        b_id = _create_user(db_conn, b)
+
+        label = f"Family Brokerage {uuid.uuid4().hex[:6]}"
+        add_account_for_user(a_id, label)
+        add_account_for_user(b_id, label)  # must not raise
+
+        assert label in get_accounts_for_user(a_id)
+        assert label in get_accounts_for_user(b_id)
+
+    def test_same_user_relinking_is_idempotent(self, db_conn):
+        """Re-linking the same (user, label) pair stays a no-op — that's
+        what the per-user uniqueness on (user_id, account_name) gives us."""
+        from app.models import add_account_for_user, get_accounts_for_user
+
+        user_id = _create_user(db_conn, _unique_username("acct_repeat"))
         label = f"MyBrokerage_{uuid.uuid4().hex[:6]}"
 
         add_account_for_user(user_id, label)
-        add_account_for_user(user_id, label)  # second call must not raise
+        add_account_for_user(user_id, label)
 
         accounts = get_accounts_for_user(user_id)
         assert accounts.count(label) == 1
 
-    def test_case_and_whitespace_variants_collide(self, db_conn):
-        """ 'Brokerage', ' brokerage ', 'BROKERAGE' all map to the same claim."""
-        from app.models import AccountClaimedError, add_account_for_user
+    def test_account_is_claimed_by_other_is_deprecated_no_op(self):
+        """The pre-flight check is now always False. Kept callable so old
+        upload/Schwab call sites don't crash if they linger."""
+        from app.models import account_is_claimed_by_other
 
-        owner = _unique_username("acct_case_owner")
-        intruder = _unique_username("acct_case_intruder")
-        owner_id = _create_user(db_conn, owner)
-        intruder_id = _create_user(db_conn, intruder)
+        assert account_is_claimed_by_other(1, "Anything") is False
+        assert account_is_claimed_by_other(2, "Anything") is False
 
-        suffix = uuid.uuid4().hex[:6]
-        add_account_for_user(owner_id, f"Brokerage{suffix}")
-
-        with pytest.raises(AccountClaimedError):
-            add_account_for_user(intruder_id, f"  brokerage{suffix}  ")
-        with pytest.raises(AccountClaimedError):
-            add_account_for_user(intruder_id, f"BROKERAGE{suffix}")
-
-
-class TestCrossTenantAccountConflictGuard:
-    """Defense-in-depth: even when the unique index is missing and two users
-    end up sharing the same ``account_name`` (legacy duplicates that pre-date
-    ``uniq_user_accounts_global_account_name``), the request-time guard must
-    strip the conflicting label so neither user can read the other's BigQuery
-    rows on positions / weekly review / position detail / etc.
-
-    These tests bypass the unique-index-enforced ``add_account_for_user`` and
-    write the conflicting rows directly through the same connection the
-    fixture yields, so the rollback at the end of the test still cleans up
-    even if the prod migration eventually installs the index.
-    """
-
-    def _force_dup_row(self, conn, user_id, label):
-        with conn.cursor() as cur:
-            try:
-                cur.execute(
-                    "INSERT INTO user_accounts (user_id, account_name) "
-                    "VALUES (%s, %s) "
-                    "ON CONFLICT (user_id, account_name) DO NOTHING",
-                    (user_id, label),
-                )
-            except Exception:
-                # If the unique index already exists, we can't simulate the
-                # pre-index state. Skip the test so it doesn't false-fail.
-                pytest.skip(
-                    "uniq_user_accounts_global_account_name is installed; "
-                    "cannot simulate legacy duplicate state"
-                )
-
-    def test_returns_label_when_only_one_owner(self, db_conn):
-        from app.models import (
-            add_account_for_user,
-            find_cross_tenant_account_conflicts,
-        )
-        owner_id = _create_user(db_conn, _unique_username("safe_owner"))
-        label = f"Solo_{uuid.uuid4().hex[:6]}"
-        add_account_for_user(owner_id, label)
-        # Single-owner labels are NEVER stripped — that's the legitimate case.
-        assert find_cross_tenant_account_conflicts([label]) == set()
-
-    def test_flags_label_owned_by_two_users(self, db_conn):
+    def test_find_cross_tenant_account_conflicts_is_deprecated_no_op(self):
         from app.models import find_cross_tenant_account_conflicts
 
-        a = _create_user(db_conn, _unique_username("dup_a"))
-        b = _create_user(db_conn, _unique_username("dup_b"))
-        label = f"Investment_{uuid.uuid4().hex[:6]}"
-        self._force_dup_row(db_conn, a, label)
-        self._force_dup_row(db_conn, b, label)
+        assert find_cross_tenant_account_conflicts(["A", "B"]) == set()
+        assert find_cross_tenant_account_conflicts([]) == set()
 
-        # Whoever is asking, the conflict surfaces and the original-case
-        # label is returned so the caller can strip it from their list.
-        flagged = find_cross_tenant_account_conflicts([label])
-        assert flagged == {label}
-
-    def test_normalization_matches_intended_unique_index(self, db_conn):
-        """ 'Investment', '  investment  ', 'INVESTMENT' all collide."""
-        from app.models import find_cross_tenant_account_conflicts
-
-        a = _create_user(db_conn, _unique_username("norm_a"))
-        b = _create_user(db_conn, _unique_username("norm_b"))
-        suffix = uuid.uuid4().hex[:6]
-        self._force_dup_row(db_conn, a, f"Investment_{suffix}")
-        self._force_dup_row(db_conn, b, f"  INVESTMENT_{suffix}  ")
-
-        # Either case-form passed in returns flagged. The match key is
-        # ``lower(trim(...))`` to mirror the unique index.
-        assert find_cross_tenant_account_conflicts([f"Investment_{suffix}"]) == {
-            f"Investment_{suffix}"
-        }
-        assert find_cross_tenant_account_conflicts([f"investment_{suffix}"]) == {
-            f"investment_{suffix}"
-        }
-
-    def test_user_account_list_strips_conflict_at_request_time(self, app, db_conn):
-        """``_user_account_list()`` is THE gate to multi-tenant data — every
-        BQ query template scopes to whatever it returns. Pin the contract:
-        when a user's label collides with another user's label, that label
-        MUST NOT appear in the returned list, AND the stripped label is
-        recorded on ``flask.g`` so the banner can render. Without this
-        guarantee, two users sharing 'investment1' would each see the
-        other's BigQuery rows on every page.
-        """
+    def test_user_account_list_returns_shared_label(self, app, db_conn):
+        """``_user_account_list()`` is THE gate to multi-tenant data — it
+        used to strip labels that collided across users. Now it returns
+        the user's labels as-is (the user_id-aware SQL/DataFrame
+        filters downstream are what keep the data separate)."""
         from app.models import User, add_account_for_user
         from app.routes import _user_account_list
-        from flask import g
         from flask_login import login_user
 
-        legit_id = _create_user(db_conn, _unique_username("legit"))
-        intruder_id = _create_user(db_conn, _unique_username("intruder"))
+        legit_id = _create_user(db_conn, _unique_username("share_legit"))
+        other_id = _create_user(db_conn, _unique_username("share_other"))
         shared = f"Shared_{uuid.uuid4().hex[:6]}"
-        solo_legit = f"SoloLegit_{uuid.uuid4().hex[:6]}"
+        solo = f"SoloLegit_{uuid.uuid4().hex[:6]}"
 
-        add_account_for_user(legit_id, solo_legit)
-        self._force_dup_row(db_conn, legit_id, shared)
-        self._force_dup_row(db_conn, intruder_id, shared)
+        add_account_for_user(legit_id, solo)
+        add_account_for_user(legit_id, shared)
+        add_account_for_user(other_id, shared)  # collision is allowed now
 
         with app.test_request_context("/positions"):
             login_user(User.get_by_id(legit_id))
             allowed = _user_account_list()
-            assert solo_legit in allowed, "non-conflicting label was wrongly stripped"
-            assert shared not in allowed, (
-                "cross-tenant guard FAILED — shared label leaked into the "
-                "user's allowed-account list and would be passed to BQ"
-            )
-            recorded = list(getattr(g, "_account_conflicts", []) or [])
-            assert shared in recorded, (
-                "conflict not recorded on flask.g — the banner would not "
-                "explain to the user why their data is hidden"
+            assert solo in allowed
+            assert shared in allowed, (
+                "Shared labels are intentionally allowed under user_id "
+                "tenancy. If this assertion ever fails, somebody re-"
+                "introduced cross-user account-name uniqueness without "
+                "first removing the user_id-scoped tenant filters that "
+                "make sharing safe (see docs/USER_ID_TENANCY.md)."
             )
 
 
@@ -605,6 +522,139 @@ class TestAccountSqlFilter:
 
         sql = _account_sql_filter(["Schwab Account"])
         assert "TRIM(CAST(account AS STRING))" in sql
+
+
+class TestDailyPnlChartDedup:
+    """The /accounts and /position/<symbol> charts iterate ``mart_daily_pnl``
+    row by row. If the same (account, symbol, date) shows up more than
+    once — e.g. a legacy user_id-NULL row plus a backfilled populated
+    row both passing through ``_filter_df_by_user``'s Stage 0/1
+    leniency — the buy/sell ledger accumulates the same trade N times
+    AND the unrealized loop runs N times, multiplying equity P&L by
+    N**2.
+
+    A real bug (May 2026): a real ~$700k LEAP spike rendered as $17M on
+    /accounts because the user's data had ~5 dups per business key.
+    These tests pin the dedup so the helpers stay defensive.
+    """
+
+    def _make_dup_row(self, *, account, symbol, date_, user_id):
+        return {
+            "account": account,
+            "user_id": user_id,
+            "symbol": symbol,
+            "date": date_,
+            "options_amount": 0.0,
+            "dividends_amount": 0.0,
+            "equity_buy_qty": 100.0,
+            "equity_buy_cost": 50_000.0,
+            "equity_sell_qty": 0.0,
+            "equity_sell_proceeds": 0.0,
+            "other_amount": 0.0,
+            "close_price": 1000.0,
+            "has_trade": True,
+            "option_market_value": 0.0,
+            "option_cost_basis": 0.0,
+            "cumulative_options_pnl": 0.0,
+            "cumulative_dividends_pnl": 0.0,
+            "cumulative_other_pnl": 0.0,
+        }
+
+    def test_account_chart_dedupes_duplicate_business_keys(self):
+        """5 dups on the same (account, symbol, date) must NOT
+        N**2-amplify equity P&L. Without dedup the equity series for
+        this fixture would land in the millions; with dedup it lands
+        on the single-row value."""
+        import pandas as pd
+        from datetime import date
+
+        from app.routes import _build_account_chart_from_daily_pnl
+
+        # 5 dups: 1 with populated user_id, 4 with NULL
+        rows = [
+            self._make_dup_row(
+                account="Shared", symbol="X", date_=date(2025, 1, 15),
+                user_id=6,
+            ),
+            *[
+                self._make_dup_row(
+                    account="Shared", symbol="X", date_=date(2025, 1, 15),
+                    user_id=None,
+                )
+                for _ in range(4)
+            ],
+        ]
+        daily_df = pd.DataFrame(rows)
+        out = _build_account_chart_from_daily_pnl(daily_df, pd.DataFrame())
+
+        # Single row would give: shares=100, cost=50000, close=1000
+        # → unrealized = 100*1000 - 50000 = 50_000.
+        # 5 dups WITHOUT dedup would give: shares=500, cost=250000
+        # → per-row unrealized = 500*1000 - 250000 = 250_000
+        # → loop runs 5 times → 5*250_000 = 1_250_000 (25x).
+        assert out["equity"] == [50_000.0], (
+            f"Equity P&L was amplified by duplicate business keys: "
+            f"got {out['equity']}, expected [50000.0]. The dedup at "
+            f"the top of _build_account_chart_from_daily_pnl is the "
+            f"only thing preventing N**2 inflation when "
+            f"_filter_df_by_user keeps NULL user_id legacy rows."
+        )
+
+    def test_position_chart_dedupes_duplicate_business_keys(self):
+        """Same defense for the per-symbol chart used on /position/<symbol>."""
+        import pandas as pd
+        from datetime import date
+
+        from app.routes import _build_chart_from_daily_pnl
+
+        rows = [
+            self._make_dup_row(
+                account="Shared", symbol="X", date_=date(2025, 1, 15),
+                user_id=6,
+            ),
+            *[
+                self._make_dup_row(
+                    account="Shared", symbol="X", date_=date(2025, 1, 15),
+                    user_id=None,
+                )
+                for _ in range(4)
+            ],
+        ]
+        daily_df = pd.DataFrame(rows)
+        out = _build_chart_from_daily_pnl(daily_df, pd.DataFrame())
+
+        # Same arithmetic: a single-row chart gives shares=100, cost=50000,
+        # close=1000 → unrealized 50_000.
+        assert out["equity"] == [50_000.0], (
+            f"Per-symbol chart equity P&L was amplified: got "
+            f"{out['equity']}, expected [50000.0]"
+        )
+
+    def test_dedupe_prefers_populated_user_id(self):
+        """When both NULL and populated user_id rows exist, the
+        populated one must win — we want the row with full tenancy
+        info so any downstream re-filter still has a user_id to match."""
+        import pandas as pd
+        from datetime import date
+
+        from app.routes import _build_account_chart_from_daily_pnl
+
+        # The populated-user_id row has different numbers from the NULL
+        # row; if we keep the wrong one, the chart shows the wrong P&L.
+        populated = self._make_dup_row(
+            account="Shared", symbol="X", date_=date(2025, 1, 15), user_id=6,
+        )
+        null_row = self._make_dup_row(
+            account="Shared", symbol="X", date_=date(2025, 1, 15), user_id=None,
+        )
+        null_row["equity_buy_qty"] = 999.0
+        null_row["equity_buy_cost"] = 999_000.0
+
+        daily_df = pd.DataFrame([null_row, populated])
+        out = _build_account_chart_from_daily_pnl(daily_df, pd.DataFrame())
+        # If dedup picked the populated row: 100*1000 - 50000 = 50_000.
+        # If dedup picked the NULL row: 999*1000 - 999000 = 0.
+        assert out["equity"] == [50_000.0]
 
 
 class TestStrategyFitQueryTenancy:
