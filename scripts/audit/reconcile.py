@@ -89,17 +89,23 @@ def main():
         if diff(r.total_return, derived):
             issues_1.append((r.account, r.total_return, derived,
                              r.realized_pnl, r.unrealized_pnl, r.dividends))
-        also = float(r.total_pnl) + float(r.dividends)
-        if diff(r.total_return, also):
-            issues_1.append((r.account + " (pnl+div)", r.total_return, also,
-                             r.total_pnl, 0, r.dividends))
+        # After dividends-as-first-class, total_pnl already folds in
+        # attributed dividends. total_return is now an alias of total_pnl,
+        # so the two should match column-for-column per row (and therefore
+        # per account when summed). If they drift, the alias has broken.
+        if diff(r.total_return, r.total_pnl):
+            issues_1.append((r.account + " (pnl==return alias)", r.total_return,
+                             r.total_pnl, r.total_pnl, 0, r.dividends))
     if issues_1:
         print("FAIL — total_return ≠ realized + unrealized + dividends:")
         for row in issues_1:
             print(f"  {row[0]}: expected {fmt(row[2])} got {fmt(row[1])}  "
                   f"(R={fmt(row[3])} U={fmt(row[4])} D={fmt(row[5])})")
     else:
-        print("PASS — total_return == realized + unrealized + dividends for every account")
+        print(
+            "PASS — total_return == realized + unrealized + dividends == total_pnl "
+            "for every account"
+        )
 
     # ====================================================================
     # CHECK 2: Per-symbol — positions list vs position_detail realized P&L
@@ -254,24 +260,34 @@ def main():
         print("PASS — win rate consistent")
 
     # ====================================================================
-    # CHECK 5: positions_summary.total_pnl = realized_pnl + unrealized_pnl?
-    # (This is internal to the mart, but it's the assumption many pages rely on.)
+    # CHECK 5: positions_summary.total_pnl = realized + unrealized + dividends?
+    # (Dividends are a first-class P&L stream as of the dividends-as-first-class
+    # change. The invariant the rest of the app relies on is that the headline
+    # number reconciles with its three building blocks.)
     # ====================================================================
-    section("CHECK 5: total_pnl == realized_pnl + unrealized_pnl per row")
+    section("CHECK 5: total_pnl == realized_pnl + unrealized_pnl + total_dividend_income per row")
     sql5 = f"""
         SELECT
           account, symbol, strategy,
-          total_pnl, realized_pnl, unrealized_pnl,
-          ROUND(total_pnl - (realized_pnl + unrealized_pnl), 2) AS delta
+          total_pnl, realized_pnl, unrealized_pnl, total_dividend_income,
+          ROUND(
+            total_pnl - (realized_pnl + unrealized_pnl + COALESCE(total_dividend_income, 0)),
+            2
+          ) AS delta
         FROM {DS}.positions_summary
-        WHERE ABS(total_pnl - (realized_pnl + unrealized_pnl)) > 0.01
+        WHERE ABS(
+            total_pnl - (realized_pnl + unrealized_pnl + COALESCE(total_dividend_income, 0))
+        ) > 0.01
     """
     d5 = q(client, sql5)
     if not d5.empty:
-        print(f"FAIL — {len(d5)} rows where total_pnl ≠ realized + unrealized:")
+        print(f"FAIL — {len(d5)} rows where total_pnl ≠ realized + unrealized + dividends:")
         print(d5.head(20).to_string(index=False))
     else:
-        print("PASS — every positions_summary row has total_pnl = realized + unrealized")
+        print(
+            "PASS — every positions_summary row has "
+            "total_pnl = realized + unrealized + dividends"
+        )
 
     # ====================================================================
     # CHECK 6: Sectors page — sum across sectors == positions total
