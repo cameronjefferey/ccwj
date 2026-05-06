@@ -121,6 +121,8 @@ SELECT
   SUM(trades_closed) AS trades_closed,
   SUM(trades_opened) AS trades_opened,
   SUM(total_pnl)     AS total_pnl,
+  SUM(dividends_amount) AS dividends_amount,
+  SUM(total_return)  AS total_return,
   SUM(num_winners)   AS num_winners,
   SUM(num_losers)    AS num_losers,
   SUM(premium_received) AS premium_received,
@@ -394,6 +396,10 @@ def _build_prompt_data(df):
     total_return = float(df["total_return"].sum())
     realized = float(df["realized_pnl"].sum())
     unrealized = float(df["unrealized_pnl"].sum())
+    dividend_income = (
+        float(df["total_dividend_income"].sum())
+        if "total_dividend_income" in df.columns else 0.0
+    )
     premium_received = float(df["total_premium_received"].sum())
     premium_paid = float(df["total_premium_paid"].sum())
     total_trades = int(df["num_individual_trades"].sum())
@@ -408,6 +414,7 @@ def _build_prompt_data(df):
 
     strat_agg = df.groupby("strategy").agg(
         total_return=("total_return", "sum"),
+        dividend_income=("total_dividend_income", "sum"),
         num_trades=("num_individual_trades", "sum"),
         num_winners=("num_winners", "sum"),
         num_losers=("num_losers", "sum"),
@@ -419,14 +426,24 @@ def _build_prompt_data(df):
     for _, r in strat_agg.iterrows():
         closed = int(r["num_winners"] + r["num_losers"])
         wr = r["num_winners"] / closed if closed else 0
+        div_part = (
+            f", divs=${r['dividend_income']:,.2f}"
+            if r.get("dividend_income", 0) and float(r["dividend_income"]) != 0
+            else ""
+        )
         strategy_lines.append(
-            f"  - {r['strategy']}: return=${r['total_return']:,.2f}, "
+            f"  - {r['strategy']}: return=${r['total_return']:,.2f}{div_part}, "
             f"WR={wr:.1%}, trades={int(r['num_trades'])}, avg_days={r['avg_days']:.1f}"
         )
 
+    div_line = (
+        f", dividends ${dividend_income:,.2f}"
+        if dividend_income else ""
+    )
+
     return f"""PORTFOLIO OVERVIEW
 - Symbols: {num_symbols}, Trades: {total_trades}, Range: {first_date} to {last_date}
-- Return: ${total_return:,.2f} (realized ${realized:,.2f}, unrealized ${unrealized:,.2f})
+- Return: ${total_return:,.2f} (realized ${realized:,.2f}, unrealized ${unrealized:,.2f}{div_line})
 - Win rate: {overall_win_rate:.1%} ({total_winners}W / {total_losers}L)
 - Net premium: ${premium_received - premium_paid:,.2f}
 
@@ -847,14 +864,20 @@ def insights_ask():
                 tc = int(row.get("trades_closed", 0) or 0)
                 to = int(row.get("trades_opened", 0) or 0)
                 tp = float(row.get("total_pnl", 0) or 0)
+                divs = float(row.get("dividends_amount", 0) or 0)
+                tr = float(row.get("total_return", tp + divs) or 0)
                 nw = int(row.get("num_winners", 0) or 0)
                 nl = int(row.get("num_losers", 0) or 0)
                 total_c = nw + nl
                 wr = nw / total_c if total_c else 0
                 ws = str(row.get("week_start", ""))
+                divs_part = (
+                    f", divs ${divs:,.2f}, total return ${tr:,.2f}"
+                    if divs else ""
+                )
                 weekly_text = (
                     f"WEEK {ws}: {tc} closed ({nw}W/{nl}L, {wr:.0%}), "
-                    f"{to} opened, P&L ${tp:,.2f}"
+                    f"{to} opened, trade P&L ${tp:,.2f}{divs_part}"
                 )
         except Exception:
             pass

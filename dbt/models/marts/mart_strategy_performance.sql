@@ -4,10 +4,15 @@
     Strategy-level performance — what works for you.
 
     One row per (account, strategy) with:
-      - total_pnl, realized_pnl, unrealized_pnl
+      - total_pnl       (dividend-inclusive headline number, peer to equity+options)
+      - trade_only_pnl  (legacy: realized + unrealized, no dividends)
+      - realized_pnl, unrealized_pnl, dividend_income
       - num_trades, num_winners, num_losers, win_rate
       - premium_received, premium_paid
       - avg_days_in_trade, first_trade_date, last_trade_date
+
+    Strategy values include "Dividend" for buy-for-yield positions where the
+    dividend income exceeds the price-appreciation P&L (see positions_summary).
 
     Powers the Strategies page and strategy-focused sections on Weekly Review.
     No P/L judgment — just evidence: which strategies you use and how they've performed.
@@ -19,6 +24,7 @@ with base as (
         user_id,
         strategy,
         sum(total_pnl)              as total_pnl,
+        sum(trade_only_pnl)         as trade_only_pnl,
         sum(realized_pnl)           as realized_pnl,
         sum(unrealized_pnl)         as unrealized_pnl,
         sum(total_premium_received) as premium_received,
@@ -49,6 +55,7 @@ select
     user_id,
     strategy,
     round(total_pnl, 2)           as total_pnl,
+    round(trade_only_pnl, 2)      as trade_only_pnl,
     round(realized_pnl, 2)        as realized_pnl,
     round(unrealized_pnl, 2)      as unrealized_pnl,
     round(premium_received, 2)    as premium_received,

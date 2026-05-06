@@ -1471,12 +1471,23 @@ def _build_calendar_grid(daily_changes, today):
 
 
 def _aggregate_weekly_rows(rows):
-    """Aggregate multiple account rows from mart_weekly_summary into one summary."""
+    """Aggregate multiple account rows from mart_weekly_summary into one summary.
+
+    Dividends-as-first-class:
+        total_pnl       — closed-trade P&L (preserved as-is for behavioral baselines).
+        dividends_amount — cash dividends received during the week.
+        total_return    — total_pnl + dividends_amount, the "what did this
+                          week make me" headline number.
+    """
     if not rows:
         return None
+    total_pnl = sum(r.get("total_pnl", 0) for r in rows)
+    dividends_amount = sum(r.get("dividends_amount", 0) for r in rows)
     summary = {
         "trades_closed": sum(r.get("trades_closed", 0) for r in rows),
-        "total_pnl": sum(r.get("total_pnl", 0) for r in rows),
+        "total_pnl": total_pnl,
+        "dividends_amount": dividends_amount,
+        "total_return": total_pnl + dividends_amount,
         "num_winners": sum(r.get("num_winners", 0) for r in rows),
         "num_losers": sum(r.get("num_losers", 0) for r in rows),
         "premium_received": sum(r.get("premium_received", 0) for r in rows),

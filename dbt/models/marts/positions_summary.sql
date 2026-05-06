@@ -2,11 +2,19 @@
     Positions summary — the mart that powers the Positions Dashboard.
 
     One row per (account, symbol, strategy) with:
-      - P&L (total, realized, unrealized)
+      - P&L (total, realized, unrealized) — total_pnl INCLUDES attributed dividends
       - Win/loss stats
       - Duration
       - Premium collected / paid
-      - Dividend income
+      - Dividend income (also surfaced separately for breakdown UX)
+
+    Dividends-as-first-class:
+      Dividends are a peer P&L stream alongside equity and options. The headline
+      total_pnl number folds in the dividend income that's been attributed to
+      this strategy via the dividend_rank ordering. A Buy-and-Hold position
+      whose dividend income exceeds its price appreciation is reclassified
+      as the "Dividend" strategy — capturing the trader who buys for yield.
+      total_return is preserved as an alias of total_pnl for back-compat.
 */
 
 with classified as (
@@ -99,51 +107,82 @@ with_dividend_rank as (
     from strategy_summary ss
 ),
 
+-- Pre-compute the attributed dividend amount per (strategy row) so the
+-- final SELECT can read a single value in multiple places without
+-- repeating the rank/coalesce expression.
+with_attributed_dividends as (
+    select
+        wdr.*,
+        case when wdr.dividend_rank = 1 then coalesce(d.total_dividend_income, 0) else 0 end
+            as attributed_dividend_income,
+        case when wdr.dividend_rank = 1 then coalesce(d.dividend_count, 0) else 0 end
+            as attributed_dividend_count
+    from with_dividend_rank wdr
+    left join dividends d
+        on wdr.account = d.account
+        and (wdr.user_id is not distinct from d.user_id)
+        and wdr.symbol = d.symbol
+),
+
 final as (
     select
-        wdr.account,
-        wdr.user_id,
-        wdr.symbol,
-        wdr.strategy,
-        wdr.status,
+        wad.account,
+        wad.user_id,
+        wad.symbol,
 
-        -- P&L
-        round(wdr.total_pnl, 2)       as total_pnl,
-        round(wdr.realized_pnl, 2)    as realized_pnl,
-        round(wdr.unrealized_pnl, 2)  as unrealized_pnl,
+        -- Strategy reclassification: a "Buy and Hold" position whose dividend
+        -- income exceeds its price-appreciation P&L (the trade-only total) is
+        -- bucketed as "Dividend" — recognising the buy-for-yield trader.
+        -- We only reclassify when this strategy is also the dividend-rank
+        -- holder so we never invent a Dividend bucket on a row that isn't
+        -- actually carrying dividend income (e.g. a Buy and Hold row that
+        -- sits behind a Wheel on the same symbol).
+        case
+            when wad.dividend_rank = 1
+                 and wad.strategy = 'Buy and Hold'
+                 and wad.attributed_dividend_income > greatest(wad.total_pnl, 0)
+                then 'Dividend'
+            else wad.strategy
+        end as strategy,
+
+        wad.status,
+
+        -- P&L — total_pnl includes attributed dividends so it is the headline
+        -- "what did this position make me" number. realized_pnl and
+        -- unrealized_pnl remain trade-only so the breakdown still maps to
+        -- equity/option mark-to-market mechanics.
+        round(wad.total_pnl + wad.attributed_dividend_income, 2) as total_pnl,
+        round(wad.realized_pnl, 2)                               as realized_pnl,
+        round(wad.unrealized_pnl, 2)                             as unrealized_pnl,
+        round(wad.total_pnl, 2)                                  as trade_only_pnl,
 
         -- Premiums
-        round(wdr.total_premium_received, 2) as total_premium_received,
-        round(wdr.total_premium_paid, 2)     as total_premium_paid,
+        round(wad.total_premium_received, 2) as total_premium_received,
+        round(wad.total_premium_paid, 2)     as total_premium_paid,
 
         -- Trade counts
-        wdr.num_trade_groups,
-        wdr.num_individual_trades,
-        wdr.num_winners,
-        wdr.num_losers,
-        round(wdr.win_rate, 4)          as win_rate,
-        round(wdr.avg_pnl_per_trade, 2) as avg_pnl_per_trade,
-        wdr.avg_days_in_trade,
+        wad.num_trade_groups,
+        wad.num_individual_trades,
+        wad.num_winners,
+        wad.num_losers,
+        round(wad.win_rate, 4)          as win_rate,
+        round(wad.avg_pnl_per_trade, 2) as avg_pnl_per_trade,
+        wad.avg_days_in_trade,
 
         -- Dates
-        wdr.first_trade_date,
-        wdr.last_trade_date,
+        wad.first_trade_date,
+        wad.last_trade_date,
 
-        -- Dividends (attributed to one strategy per symbol to avoid double-counting)
-        case when wdr.dividend_rank = 1
-            then round(coalesce(d.total_dividend_income, 0), 2)
-            else 0
-        end as total_dividend_income,
-        case when wdr.dividend_rank = 1
-            then coalesce(d.dividend_count, 0)
-            else 0
-        end as dividend_count,
+        -- Dividends (attributed to one strategy per symbol to avoid
+        -- double-counting). Surfaced separately so the UI can still show
+        -- "Dividends" as a peer to Equity/Options in the breakdown.
+        round(wad.attributed_dividend_income, 2) as total_dividend_income,
+        wad.attributed_dividend_count            as dividend_count,
 
-        -- All-in return = strategy P&L + dividends
-        round(
-            wdr.total_pnl
-            + case when wdr.dividend_rank = 1 then coalesce(d.total_dividend_income, 0) else 0 end
-        , 2) as total_return,
+        -- total_return is now an alias of total_pnl. Kept for back-compat
+        -- with templates and downstream marts. New code should prefer
+        -- total_pnl.
+        round(wad.total_pnl + wad.attributed_dividend_income, 2) as total_return,
 
         -- Sector / subsector context (yfinance, refreshed daily). Coalesce so
         -- a missing-from-yfinance ticker still has 'Unknown' instead of NULL,
@@ -153,13 +192,9 @@ final as (
         sm.long_name                         as company_name,
         sm.market_cap                        as market_cap
 
-    from with_dividend_rank wdr
-    left join dividends d
-        on wdr.account = d.account
-        and (wdr.user_id is not distinct from d.user_id)
-        and wdr.symbol = d.symbol
+    from with_attributed_dividends wad
     left join symbol_meta sm
-        on upper(trim(wdr.symbol)) = sm.symbol
+        on upper(trim(wad.symbol)) = sm.symbol
 )
 
 select * from final

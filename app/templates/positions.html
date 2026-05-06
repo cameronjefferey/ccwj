@@ -395,6 +395,7 @@
             'Cash-Secured Put': '#6f42c1',
             'Wheel':            '#fd7e14',
             'Buy and Hold':     '#198754',
+            'Dividend':         '#0c8b6e',
             'Long Call':        '#20c997',
             'Long Put':         '#0dcaf0',
             'Call Spread':      '#6610f2',
@@ -413,15 +414,17 @@
                         <th class="sortable" data-sort="str">Symbol</th>
                         <th class="sortable" data-sort="str">Subsector</th>
                         <th>Strategies</th>
-                        <th class="sortable" data-sort="num">Total P&amp;L</th>
+                        <th class="sortable" data-sort="num"
+                            title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
+                            Total P&amp;L
+                        </th>
                         <th class="sortable" data-sort="num">Realized</th>
                         <th class="sortable" data-sort="num">Unrealized</th>
+                        <th class="sortable" data-sort="num">Dividends</th>
                         <th class="sortable" data-sort="num">Win Rate</th>
                         <th class="sortable" data-sort="num">Trades</th>
                         <th class="sortable" data-sort="num">W / L</th>
                         <th class="sortable" data-sort="num">Premium</th>
-                        <th class="sortable" data-sort="num">Dividends</th>
-                        <th class="sortable" data-sort="num">Total Return</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -451,7 +454,7 @@
                             {% endfor %}
                         </td>
                         <td data-val="{{ row.total_pnl }}"
-                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
                             ${{ "{:,.2f}".format(row.total_pnl) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
@@ -461,6 +464,14 @@
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
                             ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.total_dividend_income }}"
+                            class="{% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                            {% if (row.total_dividend_income or 0) != 0 %}
+                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
+                            {% else %}
+                            &mdash;
+                            {% endif %}
                         </td>
                         <td data-val="{{ row.win_rate }}">
                             {{ "{:.0%}".format(row.win_rate) }}
@@ -473,13 +484,6 @@
                         </td>
                         <td data-val="{{ row.total_premium_received }}" class="text-positive">
                             ${{ "{:,.2f}".format(row.total_premium_received) }}
-                        </td>
-                        <td data-val="{{ row.total_dividend_income }}">
-                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
-                        </td>
-                        <td data-val="{{ row.total_return }}"
-                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-bold">
-                            ${{ "{:,.2f}".format(row.total_return) }}
                         </td>
                     </tr>
                     {% endfor %}
@@ -507,17 +511,22 @@
                         <th class="sortable" data-sort="str">Account</th>
                         <th class="sortable" data-sort="str">Strategy</th>
                         <th class="sortable" data-sort="str">Status</th>
-                        <th class="sortable" data-sort="num">Total P&amp;L</th>
+                        <th class="sortable" data-sort="num"
+                            title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
+                            Total P&amp;L
+                        </th>
                         <th class="sortable" data-sort="num">Realized</th>
                         <th class="sortable" data-sort="num">Unrealized</th>
+                        <th class="sortable" data-sort="num"
+                            title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
+                            Dividends
+                        </th>
                         <th class="sortable" data-sort="num">Win Rate</th>
                         <th class="sortable" data-sort="num">Trades</th>
                         <th class="sortable" data-sort="num">W / L</th>
                         <th class="sortable" data-sort="num">Avg P&amp;L</th>
                         <th class="sortable" data-sort="num">Avg Days</th>
                         <th class="sortable" data-sort="num">Premium</th>
-                        <th class="sortable" data-sort="num">Dividends</th>
-                        <th class="sortable" data-sort="num">Total Return</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -527,6 +536,7 @@
                         'Cash-Secured Put': '#6f42c1',
                         'Wheel':            '#fd7e14',
                         'Buy and Hold':     '#198754',
+                        'Dividend':         '#0c8b6e',
                         'Long Call':        '#20c997',
                         'Long Put':         '#0dcaf0',
                         'Call Spread':      '#6610f2',
@@ -563,7 +573,7 @@
                             {% endif %}
                         </td>
                         <td data-val="{{ row.total_pnl }}"
-                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
                             ${{ "{:,.2f}".format(row.total_pnl) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
@@ -573,6 +583,14 @@
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
                             ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                        </td>
+                        <td data-val="{{ row.total_dividend_income }}"
+                            class="{% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                            {% if (row.total_dividend_income or 0) != 0 %}
+                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
+                            {% else %}
+                            &mdash;
+                            {% endif %}
                         </td>
                         <td data-val="{{ row.win_rate }}">
                             {{ "{:.0%}".format(row.win_rate) }}
@@ -590,13 +608,6 @@
                         <td data-val="{{ row.avg_days_in_trade }}">{{ row.avg_days_in_trade }}</td>
                         <td data-val="{{ row.total_premium_received }}" class="text-positive">
                             ${{ "{:,.2f}".format(row.total_premium_received) }}
-                        </td>
-                        <td data-val="{{ row.total_dividend_income }}">
-                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
-                        </td>
-                        <td data-val="{{ row.total_return }}"
-                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-bold">
-                            ${{ "{:,.2f}".format(row.total_return) }}
                         </td>
                     </tr>
                     {% endfor %}

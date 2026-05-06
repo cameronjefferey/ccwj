@@ -695,14 +695,22 @@
     <p class="hero-headline">Weekly Review</p>
     {% endif %}
 
-    {% if review and review.trades_closed > 0 %}
+    {% if review and (review.trades_closed > 0 or (review.dividends_amount or 0) != 0) %}
     {% set _wr_pct = (review.num_winners / review.trades_closed * 100) if review.trades_closed > 0 else None %}
+    {% set _hero_pnl = review.total_return if review.total_return is defined else review.total_pnl %}
+    {% set _has_div = (review.dividends_amount or 0) != 0 %}
     <div class="dual-hero-pnl">
-        <span class="pnl-num {% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(review.total_pnl) }}
+        <span class="pnl-num {% if _hero_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}"
+              title="{% if _has_div %}Trade P&L ${{ '{:,.0f}'.format(review.total_pnl) }} + dividends ${{ '{:,.0f}'.format(review.dividends_amount) }}{% else %}Closed trades P&L this week{% endif %}">
+            {{ "+" if _hero_pnl >= 0 else "" }}${{ "{:,.0f}".format(_hero_pnl) }}
         </span>
+        {% if review.trades_closed > 0 %}
         · {{ review.trades_closed }} close{{ 's' if review.trades_closed != 1 else '' }}
         {% if _wr_pct is not none %} · {{ "%.0f%%"|format(_wr_pct) }} wins{% endif %}
+        {% endif %}
+        {% if _has_div %}
+        · <span class="text-positive" title="Cash dividends received this week — peer to equity and option P&L.">${{ "{:,.0f}".format(review.dividends_amount) }} divs</span>
+        {% endif %}
         {% if market_neutral_line %}
         <span class="market-extra">· {{ market_neutral_line.replace('Market context this week: ', '') }}</span>
         {% endif %}

@@ -397,6 +397,12 @@ def _iter_symbols_for_daily_detail(trades_df, pnl_df, current_df, open_pairs):
 # with a WHERE clause on dates — essentially positions_summary with a date window.
 # ------------------------------------------------------------------
 DATE_FILTERED_QUERY = """
+-- Date-filtered re-aggregation that mirrors positions_summary so the date
+-- picker on /positions stays consistent with the un-filtered mart. Mirrors
+-- the dividends-as-first-class semantics:
+--   * total_pnl folds in attributed dividend income
+--   * Buy-and-Hold reclassified to "Dividend" when div income > price gain
+--   * total_return preserved as alias of total_pnl for back-compat
 WITH classified AS (
     SELECT *
     FROM `ccwj-dbt.analytics.int_strategy_classification`
@@ -408,6 +414,7 @@ WITH classified AS (
 dividends AS (
     SELECT
         account,
+        user_id,
         underlying_symbol AS symbol,
         SUM(amount) AS total_dividend_income,
         COUNT(*) AS dividend_count
@@ -416,12 +423,13 @@ dividends AS (
       AND trade_date >= @start_date
       AND trade_date <= @end_date
       {account_filter}
-    GROUP BY 1, 2
+    GROUP BY 1, 2, 3
 ),
 
 strategy_summary AS (
     SELECT
         account,
+        user_id,
         symbol,
         strategy,
 
@@ -458,14 +466,14 @@ strategy_summary AS (
         MAX(COALESCE(close_date, CURRENT_DATE())) AS last_trade_date
 
     FROM classified
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 
 with_dividend_rank AS (
     SELECT
         ss.*,
         ROW_NUMBER() OVER (
-            PARTITION BY ss.account, ss.symbol
+            PARTITION BY ss.account, ss.user_id, ss.symbol
             ORDER BY
                 CASE ss.strategy
                     WHEN 'Wheel'        THEN 1
@@ -477,46 +485,60 @@ with_dividend_rank AS (
     FROM strategy_summary ss
 ),
 
-final AS (
+with_attributed AS (
     SELECT
-        wdr.account,
-        wdr.symbol,
-        wdr.strategy,
-        wdr.status,
-        ROUND(wdr.total_pnl, 2) AS total_pnl,
-        ROUND(wdr.realized_pnl, 2) AS realized_pnl,
-        ROUND(wdr.unrealized_pnl, 2) AS unrealized_pnl,
-        ROUND(wdr.total_premium_received, 2) AS total_premium_received,
-        ROUND(wdr.total_premium_paid, 2) AS total_premium_paid,
-        wdr.num_trade_groups,
-        wdr.num_individual_trades,
-        wdr.num_winners,
-        wdr.num_losers,
-        ROUND(wdr.win_rate, 4) AS win_rate,
-        ROUND(wdr.avg_pnl_per_trade, 2) AS avg_pnl_per_trade,
-        wdr.avg_days_in_trade,
-        wdr.first_trade_date,
-        wdr.last_trade_date,
+        wdr.*,
         CASE WHEN wdr.dividend_rank = 1
-            THEN ROUND(COALESCE(d.total_dividend_income, 0), 2)
+            THEN COALESCE(d.total_dividend_income, 0)
             ELSE 0
-        END AS total_dividend_income,
+        END AS attributed_dividend_income,
         CASE WHEN wdr.dividend_rank = 1
             THEN COALESCE(d.dividend_count, 0)
             ELSE 0
-        END AS dividend_count,
-        ROUND(
-            wdr.total_pnl
-            + CASE WHEN wdr.dividend_rank = 1 THEN COALESCE(d.total_dividend_income, 0) ELSE 0 END
-        , 2) AS total_return
+        END AS attributed_dividend_count
     FROM with_dividend_rank wdr
     LEFT JOIN dividends d
         ON wdr.account = d.account
+        AND (wdr.user_id IS NOT DISTINCT FROM d.user_id)
         AND wdr.symbol = d.symbol
+),
+
+final AS (
+    SELECT
+        wa.account,
+        wa.user_id,
+        wa.symbol,
+        CASE
+            WHEN wa.dividend_rank = 1
+                 AND wa.strategy = 'Buy and Hold'
+                 AND wa.attributed_dividend_income > GREATEST(wa.total_pnl, 0)
+                THEN 'Dividend'
+            ELSE wa.strategy
+        END AS strategy,
+        wa.status,
+        ROUND(wa.total_pnl + wa.attributed_dividend_income, 2) AS total_pnl,
+        ROUND(wa.total_pnl, 2)        AS trade_only_pnl,
+        ROUND(wa.realized_pnl, 2)     AS realized_pnl,
+        ROUND(wa.unrealized_pnl, 2)   AS unrealized_pnl,
+        ROUND(wa.total_premium_received, 2) AS total_premium_received,
+        ROUND(wa.total_premium_paid, 2) AS total_premium_paid,
+        wa.num_trade_groups,
+        wa.num_individual_trades,
+        wa.num_winners,
+        wa.num_losers,
+        ROUND(wa.win_rate, 4) AS win_rate,
+        ROUND(wa.avg_pnl_per_trade, 2) AS avg_pnl_per_trade,
+        wa.avg_days_in_trade,
+        wa.first_trade_date,
+        wa.last_trade_date,
+        ROUND(wa.attributed_dividend_income, 2) AS total_dividend_income,
+        wa.attributed_dividend_count            AS dividend_count,
+        ROUND(wa.total_pnl + wa.attributed_dividend_income, 2) AS total_return
+    FROM with_attributed wa
 )
 
 SELECT * FROM final
-ORDER BY account, symbol, strategy
+ORDER BY account, user_id, symbol, strategy
 """
 
 # ------------------------------------------------------------------

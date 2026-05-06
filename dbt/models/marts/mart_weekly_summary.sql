@@ -1,8 +1,20 @@
 /*
     Weekly trading summary — one row per (account, iso_week_start).
     Pre-aggregates closed trades, best/worst trade details, strategy stats,
-    and trade-open counts for the Weekly Review and temporal check-ins.
+    trade-open counts, and weekly dividend cash flows for the Weekly
+    Review and temporal check-ins.
     ISO weeks run Monday→Sunday.
+
+    Dividends-as-first-class:
+      - total_pnl         = trade-only P&L from int_strategy_classification
+                            (preserved as the trade-consistency signal — used
+                            by mart_weekly_account_change as pnl_closed_trades
+                            in the equity-decomposition waterfall, and by
+                            mart_weekly_behavior_enriched).
+      - dividends_amount  = cash dividends received in the week.
+      - total_return      = total_pnl + dividends_amount, the headline
+                            "what did this week make me" number for the
+                            Weekly Review hero / sentence templates.
 */
 
 with closed_trades as (
@@ -79,10 +91,25 @@ ranked_strategy as (
     from strategy_stats
 ),
 
+-- Weekly dividend cash flows (sum of stg_history dividend events per ISO week).
+-- Aggregated here rather than in the consumer so every reader of
+-- mart_weekly_summary gets the dividend stream in one place.
+weekly_dividends as (
+    select
+        account,
+        user_id,
+        date_trunc(date, isoweek) as week_start,
+        sum(dividends_amount)     as dividends_amount
+    from {{ ref('mart_daily_pnl') }}
+    group by 1, 2, 3
+),
+
 all_weeks as (
     select distinct account, user_id, week_start from weekly_agg
     union distinct
     select distinct account, user_id, week_start from opened_trades
+    union distinct
+    select distinct account, user_id, week_start from weekly_dividends
 )
 
 select
@@ -93,6 +120,9 @@ select
 
     coalesce(wa.trades_closed, 0)           as trades_closed,
     coalesce(wa.total_pnl, 0)              as total_pnl,
+    coalesce(wd.dividends_amount, 0)       as dividends_amount,
+    coalesce(wa.total_pnl, 0)
+        + coalesce(wd.dividends_amount, 0) as total_return,
     coalesce(wa.num_winners, 0)            as num_winners,
     coalesce(wa.num_losers, 0)             as num_losers,
     coalesce(wa.premium_received, 0)       as premium_received,
@@ -125,6 +155,10 @@ left join weekly_agg wa
     on aw.account = wa.account
     and (aw.user_id is not distinct from wa.user_id)
     and aw.week_start = wa.week_start
+left join weekly_dividends wd
+    on aw.account = wd.account
+    and (aw.user_id is not distinct from wd.user_id)
+    and aw.week_start = wd.week_start
 left join opened_trades ot
     on aw.account = ot.account
     and (aw.user_id is not distinct from ot.user_id)

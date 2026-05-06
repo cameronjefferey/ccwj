@@ -342,6 +342,7 @@
     {% set colors = {
         'Covered Call': '#0d6efd', 'Cash-Secured Put': '#6f42c1',
         'Wheel': '#fd7e14', 'Buy and Hold': '#198754',
+        'Dividend': '#0c8b6e',
         'Long Call': '#20c997', 'Long Put': '#0dcaf0',
         'Call Spread': '#6610f2', 'Put Spread': '#d63384',
         'Naked Call': '#dc3545', 'Poor Man Covered Call': '#6f42c1', 'Protective Put': '#ffc107',
@@ -354,15 +355,15 @@
                     <th>Account</th>
                     <th>Strategy</th>
                     <th>Status</th>
-                    <th>Total P&amp;L</th>
+                    <th title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total P&amp;L</th>
                     <th>Realized</th>
                     <th>Unrealized</th>
+                    <th title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
                     <th>Win Rate</th>
                     <th>Trades</th>
                     <th>Avg P&amp;L</th>
                     <th>Avg Days</th>
                     <th>Premium</th>
-                    <th>Total Return</th>
                 </tr>
             </thead>
             <tbody>
@@ -378,7 +379,7 @@
                         {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
                         {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
                     </td>
-                    <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                    <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-bold">
                         ${{ "{:,.2f}".format(r.total_pnl) }}
                     </td>
                     <td class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
@@ -386,6 +387,13 @@
                     </td>
                     <td class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(r.unrealized_pnl) }}
+                    </td>
+                    <td class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                        {% if (r.total_dividend_income or 0) != 0 %}
+                        ${{ "{:,.2f}".format(r.total_dividend_income) }}
+                        {% else %}
+                        &mdash;
+                        {% endif %}
                     </td>
                     <td>{{ "{:.0%}".format(r.win_rate) }}</td>
                     <td>
@@ -400,9 +408,6 @@
                     </td>
                     <td>{{ r.avg_days_in_trade }}</td>
                     <td class="text-positive">${{ "{:,.2f}".format(r.total_premium_received) }}</td>
-                    <td class="{{ 'text-positive' if r.total_return >= 0 else 'text-negative' }} fw-bold">
-                        ${{ "{:,.2f}".format(r.total_return) }}
-                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
