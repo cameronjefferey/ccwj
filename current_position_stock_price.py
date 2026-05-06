@@ -61,6 +61,50 @@ for _, row in positions_df.iterrows():
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(start=start_date, end=end_date)
+
+        # Undo yfinance's split back-adjustment.
+        #
+        # yfinance always returns historical close prices retroactively
+        # adjusted for splits — pre-split prices are scaled so that they
+        # are directly comparable, on a per-current-share basis, to
+        # post-split prices. For a 1-for-30 reverse split this means
+        # pre-split closes are *multiplied* by 30 (because 1 new share
+        # represents 30 old shares); two consecutive 1-for-30 reverse
+        # splits inflate pre-split closes by 900×.
+        #
+        # That convention is the wrong default for us because our share
+        # ledger is built from raw broker tickets (``stg_history``), not
+        # from current-shares. Marking 8000 raw RVSN shares against a
+        # back-adjusted $2,214 close produced a $17.7M phantom equity
+        # peak on the /accounts chart (real peak ~$10K). The user never
+        # held shares at $2,214 — that's just yfinance reverse-engineering
+        # 2026 splits onto 2024 prices.
+        #
+        # Fix: multiply each historical close by the product of split
+        # ratios for splits that occur AFTER its date. For RVSN on
+        # 2024-12-30 the future ratios are 0.033333 × 0.033333 ≈
+        # 0.001111 → raw close $2.46. For dates after all known splits
+        # (or for symbols with no splits) the factor is 1 and we keep
+        # whatever yfinance returned. Dividends from yfinance are not
+        # consumed downstream (mart_daily_pnl reads them from
+        # stg_history), so we leave the Dividends column alone.
+        try:
+            splits = ticker.splits
+        except Exception:
+            splits = None
+        if splits is not None and len(splits) and not hist.empty:
+            split_dates = list(splits.index)
+            split_ratios = [float(r) for r in splits.values]
+            close = hist["Close"].astype(float).copy()
+            hist_dates = hist.index
+            for sd, ratio in zip(split_dates, split_ratios):
+                if not (ratio > 0):
+                    continue
+                mask = hist_dates < sd
+                if mask.any():
+                    close.loc[mask] = close.loc[mask] * ratio
+            hist["Close"] = close
+
         hist = hist[["Close", "Dividends"]].reset_index()
         hist["account"] = account
         hist["user_id"] = user_id
