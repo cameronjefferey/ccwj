@@ -6,6 +6,8 @@ Action='Other' with empty symbols — tests here guard against that regression.
 from app.schwab import (
     _schwab_action_from_effect,
     _schwab_asset_type_to_security_type,
+    _schwab_cash_event_rows,
+    _schwab_classify_cash_event_action,
     _schwab_collapse_wash_pairs,
     _schwab_trade_rows,
 )
@@ -120,6 +122,190 @@ def test_trade_rows_skips_non_trade_and_fee_only():
         )
         == []
     )
+
+
+# --------------------------------------------------------------------------- #
+# Dividend / interest sync — DIVIDEND_OR_INTEREST and friends were silently
+# dropped by the old `_schwab_trade_rows` guard. JEPI / JEPQ holders saw $0
+# dividends on /position even though the broker was reporting them. These tests
+# guard against that regression.
+# --------------------------------------------------------------------------- #
+
+
+def test_classify_qualified_dividend_from_description():
+    inst = {"description": "JPMorgan Equity Premium Income ETF"}
+    assert (
+        _schwab_classify_cash_event_action(
+            {"description": "QUALIFIED DIVIDEND~JEPI"}, inst
+        )
+        == "Qualified Dividend"
+    )
+
+
+def test_classify_cash_dividend_default():
+    assert (
+        _schwab_classify_cash_event_action({"description": "CASH DIVIDEND"}, None)
+        == "Cash Dividend"
+    )
+
+
+def test_classify_margin_interest():
+    assert (
+        _schwab_classify_cash_event_action(
+            {"description": "MARGIN INTEREST 11/26-12/29"}, None
+        )
+        == "Margin Interest"
+    )
+
+
+def test_classify_bank_interest():
+    assert (
+        _schwab_classify_cash_event_action(
+            {"description": "BANK INT ...523 SCHWAB BANK"}, None
+        )
+        == "Bank Interest"
+    )
+
+
+def test_classify_credit_interest():
+    assert (
+        _schwab_classify_cash_event_action(
+            {"description": "SCHWAB1 INT 11/26-12/29"}, None
+        )
+        == "Credit Interest"
+    )
+
+
+def test_classify_subtype_fallback_for_qd():
+    # Description empty — fall back to subType code
+    assert (
+        _schwab_classify_cash_event_action({"transactionSubType": "QD"}, None)
+        == "Qualified Dividend"
+    )
+
+
+def test_classify_unknown_event_returns_empty_string():
+    # JOURNAL / MEMORANDUM / ACH should not be classified as dividends
+    assert _schwab_classify_cash_event_action({"description": "JOURNAL ENTRY"}, None) == ""
+    assert _schwab_classify_cash_event_action({}, None) == ""
+
+
+def test_cash_event_rows_qualified_dividend_jepi():
+    """
+    Real Schwab DIVIDEND_OR_INTEREST shape for a JEPI qualified dividend.
+    The dividend leg carries the symbol; the cash-equivalent leg is a
+    bookkeeping mirror that must be ignored to avoid a duplicate row.
+    """
+    tx = {
+        "type": "DIVIDEND_OR_INTEREST",
+        "transactionSubType": "QD",
+        "tradeDate": "2024-08-01T00:00:00+0000",
+        "description": "QUALIFIED DIVIDEND~JEPI",
+        "netAmount": 142.55,
+        "transferItems": [
+            {
+                "amount": 142.55,
+                "instrument": {
+                    "symbol": "JEPI",
+                    "assetType": "COLLECTIVE_INVESTMENT",
+                    "description": "JPMorgan Equity Premium Income ETF",
+                },
+            },
+            {
+                "amount": -142.55,
+                "instrument": {"assetType": "CASH_EQUIVALENT"},
+            },
+        ],
+    }
+    rows = _schwab_cash_event_rows(tx)
+    assert len(rows) == 1, rows
+    r = rows[0]
+    assert r["action"] == "Qualified Dividend"
+    assert r["symbol"] == "JEPI"
+    assert r["amount"] == 142.55
+    assert r["quantity"] == ""
+    assert r["price"] == ""
+
+
+def test_cash_event_rows_cash_dividend_with_only_equity_leg():
+    tx = {
+        "type": "DIVIDEND_OR_INTEREST",
+        "subType": "CD",
+        "transactionDate": "2024-09-15T00:00:00+0000",
+        "description": "CASH DIVIDEND",
+        "transferItems": [
+            {
+                "amount": 80.00,
+                "instrument": {
+                    "symbol": "JEPQ",
+                    "assetType": "COLLECTIVE_INVESTMENT",
+                },
+            },
+        ],
+    }
+    rows = _schwab_cash_event_rows(tx)
+    assert len(rows) == 1
+    assert rows[0]["action"] == "Cash Dividend"
+    assert rows[0]["symbol"] == "JEPQ"
+    assert rows[0]["amount"] == 80.00
+
+
+def test_cash_event_rows_margin_interest_no_instrument_leg():
+    """
+    Margin interest typically arrives with no instrument at all (just a
+    netAmount and description). The fallback path should still emit a row.
+    """
+    tx = {
+        "type": "DIVIDEND_OR_INTEREST",
+        "transactionDate": "2024-08-30T00:00:00+0000",
+        "description": "MARGIN INTEREST 07/30-08/29",
+        "netAmount": -18.95,
+        "transferItems": [],
+    }
+    rows = _schwab_cash_event_rows(tx)
+    assert len(rows) == 1
+    assert rows[0]["action"] == "Margin Interest"
+    assert rows[0]["symbol"] == ""
+    assert rows[0]["amount"] == -18.95
+
+
+def test_cash_event_rows_skips_unrelated_receive_and_deliver():
+    """
+    RECEIVE_AND_DELIVER also covers stock splits / mergers / journal entries.
+    Without a dividend-shaped description or subType we should not synthesize
+    a fake dividend row — Schwab's daily snapshot reflects those flows.
+    """
+    tx = {
+        "type": "RECEIVE_AND_DELIVER",
+        "transactionSubType": "SPLIT",
+        "description": "MANDATORY REVERSE STOCK SPLIT",
+        "transferItems": [
+            {
+                "amount": -100,
+                "instrument": {"symbol": "RVSN", "assetType": "EQUITY"},
+            },
+            {
+                "amount": 1,
+                "instrument": {"symbol": "RVSN", "assetType": "EQUITY"},
+            },
+        ],
+    }
+    assert _schwab_cash_event_rows(tx) == []
+
+
+def test_cash_event_rows_skips_pure_trade_payload():
+    # Sanity: dividend extractor must not emit anything for a TRADE row.
+    tx = {
+        "type": "TRADE",
+        "transferItems": [
+            {
+                "amount": -100,
+                "instrument": {"symbol": "JEPI", "assetType": "EQUITY"},
+                "price": 60.0,
+            }
+        ],
+    }
+    assert _schwab_cash_event_rows(tx) == []
 
 
 def test_trade_rows_collapses_covered_call_assignment_wash_pair():

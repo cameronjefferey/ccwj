@@ -2373,11 +2373,20 @@ def position_detail(symbol):
     # Strategy rows: positions_summary plus any (account, strategy) missing from the mart.
     # Always roll up int_strategy_classification and merge in gaps — the mart can lag by a
     # dbt run (e.g. right after a Schwab/CSV seed commit) and silently drop closed history
-    # for a symbol whose open row is already in the mart. Scoped to the user's accounts.
+    # for a symbol whose open row is already in the mart.
+    #
+    # Account scoping: when the user has filtered to a single account, the supplement
+    # MUST be restricted to that account too. Otherwise int_strategy rows from the
+    # user's other accounts get rolled in and the page shows mixed-account rows even
+    # though the URL is scoped (`?account=X`). This was the visible bug on
+    # /position/JEPI?account=Schwab••••0044 — table showed 4828, 8602, Coco rows.
     summary_for_strat = summary_df
-    if user_accounts is not None and len(user_accounts) > 0:
+    strat_accounts_scope = (
+        [selected_account] if selected_account else user_accounts
+    )
+    if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
         int_raw = _fetch_int_strategy_classification_by_symbol(
-            client, safe_symbol, user_accounts
+            client, safe_symbol, strat_accounts_scope
         )
         if not int_raw.empty:
             rolled = _rollup_int_strategy_to_summary_shape(int_raw)

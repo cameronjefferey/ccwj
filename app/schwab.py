@@ -1296,6 +1296,12 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
     transactions = []
     for tx in tx_list:
         transactions.extend(_schwab_trade_rows(tx))
+        # Schwab Connect was previously dropping every non-TRADE transaction,
+        # which meant cash dividends and interest never reached trade_history.
+        # JEPI/JEPQ/dividend-stock holders saw $0 dividends on /position even
+        # though the broker was reporting them. Pull DIVIDEND_OR_INTEREST and
+        # the cash-shape RECEIVE_AND_DELIVER events through to the seed too.
+        transactions.extend(_schwab_cash_event_rows(tx))
 
     # Cross-transaction wash-pair cleanup.
     #
@@ -1447,6 +1453,189 @@ def _schwab_action_from_effect(asset_type, signed_amount, position_effect, instr
             return "Buy to Close" if bought else "Sell to Close"
         return "Buy to Open" if bought else "Sell to Open"
     return "Buy" if bought else "Sell"
+
+
+_SCHWAB_CASH_EVENT_TYPES = {
+    "DIVIDEND_OR_INTEREST",
+    "RECEIVE_AND_DELIVER",
+}
+
+# Instrument assetTypes that should not be treated as the dividend symbol leg
+# of a DIVIDEND_OR_INTEREST transaction (they're the cash-side journal leg).
+_SCHWAB_CASH_INSTRUMENT_TYPES = {
+    "CASH_EQUIVALENT",
+    "CURRENCY",
+    "MONEY_MARKET",
+    "FIXED_INCOME",  # rare, but cash-equivalent for dividend bookkeeping
+}
+
+
+def _schwab_classify_cash_event_action(tx, item_instrument):
+    """
+    Decide a brokerage-export Action label ("Cash Dividend", "Qualified Dividend",
+    "Margin Interest", "Bank Interest", "Credit Interest", "Special Dividend") for
+    a Schwab DIVIDEND_OR_INTEREST or dividend-shaped RECEIVE_AND_DELIVER
+    transaction. Returns "" if it doesn't look like a dividend or interest event.
+
+    Schwab's transaction `description` is the most reliable signal: cash dividends
+    say things like "QUALIFIED DIVIDEND~JEPI" or "CASH DIVIDEND". Interest rows
+    say "MARGIN INTEREST", "BANK INT...", or "SCHWAB1 INT..." The transactionSubType
+    is also informative ("QD" qualified, "ND" non-qualified, "CD" cash, "INT").
+    """
+    desc_text = str(tx.get("description") or "").upper()
+    item_desc = str((item_instrument or {}).get("description") or "").upper()
+    full = f"{desc_text} {item_desc}".strip()
+
+    sub = str(
+        tx.get("transactionSubType")
+        or tx.get("subType")
+        or ""
+    ).upper().strip()
+
+    if "SPECIAL" in full and "QUAL" in full and "DIV" in full:
+        return "Special Qual Div"
+    if "SPECIAL" in full and "DIV" in full:
+        return "Special Dividend"
+    if "QUALIFIED" in full and "DIV" in full:
+        return "Qualified Dividend"
+    if "PR YR" in full and "DIV" in full:
+        return "Pr Yr Cash Div"
+    if "DIVIDEND" in full or "DIV " in full or full.endswith(" DIV"):
+        return "Cash Dividend"
+    if "MARGIN INTEREST" in full or full.startswith("INTEREST"):
+        return "Margin Interest"
+    if "BANK INT" in full:
+        return "Bank Interest"
+    if "CREDIT INTEREST" in full or "SCHWAB1 INT" in full:
+        return "Credit Interest"
+
+    # Fall back to subType code when the description is truncated or empty
+    if sub in {"QD"}:
+        return "Qualified Dividend"
+    if sub in {"ND", "CD"}:
+        return "Cash Dividend"
+    if "DIV" in sub:
+        return "Cash Dividend"
+    if sub in {"BANKINT", "BANKINTEREST"}:
+        return "Bank Interest"
+    if "MARGIN" in sub:
+        return "Margin Interest"
+    if "CREDIT" in sub:
+        return "Credit Interest"
+    if sub in {"INT"}:
+        # generic interest — assume bank/credit (positive cash); margin is rare
+        # and tends to come through with the explicit MARGIN keyword above.
+        return "Bank Interest"
+    return ""
+
+
+def _schwab_cash_event_rows(tx):
+    """
+    Turn one Schwab DIVIDEND_OR_INTEREST (or dividend-shaped RECEIVE_AND_DELIVER)
+    transaction into zero or more brokerage-export-shaped rows.
+
+    Schwab Connect was previously dropping every non-TRADE transaction (see
+    `_schwab_trade_rows`'s `tx.get("type") != "TRADE"` guard), which meant
+    every dividend and interest event from sync'd users was silently lost.
+    JEPI / JEPQ holders saw $0 dividends on /position/<symbol> and the
+    "Dividend" strategy bucket was unreachable for any account synced via OAuth.
+
+    The output schema matches the manual Schwab CSV export rows for dividends
+    and interest (see seeds/trade_history.csv): empty Quantity/Price, the
+    underlying ETF/stock symbol on the dividend leg, and a positive Amount
+    for credits (negative for margin interest).
+
+    transferItems for a dividend usually look like:
+        [
+            {amount: +142.55, instrument: {symbol: "JEPI", assetType: "EQUITY"}},
+            {amount: -142.55, instrument: {assetType: "CASH_EQUIVALENT"}},
+        ]
+    We keep the equity leg and drop the cash bookkeeping leg.
+    """
+    if not isinstance(tx, dict):
+        return []
+    tx_type = str(tx.get("type") or "").upper()
+    if tx_type not in _SCHWAB_CASH_EVENT_TYPES:
+        return []
+
+    dt = (
+        tx.get("tradeDate")
+        or tx.get("time")
+        or tx.get("transactionDate")
+        or tx.get("settlementDate", "")
+    )
+    if isinstance(dt, (int, float)):
+        dt = str(int(dt))
+    date_str = _format_date(dt)
+
+    items = tx.get("transferItems")
+    if not isinstance(items, list):
+        items = []
+
+    # Pick the dividend leg: prefer non-cash instrument with a non-empty symbol.
+    # Keep the original instrument to extract description for action classification
+    # (Schwab sometimes carries "QUALIFIED DIVIDEND~JEPI" on the leg's description).
+    dividend_legs = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        inst = it.get("instrument") if isinstance(it.get("instrument"), dict) else {}
+        asset_type = str(inst.get("assetType") or inst.get("type") or "").upper()
+        if asset_type in _SCHWAB_CASH_INSTRUMENT_TYPES:
+            continue
+        try:
+            amt = float(it.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if abs(amt) < 1e-9:
+            continue
+        dividend_legs.append((it, inst, amt, asset_type))
+
+    rows = []
+    if dividend_legs:
+        for it, inst, amt, _asset_type in dividend_legs:
+            action = _schwab_classify_cash_event_action(tx, inst)
+            if not action:
+                # Not a dividend/interest event — RECEIVE_AND_DELIVER also covers
+                # stock splits, mergers, journal entries; leave those alone here
+                # and rely on Schwab's daily position snapshot to reflect them.
+                continue
+            sym = str(inst.get("symbol") or "").strip()
+            descr = inst.get("description") or sym or tx.get("description") or action
+            rows.append({
+                "transaction_date": date_str,
+                "action": action,
+                "symbol": sym,
+                "description": descr,
+                "quantity": "",
+                "price": "",
+                "fees": "",
+                "amount": amt,
+            })
+        return rows
+
+    # No usable transferItems leg (cash-only events like Bank/Credit/Margin
+    # Interest often arrive with no instrument at all). Fall back to netAmount.
+    action = _schwab_classify_cash_event_action(tx, None)
+    if not action:
+        return []
+    try:
+        net = float(tx.get("netAmount") or 0)
+    except (TypeError, ValueError):
+        net = 0.0
+    if abs(net) < 1e-9:
+        return []
+    rows.append({
+        "transaction_date": date_str,
+        "action": action,
+        "symbol": "",
+        "description": tx.get("description") or action,
+        "quantity": "",
+        "price": "",
+        "fees": "",
+        "amount": net,
+    })
+    return rows
 
 
 def _schwab_trade_rows(tx):

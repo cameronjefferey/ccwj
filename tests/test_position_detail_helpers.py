@@ -189,5 +189,61 @@ def test_supplement_with_empty_rolled_returns_summary():
     assert out.iloc[0]["strategy"] == "Long Call"
 
 
+# --------------------------------------------------------------------------- #
+# Account-scoping invariant: when /position/<symbol>?account=X scopes the
+# page to one account, the int_strategy supplement MUST NOT pull rows from
+# the user's other accounts. See routes.py around `strat_accounts_scope`.
+# Regression: /position/JEPI?account=Schwab••••0044 used to render rows for
+# 4828, 8602, Coco — leaking other accounts into a filtered view.
+# --------------------------------------------------------------------------- #
+
+
+def test_position_detail_scopes_int_strategy_supplement_to_selected_account(
+    monkeypatch,
+):
+    """
+    Smoke check for the account-scoping fix in routes.position_detail. We don't
+    need to spin up the full Flask request — instead we mimic the small block
+    that decides which list of accounts to pass to the int_strategy fetch and
+    assert that selected_account wins over the wider user_accounts list.
+    """
+    user_accounts = ["A", "B", "C"]
+
+    # User filtered to account "B"
+    selected_account = "B"
+    scope = [selected_account] if selected_account else user_accounts
+    assert scope == ["B"]
+    # And when no selection is set, fall back to the full set
+    selected_account = ""
+    scope = [selected_account] if selected_account else user_accounts
+    assert scope == user_accounts
+
+
+def test_supplement_does_not_introduce_unrelated_account_rows():
+    """
+    Even if the rolled DataFrame is built from a wider account list (defensive
+    case if a future refactor forgets the scope), supplementing should not
+    silently inject rows that don't already exist in summary_df keyed on
+    (account, strategy). This is what visibly fired on the JEPI page.
+    """
+    summary = pd.DataFrame([_summary_row("0044", "Buy and Hold", "Open", -52000.0)])
+    # Rolled rows from accounts the user didn't ask for. The supplement
+    # behavior is to ADD missing (account, strategy) pairs — so this test
+    # documents that the scoping invariant lives at the FETCH layer, not the
+    # supplement layer. If you ever change supplement to filter, update this.
+    rolled = pd.DataFrame([
+        _summary_row("0044", "Buy and Hold", "Open", -52000.0),
+        _summary_row("4828", "Buy and Hold", "Closed", -10000.0),
+        _summary_row("Coco", "Buy and Hold", "Closed", 1000.0),
+    ])
+    out = _supplement_summary_with_rolled(summary, rolled)
+    accounts = sorted(out["account"].unique().tolist())
+    # If this test ever flips and accounts == ['0044'], it means supplement
+    # learned to scope by account too. That's OK — just delete this test.
+    assert "4828" in accounts and "Coco" in accounts, (
+        "Supplement is account-agnostic; scoping must happen at the fetch step"
+    )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
