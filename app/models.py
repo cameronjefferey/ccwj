@@ -791,9 +791,21 @@ def update_schwab_tokens_for_user(user_id, token_json):
     When a refresh rotates the token (or the user re-authorizes), every
     connection row needs the new token or the next sync of the un-updated
     rows will 401 with a stale refresh_token.
+
+    Also clears ``refresh_token_invalid_at`` on every row: if we just
+    landed a fresh token covering the whole login, every sibling
+    connection is implicitly valid again. Without this, the
+    "Reconnect Schwab" banner stays up after re-auth because
+    ``save_schwab_connection`` only clears the flag on the single row
+    matching the first ``accountNumbers`` entry — the other 4 of a
+    5-account login keep ``refresh_token_invalid_at`` set and the
+    banner template's ``IS NOT NULL`` query keeps matching them.
     """
     execute(
-        "UPDATE schwab_connections SET token_json = %s, updated_at = NOW() "
+        "UPDATE schwab_connections "
+        "SET token_json = %s, "
+        "    refresh_token_invalid_at = NULL, "
+        "    updated_at = NOW() "
         "WHERE user_id = %s",
         (token_json, user_id),
     )

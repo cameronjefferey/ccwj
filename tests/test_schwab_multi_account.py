@@ -272,3 +272,56 @@ def test_account_nicknames_swallows_db_errors(monkeypatch):
     # A transient DB hiccup must not blank account labels app-wide; the
     # filter falls back to raw account_name when the dict is empty.
     assert _models.get_account_nicknames(7) == {}
+
+
+# ---------------------------------------------------------------------------
+# update_schwab_tokens_for_user — reconnect MUST clear refresh_token_invalid_at
+# on every sibling row, not just the one save_schwab_connection rewrites.
+#
+# Regression guard: a single Schwab login can authorize many brokerage
+# accounts. After OAuth, schwab_callback writes the freshly returned token
+# to one row via save_schwab_connection (which clears the flag on that row)
+# and then propagates the token to every sibling row via this helper.
+# Sibling rows previously kept refresh_token_invalid_at set, so the
+# "Reconnect Schwab" banner — which queries WHERE IS NOT NULL — stayed up
+# even though the token was now valid for all of them.
+# ---------------------------------------------------------------------------
+
+
+def test_update_schwab_tokens_for_user_clears_invalid_flag(monkeypatch):
+    spy = _ExecuteSpy()
+    monkeypatch.setattr(_models, "execute", spy)
+
+    _models.update_schwab_tokens_for_user(42, '{"token": "fresh"}')
+
+    assert len(spy.calls) == 1
+    sql, params = spy.calls[0]
+    # Token gets written to every row owned by the user...
+    assert "UPDATE schwab_connections" in sql
+    assert "token_json = %s" in sql
+    assert "WHERE user_id = %s" in sql
+    # ...and the invalid flag is cleared on every row in the same UPDATE
+    # so the Reconnect banner clears for all of a multi-account login.
+    assert "refresh_token_invalid_at = NULL" in sql
+    assert params == ('{"token": "fresh"}', 42)
+
+
+def test_save_schwab_connection_clears_invalid_flag_on_reauth(monkeypatch):
+    """save_schwab_connection still owns the per-row clear on the one
+    account it touches. Pinning this so the contract that each callsite
+    relies on (the OAuth callback expects ON CONFLICT to dismiss the
+    banner for the matched row) doesn't silently regress."""
+    spy = _ExecuteSpy()
+    monkeypatch.setattr(_models, "execute", spy)
+
+    _models.save_schwab_connection(
+        user_id=42,
+        account_hash="HASH_A",
+        account_number="11111",
+        account_name="Schwab \u20221111",
+        token_json='{"token": "fresh"}',
+    )
+
+    sql, _ = spy.calls[0]
+    assert "ON CONFLICT" in sql
+    assert "refresh_token_invalid_at = NULL" in sql
