@@ -24,9 +24,6 @@ with trade_daily as (
         sum(case when instrument_type in ('Call', 'Put')
             then amount else 0 end)                                     as options_amount,
 
-        sum(case when action = 'dividend'
-            then amount else 0 end)                                     as dividends_amount,
-
         sum(case when instrument_type = 'Equity' and action = 'equity_buy'
             then abs(amount) else 0 end)                                as equity_buy_cost,
 
@@ -50,6 +47,24 @@ with trade_daily as (
     group by 1, 2, 3, 4
 ),
 
+-- Dividends source: int_dividend_events. UNIONs CSV-reported dividends with
+-- yfinance-synthesized ex-div × holdings events. Reading stg_history's
+-- action='dividend' rows directly here was broken for ~99% of users —
+-- Schwab Connect drops DIVIDEND_OR_INTEREST and most users never run a
+-- manual CSV upload, so the chart's cumulative_dividends_pnl line on JEPI /
+-- JEPQ / SCHD positions stayed flat at $0 even when the user clearly owned
+-- thousands of shares for years.
+dividend_daily as (
+    select
+        account,
+        user_id,
+        symbol,
+        trade_date as date,
+        sum(amount) as dividends_amount
+    from {{ ref('int_dividend_events') }}
+    group by 1, 2, 3, 4
+),
+
 prices as (
     select account, symbol, date, close_price
     from {{ ref('stg_daily_prices') }}
@@ -69,6 +84,8 @@ known_tenants as (
 all_dates as (
     select distinct account, user_id, symbol, date from (
         select account, user_id, symbol, date from trade_daily
+        union distinct
+        select account, user_id, symbol, date from dividend_daily
         union distinct
         select account, user_id, symbol, date from {{ ref('int_daily_option_value') }}
         union distinct
@@ -92,7 +109,7 @@ joined as (
         ad.symbol,
         ad.date,
         coalesce(td.options_amount, 0)        as options_amount,
-        coalesce(td.dividends_amount, 0)      as dividends_amount,
+        coalesce(dd.dividends_amount, 0)      as dividends_amount,
         coalesce(td.equity_buy_cost, 0)       as equity_buy_cost,
         coalesce(td.equity_buy_qty, 0)        as equity_buy_qty,
         coalesce(td.equity_sell_proceeds, 0)  as equity_sell_proceeds,
@@ -102,8 +119,14 @@ joined as (
         o.option_market_value,
         o.option_cost_basis,
 
-        -- Flag rows that have at least one trade (vs price-only rows)
-        case when td.date is not null then true else false end as has_trade
+        -- "has_trade" = at least one real trade or dividend on this date
+        -- (vs price-only rows). Including dividends here is intentional:
+        -- a div-only day is meaningful activity for the chart legend.
+        case
+            when td.date is not null then true
+            when dd.date is not null then true
+            else false
+        end as has_trade
 
     from all_dates ad
     left join trade_daily td
@@ -111,6 +134,11 @@ joined as (
         and (ad.user_id is not distinct from td.user_id)
         and ad.symbol = td.symbol
         and ad.date = td.date
+    left join dividend_daily dd
+        on ad.account = dd.account
+        and (ad.user_id is not distinct from dd.user_id)
+        and ad.symbol = dd.symbol
+        and ad.date = dd.date
     left join prices p
         on ad.account = p.account
         and ad.symbol = p.symbol

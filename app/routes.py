@@ -411,16 +411,24 @@ WITH classified AS (
       {account_filter}
 ),
 
+-- Read dividends from int_dividend_events (per-event). int_dividend_events
+-- UNIONs CSV-reported dividends (from stg_history.action='dividend') with
+-- yfinance-synthesized ex-div × holdings events. Reading stg_history
+-- directly here was broken for ~99% of users: Schwab Connect drops
+-- DIVIDEND_OR_INTEREST transactions and most users have never run a manual
+-- CSV upload, so JEPI / JEPQ / SCHD positions reported $0 dividend income
+-- on /position even when the user clearly owned thousands of shares for
+-- years. Going through int_dividend_events instead respects the date
+-- range filter while picking up synthetic dividends.
 dividends AS (
     SELECT
         account,
         user_id,
-        underlying_symbol AS symbol,
+        symbol,
         SUM(amount) AS total_dividend_income,
         COUNT(*) AS dividend_count
-    FROM `ccwj-dbt.analytics.stg_history`
-    WHERE action = 'dividend'
-      AND trade_date >= @start_date
+    FROM `ccwj-dbt.analytics.int_dividend_events`
+    WHERE trade_date >= @start_date
       AND trade_date <= @end_date
       {account_filter}
     GROUP BY 1, 2, 3
