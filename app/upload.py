@@ -263,13 +263,25 @@ def _get_file_content(path):
     return data.get("content", "")
 
 
-def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
+def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_id=None):
     """
     Merge new account data with existing seed data.
     - Fetches current file from GitHub
     - For current positions: replace that account's rows (snapshot semantics)
     - For history: append new rows for that account and de-duplicate
     - Returns CSV string ready to commit
+
+    ``user_id`` (the syncing user's tenant id) MUST be passed for any
+    history merge that lands user-facing data. The dedup window is
+    scoped to the syncing user's own rows plus legacy unowned rows
+    (``user_id=""`` from before tenancy was tracked). Rows owned by
+    OTHER users under the same ``account_name`` are kept verbatim in
+    ``other_df`` and never touched — required by the tenant-isolation
+    rule: account labels can collide across users (parent + child both
+    saying "Schwab Account"), and a sync must never silently overwrite
+    another user's rows even on a key collision. See
+    ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
+    ``docs/USER_ID_TENANCY.md``.
     """
     existing_content = _get_file_content(path)
     if not existing_content or not existing_content.strip():
@@ -311,7 +323,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
 
     # Normalize Account field on both sides for comparison
     existing_df[acct_col] = existing_df[acct_col].astype(str).str.strip()
-    account_mask = existing_df[acct_col] == account_name
+    acct_match = existing_df[acct_col] == account_name
 
     # Ensure new_df has same columns as seed; align columns
     for col in seed_columns:
@@ -325,7 +337,27 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
             existing_df[col] = ""
     existing_df = existing_df[seed_columns]
 
-    # Split existing into this account vs other accounts
+    # Tenancy scope: only the syncing user's own rows (and legacy unowned
+    # rows from before user_id was tracked) are eligible to be rewritten
+    # by this merge. Rows owned by OTHER users under the same
+    # account_name stay in ``other_df`` and are never touched. Without
+    # this scope, two users sharing an account label (parent + child
+    # both calling theirs "Schwab Account", or a re-tested test user)
+    # would dedup against each other on identical trade keys and
+    # silently steal each other's history. See tenancy rule.
+    if user_id is not None and "user_id" in existing_df.columns:
+        target_uid = str(int(user_id))
+        existing_uid_norm = (
+            existing_df["user_id"]
+            .astype(str)
+            .str.strip()
+            .replace({"nan": "", "None": ""})
+        )
+        legacy_or_self = existing_uid_norm.isin(["", target_uid])
+        account_mask = acct_match & legacy_or_self
+    else:
+        account_mask = acct_match
+
     other_df = existing_df.loc[~account_mask]
     existing_account_df = existing_df.loc[account_mask]
 
@@ -335,11 +367,19 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
         if existing_account_df.empty:
             merged_account = new_df.copy()
         else:
-            # Mark source to prefer new rows on duplicates
+            # Tag rows by source so the dedup keeps the NEW row on key
+            # collisions. Use integer sentinels (0=old, 1=new) — the
+            # previous "old"/"new" string sentinels sorted alphabetically
+            # ("new" < "old") and silently put NEW rows BEFORE OLD ones,
+            # which made keep="last" retain the legacy row instead of
+            # the freshly-tagged sync row. Multi-account users with
+            # pre-tenancy seed data ended up losing every re-synced
+            # trade to that misordering. Regression-tested in
+            # tests/test_upload_merge.py.
             existing_account_df = existing_account_df.copy()
             new_tagged = new_df.copy()
-            existing_account_df["__src"] = "old"
-            new_tagged["__src"] = "new"
+            existing_account_df["__src"] = 0
+            new_tagged["__src"] = 1
             combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
 
             # Normalize key columns so duplicates match: NaN != NaN in pandas,
@@ -348,8 +388,9 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
             # not part of the trade's identity — without this exclusion a
             # legacy row (``user_id=""``) and the same-trade re-sync row
             # (``user_id=5``) would both be kept, double-counting the
-            # trade. Sorting old-first and keep="last" then makes the new
-            # row's populated user_id win.
+            # trade. The combined frame is already scoped to the syncing
+            # user + legacy rows, so excluding user_id is safe (other
+            # users' rows can't reach this dedup at all).
             key_cols = [
                 c for c in seed_columns
                 if str(c).lower() not in ("account", "user_id")
@@ -358,7 +399,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns):
                 if c in combined.columns:
                     combined[c] = combined[c].astype(str).replace("nan", "").replace("None", "").str.strip()
 
-            combined = combined.sort_values("__src")  # old first, new second
+            combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
             combined = combined.drop_duplicates(subset=key_cols, keep="last")
             merged_account = combined.drop(columns=["__src"])
     else:
@@ -632,12 +673,14 @@ def merge_and_push_seeds(
     path_contents = []
     if not skip_history and history_df is not None:
         history_content = _merge_seed_with_existing(
-            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS
+            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS,
+            user_id=user_id_int,
         )
         path_contents.append((HISTORY_PATH, history_content))
 
     current_content = _merge_seed_with_existing(
-        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS
+        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS,
+        user_id=user_id_int,
     )
     path_contents.append((CURRENT_PATH, current_content))
 
@@ -654,6 +697,7 @@ def merge_and_push_seeds(
             account_name,
             balances_prepared,
             SCHWAB_BALANCE_COLUMNS,
+            user_id=user_id_int,
         )
         path_contents.append((SCHWAB_ACCOUNT_BALANCES_PATH, bal_content))
 
