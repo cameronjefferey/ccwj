@@ -219,6 +219,72 @@ def test_position_detail_scopes_int_strategy_supplement_to_selected_account(
     assert scope == user_accounts
 
 
+def test_merge_does_not_promote_equity_leg_descriptions_to_strategy_rows():
+    """
+    Regression: int_closed_equity_legs.description is the LEG TYPE
+    ("Equity Sold" / "Cost Written Off"), not a strategy. Promoting it
+    to the strategy column produced duplicate Strategy Breakdown rows for
+    the same Buy-and-Hold session (one row per leg description), each one
+    looking like a separate strategy outcome — visible bug on JEPI/0044.
+    The merge should fold equity legs into a single 'Buy and Hold' row
+    when summary_df doesn't already cover that account.
+    """
+    closed_equity = pd.DataFrame(
+        {
+            "account": ["Schwab ••••0044", "Schwab ••••0044"],
+            "session_id": [1, 1],
+            "open_date": pd.to_datetime(["2024-07-31", "2024-07-31"]),
+            "close_date": pd.to_datetime(["2026-04-15", "2026-04-15"]),
+            "quantity": [1000.0, 1000.0],
+            "cost_basis": [54973.85, 54973.85],
+            "sell_proceeds": [57655.0, 0.0],
+            "realized_pnl": [2681.15, -54973.85],
+            "status": ["Closed", "Closed"],
+            "description": ["Equity Sold", "Cost Written Off"],
+        }
+    )
+    out = _merge_position_strategy_breakdown(
+        "JEPI", pd.DataFrame(), pd.DataFrame(), closed_equity
+    )
+    # One row per (account, strategy) — not three.
+    assert len(out) == 1, out
+    r = out.iloc[0]
+    assert r["account"] == "Schwab ••••0044"
+    assert r["strategy"] == "Buy and Hold"
+    # And nothing labeled "Cost Written Off" or "Equity Sold" anywhere.
+    strats = set(out["strategy"].astype(str))
+    assert "Cost Written Off" not in strats
+    assert "Equity Sold" not in strats
+
+
+def test_merge_falls_through_when_summary_already_has_buy_and_hold_for_account():
+    """
+    If positions_summary already classifies the closed equity session as
+    Buy-and-Hold for that account, the merge should not append a synthetic
+    row — that would double the count.
+    """
+    summary = pd.DataFrame([_summary_row("Schwab ••••0044", "Buy and Hold", "Closed", 2681.15)])
+    closed_equity = pd.DataFrame(
+        {
+            "account": ["Schwab ••••0044"],
+            "session_id": [1],
+            "open_date": pd.to_datetime(["2024-07-31"]),
+            "close_date": pd.to_datetime(["2026-04-15"]),
+            "quantity": [1000.0],
+            "cost_basis": [54973.85],
+            "sell_proceeds": [57655.0],
+            "realized_pnl": [2681.15],
+            "status": ["Closed"],
+            "description": ["Equity Sold"],
+        }
+    )
+    out = _merge_position_strategy_breakdown(
+        "JEPI", summary, pd.DataFrame(), closed_equity
+    )
+    assert len(out) == 1, out
+    assert out.iloc[0]["strategy"] == "Buy and Hold"
+
+
 def test_supplement_does_not_introduce_unrelated_account_rows():
     """
     Even if the rolled DataFrame is built from a wider account list (defensive

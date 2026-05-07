@@ -1442,23 +1442,28 @@ def _merge_position_strategy_breakdown(
             extra.append(_row_from_option_group(acct, strat, sub))
             existing.add((acct, strat))
 
+    # NOTE: `closed_equity_df` is `int_closed_equity_legs`, whose `description`
+    # column is the LEG TYPE ("Equity Sold" / "Cost Written Off"), NOT a strategy.
+    # Promoting the description into the strategy breakdown was creating spurious
+    # rows: a single Buy-and-Hold session would render as three rows in the
+    # Strategy Breakdown table (Buy and Hold + Equity Sold + Cost Written Off),
+    # each one looking like a separate strategy outcome. The Position Legs section
+    # already surfaces individual sells/transfers — the strategy breakdown should
+    # stick to one row per real (account, strategy) classification.
+    #
+    # The original intent was: if positions_summary lacks a row for a closed
+    # equity session that is recorded in int_closed_equity_legs, synthesize a
+    # "Buy and Hold"-shaped row so the table isn't blank. We preserve that
+    # narrow fallback by labeling synthetic equity rows "Buy and Hold" rather
+    # than borrowing the leg description.
     if closed_equity_df is not None and not closed_equity_df.empty and "account" in closed_equity_df.columns:
         g = closed_equity_df.copy()
-        lbl_col = "description" if "description" in g.columns else None
-        if lbl_col:
-            g["_strat_lbl"] = g[lbl_col].fillna("Equity").astype(str).str.strip()
-            g.loc[g["_strat_lbl"] == "", "_strat_lbl"] = "Equity"
-        else:
-            g["_strat_lbl"] = "Equity"
-        for (acct, slbl), sub in g.groupby(
-            [g["account"].astype(str), g["_strat_lbl"]]
-        ):
-            acct, slbl = str(acct).strip(), str(slbl).strip() or "Equity"
-            if (acct, slbl) in existing:
+        for acct, sub in g.groupby(g["account"].astype(str)):
+            acct = str(acct).strip()
+            if (acct, "Buy and Hold") in existing:
                 continue
-            sub = sub.drop(columns=["_strat_lbl"], errors="ignore")
-            extra.append(_row_from_equity_group(acct, slbl, sub))
-            existing.add((acct, slbl))
+            extra.append(_row_from_equity_group(acct, "Buy and Hold", sub))
+            existing.add((acct, "Buy and Hold"))
 
     if not extra:
         return summary_df if summary_df is not None else pd.DataFrame()

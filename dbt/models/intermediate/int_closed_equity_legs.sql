@@ -133,15 +133,41 @@ sell_events as (
       and s.session_id > 0
 ),
 
--- Synthetic write-off row for any session where the trade history shows
--- fewer shares sold than bought yet the session has closed (e.g. the symbol
--- is no longer in current holdings). The residual cost basis is the loss
--- caused by missing trade history (transfers, corporate actions, etc.) and
--- is needed so the sum of realized P&L per leg reconciles to the session's
--- actual net cash flow (which is what positions_summary reports).
+-- Residual rows: when the trade history shows fewer shares sold than bought
+-- yet the session has closed (the symbol is no longer in current holdings
+-- for THIS account), the missing shares went somewhere — most often a
+-- Schwab Journal entry that transferred them to another account in the same
+-- portfolio. We previously labeled the residual a "Cost Written Off" loss,
+-- which double-counted the cost basis on the position page (e.g. JEPI/0044:
+-- bought 2,000, sold 1,000, transferred 1,000 to /4828; we'd report a
+-- $54,973 fake loss instead of the actual $2,681 gain on the 1,000 sold).
+--
+-- The fix: cross-reference the user's CURRENT holdings of the same symbol
+-- across every account. If the residual qty is plausibly explained by
+-- shares held in another account (>= residual qty), suppress the writeoff —
+-- the cost basis isn't lost, it's just sitting in the destination account.
+-- Only emit a writeoff when no current holdings can absorb the residual
+-- (genuine missing trade history: corporate action, transfer-out off the
+-- platform, etc.). Sum-of-realized-per-leg then still reconciles to the
+-- session's actual realized P&L on the sold shares only.
 session_status as (
     select account, user_id, symbol, session_id, status, last_trade_date
     from {{ ref('int_equity_sessions') }}
+),
+
+-- Sum of currently-held shares of each (user_id, symbol) across accounts the
+-- user owns. Used to decide whether a residual buy_qty − sell_qty is a
+-- transfer (shares exist elsewhere) vs. genuinely missing trade history.
+user_other_holdings as (
+    select
+        user_id,
+        underlying_symbol as symbol,
+        sum(coalesce(quantity, 0)) as shares_held_elsewhere
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+      and coalesce(quantity, 0) > 0
+      and trim(coalesce(underlying_symbol, '')) != ''
+    group by 1, 2
 ),
 
 writeoffs as (
@@ -176,9 +202,17 @@ writeoffs as (
         and (sac.user_id is not distinct from ss.user_id)
         and sac.symbol     = ss.symbol
         and sac.session_id = ss.session_id
+    left join user_other_holdings uoh
+        on (sac.user_id is not distinct from uoh.user_id)
+        and sac.symbol = uoh.symbol
     where ss.status = 'Closed'
       and sac.total_buy_qty > sac.total_sell_qty
       and (sac.total_buy_qty - sac.total_sell_qty) > 0
+      -- Suppress writeoff when the residual is plausibly a transfer to
+      -- another account the user owns. coalesce → 0 when no shares are
+      -- held anywhere; that's the only case the residual truly is lost.
+      and coalesce(uoh.shares_held_elsewhere, 0)
+          < (sac.total_buy_qty - sac.total_sell_qty)
 ),
 
 all_legs as (

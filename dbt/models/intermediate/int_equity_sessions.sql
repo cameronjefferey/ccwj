@@ -70,7 +70,11 @@ sessions as (
     from with_prev
 ),
 
--- Aggregate each session (trade-derived only)
+-- Aggregate each session (trade-derived only). We track buy_qty / sell_qty
+-- separately so the closed-session P&L logic below can spot transfer-out
+-- residuals (buy_qty > sell_qty AND no current holdings in this account)
+-- and value them against the actually-sold shares' cost basis instead of
+-- treating the missing shares as a $0-proceeds loss.
 trade_session_summary as (
     select
         account,
@@ -81,6 +85,13 @@ trade_session_summary as (
         max(trade_date)  as last_trade_date,
         max(running_qty) as max_quantity_held,
         sum(amount)      as net_cash_flow,   -- total cash in/out from buys and sells
+        sum(case when action = 'equity_buy' then abs(amount) else 0 end)
+                         as total_buy_cost,
+        sum(case when action = 'equity_buy' then quantity else 0 end)
+                         as total_buy_qty,
+        sum(case when action in ('equity_sell','equity_sell_short')
+                 then quantity else 0 end)
+                         as total_sell_qty,
         count(*)         as num_trades
     from sessions
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
@@ -98,6 +109,9 @@ snapshot_equity_sessions as (
         coalesce(c.snapshot_date, current_date()) as last_trade_date,
         coalesce(abs(c.quantity), 0) as max_quantity_held,
         -coalesce(c.cost_basis, 0) as net_cash_flow,
+        coalesce(c.cost_basis, 0)  as total_buy_cost,
+        coalesce(abs(c.quantity), 0) as total_buy_qty,
+        cast(0 as float64)         as total_sell_qty,
         0 as num_trades
     from {{ ref('stg_current') }} c
     where c.instrument_type = 'Equity'
@@ -122,6 +136,27 @@ session_summary as (
     select * from trade_session_summary
     union all
     select * from snapshot_equity_sessions
+),
+
+-- Cross-account holdings of the same (user_id, symbol). When a session
+-- closes for one account but the user still holds the symbol elsewhere,
+-- the missing shares were almost certainly transferred (Schwab Journal
+-- entry with no symbol-bearing trade row). For those sessions, total_pnl
+-- and realized_pnl below report the cost basis of the SOLD shares only,
+-- not the cost basis of the transferred shares — the latter sits in the
+-- destination account and counts there. Without this, JEPI / dividend ETFs
+-- that get transferred between joint and individual accounts produce
+-- six-figure phantom losses on the position page.
+user_total_holdings as (
+    select
+        user_id,
+        underlying_symbol as symbol,
+        sum(coalesce(quantity, 0)) as shares_held_anywhere
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+      and coalesce(quantity, 0) > 0
+      and trim(coalesce(underlying_symbol, '')) != ''
+    group by 1, 2
 ),
 
 -- Identify the latest session per account/symbol (candidate for "Open")
@@ -167,11 +202,40 @@ final as (
         end as current_price,
 
         -- Total P&L
-        --   Closed session:  sum of all cash flows (buy amounts + sell amounts)
         --   Open session:    cash flows + current market value of remaining shares
+        --   Closed session, no transfer-out:        net_cash_flow (buys + sells)
+        --   Closed session, transfer-out detected:  realized P&L on sold shares
+        --                                           only (sell_proceeds − sold-share
+        --                                           cost basis); transferred shares'
+        --                                           cost is in the destination account.
+        --
+        -- Transfer-out heuristic: session is Closed for THIS account
+        -- (snapshot has no shares here), buy_qty > sell_qty, AND the user
+        -- holds the symbol in another account that can absorb the residual.
         case
             when ls.latest_session_id = s.session_id and c.trade_symbol is not null
-            then s.net_cash_flow + coalesce(c.market_value, 0)
+                then s.net_cash_flow + coalesce(c.market_value, 0)
+            when c.trade_symbol is null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
+                 and coalesce(uth.shares_held_anywhere, 0)
+                     >= (coalesce(s.total_buy_qty, 0) - coalesce(s.total_sell_qty, 0))
+                then -- realized on sold shares only
+                     -- = sell_proceeds_total − avg_cost × sell_qty
+                     -- net_cash_flow = sell_proceeds_total − total_buy_cost
+                     -- so realized = net_cash_flow + total_buy_cost
+                     --              − avg_cost × (buy_qty − sell_qty)
+                     -- which simplifies to:
+                     -- net_cash_flow + (total_buy_cost / buy_qty) × sell_qty
+                     --                             − total_buy_cost × (sell_qty / buy_qty)
+                     -- but we keep it explicit for readability:
+                round(
+                    s.net_cash_flow
+                    + safe_divide(
+                        s.total_buy_cost,
+                        greatest(s.total_buy_qty, s.total_sell_qty)
+                    ) * (s.total_buy_qty - s.total_sell_qty),
+                    2
+                )
             else s.net_cash_flow
         end as total_pnl,
 
@@ -192,6 +256,9 @@ final as (
         and (s.user_id is not distinct from c.user_id)
         and s.symbol = c.underlying_symbol
         and c.instrument_type = 'Equity'
+    left join user_total_holdings uth
+        on (s.user_id is not distinct from uth.user_id)
+        and s.symbol = uth.symbol
 )
 
 select * from final
