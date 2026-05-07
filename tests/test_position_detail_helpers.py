@@ -285,6 +285,49 @@ def test_merge_falls_through_when_summary_already_has_buy_and_hold_for_account()
     assert out.iloc[0]["strategy"] == "Buy and Hold"
 
 
+def test_merge_falls_through_when_summary_has_dividend_strategy_for_account():
+    """
+    Regression for the JEPI/0044 visible bug: positions_summary reclassifies
+    Buy-and-Hold to "Dividend" when div income > trade gain. The merge used
+    to look up only ("Buy and Hold") in `existing` so when the mart shipped
+    a "Dividend" row, the merge thought no equity row existed and appended
+    a synthetic Buy-and-Hold *alongside* the Dividend row — two rows for
+    the same closed session, only one with $16k of dividends.
+    Equity-bucket rows ("Buy and Hold" or its "Dividend" reclassification)
+    occupy the same slot; either's presence should suppress synthesis.
+    """
+    summary = pd.DataFrame([
+        {
+            **_summary_row("Schwab ••••0044", "Dividend", "Closed", 18861.15),
+            "total_dividend_income": 16180.0,
+            "dividend_count": 21,
+        }
+    ])
+    closed_equity = pd.DataFrame(
+        {
+            "account": ["Schwab ••••0044"],
+            "session_id": [1],
+            "open_date": pd.to_datetime(["2024-07-31"]),
+            "close_date": pd.to_datetime(["2026-04-15"]),
+            "quantity": [1000.0],
+            "cost_basis": [54973.85],
+            "sell_proceeds": [57655.0],
+            "realized_pnl": [2681.15],
+            "status": ["Closed"],
+            "description": ["Equity Sold"],
+        }
+    )
+    out = _merge_position_strategy_breakdown(
+        "JEPI", summary, pd.DataFrame(), closed_equity
+    )
+    assert len(out) == 1, f"Expected single equity-bucket row, got: {out}"
+    r = out.iloc[0]
+    assert r["strategy"] == "Dividend"
+    assert float(r["total_dividend_income"]) == 16180.0
+    # Trade-side P&L preserved as part of total_pnl
+    assert float(r["total_pnl"]) == 18861.15
+
+
 def test_supplement_does_not_introduce_unrelated_account_rows():
     """
     Even if the rolled DataFrame is built from a wider account list (defensive

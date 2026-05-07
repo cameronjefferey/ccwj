@@ -1436,6 +1436,18 @@ def _merge_position_strategy_breakdown(
             "total_return": round(real, 2),
         }
 
+    # Equity bucket: positions_summary's "Buy and Hold" row gets reclassified
+    # to "Dividend" when dividend income > trade gain. They occupy the same
+    # equity-strategy slot in the breakdown — only one of them can ever exist
+    # for a given (account, symbol). Track which accounts already have one
+    # so we don't synthesize a duplicate Buy-and-Hold row alongside a real
+    # Dividend row from the mart.
+    EQUITY_BUCKET = ("Buy and Hold", "Dividend")
+    equity_covered_accounts: set[str] = set()
+    for acct_existing, strat_existing in existing:
+        if strat_existing in EQUITY_BUCKET:
+            equity_covered_accounts.add(acct_existing)
+
     extra: list[dict] = []
 
     if closed_legs_df is not None and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
@@ -1468,10 +1480,16 @@ def _merge_position_strategy_breakdown(
         g = closed_equity_df.copy()
         for acct, sub in g.groupby(g["account"].astype(str)):
             acct = str(acct).strip()
-            if (acct, "Buy and Hold") in existing:
+            # Skip if positions_summary already has any equity-bucket row for
+            # this account (Buy and Hold or its Dividend reclassification).
+            # Otherwise we'd render two rows for the same closed equity session
+            # — one "Dividend" with $16k divs, one synthetic "Buy and Hold"
+            # with $0 divs — and they'd look like separate strategies.
+            if acct in equity_covered_accounts:
                 continue
             extra.append(_row_from_equity_group(acct, "Buy and Hold", sub))
             existing.add((acct, "Buy and Hold"))
+            equity_covered_accounts.add(acct)
 
     if not extra:
         return summary_df if summary_df is not None else pd.DataFrame()
