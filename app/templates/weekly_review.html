@@ -602,11 +602,15 @@
     .cal-grid-rolling.is-expanded .cal-rolling-week-label.cal-extra {
         display: block;
     }
+    .cal-section-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 1rem; max-width: 36rem; margin-bottom: .5rem;
+    }
     .cal-toggle-btn {
-        margin-top: .65rem; background: transparent; border: 0;
-        padding: .25rem 0; font-size: .72rem; font-weight: 600;
+        background: transparent; border: 0; padding: .25rem 0;
+        font-size: .68rem; font-weight: 600;
         text-transform: uppercase; letter-spacing: .4px;
-        color: #2563eb; cursor: pointer;
+        color: #2563eb; cursor: pointer; white-space: nowrap;
     }
     .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
     .cal-toggle-btn[hidden] { display: none; }
@@ -1067,7 +1071,20 @@
     {% endif %}
 {% endfor %}{% endfor %}
 <div class="review-section">
-    <div class="section-label">Daily P&amp;L — {{ calendar_month_label|default('last 4 weeks') }}</div>
+    <div class="cal-section-head">
+        <div class="section-label" style="margin:0;">Daily P&amp;L</div>
+        {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
+        <button type="button"
+                id="cal-toggle-btn"
+                class="cal-toggle-btn"
+                data-extra="{{ calendar_extra_weeks }}"
+                data-default="{{ calendar_default_weeks|default(4) }}"
+                aria-controls="cal-grid-rolling"
+                aria-expanded="false">
+            Show {{ calendar_extra_weeks }} earlier week{{ 's' if calendar_extra_weeks != 1 else '' }} &uarr;
+        </button>
+        {% endif %}
+    </div>
     <div class="cal-grid-rolling" id="cal-grid-rolling">
         <div class="cal-rolling-header">Week</div>
         <div class="cal-rolling-header">Mon</div>
@@ -1108,15 +1125,6 @@
         {% endfor %}
     </div>
     {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
-    <button type="button"
-            id="cal-toggle-btn"
-            class="cal-toggle-btn"
-            data-extra="{{ calendar_extra_weeks }}"
-            data-default="{{ calendar_default_weeks|default(4) }}"
-            aria-controls="cal-grid-rolling"
-            aria-expanded="false">
-        Show {{ calendar_extra_weeks }} earlier week{{ 's' if calendar_extra_weeks != 1 else '' }} &darr;
-    </button>
     <script>
         (function () {
             var grid = document.getElementById('cal-grid-rolling');
@@ -1127,8 +1135,8 @@
                 var expanded = grid.classList.toggle('is-expanded');
                 btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
                 btn.innerHTML = expanded
-                    ? 'Show less &uarr;'
-                    : 'Show ' + extra + ' earlier week' + (extra !== 1 ? 's' : '') + ' &darr;';
+                    ? 'Show less &darr;'
+                    : 'Show ' + extra + ' earlier week' + (extra !== 1 ? 's' : '') + ' &uarr;';
             });
         })();
     </script>

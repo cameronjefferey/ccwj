@@ -2367,11 +2367,12 @@ def weekly_review():
         # ── Process: Daily P&L — rolling N-week grid ──
         # The grid renders DAILY_CALENDAR_WEEKS rows in the DOM; the template
         # shows DAILY_CALENDAR_DEFAULT_WEEKS by default and a JS toggle reveals
-        # the rest. So the labels reflect the default *visible* window, not
-        # the fetched one.
+        # the rest. The section heading is intentionally generic ("Daily P&L")
+        # — earlier copy hard-coded "last 4 weeks" but that becomes wrong the
+        # moment a user expands the view, and the dates on each row already
+        # tell them the window.
         context["daily_calendar"] = []
         context["calendar_grid"] = []
-        context["calendar_month_label"] = f"Last {DAILY_CALENDAR_DEFAULT_WEEKS} weeks"
         context["calendar_weeks_back"] = DAILY_CALENDAR_WEEKS
         context["calendar_default_weeks"] = DAILY_CALENDAR_DEFAULT_WEEKS
         context["calendar_extra_weeks"] = max(
