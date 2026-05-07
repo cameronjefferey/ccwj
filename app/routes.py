@@ -2682,8 +2682,11 @@ def position_detail(symbol):
         filtered_trade_syms = set(r.get("trade_symbol") for r in closed_legs_list)
         if "trade_symbol" in matrix_df.columns:
             matrix_df = matrix_df[matrix_df["trade_symbol"].isin(filtered_trade_syms)]
+    _matrix_default_account = ""
+    if user_accounts and len(user_accounts) == 1:
+        _matrix_default_account = user_accounts[0]
     option_matrices = _build_option_matrices(
-        matrix_df, selected_account or (user_accounts[0] if len(user_accounts) == 1 else ""), symbol
+        matrix_df, selected_account or _matrix_default_account, symbol
     ) if not matrix_df.empty else []
     if not option_matrices and not matrix_df.empty:
         all_mats = []
