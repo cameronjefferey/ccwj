@@ -575,9 +575,12 @@
     }
     .noticed-detail { font-weight: 400; }
 
-    /* ── Rolling 4-week calendar ──
+    /* ── Rolling N-week calendar ──
        Replaces the "current calendar month so far" grid that was empty on
-       the 1st of every month. Always shows 4 weeks × Mon-Fri. */
+       the 1st of every month. Default view is the last 4 weeks × Mon-Fri;
+       a "Show earlier weeks" button below the grid reveals up to 12 weeks
+       of history (already in the DOM, marked .cal-extra and hidden by
+       default — no extra request when the user expands). */
     .cal-grid-rolling {
         display: grid;
         grid-template-columns: 5rem repeat(5, 1fr);
@@ -593,6 +596,20 @@
         font-size: .68rem; color: #94a3b8; text-transform: uppercase;
         letter-spacing: .4px; align-self: center; padding-left: .25rem;
     }
+    /* Older history rendered server-side but hidden until the toggle fires. */
+    .cal-grid-rolling .cal-extra { display: none; }
+    .cal-grid-rolling.is-expanded .cal-extra { display: flex; }
+    .cal-grid-rolling.is-expanded .cal-rolling-week-label.cal-extra {
+        display: block;
+    }
+    .cal-toggle-btn {
+        margin-top: .65rem; background: transparent; border: 0;
+        padding: .25rem 0; font-size: .72rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: .4px;
+        color: #2563eb; cursor: pointer;
+    }
+    .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
+    .cal-toggle-btn[hidden] { display: none; }
 
     /* ── Numbers disclosure (collapsible) ──
        The richer P&L tables are kept (don't lose data!) but tucked behind
@@ -1050,8 +1067,8 @@
     {% endif %}
 {% endfor %}{% endfor %}
 <div class="review-section">
-    <div class="section-label">Daily P&amp;L — {{ calendar_month_label|default('last 12 weeks') }}</div>
-    <div class="cal-grid-rolling">
+    <div class="section-label">Daily P&amp;L — {{ calendar_month_label|default('last 4 weeks') }}</div>
+    <div class="cal-grid-rolling" id="cal-grid-rolling">
         <div class="cal-rolling-header">Week</div>
         <div class="cal-rolling-header">Mon</div>
         <div class="cal-rolling-header">Tue</div>
@@ -1059,7 +1076,8 @@
         <div class="cal-rolling-header">Thu</div>
         <div class="cal-rolling-header">Fri</div>
         {% for r in calendar_grid %}
-            <div class="cal-rolling-week-label">{{ r.week_label }}</div>
+            {% set extra_cls = ' cal-extra' if r.is_extra else '' %}
+            <div class="cal-rolling-week-label{{ extra_cls }}">{{ r.week_label }}</div>
             {% for c in r.cells %}
                 {% if c.is_future %}
                     {% set bg = "#f9fafb" %}
@@ -1080,7 +1098,7 @@
                     {% set bg = "#f3f4f6" %}
                     {% set fg = "#d1d5db" %}
                 {% endif %}
-                <div class="cal-day {{ 'today' if c.is_today }}" style="background:{{ bg }}; color:{{ fg }};">
+                <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
                     <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
@@ -1089,6 +1107,32 @@
             {% endfor %}
         {% endfor %}
     </div>
+    {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
+    <button type="button"
+            id="cal-toggle-btn"
+            class="cal-toggle-btn"
+            data-extra="{{ calendar_extra_weeks }}"
+            data-default="{{ calendar_default_weeks|default(4) }}"
+            aria-controls="cal-grid-rolling"
+            aria-expanded="false">
+        Show {{ calendar_extra_weeks }} earlier week{{ 's' if calendar_extra_weeks != 1 else '' }} &darr;
+    </button>
+    <script>
+        (function () {
+            var grid = document.getElementById('cal-grid-rolling');
+            var btn  = document.getElementById('cal-toggle-btn');
+            if (!grid || !btn) return;
+            var extra = parseInt(btn.dataset.extra, 10) || 0;
+            btn.addEventListener('click', function () {
+                var expanded = grid.classList.toggle('is-expanded');
+                btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                btn.innerHTML = expanded
+                    ? 'Show less &uarr;'
+                    : 'Show ' + extra + ' earlier week' + (extra !== 1 ? 's' : '') + ' &darr;';
+            });
+        })();
+    </script>
+    {% endif %}
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
         Daily account snapshots haven&rsquo;t arrived yet. New Schwab syncs and uploads take a few minutes to show up here.

@@ -1482,29 +1482,52 @@ def _build_noticed(key_observation, patterns, coaching_take):
     return cards[:3]
 
 
-DAILY_CALENDAR_WEEKS = 12  # ~3 months — enough history to spot patterns
-                           # without the grid getting unwieldy. The data source
-                           # (closed-trade P&L + dividends) extends as far
-                           # back as the user has trade history, so this is a
-                           # display cap, not a data cap.
+# Calendar window:
+#   - We fetch and render up to DAILY_CALENDAR_WEEKS weeks (~3 months) so the
+#     full extra history is right there in the DOM.
+#   - We *display* DAILY_CALENDAR_DEFAULT_WEEKS by default. The remainder is
+#     marked with ``is_extra=True`` and hidden behind a CSS-toggle "Show
+#     earlier weeks" button rendered by the template. No extra round-trip
+#     when the user expands.
+#
+# The data source (closed-trade P&L + dividends) extends as far back as the
+# user has trade history; bumping these constants is the only knob.
+DAILY_CALENDAR_WEEKS = 12
+DAILY_CALENDAR_DEFAULT_WEEKS = 4
 
 
-def _build_calendar_grid(daily_changes, today, weeks_back=DAILY_CALENDAR_WEEKS):
+def _build_calendar_grid(
+    daily_changes,
+    today,
+    weeks_back=DAILY_CALENDAR_WEEKS,
+    default_weeks=DAILY_CALENDAR_DEFAULT_WEEKS,
+):
     """Rolling N-weeks-ending-today calendar (N ISO weeks × Mon-Fri = 5·N cells).
 
     Always populated regardless of where we are in the calendar month — a much
     better default than "current month so far" (which was empty on the 1st).
 
-    `weeks_back` is the total row count including the current week. Earlier
-    versions hard-coded 4 weeks; we extended that to ~3 months once the data
-    source switched from sparse account snapshots to closed-trade P&L +
-    dividends, which covers every day the user actually traded.
+    Args:
+        daily_changes: dict[date, float] of P&L per date.
+        today:        anchor date; the current week is the bottom row.
+        weeks_back:   total rows fetched (default ~3 months).
+        default_weeks: how many of the most-recent rows to mark as visible by
+                      default; rows older than this carry ``is_extra=True``
+                      so the template can hide-and-toggle them. The remainder
+                      is still in the rendered DOM, just behind a button.
+
+    Earlier versions hard-coded 4 weeks for both fetch and display; we
+    extended fetch to ~3 months once the data source switched from sparse
+    account snapshots to closed-trade P&L + dividends, then split fetch
+    from display so the calendar still leads with a tight 4-week view.
     """
     weeks_back = max(1, int(weeks_back))
+    default_weeks = max(1, min(int(default_weeks), weeks_back))
+    extra_weeks = weeks_back - default_weeks
     # Anchor on the Monday of the current week and walk back (weeks_back - 1) weeks.
     week_mon = today - timedelta(days=today.weekday())
     rows = []
-    for w in range(weeks_back - 1, -1, -1):
+    for idx, w in enumerate(range(weeks_back - 1, -1, -1)):
         row_start = week_mon - timedelta(days=w * 7)
         row_cells = []
         for i in range(5):
@@ -1524,6 +1547,8 @@ def _build_calendar_grid(daily_changes, today, weeks_back=DAILY_CALENDAR_WEEKS):
             "week_label": row_start.strftime("%b %-d"),
             "week_start": row_start,
             "cells": row_cells,
+            # First `extra_weeks` rows are older history hidden by default.
+            "is_extra": idx < extra_weeks,
         })
     return rows
 
@@ -2340,10 +2365,18 @@ def weekly_review():
                 app.logger.warning("Position impact processing failed: %s", e)
 
         # ── Process: Daily P&L — rolling N-week grid ──
+        # The grid renders DAILY_CALENDAR_WEEKS rows in the DOM; the template
+        # shows DAILY_CALENDAR_DEFAULT_WEEKS by default and a JS toggle reveals
+        # the rest. So the labels reflect the default *visible* window, not
+        # the fetched one.
         context["daily_calendar"] = []
         context["calendar_grid"] = []
-        context["calendar_month_label"] = f"Last {DAILY_CALENDAR_WEEKS} weeks"
+        context["calendar_month_label"] = f"Last {DAILY_CALENDAR_DEFAULT_WEEKS} weeks"
         context["calendar_weeks_back"] = DAILY_CALENDAR_WEEKS
+        context["calendar_default_weeks"] = DAILY_CALENDAR_DEFAULT_WEEKS
+        context["calendar_extra_weeks"] = max(
+            0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS
+        )
         context["daily_calendar_no_query_rows"] = True
         daily_changes_map = {}
         try:

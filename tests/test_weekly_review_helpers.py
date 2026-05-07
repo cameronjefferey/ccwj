@@ -301,16 +301,56 @@ class TestWeekDiary:
 
 class TestCalendarGrid:
     """Rolling N-week grid (replaces 'current calendar month' which was empty
-    on the 1st of every month). Default window is 12 weeks; the helper takes
-    a `weeks_back` arg so callers can vary it."""
+    on the 1st of every month). The grid renders DAILY_CALENDAR_WEEKS rows
+    in the DOM but flags older rows with ``is_extra`` so the template can
+    show the latest DAILY_CALENDAR_DEFAULT_WEEKS by default and reveal the
+    rest behind a toggle."""
 
-    def test_default_window_is_twelve_weeks_of_five_cells(self):
+    def test_default_window_renders_full_history(self):
         from app.weekly_review import DAILY_CALENDAR_WEEKS
 
         grid = _build_calendar_grid({}, today=date(2026, 5, 1))
         assert len(grid) == DAILY_CALENDAR_WEEKS
         for row in grid:
             assert len(row["cells"]) == 5
+
+    def test_extra_rows_are_the_oldest(self):
+        from app.weekly_review import (
+            DAILY_CALENDAR_WEEKS,
+            DAILY_CALENDAR_DEFAULT_WEEKS,
+        )
+
+        grid = _build_calendar_grid({}, today=date(2026, 5, 1))
+        extra_count = sum(1 for r in grid if r.get("is_extra"))
+        assert extra_count == DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS
+        # Extra rows are the FIRST ones (oldest); default-visible rows are the
+        # last DAILY_CALENDAR_DEFAULT_WEEKS rows (most recent, ending today).
+        for r in grid[:extra_count]:
+            assert r["is_extra"] is True
+        for r in grid[extra_count:]:
+            assert r["is_extra"] is False
+
+    def test_default_weeks_arg_is_respected(self):
+        # 6 fetched, only 2 visible → 4 extra (oldest).
+        grid = _build_calendar_grid(
+            {}, today=date(2026, 5, 1), weeks_back=6, default_weeks=2
+        )
+        assert len(grid) == 6
+        extras = [r for r in grid if r["is_extra"]]
+        visibles = [r for r in grid if not r["is_extra"]]
+        assert len(extras) == 4
+        assert len(visibles) == 2
+        # Extras precede visibles in row order (oldest first).
+        assert grid[0]["is_extra"] is True
+        assert grid[-1]["is_extra"] is False
+
+    def test_default_weeks_clamped_to_weeks_back(self):
+        # If a caller asks for more visible weeks than fetched, no row is
+        # marked extra (everything visible).
+        grid = _build_calendar_grid(
+            {}, today=date(2026, 5, 1), weeks_back=4, default_weeks=99
+        )
+        assert all(r["is_extra"] is False for r in grid)
 
     def test_window_is_configurable(self):
         grid = _build_calendar_grid({}, today=date(2026, 5, 1), weeks_back=4)
@@ -336,7 +376,6 @@ class TestCalendarGrid:
         grid = _build_calendar_grid(
             {date(2026, 4, 14): 123.0}, today=date(2026, 5, 1),
         )
-        # Find the cell for 4/14
         match = [c for r in grid for c in r["cells"] if c["date"] == date(2026, 4, 14)]
         assert len(match) == 1
         assert match[0]["daily_change"] == 123.0
@@ -346,8 +385,6 @@ class TestCalendarGrid:
         """Regression: with the new closed-trade + dividends data source, days
         with only a dividend payout (no trade closes) should still fill cells
         as far back as the rolling window allows."""
-        # Today = May 7 2026, 12 weeks back = ~Feb 12 2026.
-        # A dividend on Feb 16 should be inside the window.
         today = date(2026, 5, 7)
         grid = _build_calendar_grid({date(2026, 2, 16): 412.5}, today=today)
         match = [c for r in grid for c in r["cells"] if c["date"] == date(2026, 2, 16)]
