@@ -1039,7 +1039,7 @@
 
 
 {# ════════════════════════════════════════════════════════
-   DAILY P&L — rolling 4-week grid (always populated)
+   DAILY P&L — rolling N-week grid (always populated)
    ════════════════════════════════════════════════════════ #}
 {% if calendar_grid %}
 {# Compute a max-magnitude value once for color intensity. #}
@@ -1050,7 +1050,7 @@
     {% endif %}
 {% endfor %}{% endfor %}
 <div class="review-section">
-    <div class="section-label">Daily P&amp;L — last 4 weeks</div>
+    <div class="section-label">Daily P&amp;L — {{ calendar_month_label|default('last 12 weeks') }}</div>
     <div class="cal-grid-rolling">
         <div class="cal-rolling-header">Week</div>
         <div class="cal-rolling-header">Mon</div>

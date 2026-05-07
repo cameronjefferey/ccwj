@@ -323,16 +323,61 @@ WHERE date BETWEEN @start_date AND @end_date
   AND close_price > 0
 """
 
-# Daily P&L calendar: account value changes for the current month
+# Daily P&L calendar: realized closed-trade P&L + dividends, by date.
+#
+# We deliberately do NOT read mart_account_snapshots_enriched.delta_1d here
+# even though the column literally measures "daily account value change".
+# Two reasons:
+#   1) The calendar's promise is "Daily P&L", not "Daily portfolio swing" —
+#      account value delta includes deposits / withdrawals / Schwab Journal
+#      transfers between accounts, which is noise in a trading mirror.
+#   2) mart_account_snapshots_enriched is fed by dbt snapshots of broker
+#      balance exports. Most users only have a handful of snapshot days,
+#      so the calendar would render mostly empty. Here we want the calendar
+#      to be "as full as the user's trade history allows" — months of data
+#      out of the box.
+#
+# Trade-shaped daily P&L = realized P&L from closed positions on close_date
+#                          + dividend income received on trade_date.
+# Both are user-action-driven and cover every day with activity.
 DAILY_CALENDAR_QUERY = """
+WITH closed_trade_daily AS (
+    SELECT
+        close_date AS date,
+        SUM(total_pnl) AS realized_pnl
+    FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE status = 'Closed'
+      AND close_date IS NOT NULL
+      AND close_date >= @start_date
+      AND close_date <= @end_date
+      {account_filter}
+    GROUP BY close_date
+),
+div_daily AS (
+    SELECT
+        trade_date AS date,
+        SUM(amount) AS dividends
+    FROM `ccwj-dbt.analytics.int_dividend_events`
+    WHERE trade_date >= @start_date
+      AND trade_date <= @end_date
+      {account_filter}
+    GROUP BY trade_date
+),
+combined AS (
+    SELECT date, realized_pnl, NULL AS dividends FROM closed_trade_daily
+    UNION ALL
+    SELECT date, NULL AS realized_pnl, dividends FROM div_daily
+)
 SELECT
     date,
-    SUM(account_value) AS account_value,
-    SUM(delta_1d) AS daily_change
-FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
-WHERE date >= @start_date
-  AND date <= @end_date
-  {account_filter}
+    -- account_value is unused by the calendar grid but retained for any
+    -- caller that imports this query and pivots downstream.
+    NULL AS account_value,
+    ROUND(
+        COALESCE(SUM(realized_pnl), 0) + COALESCE(SUM(dividends), 0),
+        2
+    ) AS daily_change
+FROM combined
 GROUP BY date
 ORDER BY date
 """
@@ -1437,16 +1482,29 @@ def _build_noticed(key_observation, patterns, coaching_take):
     return cards[:3]
 
 
-def _build_calendar_grid(daily_changes, today):
-    """Rolling 4-weeks-ending-today calendar (4 ISO weeks × Mon-Fri = 20 cells).
+DAILY_CALENDAR_WEEKS = 12  # ~3 months — enough history to spot patterns
+                           # without the grid getting unwieldy. The data source
+                           # (closed-trade P&L + dividends) extends as far
+                           # back as the user has trade history, so this is a
+                           # display cap, not a data cap.
 
-    Always populated regardless of where we are in the calendar month, which is
-    a much better default than "current month so far".
+
+def _build_calendar_grid(daily_changes, today, weeks_back=DAILY_CALENDAR_WEEKS):
+    """Rolling N-weeks-ending-today calendar (N ISO weeks × Mon-Fri = 5·N cells).
+
+    Always populated regardless of where we are in the calendar month — a much
+    better default than "current month so far" (which was empty on the 1st).
+
+    `weeks_back` is the total row count including the current week. Earlier
+    versions hard-coded 4 weeks; we extended that to ~3 months once the data
+    source switched from sparse account snapshots to closed-trade P&L +
+    dividends, which covers every day the user actually traded.
     """
-    # Anchor on the Monday of the current week and walk 3 weeks back.
+    weeks_back = max(1, int(weeks_back))
+    # Anchor on the Monday of the current week and walk back (weeks_back - 1) weeks.
     week_mon = today - timedelta(days=today.weekday())
     rows = []
-    for w in range(3, -1, -1):
+    for w in range(weeks_back - 1, -1, -1):
         row_start = week_mon - timedelta(days=w * 7)
         row_cells = []
         for i in range(5):
@@ -1706,10 +1764,12 @@ def weekly_review():
         week_end = this_week + timedelta(days=6)
 
         # ── Parallel batch: all independent queries after week is determined ──
-        # Calendar shows a rolling 4-week window ending at the Monday of the
+        # Calendar shows a rolling N-week window ending at the Monday of the
         # current week + Friday so it's always populated (the old "current
-        # calendar month" version was empty on the 1st of every month).
-        cal_start = this_week - timedelta(days=21)  # 3 weeks before this Monday
+        # calendar month" version was empty on the 1st of every month, and
+        # the previous 4-week cap was throwing away months of available data
+        # for active users — see DAILY_CALENDAR_WEEKS).
+        cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
         cal_end = this_week + timedelta(days=4)     # this Friday
 
         week_cfg = bigquery.QueryJobConfig(
@@ -2279,10 +2339,11 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Position impact processing failed: %s", e)
 
-        # ── Process: Daily P&L — rolling 4-week grid ──
+        # ── Process: Daily P&L — rolling N-week grid ──
         context["daily_calendar"] = []
         context["calendar_grid"] = []
-        context["calendar_month_label"] = "Last 4 weeks"
+        context["calendar_month_label"] = f"Last {DAILY_CALENDAR_WEEKS} weeks"
+        context["calendar_weeks_back"] = DAILY_CALENDAR_WEEKS
         context["daily_calendar_no_query_rows"] = True
         daily_changes_map = {}
         try:

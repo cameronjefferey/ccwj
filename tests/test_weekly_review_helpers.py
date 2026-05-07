@@ -300,14 +300,23 @@ class TestWeekDiary:
 
 
 class TestCalendarGrid:
-    """Rolling 4-week grid (replaces 'current calendar month' which was empty
-    on the 1st of every month)."""
+    """Rolling N-week grid (replaces 'current calendar month' which was empty
+    on the 1st of every month). Default window is 12 weeks; the helper takes
+    a `weeks_back` arg so callers can vary it."""
 
-    def test_returns_four_rows_of_five_cells(self):
+    def test_default_window_is_twelve_weeks_of_five_cells(self):
+        from app.weekly_review import DAILY_CALENDAR_WEEKS
+
         grid = _build_calendar_grid({}, today=date(2026, 5, 1))
-        assert len(grid) == 4
+        assert len(grid) == DAILY_CALENDAR_WEEKS
         for row in grid:
             assert len(row["cells"]) == 5
+
+    def test_window_is_configurable(self):
+        grid = _build_calendar_grid({}, today=date(2026, 5, 1), weeks_back=4)
+        assert len(grid) == 4
+        grid26 = _build_calendar_grid({}, today=date(2026, 5, 1), weeks_back=26)
+        assert len(grid26) == 26
 
     def test_marks_today_only_once(self):
         grid = _build_calendar_grid({}, today=date(2026, 5, 1))
@@ -317,7 +326,7 @@ class TestCalendarGrid:
 
     def test_marks_future_cells(self):
         # If today is Wed, Thu and Fri of this row should be is_future.
-        grid = _build_calendar_grid({}, today=date(2026, 4, 29))
+        grid = _build_calendar_grid({}, today=date(2026, 4, 29), weeks_back=4)
         last_row = grid[-1]
         assert last_row["cells"][2]["is_today"] is True       # Wed
         assert last_row["cells"][3]["is_future"] is True      # Thu
@@ -332,3 +341,15 @@ class TestCalendarGrid:
         assert len(match) == 1
         assert match[0]["daily_change"] == 123.0
         assert match[0]["has_data"] is True
+
+    def test_grid_extends_far_enough_back_for_dividend_only_days(self):
+        """Regression: with the new closed-trade + dividends data source, days
+        with only a dividend payout (no trade closes) should still fill cells
+        as far back as the rolling window allows."""
+        # Today = May 7 2026, 12 weeks back = ~Feb 12 2026.
+        # A dividend on Feb 16 should be inside the window.
+        today = date(2026, 5, 7)
+        grid = _build_calendar_grid({date(2026, 2, 16): 412.5}, today=today)
+        match = [c for r in grid for c in r["cells"] if c["date"] == date(2026, 2, 16)]
+        assert len(match) == 1, "Feb 16 should be inside the 12-week window"
+        assert match[0]["daily_change"] == 412.5
