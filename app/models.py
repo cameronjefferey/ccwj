@@ -853,8 +853,16 @@ def update_schwab_account_hash(user_id, account_number, account_hash):
 
 
 def get_schwab_connections(user_id):
+    """Lightweight metadata for every Schwab connection the user owns.
+
+    Returns ``schwab_first_sync_completed`` so callers can tell which
+    rows still need a full ~5-year history pull (the bulk
+    "Sync all accounts" loop and the ``/schwab/accounts``
+    "Synced before" / "First sync pending" badges both depend on this).
+    """
     return fetch_all(
-        "SELECT account_number, account_name, display_nickname, created_at "
+        "SELECT account_number, account_name, display_nickname, "
+        "schwab_first_sync_completed, created_at "
         "FROM schwab_connections WHERE user_id = %s",
         (user_id,),
     )

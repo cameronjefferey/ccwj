@@ -10,6 +10,7 @@ in higher-level integration runs that ship with the deploy script.
 """
 from app import models as _models
 from app.schwab import (
+    _bulk_sync_lookback_days,
     _schwab_default_account_label,
     _schwab_fetch_remote_accounts,
 )
@@ -304,6 +305,63 @@ def test_update_schwab_tokens_for_user_clears_invalid_flag(monkeypatch):
     # so the Reconnect banner clears for all of a multi-account login.
     assert "refresh_token_invalid_at = NULL" in sql
     assert params == ('{"token": "fresh"}', 42)
+
+
+# ---------------------------------------------------------------------------
+# _bulk_sync_lookback_days — drives the "Sync all accounts" loop.
+#
+# Regression context: the original sync-all helper hardcoded the routine
+# rolling window for every connection, so a multi-account user with five
+# brand-new logins would only ever pull the last ~60 days of trades on the
+# bulk button — most of their history silently never landed in BigQuery.
+# These tests pin the per-row policy: first-sync-pending rows get full
+# history, already-synced rows get the routine window, and the explicit
+# "Pull full history" override on the form forces every row to full.
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_lookback_uses_full_when_first_sync_pending():
+    days = _bulk_sync_lookback_days(
+        first_done=False,
+        force_full_history=False,
+        routine_days=60,
+        full_days=1825,
+    )
+    assert days == 1825
+
+
+def test_bulk_lookback_uses_routine_when_first_sync_done():
+    days = _bulk_sync_lookback_days(
+        first_done=True,
+        force_full_history=False,
+        routine_days=60,
+        full_days=1825,
+    )
+    assert days == 60
+
+
+def test_bulk_lookback_force_full_overrides_first_sync_done():
+    # The "Pull full history" checkbox on the bulk form must win over the
+    # routine default — a trader explicitly opting into a full re-import
+    # should get one regardless of first_sync state.
+    days = _bulk_sync_lookback_days(
+        first_done=True,
+        force_full_history=True,
+        routine_days=60,
+        full_days=1825,
+    )
+    assert days == 1825
+
+
+def test_bulk_lookback_force_full_with_pending_first_sync_still_full():
+    # Both signals point to full; assert no double-counting / regression.
+    days = _bulk_sync_lookback_days(
+        first_done=False,
+        force_full_history=True,
+        routine_days=60,
+        full_days=1825,
+    )
+    assert days == 1825
 
 
 def test_save_schwab_connection_clears_invalid_flag_on_reauth(monkeypatch):

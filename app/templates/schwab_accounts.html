@@ -88,6 +88,33 @@
             can tell your accounts apart. The nickname is just for display —
             your synced data stays linked to the same account underneath.
         </p>
+        {% if connected_accounts and connected_accounts|length > 1 %}
+        {# Default the "pull full history" toggle on whenever any account
+           is still pending its first sync — that's the case where the
+           routine ~60-day window would silently leave most of the user's
+           trade history out. Mirrors the same default on profile.html. #}
+        {% set _any_first_pending = false %}
+        {% for c in connected_accounts %}
+            {% if not c.first_sync_completed %}{% set _any_first_pending = true %}{% endif %}
+        {% endfor %}
+        <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="sync_all" value="1">
+            <button type="submit" class="btn btn-sm btn-primary">Sync all accounts</button>
+            <div class="form-check mt-2 mb-0">
+                <input class="form-check-input" type="checkbox"
+                       name="full_history_again" id="schwab_mgr_sync_all_full"
+                       value="1"{% if _any_first_pending %} checked{% endif %}>
+                <label class="form-check-label small" for="schwab_mgr_sync_all_full">
+                    Pull full history (up to {{ schwab_full_history_lookback_days }} days, ~5 years) on every account
+                </label>
+            </div>
+            <p class="empty-hint mb-0 mt-1" style="font-size:.75rem">
+                Leave unchecked for the routine {{ schwab_routine_lookback_days }}-day refresh.
+            </p>
+            <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab for every linked account. This can take a minute or two — keep this tab open.</p>
+        </form>
+        {% endif %}
         {% if connected_accounts %}
         {% for c in connected_accounts %}
         {% set heading = c.display_nickname or c.account_name %}

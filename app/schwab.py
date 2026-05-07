@@ -191,8 +191,32 @@ def _schwab_resp_with_refresh(client, request_fn):
     """
     Run a schwab-py call that returns httpx.Response. On 401, refresh OAuth
     tokens and retry once (access token can be rejected before local expiry).
+
+    Also retries once on a transient ``httpx`` timeout (read/connect) or
+    remote-protocol hiccup. Schwab's /transactions endpoint occasionally
+    runs 30–45s for accounts with active option books; the bare 30s
+    default would surface that as a hard sync failure even though a
+    second attempt almost always succeeds. We deliberately do NOT retry
+    on 4xx/5xx responses — those come back from ``raise_for_status``
+    below and the caller's existing ``_is_schwab_refresh_token_invalid``
+    branch handles refresh-token revocation.
     """
-    resp = request_fn()
+    import httpx
+
+    transient = (
+        httpx.ReadTimeout,
+        httpx.ConnectTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+        httpx.RemoteProtocolError,
+    )
+
+    try:
+        resp = request_fn()
+    except transient:
+        time.sleep(2)
+        resp = request_fn()
+
     if resp.status_code == 401:
         sess = client.session
         token = getattr(sess, "token", None)
@@ -434,14 +458,24 @@ def _get_schwab_client(user_id, account_number=None):
         update_schwab_tokens_for_user(user_id, json.dumps(token))
 
     try:
+        import httpx
         from schwab.auth import client_from_access_functions
 
-        return client_from_access_functions(
+        client = client_from_access_functions(
             app_key,
             app_secret,
             token_read_func=token_read,
             token_write_func=token_write,
         )
+        # schwab-py defaults to a flat 30s timeout, but Schwab's
+        # /transactions endpoint occasionally takes 35–55s for accounts
+        # with large active option books — we were dropping requests
+        # mid-flight before the response landed (prod log: "The read
+        # operation timed out" on user_id=2/9 accounts ending 9437/3852).
+        # Bump the read deadline only; connect/write/pool stay tight so
+        # a truly broken socket fails fast.
+        client.set_timeout(httpx.Timeout(connect=10.0, read=45.0, write=10.0, pool=10.0))
+        return client
     except Exception:
         app.logger.exception(
             "Schwab client init failed (user_id=%s, account_number=%s)",
@@ -724,9 +758,10 @@ def schwab_sync():
 
     Form fields:
         sync_all: "1" to sync every linked Schwab connection in one
-            click. Uses the routine (rolling) lookback for each so the
-            request stays bounded; per-account "Sync this account" is
-            still where users go for a one-off full-history refresh.
+            click. By default the loop mirrors single-account semantics
+            per row: connections whose first sync hasn't run yet pull
+            full history (~5 years), already-synced ones pull the
+            routine rolling window.
         account_number (optional, ignored when ``sync_all=1``): when
             provided, sync only that connection. If omitted and
             ``sync_all`` is not set, the user's first connection is
@@ -734,7 +769,9 @@ def schwab_sync():
         sync_scope: "full" or "rolling" (only used on the first sync
             per connection — see ``schwab_first_sync_completed``).
         full_history_again: "1" to do a one-off full re-import after
-            the first sync.
+            the first sync. Honoured on both single-account and
+            ``sync_all`` paths; on ``sync_all`` it forces every row to
+            pull full history regardless of first-sync state.
     """
     blocked = demo_block_writes("syncing Schwab data")
     if blocked:
@@ -747,7 +784,10 @@ def schwab_sync():
     sync_all = request.form.get("sync_all") == "1"
 
     if sync_all:
-        return _schwab_sync_all_for_user(current_user.id)
+        force_full = request.form.get("full_history_again") == "1"
+        return _schwab_sync_all_for_user(
+            current_user.id, force_full_history=force_full
+        )
 
     requested_account = (request.form.get("account_number") or "").strip() or None
     conn_row = get_schwab_connection(current_user.id, requested_account)
@@ -843,25 +883,52 @@ def schwab_sync():
     return redirect(url_for("profile", tab="account"))
 
 
-def _schwab_sync_all_for_user(user_id):
-    """Iterate every Schwab connection for ``user_id`` and run a routine
-    sync for each. Each connection commits to GitHub independently
-    (one CSV merge + push per account); the GitHub Action workflow
-    debounces the rebuilds so trailing pushes catch up. Surfaces a
-    combined flash summary and redirects to ``sync_processing`` when
-    at least one connection landed a push to GitHub.
+def _bulk_sync_lookback_days(first_done, *, force_full_history, routine_days, full_days):
+    """Pick the per-row lookback for the bulk "Sync all accounts" loop.
+
+    Mirrors the single-account semantics in ``schwab_sync``:
+      * connections whose first sync hasn't completed pull the full
+        ~5-year window so the trader gets meaningful history on day one;
+      * already-synced connections pull the rolling routine window so
+        the request stays bounded;
+      * ``force_full_history=True`` (driven by the "Pull full history"
+        toggle on the bulk forms) overrides both and forces the full
+        window for every row.
+    """
+    if force_full_history or not first_done:
+        return full_days
+    return routine_days
+
+
+def _schwab_sync_all_for_user(user_id, *, force_full_history=False):
+    """Iterate every Schwab connection for ``user_id`` and sync each.
+
+    Per-row lookback follows ``_bulk_sync_lookback_days`` so a fresh
+    multi-account login gets full history on every row without the
+    user having to click "Sync this account" five times. Pass
+    ``force_full_history=True`` (set by the "Pull full history"
+    checkbox on the bulk forms) to make every row do the ~5-year
+    pull regardless of first-sync state.
+
+    Each connection commits to GitHub independently (one CSV merge +
+    push per account); the GitHub Action workflow debounces the
+    rebuilds so trailing pushes catch up. Surfaces a combined flash
+    summary and redirects to ``sync_processing`` when at least one
+    connection landed a push to GitHub.
     """
     rows = get_schwab_connections(user_id)
     if not rows:
         flash("No Schwab connection. Connect your account first.", "warning")
         return redirect(url_for("profile", tab="account"))
 
-    lookback_days = _schwab_transaction_lookback_days()
+    routine_days = _schwab_transaction_lookback_days()
+    full_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
     successes = []
     failures = []
     last_pushed_sha = None
     any_push_skipped = False
     any_first_run = False
+    any_full_history = False
 
     for conn_meta in rows:
         # ``get_schwab_connections`` returns lightweight metadata; we need
@@ -870,8 +937,17 @@ def _schwab_sync_all_for_user(user_id):
         if not full:
             failures.append({"label": conn_meta.get("account_name") or conn_meta["account_number"], "reason": "missing"})
             continue
-        if not full.get("schwab_first_sync_completed"):
+        first_done = bool(full.get("schwab_first_sync_completed"))
+        if not first_done:
             any_first_run = True
+        lookback_days = _bulk_sync_lookback_days(
+            first_done,
+            force_full_history=force_full_history,
+            routine_days=routine_days,
+            full_days=full_days,
+        )
+        if lookback_days >= full_days:
+            any_full_history = True
         res = _sync_one_connection(user_id, full, lookback_days=lookback_days)
         if res["ok"]:
             successes.append(res)
@@ -889,7 +965,12 @@ def _schwab_sync_all_for_user(user_id):
             f"{s['current_rows']} open {'position' if s['current_rows'] == 1 else 'positions'}"
             for s in successes
         )
-        parts.append(f"Sync complete. {per_account}.")
+        scope_note = (
+            " Full history (up to ~5 years) was requested where applicable."
+            if any_full_history
+            else ""
+        )
+        parts.append(f"Sync complete. {per_account}.{scope_note}")
     if failures:
         per_failure = ", ".join(f"{f['label']} ({f['reason']})" for f in failures)
         parts.append(f"These didn't finish: {per_failure}.")
@@ -1068,6 +1149,8 @@ def schwab_accounts():
         connected_accounts=connected,
         available_accounts=available,
         discovery_failed=discovery_failed,
+        schwab_routine_lookback_days=_schwab_transaction_lookback_days(),
+        schwab_full_history_lookback_days=SCHWAB_FULL_HISTORY_LOOKBACK_DAYS,
     )
 
 
