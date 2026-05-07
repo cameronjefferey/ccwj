@@ -355,6 +355,107 @@ def admin_users():
 # ---------------------------------------------------------------------------
 
 
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@_admin_only
+def admin_delete_user(user_id):
+    """Permanently delete a user.
+
+    What this does:
+      1. (Optional) ``purge_bq=1`` — strip every seed-CSV row whose
+         ``user_id`` matches and commit a cleaned set to GitHub. The
+         next CI ``dbt build`` rebuilds BigQuery without those rows.
+         If the GitHub push fails we abort BEFORE touching Postgres so
+         the operator can fix the env / retry without ending up in a
+         half-deleted state.
+      2. ``DELETE FROM users`` — Postgres cascades clean up the
+         user's profile, accounts, posts, mirror scores, schwab tokens,
+         etc. ``feedback`` and ``pro_waitlist`` retain the row with
+         ``user_id`` nulled (intentional — see ``app.models.delete_user``).
+
+    Form fields:
+      ``confirm_username`` — must equal the target's username
+        (case-insensitive). Misclick guard.
+      ``purge_bq`` — ``"1"`` to also wipe seed rows. Anything else =
+        Postgres-only delete.
+
+    Self-deletion is refused. Deleting another admin is allowed (the
+    typed-username gate is the only protection there) so an admin
+    rotation does not require a DB shell.
+    """
+    target = User.get_by_id(user_id)
+    if target is None:
+        flash("That user no longer exists.", "warning")
+        return redirect(url_for("admin_users"))
+    if target.id == current_user.id:
+        flash("You can't delete yourself. Have another admin do it.", "danger")
+        return redirect(url_for("admin_users"))
+
+    typed = (request.form.get("confirm_username") or "").strip()
+    if typed.lower() != (target.username or "").lower():
+        flash(
+            f"Typed username didn't match '{target.username}'. No changes made.",
+            "danger",
+        )
+        return redirect(url_for("admin_users"))
+
+    purge_bq = (request.form.get("purge_bq") or "") == "1"
+    bq_summary = ""
+
+    if purge_bq:
+        from app.upload import purge_user_id_from_seeds
+        ok, err, rows_removed, commit_sha = purge_user_id_from_seeds(
+            target.id,
+            commit_message=(
+                f"admin: purge BigQuery seed rows for deleted user "
+                f"{target.username} (id={target.id})"
+            ),
+        )
+        if not ok:
+            flash(
+                f"Could not push cleaned seed CSVs to GitHub: {err}. "
+                "User NOT deleted — fix the GitHub config and retry, "
+                "or untick the BigQuery purge box and delete just the "
+                "Postgres user.",
+                "danger",
+            )
+            return redirect(url_for("admin_users"))
+        total = sum(rows_removed.values())
+        if total:
+            per_file = ", ".join(
+                f"{path.rsplit('/', 1)[-1]}: {n}"
+                for path, n in rows_removed.items()
+                if n
+            )
+            sha_tag = f" (commit {commit_sha[:7]})" if commit_sha else ""
+            bq_summary = (
+                f" Stripped {total} seed rows ({per_file}) from GitHub{sha_tag}. "
+                "The next CI dbt build will rebuild BigQuery without them."
+            )
+        else:
+            bq_summary = (
+                " No matching user_id rows in seed CSVs (nothing to strip). "
+                "Legacy rows with empty user_id were left in place."
+            )
+
+    from app.models import delete_user
+    if not delete_user(target.id):
+        flash(
+            "Postgres delete failed (see Render logs). "
+            + ("Note: the seed-CSV cleanup commit was already pushed to GitHub "
+               "and will take effect on the next dbt build."
+               if purge_bq else "No changes were made."),
+            "danger",
+        )
+        return redirect(url_for("admin_users"))
+
+    app.logger.warning(
+        "ADMIN DELETE USER: %s deleted user %s (id=%s, purge_bq=%s)",
+        current_user.username, target.username, target.id, purge_bq,
+    )
+    flash(f"Deleted user @{target.username}.{bq_summary}", "success")
+    return redirect(url_for("admin_users"))
+
+
 @app.route("/admin/feedback", methods=["GET"])
 @_admin_only
 def admin_feedback():

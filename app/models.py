@@ -473,6 +473,38 @@ class User(UserMixin):
         execute("UPDATE users SET email = %s WHERE id = %s", (clean, user_id))
 
 
+def delete_user(user_id):
+    """Permanently delete a user and cascade-clean every related Postgres row.
+
+    Every user-scoped table is declared with ``ON DELETE CASCADE`` on
+    ``users(id)``, so a single ``DELETE FROM users`` removes
+    user_profiles, user_accounts, schwab_connections, weekly_mirror_scores,
+    insights, strategy_fit_insights, uploads, password_reset_tokens,
+    user_review_visits, user_follows (both directions), community_posts,
+    and community_published_trades in the same transaction.
+
+    Two tables retain the row on purpose:
+      * ``feedback``     — ON DELETE SET NULL so bug reports outlive the user.
+      * ``pro_waitlist`` — ON DELETE SET NULL so waitlist entries survive.
+      * ``login_attempts`` has no FK (keyed by ``username_lc``); rows persist
+        as audit trail but become unreachable from any user lookup.
+
+    This does NOT touch BigQuery. The warehouse is rebuilt from
+    ``dbt/seeds/*.csv`` on every CI run, so a BQ ``DELETE`` would be
+    undone the next dbt build. Use
+    ``app.upload.purge_user_id_from_seeds`` first when you want the
+    warehouse cleaned alongside the Postgres delete.
+
+    Returns True on success, False if the DELETE raised.
+    """
+    try:
+        execute("DELETE FROM users WHERE id = %s", (user_id,))
+        return True
+    except Exception as exc:
+        _log.warning("delete_user(%s) failed: %s", user_id, exc)
+        return False
+
+
 # ------------------------------------------------------------------
 # User <-> Account association
 # ------------------------------------------------------------------

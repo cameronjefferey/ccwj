@@ -37,8 +37,69 @@
     .au-actions a:hover { background: #075985; }
     .au-actions a.audit { background: #1c1917; }
     .au-actions a.audit:hover { background: #292524; }
+    .au-actions button.au-delete {
+        background: #b91c1c; color: #fff; padding: .2rem .65rem;
+        border: 0; border-radius: 999px; font-size: .72rem; font-weight: 700;
+        cursor: pointer; white-space: nowrap;
+    }
+    .au-actions button.au-delete:hover { background: #991b1b; }
 
     .au-empty { color: #a8a29e; font-size: .85rem; padding: 1rem; text-align: center; }
+
+    /* Delete confirmation modal */
+    .au-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(15, 23, 42, .55);
+        display: none; align-items: center; justify-content: center;
+        z-index: 1000; padding: 1rem;
+    }
+    .au-modal-backdrop.open { display: flex; }
+    .au-modal {
+        background: #fff; border-radius: 14px; max-width: 520px; width: 100%;
+        padding: 1.4rem 1.6rem; box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    .au-modal h2 {
+        font-size: 1.1rem; margin: 0 0 .4rem; color: #7f1d1d;
+        display: flex; align-items: center; gap: .5rem;
+    }
+    .au-modal p { margin: .35rem 0; color: #44403c; font-size: .88rem; line-height: 1.45; }
+    .au-modal .au-modal-target {
+        background: #fef2f2; border: 1px solid #fecaca; padding: .55rem .75rem;
+        border-radius: 8px; font-family: monospace; color: #7f1d1d;
+        margin: .5rem 0 .9rem;
+    }
+    .au-modal .au-modal-cascade {
+        background: #fafaf9; border: 1px solid #e7e5e4; padding: .55rem .75rem;
+        border-radius: 8px; font-size: .78rem; color: #57534e;
+        margin: .25rem 0 .9rem;
+    }
+    .au-modal label.au-modal-label {
+        display: block; font-size: .78rem; font-weight: 600; color: #44403c;
+        margin: .65rem 0 .25rem;
+    }
+    .au-modal input[type="text"].au-modal-input {
+        width: 100%; padding: .5rem .7rem; border: 1px solid #d6d3d1;
+        border-radius: 8px; font-size: .9rem; font-family: monospace;
+    }
+    .au-modal .au-modal-bq {
+        background: #fffbeb; border: 1px solid #fde68a; padding: .55rem .75rem;
+        border-radius: 8px; font-size: .78rem; color: #78350f; margin: .65rem 0 0;
+        display: flex; gap: .55rem; align-items: flex-start;
+    }
+    .au-modal .au-modal-bq input { margin-top: .15rem; }
+    .au-modal .au-modal-actions {
+        display: flex; justify-content: flex-end; gap: .55rem; margin-top: 1.1rem;
+    }
+    .au-modal button.au-modal-cancel {
+        background: #f5f5f4; border: 1px solid #d6d3d1; color: #1c1917;
+        padding: .45rem 1rem; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    .au-modal button.au-modal-confirm {
+        background: #b91c1c; border: 0; color: #fff;
+        padding: .45rem 1rem; border-radius: 8px; font-weight: 700; cursor: pointer;
+    }
+    .au-modal button.au-modal-confirm:disabled {
+        background: #d6d3d1; color: #78716c; cursor: not-allowed;
+    }
 </style>
 {% endblock %}
 
@@ -94,6 +155,13 @@
                         {% if u.accounts %}
                         <a class="audit" href="{{ url_for('admin_audit', account=u.accounts[0]) }}">Audit</a>
                         {% endif %}
+                        {% if u.id != current_user.id %}
+                        <button type="button"
+                                class="au-delete"
+                                data-user-id="{{ u.id }}"
+                                data-username="{{ u.username }}"
+                                data-accounts="{{ u.accounts|join(', ') }}">Delete</button>
+                        {% endif %}
                     </div>
                 </td>
             </tr>
@@ -106,22 +174,129 @@
     {% endif %}
 </div>
 
+<!-- Shared delete-user confirmation modal. Single instance reused for every row;
+     the JS below populates the form action + target username on click. -->
+<div id="au-delete-modal" class="au-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="au-modal-title">
+    <div class="au-modal">
+        <h2 id="au-modal-title">Delete user permanently?</h2>
+        <p>You are about to delete:</p>
+        <div class="au-modal-target">@<span id="au-modal-username"></span></div>
+        <p>Linked accounts: <span id="au-modal-accounts" style="font-family:monospace;color:#44403c;">—</span></p>
+        <div class="au-modal-cascade">
+            Postgres cascades will remove this user's profile, accounts, posts,
+            mirror scores, schwab tokens, insights, follows, and uploads. Their
+            <strong>feedback</strong> rows are kept (with user_id nulled) so bug
+            reports survive.
+        </div>
+
+        <form id="au-delete-form" method="POST" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label class="au-modal-label" for="au-confirm-input">
+                Type the username to confirm:
+            </label>
+            <input id="au-confirm-input" class="au-modal-input" type="text"
+                   name="confirm_username" autocomplete="off" spellcheck="false"
+                   placeholder="username">
+
+            <label class="au-modal-bq">
+                <input type="checkbox" name="purge_bq" value="1" id="au-purge-bq">
+                <span>
+                    <strong>Also wipe their data from BigQuery.</strong>
+                    Commits a cleaned <code>dbt/seeds/*.csv</code> set (rows where
+                    <code>user_id={{ '{id}' }}</code>) to GitHub. The next CI
+                    <code>dbt build</code> rebuilds the warehouse without those rows.
+                    Rows with empty <code>user_id</code> (legacy) are left alone.
+                </span>
+            </label>
+
+            <div class="au-modal-actions">
+                <button type="button" class="au-modal-cancel" id="au-modal-cancel">Cancel</button>
+                <button type="submit" class="au-modal-confirm" id="au-modal-confirm" disabled>Delete permanently</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 (function() {
     var searchInput = document.getElementById('au-search');
     var rows = Array.prototype.slice.call(document.querySelectorAll('#au-table tbody tr'));
     var counter = document.getElementById('au-visible-count');
-    if (!searchInput || !rows.length) return;
-    searchInput.addEventListener('input', function() {
-        var q = (searchInput.value || '').trim().toLowerCase();
-        var visible = 0;
-        rows.forEach(function(r) {
-            var hay = r.getAttribute('data-search') || '';
-            var match = !q || hay.indexOf(q) !== -1;
-            r.style.display = match ? '' : 'none';
-            if (match) visible++;
+    if (searchInput && rows.length) {
+        searchInput.addEventListener('input', function() {
+            var q = (searchInput.value || '').trim().toLowerCase();
+            var visible = 0;
+            rows.forEach(function(r) {
+                var hay = r.getAttribute('data-search') || '';
+                var match = !q || hay.indexOf(q) !== -1;
+                r.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            if (counter) counter.textContent = visible;
         });
-        if (counter) counter.textContent = visible;
+    }
+
+    // ---- Delete modal -----------------------------------------------------
+    var modal      = document.getElementById('au-delete-modal');
+    var form       = document.getElementById('au-delete-form');
+    var usernameEl = document.getElementById('au-modal-username');
+    var accountsEl = document.getElementById('au-modal-accounts');
+    var input      = document.getElementById('au-confirm-input');
+    var confirmBtn = document.getElementById('au-modal-confirm');
+    var cancelBtn  = document.getElementById('au-modal-cancel');
+    if (!modal || !form) return;
+
+    var currentUsername = '';
+    var deleteUrlTemplate = "{{ url_for('admin_delete_user', user_id=0) }}";
+
+    function openModal(userId, username, accounts) {
+        currentUsername = username || '';
+        usernameEl.textContent = currentUsername;
+        accountsEl.textContent = accounts && accounts.length ? accounts : 'none linked';
+        // url_for with user_id=0 produces ".../users/0/delete"; swap the 0 for the real id.
+        form.action = deleteUrlTemplate.replace(/\/0\/delete$/, '/' + userId + '/delete');
+        input.value = '';
+        var purge = document.getElementById('au-purge-bq');
+        if (purge) purge.checked = false;
+        confirmBtn.disabled = true;
+        modal.classList.add('open');
+        setTimeout(function() { input.focus(); }, 30);
+    }
+
+    function closeModal() {
+        modal.classList.remove('open');
+        currentUsername = '';
+    }
+
+    document.querySelectorAll('button.au-delete').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            openModal(
+                btn.getAttribute('data-user-id'),
+                btn.getAttribute('data-username'),
+                btn.getAttribute('data-accounts') || ''
+            );
+        });
+    });
+
+    cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+    });
+
+    input.addEventListener('input', function() {
+        var typed = (input.value || '').trim().toLowerCase();
+        confirmBtn.disabled = !currentUsername || typed !== currentUsername.toLowerCase();
+    });
+
+    form.addEventListener('submit', function(e) {
+        var typed = (input.value || '').trim().toLowerCase();
+        if (!currentUsername || typed !== currentUsername.toLowerCase()) {
+            e.preventDefault();
+        }
     });
 })();
 </script>

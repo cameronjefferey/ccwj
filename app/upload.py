@@ -673,6 +673,103 @@ def merge_and_push_seeds(
     return True, None, history_rows, current_rows, head_sha
 
 
+def purge_user_id_from_seeds(user_id, *, commit_message):
+    """Strip every seed-CSV row whose ``user_id`` matches and commit a
+    cleaned version to GitHub in a single atomic commit.
+
+    Why this exists: BigQuery is rebuilt from ``dbt/seeds/*.csv`` on
+    every CI run (``.github/workflows/bigquery_update.yml``). Issuing a
+    BQ ``DELETE FROM analytics.stg_history WHERE user_id = N`` is reversed
+    the next time ``dbt build`` runs because the seed CSVs in GitHub
+    still hold those rows. Permanently purging a user from the warehouse
+    therefore requires editing the seed CSVs themselves.
+
+    Filter is strict per the tenancy rule: only rows whose ``user_id``
+    column equals the target are removed. Rows with empty/NULL
+    ``user_id`` (legacy / un-migrated, see
+    ``scripts/backfill_seed_user_ids.py``) are left alone — we cannot
+    prove they belong to this tenant, and a per-user delete must never
+    accidentally take another tenant's history with it.
+
+    Returns ``(ok, error_message, rows_removed_dict, head_commit_sha or None)``
+    where ``rows_removed_dict`` maps each seed path to how many rows were
+    dropped. ``ok=True`` with empty ``rows_removed`` and ``head_commit_sha=None``
+    means no matching rows existed (no commit was created).
+    """
+    ok, err = _upload_github_config_ok()
+    if not ok:
+        return False, err, {}, None
+
+    try:
+        target = str(int(user_id))
+    except (TypeError, ValueError):
+        return False, f"Invalid user_id: {user_id!r}", {}, None
+
+    seed_specs = [
+        (HISTORY_PATH, HISTORY_SEED_COLUMNS),
+        (CURRENT_PATH, CURRENT_SEED_COLUMNS),
+        (SCHWAB_ACCOUNT_BALANCES_PATH, SCHWAB_BALANCE_COLUMNS),
+    ]
+
+    path_contents = []
+    rows_removed = {}
+
+    for path, columns in seed_specs:
+        existing_content = _get_file_content(path)
+        if not existing_content or not existing_content.strip():
+            rows_removed[path] = 0
+            continue
+        try:
+            # dtype=str + keep_default_na=False so we never coerce ""→NaN→"nan"
+            # on round-trip, which would dirty every other tenant's row.
+            df = pd.read_csv(StringIO(existing_content), dtype=str, keep_default_na=False)
+        except Exception as exc:
+            return False, f"Could not parse {path}: {exc}", rows_removed, None
+        if df.empty:
+            rows_removed[path] = 0
+            continue
+
+        uid_col = None
+        for c in df.columns:
+            if str(c).strip().lower() == "user_id":
+                uid_col = c
+                break
+        if uid_col is None:
+            # Older seed shapes pre-date the user_id column. Nothing to
+            # filter on, so skip rather than guessing by Account.
+            rows_removed[path] = 0
+            continue
+
+        before = len(df)
+        keep_mask = df[uid_col].astype(str).str.strip() != target
+        cleaned = df.loc[keep_mask].copy()
+        removed = before - len(cleaned)
+        if removed == 0:
+            rows_removed[path] = 0
+            continue
+
+        # Re-align to the canonical seed column shape so the commit
+        # doesn't drift column order or drop unrelated columns the
+        # CSV happens to be missing.
+        for col in columns:
+            if col not in cleaned.columns:
+                cleaned[col] = ""
+        cleaned = cleaned[columns]
+        path_contents.append((path, cleaned.to_csv(index=False)))
+        rows_removed[path] = removed
+
+    if not path_contents:
+        return True, None, rows_removed, None
+
+    try:
+        ok, err, head_sha = _commit_git_paths(path_contents, commit_message)
+    except Exception as exc:
+        return False, str(exc), rows_removed, None
+    if not ok:
+        return False, err or "GitHub commit failed.", rows_removed, None
+    return True, None, rows_removed, head_sha
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 @limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
