@@ -325,11 +325,21 @@
 
 {# ── Cumulative P&L Chart ── #}
 <div class="chart-wrapper mb-4">
-    <h6 class="fw-bold mb-3">Cumulative P&amp;L</h6>
-    {% if prices_through_date and has_underlying_price %}
-    <p class="text-muted small mb-2">Stock prices through {{ prices_through_date }}.</p>
-    {% endif %}
-    <div style="height: 300px;">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+        <div>
+            <h6 class="fw-bold mb-1">Cumulative P&amp;L</h6>
+            {% if prices_through_date and has_underlying_price %}
+            <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
+            {% endif %}
+        </div>
+        {% if has_underlying_price %}
+        <div class="form-check form-switch mb-0" style="padding-left:2.4em;">
+            <input class="form-check-input" type="checkbox" id="togglePriceLine">
+            <label class="form-check-label small text-muted" for="togglePriceLine">Show {{ symbol }} price</label>
+        </div>
+        {% endif %}
+    </div>
+    <div style="height: 460px;">
         <canvas id="pnlChart"></canvas>
     </div>
 </div>
@@ -701,8 +711,15 @@
 <script>
 (function () {
     var chartData = {{ chart_data_json | safe }};
+    var hasUnderlyingPrice = {{ 'true' if has_underlying_price else 'false' }};
+    var PRICE_TOGGLE_KEY = 'positionDetail.showPriceLine';
+    var showPriceLine = false;
+    try {
+        showPriceLine = localStorage.getItem(PRICE_TOGGLE_KEY) === '1';
+    } catch (e) { /* localStorage unavailable */ }
+
     if (chartData.dates && chartData.dates.length > 0) {
-        new Chart(document.getElementById('pnlChart'), {
+        var pnlChart = new Chart(document.getElementById('pnlChart'), {
             type: 'line',
             data: {
                 labels: chartData.dates,
@@ -761,7 +778,8 @@
                         pointHitRadius: 6,
                         borderWidth: 1.5,
                         order: 4,
-                        yAxisID: 'yPrice'
+                        yAxisID: 'yPrice',
+                        hidden: !showPriceLine
                     }
                     {% endif %}
                 ]
@@ -802,7 +820,7 @@
                     {% if has_underlying_price %}
                     ,yPrice: {
                         type: 'linear',
-                        display: true,
+                        display: showPriceLine,
                         position: 'right',
                         min: function(ctx) {
                             var ds = ctx.chart.data.datasets.filter(function(d) { return d.yAxisID === 'yPrice'; })[0];
@@ -827,6 +845,34 @@
                 }
             }
         });
+
+        // Stock price line show/hide toggle
+        var priceToggle = document.getElementById('togglePriceLine');
+        var priceCaption = document.getElementById('pnlChartPriceCaption');
+        if (priceToggle && hasUnderlyingPrice) {
+            var applyPriceVisibility = function (visible) {
+                var datasets = pnlChart.data.datasets;
+                for (var i = 0; i < datasets.length; i++) {
+                    if (datasets[i].yAxisID === 'yPrice') {
+                        pnlChart.setDatasetVisibility(i, visible);
+                    }
+                }
+                if (pnlChart.options.scales.yPrice) {
+                    pnlChart.options.scales.yPrice.display = visible;
+                }
+                if (priceCaption) {
+                    priceCaption.style.display = visible ? '' : 'none';
+                }
+                pnlChart.update();
+            };
+            priceToggle.checked = showPriceLine;
+            applyPriceVisibility(showPriceLine);
+            priceToggle.addEventListener('change', function () {
+                var visible = this.checked;
+                try { localStorage.setItem(PRICE_TOGGLE_KEY, visible ? '1' : '0'); } catch (e) {}
+                applyPriceVisibility(visible);
+            });
+        }
     }
 
     // Trade search
