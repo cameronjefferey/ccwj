@@ -1,0 +1,26 @@
+---
+description: Data-first debugging when a UI value is missing — verify the source has rows before touching pipeline code
+alwaysApply: true
+---
+
+# Data-pipeline fixes — verify the source, render with real data
+
+When the bug is **"X isn't showing up on the page"**, do not start by editing pipeline code, dbt models, or templates. The most common failure mode in this repo is "the pipeline is correctly transforming nothing into nothing" because the source row count is zero (or unexpectedly tiny) for the affected user. Three commits in a row "fixed" the dividend pipeline while `stg_history.action='dividend'` had **4 rows in the entire warehouse**. dbt build green, pytest green, page still empty.
+
+## Rules for any data-flow / "missing data" report
+
+1. **Source check FIRST, before any code change.** Run a `SELECT COUNT(*) FROM <canonical_source> WHERE <user_predicate> GROUP BY user_id` (or equivalent grain) on the row source. **If empty → the bug is upstream of the pipeline, not in it.** Do not edit dbt models, Flask queries, or templates yet.
+2. **Survey what data already exists in the warehouse.** Before declaring you need to fix ingestion or build a new model, list the tables that could carry the fact (yfinance prices, snapshot tables, broker exports, intermediate marts). The cheapest fix is usually "synthesize from a table you forgot existed." `stg_daily_prices.dividend` had every JEPI ex-div for free; a 60-line `int_dividend_events` model multiplied it by holdings and the problem was solved.
+3. **Distinguish forward fixes from now fixes.** Fixing a broker connector parser repairs **future** sync output only — it does **not** backfill history. If the user is asking why a *current* position has no data, you need a derivation off already-on-disk data, not a six-month wait for new syncs to accumulate. Schwab's API does not return historical transactions beyond a short window.
+4. **dbt build green + pytest green ≠ done.** Unit tests verify "if input X, output Y." They say nothing about whether X exists for this user. After every UI-data fix, simulate the actual page render with real BQ data and grep the output for the expected number. If you can't grep that number out, you are not done.
+
+## Before marking work complete
+
+- [ ] You ran a `COUNT(*) GROUP BY user_id` on the row source and recorded the count in your reasoning. Zero or unexpectedly tiny is the smoking gun, not the dbt graph.
+- [ ] You enumerated at least one alternative source table that could supply the fact (or explicitly noted "no alternative exists, ingestion needs to grow").
+- [ ] If you fixed a broker connector / parser / sync path, you stated whether the fix is forward-only and whether historical backfill is needed (and how).
+- [ ] You rendered the affected template fragment (KPI card / Strategy Breakdown row / chart series) with real production data — either via the running app or a Jinja partial render — and grep'd the HTML for the expected dollar amount.
+
+## Failure mode to remember
+
+`stg_history.action='dividend'` had ~4 rows. Three commits built progressively cleaner code reading that source. None of them surfaced a single dividend dollar to any user. The actual fix synthesized dividends from `stg_daily_prices.dividend × stg_history equity events`, both of which had been on disk the whole time. Cost: ~60 lines of dbt + a Flask CTE swap. Effort burned chasing the wrong layer first: ~3 commits, ~half a day, and substantial user trust.
