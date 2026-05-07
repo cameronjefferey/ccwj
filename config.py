@@ -52,9 +52,11 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(days=max(1, _session_days))
 
     # Log out after this many minutes without any request (0 = disabled, e.g. tests).
-    # 60 min by default so a casual demo or tab-left-open for a meeting doesn't
-    # force a surprise re-login. Shorten via SESSION_IDLE_TIMEOUT_MINUTES=10.
-    _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "60"))
+    # 8 hours by default so a tab left open during a full trading day (or a tab
+    # parked overnight on a desktop) doesn't force a surprise re-login mid-flow.
+    # Shorten via SESSION_IDLE_TIMEOUT_MINUTES=60 in env if you want shorter idle
+    # for a shared/kiosk machine; 0 disables idle expiry entirely.
+    _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "480"))
     SESSION_IDLE_TIMEOUT_MINUTES = max(0, _idle_min)
 
     # /insights (Coach) UI: on by default; set INSIGHTS_ENABLED=0 in .env to hide nav + /insights*.
