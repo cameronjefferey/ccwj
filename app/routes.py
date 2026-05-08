@@ -1837,6 +1837,172 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
     return pd.DataFrame(rows)
 
 
+def _compute_breakdown_by_type(
+    *,
+    client,
+    safe_symbol: str,
+    strat_accounts_scope,
+    closed_equity_df: pd.DataFrame,
+    closed_legs_df: pd.DataFrame,
+    current_df: pd.DataFrame,
+    leg_predicate,
+):
+    """Build the Equity / Options / Dividends rollup the position page renders
+    above Strategy Breakdown.
+
+    All P&L source frames passed in here are already leg-filtered by the
+    caller (closed_legs_df, closed_equity_df by date overlap; current_df is
+    cleared in routes.py when no selected leg is Open). For dividends we
+    have to do the leg-scope here because there is no per-row dividend
+    frame upstream — int_dividend_events is queried directly and filtered
+    by ``trade_date`` against ``leg_predicate``.
+
+    leg_predicate: callable(date) -> bool when leg-filtered, else None.
+    When None, every dividend event for the symbol counts.
+
+    Returns a list of dict rows ready for Jinja:
+        type, total, realized, unrealized, count, count_label, count_open
+    Empty list when there is no activity at all (page won't render the card).
+
+    Numbers should sum to the page-level kpis['total_return'] within
+    rounding (positions_summary uses rounded P&L per strategy; the mart's
+    open_options unrealized has full precision).
+    """
+    eq_realized = 0.0
+    eq_unrealized = 0.0
+    eq_session_count = 0
+    eq_open_count = 0
+    if closed_equity_df is not None and not closed_equity_df.empty:
+        if "realized_pnl" in closed_equity_df.columns:
+            eq_realized = float(
+                pd.to_numeric(closed_equity_df["realized_pnl"], errors="coerce")
+                .fillna(0)
+                .sum()
+            )
+        # int_closed_equity_legs has one row per *closure event* (each sell
+        # in a session), not per session. Count distinct session_ids so the
+        # UI says "1 session" when a trader sold their PLTR position over
+        # three trips, not "3 sessions".
+        if "session_id" in closed_equity_df.columns:
+            eq_session_count += int(
+                closed_equity_df[["account", "session_id"]].drop_duplicates().shape[0]
+            )
+        else:
+            eq_session_count += len(closed_equity_df)
+    if current_df is not None and not current_df.empty and "instrument_type" in current_df.columns:
+        eq_open = current_df[current_df["instrument_type"] == "Equity"]
+        if not eq_open.empty and "unrealized_pnl" in eq_open.columns:
+            eq_unrealized = float(
+                pd.to_numeric(eq_open["unrealized_pnl"], errors="coerce")
+                .fillna(0)
+                .sum()
+            )
+            eq_session_count += len(eq_open)
+            eq_open_count += len(eq_open)
+
+    opt_realized = 0.0
+    opt_unrealized = 0.0
+    opt_count = 0
+    opt_open_count = 0
+    if closed_legs_df is not None and not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns:
+        opt_realized = float(
+            pd.to_numeric(closed_legs_df["total_pnl"], errors="coerce")
+            .fillna(0)
+            .sum()
+        )
+        opt_count += len(closed_legs_df)
+    if current_df is not None and not current_df.empty and "instrument_type" in current_df.columns:
+        opt_open = current_df[current_df["instrument_type"].isin(["Call", "Put"])]
+        if not opt_open.empty and "unrealized_pnl" in opt_open.columns:
+            opt_unrealized = float(
+                pd.to_numeric(opt_open["unrealized_pnl"], errors="coerce")
+                .fillna(0)
+                .sum()
+            )
+            opt_count += len(opt_open)
+            opt_open_count += len(opt_open)
+
+    div_total = 0.0
+    div_count = 0
+    if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+        try:
+            acct_filter = _account_sql_and(strat_accounts_scope, col="account")
+            div_df = client.query(
+                """
+                SELECT account, user_id, symbol, trade_date, amount
+                FROM `ccwj-dbt.analytics.int_dividend_events`
+                WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
+                {account_filter}
+                """.format(symbol=safe_symbol, account_filter=acct_filter)
+            ).to_dataframe()
+            # Belt-and-suspenders tenancy guard. The SQL is already user_id +
+            # account scoped via _account_sql_and, but the BQ-tenant rule
+            # requires a Python filter on every BQ result before any
+            # re-aggregation. See .cursor/rules/bigquery-tenant-isolation.mdc.
+            div_df = _filter_df_by_accounts(div_df, strat_accounts_scope)
+            if not div_df.empty:
+                if leg_predicate is not None and "trade_date" in div_df.columns:
+                    div_df = div_df.copy()
+                    div_df["_d"] = pd.to_datetime(div_df["trade_date"]).dt.date
+                    div_df = div_df[div_df["_d"].apply(leg_predicate)]
+                if not div_df.empty and "amount" in div_df.columns:
+                    div_total = float(
+                        pd.to_numeric(div_df["amount"], errors="coerce")
+                        .fillna(0)
+                        .sum()
+                    )
+                    div_count = len(div_df)
+        except Exception as exc:
+            # Dividends are a nice-to-have on the breakdown; if int_dividend_events
+            # is unavailable or schema-drifted, log and show a 0 row rather than
+            # crashing the whole position page.
+            app.logger.exception(
+                "breakdown by-type dividends fetch failed for %s: %s", safe_symbol, exc
+            )
+
+    eq_total = eq_realized + eq_unrealized
+    opt_total = opt_realized + opt_unrealized
+
+    if (
+        eq_session_count == 0
+        and opt_count == 0
+        and div_count == 0
+    ):
+        return []
+
+    return [
+        {
+            "type": "Equity",
+            "total": round(eq_total, 2),
+            "realized": round(eq_realized, 2),
+            "unrealized": round(eq_unrealized, 2),
+            "count": eq_session_count,
+            "count_label": "session" if eq_session_count == 1 else "sessions",
+            "count_open": eq_open_count,
+        },
+        {
+            "type": "Options",
+            "total": round(opt_total, 2),
+            "realized": round(opt_realized, 2),
+            "unrealized": round(opt_unrealized, 2),
+            "count": opt_count,
+            "count_label": "contract" if opt_count == 1 else "contracts",
+            "count_open": opt_open_count,
+        },
+        {
+            "type": "Dividends",
+            "total": round(div_total, 2),
+            "realized": round(div_total, 2),
+            # Dividends are realized cash income — no mark-to-market component,
+            # so leave a sentinel the template can render as an em-dash.
+            "unrealized": None,
+            "count": div_count,
+            "count_label": "event" if div_count == 1 else "events",
+            "count_open": 0,
+        },
+    ]
+
+
 def _realized_pnl_from_closed_frames(
     closed_legs_df: pd.DataFrame, closed_equity_df: pd.DataFrame
 ) -> float:
@@ -1950,6 +2116,7 @@ def position_detail(symbol):
             error=str(exc),
             kpis={},
             strategy_rows=[],
+            breakdown_rows=[],
             trades=[],
             trade_outcomes=[],
             current_positions=[],
@@ -2145,8 +2312,21 @@ def position_detail(symbol):
             closed_legs_df["_od"] = pd.to_datetime(closed_legs_df["open_date"]).dt.date
             closed_legs_df = closed_legs_df[closed_legs_df["_od"].apply(_in_leg_range)]
             closed_legs_df = closed_legs_df.drop(columns=["_od"])
-        if not closed_equity_df.empty and "session_id" in closed_equity_df.columns:
-            closed_equity_df = closed_equity_df[closed_equity_df["session_id"].isin(selected_legs)]
+        # Equity session leg-filter: use open_date overlap, NOT session_id.
+        # int_closed_equity_legs.session_id is the int_equity_sessions
+        # session number (1, 2, ...), which used to also be our leg pill's
+        # session_id. Under the merged-interval int_position_legs the pill
+        # leg_id is sequential per merged chapter and may not equal the
+        # equity session_id at all (a single equity session can be merged
+        # into a leg labeled 2 because an earlier orphan-options leg got
+        # leg_id 1). Filtering by session_id collisions used to spill the
+        # equity session into the wrong leg's tables — visible bug for
+        # PLTR / Cameron Investment ?leg=1 (Buy and Hold appeared in the
+        # Nov 2024 orphan leg's strategy table).
+        if not closed_equity_df.empty and "open_date" in closed_equity_df.columns:
+            closed_equity_df["_od"] = pd.to_datetime(closed_equity_df["open_date"]).dt.date
+            closed_equity_df = closed_equity_df[closed_equity_df["_od"].apply(_in_leg_range)]
+            closed_equity_df = closed_equity_df.drop(columns=["_od"])
 
     # Min/max activity for hero + chart when summary/leg filter hides dates (e.g. open option leg).
     _activity_all_dates = _collect_activity_candidate_dates(
@@ -2372,30 +2552,59 @@ def position_detail(symbol):
             "last_trade": last_trade,
         }
 
-    # Strategy rows: positions_summary plus any (account, strategy) missing from the mart.
-    # Always roll up int_strategy_classification and merge in gaps — the mart can lag by a
-    # dbt run (e.g. right after a Schwab/CSV seed commit) and silently drop closed history
-    # for a symbol whose open row is already in the mart.
+    # Strategy rows.
     #
-    # Account scoping: when the user has filtered to a single account, the supplement
-    # MUST be restricted to that account too. Otherwise int_strategy rows from the
-    # user's other accounts get rolled in and the page shows mixed-account rows even
-    # though the URL is scoped (`?account=X`). This was the visible bug on
-    # /position/JEPI?account=Schwab••••0044 — table showed 4828, 8602, Coco rows.
-    summary_for_strat = summary_df
+    # Two distinct data paths because the question "what are my strategy
+    # results?" has different right answers depending on scope:
+    #
+    #  • No leg filter (whole symbol) — positions_summary is the source of
+    #    truth, supplemented from int_strategy_classification when the mart
+    #    lags by a dbt run (common right after a Schwab/CSV seed commit).
+    #
+    #  • Leg-filtered — positions_summary CANNOT be used. It aggregates per
+    #    (account, symbol, strategy) across the entire symbol history, so its
+    #    per-strategy P&L, trade count, win-rate are full-symbol numbers
+    #    that don't move when you click a leg pill (which is exactly the
+    #    "Strategy Breakdown didn't update" bug). Rebuild the strategy
+    #    rollup from int_strategy_classification rows whose open_date falls
+    #    inside the selected leg(s) — same grain as positions_summary, but
+    #    scoped correctly. Also skip the supplement step (it would re-inject
+    #    full-history numbers).
+    #
+    # Account scoping: when the user has filtered to a single account, the
+    # classification fetch MUST be restricted to that account too. Otherwise
+    # int_strategy rows from the user's other accounts get rolled in and the
+    # page shows mixed-account rows even though the URL is scoped
+    # (`?account=X`) — the JEPI/0044 visible bug.
     strat_accounts_scope = (
         [selected_account] if selected_account else user_accounts
     )
-    if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
-        int_raw = _fetch_int_strategy_classification_by_symbol(
-            client, safe_symbol, strat_accounts_scope
-        )
-        if not int_raw.empty:
-            rolled = _rollup_int_strategy_to_summary_shape(int_raw)
-            if not rolled.empty:
-                summary_for_strat = _supplement_summary_with_rolled(
-                    summary_for_strat, rolled
+    if leg_param and _leg_ranges:
+        summary_for_strat = pd.DataFrame()
+        if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+            int_raw = _fetch_int_strategy_classification_by_symbol(
+                client, safe_symbol, strat_accounts_scope
+            )
+            if not int_raw.empty and "open_date" in int_raw.columns:
+                int_raw = int_raw.copy()
+                int_raw["_od"] = pd.to_datetime(int_raw["open_date"]).dt.date
+                int_raw = int_raw[int_raw["_od"].apply(_in_leg_range)].drop(
+                    columns=["_od"]
                 )
+                if not int_raw.empty:
+                    summary_for_strat = _rollup_int_strategy_to_summary_shape(int_raw)
+    else:
+        summary_for_strat = summary_df
+        if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+            int_raw = _fetch_int_strategy_classification_by_symbol(
+                client, safe_symbol, strat_accounts_scope
+            )
+            if not int_raw.empty:
+                rolled = _rollup_int_strategy_to_summary_shape(int_raw)
+                if not rolled.empty:
+                    summary_for_strat = _supplement_summary_with_rolled(
+                        summary_for_strat, rolled
+                    )
     _cl_for_strat = closed_legs_pre_leg if not leg_param else closed_legs_df
     _eq_for_strat = closed_equity_pre_leg if not leg_param else closed_equity_df
     merged_strategy_df = _merge_position_strategy_breakdown(
@@ -2409,6 +2618,25 @@ def position_detail(symbol):
         merged_strategy_df.to_dict(orient="records")
         if not merged_strategy_df.empty
         else []
+    )
+
+    # ── Breakdown by type (equity / options / dividends) ──
+    # Sums roll up across the selected legs (or the whole symbol when no
+    # leg filter is active). Sources:
+    #   - equity realized:    closed_equity_df (already leg-filtered)
+    #   - equity unrealized:  current_df rows where instrument_type='Equity'
+    #   - options realized:   closed_legs_df (already leg-filtered)
+    #   - options unrealized: current_df rows where instrument_type in (Call, Put)
+    #   - dividends:          int_dividend_events filtered by leg date range
+    # See _compute_breakdown_by_type for the full contract.
+    breakdown_rows = _compute_breakdown_by_type(
+        client=client,
+        safe_symbol=safe_symbol,
+        strat_accounts_scope=strat_accounts_scope,
+        closed_equity_df=closed_equity_df,
+        closed_legs_df=closed_legs_df,
+        current_df=current_df,
+        leg_predicate=(_in_leg_range if (leg_param and _leg_ranges) else None),
     )
 
     # Build chart data from pre-aggregated mart_daily_pnl
@@ -2702,6 +2930,7 @@ def position_detail(symbol):
         kpis=kpis,
         overall_status=overall_status,
         strategy_rows=strategy_rows,
+        breakdown_rows=breakdown_rows,
         trades=trades,
         trade_outcomes=trade_outcomes,
         current_positions=current_positions,

@@ -96,6 +96,20 @@ What's working:
   CLOSED contracts and showed "all closed" pills next to an Open banner).
   ```dbt/models/intermediate/int_position_legs.sql```
 - Leg filtering — click a leg pill to scope the entire page (URL ?leg=<n>)
+- **Breakdown by Type** card (Equity / Options / Dividends rows) sits
+  above Strategy Breakdown. Source: `closed_equity_df` + `closed_legs_df`
+  + `current_df` + `int_dividend_events`, all leg-aware. Equity row
+  collapses multiple closure events for one session into "1 session" so
+  partially-sold positions don't read as multiple chapters.
+- Strategy Breakdown re-aggregates per leg under a leg filter. The leg
+  path rebuilds rows from `int_strategy_classification` filtered by
+  `open_date in_leg_range` instead of using `positions_summary` (which
+  is full-symbol and was making the table look frozen on filter).
+- `closed_equity_df` leg-filter uses `open_date` overlap, NOT
+  `int_equity_sessions.session_id` — under the merged-interval mart the
+  pill `leg_id` is sequential per merged chapter and may not equal the
+  equity session_id. Old session_id-based filter spilled equity into
+  the wrong leg's tables.
 - Cumulative P&L chart with equity, options, dividends, total lines + stock price overlay
 - Win/Loss Matrix (DTE vs Strike Distance) per strategy
 - Expandable raw trades per leg (click arrow to see underlying transactions)

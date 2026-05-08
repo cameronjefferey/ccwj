@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from app.routes import (
+    _compute_breakdown_by_type,
     _legs_df_to_sessions_list,
     _merge_position_strategy_breakdown,
     _supplement_summary_with_rolled,
@@ -481,6 +482,164 @@ def test_legs_to_sessions_list_handles_null_dates():
     out = _legs_df_to_sessions_list(pd.DataFrame([row]))
     assert out[0]["last_trade_date"] == ""
     assert out[0]["open_date"] == "2024-01-01"
+
+
+# --- Breakdown by Type (equity / options / dividends) ---------------------
+
+
+class _StubBQClient:
+    """Tiny BigQuery client stand-in for testing _compute_breakdown_by_type
+    without spinning up an actual BQ connection. Returns a fixed dividends
+    DataFrame for any query, so we can isolate dividend filtering logic
+    from query construction."""
+
+    def __init__(self, dividends_df):
+        self._dividends = dividends_df
+
+    def query(self, _sql):
+        outer = self
+
+        class _Job:
+            def to_dataframe(self_inner):
+                return outer._dividends.copy()
+
+        return _Job()
+
+
+def _bd_lookup(rows, type_label):
+    for r in rows:
+        if r["type"] == type_label:
+            return r
+    raise AssertionError(f"missing {type_label} row in {rows}")
+
+
+def test_breakdown_by_type_unfiltered_pltr_shape():
+    """Whole-position render: equity from int_closed_equity_legs sums per
+    closure event (3 partial sells of one Buy and Hold session), options
+    from closed_legs + open mark-to-market, and a 0 dividend row when the
+    symbol pays nothing. The session count must collapse to 1 even though
+    the closed_equity_df has 3 rows for one continuous session — otherwise
+    the UI says '3 sessions' for a position the trader thinks of as one."""
+    closed_equity = pd.DataFrame([
+        {"account": "Cameron Investment", "session_id": 1,
+         "open_date": "2025-06-03", "close_date": "2025-12-30",
+         "realized_pnl": 40.89},
+        {"account": "Cameron Investment", "session_id": 1,
+         "open_date": "2025-06-03", "close_date": "2026-02-23",
+         "realized_pnl": -683.58},
+        {"account": "Cameron Investment", "session_id": 1,
+         "open_date": "2025-06-03", "close_date": "2026-04-06",
+         "realized_pnl": 416.42},
+    ])
+    closed_legs = pd.DataFrame([
+        {"account": "Cameron Investment", "open_date": "2025-06-03", "total_pnl": -1334.0},
+    ])
+    current = pd.DataFrame([
+        {"account": "Cameron Investment", "instrument_type": "Call",
+         "unrealized_pnl": -4354.0},
+        {"account": "Cameron Investment", "instrument_type": "Call",
+         "unrealized_pnl": 1190.33},
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="PLTR",
+        strat_accounts_scope=["Cameron Investment"],
+        closed_equity_df=closed_equity,
+        closed_legs_df=closed_legs,
+        current_df=current,
+        leg_predicate=None,
+    )
+    eq = _bd_lookup(rows, "Equity")
+    assert eq["realized"] == -226.27, eq
+    assert eq["unrealized"] == 0.0
+    assert eq["count"] == 1, "three closure events but only one session"
+    assert eq["count_label"] == "session"
+
+    opt = _bd_lookup(rows, "Options")
+    assert opt["realized"] == -1334.0
+    assert abs(opt["unrealized"] - (-3163.67)) < 0.01
+    assert opt["count"] == 3
+    assert opt["count_open"] == 2
+
+    div = _bd_lookup(rows, "Dividends")
+    assert div["unrealized"] is None, "dividends never have a mark-to-market"
+    assert div["count"] == 0
+
+
+def test_breakdown_by_type_returns_empty_when_no_activity():
+    """Card must hide entirely when there is nothing to show."""
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="ZZZZ",
+        strat_accounts_scope=["Cameron Investment"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame(),
+        leg_predicate=None,
+    )
+    assert rows == []
+
+
+def test_breakdown_by_type_filters_dividends_by_leg_predicate():
+    """When a leg pill is selected, only dividend events whose trade_date
+    falls inside that leg's window contribute. JEPI's monthly distributions
+    pre-2026 must NOT show up when the trader filters to a 2026-only leg."""
+    from datetime import date
+
+    dividends = pd.DataFrame([
+        {"account": "Cameron Investment", "user_id": 9, "symbol": "JEPI",
+         "trade_date": pd.Timestamp("2024-08-15"), "amount": 12.34},
+        {"account": "Cameron Investment", "user_id": 9, "symbol": "JEPI",
+         "trade_date": pd.Timestamp("2026-03-15"), "amount": 9.87},
+    ])
+    leg_window = (date(2026, 1, 1), date(2026, 12, 31))
+    pred = lambda d: leg_window[0] <= d <= leg_window[1]
+
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(dividends),
+        safe_symbol="JEPI",
+        strat_accounts_scope=["Cameron Investment"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame([
+            {"account": "Cameron Investment", "instrument_type": "Equity",
+             "unrealized_pnl": 50.0},
+        ]),
+        leg_predicate=pred,
+    )
+    div = _bd_lookup(rows, "Dividends")
+    assert div["realized"] == 9.87, "only the in-window event counts"
+    assert div["count"] == 1
+    eq = _bd_lookup(rows, "Equity")
+    assert eq["unrealized"] == 50.0
+    assert eq["count_open"] == 1
+
+
+def test_breakdown_by_type_dividend_query_failure_is_non_fatal():
+    """A schema drift on int_dividend_events must not 500 the position page.
+    The breakdown card should still render with a 0-dividend row."""
+
+    class _FailingClient:
+        def query(self, _sql):
+            class _Job:
+                def to_dataframe(self_inner):
+                    raise RuntimeError("simulated BQ schema drift")
+            return _Job()
+
+    rows = _compute_breakdown_by_type(
+        client=_FailingClient(),
+        safe_symbol="PLTR",
+        strat_accounts_scope=["Cameron Investment"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame([
+            {"account": "Cameron Investment", "open_date": "2025-06-03", "total_pnl": 100.0},
+        ]),
+        current_df=pd.DataFrame(),
+        leg_predicate=None,
+    )
+    div = _bd_lookup(rows, "Dividends")
+    assert div["realized"] == 0.0
+    assert div["count"] == 0
 
 
 if __name__ == "__main__":

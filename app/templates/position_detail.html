@@ -344,6 +344,67 @@
     </div>
 </div>
 
+{# ── Breakdown by Type (equity / options / dividends) ── #}
+{% if breakdown_rows %}
+<div class="card stat-card p-4 mb-4">
+    <h6 class="fw-bold mb-1">Breakdown by Type</h6>
+    <p class="text-muted small mb-3">
+        How {{ symbol }}'s P&amp;L splits across what you actually owned —
+        equity, options and dividends — for {% if leg_param %}the selected leg{% else %}the whole position{% endif %}.
+    </p>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Type</th>
+                    <th title="Realized + unrealized for this type, scoped to the current leg filter.">Total P&amp;L</th>
+                    <th title="Closed-out P&amp;L: equity sale proceeds vs cost, settled options, cash dividends received.">Realized</th>
+                    <th title="Mark-to-market on what's still open. Dividends have no unrealized component.">Unrealized</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in breakdown_rows %}
+                <tr>
+                    <td><strong>{{ r.type }}</strong></td>
+                    <td class="{{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-bold">
+                        ${{ "{:,.2f}".format(r.total) }}
+                    </td>
+                    <td class="{{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(r.realized) }}
+                    </td>
+                    <td class="{% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {% if r.unrealized is none %}
+                        &mdash;
+                        {% else %}
+                        ${{ "{:,.2f}".format(r.unrealized) }}
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">
+                        {% if r.count == 0 %}
+                        &mdash;
+                        {% else %}
+                        {{ r.count }} {{ r.count_label }}{% if r.count_open %} ({{ r.count_open }} open){% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% set bd_total = breakdown_rows | sum(attribute='total') %}
+            <tfoot>
+                <tr class="border-top">
+                    <th>Total</th>
+                    <th class="{{ 'text-positive' if bd_total >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(bd_total) }}
+                    </th>
+                    <th colspan="3"></th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# ── Strategy Breakdown ── #}
 {% if strategy_rows %}
 <div class="card stat-card p-4 mb-4">
