@@ -90,7 +90,13 @@
 {% block content %}
 
 {# ── Hero ─────────────────────────────────────────────────────────── #}
-{% set _acct_count = user_accounts|length if user_accounts else 0 %}
+{# `user_accounts` is the auth list (every account the user has linked).
+   `accounts` is the data list (accounts that have positions in the
+   current view). Use `user_accounts` for "are you connected?" decisions
+   so a too-narrow filter doesn't trigger the connect-Schwab onboarding
+   copy when the user actually has 5 accounts wired up. #}
+{% set _auth_acct_count = user_accounts|length if user_accounts else 0 %}
+{% set _data_acct_count = accounts|length if accounts else 0 %}
 {% set _open_ct    = status_counts.Open    if status_counts else 0 %}
 {% set _closed_ct  = status_counts.Closed  if status_counts else 0 %}
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
@@ -99,19 +105,19 @@
         <div>
             <h1>Your Positions</h1>
             <div class="hero-sub">
-                {% if _acct_count == 0 %}
+                {% if _auth_acct_count == 0 %}
                     No accounts linked yet &mdash;
                     <a href="{{ url_for('profile') }}#schwab-sync" class="text-white text-decoration-underline">connect Schwab</a>
                     or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
-                {% elif _acct_count == 1 %}
+                {% elif _auth_acct_count == 1 %}
                     {{ user_accounts[0] | account_label }}
                     &middot; your current and historical options strategies.
                 {% else %}
-                    Across {{ _acct_count }} account{{ '' if _acct_count == 1 else 's' }}:
+                    Across {{ _auth_acct_count }} account{{ '' if _auth_acct_count == 1 else 's' }}:
                     {{ user_accounts | map('account_label') | join(', ') }}.
                 {% endif %}
             </div>
-            {% if _acct_count > 0 %}
+            {% if _auth_acct_count > 0 %}
             <div class="d-flex flex-wrap gap-2 mt-3">
                 <span class="hero-chip"><span class="dot open"></span>{{ _open_ct }} open</span>
                 <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
@@ -135,7 +141,7 @@
             {% endif %}
         </div>
 
-        {% if kpis and _acct_count > 0 %}
+        {% if kpis and _auth_acct_count > 0 %}
         <div class="d-flex gap-4 flex-wrap">
             <div class="hero-kpi">
                 <div class="label">Total Return</div>
@@ -173,7 +179,13 @@
     </div>
 </div>
 
-{% if accounts is defined and accounts|length == 0 and not (selected_account or selected_strategy or selected_symbol or selected_start_date or selected_end_date) %}
+{# Empty-state copy splits two ways:
+   * No data accounts AND no auth accounts → onboarding (connect Schwab).
+   * No data accounts but user IS connected → "we have your accounts but
+     they didn't return anything." Most common cause is a brand-new
+     Schwab connection that hasn't synced yet, or a too-narrow filter. #}
+{% if _data_acct_count == 0 and not (selected_account or selected_strategy or selected_symbol or selected_subsector or selected_sector or selected_statuses or selected_start_date or selected_end_date) %}
+{% if _auth_acct_count == 0 %}
 <div class="alert alert-info">
     <strong>No positions yet.</strong>
     Bring in your trades to see your live positions, P&amp;L, and performance:
@@ -183,6 +195,15 @@
         <a href="{{ url_for('get_started') }}" class="btn btn-link btn-sm text-decoration-none">Walk me through it</a>
     </div>
 </div>
+{% else %}
+<div class="alert alert-info">
+    <strong>No positions to show yet.</strong>
+    Your account{{ '' if _auth_acct_count == 1 else 's' }} {{ user_accounts | map('account_label') | join(', ') }}
+    {{ 'is' if _auth_acct_count == 1 else 'are' }} connected, but we don&rsquo;t have any trade data yet.
+    <a href="{{ url_for('profile') }}#schwab-sync" class="alert-link">Run a Schwab sync</a>
+    or <a href="{{ url_for('upload') }}" class="alert-link">upload trade history</a> to populate this page.
+</div>
+{% endif %}
 {% endif %}
 
 {% if error is defined and error %}
@@ -264,11 +285,11 @@
         <label class="lblh">Status</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _all_statuses }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
         </div>
         {# Mirror the chosen status into the form so a Symbol/Strategy
            change preserves it. Multi-status (rare path) still works
@@ -283,11 +304,11 @@
         <label class="lblh">Dates</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _is_alltime }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses) }}">All time</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses) }}">All time</a>
             <a class="{{ 'active' if _is_30d }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
             <a class="{{ 'active' if _is_ytd }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
         </div>
         {# No hidden date inputs needed — the visible date inputs below
            are part of this form and carry the current values, so when
@@ -363,14 +384,21 @@
         <div class="chart-wrapper w-100">
             <h6 class="fw-bold mb-3">Quick Stats</h6>
             <table class="table table-sm table-borderless mb-0">
-                <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ kpis.total_trades }}</td></tr>
-                <tr><td class="text-muted">Winners</td><td class="fw-bold text-end text-positive">{{ "{:,.0f}".format(kpis.total_trades * kpis.win_rate) if kpis.total_trades else 0 }}</td></tr>
+                <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ "{:,}".format(kpis.total_trades) }}</td></tr>
+                <tr title="Winning closed trade groups (one group per option contract or one per equity round-trip). Win Rate above is winners ÷ closed groups.">
+                    <td class="text-muted">Winners / Losers</td>
+                    <td class="fw-bold text-end">
+                        <span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span>
+                        /
+                        <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span>
+                    </td>
+                </tr>
                 <tr>
                     <td class="text-muted">Strategies Used</td>
                     <td class="fw-bold text-end">{{ strategy_chart | length }}</td>
                 </tr>
                 <tr>
-                    <td class="text-muted">Accounts</td>
+                    <td class="text-muted">Accounts in view</td>
                     <td class="fw-bold text-end">{{ accounts | length }}</td>
                 </tr>
             </table>
@@ -432,7 +460,7 @@
                     <tr>
                         <td>{{ row.account }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
                                 {{ row.symbol }}
                             </a>
                         </td>
@@ -619,11 +647,11 @@
             <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>

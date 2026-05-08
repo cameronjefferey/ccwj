@@ -142,10 +142,42 @@ Silent error handling (`except: pass`) on chart build, mirror score history, and
 trader profile — errors are invisible in production.
 
 ### Positions List (`/positions`)
-**Status: Working. Entry point to position detail.**
+**Status: Working with recent filter-discipline pass.** Entry point to position detail.
 
 Lists all positions with strategy tags, P&L, status. Links to position detail.
 Pagination in Python (`per_page = 25`).
+
+What's working:
+- Hero "X open / Y closed" chips honor every active filter (account,
+  strategy, symbol, status, subsector, sector, date range). Pre-fix the
+  chips read off the unfiltered df and lied about the body.
+- Pagination + symbol-cell links preserve all 7 filter dimensions.
+- "No accounts linked yet" copy fires only when the user genuinely has no
+  linked accounts. Connected-but-empty users get a "data is pending"
+  message instead.
+- Quick Stats Winners shows raw `num_winners`, not the buggy
+  `total_trades * win_rate` derivation that over-reported by 2-3x.
+- Date-filtered view (DATE_FILTERED_QUERY) uses the same realized /
+  unrealized split and same status logic as the positions_summary mart;
+  pre-fix the date view emitted a 3rd "Mixed" status the all-time view
+  never showed, and derived realized_pnl from total_pnl by status which
+  collapsed open-equity-with-interim-sells P&L into unrealized.
+
+Architecture:
+- Dividend attribution rules live in
+  `dbt/macros/attribute_dividends_to_strategy.sql` (single source of
+  truth). `dbt/models/marts/positions_summary.sql` calls the macro.
+  The runtime DATE_FILTERED_QUERY in `app/routes.py` mirrors the macro
+  output in inlined SQL (it has to — start/end dates come from the URL
+  at request time, after dbt has finished building). `ATTRIBUTION_INVARIANT`
+  comments in both files cross-reference; integration test
+  `test_date_filtered_at_full_window_matches_mart` (set `RUN_BQ_TESTS=1`)
+  pins them together.
+
+Known issues:
+- DATE_FILTERED_QUERY is still ~150 lines of inlined SQL in routes.py.
+  Can't be a pure dbt mart because of the runtime parameterization, but
+  the dividend-attribution complexity now lives in dbt.
 
 ### Symbols (`/symbols`)
 **Status: Functional but being superseded by Position Detail.**

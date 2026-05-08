@@ -470,6 +470,17 @@ DATE_FILTERED_QUERY = """
 --   * total_pnl folds in attributed dividend income
 --   * Buy-and-Hold reclassified to "Dividend" when div income > price gain
 --   * total_return preserved as alias of total_pnl for back-compat
+--
+-- ATTRIBUTION_INVARIANT: The dividend ranking + attribution + Buy-and-Hold
+-- reclassification logic below MUST stay in sync with the canonical
+-- definition in dbt/macros/attribute_dividends_to_strategy.sql (which is
+-- imported by dbt/models/marts/positions_summary.sql). This runtime SQL
+-- can't call the dbt macro directly because dbt macros compile at
+-- `dbt build` time, not at request time, and we need the start_date /
+-- end_date URL params to flow into the source filter. The duplication is
+-- intentional and documented; if you change the macro, mirror the change
+-- here AND verify with the integration test
+-- tests/test_positions_filter_discipline.py::test_date_filtered_at_full_window_matches_mart.
 WITH classified AS (
     SELECT *
     FROM `ccwj-dbt.analytics.int_strategy_classification`
@@ -508,15 +519,32 @@ strategy_summary AS (
         symbol,
         strategy,
 
+        -- Match positions_summary's 2-state status. The mart deliberately
+        -- folds "both open and closed positions for this (account, symbol,
+        -- strategy)" into 'Open' rather than emitting a 3rd 'Mixed' state,
+        -- per its inline comment "to keep the UX simple". This runtime
+        -- query used to emit 'Mixed' too, so the same page showed
+        -- different status counts in the all-time view (mart, no Mixed)
+        -- vs the date-filtered view (runtime, with Mixed). Folding here
+        -- restores ATTRIBUTION_INVARIANT and stops users from seeing
+        -- chips that vanish when they clear the date filter.
         CASE
-            WHEN COUNTIF(status = 'Open') > 0 AND COUNTIF(status = 'Closed') > 0 THEN 'Mixed'
             WHEN COUNTIF(status = 'Open') > 0 THEN 'Open'
             ELSE 'Closed'
         END AS status,
 
         SUM(total_pnl) AS total_pnl,
-        SUM(CASE WHEN status = 'Closed' THEN total_pnl ELSE 0 END) AS realized_pnl,
-        SUM(CASE WHEN status = 'Open'   THEN total_pnl ELSE 0 END) AS unrealized_pnl,
+        -- Use pre-split realized_pnl / unrealized_pnl from
+        -- int_strategy_classification rather than deriving from total_pnl
+        -- by status. The pre-split version correctly attributes the
+        -- already-realized portion of a still-open equity session (one
+        -- with interim sells) to realized_pnl. The old "CASE WHEN
+        -- status='Closed' THEN total_pnl" derivation lumped 100% of an
+        -- Open session's P&L into unrealized — even after the trader
+        -- had banked $X selling half the position. positions_summary has
+        -- always done it this way; this restores ATTRIBUTION_INVARIANT.
+        SUM(realized_pnl)   AS realized_pnl,
+        SUM(unrealized_pnl) AS unrealized_pnl,
 
         SUM(premium_received) AS total_premium_received,
         SUM(ABS(premium_paid)) AS total_premium_paid,
@@ -1048,10 +1076,28 @@ def positions():
     except Exception as exc:
         ctx = dict(ERROR_DEFAULTS)
         ctx["error"] = str(exc)
+        # Even on error, pass the auth account list so the hero can render
+        # the right "you have N accounts but couldn't load data" message
+        # rather than the generic "no accounts linked" copy.
+        ctx["user_accounts"] = user_accounts or []
         return render_template("positions.html", **ctx)
 
     # ------------------------------------------------------------------
-    # 3. Clean up types
+    # 3. Tenant-scope BEFORE any aggregation or coercion
+    #
+    # IMPORTANT tenancy rule (keep): the hero, KPIs, chart, and every table
+    # below MUST read off DataFrames that have already been scoped to the
+    # logged-in user's accounts. The SQL is already account-scoped via
+    # _account_sql_and, but the BQ-tenant rule requires a Python re-filter
+    # before any re-aggregation (which includes the numeric coercion below
+    # — fillna/to_numeric are arguably re-aggregation work). Do not move
+    # this back below the coercion. See
+    # .cursor/rules/bigquery-tenant-isolation.mdc.
+    # ------------------------------------------------------------------
+    df = _filter_df_by_accounts(df, user_accounts)
+
+    # ------------------------------------------------------------------
+    # 4. Clean up types (now safe — frame is tenant-scoped)
     # ------------------------------------------------------------------
     numeric_cols = [
         "total_pnl", "realized_pnl", "unrealized_pnl",
@@ -1069,16 +1115,6 @@ def positions():
         if col in df.columns:
             df[col] = df[col].astype(str).replace("NaT", "")
 
-    # ------------------------------------------------------------------
-    # 4. Safety-belt filter (SQL already filtered by account)
-    #
-    # IMPORTANT tenancy rule (keep): the hero, KPIs, chart, and every table
-    # below MUST read off DataFrames that have already been scoped to the
-    # logged-in user's accounts. Do not re-introduce paths that compute from
-    # the unscoped df. See .cursor/rules/bigquery-tenant-isolation.mdc.
-    # ------------------------------------------------------------------
-    df = _filter_df_by_accounts(df, user_accounts)
-
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
@@ -1090,13 +1126,6 @@ def positions():
         sorted(df["sector"].dropna().unique())
         if "sector" in df.columns else []
     )
-
-    # Status counts for hero/filters (from user-scoped df, before other filters)
-    status_counts = {"Open": 0, "Closed": 0, "Mixed": 0}
-    if "status" in df.columns and not df.empty:
-        vc = df["status"].fillna("").value_counts()
-        for k in list(status_counts.keys()):
-            status_counts[k] = int(vc.get(k, 0))
 
     filtered = df.copy()
     if selected_account:
@@ -1111,6 +1140,19 @@ def positions():
         filtered = filtered[filtered["subsector"] == selected_subsector]
     if selected_sector and "sector" in filtered.columns:
         filtered = filtered[filtered["sector"] == selected_sector]
+
+    # Status counts for hero chips. Must read from `filtered`, NOT `df`,
+    # so the chips agree with the body. Reading from `df` was a long-
+    # standing UI lie: the chip said "12 open" even when the user had
+    # filtered to one symbol with 1 open position. Hero / body
+    # disagreement on the same page is exactly the same bug class as
+    # Position Detail's "Strategy Breakdown didn't update" — a
+    # sub-aggregation reading from the wrong source.
+    status_counts = {"Open": 0, "Closed": 0, "Mixed": 0}
+    if "status" in filtered.columns and not filtered.empty:
+        vc = filtered["status"].fillna("").value_counts()
+        for k in list(status_counts.keys()):
+            status_counts[k] = int(vc.get(k, 0))
 
     # ------------------------------------------------------------------
     # 5. KPIs
@@ -1132,6 +1174,16 @@ def positions():
         "win_rate": total_winners / total_closed if total_closed else 0,
         "num_positions": len(filtered),
         "total_trades": int(filtered["num_individual_trades"].sum()),
+        # Closed-trade-group counts. Distinct from total_trades, which sums
+        # num_individual_trades (each open + close + roll fill counts). The
+        # template's Quick Stats card used to derive winners as
+        # total_trades * win_rate, which is wrong: win_rate is the
+        # winner-share of *closed groups*, so multiplying by per-fill trade
+        # count over-reports winners by 2-3x. Pass the raw counts through
+        # and let the template render them directly.
+        "num_winners": total_winners,
+        "num_losers": total_losers,
+        "num_closed_groups": total_closed,
     }
 
     # ------------------------------------------------------------------
@@ -1231,7 +1283,13 @@ def positions():
         symbols=symbols,
         subsectors=subsectors,
         sectors=sectors,
-        user_accounts=accounts,
+        # `user_accounts` is the auth list (every account the user has
+        # linked), used by the hero to decide between "you haven't
+        # connected anything yet" and "your filter just returned nothing".
+        # `accounts` is the data list (accounts that have positions in the
+        # current view) and powers the Account dropdown. Distinct names
+        # because they answer different questions.
+        user_accounts=user_accounts,
         status_counts=status_counts,
         selected_account=selected_account,
         selected_strategy=selected_strategy,

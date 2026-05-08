@@ -88,41 +88,12 @@ strategy_summary as (
 
 ---------------------------------------------------------------------
 -- Attach dividend income (once per account × symbol, to the primary equity strategy).
--- Window partitioned by (account, user_id, symbol) so the dividend
--- ranking can't bleed across tenants who happen to share a label.
+-- Logic lives in the attribute_dividends_to_strategy macro so the
+-- mart and the runtime DATE_FILTERED_QUERY in app/routes.py can
+-- never silently drift. ATTRIBUTION_INVARIANT: keep these two paths in
+-- sync — see the macro docstring.
 ---------------------------------------------------------------------
-with_dividend_rank as (
-    select
-        ss.*,
-        row_number() over (
-            partition by ss.account, ss.user_id, ss.symbol
-            order by
-                case ss.strategy
-                    when 'Wheel'        then 1
-                    when 'Covered Call'  then 2
-                    when 'Buy and Hold'  then 3
-                    else 99
-                end
-        ) as dividend_rank
-    from strategy_summary ss
-),
-
--- Pre-compute the attributed dividend amount per (strategy row) so the
--- final SELECT can read a single value in multiple places without
--- repeating the rank/coalesce expression.
-with_attributed_dividends as (
-    select
-        wdr.*,
-        case when wdr.dividend_rank = 1 then coalesce(d.total_dividend_income, 0) else 0 end
-            as attributed_dividend_income,
-        case when wdr.dividend_rank = 1 then coalesce(d.dividend_count, 0) else 0 end
-            as attributed_dividend_count
-    from with_dividend_rank wdr
-    left join dividends d
-        on wdr.account = d.account
-        and (wdr.user_id is not distinct from d.user_id)
-        and wdr.symbol = d.symbol
-),
+{{ attribute_dividends_to_strategy('strategy_summary', 'dividends') }},
 
 final as (
     select
