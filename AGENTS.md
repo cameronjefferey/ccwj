@@ -89,14 +89,21 @@ What could be better:
 **Status: Functional with recent fixes. Complex page with the most logic.**
 
 What's working:
-- Position Legs with sequential numbering (Leg 1, Leg 2, etc.)
-- Leg filtering — click a leg pill to scope the entire page
+- Position Legs with sequential numbering (Leg 1, Leg 2, etc.) — **canonical
+  definition lives in `int_position_legs` mart**, not in Python anymore.
+  Legs include open option contracts so the pill status agrees with the
+  banner (was a long-standing bug — the legs section used to read only
+  CLOSED contracts and showed "all closed" pills next to an Open banner).
+  ```dbt/models/intermediate/int_position_legs.sql```
+- Leg filtering — click a leg pill to scope the entire page (URL ?leg=<n>)
 - Cumulative P&L chart with equity, options, dividends, total lines + stock price overlay
 - Win/Loss Matrix (DTE vs Strike Distance) per strategy
 - Expandable raw trades per leg (click arrow to see underlying transactions)
 - KPIs recalculated per-leg when filtered
 - Strategy breakdown table filtered by leg
-- Orphan options grouped into non-overlapping "options only" legs
+- Orphan options grouped into non-overlapping "options only" legs (mart owns
+  the gap-id assignment; old Python had ordering edge cases that produced
+  duplicate negative session_ids in rare cases)
 - Short position handling in equity P&L (call assignments selling more shares than held)
 - Snapshot market value nulled out when leg-filtering (prevents cross-leg inflation)
 - Cumulative columns re-zeroed per-leg so chart starts at 0
@@ -110,7 +117,8 @@ Known issues:
 - `_build_option_matrices` uses nested loops over DTE/strike buckets in Flask.
 - Pre-snapshot option P&L shows only cash flows (no mark-to-market). This means a dip
   when a LEAP is purchased that recovers once snapshots begin. Acceptable tradeoff.
-- `routes.py` is a monolith (~2700+ lines). Position detail logic alone is ~500 lines.
+- `routes.py` is still long. Position detail used to be ~1,650 lines; the
+  legs teardown removed ~150 of stateful Python.
 
 ### Dashboard / Home (`/`, `/index`, `/dashboard`)
 **Status: Working. Summary landing page.**

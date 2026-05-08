@@ -223,6 +223,30 @@ cleaned as (
             else unrealized_pnl_pct
         end as unrealized_pnl_pct
     from cleaned_raw
+),
+
+-- Belt-and-suspenders dedup: if current_positions.csv ever ships duplicate
+-- rows for the same (account, user_id, trade_symbol) — which has happened
+-- when the Schwab "Pull full history" sync wrote the same payload three
+-- times in quick succession before the merge logic was hardened — every
+-- downstream model that joins to stg_current would otherwise multiply
+-- (int_equity_sessions self-joins to stg_current and ballooned 9× for
+-- those keys, breaking int_position_legs uniqueness). Keep the row with
+-- the most-populated market_value as a deterministic tiebreak. Mirrors
+-- the same defense in stg_account_balances.
+deduped as (
+    select *
+    from cleaned
+    qualify row_number() over (
+        partition by account, user_id, trade_symbol
+        order by case when market_value is not null then 0 else 1 end,
+                 case when cost_basis  is not null then 0 else 1 end,
+                 -- Last resort: deterministic tie-break so rebuilds are
+                 -- byte-identical. Highest market_value wins among rows
+                 -- with the same population score (most-recent-sync
+                 -- proxy when no real timestamp is available).
+                 market_value desc nulls last
+    ) = 1
 )
 
-select * from cleaned
+select * from deduped

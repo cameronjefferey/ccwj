@@ -353,6 +353,73 @@ def _df_normalize_account_column(df):
     return df
 
 
+def _legs_df_to_sessions_list(legs_df):
+    """Reshape int_position_legs rows into the legacy ``sessions_list`` dict
+    shape that the position_detail template and downstream helpers consume.
+
+    Maintains the historic key contract:
+      - ``session_id`` ← ``leg_id``       (positive for equity sessions,
+                                           negative for options-only legs)
+      - ``display_leg`` ← ``display_leg_num`` (chronological 1..N)
+      - ``last_trade_date`` ← ``last_activity_date`` (string YYYY-MM-DD)
+      - ``options_pnl`` ← ``closed_options_pnl + open_options_pnl``
+
+    Replaces ~150 lines of stateful Python (orphan-grouping, gap-id
+    assignment, P&L overlap re-aggregation) — the dbt mart owns all of
+    that now. Returns ``[]`` for an empty / None DataFrame.
+    """
+    if legs_df is None or legs_df.empty:
+        return []
+
+    df = legs_df.copy()
+    for col in (
+        "equity_pnl", "closed_options_pnl", "open_options_pnl",
+        "combined_pnl", "max_quantity_held",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    for col in (
+        "options_count", "open_options_count", "num_trades",
+        "leg_id", "display_leg_num", "days_held",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    if "display_leg_num" in df.columns:
+        df = df.sort_values("display_leg_num")
+
+    out = []
+    for _, r in df.iterrows():
+        od = r.get("open_date")
+        ld = r.get("last_activity_date")
+        equity_pnl = round(float(r.get("equity_pnl") or 0), 2)
+        options_pnl = round(
+            float(r.get("closed_options_pnl") or 0) + float(r.get("open_options_pnl") or 0),
+            2,
+        )
+        combined = round(
+            float(r.get("combined_pnl") or (equity_pnl + options_pnl)), 2
+        )
+        out.append({
+            "session_id": int(r["leg_id"]),
+            "display_leg": int(r["display_leg_num"]),
+            "status": str(r.get("status") or "Closed"),
+            "open_date": str(od) if od is not None and not pd.isna(od) else "",
+            "last_trade_date": str(ld) if ld is not None and not pd.isna(ld) else "",
+            "equity_pnl": equity_pnl,
+            "options_pnl": options_pnl,
+            "options_count": int(r.get("options_count") or 0),
+            "combined_pnl": combined,
+            "total_pnl": combined,
+            "days_held": int(r.get("days_held") or 0),
+            "max_quantity_held": float(r.get("max_quantity_held") or 0),
+            "num_trades": int(r.get("num_trades") or 0),
+            "options_only": bool(r.get("options_only") or False),
+            "open_options_count": int(r.get("open_options_count") or 0),
+        })
+    return out
+
+
 def _iter_symbols_for_daily_detail(trades_df, pnl_df, current_df, open_pairs):
     """
     Row keys (account, symbol) for /symbols. dbt can classify open options from
@@ -1286,22 +1353,31 @@ POSITION_CLOSED_EQUITY_QUERY = """
     {account_filter}
 """
 
-POSITION_SESSIONS_QUERY = """
+POSITION_LEGS_QUERY = """
     SELECT
         account,
+        user_id,
         symbol,
-        session_id,
-        open_date,
-        last_trade_date,
+        leg_id,
+        leg_type,
         status,
-        total_pnl,
-        days_held,
+        open_date,
+        last_activity_date,
+        equity_pnl,
+        closed_options_pnl,
+        open_options_pnl,
+        combined_pnl,
+        options_count,
+        open_options_count,
         max_quantity_held,
-        num_trades
-    FROM `ccwj-dbt.analytics.int_equity_sessions`
+        num_trades,
+        options_only,
+        display_leg_num,
+        days_held
+    FROM `ccwj-dbt.analytics.int_position_legs`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
-    ORDER BY account, session_id
+    ORDER BY account, display_leg_num
 """
 
 POSITION_MATRIX_QUERY = """
@@ -1849,7 +1925,7 @@ def position_detail(symbol):
             "matrix": POSITION_MATRIX_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
             ),
-            "sessions": POSITION_SESSIONS_QUERY.format(
+            "legs": POSITION_LEGS_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
             ),
         })
@@ -1859,14 +1935,14 @@ def position_detail(symbol):
         closed_legs_df = dfs["closed_legs"]
         closed_equity_df = dfs["closed_equity"]
         matrix_df = dfs["matrix"]
-        sessions_df = dfs["sessions"]
+        legs_df = dfs["legs"]
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
         closed_legs_df = _df_normalize_account_column(closed_legs_df)
         closed_equity_df = _df_normalize_account_column(closed_equity_df)
         matrix_df = _df_normalize_account_column(matrix_df)
-        sessions_df = _df_normalize_account_column(sessions_df)
+        legs_df = _df_normalize_account_column(legs_df)
     except Exception as exc:
         return render_template(
             "position_detail.html",
@@ -1969,123 +2045,18 @@ def position_detail(symbol):
     if end_date is not None and "trade_date" in trades_df.columns:
         trades_df = trades_df[trades_df["trade_date"] <= end_date]
 
-    # ── Session / leg filtering ──
-    sessions_df = _filter_df_by_accounts(sessions_df, user_accounts)
-    if selected_account and not sessions_df.empty:
-        sessions_df = sessions_df[sessions_df["account"] == selected_account]
-    for col in ["total_pnl"]:
-        if col in sessions_df.columns:
-            sessions_df[col] = pd.to_numeric(sessions_df[col], errors="coerce").fillna(0)
-    if "open_date" in sessions_df.columns:
-        sessions_df["open_date"] = pd.to_datetime(sessions_df["open_date"]).dt.date
-    if "last_trade_date" in sessions_df.columns:
-        sessions_df["last_trade_date"] = pd.to_datetime(sessions_df["last_trade_date"]).dt.date
+    # ── Position legs (read from int_position_legs mart) ──
+    # The mart owns the canonical leg definition (equity sessions + option-only
+    # orphan legs, with Open status whenever any attached option is still live
+    # so the pill agrees with the banner). _legs_df_to_sessions_list reshapes
+    # the mart rows into the legacy dict shape the template + downstream
+    # helpers consume, preserving the leg_id ↔ session_id contract that keeps
+    # bookmarked ?leg=<n> URLs working.
+    legs_df = _filter_df_by_accounts(legs_df, user_accounts)
+    if selected_account and not legs_df.empty:
+        legs_df = legs_df[legs_df["account"] == selected_account]
 
-    sessions_list = sessions_df.to_dict(orient="records") if not sessions_df.empty else []
-    for s in sessions_list:
-        s["open_date"] = str(s["open_date"]) if s.get("open_date") else ""
-        s["last_trade_date"] = str(s["last_trade_date"]) if s.get("last_trade_date") else ""
-
-    # Enrich sessions with option P&L that overlaps each session's date range
-    if sessions_list and not closed_legs_df.empty and "open_date" in closed_legs_df.columns and "total_pnl" in closed_legs_df.columns:
-        _cl = closed_legs_df.copy()
-        if selected_account:
-            _cl = _cl[_cl["account"] == selected_account] if "account" in _cl.columns else _cl
-        _cl["_opt_od"] = pd.to_datetime(_cl["open_date"]).dt.date
-        _cl["_opt_pnl"] = pd.to_numeric(_cl["total_pnl"], errors="coerce").fillna(0)
-
-        _assigned_option_indices = set()
-        for s in sessions_list:
-            s_od = pd.to_datetime(s["open_date"]).date() if s["open_date"] else None
-            s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s["last_trade_date"] else None
-            s_open = str(s.get("status", "")).strip().lower() == "open"
-            s_end = s_ltd if not s_open else date.today()
-            if s_od and s_end:
-                mask = (_cl["_opt_od"] >= s_od) & (_cl["_opt_od"] <= s_end)
-                matching = _cl[mask]
-                s["options_pnl"] = round(float(matching["_opt_pnl"].sum()), 2)
-                s["options_count"] = len(matching)
-                _assigned_option_indices.update(matching.index.tolist())
-            else:
-                s["options_pnl"] = 0.0
-                s["options_count"] = 0
-            s["equity_pnl"] = round(float(s.get("total_pnl") or 0), 2)
-            s["combined_pnl"] = round(s["equity_pnl"] + s["options_pnl"], 2)
-
-        # Orphan options: split into non-overlapping groups around equity sessions
-        orphan_mask = ~_cl.index.isin(_assigned_option_indices)
-        orphan_df = _cl[orphan_mask]
-        if not orphan_df.empty:
-            # Build sorted list of equity session boundaries to split orphans around
-            eq_boundaries = []
-            for s in sessions_list:
-                s_od = pd.to_datetime(s["open_date"]).date() if s.get("open_date") else None
-                s_ltd = pd.to_datetime(s["last_trade_date"]).date() if s.get("last_trade_date") else None
-                s_open = str(s.get("status", "")).strip().lower() == "open"
-                s_end = s_ltd if not s_open else date.today()
-                if s_od and s_end:
-                    eq_boundaries.append((s_od, s_end))
-            eq_boundaries.sort()
-
-            # Group orphan options into clusters separated by equity sessions
-            orphan_dates_series = orphan_df["_opt_od"].dropna().sort_values()
-            orphan_groups = []
-            current_group = []
-            _orphan_sid_counter = 0
-
-            for idx in orphan_dates_series.index:
-                od = orphan_df.loc[idx, "_opt_od"]
-                # Check which gap this orphan falls in (before, between, or after sessions)
-                gap_id = 0
-                for i, (eq_start, eq_end) in enumerate(eq_boundaries):
-                    if od >= eq_start:
-                        gap_id = i + 1
-                if not current_group or current_group[0]["gap"] == gap_id:
-                    current_group.append({"idx": idx, "gap": gap_id})
-                else:
-                    orphan_groups.append(current_group)
-                    current_group = [{"idx": idx, "gap": gap_id}]
-            if current_group:
-                orphan_groups.append(current_group)
-
-            # Deduplicate groups by gap_id
-            gap_groups = {}
-            for grp in orphan_groups:
-                gid = grp[0]["gap"]
-                gap_groups.setdefault(gid, []).extend(grp)
-
-            for gid, grp in sorted(gap_groups.items()):
-                indices = [g["idx"] for g in grp]
-                grp_df = orphan_df.loc[indices]
-                grp_pnl = round(float(grp_df["_opt_pnl"].sum()), 2)
-                grp_dates = grp_df["_opt_od"].dropna()
-                _orphan_sid_counter -= 1
-                sessions_list.append({
-                    "session_id": _orphan_sid_counter,
-                    "open_date": str(grp_dates.min()) if not grp_dates.empty else "",
-                    "last_trade_date": str(grp_dates.max()) if not grp_dates.empty else "",
-                    "status": "Closed",
-                    "total_pnl": grp_pnl,
-                    "equity_pnl": 0.0,
-                    "options_pnl": grp_pnl,
-                    "options_count": len(grp),
-                    "combined_pnl": grp_pnl,
-                    "days_held": 0,
-                    "max_quantity_held": 0,
-                    "num_trades": len(grp),
-                    "options_only": True,
-                })
-            sessions_list.sort(key=lambda x: x.get("open_date") or "")
-    else:
-        for s in sessions_list:
-            s["equity_pnl"] = round(float(s.get("total_pnl") or 0), 2)
-            s["options_pnl"] = 0.0
-            s["options_count"] = 0
-            s["combined_pnl"] = s["equity_pnl"]
-
-    # Assign sequential display leg numbers (1, 2, 3...) by chronological order
-    for i, s in enumerate(sessions_list, start=1):
-        s["display_leg"] = i
+    sessions_list = _legs_df_to_sessions_list(legs_df)
 
     leg_param = request.args.get("leg", "")
     if leg_param:

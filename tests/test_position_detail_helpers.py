@@ -4,9 +4,41 @@ import pandas as pd
 import pytest
 
 from app.routes import (
+    _legs_df_to_sessions_list,
     _merge_position_strategy_breakdown,
     _supplement_summary_with_rolled,
 )
+
+
+def _legs_row(
+    leg_id, display_leg_num, status, open_date, last_activity_date,
+    equity_pnl=0.0, closed_options_pnl=0.0, open_options_pnl=0.0,
+    options_count=0, open_options_count=0, options_only=False,
+):
+    """Shape mirrors int_position_legs SELECT — keeps the test honest about
+    the mart contract."""
+    combined = round(equity_pnl + closed_options_pnl + open_options_pnl, 2)
+    return {
+        "account": "Cameron Investment",
+        "user_id": 9,
+        "symbol": "PLTR",
+        "leg_id": leg_id,
+        "leg_type": "options_only" if options_only else "equity_session",
+        "status": status,
+        "open_date": open_date,
+        "last_activity_date": last_activity_date,
+        "equity_pnl": equity_pnl,
+        "closed_options_pnl": closed_options_pnl,
+        "open_options_pnl": open_options_pnl,
+        "combined_pnl": combined,
+        "options_count": options_count,
+        "open_options_count": open_options_count,
+        "max_quantity_held": 1.0 if not options_only else 0.0,
+        "num_trades": options_count if options_only else 1,
+        "options_only": options_only,
+        "display_leg_num": display_leg_num,
+        "days_held": 1,
+    }
 
 
 def _summary_row(account, strategy, status, total_pnl):
@@ -352,6 +384,107 @@ def test_supplement_does_not_introduce_unrelated_account_rows():
     assert "4828" in accounts and "Coco" in accounts, (
         "Supplement is account-agnostic; scoping must happen at the fetch step"
     )
+
+
+def test_legs_to_sessions_list_empty_df_returns_empty_list():
+    """Empty mart fetch (e.g. brand-new symbol with no trades) shouldn't crash
+    or invent legs. Position detail must keep rendering with sessions=[]."""
+    assert _legs_df_to_sessions_list(pd.DataFrame()) == []
+    assert _legs_df_to_sessions_list(None) == []
+
+
+def test_legs_to_sessions_list_preserves_leg_id_and_display_order():
+    """Mart leg_id ↔ legacy session_id contract: positive ids for equity
+    sessions, negative for orphans, sorted by display_leg_num. Critical
+    because bookmarked URLs (?leg=-1, ?leg=1) and the JS pill click handler
+    both pivot on these stable ids."""
+    rows = [
+        # Out of order on purpose; helper must sort by display_leg_num.
+        _legs_row(
+            leg_id=1, display_leg_num=2, status="Open",
+            open_date="2025-06-03", last_activity_date="2026-05-08",
+            equity_pnl=-226.27, closed_options_pnl=1499.0, open_options_pnl=-4355.32,
+            options_count=20, open_options_count=1,
+        ),
+        _legs_row(
+            leg_id=-1, display_leg_num=1, status="Closed",
+            open_date="2024-11-25", last_activity_date="2024-11-29",
+            closed_options_pnl=-1715.0, options_count=1, options_only=True,
+        ),
+        _legs_row(
+            leg_id=-2, display_leg_num=3, status="Open",
+            open_date="2026-04-14", last_activity_date="2026-05-08",
+            closed_options_pnl=-1118.0, open_options_pnl=1191.65,
+            options_count=4, open_options_count=1, options_only=True,
+        ),
+    ]
+    out = _legs_df_to_sessions_list(pd.DataFrame(rows))
+    assert [s["display_leg"] for s in out] == [1, 2, 3]
+    assert [s["session_id"] for s in out] == [-1, 1, -2]
+    assert [s["status"] for s in out] == ["Closed", "Open", "Open"]
+
+
+def test_legs_to_sessions_list_open_leg_when_open_options_attached_to_closed_equity_session():
+    """The PLTR/Cameron Investment regression. Equity session itself was
+    classified Closed (cycle ran 0→shares→0) but a long call opened during
+    the session is still live → the leg must render as Open with
+    last_trade_date driven by the mart's last_activity_date (= today),
+    NOT the equity session's last_trade_date. Pre-fix, banner said Open
+    while every leg pill said Closed."""
+    rows = [
+        _legs_row(
+            leg_id=1, display_leg_num=1, status="Open",
+            open_date="2025-06-03", last_activity_date="2026-05-08",
+            equity_pnl=-226.27, closed_options_pnl=1499.0,
+            open_options_pnl=-4355.32,
+            options_count=20, open_options_count=1,
+        ),
+    ]
+    out = _legs_df_to_sessions_list(pd.DataFrame(rows))
+    assert len(out) == 1
+    s = out[0]
+    assert s["status"] == "Open"
+    assert s["last_trade_date"] == "2026-05-08"
+    # Combined P&L = equity + closed options + open options unrealized.
+    # Pre-fix, options_pnl was closed-only so combined = -226 + 1499 = $1,273
+    # (the original screenshot's misleading number). Post-fix it must
+    # include the live -$4,355 from the open Long Call.
+    assert abs(s["combined_pnl"] - (-3082.59)) < 0.01, s
+
+
+def test_legs_to_sessions_list_options_pnl_combines_closed_and_open():
+    """options_pnl is the leg-level options total the template renders.
+    Must sum closed_options_pnl + open_options_pnl from the mart so the
+    pill caption reflects current value, not just settled trades."""
+    rows = [
+        _legs_row(
+            leg_id=-2, display_leg_num=1, status="Open",
+            open_date="2026-04-14", last_activity_date="2026-05-08",
+            closed_options_pnl=-1118.0, open_options_pnl=1191.65,
+            options_count=4, open_options_count=1, options_only=True,
+        ),
+    ]
+    out = _legs_df_to_sessions_list(pd.DataFrame(rows))
+    assert len(out) == 1
+    s = out[0]
+    assert s["options_only"] is True
+    assert abs(s["options_pnl"] - 73.65) < 0.01
+    assert abs(s["combined_pnl"] - 73.65) < 0.01
+    assert s["equity_pnl"] == 0.0
+    assert s["open_options_count"] == 1
+
+
+def test_legs_to_sessions_list_handles_null_dates():
+    """Mart can emit NULL last_activity_date (rare but possible if a
+    snapshot-only leg has no close info). The reshape must not crash and
+    must produce empty strings the template can render with [:10] slicing."""
+    row = _legs_row(
+        leg_id=1, display_leg_num=1, status="Closed",
+        open_date="2024-01-01", last_activity_date=None,
+    )
+    out = _legs_df_to_sessions_list(pd.DataFrame([row]))
+    assert out[0]["last_trade_date"] == ""
+    assert out[0]["open_date"] == "2024-01-01"
 
 
 if __name__ == "__main__":
