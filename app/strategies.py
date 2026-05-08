@@ -20,9 +20,11 @@ def _user_account_list():
     return get_accounts_for_user(current_user.id)
 
 
-# Use the tenant-scoped helper from app.routes so we pick up user_id
-# filtering automatically. See docs/USER_ID_TENANCY.md.
-from app.routes import _account_sql_and  # noqa: E402,F401
+# Use the tenant-scoped helpers from app.routes so we pick up user_id
+# filtering automatically — SQL AND a Python `_filter_df_by_accounts` belt
+# on every DataFrame before groupby/sparklines render. See
+# docs/USER_ID_TENANCY.md and .cursor/rules/bigquery-tenant-isolation.mdc.
+from app.routes import _account_sql_and, _filter_df_by_accounts  # noqa: E402
 
 
 STRATEGY_PERFORMANCE_QUERY = """
@@ -108,6 +110,117 @@ WHERE strategy = @strategy
   {account_filter}
 ORDER BY dte_bucket, moneyness_at_open
 """
+
+
+STRATEGY_TYPE_BREAKDOWN_QUERY = """
+SELECT
+  trade_group_type,
+  ROUND(SUM(realized_pnl), 2) AS realized_sum,
+  ROUND(SUM(unrealized_pnl), 2) AS unrealized_sum,
+  COUNT(*) AS num_groups,
+  COUNTIF(status = 'Open') AS num_open_groups
+FROM `ccwj-dbt.analytics.int_strategy_classification`
+WHERE strategy = @strategy
+  {account_filter}
+GROUP BY 1
+"""
+
+STRATEGY_DIVIDEND_ROLLUP_QUERY = """
+SELECT
+  ROUND(SUM(IFNULL(total_dividend_income, 0)), 2) AS dividend_total,
+  SUM(IFNULL(dividend_count, 0)) AS dividend_events
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE strategy = @strategy
+  {account_filter}
+"""
+
+
+TYPE_LABEL_FOR_GROUP = {
+    "equity_session": "Equity",
+    "option_contract": "Options",
+}
+
+
+def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, dividend_events: int):
+    """Build Breakdown-by-Type rows for the focused strategy drill-in.
+    Inputs are tenant-scoped DataFrames / scalars."""
+    buckets = {}
+
+    def _accum(label: str, rsum, usum, ng, og):
+        d = buckets.setdefault(
+            label,
+            {"realized": 0.0, "unrealized": 0.0, "groups": 0, "open_groups": 0},
+        )
+        rs = pd.to_numeric(rsum, errors="coerce")
+        us = pd.to_numeric(usum, errors="coerce")
+        d["realized"] += float(0 if rs is None or pd.isna(rs) else rs)
+        d["unrealized"] += float(0 if us is None or pd.isna(us) else us)
+        d["groups"] += int(ng or 0)
+        d["open_groups"] += int(og or 0)
+
+    if breakdown_df is not None and not breakdown_df.empty:
+        for _, crow in breakdown_df.iterrows():
+            tg = str(crow.get("trade_group_type") or "").strip()
+            lbl = TYPE_LABEL_FOR_GROUP.get(tg, "Other")
+            _accum(
+                lbl,
+                crow.get("realized_sum"),
+                crow.get("unrealized_sum"),
+                crow.get("num_groups"),
+                crow.get("num_open_groups"),
+            )
+
+    xdiv = pd.to_numeric(dividend_total, errors="coerce")
+    div_tot = round(float(0 if xdiv is None or pd.isna(xdiv) else xdiv), 2)
+    div_ev_raw = pd.to_numeric(dividend_events if dividend_events is not None else 0, errors="coerce")
+    div_ev = int(0 if div_ev_raw is None or pd.isna(div_ev_raw) else div_ev_raw)
+
+    if not buckets and div_tot == 0.0:
+        return []
+
+    out_rows = []
+    preferred = ["Equity", "Options", "Other"]
+
+    for lbl in preferred:
+        st = buckets.get(lbl)
+        if not st:
+            continue
+        grp = int(st["groups"])
+        open_g = int(st["open_groups"])
+        suf_parts = []
+        if grp > 0:
+            suf_parts.append(f"{grp} {'group' if grp == 1 else 'groups'}")
+        if open_g > 0:
+            suf_parts.append(f"{open_g} open")
+
+        total = round(st["realized"] + st["unrealized"], 2)
+
+        out_rows.append(
+            {
+                "type": lbl,
+                "total": total,
+                "realized": round(float(st["realized"]), 2),
+                "unrealized": round(float(st["unrealized"]), 2),
+                "suffix": "(" + "; ".join(suf_parts) + ")" if suf_parts else "",
+            }
+        )
+
+    if div_tot != 0.0 or div_ev > 0:
+        ev_sfx = ""
+        if div_ev > 0:
+            ev_sfx = f"({div_ev} event{'s' if div_ev != 1 else ''})"
+        out_rows.append(
+            {
+                "type": "Dividends",
+                "total": div_tot,
+                "realized": div_tot,
+                "unrealized": None,
+                "suffix": ev_sfx,
+            }
+        )
+
+    # Equity / Options first, Dividends always last after Other
+    return out_rows
 
 
 def _strategy_narrative(summary, strategies_list, trend_data):
@@ -244,9 +357,11 @@ def strategies():
         "focus_insights": [],
         "focus_accounts": None,
         "focus_symbols": None,
+        "focus_breakdown_rows": [],
         "focus_trend_months": [],
         "focus_dte_breakdown": [],
         "accounts": [],
+        "auth_accounts": sorted(user_accounts) if user_accounts else [],
         "selected_account": selected_account,
         "selected_strategy": selected_strategy,
     }
@@ -256,6 +371,8 @@ def strategies():
         df = client.query(
             STRATEGY_PERFORMANCE_QUERY.format(account_filter=account_filter)
         ).to_dataframe()
+
+        df = _filter_df_by_accounts(df, effective_accounts)
 
         if df.empty:
             return render_template("strategies.html", **context)
@@ -334,8 +451,9 @@ def strategies():
             trend_df = client.query(
                 STRATEGY_TREND_QUERY.format(account_filter=account_filter)
             ).to_dataframe()
+            trend_df = _filter_df_by_accounts(trend_df, effective_accounts)
         except Exception:
-            pass
+            app.logger.exception("mart_strategy_trend lookup failed")
 
         # Build latest trend signal per strategy (from most recent month)
         latest_trend = {}
@@ -463,6 +581,30 @@ def strategies():
                             for _, m in agg.iterrows()
                         ]
 
+                # Breakdown by type (equity / options / dividends) for drill-in
+                try:
+                    strat_job = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter("strategy", "STRING", selected_strategy),
+                        ]
+                    )
+                    bdf = client.query(
+                        STRATEGY_TYPE_BREAKDOWN_QUERY.format(account_filter=account_filter),
+                        job_config=strat_job,
+                    ).to_dataframe()
+                    bdf = _filter_df_by_accounts(bdf, effective_accounts)
+                    div_df = client.query(
+                        STRATEGY_DIVIDEND_ROLLUP_QUERY.format(account_filter=account_filter),
+                        job_config=strat_job,
+                    ).to_dataframe()
+                    div_tot, div_ev = 0.0, 0
+                    if not div_df.empty:
+                        div_tot = float(div_df.iloc[0].get("dividend_total") or 0)
+                        div_ev = int(div_df.iloc[0].get("dividend_events") or 0)
+                    context["focus_breakdown_rows"] = _focus_breakdown_rows(bdf, div_tot, div_ev)
+                except Exception:
+                    app.logger.exception("strategy focus type breakdown failed")
+
                 # DTE / moneyness breakdown
                 try:
                     dte_cfg = bigquery.QueryJobConfig(
@@ -474,6 +616,7 @@ def strategies():
                         DTE_MONEYNESS_QUERY.format(account_filter=account_filter),
                         job_config=dte_cfg,
                     ).to_dataframe()
+                    dte_df = _filter_df_by_accounts(dte_df, effective_accounts)
                     if not dte_df.empty:
                         for col in ["num_trades", "total_pnl"]:
                             dte_df[col] = pd.to_numeric(dte_df[col], errors="coerce").fillna(0)
@@ -502,7 +645,7 @@ def strategies():
                             })
                         context["focus_dte_breakdown"] = dte_list
                 except Exception:
-                    pass
+                    app.logger.exception("strategy DTE breakdown query failed")
 
                 # Generate insights
                 context["focus_insights"] = _focus_insights(
@@ -536,6 +679,7 @@ def strategies():
                         ]
                     )
                     pos_df = client.query(pos_query, job_config=job_config).to_dataframe()
+                    pos_df = _filter_df_by_accounts(pos_df, effective_accounts)
                     if not pos_df.empty:
                         sym_rows = []
                         for _, r in pos_df.iterrows():
@@ -554,7 +698,7 @@ def strategies():
                             })
                         context["focus_symbols"] = sym_rows
                 except Exception:
-                    pass
+                    app.logger.exception("strategy positions_summary drill-in failed")
 
     except Exception as e:
         context["error"] = str(e)

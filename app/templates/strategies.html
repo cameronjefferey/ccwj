@@ -134,9 +134,19 @@
 
 {% if not strategies %}
 <div class="data-section text-center py-5">
+    {% if auth_accounts and auth_accounts|length > 0 %}
+    <h5 class="mb-3">No strategy data to show yet</h5>
+    <p class="text-muted mb-3">
+        Your linked accounts are connected — sync or refresh uploads so trades are classified into strategies here.
+    </p>
+    {% else %}
     <h5 class="mb-3">No strategy data yet</h5>
     <p class="text-muted mb-3">Upload your positions and trade history. Once your trades are classified by strategy, you'll see how each one performs over time.</p>
-    <a href="{{ url_for('upload') }}" class="btn btn-primary">Upload &amp; Refresh</a>
+    {% endif %}
+    <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Run Schwab sync</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload &amp; refresh</a>
+    </div>
 </div>
 {% else %}
 
@@ -232,6 +242,67 @@
     </div>
 </div>
 
+{# Breakdown by type (mirrors Position Detail card) ─────────────── #}
+{% if focus_breakdown_rows %}
+<div class="data-section">
+    <div class="section-label">Breakdown by Type</div>
+    <p class="text-muted small mb-3">
+        Realized and unrealized are split using the warehouse&rsquo;s equity-vs-option classifications; dividends are cash dividends attributed alongside those positions.
+    </p>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Type</th>
+                    <th class="text-end">Total P&amp;L</th>
+                    <th class="text-end">Realized</th>
+                    <th class="text-end">Unrealized</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in focus_breakdown_rows %}
+                <tr>
+                    <td><strong>{{ r.type }}</strong></td>
+                    <td class="text-end {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
+                        {{ "+" if r.total >= 0 else "" }}${{ "{:,.2f}".format(r.total) }}
+                        {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
+                    </td>
+                    <td class="text-end {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
+                        {{ "+" if r.realized >= 0 else "" }}${{ "{:,.2f}".format(r.realized) }}
+                    </td>
+                    <td class="text-end {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {% if r.unrealized is none %}
+                        &mdash;
+                        {% else %}
+                        {{ "+" if r.unrealized >= 0 else "" }}${{ "{:,.2f}".format(r.unrealized) }}
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">
+                        {% if r.type == 'Dividends' %}
+                        Cash dividends linked to holdings for this strategy
+                        {% elif r.type == 'Other' %}
+                        Other classifications (rolls, assigns, misc.)
+                        {% else %}
+                        Equity rounds vs settled option lifecycle
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% set _bd_tot = focus_breakdown_rows | sum(attribute='total') %}
+            <tfoot>
+                <tr class="border-top">
+                    <th>Total</th>
+                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ "+" if _bd_tot >= 0 else "" }}${{ "{:,.2f}".format(_bd_tot) }}</th>
+                    <th colspan="3"></th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# Insights #}
 {% if focus_insights %}
 <div class="mb-3">
@@ -293,7 +364,7 @@
                 {% for r in focus_symbols %}
                 <tr>
                     <td>
-                        <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="sym-link">{{ r.symbol }}</a>
+                        <a href="{{ url_for('position_detail', symbol=r.symbol, account=selected_account or none) }}" class="sym-link">{{ r.symbol }}</a>
                     </td>
                     <td>
                         {% if r.status == 'Open' %}

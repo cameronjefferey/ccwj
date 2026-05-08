@@ -187,13 +187,15 @@ moved to Position Detail. This page is now mostly a navigation step.
 Still has heavy pandas work (groupby, iterrows) that could be simplified.
 
 ### Strategies (`/strategies`)
-**Status: Needs rework.**
+**Status: Improved — drill-down now includes Breakdown by Type + tenant hardening.**
 
-The strategy cards at the top don't convey useful information when you click into a
-strategy. The page reads from `mart_strategy_performance` (good) but the presentation
-needs to tell a better story. Should answer: "For this strategy, am I getting better
-or worse over time?"
+Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. When you click a strategy, you now get a **Breakdown by Type** table (equity sessions vs option contracts vs attributed dividends): equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label.
 
+Tenant isolation: row-level query results go through `_filter_df_by_accounts(...)` before any pandas work, same as `/positions`. Pure `SUM(...) ...` aggregates without an account column rely on SQL `_account_sql_and` only. Failed `mart_strategy_trend` reads are logged instead of silently swallowed.
+
+Symbol links in the drill-down table preserve the selected account filter (`?account=`).
+
+**Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
 ### Mirror Score (`/mirror-score`)
 **Status: Functional but definition is evolving.**
 
