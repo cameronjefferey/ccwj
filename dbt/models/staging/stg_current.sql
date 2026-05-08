@@ -107,7 +107,7 @@ osi_split as (
     from osi_parts
 ),
 
-cleaned as (
+cleaned_raw as (
     select
         trim(account) as account,
 
@@ -176,6 +176,53 @@ cleaned as (
         current_date() as snapshot_date
 
     from osi_split
+),
+
+-- Schwab's `gain_or_loss_dollat` for SHORT options (qty < 0) is the
+-- inverted-sign trader bug we keep stumbling on:
+--
+--   sold-to-open 2 calls @ $5.97  → cost_basis = +$1,194.65 (premium received)
+--   current price drops to $0.015 → market_value = -$3.00 (cost to close)
+--   schwab gain = market_value - cost_basis  = -$3 - $1,194.65 = -$1,197.65   (wrong)
+--   true P&L   = premium_in - close_cost     = $1,194.65 - $3 = +$1,191.65    (right)
+--
+-- Schwab's arithmetic is what `market_value - cost_basis` would give for a
+-- LONG position — applied to a short it always shows the trader losing
+-- ~2× the absolute premium. We override at the staging layer so EVERY
+-- downstream consumer sees the correct sign:
+--   - int_enriched_current.unrealized_pnl  (Position Detail "Open legs" rows)
+--   - snapshot_options_market_values_daily (snapshot history + peak-pnl analysis)
+--   - int_option_pnl_series                (per-day open-option P&L)
+--   - int_option_contracts.snapshot_only_options (positions_summary fallback path)
+--   - app/weekly_review.py today_strip + expiring_options aggregations
+--
+-- The unified formula  `market_value - sign(qty) * cost_basis`  works for
+-- both directions. For shorts, sign(qty) = -1 collapses to
+-- `market_value + cost_basis` which is exactly the cash-flow truth above.
+-- Long calc is unchanged from Schwab's value.
+cleaned as (
+    select
+        * except (unrealized_pnl, unrealized_pnl_pct),
+        case
+            when instrument_type in ('Call', 'Put')
+                 and quantity is not null
+                 and quantity < 0
+                 and market_value is not null
+                 and cost_basis is not null
+            then market_value + cost_basis
+            else unrealized_pnl
+        end as unrealized_pnl,
+        case
+            when instrument_type in ('Call', 'Put')
+                 and quantity is not null
+                 and quantity < 0
+                 and market_value is not null
+                 and cost_basis is not null
+                 and cost_basis != 0
+            then 100.0 * (market_value + cost_basis) / abs(cost_basis)
+            else unrealized_pnl_pct
+        end as unrealized_pnl_pct
+    from cleaned_raw
 )
 
 select * from cleaned

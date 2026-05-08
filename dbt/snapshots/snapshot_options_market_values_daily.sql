@@ -3,25 +3,25 @@
   Source: stg_current, filtered to options only (Call/Put).
   Run after each upload to preserve history; full-refresh does not wipe this table.
 
-  user_id is carried as a payload column (not part of unique_key) so we
-  preserve the existing snapshot table schema during the user_id-tenancy
-  migration — adding user_id to unique_key would invalidate the existing
-  snapshot's MERGE predicate and lose every row of history.
+  ``unique_key`` includes ``user_id`` because the cross-tenant guard
+  has been removed: two users may legitimately register the same
+  ``account_name`` (parent monitoring child's "Schwab Account", a test
+  user re-using a real label, etc.) and the snapshot grain must keep
+  their option positions apart. Same Stage 4 promotion as
+  ``snapshot_account_balances_daily`` — see that snapshot's docstring
+  for the long-form rationale.
 
-  Tenant scoping for snapshot reads is enforced in the app via
-  ``_user_scoped_filter`` / ``_filter_df_by_user`` (see
-  ``docs/USER_ID_TENANCY.md``). The cross-tenant guard prevents two
-  users from simultaneously claiming the same ``account_name`` so the
-  ``(account, trade_symbol)`` unique_key remains a valid grain in
-  practice. A Stage 4 follow-up can promote ``user_id`` into the
-  unique_key once the cross-tenant guard is removed.
+  ``coalesce(user_id, -1)`` keeps legacy rows that pre-date the
+  ``user_id`` column from breaking the MERGE (NULL = NULL is false in a
+  MERGE predicate). The sentinel only appears in BQ, never in app
+  reads — Flask filters by the real ``users.id``.
 #}
 {% snapshot snapshot_options_market_values_daily %}
 {{
     config(
         target_schema='analytics',
         target_database=target.database,
-        unique_key=['account', 'trade_symbol'],
+        unique_key=['account', 'user_id', 'trade_symbol'],
         strategy='check',
         check_cols=['market_value', 'quantity', 'cost_basis', 'current_price'],
         invalidate_hard_deletes=True,
@@ -30,7 +30,7 @@
 
 select
     account,
-    user_id,
+    coalesce(user_id, -1) as user_id,
     trade_symbol,
     underlying_symbol,
     option_expiry,
