@@ -112,7 +112,13 @@ cleaned as (
         trim(account) as account,
 
         -- Tenant key — see docs/USER_ID_TENANCY.md. Stage 0: nullable.
-        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
+        -- Cast through FLOAT64: the seed stores user_id as the pandas
+        -- "9.0" decimal-string form, and safe_cast(STRING -> INT64)
+        -- rejects any decimal point. Going via FLOAT64 -> INT64 accepts
+        -- "9.0" while still safe-failing on garbage. See stg_history.sql
+        -- for the full incident write-up — the original direct cast
+        -- silently NULLed user_id for every Schwab-synced row.
+        safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
 
         -- Full trade symbol
         trim(symbol) as trade_symbol,

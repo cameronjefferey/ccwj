@@ -19,6 +19,8 @@ This document describes how AI agents are used in this repository and how to wor
 
 **BigQuery is multi-tenant in practice:** a shared dataset can contain many `account` labels. Unscoped symbol-only (or unfiltered) queries have leaked other users’ rows to a signed-in user before. **Every BQ read for user-facing pages must be scoped in SQL and/or with `_filter_df_by_accounts` on every DataFrame before merge or render.** See `.cursor/rules/bigquery-tenant-isolation.mdc` (always on for agents) — follow it for every change under `app/` that touches queries.
 
+**Schwab sync is the most failure-prone surface in the product.** Three production regressions shipped in a single chat in May 2026 (banner persistence, bulk lookback, seed merge dedup+tenancy). Before editing `app/schwab.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/schwab_sync_cli.py`, the `dbt/seeds/*.csv` shape, `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` or `/schwab/accounts`, or any column on `schwab_connections` (`refresh_token_invalid_at`, `schwab_first_sync_completed`, `token_json`), **load the `schwab-sync-safety` agent skill** (`~/.cursor/skills/schwab-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
+
 ---
 
 ## Product Identity

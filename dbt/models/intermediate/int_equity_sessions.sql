@@ -98,38 +98,97 @@ trade_session_summary as (
     group by 1, 2, 3, 4
 ),
 
--- Equity rows in current snapshot with no equity trade history (e.g. Schwab-only)
+-- Per (account, user_id, symbol), how many trade sessions exist and what's
+-- the highest session_id used. Snapshot-only sessions need a session_id
+-- that doesn't collide with any existing trade session (e.g. trade_session
+-- with id=1 followed by a fresh transferred-in lot must become id=2, not
+-- a duplicate id=1 row that breaks every join keyed on session_id).
+trade_sessions_by_symbol as (
+    select
+        account,
+        user_id,
+        symbol,
+        max(session_id)                                as max_session_id,
+        sum(total_buy_qty - total_sell_qty)            as net_open_qty_from_trades,
+        sum(case
+                when total_buy_qty > total_sell_qty then total_buy_cost
+                else 0
+            end)                                       as cost_from_open_trade_sessions
+    from trade_session_summary
+    group by 1, 2, 3
+),
+
+-- Equity rows in the current snapshot whose share count is NOT explained
+-- by trade history. Two cases:
+--
+--  (a) symbol+account has no trade rows at all (Schwab-positions-only
+--      sync, or pre-history holding). Whole snapshot quantity is unaccounted.
+--
+--  (b) symbol+account has trade rows but they net to fewer open shares
+--      than the snapshot shows (e.g. a closed round-trip of 150 shares
+--      followed by a transferred-in lot of 250 shares Schwab's
+--      transactions API doesn't surface). Emit a snapshot session for
+--      the residual so the page shows the user's actually-held lot
+--      with its real cost basis from the snapshot, instead of folding
+--      the snapshot's market value into the closed trade session and
+--      reporting a phantom +$15K "unrealized" P&L equal to the market
+--      value itself. See data-pipeline-fixes.mdc — this surfaced on
+--      /position/IREN?account=Cameron+Investment for testingcameron.
 snapshot_equity_sessions as (
     select
         c.account,
         c.user_id,
         c.underlying_symbol as symbol,
-        1 as session_id,
+        coalesce(tsbs.max_session_id, 0) + 1 as session_id,
         coalesce(c.snapshot_date, current_date()) as open_date,
         coalesce(c.snapshot_date, current_date()) as last_trade_date,
-        coalesce(abs(c.quantity), 0) as max_quantity_held,
-        -coalesce(c.cost_basis, 0) as net_cash_flow,
-        coalesce(c.cost_basis, 0)  as total_buy_cost,
-        coalesce(abs(c.quantity), 0) as total_buy_qty,
+        -- "Unaccounted" shares only — the trade-explained portion stays in
+        -- the trade session (which keeps Open status when trade qty > 0).
+        greatest(
+            coalesce(abs(c.quantity), 0) - coalesce(tsbs.net_open_qty_from_trades, 0),
+            0
+        ) as max_quantity_held,
+        -- Cost basis for the unaccounted shares: prefer the snapshot's
+        -- per-share avg cost when available, otherwise pro-rata the
+        -- snapshot cost basis. Trade-history's cost stays attributed to
+        -- the trade session.
+        -(
+            coalesce(c.cost_basis, 0)
+            - coalesce(tsbs.cost_from_open_trade_sessions, 0)
+        ) as net_cash_flow,
+        coalesce(c.cost_basis, 0) - coalesce(tsbs.cost_from_open_trade_sessions, 0)
+            as total_buy_cost,
+        greatest(
+            coalesce(abs(c.quantity), 0) - coalesce(tsbs.net_open_qty_from_trades, 0),
+            0
+        ) as total_buy_qty,
         cast(0 as float64)         as total_sell_qty,
         0 as num_trades
     from {{ ref('stg_current') }} c
+    left join trade_sessions_by_symbol tsbs
+        on tsbs.account = c.account
+        -- NULL-safe so legacy rows with user_id IS NULL still match the
+        -- snapshot's NULL user_id (Stage 0 leniency); non-NULL on both
+        -- sides compares strictly.
+        and (tsbs.user_id is not distinct from c.user_id)
+        and tsbs.symbol = c.underlying_symbol
     where c.instrument_type = 'Equity'
       and coalesce(c.quantity, 0) != 0
       and trim(coalesce(c.underlying_symbol, '')) != ''
-      and not exists (
-          select 1
-          from trade_session_summary t
-          where t.account = c.account
-            -- Match user_id with a NULL-safe comparison: both NULL is a
-            -- legacy-row match (Stage 0 backfill state); both non-NULL
-            -- compares strictly. Without the NULL-safe equality
-            -- ``t.user_id = c.user_id`` would silently miss legacy rows
-            -- and we'd double-count snapshot sessions on top of trade
-            -- sessions for the same holding.
-            and (t.user_id is not distinct from c.user_id)
-            and t.symbol = c.underlying_symbol
-      )
+      -- Only emit a snapshot session when trade history doesn't already
+      -- explain *any* still-open shares for this (account, symbol).
+      -- Two qualifying scenarios:
+      --   (a) zero trade rows for this symbol+account at all (LEFT JOIN
+      --       leaves tsbs NULL → coalesce = 0)  — pure Schwab-only path
+      --   (b) all trade rows net to zero (full round-trip) — the
+      --       snapshot represents a separately-acquired lot
+      --
+      -- We deliberately do NOT emit a snapshot session for the partial
+      -- case (trade has some still-open shares + snapshot has more):
+      -- attributing market_value to two sessions joined on the same
+      -- stg_current row would double-count it. Partial mismatches are a
+      -- data integrity issue better surfaced than silently patched.
+      and coalesce(tsbs.net_open_qty_from_trades, 0) <= 0
 ),
 
 session_summary as (
@@ -182,22 +241,40 @@ final as (
         s.net_cash_flow,
         s.num_trades,
 
-        -- A session is Open only if it's the latest one AND the symbol still appears in current holdings
+        -- A session is Open only when:
+        --   1. it's the latest session for this (account, user_id, symbol), AND
+        --   2. the symbol still appears in the current snapshot, AND
+        --   3. this session itself has unsold shares (total_buy_qty > total_sell_qty).
+        -- The qty guard matters when a trade-history session ran a full
+        -- round-trip back to zero shares but the snapshot still shows the
+        -- symbol (because a separate transferred-in / pre-history lot
+        -- exists). Without it the closed round-trip used to be rebadged
+        -- "Open" and inherit the snapshot's market value as fake
+        -- unrealized P&L. The transferred-in lot itself becomes its own
+        -- snapshot_equity_sessions row with a fresh session_id.
         case
             when ls.latest_session_id = s.session_id
                  and c.trade_symbol is not null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
             then 'Open'
             else 'Closed'
         end as status,
 
-        -- Current market data (only meaningful for open sessions)
+        -- Current market data (only meaningful for open sessions). Same
+        -- guard as `status`: a closed round-trip whose symbol still has
+        -- a snapshot row must NOT pick up the snapshot's market value
+        -- (that belongs to the separate snapshot session).
         case
-            when ls.latest_session_id = s.session_id and c.trade_symbol is not null
+            when ls.latest_session_id = s.session_id
+                 and c.trade_symbol is not null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
             then c.market_value
         end as current_market_value,
 
         case
-            when ls.latest_session_id = s.session_id and c.trade_symbol is not null
+            when ls.latest_session_id = s.session_id
+                 and c.trade_symbol is not null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
             then c.current_price
         end as current_price,
 
@@ -213,7 +290,9 @@ final as (
         -- (snapshot has no shares here), buy_qty > sell_qty, AND the user
         -- holds the symbol in another account that can absorb the residual.
         case
-            when ls.latest_session_id = s.session_id and c.trade_symbol is not null
+            when ls.latest_session_id = s.session_id
+                 and c.trade_symbol is not null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
                 then s.net_cash_flow + coalesce(c.market_value, 0)
             when c.trade_symbol is null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
@@ -241,7 +320,9 @@ final as (
 
         -- Duration in calendar days
         case
-            when ls.latest_session_id = s.session_id and c.trade_symbol is not null
+            when ls.latest_session_id = s.session_id
+                 and c.trade_symbol is not null
+                 and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
             then date_diff(current_date(), s.open_date, day)
             else date_diff(s.last_trade_date, s.open_date, day)
         end as days_held

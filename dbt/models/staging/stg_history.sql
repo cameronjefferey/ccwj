@@ -95,7 +95,16 @@ cleaned as (
         -- Tenant key — see docs/USER_ID_TENANCY.md. Stage 0 keeps user_id
         -- nullable so legacy rows (empty string in the seed CSV) survive
         -- the load. safe_cast → NULL on empty / non-numeric values.
-        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
+        --
+        -- Cast through FLOAT64 first because the seed CSV stores user_id
+        -- as the pandas-emitted "9.0" / "2.0" decimal-string form (Postgres
+        -- bigint values get serialized that way by the Schwab sync). BQ's
+        -- safe_cast(STRING -> INT64) refuses any decimal point even when
+        -- the fractional part is zero, so a direct cast silently returned
+        -- NULL for every Schwab-synced row and broke `user_id`-based
+        -- tenancy across the whole warehouse. Going via FLOAT64 -> INT64
+        -- accepts "9.0" and still safe-fails on truly bogus strings.
+        safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
 
         -- Parse the effective date: use the "as of" date when present, otherwise the main date
         safe.parse_date(

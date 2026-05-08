@@ -244,23 +244,78 @@ def _get_file_sha(path):
     return None  # File doesn't exist yet
 
 
+class SeedFetchError(RuntimeError):
+    """Raised when reading the existing seed from GitHub fails for any reason
+    other than the file genuinely not existing (HTTP 404).
+
+    A merge that proceeds on a transient fetch failure would silently
+    treat the seed as empty and overwrite every other tenant's history
+    with just the syncing user's new rows. That actually happened in
+    production once (see commit ``3f4aecb`` — Sara Investment sync wiped
+    10,446 rows belonging to four other accounts and three other users).
+    The merge MUST refuse to run unless we can distinguish "file does
+    not yet exist" from "GitHub call blipped".
+    """
+
+
 def _get_file_content(path):
     """
     Fetch the raw content of a file from the repo.
-    Returns decoded string, or None if file doesn't exist or fetch fails.
+    Returns decoded string on 200, or ``None`` only when the file truly
+    does not exist (HTTP 404). Raises ``SeedFetchError`` on any other
+    failure (timeout, 5xx, 403 rate-limit, auth) so callers cannot
+    accidentally treat a transient blip as "no existing data". See
+    ``_merge_seed_with_existing`` and the Bug A note in the
+    SeedFetchError docstring.
     """
     repo = _github_repo()
     branch = _github_branch()
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    resp = requests.get(
-        url, headers=_github_headers(), params={"ref": branch}, timeout=15
-    )
-    if resp.status_code != 200:
+    try:
+        resp = requests.get(
+            url, headers=_github_headers(), params={"ref": branch}, timeout=15
+        )
+    except requests.RequestException as exc:
+        raise SeedFetchError(
+            f"GitHub fetch for {path} failed: {exc}"
+        ) from exc
+    if resp.status_code == 404:
         return None
+    if resp.status_code != 200:
+        raise SeedFetchError(
+            f"GitHub fetch for {path} returned HTTP {resp.status_code}: "
+            f"{resp.text[:200]}"
+        )
     data = resp.json()
     if data.get("encoding") == "base64":
         return base64.b64decode(data["content"]).decode("utf-8")
     return data.get("content", "")
+
+
+def _normalize_uid(value) -> str:
+    """Canonicalize a ``user_id`` value to its int-string form.
+
+    Pandas reads any column that contains a NaN as ``float64``, so a CSV
+    user_id of ``9`` becomes ``9.0`` after ``.astype(str)``. The original
+    merge compared that to ``str(int(user_id)) = "9"`` and never
+    matched, which silently moved every existing row of the syncing
+    user into ``other_df`` and then APPENDED the fresh sync on top —
+    doubling the row count on every re-sync (see commit ``05c5ae5``:
+    Cameron Investment went 2,703 → 4,059 user_9 rows after a fresh
+    1,356-tx sync that should have replaced the existing rows). Both
+    sides of the dedup MUST canonicalize the same way.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    try:
+        return str(int(float(s)))
+    except (ValueError, TypeError):
+        return s
 
 
 def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_id=None):
@@ -282,25 +337,39 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
     another user's rows even on a key collision. See
     ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
     ``docs/USER_ID_TENANCY.md``.
+
+    Raises ``SeedFetchError`` if the existing seed cannot be fetched
+    for any reason other than HTTP 404 — see commit ``3f4aecb`` for
+    why a silent "treat as empty" path is unacceptable.
     """
     existing_content = _get_file_content(path)
-    if not existing_content or not existing_content.strip():
-        # No existing file or empty: use only new data
+    if existing_content is None:
+        # File truly does not exist yet (HTTP 404). Safe to use only new data.
+        for col in seed_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        merged = new_df[seed_columns]
+        return merged.to_csv(index=False)
+    if not existing_content.strip():
+        # File exists but is empty (e.g. someone manually truncated it).
+        # Still safe to use only new data — there is nothing to preserve.
         for col in seed_columns:
             if col not in new_df.columns:
                 new_df[col] = ""
         merged = new_df[seed_columns]
         return merged.to_csv(index=False)
 
-    # Parse existing CSV
+    # Parse existing CSV. Refuse to proceed on parse failure rather than
+    # silently overwriting — a corrupted file in the repo is something a
+    # human needs to look at, not something a sync should paper over by
+    # destroying every other tenant's data.
     try:
         existing_df = pd.read_csv(StringIO(existing_content))
-    except Exception:
-        # If parse fails, fall back to overwrite with new data only
-        for col in seed_columns:
-            if col not in new_df.columns:
-                new_df[col] = ""
-        return new_df[seed_columns].to_csv(index=False)
+    except Exception as exc:
+        raise SeedFetchError(
+            f"Existing seed at {path} failed to parse: {exc}. "
+            "Refusing to overwrite to protect other tenants' data."
+        ) from exc
 
     if existing_df.empty:
         for col in seed_columns:
@@ -315,11 +384,12 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
             acct_col = c
             break
     if acct_col is None:
-        # No account column in existing: overwrite with new only
-        for col in seed_columns:
-            if col not in new_df.columns:
-                new_df[col] = ""
-        return new_df[seed_columns].to_csv(index=False)
+        # No account column in existing: same reasoning as the parse-fail
+        # branch — refuse rather than silently nuking other tenants.
+        raise SeedFetchError(
+            f"Existing seed at {path} has no Account column. "
+            "Refusing to overwrite to protect other tenants' data."
+        )
 
     # Normalize Account field on both sides for comparison
     existing_df[acct_col] = existing_df[acct_col].astype(str).str.strip()
@@ -346,13 +416,8 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
     # would dedup against each other on identical trade keys and
     # silently steal each other's history. See tenancy rule.
     if user_id is not None and "user_id" in existing_df.columns:
-        target_uid = str(int(user_id))
-        existing_uid_norm = (
-            existing_df["user_id"]
-            .astype(str)
-            .str.strip()
-            .replace({"nan": "", "None": ""})
-        )
+        target_uid = _normalize_uid(user_id)
+        existing_uid_norm = existing_df["user_id"].map(_normalize_uid)
         legacy_or_self = existing_uid_norm.isin(["", target_uid])
         account_mask = acct_match & legacy_or_self
     else:

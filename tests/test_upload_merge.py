@@ -287,3 +287,160 @@ def test_merge_without_user_id_falls_back_to_account_only_scope(monkeypatch):
     # Without user_id scoping, both rows survive (no key collision); this
     # asserts the fallback path doesn't crash and still de-dups correctly.
     assert len(out) == 2
+
+
+# ---------------------------------------------------------------------------
+# Bug A (commit 3f4aecb): a transient GitHub fetch failure used to fall
+# through to "treat existing seed as empty and write only the new account's
+# rows", silently destroying every other tenant's history. Sara Investment's
+# 408-row sync wiped 10,446 rows belonging to four other accounts and three
+# other users. The merge MUST refuse to run unless the existing seed was
+# definitively absent (HTTP 404).
+# ---------------------------------------------------------------------------
+
+
+def test_merge_raises_when_existing_fetch_blips_5xx(monkeypatch):
+    """A 503 from GitHub must NOT be interpreted as 'no existing data'."""
+    def _boom(path):
+        raise _upload.SeedFetchError("HTTP 503 from GitHub")
+    monkeypatch.setattr(_upload, "_get_file_content", _boom)
+
+    new_df = pd.DataFrame([
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+    ])
+    with pytest.raises(_upload.SeedFetchError):
+        _upload._merge_seed_with_existing(
+            HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
+            user_id=9,
+        )
+
+
+def test_merge_treats_true_404_as_empty_seed(monkeypatch):
+    """A real 404 (file does not exist yet) is the only safe overwrite signal."""
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
+
+    new_df = pd.DataFrame([
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+    ])
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
+        user_id=9,
+    )
+    out = _parse(out_csv)
+    assert len(out) == 1
+    assert out["Account"].tolist() == ["Sara Investment"]
+    assert out["user_id"].tolist() == ["9"]
+
+
+def test_merge_refuses_to_overwrite_when_existing_unparseable(monkeypatch):
+    """Garbage in the seed file must abort, not blank out other tenants."""
+    monkeypatch.setattr(
+        _upload, "_get_file_content",
+        lambda path: "this,is,not,a,valid\nheader\x00row\nwith,bad,bytes",
+    )
+    new_df = pd.DataFrame([
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+    ])
+    # Either parse raises or the no-Account-column branch raises. Both
+    # land in SeedFetchError; either way the merge refuses to overwrite.
+    with pytest.raises(_upload.SeedFetchError):
+        _upload._merge_seed_with_existing(
+            HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
+            user_id=9,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug B (commit 05c5ae5): pandas reads any user_id column containing a NaN
+# as ``float64``, so a CSV value of ``9`` round-trips as the string ``"9.0"``.
+# The original ``account_mask`` compared that to ``str(int(user_id))="9"``
+# and never matched — so existing rows owned by the syncing user were
+# moved to ``other_df`` and the fresh sync was APPENDED on top, doubling
+# the row count on every re-sync (Cameron Investment went 2,703 → 4,059
+# user_9 rows after a fresh 1,356-tx sync that should have replaced them).
+# ---------------------------------------------------------------------------
+
+
+def test_merge_dedupes_against_existing_user_rows_with_float_string_uid(monkeypatch):
+    """Re-syncing must REPLACE existing user_9 rows even when pandas
+    stringified them as '9.0' due to NaN-induced float coercion in the CSV."""
+    # Force pandas to read user_id as float by mixing a NaN row in.
+    existing = _csv_from_rows([
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
+        # Legacy NaN row in the same file forces user_id to float-typed
+        # column on read; this is the production reality.
+        _row("Schwab Account", "", "01/01/2024", "Buy", "MSFT", 5, 300.0, -1500.0),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    new_df = pd.DataFrame([
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Cameron Investment", new_df, HISTORY_SEED_COLUMNS,
+        user_id=9,
+    )
+    out = _parse(out_csv)
+
+    cam = out[out["Account"] == "Cameron Investment"]
+    # The two existing user_9 rows MUST dedup against the two new user_9
+    # rows. Without the user_id normalization they end up in other_df and
+    # we'd see 4 Cameron Investment rows (the production doubling bug).
+    assert len(cam) == 2, (
+        f"expected 2 Cameron rows after re-sync (dedup), got {len(cam)}: "
+        f"{cam.to_dict('records')}"
+    )
+    assert set(cam["user_id"].tolist()) == {"9"}
+    # Other-account legacy row stays untouched.
+    other = out[out["Account"] == "Schwab Account"]
+    assert len(other) == 1
+
+
+def test_merge_full_resync_does_not_double_count_after_three_runs(monkeypatch):
+    """Run the same sync three times; row count must stay constant."""
+    sync_rows = [
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
+        _row("Cameron Investment", 9, "01/03/2025", "Buy", "MSFT", 5, 400.0, -2000.0),
+    ]
+    # Force float-typed user_id column.
+    base_with_legacy = _csv_from_rows(sync_rows + [
+        _row("Schwab Account", "", "12/31/2023", "Buy", "TSLA", 1, 200.0, -200.0),
+    ])
+    state = {"csv": base_with_legacy}
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: state["csv"])
+
+    for _ in range(3):
+        out_csv = _upload._merge_seed_with_existing(
+            HISTORY_PATH, "Cameron Investment",
+            pd.DataFrame(sync_rows), HISTORY_SEED_COLUMNS,
+            user_id=9,
+        )
+        state["csv"] = out_csv
+
+    final = _parse(state["csv"])
+    cam = final[final["Account"] == "Cameron Investment"]
+    assert len(cam) == 3, (
+        f"three identical re-syncs must remain 3 rows, got {len(cam)}: "
+        f"{cam.to_dict('records')}"
+    )
+    other = final[final["Account"] == "Schwab Account"]
+    assert len(other) == 1
+
+
+def test_normalize_uid_collapses_known_pandas_string_forms():
+    """Direct unit test for the helper that fixes Bug B."""
+    n = _upload._normalize_uid
+    assert n(9) == "9"
+    assert n("9") == "9"
+    assert n("9.0") == "9"
+    assert n(" 9 ") == "9"
+    assert n("9.0 ") == "9"
+    assert n("") == ""
+    assert n("nan") == ""
+    assert n("None") == ""
+    assert n(None) == ""
+    assert n(float("nan")) == ""

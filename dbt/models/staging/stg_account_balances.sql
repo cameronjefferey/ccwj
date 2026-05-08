@@ -66,7 +66,11 @@ with export_source as (
 cash_rows as (
     select
         trim(account) as account,
-        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
+        -- Cast through FLOAT64: seed user_id is "9.0" string form (pandas
+        -- emits Postgres BIGINT that way). safe_cast(STRING -> INT64)
+        -- rejects any decimal point. See stg_history.sql for the full
+        -- incident write-up.
+        safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
         'cash' as row_type,
         safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
         cast(null as float64) as cost_basis,
@@ -80,7 +84,7 @@ cash_rows as (
 account_total_rows as (
     select
         trim(account) as account,
-        safe_cast(nullif(trim(user_id), '') as int64) as user_id,
+        safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
         'account_total' as row_type,
         safe_cast(trim(replace(replace(market_value, '$', ''), ',', '')) as float64) as market_value,
         safe_cast(trim(replace(replace(cost_bases, '$', ''), ',', '')) as float64) as cost_basis,
@@ -94,7 +98,7 @@ account_total_rows as (
 schwab_bal_rows as (
     select
         trim(cast(account as string)) as account,
-        safe_cast(nullif(trim({{ _bal_user_id_expr }}), '') as int64) as user_id,
+        safe_cast(safe_cast(nullif(trim({{ _bal_user_id_expr }}), '') as float64) as int64) as user_id,
         case lower(trim(cast(row_type as string)))
             when 'cash' then 'cash'
             when 'account_total' then 'account_total'
@@ -107,10 +111,35 @@ schwab_bal_rows as (
     from {{ ref('schwab_account_balances') }}
     where trim(coalesce(cast(account as string), '')) != ''
       and lower(trim(coalesce(cast(row_type as string), ''))) in ('cash', 'account_total')
+),
+
+-- Dedupe across the three sources. The same (account, user_id, row_type)
+-- can appear in *both* current_positions (manual export seed) AND
+-- schwab_account_balances (Schwab sync seed) once a user has uploaded a
+-- CSV and then connected Schwab — both seeds carry the cash + account
+-- total rows. Without this, snapshot_account_balances_daily's MERGE
+-- fails with "must match at most one source row for each target row"
+-- (its unique_key is (account, row_type) — see the snapshot's docstring
+-- for the Stage 0/1 grain rationale). Prefer the Schwab row when it
+-- exists (more authoritative / live-synced); else the export row.
+unioned as (
+    select *, 1 as src_priority from schwab_bal_rows
+    union all
+    select *, 2 as src_priority from cash_rows
+    union all
+    select *, 2 as src_priority from account_total_rows
+),
+
+deduped as (
+    select * except (src_priority)
+    from unioned
+    qualify row_number() over (
+        partition by account, user_id, row_type
+        order by src_priority,
+                 -- Tie-break on a populated market_value so empty
+                 -- placeholder rows lose to ones with real numbers.
+                 case when market_value is not null then 0 else 1 end
+    ) = 1
 )
 
-select * from cash_rows
-union all
-select * from account_total_rows
-union all
-select * from schwab_bal_rows
+select * from deduped
