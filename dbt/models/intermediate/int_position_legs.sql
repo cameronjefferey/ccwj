@@ -1,232 +1,166 @@
 /*
-    Position legs — canonical leg view for the /position/<symbol> page.
+    Position legs — merged-interval definition.
 
-    A "leg" is one chronological chapter of trading activity for a
-    (user_id, account, symbol). Two kinds:
+    Mental model: a "leg" is one continuous chapter of trading activity for
+    a (user_id, account, symbol). "Continuous" = at least one position
+    (equity OR open option contract) was alive every day, with no gap.
 
-      1. equity_session — every equity ownership cycle from
-         int_equity_sessions (positive `leg_id` = `session_id`).
-         Any open or closed option contract whose open_date falls
-         inside the session's active window is *attributed* to the
-         session and rolls into its P&L.
+    Algorithm:
+      1. Cast every equity session and every option contract as an
+         interval [open_date, close_date_or_today].
+      2. Sort by open_date and walk: a new leg starts whenever the next
+         interval's open_date is strictly later than the running maximum
+         close_date seen so far. Otherwise it merges into the current leg.
+      3. Aggregate per merged leg.
 
-      2. options_only   — option contracts whose open_date falls
-         outside any equity session. Grouped into one leg per
-         "gap" (before / between / after equity sessions).
-         Negative `leg_id` (-1, -2, …) so they never collide with
-         equity session_ids.
+    Why this matters for the page: under the previous "anchor each leg
+    to an equity session, attach options by date overlap" rule, a single
+    long-dated LEAP whose lifetime spanned an equity-session boundary
+    AND a separate orphan options cluster afterwards produced TWO Open
+    leg pills for what a trader thinks of as one ongoing chapter.
+    PLTR / Cameron Investment was the visible case: equity session
+    Jun-2025→Apr-2026 + Long Call still alive + post-equity short call
+    used to render as Leg 2 (Open) and Leg 3 (Open). Under merged
+    intervals it's one Open leg spanning Jun 2025 → today.
 
-    Status is the canonical Open / Closed flag for the LEG:
-      - Open if the underlying equity session is Open, OR
-      - Open if any option contract assigned to the leg is Open.
-    Otherwise Closed.
+    Status:
+      - Open  iff the leg's max close_date == current_date(), which
+        only happens when an interval inside the leg is itself open.
+      - Closed otherwise.
 
-    Replaces ~200 lines of stateful Python in app/routes.py
-    (the orphan-grouping / leg-pill construction). Keeps the
-    `session_id` ⇄ `leg_id` contract so existing ?leg=<n> URLs
-    keep working.
+    Invariant (enforced by dbt test): at most one Open leg per
+    (user_id, account, symbol). The merge algorithm guarantees this by
+    construction — every still-open interval extends to today, and any
+    other interval that touches today gets merged in.
 
-    Tenancy: every CTE keys on (user_id, account, symbol).
-    All cross-CTE joins use IS NOT DISTINCT FROM on user_id so
-    legacy NULL rows still match each other but never leak to
-    a different non-NULL user.
+    leg_id: sequential 1..N per (user_id, account, symbol) ordered by
+    open_date. Bookmarked URLs from the previous mart shape (where
+    orphan-options legs used negative ids) won't necessarily resolve
+    to the same activity but ?leg=<n> still works.
+
+    Tenancy: every CTE keys on (user_id, account, symbol). Cross-CTE
+    joins use IS NOT DISTINCT FROM on user_id so legacy NULL rows
+    still match each other but never leak across populated tenants.
 */
 
-with equity_sessions as (
+with equity_intervals as (
     select
         account,
         user_id,
         symbol,
-        session_id,
         open_date,
-        last_trade_date,
-        status,
-        total_pnl as equity_pnl,
-        max_quantity_held,
-        num_trades as equity_num_trades,
-        case
-            when status = 'Open' then current_date()
-            else last_trade_date
-        end as effective_end_date
+        case when status = 'Open' then current_date() else last_trade_date end as close_date,
+        cast('equity' as string) as source,
+        case when status = 'Open' then true else false end as is_open,
+        coalesce(total_pnl, 0)         as equity_pnl,
+        cast(0 as float64)             as option_total_pnl,
+        cast(0 as float64)             as option_unrealized_pnl,
+        cast(0 as int64)               as option_count,
+        cast(0 as int64)               as open_option_count,
+        coalesce(max_quantity_held, 0) as max_quantity_held,
+        coalesce(num_trades, 0)        as num_trades
     from {{ ref('int_equity_sessions') }}
 ),
 
-option_contracts as (
+option_intervals as (
     select
         account,
         user_id,
         underlying_symbol as symbol,
-        trade_symbol,
         open_date,
-        close_date,
-        status,
-        total_pnl,
-        current_unrealized_pnl
+        case
+            when status = 'Open' then current_date()
+            else coalesce(close_date, open_date)
+        end as close_date,
+        cast('option' as string) as source,
+        case when status = 'Open' then true else false end as is_open,
+        cast(0 as float64)                              as equity_pnl,
+        case when status = 'Closed' then coalesce(total_pnl, 0) else 0 end
+                                                        as option_total_pnl,
+        case when status = 'Open'   then coalesce(current_unrealized_pnl, 0) else 0 end
+                                                        as option_unrealized_pnl,
+        cast(1 as int64)                                as option_count,
+        case when status = 'Open' then 1 else 0 end     as open_option_count,
+        cast(0 as float64)                              as max_quantity_held,
+        cast(1 as int64)                                as num_trades
     from {{ ref('int_option_contracts') }}
 ),
 
--- Attach each option to an equity session whose active window contains
--- the option's open_date. Equity sessions for the same
--- (user_id, account, symbol) are non-overlapping by construction
--- (one ownership cycle at a time), so this is at most one match.
-options_with_session as (
-    select
-        o.account,
-        o.user_id,
-        o.symbol,
-        o.trade_symbol,
-        o.open_date,
-        o.close_date,
-        o.status,
-        o.total_pnl,
-        o.current_unrealized_pnl,
-        e.session_id as assigned_session_id
-    from option_contracts o
-    left join equity_sessions e
-        on  e.account = o.account
-        and e.user_id is not distinct from o.user_id
-        and e.symbol = o.symbol
-        and o.open_date >= e.open_date
-        and o.open_date <= e.effective_end_date
-),
-
--- For options that didn't land in any equity session, compute a stable
--- gap_id = how many equity sessions opened on or before the option's
--- open_date. Two orphan options get the same gap_id iff they fall in
--- the same chronological gap, so a simple group-by-gap_id collapses
--- the cluster — no need for the order-walk dedup the Python did.
-orphan_options as (
-    select
-        o.account,
-        o.user_id,
-        o.symbol,
-        o.trade_symbol,
-        o.open_date,
-        o.close_date,
-        o.status,
-        o.total_pnl,
-        o.current_unrealized_pnl,
-        (
-            select count(*)
-            from equity_sessions e
-            where e.account = o.account
-              and e.user_id is not distinct from o.user_id
-              and e.symbol = o.symbol
-              and e.open_date <= o.open_date
-        ) as gap_id
-    from options_with_session o
-    where o.assigned_session_id is null
-),
-
--- Aggregate options that are attributed to an equity session.
-session_option_rollup as (
-    select
-        account,
-        user_id,
-        symbol,
-        assigned_session_id as session_id,
-        sum(case when status = 'Closed' then total_pnl else 0 end)            as closed_options_pnl,
-        sum(case when status = 'Open'   then current_unrealized_pnl else 0 end) as open_options_pnl,
-        count(*) as options_count,
-        sum(case when status = 'Open'   then 1 else 0 end) as open_options_count,
-        max(case when status = 'Open'   then current_date() else close_date end) as last_option_activity_date
-    from options_with_session
-    where assigned_session_id is not null
-    group by 1, 2, 3, 4
-),
-
--- Aggregate options grouped per orphan gap.
-orphan_rollup as (
-    select
-        account,
-        user_id,
-        symbol,
-        gap_id,
-        min(open_date) as open_date,
-        -- "last activity": today if any option is still open, else the
-        -- latest close_date in the cluster. Falls back to max(open_date)
-        -- if close_date is somehow NULL on every contract.
-        coalesce(
-            max(case when status = 'Open' then current_date() else close_date end),
-            max(open_date)
-        ) as last_activity_date,
-        sum(case when status = 'Closed' then total_pnl else 0 end)            as closed_options_pnl,
-        sum(case when status = 'Open'   then current_unrealized_pnl else 0 end) as open_options_pnl,
-        count(*) as options_count,
-        sum(case when status = 'Open'   then 1 else 0 end) as open_options_count
-    from orphan_options
-    group by 1, 2, 3, 4
-),
-
--- Equity-backed legs (the primary kind). Status flips to Open if any
--- attributed option is still live, even when the underlying equity
--- session itself has closed — that's exactly the case where the page
--- used to mislabel a leg "Closed" while a covered call was still open.
-equity_session_legs as (
-    select
-        e.account,
-        e.user_id,
-        e.symbol,
-        e.session_id                    as leg_id,
-        cast('equity_session' as string) as leg_type,
-        e.open_date,
-        case
-            when e.status = 'Open' or coalesce(so.open_options_count, 0) > 0
-                then current_date()
-            else greatest(
-                e.last_trade_date,
-                coalesce(so.last_option_activity_date, e.last_trade_date)
-            )
-        end as last_activity_date,
-        case
-            when e.status = 'Open' or coalesce(so.open_options_count, 0) > 0
-                then 'Open'
-            else 'Closed'
-        end as status,
-        coalesce(e.equity_pnl, 0)                  as equity_pnl,
-        coalesce(so.closed_options_pnl, 0)         as closed_options_pnl,
-        coalesce(so.open_options_pnl, 0)           as open_options_pnl,
-        coalesce(so.options_count, 0)              as options_count,
-        coalesce(so.open_options_count, 0)         as open_options_count,
-        coalesce(e.max_quantity_held, 0)           as max_quantity_held,
-        coalesce(e.equity_num_trades, 0)           as num_trades,
-        false                                      as options_only
-    from equity_sessions e
-    left join session_option_rollup so
-        on  so.session_id = e.session_id
-        and so.account = e.account
-        and so.user_id is not distinct from e.user_id
-        and so.symbol = e.symbol
-),
-
--- Option-only legs. leg_id is negative (-1, -2, …) so it never collides
--- with positive equity session_ids — preserves the historic URL
--- ?leg=-1 contract from the old Python implementation.
-options_only_legs as (
-    select
-        account,
-        user_id,
-        symbol,
-        cast(-(gap_id + 1) as int64)        as leg_id,
-        cast('options_only' as string)      as leg_type,
-        open_date,
-        last_activity_date,
-        case when open_options_count > 0 then 'Open' else 'Closed' end as status,
-        cast(0.0 as float64)                as equity_pnl,
-        closed_options_pnl,
-        open_options_pnl,
-        options_count,
-        open_options_count,
-        cast(0 as float64)                  as max_quantity_held,
-        options_count                       as num_trades,
-        true                                as options_only
-    from orphan_rollup
-),
-
-all_legs as (
-    select * from equity_session_legs
+all_intervals as (
+    select * from equity_intervals
     union all
-    select * from options_only_legs
+    select * from option_intervals
+),
+
+-- Walk intervals chronologically. The "running max close" is the latest
+-- close_date seen STRICTLY BEFORE the current row (rows between
+-- unbounded preceding and 1 preceding); any interval that opens on or
+-- before that date is part of the same continuous chapter, anything
+-- opening later kicks off a fresh leg.
+ordered as (
+    select
+        *,
+        row_number() over (
+            partition by user_id, account, symbol
+            order by open_date, close_date, source
+        ) as rn
+    from all_intervals
+),
+
+with_running_max as (
+    select
+        *,
+        max(close_date) over (
+            partition by user_id, account, symbol
+            order by open_date, close_date, source
+            rows between unbounded preceding and 1 preceding
+        ) as prev_max_close
+    from ordered
+),
+
+with_break_flag as (
+    select
+        *,
+        case
+            when prev_max_close is null then 1
+            when open_date > prev_max_close then 1
+            else 0
+        end as is_new_leg
+    from with_running_max
+),
+
+-- Cumulative count of breaks = leg sequence number per partition.
+-- Stable across rebuilds because the underlying sort is deterministic.
+with_leg_seq as (
+    select
+        *,
+        sum(is_new_leg) over (
+            partition by user_id, account, symbol
+            order by open_date, close_date, source
+            rows between unbounded preceding and current row
+        ) as leg_seq
+    from with_break_flag
+),
+
+aggregated as (
+    select
+        account,
+        user_id,
+        symbol,
+        leg_seq                                   as leg_id,
+        min(open_date)                            as open_date,
+        max(close_date)                           as last_activity_date,
+        sum(equity_pnl)                           as equity_pnl,
+        sum(option_total_pnl)                     as closed_options_pnl,
+        sum(option_unrealized_pnl)                as open_options_pnl,
+        sum(option_count)                         as options_count,
+        sum(open_option_count)                    as open_options_count,
+        max(max_quantity_held)                    as max_quantity_held,
+        sum(num_trades)                           as num_trades,
+        sum(case when source = 'equity' then 1 else 0 end) as equity_session_count,
+        max(case when is_open then 1 else 0 end)  as has_open_interval
+    from with_leg_seq
+    group by 1, 2, 3, 4
 ),
 
 final as (
@@ -235,8 +169,12 @@ final as (
         user_id,
         symbol,
         leg_id,
-        leg_type,
-        status,
+        case
+            when equity_session_count = 0 then cast('options_only'   as string)
+            when options_count        = 0 then cast('equity_only'    as string)
+            else                              cast('mixed'           as string)
+        end as leg_type,
+        case when has_open_interval = 1 then 'Open' else 'Closed' end as status,
         open_date,
         last_activity_date,
         equity_pnl,
@@ -247,13 +185,13 @@ final as (
         open_options_count,
         max_quantity_held,
         num_trades,
-        options_only,
+        equity_session_count = 0 as options_only,
         row_number() over (
             partition by user_id, account, symbol
             order by open_date, leg_id
         ) as display_leg_num,
         date_diff(last_activity_date, open_date, day) as days_held
-    from all_legs
+    from aggregated
 )
 
 select * from final

@@ -394,50 +394,46 @@ def test_legs_to_sessions_list_empty_df_returns_empty_list():
 
 
 def test_legs_to_sessions_list_preserves_leg_id_and_display_order():
-    """Mart leg_id ↔ legacy session_id contract: positive ids for equity
-    sessions, negative for orphans, sorted by display_leg_num. Critical
-    because bookmarked URLs (?leg=-1, ?leg=1) and the JS pill click handler
-    both pivot on these stable ids."""
+    """Mart leg_id ↔ legacy session_id contract: sequential positive ids
+    per (user_id, account, symbol), sorted by display_leg_num. Critical
+    because bookmarked URLs (?leg=N) and the JS pill click handler both
+    pivot on these stable ids."""
     rows = [
         # Out of order on purpose; helper must sort by display_leg_num.
         _legs_row(
-            leg_id=1, display_leg_num=2, status="Open",
+            leg_id=2, display_leg_num=2, status="Open",
             open_date="2025-06-03", last_activity_date="2026-05-08",
-            equity_pnl=-226.27, closed_options_pnl=1499.0, open_options_pnl=-4355.32,
-            options_count=20, open_options_count=1,
+            equity_pnl=-226.27, closed_options_pnl=381.0, open_options_pnl=-3163.67,
+            options_count=24, open_options_count=2,
         ),
         _legs_row(
-            leg_id=-1, display_leg_num=1, status="Closed",
+            leg_id=1, display_leg_num=1, status="Closed",
             open_date="2024-11-25", last_activity_date="2024-11-29",
             closed_options_pnl=-1715.0, options_count=1, options_only=True,
         ),
-        _legs_row(
-            leg_id=-2, display_leg_num=3, status="Open",
-            open_date="2026-04-14", last_activity_date="2026-05-08",
-            closed_options_pnl=-1118.0, open_options_pnl=1191.65,
-            options_count=4, open_options_count=1, options_only=True,
-        ),
     ]
     out = _legs_df_to_sessions_list(pd.DataFrame(rows))
-    assert [s["display_leg"] for s in out] == [1, 2, 3]
-    assert [s["session_id"] for s in out] == [-1, 1, -2]
-    assert [s["status"] for s in out] == ["Closed", "Open", "Open"]
+    assert [s["display_leg"] for s in out] == [1, 2]
+    assert [s["session_id"] for s in out] == [1, 2]
+    assert [s["status"] for s in out] == ["Closed", "Open"]
 
 
-def test_legs_to_sessions_list_open_leg_when_open_options_attached_to_closed_equity_session():
-    """The PLTR/Cameron Investment regression. Equity session itself was
-    classified Closed (cycle ran 0→shares→0) but a long call opened during
-    the session is still live → the leg must render as Open with
-    last_trade_date driven by the mart's last_activity_date (= today),
-    NOT the equity session's last_trade_date. Pre-fix, banner said Open
-    while every leg pill said Closed."""
+def test_legs_to_sessions_list_open_leg_merges_equity_and_live_options():
+    """The PLTR/Cameron Investment regression in the merged-interval model.
+    A LEAP opened mid-equity-session and still live, plus a short call
+    opened after the equity sold off — these used to render as TWO Open
+    legs (one for each anchor window), which a trader correctly reads as
+    nonsense (you only have one current PLTR chapter). Under the merged
+    model they collapse into one Open leg whose interval extends from
+    the equity session start through to today. status='Open',
+    last_trade_date = today's snapshot."""
     rows = [
         _legs_row(
-            leg_id=1, display_leg_num=1, status="Open",
+            leg_id=2, display_leg_num=2, status="Open",
             open_date="2025-06-03", last_activity_date="2026-05-08",
-            equity_pnl=-226.27, closed_options_pnl=1499.0,
-            open_options_pnl=-4355.32,
-            options_count=20, open_options_count=1,
+            equity_pnl=-226.27, closed_options_pnl=381.0,
+            open_options_pnl=-3163.67,
+            options_count=24, open_options_count=2,
         ),
     ]
     out = _legs_df_to_sessions_list(pd.DataFrame(rows))
@@ -445,11 +441,11 @@ def test_legs_to_sessions_list_open_leg_when_open_options_attached_to_closed_equ
     s = out[0]
     assert s["status"] == "Open"
     assert s["last_trade_date"] == "2026-05-08"
-    # Combined P&L = equity + closed options + open options unrealized.
-    # Pre-fix, options_pnl was closed-only so combined = -226 + 1499 = $1,273
-    # (the original screenshot's misleading number). Post-fix it must
-    # include the live -$4,355 from the open Long Call.
-    assert abs(s["combined_pnl"] - (-3082.59)) < 0.01, s
+    # Combined = equity + closed options + open unrealized. Two open
+    # contracts (LEAP at -$4,355, short call at +$1,192) net to -$3,164.
+    assert abs(s["combined_pnl"] - (-3008.94)) < 0.01, s
+    # Both currently-open contracts are reflected in the count.
+    assert s["open_options_count"] == 2
 
 
 def test_legs_to_sessions_list_options_pnl_combines_closed_and_open():
@@ -458,7 +454,7 @@ def test_legs_to_sessions_list_options_pnl_combines_closed_and_open():
     pill caption reflects current value, not just settled trades."""
     rows = [
         _legs_row(
-            leg_id=-2, display_leg_num=1, status="Open",
+            leg_id=1, display_leg_num=1, status="Open",
             open_date="2026-04-14", last_activity_date="2026-05-08",
             closed_options_pnl=-1118.0, open_options_pnl=1191.65,
             options_count=4, open_options_count=1, options_only=True,
