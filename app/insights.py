@@ -37,8 +37,6 @@ SELECT
     avg_giveback_pct, avg_pnl_given_back, avg_days_held_past_peak,
     optimal_exit_rate, avg_pct_premium_captured, avg_actual_pnl,
     total_pnl_given_back,
-    num_rolls, avg_dte_at_roll, roll_success_rate, avg_roll_credit,
-    rolls_early, rolls_late, early_roll_success_rate, late_roll_success_rate,
     best_dte_bucket, best_dte_win_rate, best_dte_trades,
     worst_dte_bucket, worst_dte_win_rate, worst_dte_trades
 FROM `ccwj-dbt.analytics.mart_coaching_signals`
@@ -60,19 +58,6 @@ WHERE close_date >= @since_date
   {account_filter}
 ORDER BY pnl_given_back DESC
 LIMIT 20
-"""
-
-ROLLS_QUERY = """
-SELECT
-    underlying_symbol, option_type,
-    old_trade_symbol, old_expiry, old_strike, old_close_date, old_pnl,
-    dte_at_roll,
-    new_trade_symbol, new_expiry, new_strike, new_open_date,
-    new_contract_status, new_contract_pnl, new_contract_outcome,
-    strike_change, net_roll_credit
-FROM `ccwj-dbt.analytics.int_option_rolls`
-{where}
-ORDER BY old_close_date DESC
 """
 
 INSIGHTS_DATA_QUERY = """
@@ -140,6 +125,303 @@ ORDER BY week_start DESC
 LIMIT 1
 """
 
+# Portfolio-level “discovery” metrics (calendar, concentration, DTE, post-loss
+# sequence). One row; scoped with {account_clause} = _account_sql_and(...).
+# Mirrors logic we would put in dbt except the tenancy filter is request-time.
+_DISCOVERY_SQL = """
+WITH rel AS (
+  SELECT
+    e.close_date,
+    e.giveback_pct,
+    e.pnl_given_back,
+    e.underlying_symbol,
+    e.dte_at_open,
+    e.direction,
+    e.account,
+    e.user_id
+  FROM `ccwj-dbt.analytics.int_option_exit_analysis` e
+  WHERE e.data_reliable
+  {account_clause}
+),
+
+dow_agg AS (
+  SELECT
+    extract(dayofweek from close_date) AS dow_num,
+    count(*) AS n_trades,
+    avg(giveback_pct) AS avg_gb,
+    sum(pnl_given_back) AS sum_gb_dollars
+  FROM rel
+  GROUP BY 1
+  HAVING count(*) >= 4
+),
+
+dow_wide AS (
+  SELECT
+    (select count(*) from dow_agg) AS dow_bucket_count,
+
+    (select dow_num from dow_agg order by avg_gb desc, n_trades desc limit 1) AS worst_dow_num,
+    (select avg_gb from dow_agg order by avg_gb desc, n_trades desc limit 1) AS worst_dow_avg_gb,
+    (select n_trades from dow_agg order by avg_gb desc, n_trades desc limit 1) AS worst_dow_n,
+
+    (select dow_num from dow_agg order by avg_gb asc, n_trades desc limit 1) AS best_dow_num,
+    (select avg_gb from dow_agg order by avg_gb asc, n_trades desc limit 1) AS best_dow_avg_gb,
+    (select n_trades from dow_agg order by avg_gb asc, n_trades desc limit 1) AS best_dow_n
+),
+
+tot_gb AS (
+  SELECT COALESCE(SUM(pnl_given_back), 0) AS total_givenback_dollars FROM rel
+),
+
+top_sym_ranked AS (
+  SELECT underlying_symbol AS sym, SUM(pnl_given_back) AS gb
+  FROM rel
+  GROUP BY 1
+  ORDER BY gb DESC
+  LIMIT 1
+),
+
+sym_stats AS (
+  SELECT
+    tg.total_givenback_dollars AS total_givenback_dollars,
+    t.sym AS top_symbol,
+    t.gb AS top_symbol_givenback_sum,
+    CASE
+      WHEN tg.total_givenback_dollars > 300 AND t.gb IS NOT NULL THEN
+        ROUND(100.0 * t.gb / tg.total_givenback_dollars, 1)
+    END AS symbol_giveback_concentration_pct
+  FROM tot_gb tg
+  LEFT JOIN top_sym_ranked t ON TRUE
+),
+
+sold_dte AS (
+  SELECT
+    countif(direction = 'Sold' and dte_at_open is not null and dte_at_open <= 14) AS n_short_open,
+    countif(direction = 'Sold' and dte_at_open is not null and dte_at_open >= 45) AS n_long_open,
+    avg(case when direction = 'Sold' and dte_at_open is not null and dte_at_open <= 14
+        then giveback_pct end) AS short_avg_gb,
+    avg(case when direction = 'Sold' and dte_at_open is not null and dte_at_open >= 45
+        then giveback_pct end) AS long_avg_gb
+  FROM rel
+),
+
+seq_agg AS (
+  SELECT
+    count(*) AS n_closed_seq,
+    countif(prev_trade_outcome = 'Loser') AS n_after_loss,
+    countif(prev_trade_outcome = 'Loser' and outcome = 'Winner') AS wins_after_loss,
+    countif(outcome = 'Winner') AS wins_total
+  FROM `ccwj-dbt.analytics.int_trade_sequence` s
+  WHERE s.trade_group_type = 'option_contract'
+  {sequence_clause}
+)
+
+SELECT
+  (select count(*) from rel) AS reliable_contracts,
+
+  dw.dow_bucket_count,
+
+  dw.worst_dow_num,
+  dw.worst_dow_avg_gb,
+  dw.worst_dow_n,
+  dw.best_dow_num,
+  dw.best_dow_avg_gb,
+  dw.best_dow_n,
+
+  case
+    when dw.dow_bucket_count >= 2
+         and dw.worst_dow_num is not null
+         and dw.best_dow_num is not null
+         and dw.worst_dow_num != dw.best_dow_num
+      then round(dw.worst_dow_avg_gb - dw.best_dow_avg_gb, 1)
+    else null
+  end AS weekday_gb_spread_pp,
+
+  ss.total_givenback_dollars,
+  ss.top_symbol,
+  ss.top_symbol_givenback_sum,
+  ss.symbol_giveback_concentration_pct,
+
+  sd.n_short_open,
+  sd.n_long_open,
+  round(sd.short_avg_gb, 1) AS short_dte_avg_giveback_pp,
+  round(sd.long_avg_gb, 1) AS long_dte_avg_giveback_pp,
+  case
+    when sd.n_short_open >= 8 and sd.n_long_open >= 8
+      then round(sd.short_avg_gb - sd.long_avg_gb, 1)
+    else null
+  end AS sold_short_vs_long_gb_gap_pp,
+
+  sa.n_closed_seq,
+  sa.n_after_loss,
+  sa.wins_after_loss,
+  round(safe_divide(sa.wins_total, nullif(sa.n_closed_seq, 0)), 4) AS overall_trade_wr,
+  round(safe_divide(sa.wins_after_loss, nullif(sa.n_after_loss, 0)), 4)
+    AS win_rate_after_prior_loss,
+  /* Positive => next trade wins more often after a prior loss vs your overall WR. */
+  round(
+      safe_divide(sa.wins_after_loss, nullif(sa.n_after_loss, 0))
+      - safe_divide(sa.wins_total, nullif(sa.n_closed_seq, 0)),
+      4
+  ) AS rebound_vs_overall_gap
+FROM dow_wide dw
+CROSS JOIN sym_stats ss
+CROSS JOIN sold_dte sd
+CROSS JOIN seq_agg sa
+"""
+
+# BigQuery EXTRACT(dayofweek): Sunday = 1 ... Saturday = 7
+_DOW_EN = {
+    1: "Sunday",
+    2: "Monday",
+    3: "Tuesday",
+    4: "Wednesday",
+    5: "Thursday",
+    6: "Friday",
+    7: "Saturday",
+}
+
+
+def _safe_float(x, default=None):
+    try:
+        if x is None or (isinstance(x, float) and pd.isna(x)):
+            return default
+        return float(x)
+    except (TypeError, ValueError):
+        return default
+
+
+def _discovery_cards_from_series(r: pd.Series):
+    """Build ranked discovery cards + a DISCOVERY LAB block for Gemini.
+
+    Thresholds emphasize surprising *contrasts* backed by sufficient n.
+    """
+    cards = []
+    n_rel = int(_safe_float(r.get("reliable_contracts"), 0) or 0)
+    if n_rel < 12:
+        return [], ""
+
+    dow_spread = _safe_float(r.get("weekday_gb_spread_pp"))
+    dow_cnt = int(_safe_float(r.get("dow_bucket_count"), 0) or 0)
+    wn = r.get("worst_dow_num")
+    bn = r.get("best_dow_num")
+    if dow_spread is not None and dow_cnt >= 2 and dow_spread >= 10:
+        ww = _DOW_EN.get(int(wn), "?") if pd.notna(wn) else "?"
+        bw = _DOW_EN.get(int(bn), "?") if pd.notna(bn) else "?"
+        wf = _safe_float(r.get("worst_dow_avg_gb"))
+        bf = _safe_float(r.get("best_dow_avg_gb"))
+        cards.append({
+            "tag": "Calendar",
+            "title": "Your exits do not behave the same every day of the week",
+            "stat": f"+{dow_spread:.0f} pp",
+            "body": (
+                f"When you close on **{ww}**, you surrender about **{wf:.0f}%** of peak unrealized profit on "
+                f"average (from daily marks). Your best-reviewed weekday cluster is **{bw}** (~{bf:.0f}% avg giveback)."
+            ),
+            "score": dow_spread * 3.5,
+            "muted": "",
+        })
+
+    conc = _safe_float(r.get("symbol_giveback_concentration_pct"))
+    tot_gb = _safe_float(r.get("total_givenback_dollars"))
+    tsym = r.get("top_symbol")
+    if conc is not None and tot_gb and tot_gb > 200 and conc >= 34 and pd.notna(tsym):
+        cards.append({
+            "tag": "Concentration",
+            "title": "One ticker owns an outsized share of “money left after the peak”",
+            "stat": f"{conc:.0f}% of ${tot_gb:,.0f}",
+            "body": (
+                f"Around **{conc:.0f}%** of the dollars you theoretically left on the table vs peak "
+                f"clusters on **{tsym}** — worth asking whether sizing or exits differ there versus the rest "
+                f"of your book."
+            ),
+            "score": conc * 2.8,
+            "muted": "",
+        })
+
+    dte_gap = _safe_float(r.get("sold_short_vs_long_gb_gap_pp"))
+    ns = int(_safe_float(r.get("n_short_open"), 0) or 0)
+    nl = int(_safe_float(r.get("n_long_open"), 0) or 0)
+    if dte_gap is not None and ns >= 8 and nl >= 8 and abs(dte_gap) >= 11:
+        sh = _safe_float(r.get("short_dte_avg_giveback_pp"))
+        lg = _safe_float(r.get("long_dte_avg_giveback_pp"))
+        if dte_gap > 0:
+            cards.append({
+                "tag": "Timing",
+                "title": "Short-DTE shorts show more peak giveback than your long-leg opens",
+                "stat": f"+{dte_gap:.0f} pp avg giveback",
+                "body": (
+                    f"Selling premium **inside ~14 DTE** shows **{sh:.0f}%** avg giveback vs peak snapshots; "
+                    f"Opens **beyond ~45 DTE** average **{lg:.0f}%**. That differential is measurable only "
+                    f"because we mark every day — not broker cash alone."
+                ),
+                "score": abs(dte_gap) * 2.9,
+                "muted": "Sold short legs only.",
+            })
+        else:
+            cards.append({
+                "tag": "Timing",
+                "title": "Your long-dated short premium behaves differently than short-dated",
+                "stat": f"{dte_gap:+.0f} pp avg giveback (long worse)",
+                "body": (
+                    f"Holds on **extended-dated shorts** correlate with higher giveback vs peak (**{lg:.0f}%** avg) "
+                    f"than very short ladders (**{sh:.0f}%**) — unusual and worth inspecting by symbol."
+                ),
+                "score": abs(dte_gap) * 2.9,
+                "muted": "Sold short legs only.",
+            })
+
+    rgap = _safe_float(r.get("rebound_vs_overall_gap"))
+    n_al = int(_safe_float(r.get("n_after_loss"), 0) or 0)
+    n_seq = int(_safe_float(r.get("n_closed_seq"), 0) or 0)
+    ov = _safe_float(r.get("overall_trade_wr"))
+    al = _safe_float(r.get("win_rate_after_prior_loss"))
+    if rgap is not None and abs(rgap) >= 0.07 and n_al >= 14 and ov is not None and al is not None:
+        pct_overall = ov * 100
+        pct_al = al * 100
+        if rgap >= 0.07:
+            cards.append({
+                "tag": "Sequence",
+                "title": "You bounce harder after losses than almost anyone tracks",
+                "stat": f"+{rgap * 100:.1f} pts vs baseline WR",
+                "body": (
+                    f"When the **prior** closed trade was a loser, your next listed option-trade win rate runs "
+                    f"**~{pct_al:.0f}%** vs **~{pct_overall:.0f}%** overall (n≥{n_al} sequencing windows). Retail "
+                    f"risk tools never quantify that."
+                ),
+                "score": abs(rgap) * 500,
+                "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
+            })
+        elif rgap <= -0.07:
+            cards.append({
+                "tag": "Sequence",
+                "title": "Win rate dips right after losses — sequencing you can now see",
+                "stat": f"{rgap * 100:.1f} pts vs baseline WR",
+                "body": (
+                    f"The trade **after** a losing close wins **~{pct_al:.0f}%** vs **~{pct_overall:.0f}%** overall; "
+                    f"that's a disciplined thing to stare at rather than intuit."
+                ),
+                "score": abs(rgap) * 520,
+                "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
+            })
+
+    if not cards:
+        return [], ""
+
+    cards.sort(key=lambda c: float(c["score"]), reverse=True)
+    for i, c in enumerate(cards):
+        c["rank"] = i + 1
+    blob_lines = [
+        "DISCOVERY LAB (deterministic contrasts; not advice):",
+        f"- Snapshot-quality contracts summarized: ~{n_rel} reliable closes (daily MTM-backed).",
+    ]
+    for c in cards[:5]:
+        blob_lines.append(f"- [{c['tag']}] {c['title']}: {_strip_md_for_brief(c['body'])}")
+    return cards[:5], "\n".join(blob_lines)
+
+
+def _strip_md_for_brief(s: str) -> str:
+    return s.replace("**", "").replace("*", "")
+
 
 # ------------------------------------------------------------------
 # Coaching brief builder — the core differentiator
@@ -157,13 +439,17 @@ def _build_coaching_brief(client, user_accounts):
     coaching_data = {
         "signals": [],
         "recent_exits": [],
-        "rolls": [],
         "behavior_observations": [],
+        "discoveries": [],
+        "discovery_headline": None,
         "has_data": False,
         "total_closed": 0,
         "reliable_contracts": 0,
         "pct_reliable": 0,
     }
+
+    disco_cards = []
+    disco_txt = ""
 
     # 1. Coaching signals per strategy
     try:
@@ -175,7 +461,6 @@ def _build_coaching_brief(client, user_accounts):
             for col in ["avg_giveback_pct", "avg_pnl_given_back", "avg_days_held_past_peak",
                          "optimal_exit_rate", "avg_pct_premium_captured", "total_pnl_given_back",
                          "total_closed", "reliable_contracts", "pct_contracts_reliable",
-                         "num_rolls", "avg_dte_at_roll", "roll_success_rate", "avg_roll_credit",
                          "best_dte_win_rate", "worst_dte_win_rate"]:
                 if col in signals_df.columns:
                     signals_df[col] = pd.to_numeric(signals_df[col], errors="coerce").fillna(0)
@@ -230,26 +515,6 @@ def _build_coaching_brief(client, user_accounts):
 
             if exit_lines:
                 sections.append("EXIT TIMING PROFILE\n" + "\n".join(exit_lines))
-
-            # Roll section (account-level)
-            first_row = signals_df.iloc[0]
-            num_rolls = int(first_row.get("num_rolls", 0))
-            if num_rolls >= 2:
-                roll_lines = [f"- {num_rolls} rolls detected."]
-                avg_dte = float(first_row.get("avg_dte_at_roll", 0))
-                roll_wr = float(first_row.get("roll_success_rate", 0))
-                roll_lines.append(f"- Average roll happens at {avg_dte:.0f} DTE with {roll_wr:.0f}% success rate.")
-
-                early_wr = first_row.get("early_roll_success_rate")
-                late_wr = first_row.get("late_roll_success_rate")
-                early_n = int(first_row.get("rolls_early", 0))
-                late_n = int(first_row.get("rolls_late", 0))
-                if early_n >= 2 and late_n >= 2 and early_wr is not None and late_wr is not None:
-                    roll_lines.append(
-                        f"- Rolls at 7+ DTE: {float(early_wr):.0f}% success ({early_n} rolls). "
-                        f"Rolls at <7 DTE: {float(late_wr):.0f}% success ({late_n} rolls)."
-                    )
-                sections.append("ROLL BEHAVIOR\n" + "\n".join(roll_lines))
 
             # DTE sweet spots
             dte_lines = []
@@ -314,27 +579,27 @@ def _build_coaching_brief(client, user_accounts):
     except Exception:
         pass
 
-    # 3. Rolls detail
     try:
-        rolls_df = client.query(
-            ROLLS_QUERY.format(where=where)
+        e_and = _account_sql_and(user_accounts, col="e.account", user_col="e.user_id")
+        s_and = _account_sql_and(user_accounts, col="s.account", user_col="s.user_id")
+        dq = client.query(
+            _DISCOVERY_SQL.format(
+                account_clause=e_and if e_and else "",
+                sequence_clause=s_and if s_and else "",
+            )
         ).to_dataframe()
-        if not rolls_df.empty:
-            for _, r in rolls_df.head(10).iterrows():
-                coaching_data["rolls"].append({
-                    "symbol": str(r.get("underlying_symbol", "")),
-                    "type": str(r.get("option_type", "")),
-                    "old_strike": float(r.get("old_strike", 0) or 0),
-                    "new_strike": float(r.get("new_strike", 0) or 0),
-                    "dte_at_roll": int(r.get("dte_at_roll", 0) or 0),
-                    "old_pnl": float(r.get("old_pnl", 0) or 0),
-                    "outcome": str(r.get("new_contract_outcome", "")),
-                    "date": str(r.get("old_close_date", ""))[:10],
-                })
+        if not dq.empty:
+            disco_cards, disco_txt = _discovery_cards_from_series(dq.iloc[0])
+            coaching_data["discoveries"] = disco_cards
+            if disco_cards:
+                coaching_data["has_data"] = True
+                coaching_data["discovery_headline"] = disco_cards[0].get("title")
+            if disco_txt:
+                sections.append(disco_txt)
     except Exception:
-        pass
+        coaching_data["discoveries"] = coaching_data.get("discoveries") or []
 
-    # 4. Behavior observations (BQML-ranked, neutral evidence).
+    # 3. Behavior observations (BQML-ranked, neutral evidence).
     #    Reads ml_models.account_trade_insights which already filters by
     #    observation_text IS NOT NULL.  The text is pre-rendered in dbt
     #    so Flask does no phrasing — we just quote it verbatim.
@@ -456,8 +721,8 @@ STRATEGY BREAKDOWN
 # ------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are narrating a trader's behavioral insights report. The data below
-contains PRE-COMPUTED signals about their option trading behavior — exit timing,
-roll patterns, and DTE performance. These signals come from daily option
+contains PRE-COMPUTED signals about their option trading behavior — exit timing
+and DTE performance. These signals come from daily option
 mark-to-market data that no other retail tool tracks.
 
 You surface OBSERVATIONS, not financial advice. Never recommend trades,
@@ -471,13 +736,21 @@ is low (e.g., "15 of 40 contracts"), acknowledge that the patterns are based
 on a subset and may become clearer as more daily data accumulates. Do NOT
 present partial-coverage findings as definitive.
 
+DISCOVERY LAB (when present): These are deterministic contrasts surfaced only
+because we reconstruct daily unrealized curves — e.g., weekday clustering of
+peak givebacks, ticker concentration vs total dollars surrendered to the peak,
+DTE tenor differences on sold short premium, sequencing after prior losses versus
+overall win frequency. Quote at least ONE discovery fact by number as a headline
+finding if DISCOVERY LAB appears below. Do not inflate or invent discoveries that
+were not listed.
+
 Your job:
 1. Lead with the MOST ACTIONABLE finding — the behavior change that would
    save the most money if corrected.
 2. Use specific numbers from the signals. Never generalize when you have data.
 3. Frame everything as process, not outcome. Say "You held 8 days past peak"
-   not "you lost money." Say "Your rolls at 7+ DTE succeed 80% of the time"
-   not "you should roll earlier."
+   not "you lost money." Say "Your strongest DTE bucket is 45-60d at 65% win rate"
+   not "you should only trade that tenor."
 4. Write 3-4 concise paragraphs. No section headings. No bullet lists.
    Write like an analyst summarizing a game film — direct, specific,
    observational, never prescriptive.
@@ -505,12 +778,13 @@ the single most important behavioral insight. Then write the full analysis."""
 
 QA_SYSTEM_PROMPT = """You are a trading-data analyst with access to detailed behavioral
 data about this trader's option trading — including daily mark-to-market curves,
-exit timing analysis, roll patterns, and DTE performance breakdowns. You answer
+exit timing analysis, and DTE performance breakdowns. You answer
 questions with OBSERVATIONS grounded in the data; you do NOT give financial
 advice or recommend trades.
 
 You will receive:
-- BEHAVIORAL SIGNALS: Pre-computed metrics (exit timing, roll behavior, DTE patterns)
+- BEHAVIORAL SIGNALS: Pre-computed metrics (exit timing, giveback patterns, DTE sweet spots)
+- DISCOVERY LAB (optional): Deterministic calendar / concentration / tenor / sequencing contrasts
 - PORTFOLIO OVERVIEW: Lifetime strategy performance
 - Optionally: RECENT EXITS showing specific trades where profit was left on the table
 - Optionally: LAST WEEK performance summary
@@ -522,7 +796,7 @@ data covers.
 
 Answer the user's question in 3-6 short paragraphs. Be specific — use exact
 numbers, trade symbols, and dates from the data. If the question asks about
-exit timing, rolls, or holding behavior, lean heavily on the behavioral signals.
+exit timing or holding behavior, lean heavily on the behavioral signals.
 
 Rules:
 - Do NOT give financial advice or trade recommendations.
@@ -747,7 +1021,17 @@ def insights():
         cached["full_analysis_html"] = _md_to_html(cached["full_analysis"])
 
     # Load deterministic coaching data for the template
-    coaching_data = {"has_data": False, "signals": [], "recent_exits": [], "rolls": []}
+    coaching_data = {
+        "has_data": False,
+        "signals": [],
+        "recent_exits": [],
+        "behavior_observations": [],
+        "discoveries": [],
+        "discovery_headline": None,
+        "total_closed": 0,
+        "reliable_contracts": 0,
+        "pct_reliable": 0,
+    }
     try:
         client = get_bigquery_client()
         _, coaching_data = _build_coaching_brief(client, user_accounts)

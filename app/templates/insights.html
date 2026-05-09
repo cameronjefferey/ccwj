@@ -27,6 +27,61 @@
         margin-bottom: 1.1rem;
     }
 
+    /* Discovery Lab */
+    .discovery-lab {
+        border: 1px solid rgba(99,102,241,.25);
+        background: linear-gradient(145deg, #fafbff 0%, #eef2ff 55%, #f8fafc 100%);
+    }
+    .discovery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+    }
+    .discovery-card {
+        border-radius: 14px;
+        padding: 1.15rem 1.2rem;
+        background: rgba(255,255,255,.92);
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 4px 18px rgba(15,23,42,.06);
+        transition: transform .12s ease, box-shadow .12s ease;
+    }
+    .discovery-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(15,23,42,.09);
+    }
+    .discovery-tag {
+        font-size: .62rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #6366f1;
+        background: rgba(99,102,241,.1);
+        border-radius: 6px;
+        padding: .22rem .5rem;
+    }
+    .discovery-stat {
+        font-size: .85rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .discovery-title {
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #111827;
+        margin-bottom: .5rem;
+    }
+    .discovery-body {
+        font-size: .86rem;
+        color: #374151;
+        line-height: 1.55;
+        white-space: normal;
+    }
+    .discovery-muted {
+        font-size: .71rem;
+        color: #9ca3af;
+    }
+
     /* Signal cards */
     .signal-grid {
         display: grid;
@@ -90,10 +145,6 @@
     }
     .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
     .generate-card p { color: #6c757d; margin-bottom: 1.5rem; }
-
-    .roll-stat { text-align: center; padding: .5rem; }
-    .roll-stat-val { font-size: 1.3rem; font-weight: 700; }
-    .roll-stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .15rem; }
 </style>
 {% endblock %}
 
@@ -103,10 +154,8 @@
         <div class="insights-hero">
             <h1>AI Insights</h1>
             <p class="mb-0 opacity-90">
-                Your trading behavior analyzed through data no other tool tracks —
-                daily option mark-to-market, exit timing, and roll patterns.
-                The numbers below are computed directly from your data. The AI narrates what they mean.
-                These are observations, not financial advice.
+                A mirror backed by curves other platforms never ingest — Discovery Lab contrasts your closes by calendar,
+                ticker, DTE tenor, and post-loss sequencing. The AI narrates once you generate; cards below refresh every session.
             </p>
         </div>
 
@@ -134,6 +183,35 @@
            ════════════════════════════════════ #}
 
         {% if coaching and coaching.has_data %}
+
+        {% if coaching.discoveries and coaching.discoveries|length > 0 %}
+        <div class="coaching-section discovery-lab">
+            <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 mb-2">
+                <div>
+                    <div class="section-label mb-1">Discovery Lab</div>
+                    <p class="mb-0 small text-muted" style="max-width: 42rem;">
+                        Contrasts you cannot see in a broker blotter — computed from daily option marks + your sequencing.
+                        Evidence-backed, not adjectives.
+                    </p>
+                </div>
+            </div>
+            <div class="discovery-grid mt-3">
+                {% for d in coaching.discoveries %}
+                <div class="discovery-card">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <span class="discovery-tag">{{ d.tag }}</span>
+                        <span class="discovery-stat text-nowrap">{{ d.stat }}</span>
+                    </div>
+                    <div class="discovery-title">{{ d.title }}</div>
+                    <p class="discovery-body mb-0">{{ d.body | replace('**','') }}</p>
+                    {% if d.muted %}
+                    <p class="discovery-muted mb-0 mt-2">{{ d.muted }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         {# ── Exit Timing Profile ── #}
         {% if coaching.signals %}
@@ -235,58 +313,6 @@
         </div>
         {% endif %}
 
-        {# ── Roll Behavior ── #}
-        {% if coaching.rolls and coaching.rolls|length >= 2 %}
-        <div class="coaching-section">
-            <div class="section-label">Roll Behavior</div>
-            <p class="mb-3" style="font-size:.9rem; color:#475569">
-                Detected rolls: when you closed one option and opened another on the same underlying within 3 days.
-            </p>
-            <div class="d-flex gap-4 flex-wrap mb-3">
-                <div class="roll-stat">
-                    <div class="roll-stat-val">{{ coaching.rolls|length }}</div>
-                    <div class="roll-stat-label">Rolls Detected</div>
-                </div>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 exit-table">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Symbol</th>
-                            <th>Type</th>
-                            <th>Date</th>
-                            <th class="text-end">Old Strike</th>
-                            <th class="text-end">New Strike</th>
-                            <th class="text-center">DTE at Roll</th>
-                            <th class="text-center">Outcome</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in coaching.rolls %}
-                        <tr>
-                            <td class="fw-semibold">{{ r.symbol }}</td>
-                            <td class="text-muted">{{ r.type }}</td>
-                            <td class="small">{{ r.date }}</td>
-                            <td class="text-end">${{ "{:,.0f}".format(r.old_strike) }}</td>
-                            <td class="text-end">${{ "{:,.0f}".format(r.new_strike) }}</td>
-                            <td class="text-center">{{ r.dte_at_roll }}d</td>
-                            <td class="text-center">
-                                {% if r.outcome == 'Winner' %}
-                                <span class="badge bg-success bg-opacity-10 text-success">Win</span>
-                                {% elif r.outcome == 'Loser' %}
-                                <span class="badge bg-danger bg-opacity-10 text-danger">Loss</span>
-                                {% else %}
-                                <span class="badge bg-secondary bg-opacity-10 text-secondary">Open</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-
         {% endif %}{# end coaching.has_data #}
 
 
@@ -320,13 +346,13 @@
         <div class="coaching-section">
             <div class="section-label">Ask AI</div>
             <p class="small text-muted mb-3">
-                Ask about your exit timing, roll patterns, DTE preferences, or any behavioral pattern.
+                Ask about your exit timing, givebacks versus peaks, DTE preferences, or other behavioral patterns.
                 Grounded in your actual trading data. Responses are observations, not financial advice.
             </p>
             <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;"></div>
             <form id="coachForm" class="d-flex gap-2">
                 <input type="text" id="coachInput" class="form-control form-control-sm"
-                       placeholder="e.g. 'Am I rolling my covered calls earlier than usual?'" required>
+                       placeholder="e.g. 'Which DTE buckets seem strongest in my data?'" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
             </form>
             <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
@@ -346,7 +372,7 @@
             <h5>Get Your Behavioral Insights Report</h5>
             <div class="mx-auto mb-4" style="max-width: 480px;">
                 <p>
-                    The AI will analyze your exit timing, roll patterns, and DTE preferences —
+                    The AI will analyze your exit timing and DTE preferences —
                     behavioral signals that no other retail tool can see.
                 </p>
                 {% if coaching and coaching.has_data %}

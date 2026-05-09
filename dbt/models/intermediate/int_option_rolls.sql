@@ -17,6 +17,10 @@
 
     Excludes contracts that expired or were assigned (those aren't
     intentional rolls).
+
+    Underlying close on close_date joins stg_daily_prices so aggregates can
+    separate “defensive” timing (near expiry / ITM short premium vs stock)
+    from win-rate-on-next-contract framing.
 */
 
 with closers as (
@@ -99,39 +103,54 @@ candidates as (
 )
 
 select
-    account,
-    user_id,
-    underlying_symbol,
-    option_type,
+    c.account,
+    c.user_id,
+    c.underlying_symbol,
+    c.option_type,
 
-    old_trade_symbol,
-    old_direction,
-    old_expiry,
-    old_strike,
-    old_open_date,
-    old_close_date,
-    old_pnl,
-    old_premium_received,
-    old_days_in_trade,
-    dte_at_close as dte_at_roll,
+    c.old_trade_symbol,
+    c.old_direction,
+    c.old_expiry,
+    c.old_strike,
+    c.old_open_date,
+    c.old_close_date,
+    c.old_pnl,
+    c.old_premium_received,
+    c.old_days_in_trade,
+    c.dte_at_close as dte_at_roll,
 
-    new_trade_symbol,
-    new_direction,
-    new_expiry,
-    new_strike,
-    new_open_date,
-    new_status  as new_contract_status,
-    new_pnl     as new_contract_pnl,
-    new_outcome as new_contract_outcome,
+    c.new_trade_symbol,
+    c.new_direction,
+    c.new_expiry,
+    c.new_strike,
+    c.new_open_date,
+    c.new_status  as new_contract_status,
+    c.new_pnl     as new_contract_pnl,
+    c.new_outcome as new_contract_outcome,
 
-    days_between,
-    round(new_strike - old_strike, 2) as strike_change,
+    c.days_between,
+    round(c.new_strike - c.old_strike, 2) as strike_change,
     round(
-        coalesce(new_premium_received, 0)
-        + coalesce(old_pnl, 0)
-        - coalesce(old_premium_received, 0),
+        coalesce(c.new_premium_received, 0)
+        + coalesce(c.old_pnl, 0)
+        - coalesce(c.old_premium_received, 0),
         2
-    ) as net_roll_credit
+    ) as net_roll_credit,
 
-from candidates
-where match_rank = 1
+    dp.close_price as underlying_close_on_roll_date,
+    (coalesce(c.old_pnl, 0) < 0) as closed_leg_was_loss,
+    case
+        when c.old_direction = 'Sold' and c.option_type = 'Call' and dp.close_price is not null
+            then dp.close_price >= c.old_strike
+        when c.old_direction = 'Sold' and c.option_type = 'Put' and dp.close_price is not null
+            then dp.close_price <= c.old_strike
+        else null
+    end as sold_short_itm_at_roll
+
+from candidates c
+left join {{ ref('stg_daily_prices') }} dp
+    on c.account = dp.account
+    and (c.user_id is not distinct from dp.user_id)
+    and c.underlying_symbol = dp.symbol
+    and c.old_close_date = dp.date
+where c.match_rank = 1

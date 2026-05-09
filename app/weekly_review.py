@@ -482,9 +482,10 @@ SELECT
     total_closed, reliable_contracts, pct_contracts_reliable,
     avg_giveback_pct, avg_days_held_past_peak,
     total_pnl_given_back, optimal_exit_rate,
-    num_rolls, avg_dte_at_roll, roll_success_rate,
-    early_roll_success_rate, late_roll_success_rate,
-    rolls_early, rolls_late
+    num_rolls, avg_dte_at_roll,
+    rolls_after_losing_leg, pct_rolls_after_losing_leg,
+    rolls_at_0_or_1_dte, pct_rolls_at_0_or_1_dte,
+    rolls_with_spot_for_itm, pct_rolls_sold_short_itm_when_known
 FROM `ccwj-dbt.analytics.mart_coaching_signals`
 {where}
 ORDER BY total_pnl_given_back DESC
@@ -2544,9 +2545,15 @@ def weekly_review():
                     COACHING_SIGNALS_WEEKLY_QUERY.format(where=where_clause)
                 ).to_dataframe()
                 if not signals_df.empty:
-                    for col in ["avg_giveback_pct", "avg_days_held_past_peak",
-                                 "total_pnl_given_back", "optimal_exit_rate",
-                                 "num_rolls", "roll_success_rate"]:
+                    roll_num_cols = [
+                        "avg_giveback_pct", "avg_days_held_past_peak",
+                        "total_pnl_given_back", "optimal_exit_rate",
+                        "num_rolls", "avg_dte_at_roll",
+                        "rolls_after_losing_leg", "pct_rolls_after_losing_leg",
+                        "rolls_at_0_or_1_dte", "pct_rolls_at_0_or_1_dte",
+                        "rolls_with_spot_for_itm", "pct_rolls_sold_short_itm_when_known",
+                    ]
+                    for col in roll_num_cols:
                         if col in signals_df.columns:
                             signals_df[col] = pd.to_numeric(signals_df[col], errors="coerce").fillna(0)
 
@@ -2560,12 +2567,40 @@ def weekly_review():
                             f"on the table by holding past peak profit (avg {avg_days_past:.0f} days past peak)."
                         )
                     if num_rolls >= 3:
-                        roll_wr = float(signals_df.iloc[0].get("roll_success_rate", 0))
-                        avg_dte = float(signals_df.iloc[0].get("avg_dte_at_roll", 0))
-                        coaching_take["coaching_signals"].append(
-                            f"You've rolled {num_rolls} times, typically at {avg_dte:.0f} DTE "
-                            f"with a {roll_wr:.0f}% success rate."
+                        row0 = signals_df.iloc[0]
+                        avg_dte = float(row0.get("avg_dte_at_roll", 0))
+                        pct_loss_leg = float(row0.get("pct_rolls_after_losing_leg", 0) or 0)
+                        rolls_01 = int(row0.get("rolls_at_0_or_1_dte", 0) or 0)
+                        pct_01 = float(row0.get("pct_rolls_at_0_or_1_dte", 0) or 0)
+                        n_spot = int(row0.get("rolls_with_spot_for_itm", 0) or 0)
+                        pct_itm = float(row0.get("pct_rolls_sold_short_itm_when_known", 0) or 0)
+
+                        parts = [
+                            f"You've rolled {num_rolls} detectable times; on average the closed leg still had "
+                            f"about {avg_dte:.0f} DTE left — a timing pattern we can see from daily option marks."
+                        ]
+                        if pct_loss_leg >= 40:
+                            parts.append(
+                                f"About {pct_loss_leg:.0f}% of those followed a losing close on the leg you "
+                                f"replaced — often consistent with managing a challenged short premium leg "
+                                f"rather than \"rolling for fun.\""
+                            )
+                        if rolls_01 >= 2 and pct_01 >= 25:
+                            parts.append(
+                                f"{rolls_01} were at 0–1 DTE ({pct_01:.0f}% of rolls), when many traders extend "
+                                f"to avoid assignment or keep control of the stock."
+                            )
+                        if n_spot >= 3 and pct_itm >= 35:
+                            parts.append(
+                                f"Where we have a same-day stock close, about {pct_itm:.0f}% of your sold "
+                                f"short legs were in the money at the roll — i.e. stock vs strike lines up "
+                                f"with defensive timing, not just the next contract's win rate."
+                            )
+                        parts.append(
+                            "The useful signal is usually when you extend, not a simple "
+                            "\"you roll and lose\" score on the replacement trade."
                         )
+                        coaching_take["coaching_signals"].append(" ".join(parts))
             except Exception:
                 pass
 
