@@ -312,6 +312,74 @@ Page speed matters.
 - Optimize for weekly read performance
 - Market data comes from `stg_daily_prices` in BigQuery (not live yfinance calls)
 
+### 5. Pricing Precedence (broker-first when fresh, yfinance fallback)
+
+The product reads "what is this symbol worth right now" from two
+fundamentally different sources, and they have different freshness and
+precision profiles. Mixing them silently is the most expensive bug class
+in the repo (May 2026: a single position page showed $7,465 / $7,463.61 /
+$11,709 across three "current value" totals — three different sources,
+three different prices, all rendered to the user as if they agreed).
+
+**The rule, anywhere a UI surface displays "current value":**
+
+1. **Broker snapshot wins when fresh.** `stg_current` (the Schwab /
+   manual-CSV positions snapshot) is the source of truth for current
+   per-share price, market value, cost basis, and unrealized P&L
+   whenever `snapshot_date >= current_date - 7`. Derive per-share price
+   as `market_value / quantity` (the broker's own implied current price)
+   rather than trusting `current_price` directly — Schwab's API has
+   shipped at least one bug where `Price` was actually the per-share cost
+   basis (see `~/.cursor/skills/schwab-sync-safety/SKILL.md` 2026-05-11).
+
+2. **yfinance fills the gap when broker is stale or absent.**
+   `stg_daily_prices.close_price` (yfinance daily close) is the fallback
+   for stale snapshots, cold-start users, or positions where the broker
+   never reported a snapshot. yfinance is also the only legitimate source
+   for HISTORICAL prices (broker doesn't ship per-day OHLC) and for
+   contextual data (SPY/QQQ benchmarks, sector metadata, ex-dividend
+   amounts).
+
+3. **Today is asymmetric.** For mart_daily_pnl's *today* row,
+   broker-implied (mv/qty) wins over yfinance close when the snapshot is
+   fresh — see the "PRICE PRECEDENCE" header comment in
+   `dbt/models/marts/mart_daily_pnl.sql`. For every historical day
+   yfinance is the only source.
+
+4. **Use full-precision broker fields, not derived ones.** Schwab's
+   stg_history fill `price` rounds to 2 decimals; stg_current's
+   `cost_basis` and `market_value` carry full broker precision. For OPEN
+   options, derive total P&L from snapshot's `unrealized_pnl` directly,
+   not from `net_cash_flow + market_value` (mixing rounded fills with
+   precise marks accumulates ~$1-2 of drift per contract — caused the
+   May 2026 invariant card $1.39 disagreement).
+
+**Surfaces that legitimately stay yfinance-only** (do not "fix" these):
+
+- `mart_benchmark` (entry/exit hold P&L; needs historical close)
+- `int_option_trade_kinds` (moneyness on open_date; historical)
+- `int_option_rolls` (underlying close on roll date; historical)
+- `int_dividend_events` (per-share div × holdings; broker doesn't ship
+  per-share div amounts cleanly)
+- `weekly_review.py` SPY/QQQ market context queries (no broker source
+  for benchmarks)
+- `weekly_review.py` WEEKLY_STOCK_MOVEMENT / TRADING_DAYS (date range
+  + market calendar)
+
+**Enforcement.** `dbt/tests/int_enriched_current_equity_price_consistent.sql`
+is the structural invariant — for every Equity row in `int_enriched_current`,
+`abs(qty * current_price - market_value) <= $0.01`. The Position Detail page
+also computes a runtime invariant (`invariant_warning` in `app/routes.py`)
+that compares Strategy Breakdown total / Breakdown by Type total / Chart
+Terminal value and surfaces a red admin-only card when they disagree by
+> $1. Both must remain green.
+
+**Anti-pattern to avoid.** `_align_position_pnl_chart_with_kpi` in
+`app/routes.py` used to silently rescale the chart series when the
+chart's terminal disagreed with the KPI. That hid a structural bug for
+months. The function is now restricted to sub-$1 rounding noise; larger
+gaps log loudly and trip the invariant card. Do not weaken this guard.
+
 ---
 
 ## Mirror Score Rules

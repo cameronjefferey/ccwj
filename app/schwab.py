@@ -1353,11 +1353,45 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
         except (TypeError, ValueError):
             pass
 
+        # Derive seed `Price` (current per-share market price).
+        #
+        # CRITICAL: Schwab's API field `averagePrice` is the **per-share cost
+        # basis** of the position, NOT the current market price. We previously
+        # wrote `"Price": avg` here, which sent cost-per-share into a column
+        # that dbt (`stg_current.sql`) maps to `current_price`. The result was
+        # that every Schwab-synced equity position rendered with `qty * Price
+        # == cost_basis`, completely hiding unrealized P&L wherever the UI
+        # multiplied current_price by quantity (Today Strip, Open Positions
+        # card, Position Detail per-share displays). The bug was masked on
+        # surfaces where `int_enriched_current` overlaid yfinance's daily
+        # close on top of broker, which is its own architecture-smell — both
+        # are being addressed in the same PR.
+        #
+        # Truth: Schwab's `marketValue` (total $ value of the position at
+        # last sync) divided by `quantity` gives the broker's own implied
+        # current per-share price. For options, `marketValue / quantity`
+        # collapses the contract-multiplier into the per-contract dollar
+        # value rather than the per-share-of-underlying premium that the
+        # CSV-export "Price" column carries, so we keep `averagePrice` as
+        # the option fallback (its per-share-of-underlying semantic matches
+        # the CSV upload path's "Price" column already in use downstream).
+        # The bug + fix is logged in
+        # ~/.cursor/skills/schwab-sync-safety/SKILL.md under
+        # "averagePrice mislabeled as Price".
+        is_equity = inst_type in ("EQUITY", "ETF", "COLLECTIVE_INVESTMENT")
+        seed_price = avg
+        try:
+            qty_f = float(qty or 0)
+            if is_equity and qty_f != 0 and mv_f:
+                seed_price = round(mv_f / qty_f, 4)
+        except (TypeError, ValueError, NameError):
+            seed_price = avg
+
         open_positions_current.append({
             "Symbol": sym,
             "Description": desc,
             "Quantity": qty,
-            "Price": avg,
+            "Price": seed_price,
             "market_value": mv,
             "cost_bases": cb,
             "gain_or_loss_dollat": gl_dollar,

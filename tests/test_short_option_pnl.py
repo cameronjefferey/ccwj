@@ -124,10 +124,19 @@ def _load_current_positions():
 def test_pltr_short_call_in_seed_renders_correct_pnl():
     """The literal screenshot example: PLTR May 8 '26 $147 Call, qty=-2.
 
-    Seed has cost_bases=$1,194.65 (premium received), market_value=-$3.00
-    (cost to close). Schwab's gain_or_loss_dollat says -$1,197.65; the
-    trader's true P&L is +$1,191.65. The override in stg_current's
-    cleaned CTE makes the rendered value match the trader, not Schwab.
+    The original screenshot had cost_bases=$1,194.65 (premium received),
+    market_value=-$3.00 (cost to close). Schwab's gain_or_loss_dollat said
+    -$1,197.65; the trader's true P&L was +$1,191.65. The override in
+    stg_current's cleaned CTE makes the rendered value match the trader.
+
+    What this test pins (drift-resistant): the SHAPE of the bug — short
+    call, premium received in cost_bases, small absolute market_value
+    (cost to close cents on the dollar), Schwab's gain_or_loss_dollat
+    with the wrong sign — and the FIX always producing a sensible
+    trader-truth P&L equal to ``market_value + cost_bases`` for shorts.
+    The exact dollar values are incidental and drift as the option's
+    market price moves; pinning them caused unrelated test failures
+    every time the seed re-synced.
     """
     df = _load_current_positions()
     pltr = df[
@@ -138,19 +147,40 @@ def test_pltr_short_call_in_seed_renders_correct_pnl():
     if pltr.empty:
         pytest.skip("PLTR May 8 '26 $147C row not in current seed (account re-synced or expired)")
     row = pltr.iloc[0]
-    assert row["Quantity"] == -2, "screenshot pins this row at qty -2"
-    assert row["cost_bases"] == pytest.approx(1194.65, abs=0.01)
-    assert row["market_value"] == pytest.approx(-3.00, abs=0.01)
-    assert row["gain_or_loss_dollat"] == pytest.approx(-1197.65, abs=0.01), (
-        "Schwab's reported value is what we are correcting against; "
-        "if this changes, re-pin the test"
+    qty = float(row["Quantity"])
+    mv = float(row["market_value"])
+    cb = float(row["cost_bases"])
+    schwab_gl = float(row["gain_or_loss_dollat"])
+
+    # Shape assertions: this is a SHORT call (qty<0) with premium in
+    # cost_bases (positive) and a much smaller absolute mv (cost to close).
+    assert qty < 0, "screenshot row is short (qty<0)"
+    assert cb > 0, "premium received -> cost_bases is positive for shorts"
+    assert abs(mv) < cb, (
+        "for shorts, |market_value| (cost to close) is typically much "
+        "smaller than cost_bases (premium received)"
     )
-    fixed = short_aware_unrealized_pnl(
-        row["Quantity"], row["market_value"], row["cost_bases"],
-        row["gain_or_loss_dollat"],
+
+    # Schwab's reported gain is mv - cb (always wrong-sign for shorts).
+    # Pin only the FORMULA disagreement, not the specific dollars.
+    assert schwab_gl == pytest.approx(mv - cb, abs=0.01), (
+        "Schwab's gain_or_loss_dollat should equal market_value - cost_basis "
+        "(this is the bug stg_current's cleaned CTE corrects against)"
     )
-    assert fixed == pytest.approx(1191.65, abs=0.01), (
-        f"PLTR short-call P&L should be +$1,191.65, got {fixed}"
+
+    # The fix: short-aware P&L = mv + cb (premium received minus cost to close).
+    # For a profitable short, this is positive; for a deep-ITM short it can
+    # be negative, but it always has the trader-truth sign.
+    fixed = short_aware_unrealized_pnl(qty, mv, cb, schwab_gl)
+    expected = mv + cb
+    assert fixed == pytest.approx(expected, abs=0.01), (
+        f"short-aware fix should equal market_value + cost_basis = {expected:.2f}, "
+        f"got {fixed:.2f}"
+    )
+    # Sanity check: the fix should NOT equal Schwab's wrong answer.
+    assert abs(fixed - schwab_gl) > 0.01, (
+        "fix produced Schwab's wrong-sign value; the override has been reverted "
+        "or the formula in short_aware_unrealized_pnl no longer applies"
     )
 
 
