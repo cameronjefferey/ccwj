@@ -213,16 +213,50 @@ options_classified as (
         on oc.account = pmcc.account
         and (oc.user_id is not distinct from pmcc.user_id)
         and oc.trade_symbol = pmcc.trade_symbol
-    -- Check for overlapping equity session (Covered Call / Protective Put detection)
-    left join equity_sessions e
+    -- Check for overlapping equity session (Covered Call / Protective Put detection).
+    --
+    -- Defensive dedup: this join used to match raw `equity_sessions` directly,
+    -- and a duplicated `int_equity_sessions` row (from a poisoned source — see
+    -- 2026-05-11 entry in ~/.cursor/skills/schwab-sync-safety/SKILL.md) would
+    -- fan a single option contract into multiple classification rows. The same
+    -- option fill then showed up as both "Naked Call" and "Covered Call" under
+    -- the same trade_symbol on the position page, depending on which join
+    -- branch fired. Wrapping the join in a `qualify row_number() ... = 1`
+    -- subquery picks exactly one session per (account, user_id, trade_symbol):
+    -- prefer Open over Closed (Open is the "live coverage" reading), then the
+    -- session with the most shares held (covered-call eligibility threshold),
+    -- then the one with the latest open_date (most recently established).
+    -- Net: even if upstream `int_equity_sessions` ever holds duplicates, this
+    -- mart's classification row count stays exactly one per option contract.
+    left join (
+        select
+            oc2.account,
+            oc2.user_id,
+            oc2.trade_symbol,
+            e.session_id,
+            e.status,
+            e.max_quantity_held
+        from option_contracts oc2
+        join equity_sessions e
+            on oc2.account = e.account
+            and (oc2.user_id is not distinct from e.user_id)
+            and oc2.underlying_symbol = e.symbol
+            and oc2.open_date >= e.open_date
+            and oc2.open_date <= case
+                when e.status = 'Open' then current_date()
+                else e.last_trade_date
+            end
+        qualify row_number() over (
+            partition by oc2.account, oc2.user_id, oc2.trade_symbol
+            order by case when e.status = 'Open' then 0 else 1 end,
+                     e.max_quantity_held desc nulls last,
+                     e.open_date desc,
+                     e.session_id desc
+        ) = 1
+    ) e
         on oc.account = e.account
         and (oc.user_id is not distinct from e.user_id)
-        and oc.underlying_symbol = e.symbol
-        and oc.open_date >= e.open_date
-        and oc.open_date <= case
-            when e.status = 'Open' then current_date()
-            else e.last_trade_date
-        end
+        and oc.trade_symbol = e.trade_symbol
 ),
 
 ---------------------------------------------------------------------

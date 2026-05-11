@@ -140,6 +140,71 @@
         .snap-cell:nth-child(5) { border-right: none; }
     }
 
+    /* Multi-account consolidated table — Schwab-style "see each account at
+       a glance plus a total" layout. Used only when there is more than one
+       account; single-account view keeps the original tile row above. */
+    .snapshot-table {
+        display: grid;
+        grid-template-columns: minmax(140px, 1.4fr) repeat(5, 1fr);
+        gap: 0;
+        align-items: baseline;
+    }
+    .snapshot-table-head, .snapshot-table-row { display: contents; }
+    .snapshot-table-head > div {
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: .4px;
+        color: #9ca3af;
+        font-weight: 600;
+        padding: 0 .6rem .5rem 0;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .snapshot-table-row > div {
+        padding: .65rem .6rem .65rem 0;
+        border-bottom: 1px solid #f4f4f5;
+    }
+    .snapshot-table-row.total > div {
+        border-top: 2px solid #d1d5db;
+        border-bottom: none;
+        background: #f8fafc;
+        padding-top: .85rem;
+        padding-bottom: .85rem;
+    }
+    .snapshot-table .acct-name {
+        font-weight: 600;
+        color: #1f2937;
+        font-size: .9rem;
+        line-height: 1.2;
+    }
+    .snapshot-table .acct-meta {
+        font-size: .68rem;
+        color: #9ca3af;
+        margin-top: .1rem;
+    }
+    .snapshot-table-row.total .acct-name { color: #0f172a; }
+    .snapshot-table .snap-cell-val {
+        font-weight: 700;
+        font-size: .98rem;
+        line-height: 1.15;
+    }
+    .snapshot-table-row.total .snap-cell-val { font-size: 1.1rem; }
+    .snapshot-table .snap-cell-pct { font-size: .72rem; color: #6c757d; margin-top: .15rem; }
+    .snapshot-table .snap-cell-dash { color: #cbd5e1; font-weight: 600; }
+    @media (max-width: 720px) {
+        /* Drop "vs 1 Month" first on narrow viewports — least immediately
+           actionable for a daily check-in. */
+        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(4, 1fr); }
+        .snapshot-table .snap-col-month { display: none; }
+    }
+    @media (max-width: 540px) {
+        .snapshot-table { grid-template-columns: minmax(95px, 1.1fr) repeat(3, 1fr); }
+        .snapshot-table .snap-col-week-ago { display: none; }
+        .snapshot-table-row > div { padding: .5rem .35rem .5rem 0; }
+        .snapshot-table-head > div { padding: 0 .35rem .4rem 0; font-size: .62rem; }
+        .snapshot-table .snap-cell-val { font-size: .9rem; }
+        .snapshot-table-row.total .snap-cell-val { font-size: 1rem; }
+    }
+
     /* ── Pattern cards ── */
     .patterns-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
     .pattern-card {
@@ -865,71 +930,135 @@
    take over below.
    ════════════════════════════════════ #}
 {% if today_snapshots_by_account %}
+{# ── Single-account: original tile row ─────────────────────────────────── #}
+{% if today_snapshots_by_account|length == 1 %}
+{% set snap = today_snapshots_by_account[0] %}
 <div class="review-section snapshot-section mb-3">
-    {% for snap in today_snapshots_by_account %}
-    <div class="{% if not loop.first %}mt-3 pt-3 border-top{% endif %}">
-        {% if today_snapshots_by_account|length > 1 %}
-        <div class="d-flex align-items-baseline gap-2 mb-2">
-            <span class="fw-semibold small">{{ snap.account }}</span>
-            {% if snap.today_date %}<span class="text-muted" style="font-size:.75rem">{{ snap.today_date }}</span>{% endif %}
+    <div class="snapshot-row">
+        <div class="snap-cell">
+            <div class="snap-label">Account Value</div>
+            {% if snap.today_value is not none %}
+            <div class="snap-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
+            {% if snap.today_date %}<div class="snap-meta">{{ snap.today_date }}</div>{% endif %}
+            {% else %}
+            <div class="snap-value text-muted">—</div>
+            {% endif %}
         </div>
-        {% endif %}
-        <div class="snapshot-row">
-            <div class="snap-cell">
-                <div class="snap-label">Account Value</div>
-                {% if snap.today_value is not none %}
-                <div class="snap-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
-                {% if today_snapshots_by_account|length == 1 and snap.today_date %}
-                <div class="snap-meta">{{ snap.today_date }}</div>
-                {% endif %}
-                {% else %}
-                <div class="snap-value text-muted">—</div>
-                {% endif %}
+        {% set d = snap.comparisons.day %}
+        <div class="snap-cell">
+            <div class="snap-label">vs Yesterday</div>
+            {% if d.has_data and d.delta is not none %}
+            {% set d_pos = d.delta >= 0 %}
+            <div class="snap-value {% if d_pos %}text-positive{% else %}text-negative{% endif %}">
+                {% if d_pos %}+${{ "{:,.0f}".format(d.delta) }}{% else %}-${{ "{:,.0f}".format(d.delta|abs) }}{% endif %}
             </div>
-            {% set d = snap.comparisons.day %}
-            <div class="snap-cell">
-                <div class="snap-label">vs Yesterday</div>
-                {% if d.has_data and d.delta is not none %}
-                <div class="snap-value {% if d.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if d.delta >= 0 else "" }}${{ "{:,.0f}".format(d.delta) }}
-                </div>
-                {% if d.delta_pct is not none %}<div class="snap-meta">{{ "+" if d.delta_pct >= 0 else "" }}{{ "%.2f"|format(d.delta_pct) }}%</div>{% endif %}
-                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+            {% if d.delta_pct is not none %}<div class="snap-meta">{{ "+" if d.delta_pct >= 0 else "" }}{{ "%.2f"|format(d.delta_pct) }}%</div>{% endif %}
+            {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+        </div>
+        {% set sw = snap.vs_week_start %}
+        <div class="snap-cell">
+            <div class="snap-label" title="Change since start-of-week value for the week of {{ week_start }}">vs week start</div>
+            {% if sw and sw.has_data and sw.delta is not none %}
+            {% set sw_pos = sw.delta >= 0 %}
+            <div class="snap-value {% if sw_pos %}text-positive{% else %}text-negative{% endif %}">
+                {% if sw_pos %}+${{ "{:,.0f}".format(sw.delta) }}{% else %}-${{ "{:,.0f}".format(sw.delta|abs) }}{% endif %}
             </div>
-            {% set sw = snap.vs_week_start %}
-            <div class="snap-cell">
-                <div class="snap-label" title="Change since start-of-week value for the week of {{ week_start }}">vs week start</div>
-                {% if sw and sw.has_data and sw.delta is not none %}
-                <div class="snap-value {% if sw.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if sw.delta >= 0 else "" }}${{ "{:,.0f}".format(sw.delta) }}
-                </div>
-                {% if sw.delta_pct is not none %}<div class="snap-meta">{{ "+" if sw.delta_pct >= 0 else "" }}{{ "%.2f"|format(sw.delta_pct) }}%</div>{% endif %}
-                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+            {% if sw.delta_pct is not none %}<div class="snap-meta">{{ "+" if sw.delta_pct >= 0 else "" }}{{ "%.2f"|format(sw.delta_pct) }}%</div>{% endif %}
+            {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+        </div>
+        {% set w = snap.comparisons.week %}
+        <div class="snap-cell">
+            <div class="snap-label">vs 1 Week</div>
+            {% if w.has_data and w.delta is not none %}
+            {% set w_pos = w.delta >= 0 %}
+            <div class="snap-value {% if w_pos %}text-positive{% else %}text-negative{% endif %}">
+                {% if w_pos %}+${{ "{:,.0f}".format(w.delta) }}{% else %}-${{ "{:,.0f}".format(w.delta|abs) }}{% endif %}
             </div>
-            {% set w = snap.comparisons.week %}
-            <div class="snap-cell">
-                <div class="snap-label">vs 1 Week</div>
-                {% if w.has_data and w.delta is not none %}
-                <div class="snap-value {% if w.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if w.delta >= 0 else "" }}${{ "{:,.0f}".format(w.delta) }}
-                </div>
-                {% if w.delta_pct is not none %}<div class="snap-meta">{{ "+" if w.delta_pct >= 0 else "" }}{{ "%.2f"|format(w.delta_pct) }}%</div>{% endif %}
-                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+            {% if w.delta_pct is not none %}<div class="snap-meta">{{ "+" if w.delta_pct >= 0 else "" }}{{ "%.2f"|format(w.delta_pct) }}%</div>{% endif %}
+            {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+        </div>
+        {% set m = snap.comparisons.month %}
+        <div class="snap-cell">
+            <div class="snap-label">vs 1 Month</div>
+            {% if m.has_data and m.delta is not none %}
+            {% set m_pos = m.delta >= 0 %}
+            <div class="snap-value {% if m_pos %}text-positive{% else %}text-negative{% endif %}">
+                {% if m_pos %}+${{ "{:,.0f}".format(m.delta) }}{% else %}-${{ "{:,.0f}".format(m.delta|abs) }}{% endif %}
             </div>
-            {% set m = snap.comparisons.month %}
-            <div class="snap-cell">
-                <div class="snap-label">vs 1 Month</div>
-                {% if m.has_data and m.delta is not none %}
-                <div class="snap-value {% if m.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if m.delta >= 0 else "" }}${{ "{:,.0f}".format(m.delta) }}
-                </div>
-                {% if m.delta_pct is not none %}<div class="snap-meta">{{ "+" if m.delta_pct >= 0 else "" }}{{ "%.2f"|format(m.delta_pct) }}%</div>{% endif %}
-                {% else %}<div class="snap-value text-muted">—</div>{% endif %}
-            </div>
+            {% if m.delta_pct is not none %}<div class="snap-meta">{{ "+" if m.delta_pct >= 0 else "" }}{{ "%.2f"|format(m.delta_pct) }}%</div>{% endif %}
+            {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
     </div>
-    {% endfor %}
 </div>
+
+{# ── Multi-account: consolidated table with TOTAL row ─────────────────── #}
+{% else %}
+{% macro money_cell(comp, dash="—") %}
+    {% if comp and comp.has_data and comp.delta is not none %}
+    {% set pos = comp.delta >= 0 %}
+    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
+        {% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+    </div>
+    {% if comp.delta_pct is not none %}
+    <div class="snap-cell-pct {% if comp.delta_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+        {{ "+" if comp.delta_pct >= 0 else "" }}{{ "%.2f"|format(comp.delta_pct) }}%
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="snap-cell-val snap-cell-dash">{{ dash }}</div>
+    {% endif %}
+{% endmacro %}
+<div class="review-section snapshot-section mb-3">
+    <div class="snapshot-table">
+        <div class="snapshot-table-head">
+            <div>Account</div>
+            <div>Value</div>
+            <div>vs Yesterday</div>
+            <div class="snap-col-week-ago" title="Change since start-of-week value for the week of {{ week_start }}">vs Week Start</div>
+            <div class="snap-col-week-ago">vs 1 Week</div>
+            <div class="snap-col-month">vs 1 Month</div>
+        </div>
+        {% for snap in today_snapshots_by_account %}
+        <div class="snapshot-table-row">
+            <div>
+                <div class="acct-name">{{ snap.account }}</div>
+                {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>{% endif %}
+            </div>
+            <div>
+                {% if snap.today_value is not none %}
+                <div class="snap-cell-val">${{ "{:,.0f}".format(snap.today_value) }}</div>
+                {% else %}
+                <div class="snap-cell-val snap-cell-dash">—</div>
+                {% endif %}
+            </div>
+            <div>{{ money_cell(snap.comparisons.day) }}</div>
+            <div class="snap-col-week-ago">{{ money_cell(snap.vs_week_start) }}</div>
+            <div class="snap-col-week-ago">{{ money_cell(snap.comparisons.week) }}</div>
+            <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
+        </div>
+        {% endfor %}
+        {% if today_snapshots_total %}
+        <div class="snapshot-table-row total">
+            <div>
+                <div class="acct-name">Total</div>
+                <div class="acct-meta">{{ today_snapshots_total.accounts_count }} account{{ "s" if today_snapshots_total.accounts_count != 1 }}</div>
+            </div>
+            <div>
+                {% if today_snapshots_total.today_value is not none %}
+                <div class="snap-cell-val">${{ "{:,.0f}".format(today_snapshots_total.today_value) }}</div>
+                {% else %}
+                <div class="snap-cell-val snap-cell-dash">—</div>
+                {% endif %}
+            </div>
+            <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
+            <div class="snap-col-week-ago">{{ money_cell(today_snapshots_total.vs_week_start) }}</div>
+            <div class="snap-col-week-ago">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
+            <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 {# ════════════════════════════════════

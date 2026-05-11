@@ -84,6 +84,43 @@
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
 
+{# Admin-only canary: if the three independent totals on this page disagree
+   by more than $1, surface it here instead of letting the user discover it
+   in a screenshot. See app/routes.py invariant_warning block for the math. #}
+{% if invariant_warning and viewer_is_admin %}
+<div class="alert alert-danger d-flex align-items-start gap-3 mb-3" role="alert" style="border-left: 4px solid #842029;">
+    <div style="font-size: 1.25rem;">&#9888;</div>
+    <div class="flex-grow-1">
+        <div class="fw-bold mb-1">Reconciliation invariant tripped (admin-only)</div>
+        <div class="small mb-2">
+            Three independent totals on this page disagree by more than $1.
+            That usually means upstream duplication, a dropped row, or a sign
+            bug. <strong>Do not trust the numbers below until this is resolved.</strong>
+        </div>
+        <table class="table table-sm mb-0" style="font-size: .8rem;">
+            <tbody>
+                <tr>
+                    <td class="text-muted">Strategy Breakdown total</td>
+                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.strategy_breakdown_total) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Breakdown by Type total</td>
+                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.breakdown_by_type_total) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Chart terminal value</td>
+                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.chart_terminal) }}</td>
+                </tr>
+                <tr>
+                    <td class="fw-bold">Worst gap</td>
+                    <td class="text-end font-monospace fw-bold">${{ '{:,.2f}'.format(invariant_warning.worst_gap) }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# ── Hero ── #}
 <div class="pos-hero">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -785,13 +822,24 @@
             data: {
                 labels: chartData.dates,
                 datasets: [
+                    // Cumulative P&L is a discrete series — value changes
+                    // on trade events and on daily mark-to-market once
+                    // snapshots exist. Spline smoothing (tension > 0) draws
+                    // phantom curves BETWEEN data points that don't exist
+                    // in the data: a trade day with +$3,000 of premium
+                    // received showed up as a smooth swoop above and below
+                    // the actual values. Switched to straight-segment
+                    // polylines (tension: 0) so every visible Y is a real
+                    // data point. The price line below stays smoothed —
+                    // close prices are dense and the smoothing is faithful
+                    // to a continuous market datum.
                     {
                         label: 'Total',
                         data: chartData.total,
                         borderColor: '#1a1a2e',
                         backgroundColor: 'rgba(26,26,46,.08)',
                         fill: true,
-                        tension: 0.3,
+                        tension: 0,
                         spanGaps: true,
                         pointRadius: 0,
                         pointHitRadius: 6,
@@ -802,7 +850,7 @@
                         label: 'Equity',
                         data: chartData.equity,
                         borderColor: '#0d6efd',
-                        tension: 0.3,
+                        tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
@@ -812,7 +860,7 @@
                         label: 'Options',
                         data: chartData.options,
                         borderColor: '#6f42c1',
-                        tension: 0.3,
+                        tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
@@ -822,7 +870,7 @@
                         label: 'Dividends',
                         data: chartData.dividends,
                         borderColor: '#198754',
-                        tension: 0.3,
+                        tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,

@@ -153,10 +153,25 @@ select
     c.*,
 
     -- Status
+    --
+    -- Order matters. Past-expiry MUST be checked BEFORE
+    -- "snapshot-implies-open" because Schwab's snapshot lags actual
+    -- expiry processing by 1-2 trading days. Real example (May 2026):
+    -- BE 290C 5/8 expired Friday OTM, but Schwab's Monday snapshot still
+    -- carried the contract with quantity=-2 and market_value=-$2 (a
+    -- bookkeeping artifact, not a real cost-to-close — the contract no
+    -- longer trades). Pre-fix the position page rendered the leg as
+    -- "Open" until the next snapshot dropped the row a day or two later.
+    -- The trader's view: from the moment the bell rings on expiry
+    -- Friday, the position is realized. Calendar wins over snapshot.
+    --
+    -- close_type from history (Assigned / Exercised / Expired explicit
+    -- event) still wins above the calendar fallback because it's the
+    -- highest-precision signal we have.
     case
-        when cur.trade_symbol is not null    then 'Open'
-        when c.close_type is not null        then 'Closed'
-        when c.option_expiry < current_date() then 'Closed'   -- expired without explicit event
+        when c.close_type is not null         then 'Closed'
+        when c.option_expiry < current_date() then 'Closed'
+        when cur.trade_symbol is not null     then 'Open'
         else 'Open'
     end as status,
 
@@ -164,8 +179,31 @@ select
     coalesce(cur.market_value, 0)    as current_market_value,
     coalesce(cur.unrealized_pnl, 0)  as current_unrealized_pnl,
 
-    -- Total P&L  (for short options, market_value is negative = cost to buy back)
+    -- Total P&L for open vs closed contracts:
+    --
+    -- CLOSED: c.net_cash_flow is the only truth (sum of fills from
+    -- stg_history). No snapshot to mix in.
+    --
+    -- OPEN:   trust the broker snapshot's full-precision unrealized_pnl
+    -- directly. The naive `net_cash_flow + market_value` combines rounded
+    -- $0.01 fill prices from stg_history with full-precision snapshot
+    -- market_value, accumulating ~$1-2 of rounding drift per contract.
+    -- Worked example: Sara/BE 290C 5/8 sold-to-open at fill price
+    -- $15.01305. Schwab's CSV rounds the price column to $15.02 → seed
+    -- amount = 200 × $15.02 = $3,004 (history). Schwab's cost_basis
+    -- preserves $3,002.61 (snapshot). True open unrealized = $3,000.61
+    -- (snapshot's market_value + cost_basis with sign flip). The naive
+    -- formula gave $3,002 ($3,004 history − $2 mark), which propagates a
+    -- $1.39 drift into positions_summary.total_pnl and trips the
+    -- page-level reconciliation invariant card on otherwise-healthy
+    -- positions. Snapshot wins for open marks.
+    --
+    -- Falls back to the old formula when snapshot is missing (covers the
+    -- pre-snapshot warm-up window for newly opened contracts).
     case
+        when cur.trade_symbol is not null
+             and cur.unrealized_pnl is not null
+        then cur.unrealized_pnl
         when cur.trade_symbol is not null
         then c.net_cash_flow + coalesce(cur.market_value, 0)
         else c.net_cash_flow

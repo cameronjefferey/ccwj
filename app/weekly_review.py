@@ -696,7 +696,7 @@ def _humanize_gap(gap):
 
 
 def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip,
-                       expiring_options, user_tz):
+                       expiring_options, user_tz, force_show=False):
     """
     Build the "Since you last looked" diff card.
 
@@ -712,14 +712,37 @@ def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip
 
     Returns a dict consumable by the template, or None if there's nothing
     interesting to show.
+
+    Visibility gate (the user's intra-day reload was showing yesterday's
+    diff over and over): the section only renders when at least one of
+      • first visit ever (prev_visit_dt is None), or
+      • full 24 hours have passed since prev_visit_dt, or
+      • the user's local calendar date has rolled over (daily sync /
+        new daily snapshots), or
+      • the user just hit the page from an explicit sync/upload flow
+        (`?from_sync=1` / `?from_upload=1`, surfaced as force_show)
+    is true. Otherwise we return None up front and skip the BQ queries
+    entirely.
     """
     try:
         if prev_visit_dt is not None:
             tz = ZoneInfo(user_tz) if user_tz else ZoneInfo("America/New_York")
-            anchor_date = prev_visit_dt.astimezone(tz).date()
-            gap = datetime.now(tz) - prev_visit_dt.astimezone(tz)
+            prev_local = prev_visit_dt.astimezone(tz)
+            now_local = datetime.now(tz)
+            anchor_date = prev_local.date()
+            gap = now_local - prev_local
             time_ago = _humanize_gap(gap)
             is_first_visit = False
+
+            # Gate: skip the section entirely when nothing meaningful has
+            # changed since the user's last visit. Same calendar day in the
+            # user's TZ + less than a full day elapsed + no explicit sync
+            # signal = same content they already saw, so don't re-surface it.
+            if not force_show:
+                full_day_passed = gap >= timedelta(hours=24)
+                crossed_calendar_day = now_local.date() > anchor_date
+                if not (full_day_passed or crossed_calendar_day):
+                    return None
         else:
             anchor_date = today - timedelta(days=1)
             time_ago = "yesterday"
@@ -1169,6 +1192,104 @@ def _today_pulse(today_snapshots_by_account):
     if not has_data:
         return None
     return {"delta": round(total_delta, 0), "positive": total_delta >= 0, "date": date_label}
+
+
+def _today_totals(today_snapshots_by_account):
+    """Aggregate per-account snapshot rows into one consolidated "All Accounts" row.
+
+    Mirrors the shape of a single entry in today_snapshots_by_account so the
+    template can render it with the same tile component.
+
+    Percentages are computed off the *contributing* accounts' base value (today
+    minus delta), not off the full multi-account today total — otherwise an
+    account missing a 1-month baseline would silently dilute the % for the
+    other accounts.
+    """
+    if not today_snapshots_by_account or len(today_snapshots_by_account) < 2:
+        return None
+
+    total_today = 0.0
+    today_seen = False
+    latest_date = None
+    accounts_with_value = 0
+    for snap in today_snapshots_by_account:
+        tv = snap.get("today_value")
+        if tv is not None:
+            total_today += float(tv)
+            today_seen = True
+            accounts_with_value += 1
+            td = snap.get("today_date")
+            if td and (latest_date is None or str(td) > str(latest_date)):
+                latest_date = td
+
+    if not today_seen:
+        return None
+
+    def _agg_period(key):
+        sum_delta = 0.0
+        sum_base = 0.0
+        any_data = False
+        for snap in today_snapshots_by_account:
+            comp = (snap.get("comparisons") or {}).get(key) or {}
+            if not comp.get("has_data"):
+                continue
+            d = comp.get("delta")
+            tv = snap.get("today_value")
+            if d is None or tv is None:
+                continue
+            sum_delta += float(d)
+            sum_base += float(tv) - float(d)
+            any_data = True
+        if not any_data:
+            return {"label": None, "base_date": None, "delta": None, "delta_pct": None, "has_data": False}
+        pct = round(sum_delta / sum_base * 100, 2) if sum_base > 0 else None
+        return {
+            "label": None,
+            "base_date": None,
+            "delta": round(sum_delta, 2),
+            "delta_pct": pct,
+            "has_data": True,
+        }
+
+    def _agg_week_start():
+        sum_delta = 0.0
+        sum_base = 0.0
+        any_data = False
+        base_date = None
+        for snap in today_snapshots_by_account:
+            sw = snap.get("vs_week_start") or {}
+            if not sw.get("has_data"):
+                continue
+            d = sw.get("delta")
+            tv = snap.get("today_value")
+            if d is None or tv is None:
+                continue
+            sum_delta += float(d)
+            sum_base += float(tv) - float(d)
+            any_data = True
+            if base_date is None:
+                base_date = sw.get("base_date")
+        if not any_data:
+            return {"delta": None, "delta_pct": None, "has_data": False, "base_date": base_date}
+        pct = round(sum_delta / sum_base * 100, 2) if sum_base > 0 else None
+        return {
+            "delta": round(sum_delta, 2),
+            "delta_pct": pct,
+            "has_data": True,
+            "base_date": base_date,
+        }
+
+    return {
+        "today_value": round(total_today, 2),
+        "today_date": latest_date,
+        "accounts_count": accounts_with_value,
+        "comparisons": {
+            "day": _agg_period("day"),
+            "week": _agg_period("week"),
+            "month": _agg_period("month"),
+        },
+        "vs_week_start": _agg_week_start(),
+    }
 
 
 def _iso_week_start(d):
@@ -1668,6 +1789,7 @@ def weekly_review():
         mode = _auto_mode(today)
 
     from_upload = request.args.get("from_upload") == "1"
+    from_sync = request.args.get("from_sync") == "1"
 
     # Brand-new accounts have user_accounts == [] (an empty list, not None).
     # Bounce them to /get-started BEFORE touching any per-user state
@@ -2269,6 +2391,7 @@ def weekly_review():
                 today_strip=context.get("today_strip", []),
                 expiring_options=context.get("expiring_options", []),
                 user_tz=user_tz,
+                force_show=from_upload or from_sync,
             )
         except Exception as e:
             if app.debug:
@@ -2464,6 +2587,7 @@ def weekly_review():
         strategy_breakdown=context.get("strategy_breakdown_week", []),
     )
     context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
+    context["today_snapshots_total"] = _today_totals(context.get("today_snapshots_by_account", []))
 
     # Dual-hero behavior sentence: process-first 1-liner that anchors the page
     # for a Trading Mirror (vs the old P&L-first hero).

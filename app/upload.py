@@ -318,6 +318,50 @@ def _normalize_uid(value) -> str:
         return s
 
 
+# Numeric fields in trade rows (Quantity, Price, fees_and_comm, Amount) round-
+# trip through Schwab's API → pandas → JSON → CSV with float-precision drift:
+# the same trade can land as ``26.99`` on one sync and ``26.990000000000002``
+# on the next. ``astype(str)`` keeps both literals intact so the dedup treats
+# them as different rows and BOTH survive — observed in production for
+# ``user_id=7, 'Schwab ••••5989'`` (213 rows / 158 unique = 55 byte-different
+# but value-identical dupes; CURRENCY_USD rows show the drift directly:
+# ``-16.189999999999998``, ``-27.000000000000004``, ``-26.990000000000002``).
+# Canonicalizing numeric-looking cells to a fixed precision before the dedup
+# collapses these. Non-numeric cells (Date, Action, Symbol, Description) are
+# returned unchanged so we don't accidentally normalize away semantic content.
+def _canonicalize_seed_cell(value):
+    """Normalize a seed cell for the merge dedup key.
+
+    - ``None`` / NaN / ``"nan"`` / ``"None"`` / ``"<NA>"`` → empty string.
+    - Numeric-looking cells → ``"%.6f"`` (trailing-zero stripped) so float
+      precision drift across syncs does not break dedup.
+    - Everything else → ``str(value).strip()``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    try:
+        f = float(s)
+    except (TypeError, ValueError):
+        return s
+    if pd.isna(f):
+        return ""
+    # Round to 6 decimal places — finer than any broker reports, coarser than
+    # the noise floor introduced by JSON/float round-trips. ``rstrip('0')`` +
+    # ``rstrip('.')`` normalize ``"4600.000000"`` and ``"4600"`` to the same
+    # canonical form so int-vs-float seed cells dedup against each other too.
+    out = f"{f:.6f}".rstrip("0").rstrip(".")
+    if out in ("", "-"):
+        return "0"
+    if out == "-0":
+        return "0"
+    return out
+
+
 def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_id=None):
     """
     Merge new account data with existing seed data.
@@ -462,7 +506,7 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
             ]
             for c in key_cols:
                 if c in combined.columns:
-                    combined[c] = combined[c].astype(str).replace("nan", "").replace("None", "").str.strip()
+                    combined[c] = combined[c].map(_canonicalize_seed_cell)
 
             combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
             combined = combined.drop_duplicates(subset=key_cols, keep="last")

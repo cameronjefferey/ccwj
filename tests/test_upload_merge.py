@@ -444,3 +444,133 @@ def test_normalize_uid_collapses_known_pandas_string_forms():
     assert n("None") == ""
     assert n(None) == ""
     assert n(float("nan")) == ""
+
+
+# ---------------------------------------------------------------------------
+# Bug C (May 2026, /position/BE Sara Investment): production showed
+# ``user_id=7, account='Schwab ••••5989'`` with 213 rows in stg_history but
+# only 158 unique trades — 55 dupes that the existing dedup did not catch.
+# Sample seed rows:
+#   ...11/14/2024,Buy,CURRENCY_USD,USD currency,26.44,,,-26.44   (5 copies)
+#   ...12/04/2024,Buy,CURRENCY_USD,USD currency,26.990000000000002,,,
+#                                              -26.990000000000002  (3 copies)
+#   ...12/04/2024,Buy,CURRENCY_USD,USD currency,27.000000000000004,,,
+#                                              -27.000000000000004  (1 copy)
+# Same trade, different float-precision serializations across sync runs. The
+# old dedup ran ``astype(str)`` on the Amount column, so ``"26.99"`` and
+# ``"26.990000000000002"`` were treated as different rows and both survived.
+# The fix canonicalizes numeric cells via ``_canonicalize_seed_cell`` before
+# the dedup. Without the fix these tests fail; with it they pass.
+# ---------------------------------------------------------------------------
+
+
+def test_merge_dedupes_against_float_precision_drift_in_amount(monkeypatch):
+    """Same trade re-landing with a JSON-round-trip float precision artifact
+    (``26.99`` → ``26.990000000000002``) must collapse to a single row."""
+    existing = _csv_from_rows([
+        _row("Schwab ••••5989", 7, "12/04/2024", "Buy", "CURRENCY_USD",
+             26.99, "", -26.99, desc="USD currency"),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    new_df = pd.DataFrame([
+        # Float precision drift: same value, different serialization.
+        _row("Schwab ••••5989", 7, "12/04/2024", "Buy", "CURRENCY_USD",
+             26.990000000000002, "", -26.990000000000002, desc="USD currency"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
+        user_id=7,
+    )
+    out = _parse(out_csv)
+    assert len(out) == 1, (
+        f"float precision drift must dedup; got {len(out)} rows: "
+        f"{out.to_dict('records')}"
+    )
+
+
+def test_merge_dedupes_against_int_vs_float_seed_cells(monkeypatch):
+    """Existing seed has ``Quantity=40`` (int), new sync has ``40.0`` (float).
+    Same trade — must dedup to one row regardless of which side is which."""
+    existing = _csv_from_rows([
+        # Force int-shaped values into the seed so pandas reads them as ints
+        # in the int column it can. We pass plain ints by side-stepping _row's
+        # float coercion: mimic a hand-edited seed with bare int strings.
+    ])
+    int_seed_csv = (
+        "Account,user_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
+        "Schwab ••••5989,7,11/14/2024,Sell to Open,CFLT  241220C00030000,"
+        "CONFLUENT INC 12/20/2024 $30 Call,40,1.15,,4600\n"
+    )
+    _stub_existing(monkeypatch, int_seed_csv)
+
+    new_df = pd.DataFrame([
+        _row("Schwab ••••5989", 7, "11/14/2024", "Sell to Open",
+             "CFLT  241220C00030000", 40.0, 1.15, 4600.0,
+             desc="CONFLUENT INC 12/20/2024 $30 Call"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
+        user_id=7,
+    )
+    out = _parse(out_csv)
+    assert len(out) == 1, (
+        f"int-vs-float same-value cells must dedup; got {len(out)} rows: "
+        f"{out.to_dict('records')}"
+    )
+
+
+def test_merge_collapses_byte_identical_quintuple_landing(monkeypatch):
+    """The production seed has 5 byte-identical copies of the same option
+    fill (CFLT 11/14/2024 Sell to Open). A single new sync of that trade
+    must collapse all 5 + the new row down to one row, regardless of how
+    they got there. Stronger than the existing 3-cycle resync test because
+    it starts from a *seed already poisoned by historical dupes* — exactly
+    the recovery state we'll be in after Phase 2 cleans the file."""
+    existing_csv = (
+        "Account,user_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
+        + ("Schwab ••••5989,7.0,11/14/2024,Sell to Open,CFLT  241220C00030000,"
+           "CONFLUENT INC 12/20/2024 $30 Call,40.0,1.15,,4600.0\n" * 5)
+    )
+    _stub_existing(monkeypatch, existing_csv)
+
+    new_df = pd.DataFrame([
+        _row("Schwab ••••5989", 7, "11/14/2024", "Sell to Open",
+             "CFLT  241220C00030000", 40.0, 1.15, 4600.0,
+             desc="CONFLUENT INC 12/20/2024 $30 Call"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
+        user_id=7,
+    )
+    out = _parse(out_csv)
+    assert len(out) == 1, (
+        f"5 byte-identical legacy rows + 1 new sync row must collapse to 1, "
+        f"got {len(out)}"
+    )
+
+
+def test_canonicalize_seed_cell_collapses_known_drift_forms():
+    """Direct unit test for the helper that fixes Bug C."""
+    c = _upload._canonicalize_seed_cell
+    # Float precision drift collapses to the same canonical form.
+    assert c(26.99) == c(26.990000000000002) == "26.99"
+    assert c(-16.189999999999998) == c(-16.19) == "-16.19"
+    assert c(27.000000000000004) == c(27.0) == c(27) == "27"
+    # Int-vs-float collapses.
+    assert c(40) == c(40.0) == c("40") == c("40.0") == c("40.000000") == "40"
+    # Empty-ish stays empty.
+    assert c("") == ""
+    assert c(None) == ""
+    assert c("nan") == ""
+    assert c(float("nan")) == ""
+    # Negative zero collapses to zero (CSV serializers sometimes emit -0.0).
+    assert c(-0.0) == "0"
+    assert c("-0") == "0"
+    # Non-numeric strings pass through unchanged (Date / Description / Action).
+    assert c("Buy to Close") == "Buy to Close"
+    assert c("CFLT  241220C00030000") == "CFLT  241220C00030000"
+    assert c(" 11/14/2024 ") == "11/14/2024"

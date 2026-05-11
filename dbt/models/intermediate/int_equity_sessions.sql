@@ -315,6 +315,19 @@ final as (
                     ) * (s.total_buy_qty - s.total_sell_qty),
                     2
                 )
+            -- Orphan / duplicated buys with no sells and no holdings anywhere:
+            -- emit 0 P&L instead of net_cash_flow (= -cost_basis as a phantom
+            -- loss). Same reasoning as the parallel guard in
+            -- int_closed_equity_legs.writeoffs — without this the strategy
+            -- breakdown shows "Buy and Hold Closed -$47,639" for an account
+            -- that actually owes the user nothing (cross-tenant pollution from
+            -- an old test import, dup buy from a sync regression). Real
+            -- transfer-outs are still caught by the prior branch (the user
+            -- holds the shares somewhere). See SKILL.md (2026-05-11).
+            when c.trade_symbol is null
+                 and coalesce(s.total_sell_qty, 0) = 0
+                 and coalesce(uth.shares_held_anywhere, 0) = 0
+                then 0
             else s.net_cash_flow
         end as total_pnl,
 

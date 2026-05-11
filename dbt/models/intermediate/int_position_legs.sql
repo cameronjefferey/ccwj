@@ -86,10 +86,48 @@ option_intervals as (
     from {{ ref('int_option_contracts') }}
 ),
 
-all_intervals as (
+all_intervals_raw as (
     select * from equity_intervals
     union all
     select * from option_intervals
+),
+
+-- Defensive dedup: a duplicated upstream row (poisoned int_equity_sessions
+-- after a stg_history dupe, or two rows in int_option_contracts for the
+-- same OSI under the same tenant) used to fan into two intervals here, and
+-- the chronological walk below would treat them as a real chapter split
+-- because two intervals starting on the same day with the same close_date
+-- still consume two `row_number()` slots. Visually that produced phantom
+-- "Leg 1 / Leg 1 / Leg 2" pills under the merged-interval mart. Dropping
+-- exact (account, user_id, symbol, source, open_date, close_date) duplicates
+-- here keeps the leg sequence stable under input duplication. The plan-of-
+-- record fix is upstream (the `_canonicalize_seed_cell` dedup in the seed
+-- merge + the dbt singular test on stg_history), but this guard means a
+-- future regression in either upstream model can't split a leg by accident.
+-- See ~/.cursor/skills/schwab-sync-safety/SKILL.md (2026-05-11).
+all_intervals as (
+    select
+        account,
+        user_id,
+        symbol,
+        open_date,
+        close_date,
+        source,
+        is_open,
+        equity_pnl,
+        option_total_pnl,
+        option_unrealized_pnl,
+        option_count,
+        open_option_count,
+        max_quantity_held,
+        num_trades
+    from all_intervals_raw
+    qualify row_number() over (
+        partition by account, user_id, symbol, source, open_date, close_date
+        order by is_open desc,                  -- prefer the still-open copy
+                 option_unrealized_pnl desc,    -- then the richer P&L copy
+                 num_trades desc
+    ) = 1
 ),
 
 -- Walk intervals chronologically. The "running max close" is the latest

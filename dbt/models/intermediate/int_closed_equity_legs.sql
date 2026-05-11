@@ -213,6 +213,20 @@ writeoffs as (
       -- held anywhere; that's the only case the residual truly is lost.
       and coalesce(uoh.shares_held_elsewhere, 0)
           < (sac.total_buy_qty - sac.total_sell_qty)
+      -- Defensive guard against orphan / duplicated buy rows: when trade
+      -- history shows pure buys with NO sells AND the user holds zero
+      -- shares of this symbol anywhere, the row is almost certainly
+      -- orphan noise (cross-tenant pollution from an old test import,
+      -- a duplicated buy from a sync regression, etc.) rather than a
+      -- real transfer-out we want to surface as a writeoff loss. A real
+      -- transfer-out path always involves at least one sell, an
+      -- assignment, or a still-extant position somewhere — none of
+      -- which is true here. Skipping the writeoff makes the page
+      -- silently drop the phantom "Cost Written Off -$47,639" row that
+      -- the May 2026 BE/Sara position-page screenshot reported.
+      -- See ~/.cursor/skills/schwab-sync-safety/SKILL.md (2026-05-11).
+      and not (sac.total_sell_qty = 0
+               and coalesce(uoh.shares_held_elsewhere, 0) = 0)
 ),
 
 all_legs as (

@@ -10,8 +10,27 @@
     app uses cumulative_options_pnl from trade flows.
 
     Equity columns provide the daily buy/sell events so the presentation
-    layer can compute running average-cost P&L. close_price from
-    stg_daily_prices enables daily mark-to-market for equity.
+    layer can compute running average-cost P&L.
+
+    PRICE PRECEDENCE (see AGENTS.md "Pricing Precedence" for the full rule):
+
+      Historical days (date < today): yfinance daily close is the only
+      source — broker doesn't provide historical OHLC, and the chart
+      mark-to-market math depends on having a value every day.
+
+      Today's row (date = current_date()): prefer the broker snapshot's
+      implied price (market_value / quantity from stg_current) when the
+      snapshot is FRESH (snapshot_date = today). yfinance is the fallback.
+
+      Why: the position page renders three "current value" totals
+      (Strategy Breakdown, Breakdown by Type, Chart Terminal) all of which
+      should agree. Strategy Breakdown / Breakdown by Type read broker
+      directly via int_enriched_current. The chart used to read yfinance
+      close for today's row, which created a structural disagreement
+      hidden only by `_align_position_pnl_chart_with_kpi` rescaling the
+      whole chart series (a silent distortion, see app/routes.py).
+      Sourcing today's close from broker when fresh makes all three
+      surfaces reconcile by construction.
 */
 
 with trade_daily as (
@@ -65,9 +84,46 @@ dividend_daily as (
     group by 1, 2, 3, 4
 ),
 
+-- Daily close prices per (account, symbol, date). stg_daily_prices carries
+-- a per-tenant user_id from the price loader, so when two users legitimately
+-- share an account label AND a symbol (e.g. user 2 and user 9 both holding
+-- BE under "Sara Investment") there are TWO rows per (account, symbol, date)
+-- with the SAME close_price but different user_ids. Dedup on (account, symbol,
+-- date) here so the downstream join doesn't fan every row of `joined` into
+-- two — that doubling propagated all the way into `cumulative_options_pnl`
+-- and showed up as a chart whose options line was 2× the real per-tenant
+-- value (May 2026 BE/Sara screenshot, see SKILL.md 2026-05-11). Price is
+-- a public datum keyed on (symbol, date); user_id is not part of its identity.
 prices as (
-    select account, symbol, date, close_price
+    select
+        account,
+        symbol,
+        date,
+        any_value(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
+    group by 1, 2, 3
+),
+
+-- Broker-implied current price for today's row only. See header comment for
+-- the full price-precedence rationale. We pull from stg_current (raw broker
+-- snapshot) rather than int_enriched_current to avoid a circular reference —
+-- int_enriched_current already reads stg_daily_prices for its yfinance
+-- fallback. snapshot_date = current_date() gates this to fresh snapshots
+-- only; stale brokers leave the row null and yfinance carries.
+broker_today_prices as (
+    select
+        account,
+        user_id,
+        underlying_symbol as symbol,
+        snapshot_date as date,
+        market_value / quantity as close_price
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+      and quantity is not null
+      and quantity != 0
+      and market_value is not null
+      and market_value != 0
+      and snapshot_date = current_date()
 ),
 
 -- Build the per-tenant date spine from rows that have user_id
@@ -115,7 +171,17 @@ joined as (
         coalesce(td.equity_sell_proceeds, 0)  as equity_sell_proceeds,
         coalesce(td.equity_sell_qty, 0)       as equity_sell_qty,
         coalesce(td.other_amount, 0)          as other_amount,
-        p.close_price,
+
+        -- Price source: fresh broker snapshot today (when present) trumps
+        -- yfinance close. yfinance handles every other day. See header
+        -- comment for why this asymmetry matters for chart reconciliation.
+        case
+            when ad.date = current_date()
+                 and bt.close_price is not null
+                 and bt.close_price > 0
+            then bt.close_price
+            else p.close_price
+        end as close_price,
         o.option_market_value,
         o.option_cost_basis,
 
@@ -143,6 +209,15 @@ joined as (
         on ad.account = p.account
         and ad.symbol = p.symbol
         and ad.date = p.date
+    -- Broker today price: keyed by (account, user_id, symbol, date).
+    -- Only contributes when ad.date = current_date() AND broker snapshot
+    -- is fresh (= today). For all other dates this join produces null and
+    -- the case expression above falls through to yfinance.
+    left join broker_today_prices bt
+        on ad.account = bt.account
+        and (ad.user_id is not distinct from bt.user_id)
+        and ad.symbol = bt.symbol
+        and ad.date = bt.date
     left join daily_option o
         on ad.account = o.account
         and (ad.user_id is not distinct from o.user_id)

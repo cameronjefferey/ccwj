@@ -2127,9 +2127,38 @@ def position_detail(symbol):
     # Escape symbol for SQL (prevent injection)
     safe_symbol = symbol.replace("'", "''")
 
+    # When the URL pins a specific account (drill-in from /positions or any
+    # bookmarked link), narrow the position-level fetches to JUST that account
+    # rather than the viewer's full account list. Two reasons:
+    #
+    # 1. **Admin scope.** `_account_sql_and` drops the user_id predicate for
+    #    admins, so a non-admin's data falls in. But the account-name filter
+    #    is built from `user_accounts` = the viewer's PERSONAL account list
+    #    (Postgres `user_accounts`). For an admin viewing an account they
+    #    don't personally own (e.g. happycameron viewing Sara Investment),
+    #    the filter `account IN ('investment1')` returns ZERO rows and the
+    #    page silently shows empty current_df / closed_legs_df / etc. while
+    #    Strategy Breakdown and the chart (which already use
+    #    `[selected_account]`) populate normally. The reconciliation invariant
+    #    catches the resulting Strategy=$X / Breakdown-by-Type=$0 mismatch
+    #    on the page, but the right fix is to scope the position-level fetch
+    #    consistently with strat/chart.
+    # 2. **Non-admin bookmark.** A non-admin pasting `?account=...` for an
+    #    account they don't own gets `_account_sql_and` adding their
+    #    `user_id` predicate AND `account IN (...)`. SQL returns 0 rows;
+    #    page renders empty. No tenancy leak, just no data — same as today.
+    #
+    # `_account_sql_and` continues to enforce `(user_id = X OR user_id IS NULL)`
+    # for non-admins, so this change does NOT widen the security boundary.
+    pos_accounts_scope = (
+        [request.args.get("account", "").strip()]
+        if request.args.get("account", "").strip()
+        else user_accounts
+    )
+
     try:
-        _pos_acct = _account_sql_and(user_accounts, col="account")
-        _pos_sc_acct = _account_sql_and(user_accounts, col="sc.account")
+        _pos_acct = _account_sql_and(pos_accounts_scope, col="account")
+        _pos_sc_acct = _account_sql_and(pos_accounts_scope, col="sc.account")
         dfs = _bq_parallel(client, {
             "summary": POSITION_SUMMARY_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
@@ -2220,21 +2249,24 @@ def position_detail(symbol):
 
     # Filter to user's accounts (must run on every BQ frame — queries are by symbol
     # only, so unfiltered closed_legs/closed_equity/matrix would include all tenants.)
-    summary_df = _filter_df_by_accounts(summary_df, user_accounts)
-    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
-    current_df = _filter_df_by_accounts(current_df, user_accounts)
-    closed_legs_df = _filter_df_by_accounts(closed_legs_df, user_accounts)
-    closed_equity_df = _filter_df_by_accounts(closed_equity_df, user_accounts)
-    matrix_df = _filter_df_by_accounts(matrix_df, user_accounts)
+    # Use ``pos_accounts_scope`` so admin viewing a non-personal selected_account
+    # doesn't strip the just-fetched rows. ``_filter_df_by_accounts`` still
+    # enforces the user_id boundary for non-admins.
+    summary_df = _filter_df_by_accounts(summary_df, pos_accounts_scope)
+    trades_df = _filter_df_by_accounts(trades_df, pos_accounts_scope)
+    current_df = _filter_df_by_accounts(current_df, pos_accounts_scope)
+    closed_legs_df = _filter_df_by_accounts(closed_legs_df, pos_accounts_scope)
+    closed_equity_df = _filter_df_by_accounts(closed_equity_df, pos_accounts_scope)
+    matrix_df = _filter_df_by_accounts(matrix_df, pos_accounts_scope)
 
     # Joined closed legs are empty: int_option_contracts can fail to match while
     # int_strategy_classification still has closed option P&L — use classification only.
     if closed_legs_df.empty and (
-        user_accounts is None
-        or (isinstance(user_accounts, list) and len(user_accounts) > 0)
+        pos_accounts_scope is None
+        or (isinstance(pos_accounts_scope, list) and len(pos_accounts_scope) > 0)
     ):
         _cl_sup = _fetch_closed_option_legs_from_classification(
-            client, safe_symbol, user_accounts
+            client, safe_symbol, pos_accounts_scope
         )
         if not _cl_sup.empty:
             closed_legs_df = _cl_sup
@@ -2277,7 +2309,7 @@ def position_detail(symbol):
     # the mart rows into the legacy dict shape the template + downstream
     # helpers consume, preserving the leg_id ↔ session_id contract that keeps
     # bookmarked ?leg=<n> URLs working.
-    legs_df = _filter_df_by_accounts(legs_df, user_accounts)
+    legs_df = _filter_df_by_accounts(legs_df, pos_accounts_scope)
     if selected_account and not legs_df.empty:
         legs_df = legs_df[legs_df["account"] == selected_account]
 
@@ -2982,6 +3014,62 @@ def position_detail(symbol):
     symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
+    # Cross-source reconciliation invariant.
+    #
+    # The same "total P&L for this symbol/leg" gets surfaced in three places
+    # on this page, computed from three independent sources:
+    #   - Strategy Breakdown total: Σ strategy_rows.total_pnl
+    #     (positions_summary mart / int_strategy_classification)
+    #   - Breakdown by Type total:  Σ breakdown_rows.total_pnl
+    #     (closed_equity_df + closed_legs_df + current_df + dividends)
+    #   - Chart terminal:           chart_data["total"][-1]
+    #     (mart_daily_pnl, walked through _build_chart_from_daily_pnl)
+    #
+    # In a healthy pipeline these three numbers must reconcile within rounding
+    # noise (≈ $1 from sequential rounding). When they diverge, something
+    # upstream is duplicating, dropping, or miscounting rows — exactly the May
+    # 2026 BE/Sara symptom the user reported as "tons of dupes" / "$5,128 vs
+    # -$10k chart". Surface the disagreement to admins so it can't hide on a
+    # shipped page until a user finds it. Non-admin users never see this card
+    # (it's a developer-facing canary, not user content).
+    invariant_warning = None
+    try:
+        sb_total = round(sum(float(r.get("total_pnl") or 0) for r in strategy_rows), 2)
+        # ``breakdown_rows`` dicts come from ``_compute_breakdown_by_type``,
+        # which emits ``"total"`` (not ``"total_pnl"`` — that key belongs to
+        # the strategy_rows shape from positions_summary). Mismatching the
+        # key silently floors this to 0 and trips the invariant for the wrong
+        # reason; the dividend row also uses ``"total"``. Keep both shapes
+        # straight when editing either source.
+        bt_total = round(sum(float(r.get("total") or 0) for r in breakdown_rows), 2)
+        chart_terminal = round(float((chart_data.get("total") or [0.0])[-1] or 0.0), 2)
+        # Tolerance: $1 absorbs sequential rounding without hiding real bugs.
+        worst_gap = max(
+            abs(sb_total - bt_total),
+            abs(bt_total - chart_terminal),
+            abs(sb_total - chart_terminal),
+        )
+        if worst_gap > 1.0:
+            invariant_warning = {
+                "strategy_breakdown_total": sb_total,
+                "breakdown_by_type_total": bt_total,
+                "chart_terminal": chart_terminal,
+                "worst_gap": round(worst_gap, 2),
+            }
+            app.logger.warning(
+                "position_detail invariant: %s/%s totals disagree — "
+                "strategy_breakdown=%.2f, breakdown_by_type=%.2f, chart_terminal=%.2f "
+                "(gap=%.2f)",
+                selected_account or "ALL", safe_symbol,
+                sb_total, bt_total, chart_terminal, worst_gap,
+            )
+    except Exception as exc:
+        # Invariant computation must never break the page render. Log and move
+        # on — the worst case here is "no canary" not "broken page".
+        app.logger.exception(
+            "position_detail invariant calc failed for %s: %s", safe_symbol, exc
+        )
+
     return render_template(
         "position_detail.html",
         symbol=symbol,
@@ -3004,6 +3092,8 @@ def position_detail(symbol):
         symbol_sector=symbol_sector,
         symbol_subsector=symbol_subsector,
         symbol_company=symbol_company,
+        invariant_warning=invariant_warning,
+        viewer_is_admin=is_admin(current_user.username),
     )
 
 
@@ -3361,13 +3451,41 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
     }
 
 
+CHART_KPI_ALIGN_TOLERANCE_DOLLARS = 1.00
+
+
 def _align_position_pnl_chart_with_kpi(chart_data, kpis):
     """
-    `mart_daily_pnl` is full cumulative history for account + symbol. The page KPIs
-    can be scoped with status=Open, strategy, or a leg, so the chart can show a
-    much larger total (e.g. all closed + open) than the hero row. When the
-    series end disagrees, scale equity/options/dividend components to match
-    `kpis['total_return']` and re-sum `total` (leave underlying_price alone).
+    Cosmetic rounding-noise reconciliation between the chart's terminal value
+    and the page's KPI ``total_return``. Bounded: above
+    ``CHART_KPI_ALIGN_TOLERANCE_DOLLARS`` of disagreement we DO NOT rescale —
+    we leave the chart untouched so the page-level invariant card surfaces
+    the structural disagreement instead of silently distorting the series.
+
+    History (May 2026):
+      This function used to unconditionally rescale the chart's equity /
+      options / dividends streams by ``f = kpi / chart_total[-1]``,
+      effectively forcing the chart's terminal value to match the KPI no
+      matter how big the gap. That hid a real bug in BE/Sara where
+      ``mart_daily_pnl`` was sourcing today's close from yfinance ($283.92)
+      while the KPI sourced today's price from broker ($262.70),
+      producing a chart_total of $11,709 silently rescaled to $7,465.
+      Every per-day equity/options point on the chart was then ~36%
+      smaller than the math actually produced — meaningless cosmetic
+      values that "happened" to sum to the KPI. The rescale was a band-aid
+      over a structural bug; removing the band-aid surfaced the bug, which
+      was then fixed at source (`mart_daily_pnl.sql` "PRICE PRECEDENCE"
+      comment + `int_option_contracts.sql` open-contract total_pnl).
+
+      After those source fixes, the chart's terminal value reconciles to
+      the KPI by construction. The only legitimate disagreement is
+      sub-dollar rounding noise (sequential 2dp rounding through several
+      pandas / Jinja layers), which this function still absorbs.
+
+      If you find this function firing on a real position, that's signal:
+      either a new yfinance/broker source split has been introduced, or
+      another rounding-precision drift has appeared upstream. Investigate
+      the upstream source rather than widening the tolerance here.
     """
     if not chart_data or not kpis or not chart_data.get("total"):
         return
@@ -3376,10 +3494,37 @@ def _align_position_pnl_chart_with_kpi(chart_data, kpis):
         return
     t_end = float(chart_data["total"][-1] or 0.0)
     k = float(kpis.get("total_return", 0) or 0.0)
-    if abs(t_end - k) <= 0.02:
+    gap = abs(t_end - k)
+    if gap <= 0.02:
         return
+    if gap > CHART_KPI_ALIGN_TOLERANCE_DOLLARS:
+        # Structural disagreement, not rounding. DO NOT rescale.
+        # The page-level invariant card in position_detail will surface
+        # this on the rendered page (admin-only). Log here too so the
+        # disagreement is searchable in production logs even when the
+        # admin canary doesn't fire (e.g. non-admin viewer, or the
+        # invariant card itself has a bug).
+        try:
+            app.logger.warning(
+                "_align_position_pnl_chart_with_kpi: refusing to rescale "
+                "chart series \u2014 gap of $%.2f exceeds tolerance $%.2f. "
+                "chart_terminal=$%.2f, kpi_total_return=$%.2f. "
+                "This indicates a real source disagreement (broker vs "
+                "yfinance, rounding-precision drift, or duplicate rows). "
+                "Investigate upstream rather than widening the tolerance.",
+                gap, CHART_KPI_ALIGN_TOLERANCE_DOLLARS, t_end, k,
+            )
+        except Exception:
+            pass
+        return
+
+    # Sub-dollar gap: real rounding noise. Apply the legacy rescale logic
+    # so the chart cosmetically agrees with the KPI to the cent.
     if abs(t_end) < 1e-9:
-        # e.g. leg staircase is realized closed only, hero is open-only unreal — can't scale
+        # Edge case: chart terminal is ~0 but KPI isn't (e.g. all-realized
+        # closed-leg series with open-only KPI). Can't compute a scale
+        # factor; place the KPI delta on the most-active stream so the
+        # stacked sum matches `total`.
         if abs(k) > 0.02 and n >= 1:
             tlist = [0.0] * (n - 1) + [round(k, 2)]
             chart_data["total"] = tlist
@@ -3397,7 +3542,6 @@ def _align_position_pnl_chart_with_kpi(chart_data, kpis):
                     chart_data[key] = [0.0] * n
             mx = max(d_abs, e_abs, o_abs)
             if mx < 1e-9:
-                # All-flat leg/stg series: put open P&L on one stream so stacked sum matches `total`
                 if "options" in chart_data and len(chart_data["options"]) == n:
                     chart_data["options"][-1] = round(k, 2)
                 elif "equity" in chart_data and len(chart_data["equity"]) == n:
