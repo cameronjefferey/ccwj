@@ -1817,26 +1817,62 @@ def _supplement_summary_with_rolled(
     missing. Keeps the mart as source of truth when it has the pair; fills gaps
     from int_strategy_classification so closed history shows up even when the
     mart lags (common right after a Schwab/CSV seed commit, before dbt rebuilds).
+
+    **Equity slot (Buy and Hold / Dividend):** ``positions_summary`` renames a
+    top dividend-ranking ``Buy and Hold`` row to strategy label ``Dividend``
+    post-aggregation — but rolled rows from ``int_strategy_classification``
+    always say ``Buy and Hold``. Supplements previously keyed only on
+    ``(account, strategy)``, so they'd add a second equity row with the realized
+    P&L while the mart row already folded trade + dividends. That summed to
+    ~trade_return + dividends + trade_return in the Strategy Breakdown and
+    tripped the reconciliation invariant ($4,312 = exactly the double-count).
+    Skip rolling in ``Buy and Hold`` when this account × symbol already has
+    *either* label from the mart.
     """
     if rolled_df is None or rolled_df.empty:
         return summary_df if summary_df is not None else pd.DataFrame()
     if summary_df is None or summary_df.empty:
         return rolled_df
+    _EQUITY_STRAT_SLOT = frozenset({"Buy and Hold", "Dividend"})
     existing: set[tuple[str, str]] = set()
+    equity_slot_covered: set[tuple[str, str]] = set()
     for _, r in summary_df.iterrows():
         a = r.get("account")
         s = r.get("strategy")
+        sym = (
+            str(r.get("symbol") or "").strip()
+            if r.get("symbol") is not None
+            else ""
+        )
         if a is None or s is None or (isinstance(s, float) and pd.isna(s)):
             continue
         st = str(s).strip()
         if not st:
             continue
-        existing.add((str(a).strip(), st))
+        ac = str(a).strip()
+        existing.add((ac, st))
+        if sym and st in _EQUITY_STRAT_SLOT:
+            equity_slot_covered.add((ac, sym))
     mask = []
     for _, r in rolled_df.iterrows():
         a = str(r.get("account") or "").strip()
         s = str(r.get("strategy") or "").strip()
-        mask.append((a, s) not in existing and bool(a) and bool(s))
+        sym = (
+            str(r.get("symbol") or "").strip()
+            if r.get("symbol") is not None
+            else ""
+        )
+        if not a or not s:
+            mask.append(False)
+            continue
+        if (a, s) in existing:
+            mask.append(False)
+            continue
+        # Mart already occupies the lone equity-slot row for this symbol.
+        if s in _EQUITY_STRAT_SLOT and sym and (a, sym) in equity_slot_covered:
+            mask.append(False)
+            continue
+        mask.append(True)
     add = rolled_df[mask] if mask else rolled_df.iloc[0:0]
     if add.empty:
         return summary_df

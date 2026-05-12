@@ -37,6 +37,7 @@ Never “looks good on BE / one symbol.” Minimum bar:
 2. **Multiple accounts / tenants** if the change touches staging — especially any account that ever synced **before** linking.
 3. **BigQuery invariant:** banner inputs must agree — compare **Σ `positions_summary.total_pnl`** (scoped account/symbol) to **terminal `chart_data["total"][-1]`** after `_build_chart_from_daily_pnl` with the **same `int_enriched_current` shape prod uses** (`cost_basis`, not typo `cost_bases`).
 4. If the **reconciliation invariant** fires in dev/admin, assume **upstream split or phantom shares** until proven otherwise; grep `no_orphan_user_id` test and **`stg_history`** for NULL vs non‑NULL `user_id` on the same **`account`** string.
+5. If Strategy total **exceeds** chart but Breakdown‑by‑Type matches chart, grep **`_supplement_summary_with_rolled`**: **`Dividend`** (mart rename) vs **`Buy and Hold`** (classification rollup) is **one equity slot per (account, symbol)** — dup adds exactly the duplicate **realized** wedge (May 2026 JEPI banner gap = realized equity twice).
 
 ## Do not confuse with
 

@@ -42,10 +42,10 @@ def _legs_row(
     }
 
 
-def _summary_row(account, strategy, status, total_pnl):
+def _summary_row(account, strategy, status, total_pnl, symbol="RDDT"):
     return {
         "account": account,
-        "symbol": "RDDT",
+        "symbol": symbol,
         "strategy": strategy,
         "status": status,
         "total_pnl": total_pnl,
@@ -359,6 +359,25 @@ def test_merge_falls_through_when_summary_has_dividend_strategy_for_account():
     assert float(r["total_dividend_income"]) == 16180.0
     # Trade-side P&L preserved as part of total_pnl
     assert float(r["total_pnl"]) == 18861.15
+
+
+def test_supplement_skips_buy_and_hold_when_mart_has_dividend_same_symbol():
+    """
+    Regression: positions_summary emits strategy 'Dividend' while
+    int_strategy_classification rollup still says 'Buy and Hold'. Both
+    are the single equity-slot row for JEPI-class symbols; supplement
+    must not add duplicate realized P&L (trips invariant: sum(strategy
+    totals) ≠ chart).
+    """
+    summary = pd.DataFrame([
+        _summary_row("Schwab ••••0044", "Dividend", "Closed", 20940.30, symbol="JEPI"),
+    ])
+    rolled = pd.DataFrame([
+        _summary_row("Schwab ••••0044", "Buy and Hold", "Closed", 4312.30, symbol="JEPI"),
+    ])
+    out = _supplement_summary_with_rolled(summary, rolled)
+    assert len(out) == 1, out
+    assert out.iloc[0]["strategy"] == "Dividend"
 
 
 def test_supplement_does_not_introduce_unrelated_account_rows():
