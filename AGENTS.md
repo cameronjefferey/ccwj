@@ -124,6 +124,10 @@ What's working:
 - Covered Call classification requires >= 100 shares (`int_strategy_classification`)
 - `_date_to_leg` prioritizes equity sessions over orphan sessions
 
+**Orphan tenancy + reconciliation (critical):** If Schwab synced **before** the user linked `user_id`, history can sit under **`user_id = NULL`** and later fills under **the same masked `account` + real `user_id`**. Marts partition `(account, user_id)` → buys and sells **split**, producing **\$0 dividends / \$0 KPIs while the chart is non‑zero** and tripping the **admin reconciliation invariant** (Strategy breakdown vs breakdown-by-type vs chart terminal). Fix is staging backfill in `stg_history` / `stg_current` / `stg_account_balances`; regression test **`dbt/tests/no_orphan_user_id_per_account.sql`**. Details: `.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`.
+
+**Verification:** Never ship Position Detail / `mart_daily_pnl` / `_build_chart_from_daily_pnl` changes validated on **one symbol only**. Always check at least **one dividend ETF** (JEPI‑class), a **mixed equity+option** position, and **multiple tenants/accounts**.
+
 Known issues:
 - Heavy Python computation: `_build_chart_from_daily_pnl` iterates every row to compute
   running average-cost equity P&L. This is stateful and hard to move to dbt, but is a
@@ -596,5 +600,6 @@ Before shipping a change, ask:
 2. Does this move logic out of Flask and into dbt?
 3. Does this increase clarity?
 4. Does this reduce cognitive noise?
+5. If the change touches `stg_history` / staging `user_id`, `mart_daily_pnl`, or `_build_chart_from_daily_pnl`: did you validate **multiple symbols** (including at least one dividend-heavy position like JEPI) and rule out **`user_id`-NULL splits** on the same `account` mask? See `.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`.
 
 If not, reconsider.

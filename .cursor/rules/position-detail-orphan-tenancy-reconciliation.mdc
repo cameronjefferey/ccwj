@@ -1,0 +1,46 @@
+---
+description: Orphan user_id tenancy splits, JEPI/zero-dividends symptom, Position Detail reconciliation — never ship verification on one symbol only
+alwaysApply: true
+---
+
+# Position Detail — orphan tenancy + reconciliation (non‑negotiable)
+
+## The failure mode (May 2026)
+
+Schwab Connect can sync trade history **before** the Postgres app links `user_id` to the broker account mask. Rows land with **`user_id = NULL`**. After linking, newer sync writes the **same masked `account`** with **`user_id` populated**.
+
+Almost every mart partitions by **`(account, user_id)`** (`positions_summary`, `int_strategy_classification`, `mart_daily_pnl`, `int_dividend_events`, synthetic dividends, …). Buy and sell **halves of the same real position** land in **different partitions**:
+
+- KPIs / Strategy Breakdown read **\$0 realized**, **\$0 dividends**, wrong strategy classification.
+- The chart built from **`mart_daily_pnl`** still shows **non‑zero totals** — different partition merge / dense spine exposes the orphan half separately.
+- The **admin reconciliation banner** fires (Strategy breakdown vs breakdown-by-type vs chart terminal). **Treat that banner as a ship‑stop.** Do not rationalize \$0 JEPI dividends as “dividend pipeline broken” until you have ruled out tenancy split.
+
+**Symptoms to recognize:** Dividend ETFs (JEPI/JEPQ) with **\$0 dividends** despite years of holdings; closed position with absurd chart vs \$0 headings; JEPI BUY only under NULL and SELLS only under uid (query `stg_history` grouped by `account, user_id`).
+
+## Where the fix lives
+
+Staging backfill (only when **`count(distinct user_id)` among non‑NULL rows = 1` per account**):
+
+- `dbt/models/staging/stg_history.sql`
+- `dbt/models/staging/stg_current.sql`
+- `dbt/models/staging/stg_account_balances.sql`
+
+Regression test: **`dbt/tests/no_orphan_user_id_per_account.sql`** — **no `(account)` may have BOTH NULL and populated `user_id`** rows in those three staging outputs.
+
+Related chart/mart drift fixes (dense spine UTC “tomorrow”, live‑today patch, **`cost_basis` vs `cost_bases`**) live in `app/routes.py` **`_build_chart_from_daily_pnl`** and `int_equity_sessions` / `int_option_contract_daily_pnl` — see commit message around **orphan‑tenant backfill**.
+
+## Verification before declaring Position Detail / chart / attribution work done
+
+Never “looks good on BE / one symbol.” Minimum bar:
+
+1. **Multiple symbols** — at least **one dividend‑heavy ETF** (e.g. JEPI), **one mixed equity+option**, **one options‑heavy**.
+2. **Multiple accounts / tenants** if the change touches staging — especially any account that ever synced **before** linking.
+3. **BigQuery invariant:** banner inputs must agree — compare **Σ `positions_summary.total_pnl`** (scoped account/symbol) to **terminal `chart_data["total"][-1]`** after `_build_chart_from_daily_pnl` with the **same `int_enriched_current` shape prod uses** (`cost_basis`, not typo `cost_bases`).
+4. If the **reconciliation invariant** fires in dev/admin, assume **upstream split or phantom shares** until proven otherwise; grep `no_orphan_user_id` test and **`stg_history`** for NULL vs non‑NULL `user_id` on the same **`account`** string.
+
+## Do not confuse with
+
+- **Cross‑tenant leakage** — different bug class; see **`bigquery-tenant-isolation.mdc`** (unscoped symbol queries).
+- **Source has no dividends** — run source counts first; see **`data-pipeline-fixes.mdc`**.
+
+This rule exists so we **never** revisit the conversation: “JEPI shows nothing / banner shows errors — why didn’t you check?”
