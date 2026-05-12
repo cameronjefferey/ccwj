@@ -278,22 +278,56 @@ final as (
             then c.current_price
         end as current_price,
 
-        -- Total P&L
-        --   Open session:    cash flows + current market value of remaining shares
-        --   Closed session, no transfer-out:        net_cash_flow (buys + sells)
-        --   Closed session, transfer-out detected:  realized P&L on sold shares
-        --                                           only (sell_proceeds − sold-share
-        --                                           cost basis); transferred shares'
-        --                                           cost is in the destination account.
+        -- Total P&L for OPEN sessions = realized + broker_unrealized.
         --
-        -- Transfer-out heuristic: session is Closed for THIS account
-        -- (snapshot has no shares here), buy_qty > sell_qty, AND the user
-        -- holds the symbol in another account that can absorb the residual.
+        --   broker_unrealized = mv − cb           (snapshot, source of truth)
+        --   realized          = sell_proceeds − cost_of_sold_lots
+        --                     = sell_proceeds − max(0, total_buy_cost − cb_remaining)
+        --
+        -- Why this shape: the broker tracks per-lot cost basis under
+        -- its own accounting (FIFO for Schwab by default). The cost
+        -- basis remaining on the snapshot (``cb``) is for the lots
+        -- still on the books. The cost basis ATTRIBUTABLE TO THE
+        -- SOLD LOTS is therefore (total_buy_cost − cb), and realized
+        -- = sell_proceeds − that. For DELL ••••0044 (bought 300 cheap
+        -- in Dec, bought 300 expensive on 4/21, sold 300 the same day)
+        -- the broker holds the 300 expensive lots as remaining
+        -- (cb=$62,934) so realized = $49,500 − ($101,085 − $62,934)
+        -- = $49,500 − $38,151 = $11,349 — matches the chart's
+        -- running-average walk and the broker's own per-lot books.
+        --
+        -- The ``max(0, …)`` clamps the JPM/AMZN phantom-share case.
+        -- When the broker reports MORE shares than trade history
+        -- explains (transfer-ins or sync-dropped journal entries),
+        -- ``cb_remaining`` includes cost for shares that never
+        -- appeared as buy rows, so ``total_buy_cost − cb_remaining``
+        -- goes NEGATIVE. Clamping at 0 means we DON'T credit that
+        -- gap as fake realized P&L (the cost is real but tracked
+        -- at the originating account if it was a transfer; we
+        -- shouldn't double-count it here). Pre-fix the formula was
+        -- ``net_cash_flow + market_value`` which treated the phantom
+        -- shares as pure profit and inflated JPM by $30k.
+        --
+        -- Closed session, no transfer-out:        net_cash_flow (buys + sells)
+        -- Closed session, transfer-out detected:  realized P&L on sold shares
+        --                                         only (sell_proceeds − sold-share
+        --                                         cost basis); transferred shares'
+        --                                         cost is in the destination account.
         case
             when ls.latest_session_id = s.session_id
                  and c.trade_symbol is not null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
-                then s.net_cash_flow + coalesce(c.market_value, 0)
+                then
+                    -- realized = sell_proceeds − cost_of_sold_lots
+                    -- sell_proceeds = net_cash_flow + total_buy_cost
+                    -- cost_of_sold = max(0, total_buy_cost − cb_remaining)
+                    (s.net_cash_flow + s.total_buy_cost)
+                    - greatest(
+                        0,
+                        s.total_buy_cost - coalesce(c.cost_basis, 0)
+                    )
+                    -- broker unrealized
+                    + coalesce(c.market_value, 0) - coalesce(c.cost_basis, 0)
             when c.trade_symbol is null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
                  and coalesce(uth.shares_held_anywhere, 0)

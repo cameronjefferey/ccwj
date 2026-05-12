@@ -234,9 +234,32 @@ cleaned as (
 -- those keys, breaking int_position_legs uniqueness). Keep the row with
 -- the most-populated market_value as a deterministic tiebreak. Mirrors
 -- the same defense in stg_account_balances.
+-- Orphan-tenant backfill — see stg_history.sql for the full incident
+-- write-up. Same shape: when a Schwab account was synced before being
+-- linked, snapshot rows landed under user_id=NULL; later snapshots
+-- under the linked user_id. Without backfill, downstream partitioning
+-- by (account, user_id) treats them as separate positions.
+account_owner as (
+    select
+        account,
+        any_value(user_id) as inferred_user_id
+    from cleaned
+    where user_id is not null
+    group by 1
+    having count(distinct user_id) = 1
+),
+
+backfilled as (
+    select
+        c.* except(user_id),
+        coalesce(c.user_id, ao.inferred_user_id) as user_id
+    from cleaned c
+    left join account_owner ao using (account)
+),
+
 deduped as (
     select *
-    from cleaned
+    from backfilled
     qualify row_number() over (
         partition by account, user_id, trade_symbol
         order by case when market_value is not null then 0 else 1 end,

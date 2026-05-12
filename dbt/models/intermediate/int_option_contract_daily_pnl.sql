@@ -152,6 +152,42 @@ last_snapshot_per_contract as (
     group by 1, 2, 3
 ),
 
+-- Contracts currently in the broker's live snapshot (today). Used to
+-- decide whether the lifetime spine should extend to current_date()
+-- vs cap at last_snapshot_date. The split matters when the daily
+-- snapshot sync lags the live snapshot:
+--
+--   * currently_owned = TRUE
+--       The contract is still in the trader's portfolio today even
+--       if snapshot_options_market_values_daily hasn't booked a
+--       row for current_date() yet (Schwab sync runs nightly; live
+--       fetch updates intra-day). Extend the spine to current_date()
+--       so carry-forward propagates the last-known snapshot MTM
+--       (e.g. 5/8 snapshot) onto 5/9, 5/10, 5/11 — that's the
+--       trader's true unrealized exposure during the gap, not $0.
+--
+--   * currently_owned = FALSE
+--       Either the contract was reassigned/migrated to another
+--       tenant, or the broker connection silently dropped. No
+--       carry-forward beyond last_snapshot_date — better to under-
+--       report MTM than to keep crediting a position the trader
+--       no longer holds in the chart's terminal value.
+--
+-- This is the fix for the May-2026 "PLTR LEAP shows $0 MTM on Mon
+-- but -$4,235 in the int_option_contracts headline" reconciliation
+-- gap. Pre-fix the spine ended on Friday's snapshot date; the chart
+-- "snapped to 0" over the weekend even though the position was
+-- still on the books and the int_option_contracts.total_pnl
+-- (which reads cur.unrealized_pnl) said -$4,235.
+currently_owned as (
+    select distinct
+        account,
+        user_id,
+        trade_symbol
+    from {{ ref('stg_current') }}
+    where instrument_type in ('Call', 'Put')
+),
+
 -- Dense date spine across the open lifetime of each contract:
 -- [open_date, close_date) for closed contracts (close_date itself is
 -- owned by the realized branch), or [open_date, last_snapshot_date]
@@ -174,6 +210,10 @@ contract_lifetime as (
         on c.account = ls.account
         and (c.user_id is not distinct from ls.user_id)
         and c.trade_symbol = ls.trade_symbol
+    left join currently_owned co
+        on c.account = co.account
+        and (c.user_id is not distinct from co.user_id)
+        and c.trade_symbol = co.trade_symbol
     cross join unnest(
         generate_date_array(
             c.open_date,
@@ -182,12 +222,21 @@ contract_lifetime as (
                 -- branch owns close_date itself).
                 when c.close_date is not null
                     then date_sub(c.close_date, interval 1 day)
-                -- Open with snapshot history: cap at last snapshot
-                -- date so we don't carry forward a stale MTM into
-                -- "today" after sync stopped. This sacrifices a
-                -- couple of weekend days of carry-forward in
-                -- exchange for not lying about the chart for
-                -- migrated tenants.
+                -- Open AND still in today's broker snapshot: extend
+                -- spine to current_date() so the carry-forward
+                -- window function propagates the last-known MTM
+                -- across the snapshot-vs-today gap. Without this,
+                -- a Friday-synced position has $0 MTM on Mon/Tue
+                -- and the chart "snaps to 0" while the headline
+                -- KPI (which reads stg_current live) says
+                -- -$4,235. See currently_owned CTE header.
+                when co.trade_symbol is not null
+                    then current_date()
+                -- Open with snapshot history but not currently
+                -- owned (tenant migration / dropped connection):
+                -- cap at last_snapshot_date — better to
+                -- under-report MTM than to credit a position the
+                -- trader no longer holds.
                 --
                 -- ``greatest(last_snapshot, open_date)`` because
                 -- snapshot history can predate open_date for

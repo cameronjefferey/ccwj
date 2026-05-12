@@ -3869,17 +3869,56 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         return empty
 
     today_str = str(date.today())
-    if not current_df.empty and dates[-1] != today_str:
-        # Today's option P&L = last cumulative realized + LIVE open
-        # MTM from current_df (broker snapshot, full precision).
+
+    # Guard: BigQuery's ``current_date()`` runs in UTC and can be one
+    # calendar day ahead of US local time after ~5pm PT. The mart's
+    # dense spine therefore sometimes includes a "tomorrow" row from
+    # the trader's perspective. Trim any rows past today so the chart
+    # x-axis stops at today and the LIVE override below patches the
+    # right cell. Pre-fix, the spine ended on UTC-tomorrow with stale
+    # carry-forward values, the append-today branch added a duplicate
+    # row out-of-order ([..., 5/11, 5/12, 5/11]), and the chart's
+    # "terminal" sat on the wrong index — DELL ••••0044 stayed on
+    # pre-fix int_equity_sessions arithmetic instead of the live
+    # snapshot mv − cb.
+    while dates and dates[-1] > today_str:
+        dates.pop()
+        equity_s.pop()
+        options_s.pop()
+        dividends_s.pop()
+        total_s.pop()
+        price_s.pop()
+
+    if not current_df.empty:
+        # LIVE TODAY OVERRIDE.
         #
-        # Filter to genuinely-open contracts (option_expiry >= today
-        # if available). Schwab's snapshot can lag actual expiry by
-        # 1-2 trading days — without this filter a past-expiry
-        # contract would contribute its stale cost-to-close on top of
-        # the realized credit already in last_cumulative_options_realized,
-        # double-counting. Same calendar-beats-snapshot rule as the
-        # status logic in int_option_contracts.
+        # The mart's dense date spine emits a row for current_date()
+        # (and the contract daily-pnl spine extends to today for
+        # currently-owned contracts via the ``currently_owned`` CTE
+        # in ``int_option_contract_daily_pnl``). That row reflects
+        # the LATEST DAILY SNAPSHOT, which can be 1-3 trading days
+        # stale (Schwab's nightly sync hasn't booked today yet, or
+        # the user's connection paused). For "today" the broker's
+        # LIVE snapshot in stg_current is the source of truth — it's
+        # always intra-day fresh. We must therefore override the
+        # mart's today row with values computed from current_df so
+        # the chart's terminal value matches the headline KPIs and
+        # the positions_summary mart (which also reads stg_current
+        # live for unrealized).
+        #
+        # When the chart already ends at today (mart spine), REPLACE
+        # the last row's equity/options/total with the live-derived
+        # numbers. When the chart ends before today (rare — happens
+        # when the position has zero mart history), APPEND today.
+        #
+        # Pre-fix the patch only fired on APPEND (``dates[-1] != today``)
+        # because the mart used to leave today empty. After the dense-
+        # spine rework, today is always present and the patch was being
+        # silently skipped, so the chart "snapped to 0" or "stuck on
+        # the last snapshot" while positions_summary read live MTM.
+        # That tripped the reconciliation invariant on every position
+        # whose snapshot table lagged stg_current (real example May
+        # 2026: JPM 0044 chart=$320 vs strategy_breakdown=$30,940).
         #
         # Using ``unrealized_pnl`` (not ``market_value``) matches the
         # snapshot-derived MTM used in mart_daily_pnl; current_df came
@@ -3887,12 +3926,12 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         # See AGENTS.md "Option P&L Attribution".
         opt_mask = current_df["instrument_type"].isin(["Call", "Put"])
         if "option_expiry" in current_df.columns:
-            today_d = date.today()
+            today_ts = pd.Timestamp(date.today())
             opt_expiry_series = pd.to_datetime(
                 current_df["option_expiry"], errors="coerce"
-            ).dt.date
+            )
             opt_mask = opt_mask & (
-                opt_expiry_series.isna() | (opt_expiry_series >= today_d)
+                opt_expiry_series.isna() | (opt_expiry_series >= today_ts)
             )
         if "unrealized_pnl" in current_df.columns:
             opt_unreal_today = float(
@@ -3907,25 +3946,63 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         today_option_pnl = last_cumulative_options_realized + opt_unreal_today
         eq_row = current_df[current_df["instrument_type"] == "Equity"]
         today_eq = equity_s[-1]
-        if not eq_row.empty and (shares_held > 0 or short_shares > 0):
-            p = float(eq_row["current_price"].iloc[0] or 0)
-            if p:
-                unreal = 0
-                if shares_held > 0:
-                    unreal = shares_held * p - total_cost
-                if short_shares > 0:
-                    unreal -= (short_shares * p - short_cost_basis)
-                today_eq = cum_realized + unreal
+        # When the broker's live snapshot has equity AND a current
+        # price, prefer the snapshot's market_value - cost_basis as
+        # today's unrealized. This is the same number positions_summary
+        # surfaces in the headline KPI / Strategy Breakdown row, and
+        # it correctly accounts for shares the trader holds that
+        # aren't in trade history (broker-side journal entries,
+        # transfer-ins, dividend reinvestments — Schwab's sync
+        # occasionally drops these from the transactions feed but
+        # always reflects them in the positions snapshot). When the
+        # snapshot is missing or the user fully closed today, fall
+        # back to the running-cost-basis trade-history calc.
+        if not eq_row.empty:
+            mv_col = float(eq_row["market_value"].iloc[0] or 0) \
+                if "market_value" in eq_row.columns else 0.0
+            # ``cost_basis`` is the canonical name (int_enriched_current,
+            # CURRENT_POSITIONS_QUERY). ``cost_bases`` is the original
+            # CSV-seed typo that survives in some test fixtures and the
+            # raw ``current_positions`` seed schema; accept either so
+            # this helper works against both production and test data.
+            cb_col = 0.0
+            for cb_name in ("cost_basis", "cost_bases"):
+                if cb_name in eq_row.columns:
+                    cb_col = float(eq_row[cb_name].iloc[0] or 0)
+                    break
+            unreal_snap = (mv_col - cb_col) if (mv_col or cb_col) else None
+            if unreal_snap is not None:
+                today_eq = cum_realized + unreal_snap
+            elif shares_held > 0 or short_shares > 0:
+                p = float(eq_row["current_price"].iloc[0] or 0)
+                if p:
+                    unreal = 0
+                    if shares_held > 0:
+                        unreal = shares_held * p - total_cost
+                    if short_shares > 0:
+                        unreal -= (short_shares * p - short_cost_basis)
+                    today_eq = cum_realized + unreal
         today_price = None
         if not eq_row.empty:
             today_price = float(eq_row["current_price"].iloc[0] or 0) or None
 
-        dates.append(today_str)
-        equity_s.append(round(today_eq, 2))
-        options_s.append(round(today_option_pnl, 2))
-        dividends_s.append(dividends_s[-1])
-        price_s.append(round(today_price, 2) if today_price else None)
-        total_s.append(round(today_eq + today_option_pnl + dividends_s[-1], 2))
+        if dates[-1] == today_str:
+            equity_s[-1] = round(today_eq, 2)
+            options_s[-1] = round(today_option_pnl, 2)
+            total_s[-1] = round(
+                today_eq + today_option_pnl + dividends_s[-1], 2
+            )
+            if today_price is not None:
+                price_s[-1] = round(today_price, 2)
+        else:
+            dates.append(today_str)
+            equity_s.append(round(today_eq, 2))
+            options_s.append(round(today_option_pnl, 2))
+            dividends_s.append(dividends_s[-1])
+            price_s.append(round(today_price, 2) if today_price else None)
+            total_s.append(
+                round(today_eq + today_option_pnl + dividends_s[-1], 2)
+            )
 
     return {
         "dates": dates,
@@ -4629,12 +4706,12 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         # same rationale).
         opt_mask = current_df["instrument_type"].isin(["Call", "Put"])
         if "option_expiry" in current_df.columns:
-            today_d = date.today()
+            today_ts = pd.Timestamp(date.today())
             opt_expiry_series = pd.to_datetime(
                 current_df["option_expiry"], errors="coerce"
-            ).dt.date
+            )
             opt_mask = opt_mask & (
-                opt_expiry_series.isna() | (opt_expiry_series >= today_d)
+                opt_expiry_series.isna() | (opt_expiry_series >= today_ts)
             )
         opt_unreal_today = float(
             current_df.loc[opt_mask, "unrealized_pnl"].sum()

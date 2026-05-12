@@ -130,9 +130,32 @@ unioned as (
     select *, 2 as src_priority from account_total_rows
 ),
 
+-- Orphan-tenant backfill — see stg_history.sql for the full incident
+-- write-up. Same shape: account synced under user_id=NULL before
+-- being linked, then under the real user_id after. Without backfill,
+-- snapshot_account_balances_daily partitions the same physical
+-- account into two tenants and the live KPI tile reads only one half.
+account_owner as (
+    select
+        account,
+        any_value(user_id) as inferred_user_id
+    from unioned
+    where user_id is not null
+    group by 1
+    having count(distinct user_id) = 1
+),
+
+backfilled as (
+    select
+        u.* except(user_id),
+        coalesce(u.user_id, ao.inferred_user_id) as user_id
+    from unioned u
+    left join account_owner ao using (account)
+),
+
 deduped as (
     select * except (src_priority)
-    from unioned
+    from backfilled
     qualify row_number() over (
         partition by account, user_id, row_type
         order by src_priority,

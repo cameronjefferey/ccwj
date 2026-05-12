@@ -241,13 +241,65 @@ amount_signed as (
             else c.amount_raw
         end as amount
     from cleaned c
+),
+
+-- Orphan-tenant backfill: when broker sync runs BEFORE a user links the
+-- account in the Postgres app DB, the resulting CSV rows land with
+-- ``user_id = NULL``. After the user later links it, new sync rows
+-- arrive tagged with the real user_id. The broker account label
+-- (e.g. ``Schwab ••••0044``) is the SAME on both batches because the
+-- broker doesn't change masks across syncs.
+--
+-- Without this CTE, downstream models that partition by
+-- ``(account, user_id)`` (positions_summary, int_strategy_classification,
+-- mart_daily_pnl, int_dividend_events, …) treat the NULL-uid rows and
+-- the real-uid rows as TWO DIFFERENT positions: a buy that never
+-- closed sits in one bucket while sells with no opening sit in
+-- another. The user's Position Detail page reads $0 realized P&L on
+-- a fully-closed position with thousands of dollars of actual
+-- proceeds, and the dividend stream attaches to the wrong tenant
+-- entirely (real example May 2026: JEPI on Schwab ••••0044 showed
+-- $0 realized + $0 dividends despite having buy + 2 sells totaling
+-- ~$4,300 of realized P&L; the recon banner caught a $2,560 chart
+-- vs $0 mart gap).
+--
+-- The rule we use is the safest possible inference:
+--   "If every non-NULL row this account has ever produced points to
+--    the SAME user_id, then NULL really means that user."
+--
+-- ``count(distinct user_id) = 1`` enforces unambiguity. If two
+-- different users have ever produced rows for a single account label
+-- (e.g. a shared demo seed like ``investment1``), the backfill
+-- refuses to fire and the NULLs survive — better to keep an orphan
+-- than to attribute one user's trades to another.
+account_owner as (
+    select
+        account,
+        any_value(user_id) as inferred_user_id
+    from amount_signed
+    where user_id is not null
+    group by 1
+    having count(distinct user_id) = 1
+),
+
+backfilled as (
+    select
+        a.account,
+        coalesce(a.user_id, ao.inferred_user_id) as user_id,
+        a.trade_date, a.action_raw, a.action,
+        a.trade_symbol, a.underlying_symbol,
+        a.option_expiry, a.option_strike, a.option_type,
+        a.instrument_type, a.description,
+        a.quantity, a.price, a.fees, a.amount
+    from amount_signed a
+    left join account_owner ao using (account)
 )
 
 select
     account, user_id, trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
-from amount_signed
+from backfilled
 -- Drop non-tradeable entries that Schwab Connect emits as fake "Buy" rows:
 --   - CURRENCY_USD (cash settlement/transfer pseudo-trades)
 --   - CUSIPs (e.g. "09247X101") — money-market funds and other non-ticker
