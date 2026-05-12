@@ -380,6 +380,82 @@ chart's terminal disagreed with the KPI. That hid a structural bug for
 months. The function is now restricted to sub-$1 rounding noise; larger
 gaps log loudly and trip the invariant card. Do not weaken this guard.
 
+### 6. Option P&L Attribution (realize-on-close + MTM-while-open)
+
+Daily option marks are this product's unique value proposition. We sync
+broker snapshots so the chart can show a real options leg moving every
+day — not just two cash steps on STO and BTC dates. Every chart that
+plots options P&L over time MUST follow this rule:
+
+**For each option contract, the chart shows:**
+
+1. **$0 contribution before `open_date`** — the position didn't exist.
+2. **Daily mark-to-market while open** — at each date `d`, contribute
+   `cost_basis + market_value` from the snapshot (sign-correct for
+   shorts and longs both; matches `short_aware_unrealized_pnl` in
+   `app/upload.py`). Carry forward the last-known snapshot value
+   across snapshot gaps (weekends, sync skips) up to `close_date`.
+3. **$0 contribution while open if the contract has NEVER been
+   snapshotted** — defer the credit to `close_date` rather than
+   crediting STO premium on STO date. This applies to contracts opened
+   before snapshot infrastructure existed for that user.
+4. **Full realized P&L on `close_date`** — when the contract closes
+   (BTC, STC, expiry, assignment, exercise) credit the full
+   `net_cash_flow` (sum of all explicit fills) on the close date and
+   keep that value forever.
+
+**The mart shape:**
+
+`mart_daily_pnl` exposes two columns per (account, user_id, symbol, date):
+
+- `cumulative_options_pnl` — running sum of realized contributions
+  across every contract that closed on or before this date.
+  Monotonically accumulates.
+- `open_options_unrealized_pnl` — point-in-time MTM at `d` of all
+  currently-open contracts. NOT cumulative; on dates with no open
+  contracts the value is 0.
+
+The chart formula at any date is **`cumulative_options_pnl +
+open_options_unrealized_pnl`**. Nothing else. There is NO `options_amount`
+running-sum branch and no separate `option_market_value` add-on — those
+exist as legacy diagnostics only and using them double-counts.
+
+**`int_option_contract_daily_pnl`** is the per-contract per-date grain
+that powers the mart. Adding a new option-aware UI surface? Read from
+that model directly rather than hand-rolling another aggregation.
+
+**Why this matters (the bug we're avoiding).** Pre-fix the chart
+summed `stg_history.amount` for option fills on their fill date. A
+short call sold for $3,000 in premium and held to OTM expiry showed a
+$3,000 SPIKE on STO date and stayed flat through expiry — claiming the
+P&L was earned on day 1 when in reality it was at risk for 7 days and
+crystallized on day 7. For BTC closes the chart drew a $3,000 spike up
+on STO date and an offsetting $3,800 spike down on BTC date — same net,
+totally wrong shape. Realize-on-close fixes this by attributing the
+single net realized P&L to the actual realization moment.
+
+**Schwab's snapshot lags actual expiry by 1-2 trading days.** The
+`status` and `close_date` columns in `int_option_contracts` use
+calendar truth (`option_expiry < current_date()` overrides
+"snapshot-implies-open"), and the today-row patch in chart helpers
+filters live `current_df` rows by `option_expiry >= today` to avoid
+double-counting an expired contract that the broker hasn't dropped yet.
+Both layers must keep this invariant.
+
+**Reconciliation invariant.** `cumulative_options_pnl(today) +
+open_options_unrealized_pnl(today)`, summed across all (account,
+user_id, symbol) rows for a position, MUST equal
+`Σ int_option_contracts.total_pnl` for the same scope. The position
+page renders an admin-only invariant card that surfaces any
+disagreement; `scripts/audit/reconcile.py` CHECK 9 enforces this in CI.
+
+**Where this rule lives:**
+- Per-contract grain: `dbt/models/intermediate/int_option_contract_daily_pnl.sql`
+- Mart: `dbt/models/marts/mart_daily_pnl.sql`
+- Position chart: `_build_chart_from_daily_pnl` in `app/routes.py`
+- Account chart: `_build_account_chart_from_daily_pnl` in `app/routes.py`
+- Tests: `tests/test_chart_options_pnl.py`
+
 ---
 
 ## Mirror Score Rules

@@ -396,7 +396,14 @@ def main():
                 GROUP BY account, symbol
             )
             SELECT m.account, m.symbol,
-                   ROUND(m.cumulative_options_pnl, 2)    AS daily_options,
+                   -- Total options P&L at the latest date = realized
+                   -- cumulative + open MTM. Under the realize-on-close
+                   -- attribution rule (AGENTS.md "Option P&L
+                   -- Attribution") these are two separate columns;
+                   -- both must be summed to compare against
+                   -- positions_summary.total_pnl (realized + unrealized).
+                   ROUND(m.cumulative_options_pnl
+                         + COALESCE(m.open_options_unrealized_pnl, 0), 2) AS daily_options,
                    ROUND(m.cumulative_dividends_pnl, 2)  AS daily_dividends
             FROM {DS}.mart_daily_pnl m
             JOIN latest l

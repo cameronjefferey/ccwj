@@ -2743,16 +2743,34 @@ def position_detail(symbol):
             chart_df = chart_df[chart_df["_d"].apply(_in_leg_range)].copy()
             chart_df = chart_df.drop(columns=["_d"])
             if not chart_df.empty:
-                for cum_col in ("cumulative_options_pnl", "cumulative_dividends_pnl", "cumulative_other_pnl"):
+                # Re-zero cumulative columns relative to the leg's
+                # first day so the chart starts at $0 inside the
+                # filtered window. ``cumulative_options_pnl`` is now
+                # realize-on-close cumulative (see mart_daily_pnl
+                # header) — its baseline subtraction still produces a
+                # well-defined "delta during this leg" series.
+                for cum_col in (
+                    "cumulative_options_pnl",
+                    "cumulative_dividends_pnl",
+                    "cumulative_other_pnl",
+                ):
                     if cum_col in chart_df.columns:
                         baseline = float(chart_df[cum_col].iloc[0] or 0)
                         chart_df[cum_col] = chart_df[cum_col].astype(float) - baseline
-                # Snapshot market value / cost basis covers ALL open options for the
-                # symbol, not just those in the selected leg. Null them out so the
-                # chart uses only the re-zeroed cash flows for this leg's P&L.
-                for snap_col in ("option_market_value", "option_cost_basis"):
-                    if snap_col in chart_df.columns:
-                        chart_df[snap_col] = None
+                # Open MTM and snapshot diagnostics cover ALL open
+                # options for the symbol, not just those in the
+                # selected leg. Zero them out so the chart's
+                # within-leg series isn't inflated by other legs'
+                # open contracts. Realized contributions inside the
+                # leg window are still attributed via the rezeroed
+                # cumulative.
+                for col in (
+                    "open_options_unrealized_pnl",
+                    "option_market_value",
+                    "option_cost_basis",
+                ):
+                    if col in chart_df.columns:
+                        chart_df[col] = 0 if col == "open_options_unrealized_pnl" else None
         if not chart_df.empty:
             chart_data = _build_chart_from_daily_pnl(chart_df, current_df)
             # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
@@ -3733,7 +3751,15 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     dates, equity_s, options_s, dividends_s, total_s, price_s = (
         [], [], [], [], [], [],
     )
-    last_cumulative_options_pnl = 0.0
+    last_cumulative_options_realized = 0.0
+    last_open_options_unrealized = 0.0
+    # Track when option series steps (realization or MTM change) so the
+    # "skip quiet days for closed positions" branch doesn't drop a real
+    # event day. Without this an OTM-expiry crystallization (no fill in
+    # stg_history → has_trade=False on close_date) would be silently
+    # skipped from the rendered series.
+    prev_options_realized_for_skip = 0.0
+    prev_options_open_mtm_for_skip = 0.0
 
     for _, row in daily_df.iterrows():
         buy_qty = float(row.get("equity_buy_qty") or 0)
@@ -3745,8 +3771,26 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         if has_trade:
             last_trade_date = row["date"]
 
-        if position_is_closed and shares_held == 0 and short_shares == 0 and not has_trade:
+        # Skip quiet days for closed positions — but DO NOT skip days
+        # where the options series steps. Realization-on-close days
+        # (especially OTM expiries that have no fill in stg_history)
+        # would otherwise vanish from the chart. Compare today's
+        # mart-side option fields against the most recent rendered
+        # values: any change is a real event the user should see.
+        cur_realized_for_skip = float(row.get("cumulative_options_pnl") or 0)
+        cur_open_mtm_for_skip = float(row.get("open_options_unrealized_pnl") or 0)
+        options_step_today = (
+            cur_realized_for_skip != prev_options_realized_for_skip
+            or cur_open_mtm_for_skip != prev_options_open_mtm_for_skip
+        )
+        if (position_is_closed
+                and shares_held == 0
+                and short_shares == 0
+                and not has_trade
+                and not options_step_today):
             continue
+        prev_options_realized_for_skip = cur_realized_for_skip
+        prev_options_open_mtm_for_skip = cur_open_mtm_for_skip
 
         # Process sells first (may create short position)
         if sell_qty > 0:
@@ -3796,19 +3840,20 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
                 unrealized -= (short_shares * close - short_cost_basis)
         eq_pnl = cum_realized + unrealized
 
-        # Options P&L = cumulative cash flows + current option market value.
-        # After the first snapshot, the mart carries forward option_market_value
-        # via LAST_VALUE IGNORE NULLS, so it's only NULL pre-first-snapshot.
-        # Pre-snapshot days show cash flows only (realized premiums / costs).
-        cum_opt = float(row.get("cumulative_options_pnl") or 0)
-        opt_mv = row.get("option_market_value")
-        if opt_mv is not None and not pd.isna(opt_mv):
-            opt_pnl = cum_opt + float(opt_mv)
-        else:
-            opt_pnl = cum_opt
+        # Options P&L = realize-on-close cumulative + open-contract MTM
+        # at this date. mart_daily_pnl exposes both halves separately
+        # (see model header for the attribution rule); the chart simply
+        # sums them. Post-fix this means a STO premium does NOT appear
+        # as a step on STO date — instead the option contributes daily
+        # MTM until close_date, then crystallizes at the realized total.
+        # See AGENTS.md "Option P&L Attribution".
+        cum_realized_opt = float(row.get("cumulative_options_pnl") or 0)
+        open_unreal_opt = float(row.get("open_options_unrealized_pnl") or 0)
+        opt_pnl = cum_realized_opt + open_unreal_opt
         div_pnl = float(row.get("cumulative_dividends_pnl") or 0)
         oth_pnl = float(row.get("cumulative_other_pnl") or 0)
-        last_cumulative_options_pnl = cum_opt
+        last_cumulative_options_realized = cum_realized_opt
+        last_open_options_unrealized = open_unreal_opt
 
         dates.append(str(row["date"])[:10])
         equity_s.append(round(eq_pnl, 2))
@@ -3825,13 +3870,41 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
 
     today_str = str(date.today())
     if not current_df.empty and dates[-1] != today_str:
-        # Today's option P&L = cumulative cash flows + current open option market value.
-        # Using market_value (not unrealized_pnl) keeps this consistent with the
-        # cum + mv formula used for all historical points.
-        opt_mv_today = float(current_df.loc[
-            current_df["instrument_type"].isin(["Call", "Put"]), "market_value"
-        ].sum()) if "market_value" in current_df.columns else 0.0
-        today_option_pnl = last_cumulative_options_pnl + opt_mv_today
+        # Today's option P&L = last cumulative realized + LIVE open
+        # MTM from current_df (broker snapshot, full precision).
+        #
+        # Filter to genuinely-open contracts (option_expiry >= today
+        # if available). Schwab's snapshot can lag actual expiry by
+        # 1-2 trading days — without this filter a past-expiry
+        # contract would contribute its stale cost-to-close on top of
+        # the realized credit already in last_cumulative_options_realized,
+        # double-counting. Same calendar-beats-snapshot rule as the
+        # status logic in int_option_contracts.
+        #
+        # Using ``unrealized_pnl`` (not ``market_value``) matches the
+        # snapshot-derived MTM used in mart_daily_pnl; current_df came
+        # from int_enriched_current which has the corrected sign.
+        # See AGENTS.md "Option P&L Attribution".
+        opt_mask = current_df["instrument_type"].isin(["Call", "Put"])
+        if "option_expiry" in current_df.columns:
+            today_d = date.today()
+            opt_expiry_series = pd.to_datetime(
+                current_df["option_expiry"], errors="coerce"
+            ).dt.date
+            opt_mask = opt_mask & (
+                opt_expiry_series.isna() | (opt_expiry_series >= today_d)
+            )
+        if "unrealized_pnl" in current_df.columns:
+            opt_unreal_today = float(
+                current_df.loc[opt_mask, "unrealized_pnl"].sum()
+            )
+        elif "market_value" in current_df.columns:
+            opt_unreal_today = float(
+                current_df.loc[opt_mask, "market_value"].sum()
+            )
+        else:
+            opt_unreal_today = last_open_options_unrealized
+        today_option_pnl = last_cumulative_options_realized + opt_unreal_today
         eq_row = current_df[current_df["instrument_type"] == "Equity"]
         today_eq = equity_s[-1]
         if not eq_row.empty and (shares_held > 0 or short_shares > 0):
@@ -4452,13 +4525,45 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     all_dates = sorted(daily_df["date"].dropna().unique())
 
     eq_state = {}
-    cum_opt = cum_div = cum_oth = 0.0
+    cum_div = cum_oth = 0.0
     dates_out, equity_s, options_s, dividends_s, total_s = [], [], [], [], []
+
+    # Account-level options P&L follows the same realize-on-close +
+    # MTM-while-open rule as the position page (see AGENTS.md
+    # "Option P&L Attribution"). For each day:
+    #   - cumulative_options_pnl is already realized cumulative across
+    #     all closed contracts as of that date. Per-symbol values are
+    #     additive across symbols (each contract appears in exactly one
+    #     symbol's series).
+    #   - open_options_unrealized_pnl is point-in-time MTM of all open
+    #     contracts on this date. Sum across symbols.
+    # Pre-fix this routine ran ``cum_opt += sum(options_amount)``,
+    # which credited STO premium on STO date — the position-page bug
+    # except worse because it couldn't even mark-to-market.
+    options_per_symbol_realized = {}  # (account, symbol) -> last realized cum
 
     for d in all_dates:
         day = daily_df[daily_df["date"] == d]
 
-        cum_opt += float(day["options_amount"].sum())
+        # Update per-symbol realized cumulative from the mart (carried
+        # forward across days when no new realization happened).
+        for _, r in day.iterrows():
+            key = (r["account"], r["symbol"])
+            options_per_symbol_realized[key] = float(
+                r.get("cumulative_options_pnl") or 0
+            )
+        realized_total = sum(options_per_symbol_realized.values())
+
+        # Open MTM at this date is sum across the (account, symbol)
+        # rows present today. Symbols with no row today contribute 0
+        # (per-contract spine ends at close_date — see
+        # int_option_contract_daily_pnl).
+        open_mtm_total = float(day.get(
+            "open_options_unrealized_pnl",
+            pd.Series(dtype=float),
+        ).fillna(0).sum()) if "open_options_unrealized_pnl" in day.columns else 0.0
+
+        cum_opt = realized_total + open_mtm_total
         cum_div += float(day["dividends_amount"].sum())
         cum_oth += float(day["other_amount"].sum())
 
@@ -4501,15 +4606,47 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     today = date.today()
     today_str = str(today)
     if not current_df.empty and dates_out and dates_out[-1] != today_str:
+        # Synthetic today row when the mart hasn't been built yet for
+        # today (sync ran but dbt hasn't refreshed yet).
+        #
+        # Equity: keep the legacy behavior of adding today's snapshot
+        # unrealized to the last mart-day equity value. There's a
+        # well-known dimensional issue here (equity_s[-1] already
+        # includes mark-to-market at the mart's close price for that
+        # day, so adding today's unrealized double-counts when the
+        # mart is fresh as of yesterday). Pre-existing; out of scope
+        # for the option-attribution rewrite.
+        #
+        # Options: under realize-on-close, the right value is
+        #   today_options = (last realized cumulative across symbols)
+        #                 + (LIVE open MTM from current_df today)
+        # This is a REPLACEMENT not an addition: the last loop
+        # iteration's options_s value already had open MTM for the
+        # mart's last day, and we want today's broker MTM instead.
         eq_unreal = float(current_df.loc[current_df["instrument_type"] == "Equity", "unrealized_pnl"].sum())
-        opt_unreal = float(current_df.loc[current_df["instrument_type"].isin(["Call", "Put"]), "unrealized_pnl"].sum())
-        total_unreal = eq_unreal + opt_unreal
-        if total_unreal != 0:
+        # Filter to genuinely-open option contracts (calendar beats
+        # stale snapshot — see _build_chart_from_daily_pnl for the
+        # same rationale).
+        opt_mask = current_df["instrument_type"].isin(["Call", "Put"])
+        if "option_expiry" in current_df.columns:
+            today_d = date.today()
+            opt_expiry_series = pd.to_datetime(
+                current_df["option_expiry"], errors="coerce"
+            ).dt.date
+            opt_mask = opt_mask & (
+                opt_expiry_series.isna() | (opt_expiry_series >= today_d)
+            )
+        opt_unreal_today = float(
+            current_df.loc[opt_mask, "unrealized_pnl"].sum()
+        )
+        last_realized_total = sum(options_per_symbol_realized.values())
+        today_options = round(last_realized_total + opt_unreal_today, 2)
+        if eq_unreal != 0 or today_options != options_s[-1]:
             dates_out.append(today_str)
             equity_s.append(round(equity_s[-1] + eq_unreal, 2))
-            options_s.append(round(options_s[-1] + opt_unreal, 2))
+            options_s.append(today_options)
             dividends_s.append(dividends_s[-1])
-            total_s.append(round(total_s[-1] + total_unreal, 2))
+            total_s.append(round(equity_s[-1] + today_options + dividends_s[-1] + cum_oth, 2))
 
     return {
         "dates": dates_out,

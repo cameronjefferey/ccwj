@@ -2,12 +2,38 @@
     Daily P&L building blocks — pre-aggregated for chart rendering.
 
     One row per (account, symbol, date).  Covers every date that has either
-    a trade or a daily close price from the yfinance pipeline.
+    a trade, an option snapshot, a dividend, or a daily close price from
+    the yfinance pipeline.
 
-    Options: when daily snapshots exist (int_daily_option_value), we expose
-    option_market_value and option_cost_basis so the chart can show
-    mark-to-market option P&L every day (like equity). When absent, the
-    app uses cumulative_options_pnl from trade flows.
+    OPTION P&L ATTRIBUTION (see AGENTS.md "Option P&L Attribution" for
+    the full rule and int_option_contract_daily_pnl for the per-contract
+    grain):
+
+      The chart should show realize-on-close + MTM-while-open, NOT
+      cash-flow-on-fill-date. STO premium does not become "yours" until
+      the position closes.
+
+      Two columns expose this:
+        cumulative_options_pnl       =  cumulative SUM of realized
+                                        contributions (each closed
+                                        contract credited on its
+                                        close_date)
+        open_options_unrealized_pnl  =  point-in-time MTM at date d of
+                                        all currently-open contracts
+                                        with snapshot data
+
+      Total options P&L at d = the two above, ADDED.
+
+      ``options_amount`` is preserved (legacy diagnostic — sum of raw
+      ``stg_history.amount`` for option fills on this date) but is NOT
+      what the chart should sum. Reconcile audits and downstream
+      cross-checks read it but the presentation layer must not.
+
+      ``option_market_value`` and ``option_cost_basis`` (from
+      int_daily_option_value) are still exposed for backwards-compat
+      diagnostics. Do not use them for new chart math —
+      ``open_options_unrealized_pnl`` already wraps them with the right
+      sign convention.
 
     Equity columns provide the daily buy/sell events so the presentation
     layer can compute running average-cost P&L.
@@ -126,15 +152,39 @@ broker_today_prices as (
       and snapshot_date = current_date()
 ),
 
+-- Per (account, user_id, symbol, date) options P&L decomposition.
+-- See int_option_contract_daily_pnl for the per-contract grain and
+-- attribution rule. Two streams to aggregate:
+--   * realized_today    = sum of contracts realizing on this date
+--                         (chart accumulates this as a running total)
+--   * open_unrealized_today = sum of MTM for currently-open contracts
+--                             with snapshot data on this date
+--                             (point-in-time, NOT accumulated)
+options_pnl_per_day as (
+    select
+        account,
+        user_id,
+        symbol,
+        date,
+        sum(case when is_realized_close then pnl_today else 0 end)
+            as realized_today,
+        sum(case when not is_realized_close then pnl_today else 0 end)
+            as open_unrealized_today
+    from {{ ref('int_option_contract_daily_pnl') }}
+    group by 1, 2, 3, 4
+),
+
 -- Build the per-tenant date spine from rows that have user_id
--- (trade_daily, daily_option). prices have no user_id so we expand them
--- per-tenant via a join to known (account, user_id) pairs from
--- trade_daily; without that the price-only rows would produce NULL
--- user_id rows that the app filter would drop.
+-- (trade_daily, options_pnl_per_day, daily_option). prices have no
+-- user_id so we expand them per-tenant via a join to known
+-- (account, user_id) pairs; without that the price-only rows would
+-- produce NULL user_id rows that the app filter would drop.
 known_tenants as (
     select distinct account, user_id, symbol from trade_daily
     union distinct
     select distinct account, user_id, symbol from {{ ref('int_daily_option_value') }}
+    union distinct
+    select distinct account, user_id, symbol from options_pnl_per_day
 ),
 
 all_dates as (
@@ -144,6 +194,8 @@ all_dates as (
         select account, user_id, symbol, date from dividend_daily
         union distinct
         select account, user_id, symbol, date from {{ ref('int_daily_option_value') }}
+        union distinct
+        select account, user_id, symbol, date from options_pnl_per_day
         union distinct
         select kt.account, kt.user_id, kt.symbol, p.date
         from known_tenants kt
@@ -172,6 +224,22 @@ joined as (
         coalesce(td.equity_sell_qty, 0)       as equity_sell_qty,
         coalesce(td.other_amount, 0)          as other_amount,
 
+        -- Realize-on-close + MTM-while-open option contributions.
+        -- See header docstring for the attribution rule and
+        -- int_option_contract_daily_pnl for the per-contract grain.
+        --
+        -- ``options_realized_today``: cash sum of contracts realizing
+        -- TODAY (each closed contract appears ONCE on its close_date
+        -- with full net_cash_flow). Cumulated downstream.
+        --
+        -- ``open_unrealized_today``: SUM of MTM across every open
+        -- contract on this date. The per-contract spine is dense
+        -- across the open lifetime, so on dates with no open contracts
+        -- there are no rows in opd → NULL via LEFT JOIN, which we
+        -- coalesce to 0. Point-in-time, NOT cumulated.
+        coalesce(opd.realized_today, 0)        as options_realized_today,
+        coalesce(opd.open_unrealized_today, 0) as open_unrealized_today,
+
         -- Price source: fresh broker snapshot today (when present) trumps
         -- yfinance close. yfinance handles every other day. See header
         -- comment for why this asymmetry matters for chart reconciliation.
@@ -182,6 +250,12 @@ joined as (
             then bt.close_price
             else p.close_price
         end as close_price,
+
+        -- Legacy diagnostic columns: raw snapshot mark and basis.
+        -- Charts must NOT add these to options P&L — they're already
+        -- folded into ``open_unrealized_today`` above with the right
+        -- sign convention. Kept exposed so the reconcile audit script
+        -- and existing dashboards keep functioning.
         o.option_market_value,
         o.option_cost_basis,
 
@@ -223,6 +297,11 @@ joined as (
         and (ad.user_id is not distinct from o.user_id)
         and ad.symbol = o.symbol
         and ad.date = o.date
+    left join options_pnl_per_day opd
+        on ad.account = opd.account
+        and (ad.user_id is not distinct from opd.user_id)
+        and ad.symbol = opd.symbol
+        and ad.date = opd.date
 ),
 
 -- Carry forward latest snapshot option values so every date (on or
@@ -254,7 +333,22 @@ filled as (
             partition by account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as option_cost_basis,
-        sum(options_amount) over w    as cumulative_options_pnl,
+        -- ``cumulative_options_pnl`` is now realize-on-close cumulative.
+        -- Each closed contract's realized P&L lands ONCE on close_date
+        -- and persists. Pre-fix this was sum(stg_history.amount over
+        -- date) which credited STO premium on STO date — see
+        -- int_option_contract_daily_pnl docstring for why that was
+        -- wrong.
+        sum(options_realized_today) over w as cumulative_options_pnl,
+        -- ``open_options_unrealized_pnl`` is point-in-time MTM of all
+        -- currently-open contracts at this date. The per-contract
+        -- spine is dense (one row per day per open contract via
+        -- generate_date_array), so mart-level just passes through
+        -- whatever options_pnl_per_day produced. NO carry-forward at
+        -- this layer — that would mistakenly persist MTM after the
+        -- last open contract closed (the per-contract spine
+        -- terminates at close_date).
+        open_unrealized_today as open_options_unrealized_pnl,
         sum(dividends_amount) over w  as cumulative_dividends_pnl,
         sum(other_amount) over w      as cumulative_other_pnl
     from joined
@@ -278,6 +372,7 @@ select
     option_market_value,
     option_cost_basis,
     cumulative_options_pnl,
+    open_options_unrealized_pnl,
     cumulative_dividends_pnl,
     cumulative_other_pnl
 from filled

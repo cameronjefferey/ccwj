@@ -556,6 +556,7 @@ class TestDailyPnlChartDedup:
             "option_market_value": 0.0,
             "option_cost_basis": 0.0,
             "cumulative_options_pnl": 0.0,
+            "open_options_unrealized_pnl": 0.0,
             "cumulative_dividends_pnl": 0.0,
             "cumulative_other_pnl": 0.0,
         }

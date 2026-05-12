@@ -60,8 +60,69 @@ contract_summary as (
         d.direction,
 
         -- Dates
+        --
+        -- ``close_date`` = when the position effectively ENDED, not the
+        -- last fill date. This matters for OTM expiries: Schwab does not
+        -- ship an explicit ``option_expired`` event, so for a sold call
+        -- that just expires worthless the only fill in stg_history is
+        -- the original STO. Pre-fix close_date = STO date, which both
+        --   (a) made days_in_trade = 0 for every OTM expiry, and
+        --   (b) made every realize-on-close P&L attribution land on the
+        --       OPEN date instead of the close date — defeating the
+        --       whole purpose of int_option_contract_daily_pnl.
+        -- Precedence:
+        --   1. last fill date among closing actions (BTC / STC /
+        --      explicit option_expired / option_assigned / option_exercised)
+        --   2. option_expiry, if past current_date()
+        --   3. NULL (still open with no terminal event)
         min(o.trade_date)  as open_date,
-        max(o.trade_date)  as close_date,
+        -- ``close_date`` precedence:
+        --   1. last fill date among closing actions
+        --   2. option_expiry, if past current_date()
+        --   3. NULL (still open with no terminal event)
+        -- Defensive guard for broker-error fills that record an STO
+        -- AFTER the option's own expiry (real example May 2026: PLTR
+        -- 5/8 expiry, sync registered an STO on 5/12). The calendar-
+        -- expiry branch would yield close_date < open_date —
+        -- nonsensical. Coerce to open_date so the contract is treated
+        -- as same-day-closed (zero days_in_trade) and its P&L still
+        -- realizes — better than NULL (which would defer the realized
+        -- credit forever). Wrapped in a CASE so we keep NULL for
+        -- genuinely-open contracts (no closing action AND not past
+        -- expiry yet); ``greatest(NULL, anything)`` is NULL in BQ,
+        -- which would silently mark every open contract as
+        -- close-date=open_date — a much worse failure mode.
+        case
+            when coalesce(
+                    max(case
+                            when o.action in (
+                                'option_buy_to_close', 'option_sell_to_close',
+                                'option_expired', 'option_assigned', 'option_exercised'
+                            )
+                            then o.trade_date
+                        end),
+                    case
+                        when max(o.option_expiry) < current_date()
+                        then max(o.option_expiry)
+                    end
+                ) is null then null
+            else greatest(
+                coalesce(
+                    max(case
+                            when o.action in (
+                                'option_buy_to_close', 'option_sell_to_close',
+                                'option_expired', 'option_assigned', 'option_exercised'
+                            )
+                            then o.trade_date
+                        end),
+                    case
+                        when max(o.option_expiry) < current_date()
+                        then max(o.option_expiry)
+                    end
+                ),
+                min(o.trade_date)
+            )
+        end as close_date,
 
         -- Quantities
         sum(case when o.action = 'option_sell_to_open' then o.quantity else 0 end) as contracts_sold_to_open,
@@ -111,7 +172,24 @@ snapshot_only_options as (
         case when coalesce(c.quantity, 0) < 0 then 'Sold' else 'Bought' end as direction,
 
         coalesce(c.snapshot_date, current_date()) as open_date,
-        cast(null as date) as close_date,
+        -- Snapshot-only contracts have no fills in stg_history, so
+        -- they have no closing-action date. But the same calendar-
+        -- truth rule still applies: if option_expiry is in the past,
+        -- the position is realized regardless of what the broker's
+        -- stale snapshot says. Without this branch, snapshot-only
+        -- past-expiry contracts (e.g. broker-error STO recorded for
+        -- an expired contract) would have status='Closed' but
+        -- close_date=NULL, and int_option_contract_daily_pnl would
+        -- silently drop their realized P&L. Mirrors the close_date
+        -- precedence in contract_summary.
+        case
+            when c.option_expiry < current_date()
+            then greatest(
+                c.option_expiry,
+                coalesce(c.snapshot_date, current_date())
+            )
+            else cast(null as date)
+        end as close_date,
 
         0.0 as contracts_sold_to_open,
         0.0 as contracts_bought_to_open,
@@ -179,28 +257,40 @@ select
     coalesce(cur.market_value, 0)    as current_market_value,
     coalesce(cur.unrealized_pnl, 0)  as current_unrealized_pnl,
 
-    -- Total P&L for open vs closed contracts:
+    -- Total P&L for open vs closed contracts.
     --
-    -- CLOSED: c.net_cash_flow is the only truth (sum of fills from
-    -- stg_history). No snapshot to mix in.
+    -- Calendar truth wins over snapshot presence: a contract whose
+    -- ``status`` says Closed (because ``close_type`` is set OR
+    -- ``option_expiry`` is past) MUST realize via ``net_cash_flow``
+    -- regardless of whether Schwab's stale snapshot still carries
+    -- it. Pre-fix the case branch keyed off ``cur.trade_symbol is
+    -- not null`` and silently used ``cur.unrealized_pnl`` for
+    -- expired-but-still-snapshotted contracts (real example May 2026:
+    -- NVDA 6/5 230C closed via assignment 4/24, snapshot stale at
+    -- mv=-1375 → total_pnl rendered as -$546 instead of the true
+    -- realized +$838). This made the Strategy Breakdown / chart /
+    -- positions_summary disagree with int_option_contract_daily_pnl
+    -- (which correctly emits realized at close_date).
     --
-    -- OPEN:   trust the broker snapshot's full-precision unrealized_pnl
-    -- directly. The naive `net_cash_flow + market_value` combines rounded
-    -- $0.01 fill prices from stg_history with full-precision snapshot
-    -- market_value, accumulating ~$1-2 of rounding drift per contract.
-    -- Worked example: Sara/BE 290C 5/8 sold-to-open at fill price
-    -- $15.01305. Schwab's CSV rounds the price column to $15.02 → seed
-    -- amount = 200 × $15.02 = $3,004 (history). Schwab's cost_basis
-    -- preserves $3,002.61 (snapshot). True open unrealized = $3,000.61
-    -- (snapshot's market_value + cost_basis with sign flip). The naive
-    -- formula gave $3,002 ($3,004 history − $2 mark), which propagates a
-    -- $1.39 drift into positions_summary.total_pnl and trips the
-    -- page-level reconciliation invariant card on otherwise-healthy
-    -- positions. Snapshot wins for open marks.
+    -- CLOSED: ``c.net_cash_flow`` is the only truth (sum of all
+    -- fills from stg_history). The matching status logic at the
+    -- top of this SELECT already reserved 'Closed' for these.
     --
-    -- Falls back to the old formula when snapshot is missing (covers the
-    -- pre-snapshot warm-up window for newly opened contracts).
+    -- OPEN:   trust the broker snapshot's full-precision
+    -- ``unrealized_pnl`` directly. The naive
+    -- ``net_cash_flow + market_value`` combines rounded $0.01 fill
+    -- prices from stg_history with full-precision snapshot
+    -- market_value, accumulating ~$1-2 of rounding drift per
+    -- contract (Sara/BE 290C 5/8 STO at fill price $15.01305 →
+    -- seed amount $3,004 vs snapshot cost_basis $3,002.61 → $1.39
+    -- drift, trips the page-level reconciliation invariant). Falls
+    -- back to ``net_cash_flow`` when the snapshot is missing
+    -- (pre-snapshot warm-up window for newly opened contracts).
     case
+        -- Calendar precedence: if status is Closed, realize at
+        -- net_cash_flow no matter what stg_current still carries.
+        when c.close_type is not null         then c.net_cash_flow
+        when c.option_expiry < current_date() then c.net_cash_flow
         when cur.trade_symbol is not null
              and cur.unrealized_pnl is not null
         then cur.unrealized_pnl
@@ -210,11 +300,12 @@ select
     end as total_pnl,
 
     -- Duration
+    --
+    -- For closed contracts (close_date set) use the close_date even if
+    -- the broker's stale snapshot still carries the contract — calendar
+    -- truth wins, same precedence as the ``status`` column above.
     date_diff(
-        case
-            when cur.trade_symbol is not null then current_date()
-            else coalesce(c.close_date, current_date())
-        end,
+        coalesce(c.close_date, current_date()),
         c.open_date,
         day
     ) as days_in_trade
