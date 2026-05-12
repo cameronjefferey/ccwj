@@ -374,9 +374,10 @@ three different prices, all rendered to the user as if they agreed).
 is the structural invariant — for every Equity row in `int_enriched_current`,
 `abs(qty * current_price - market_value) <= $0.01`. The Position Detail page
 also computes a runtime invariant (`invariant_warning` in `app/routes.py`)
-that compares Strategy Breakdown total / Breakdown by Type total / Chart
-Terminal value and surfaces a red admin-only card when they disagree by
-> $1. Both must remain green.
+that compares **Hero total return**, **Breakdown by Type total**, and **chart
+terminal** (`> $1` gap → admin-only card). Σ labeled strategy rows are not
+included; attribution partitions equity across strategies and may diverge from
+ledger rollups while the three checks above still agree.
 
 **Anti-pattern to avoid.** `_align_position_pnl_chart_with_kpi` in
 `app/routes.py` used to silently rescale the chart series when the

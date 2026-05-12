@@ -35,7 +35,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from app.routes import _build_chart_from_daily_pnl
+from app.routes import (
+    _build_chart_from_daily_pnl,
+    _build_chart_from_daily_pnl_partition,
+    _chart_data_terminal,
+    _collapse_mart_daily_pnl_duplicate_grain,
+    _merge_position_pnl_chart_payloads,
+)
 
 
 def _daily_row(date_, *, cum_realized=0.0, open_mtm=0.0,
@@ -74,6 +80,90 @@ def _daily_row(date_, *, cum_realized=0.0, open_mtm=0.0,
         "close_price": close_price if close_price > 0 else None,
         "has_trade": has_trade,
     }
+
+
+def test_collapse_duplicate_mart_grain_stops_chart_double_count_equity():
+    """Twin rows same (account,user_id,symbol,date) duplicate-run equity buy
+    fields in the chart state machine unless collapsed (May 2026 BE ~2×).
+    Chart build must agree with feeding an explicitly collapsed frame.
+    """
+    r = dict(
+        _daily_row(
+            "2026-05-01",
+            equity_buy_qty=100,
+            equity_buy_cost=5000.0,
+            close_price=50.0,
+            has_trade=True,
+        )
+    )
+    df_dup = pd.DataFrame([r, dict(r)])
+    collapsed = _collapse_mart_daily_pnl_duplicate_grain(df_dup)
+    assert len(collapsed) == 1
+    from_chart = _build_chart_from_daily_pnl(df_dup, pd.DataFrame())
+    from_explicit = _build_chart_from_daily_pnl(collapsed, pd.DataFrame())
+    assert from_chart["total"][-1] == pytest.approx(
+        from_explicit["total"][-1], rel=0, abs=0.05
+    ), (
+        f"duplicate mart_daily_pnl rows must not inflate terminal "
+        f"({from_chart['total'][-1]} vs {from_explicit['total'][-1]})"
+    )
+
+
+def test_chart_partitions_per_account_so_cross_account_sells_do_not_blend_basis():
+    """InvA's sell must not realize against InvB's purchase when both feed the
+    same symbol chart (all-accounts position view). A single walker blends
+    average cost across accounts and materializes bogus equity P&L."""
+    ra = dict(
+        _daily_row(
+            "2026-01-02",
+            equity_buy_qty=100,
+            equity_buy_cost=4000.0,
+            close_price=40.0,
+            has_trade=True,
+        )
+    )
+    ra["account"] = "InvA"
+    rb = dict(
+        _daily_row(
+            "2026-01-03",
+            equity_buy_qty=100,
+            equity_buy_cost=6000.0,
+            close_price=50.0,
+            has_trade=True,
+        )
+    )
+    rb["account"] = "InvB"
+    rs = dict(
+        _daily_row(
+            "2026-01-04",
+            equity_sell_qty=100.0,
+            equity_sell_proceeds=5500.0,
+            close_price=55.0,
+            has_trade=True,
+        )
+    )
+    rs["account"] = "InvA"
+    rs["equity_buy_qty"] = 0.0
+    rs["equity_buy_cost"] = 0.0
+    combined = pd.DataFrame([ra, rb, rs])
+    naive_blend = _build_chart_from_daily_pnl_partition(
+        combined.sort_values("date"), pd.DataFrame()
+    )
+    merged_ok = _merge_position_pnl_chart_payloads(
+        [
+            _build_chart_from_daily_pnl_partition(
+                pd.DataFrame([ra, rs]).sort_values("date"), pd.DataFrame()
+            ),
+            _build_chart_from_daily_pnl_partition(
+                pd.DataFrame([rb]).sort_values("date"), pd.DataFrame()
+            ),
+        ]
+    )
+    routed = _build_chart_from_daily_pnl(combined, pd.DataFrame())
+    assert routed["total"][-1] == pytest.approx(
+        merged_ok["total"][-1], rel=0, abs=0.25
+    )
+    assert abs(naive_blend["total"][-1] - merged_ok["total"][-1]) > 25.0
 
 
 def _open_short_option_current_df(unrealized_pnl, *, expiry=None):
@@ -375,3 +465,9 @@ def test_chart_endpoint_matches_int_option_contracts_total_pnl_sum():
         f"on the same page show a different total than the chart — the "
         f"original BE/Sara reconciliation symptom."
     )
+
+def test_chart_data_terminal_reads_last_total_bucket():
+    assert _chart_data_terminal({"total": [1.0, 85581.28]}) == 85581.28
+    assert _chart_data_terminal({"total": []}) == 0.0
+    assert _chart_data_terminal({}) == 0.0
+    assert _chart_data_terminal(None) == 0.0

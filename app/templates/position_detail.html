@@ -84,24 +84,24 @@
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
 
-{# Admin-only canary: if the three independent totals on this page disagree
-   by more than $1, surface it here instead of letting the user discover it
-   in a screenshot. See app/routes.py invariant_warning block for the math. #}
+{# Admin-only canary: hero KPI vs Breakdown-by-type vs chart terminal disagree
+   by more than $1. See app/routes.py invariant_warning block. Strategy-row sums
+   are excluded — labels partition attribution and need not equal ledger totals. #}
 {% if invariant_warning and viewer_is_admin %}
 <div class="alert alert-danger d-flex align-items-start gap-3 mb-3" role="alert" style="border-left: 4px solid #842029;">
     <div style="font-size: 1.25rem;">&#9888;</div>
     <div class="flex-grow-1">
         <div class="fw-bold mb-1">Reconciliation invariant tripped (admin-only)</div>
         <div class="small mb-2">
-            Three independent totals on this page disagree by more than $1.
-            That usually means upstream duplication, a dropped row, or a sign
-            bug. <strong>Do not trust the numbers below until this is resolved.</strong>
+            Hero total return, Breakdown-by-type, and chart terminal disagree by more than $1.
+            That usually means upstream duplication, a dropped row, or a sign bug.
+            <strong>Do not trust the numbers below until this is resolved.</strong>
         </div>
         <table class="table table-sm mb-0" style="font-size: .8rem;">
             <tbody>
                 <tr>
-                    <td class="text-muted">Strategy Breakdown total</td>
-                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.strategy_breakdown_total) }}</td>
+                    <td class="text-muted">Hero total return</td>
+                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.hero_total_return) }}</td>
                 </tr>
                 <tr>
                     <td class="text-muted">Breakdown by Type total</td>
@@ -626,6 +626,15 @@
                 </tr>
             </thead>
             <tbody>
+                {% set ocost = current_positions | sum(attribute='cost_basis') if current_positions else 0 %}
+                {% set omv = current_positions | sum(attribute='market_value') if current_positions else 0 %}
+                {% set opnl = current_positions | sum(attribute='unrealized_pnl') if current_positions else 0 %}
+                {% set ccost = trade_outcomes | sum(attribute='cost') if trade_outcomes else 0 %}
+                {% set cproc = trade_outcomes | sum(attribute='proceeds') if trade_outcomes else 0 %}
+                {% set cpnl = trade_outcomes | sum(attribute='pnl') if trade_outcomes else 0 %}
+                {% set gcost = ocost + ccost %}
+                {% set gval = omv + cproc %}
+                {% set gpnl = opnl + cpnl %}
                 {# ── Open legs ── #}
                 {% if current_positions %}
                 {% for p in current_positions %}
@@ -648,6 +657,16 @@
                     </td>
                 </tr>
                 {% endfor %}
+                {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
+                <tr class="fw-semibold table-light" style="font-size:.8rem;">
+                    <td colspan="8">Open Total</td>
+                    <td class="text-end">${{ "{:,.2f}".format(ocost) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(omv) }}</td>
+                    <td class="text-end {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(opnl) }}
+                    </td>
+                    <td></td>
+                </tr>
                 {% endif %}
 
                 {# ── Separator ── #}
@@ -670,7 +689,12 @@
                         <span class="leg-arrow" style="color:#c9302c;font-size:.7rem;">&#9654;</span>
                         {% endif %}
                     </td>
-                    <td class="text-center text-muted small">{{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}</td>
+                    <td class="text-center text-muted small">
+                        {{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}
+                        {% if o.equity_partial_n is defined and o.equity_partial_n > 1 %}
+                        <span class="d-block lh-sm" style="font-size:.6rem;">partial {{ o.equity_partial_ix }}/{{ o.equity_partial_n }}</span>
+                        {% endif %}
+                    </td>
                     <td class="fw-semibold small" {% if o.trade_symbol %}title="{{ o.trade_symbol }}"{% endif %}>
                         {{ o.trade_symbol|option_symbol }}
                         {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
@@ -732,14 +756,24 @@
             <tfoot class="table-light">
                 <tr class="fw-semibold" style="font-size:.8rem;">
                     <td colspan="8">Closed Total</td>
-                    <td class="text-end">${{ "{:,.2f}".format(trade_outcomes | map(attribute='cost') | sum) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(trade_outcomes | map(attribute='proceeds') | sum) }}</td>
-                    {% set total_pnl = trade_outcomes | map(attribute='pnl') | sum %}
-                    <td class="text-end {{ 'text-positive' if total_pnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(total_pnl) }}
+                    <td class="text-end">${{ "{:,.2f}".format(ccost) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(cproc) }}</td>
+                    <td class="text-end {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(cpnl) }}
                     </td>
                     <td></td>
                 </tr>
+                {% if current_positions %}
+                <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
+                    <td colspan="8">Total Total</td>
+                    <td class="text-end">${{ "{:,.2f}".format(gcost) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(gval) }}</td>
+                    <td class="text-end {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(gpnl) }}
+                    </td>
+                    <td></td>
+                </tr>
+                {% endif %}
             </tfoot>
             {% endif %}
         </table>

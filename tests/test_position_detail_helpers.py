@@ -1,10 +1,13 @@
 """Unit tests for position detail merge logic (no BigQuery)."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
 from app.routes import (
     _compute_breakdown_by_type,
+    _equity_raw_trades_for_partial_close_outcome,
     _legs_df_to_sessions_list,
     _merge_position_strategy_breakdown,
     _supplement_summary_with_rolled,
@@ -659,6 +662,34 @@ def test_breakdown_by_type_dividend_query_failure_is_non_fatal():
     div = _bd_lookup(rows, "Dividends")
     assert div["realized"] == 0.0
     assert div["count"] == 0
+
+
+def test_equity_raw_trades_clips_future_partial_sells():
+    """Each partial-close outcome should show buy + fills through that close only."""
+
+    trades = [
+        {"trade_date": date(2024, 7, 31), "trade_symbol": "JEPI", "account": "A", "qty": -2000, "instrument_type": "Equity"},
+        {"trade_date": date(2026, 4, 15), "trade_symbol": "JEPI", "account": "A", "qty": 1000, "instrument_type": "Equity"},
+        {"trade_date": date(2026, 5, 6), "trade_symbol": "JEPI", "account": "A", "qty": 1000, "instrument_type": "Equity"},
+    ]
+    session_range = (date(2024, 7, 31), date(2026, 5, 6))
+    first = _equity_raw_trades_for_partial_close_outcome(
+        trades,
+        trade_symbol="JEPI",
+        account="A",
+        session_range=session_range,
+        close_milestone=date(2026, 4, 15),
+    )
+    second = _equity_raw_trades_for_partial_close_outcome(
+        trades,
+        trade_symbol="JEPI",
+        account="A",
+        session_range=session_range,
+        close_milestone=date(2026, 5, 6),
+    )
+    assert len(first) == 2
+    assert len(second) == 3
+    assert {r["trade_date"] for r in first} == {date(2024, 7, 31), date(2026, 4, 15)}
 
 
 if __name__ == "__main__":

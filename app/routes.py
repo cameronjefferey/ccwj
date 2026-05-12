@@ -165,6 +165,134 @@ def _filter_df_by_accounts(df, accounts, col="account", user_col="user_id"):
     )
 
 
+def _dedupe_enriched_current_positions(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop duplicate open rows from ``int_enriched_current`` (same contract or
+    equity line merged twice). Seed/snapshot regressions can emit byte-near
+    duplicates; the UI should not show twin 200-share lines with identical cost.
+    """
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    if "trade_symbol" in out.columns:
+        out["trade_symbol"] = (
+            out["trade_symbol"].astype(str).str.strip().replace({"nan": ""})
+        )
+    key = [c for c in ("account", "user_id", "instrument_type", "trade_symbol") if c in out.columns]
+    if len(key) < 2:
+        return df
+    return out.drop_duplicates(subset=key, keep="last").reset_index(drop=True)
+
+
+def _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
+    chart_df: pd.DataFrame, summary_df: pd.DataFrame
+) -> pd.DataFrame:
+    """When admin scope merges two Postgres tenants under one ``account`` label,
+    ``mart_daily_pnl`` can return parallel date spines. Stateful
+    ``_build_chart_from_daily_pnl`` would process every row and double-count
+    equity fills. Align the chart frame to the same ``user_id`` distribution
+    as ``positions_summary`` for this page (mode wins on ties)."""
+    if chart_df is None or chart_df.empty or "user_id" not in chart_df.columns:
+        return chart_df
+    m_ids = pd.to_numeric(chart_df["user_id"], errors="coerce").dropna().unique()
+    if len(m_ids) <= 1:
+        return chart_df
+    if summary_df is None or summary_df.empty or "user_id" not in summary_df.columns:
+        app.logger.warning(
+            "mart_daily_pnl chart has %s distinct user_ids but summary lacks user_id; "
+            "cannot narrow chart tenant",
+            len(m_ids),
+        )
+        return chart_df
+    s_ids = pd.to_numeric(summary_df["user_id"], errors="coerce").dropna()
+    if s_ids.empty:
+        return chart_df
+    uid_keep = int(s_ids.astype(int).value_counts().index[0])
+    m_num = pd.to_numeric(chart_df["user_id"], errors="coerce")
+    narrowed = chart_df.loc[m_num.eq(uid_keep)].copy()
+    if narrowed.empty:
+        app.logger.warning(
+            "chart tenant narrow: summary user_id=%s absent from mart chart; "
+            "keeping un-narrowed frame",
+            uid_keep,
+        )
+        return chart_df
+    return narrowed
+
+
+def _filter_current_for_chart_partition(
+    current_df: pd.DataFrame, account, user_id_key
+) -> pd.DataFrame:
+    """Slice ``int_enriched_current`` rows for one chart partition
+    (``account`` × optional ``user_id``). Required when ``mart_daily_pnl``
+    spans multiple partitions for the same symbol — the live today-row patch
+    must not mix snapshots across tenants."""
+    if current_df is None or current_df.empty or "account" not in current_df.columns:
+        return pd.DataFrame()
+    m = current_df["account"].astype(str) == str(account).strip()
+    if "user_id" in current_df.columns:
+        uid_series = pd.to_numeric(current_df["user_id"], errors="coerce")
+        if user_id_key is None or pd.isna(user_id_key):
+            m &= uid_series.isna()
+        else:
+            uk = float(pd.to_numeric(pd.Series([user_id_key]), errors="coerce").iloc[0])
+            m &= uid_series == uk
+    return current_df.loc[m].copy()
+
+
+def _merge_position_pnl_chart_payloads(parts: list) -> dict:
+    """Sum cumulative position-chart series across partitions (each partition
+    was built with its own equity cost-basis state machine).
+
+    Rows missing on sparse partitions forward-fill within that partition before
+    summing so inactive accounts contribute zero before their first date."""
+    empty = {
+        "dates": [], "equity": [], "options": [], "dividends": [],
+        "total": [], "underlying_price": [], "has_underlying_price": False,
+    }
+    parts = [p for p in (parts or []) if p and (p.get("dates") or [])]
+    if not parts:
+        return empty
+    if len(parts) == 1:
+        return parts[0]
+    all_dates = sorted(set(d for p in parts for d in p["dates"]))
+    idx = pd.Index(all_dates)
+    keys = ["equity", "options", "dividends", "total"]
+    merged = {k: pd.Series(0.0, index=idx, dtype=float) for k in keys}
+    price_acc = pd.Series(index=idx, dtype=float)
+    for p in parts:
+        ds = p["dates"]
+        for k in keys:
+            vals = p[k][: len(ds)]
+            s = pd.Series(vals, index=pd.Index(ds))
+            s = s[~s.index.duplicated(keep="last")].sort_index()
+            s = s.reindex(idx).ffill().fillna(0.0)
+            merged[k] = merged[k].add(s, fill_value=0.0)
+        pr = (p.get("underlying_price") or [None] * len(ds))[: len(ds)]
+        ps = pd.Series(pr, index=pd.Index(ds))
+        ps = ps[~ps.index.duplicated(keep="last")].sort_index()
+        ps = ps.reindex(idx)
+        price_acc = ps.combine_first(price_acc)
+
+    def _rnd_series(s):
+        return [round(float(x), 2) for x in s.tolist()]
+
+    prices_out = []
+    for x in price_acc.tolist():
+        if x is None or pd.isna(x):
+            prices_out.append(None)
+        else:
+            prices_out.append(round(float(x), 2))
+    return {
+        "dates": list(idx),
+        "equity": _rnd_series(merged["equity"]),
+        "options": _rnd_series(merged["options"]),
+        "dividends": _rnd_series(merged["dividends"]),
+        "total": _rnd_series(merged["total"]),
+        "underlying_price": prices_out,
+        "has_underlying_price": bool(price_acc.notna().any()),
+    }
+
+
 # ------------------------------------------------------------------
 # User-id-aware tenancy helpers — see docs/USER_ID_TENANCY.md.
 #
@@ -1348,6 +1476,7 @@ POSITION_TRADES_QUERY = """
 POSITION_CURRENT_QUERY = """
     SELECT
         account,
+        user_id,
         underlying_symbol AS symbol,
         instrument_type,
         trade_symbol,
@@ -1459,6 +1588,50 @@ POSITION_MATRIX_QUERY = """
       AND UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
 """
+
+def _equity_raw_trades_for_partial_close_outcome(
+    trades: list,
+    *,
+    trade_symbol: str,
+    account: str,
+    session_range,
+    close_milestone,
+):
+    """``int_closed_equity_legs`` is one mart row PER partial sell inside a chapter.
+    When attaching ``raw_trades`` for drill-down, include only fills chronological
+    through this row's realization date — otherwise each partial shows the SAME
+    full session history (duplicate Leg 1 + duplicate buy + later sells visible
+    everywhere). JEPI bought 2000 sold 1000 twice was the canonical bug."""
+    ts = str(trade_symbol or "").strip()
+    acct_o = str(account or "").strip()
+
+    def _row_date(tv):
+        try:
+            return pd.to_datetime(tv).date()
+        except Exception:
+            return None
+
+    out = []
+    for t in trades or []:
+        if str(t.get("instrument_type") or "") != "Equity":
+            continue
+        if str(t.get("trade_symbol") or "").strip() != ts:
+            continue
+        if acct_o and str(t.get("account") or "").strip() != acct_o:
+            continue
+        td = _row_date(t.get("trade_date"))
+        if td is None:
+            continue
+        if session_range and session_range[0]:
+            end = session_range[1] or date.today()
+            if not (session_range[0] <= td <= end):
+                continue
+        cm = _row_date(close_milestone) if close_milestone is not None else None
+        if cm is not None and td > cm:
+            continue
+        out.append(t)
+    return sorted(out, key=lambda r: str(r.get("trade_date") or ""))
+
 
 def _merge_position_strategy_breakdown(
     symbol: str,
@@ -2326,6 +2499,8 @@ def position_detail(symbol):
         summary_df = summary_df[summary_df["account"] == selected_account]
         trades_df = trades_df[trades_df["account"] == selected_account]
         current_df = current_df[current_df["account"] == selected_account]
+    if not current_df.empty:
+        current_df = _dedupe_enriched_current_positions(current_df)
     if selected_strategy:
         if "strategy" in summary_df.columns:
             summary_df = summary_df[summary_df["strategy"] == selected_strategy]
@@ -2765,6 +2940,20 @@ def position_detail(symbol):
         leg_predicate=(_in_leg_range if (leg_param and _leg_ranges) else None),
     )
 
+    # Headline KPI used ``Σ positions_summary.total_dividend_income`` + realized
+    # frames + unreal — but Breakdown-by-type / mart chart fold dividends from
+    # ``int_dividend_events`` (synthesised ex-div × holdings etc.). Those streams
+    # can materially diverge (~12k on BE Schwab •••0044): hero read low while
+    # ledger + chart agreed. Pin hero ``total_return`` to the same Σ as the card
+    # above Strategy Breakdown so reconciliation and user trust aren't split.
+    if kpis and breakdown_rows:
+        ledger_total = sum(float(r.get("total") or 0) for r in breakdown_rows)
+        kpis["total_return"] = round(ledger_total, 2)
+        for _br in breakdown_rows:
+            if str(_br.get("type") or "") == "Dividends":
+                kpis["dividend_income"] = round(float(_br.get("total") or 0), 2)
+                break
+
     # Build chart data from pre-aggregated mart_daily_pnl
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
     prices_through_date = None
@@ -2773,6 +2962,10 @@ def position_detail(symbol):
         chart_df = client.query(
             CHART_DATA_QUERY.format(symbol=safe_symbol, account_filter=acct_filter)
         ).to_dataframe()
+        chart_df = _filter_df_by_accounts(chart_df, pos_accounts_scope)
+        chart_df = _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
+            chart_df, summary_df
+        )
         # Filter chart data by selected session date ranges and re-zero cumulative columns
         if leg_param and _leg_ranges and not chart_df.empty and "date" in chart_df.columns:
             chart_df["_d"] = pd.to_datetime(chart_df["date"]).dt.date
@@ -2817,25 +3010,72 @@ def position_detail(symbol):
             "position_detail chart query or build failed for %s: %s", safe_symbol, exc
         )
 
-    # Prefer stg/leg when they have more calendar coverage than mart (e.g. mart has 2–3
-    # recent days while closed legs span years). Compare both; tie-break -> leg. stg can
-    # still be 2 days if only recent fills — do not pick stg before comparing n_leg vs n_stg.
+    # Prefer stg/leg when mart is unusably short — but NEVER replace a mart chart
+    # whose terminal agrees with KPI with ``_cumulative_pnl_from_*`` substitutes.
+    #
+    # Those substitutes are legacy cash-close stepping (only closed legs / raw
+    # stg HISTORY amounts): they omit open unrealized MTM, realize-on-close option
+    # shape, ``int_dividend_events``, etc. After a Schwab sync, ``trades_pre_leg``
+    # often spans *more calendar days than mart_daily_pnl* while the mart spine
+    # still reconciles KPI + breakdown. The naive rule ``best_n > n_m`` then
+    # threw away the correct mart series (~\$85k) for a truncated cash ladder
+    # (~\$20k) — reconciliation invariant explosion (May 2026 BE).
     _chart_dates = chart_data.get("dates") or []
     n_m = len(_chart_dates)
-    ch_stg = _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df) if not trades_pre_leg.empty else None
+    kp_ref = float(kpis.get("total_return") or 0) if kpis else None
+    mart_term = _chart_data_terminal(chart_data)
+
+    ch_stg = (
+        _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df)
+        if not trades_pre_leg.empty else None
+    )
     n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
     ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
-    cands = []
+
+    cands_src = []
     if ch_leg and n_leg >= 2:
-        cands.append((n_leg, "leg", ch_leg))
+        cands_src.append(("leg", ch_leg, n_leg))
     if ch_stg and n_stg >= 2:
-        cands.append((n_stg, "stg", ch_stg))
-    if cands:
-        cands.sort(key=lambda t: (-t[0], 0 if t[1] == "leg" else 1))
-        best_n = cands[0][0]
-        if best_n > n_m or (n_m <= 2 and best_n >= 2):
-            chart_data = cands[0][2]
+        cands_src.append(("stg", ch_stg, n_stg))
+
+    if cands_src:
+        # Tie-break: prefer candidates with more x-points, leg path over stg.
+        cands_src.sort(key=lambda t: (-t[2], 0 if t[0] == "leg" else 1))
+        _, cand_data, best_n = cands_src[0]
+        cand_term = _chart_data_terminal(cand_data)
+        mart_useless = n_m <= 2
+        substitute = False
+
+        if mart_useless:
+            # Mart spine is insufficient — pick whichever substitute lands closest to
+            # KPI (prefer longer tie-break among equally-close substitutes).
+            if kp_ref is not None:
+                scored = []
+                for _nm, cd, bn in cands_src:
+                    g = abs(_chart_data_terminal(cd) - kp_ref)
+                    scored.append((g, -bn, 0 if _nm == "leg" else 1, cd))
+                scored.sort(key=lambda z: z[:3])
+                chart_data = scored[0][3]
+            else:
+                chart_data = cand_data
+        elif kp_ref is not None:
+            gap_mart_k = abs(mart_term - kp_ref)
+            gap_cand_k = abs(cand_term - kp_ref)
+            materially_better_cand = gap_cand_k + 5 < gap_mart_k
+            extended_but_not_worse = (
+                best_n > n_m
+                and gap_cand_k <= gap_mart_k + CHART_SUBSTITUTION_KPI_MARGIN
+                and gap_cand_k
+                <= max(250.0, 0.01 * max(abs(kp_ref), 1.0))
+            )
+            substitute = materially_better_cand or extended_but_not_worse
+            # Never discard a KPI-aligned mart spine for cash-flow substitutes that
+            # miss open unreal / realize-on-close / synthesized dividends (~\$65k on BE).
+            if substitute and gap_cand_k > gap_mart_k + CHART_SUBSTITUTION_KPI_MARGIN:
+                substitute = False
+            if substitute:
+                chart_data = cand_data
 
     # Chart.js needs at least two x values to draw a line; a single mart day
     # (e.g. new option leg) would otherwise show only a blank chart.
@@ -2934,6 +3174,7 @@ def position_detail(symbol):
             "is_winner": eq_pnl > 0,
             "type": "equity",
             "session_id": leg.get("session_id"),
+            "account": str(leg.get("account") or "").strip(),
         })
     trade_outcomes.sort(key=lambda x: x.get("close_date") or "", reverse=True)
 
@@ -2952,31 +3193,22 @@ def position_detail(symbol):
     for t in trades:
         ts = str(t.get("trade_symbol") or "")
         trades_by_symbol.setdefault(ts, []).append(t)
+
     for o in trade_outcomes:
         ts = str(o.get("trade_symbol") or "")
         if o["type"] == "option":
             matching = trades_by_symbol.get(ts, [])
         else:
-            # Scope equity raw trades to this outcome's session date range
             sid = o.get("session_id")
             s_range = _session_ranges.get(sid)
-            eq_trades = [
-                t for t in trades
-                if str(t.get("instrument_type") or "") == "Equity"
-                and str(t.get("trade_symbol") or "") == ts
-            ]
-            if s_range and s_range[0]:
-                matching = []
-                for t in eq_trades:
-                    try:
-                        td = pd.to_datetime(t.get("trade_date")).date()
-                    except Exception:
-                        continue
-                    if s_range[0] <= td <= (s_range[1] or date.today()):
-                        matching.append(t)
-            else:
-                matching = eq_trades
-        o["raw_trades"] = sorted(matching, key=lambda t: str(t.get("trade_date") or ""))
+            matching = _equity_raw_trades_for_partial_close_outcome(
+                trades,
+                trade_symbol=ts,
+                account=str(o.get("account") or "").strip(),
+                session_range=s_range,
+                close_milestone=o.get("close_date"),
+            )
+        o["raw_trades"] = matching
 
     # Assign leg numbers to trade outcomes and open positions
     def _date_to_leg(d_str):
@@ -3012,6 +3244,22 @@ def position_detail(symbol):
 
     for o in trade_outcomes:
         o["leg_num"] = _date_to_leg(o.get("open_date") or o.get("close_date"))
+    # ``int_closed_equity_legs`` emits one outcome row per sell inside the same
+    # equity chapter; merged ``int_position_legs`` assigns one display leg for that
+    # whole span → every partial closure gets the SAME leg_num. Label partials so
+    # it reads as intentional (one chapter, sequential exits), not buggy duplication.
+    _eq_sess = {}
+    for o in trade_outcomes:
+        if o.get("type") != "equity" or o.get("session_id") is None:
+            continue
+        k = (o.get("account"), o["session_id"])
+        _eq_sess.setdefault(k, []).append(o)
+    for lst in _eq_sess.values():
+        lst_chrono = sorted(lst, key=lambda x: x.get("close_date") or "")
+        n = len(lst_chrono)
+        for i, o in enumerate(lst_chrono, start=1):
+            o["equity_partial_ix"] = i
+            o["equity_partial_n"] = n
     for p in current_positions:
         # Open positions belong to the latest open session
         open_sessions = [s for s in sessions_list if str(s.get("status", "")).strip().lower() == "open"]
@@ -3070,53 +3318,62 @@ def position_detail(symbol):
 
     # Cross-source reconciliation invariant.
     #
-    # The same "total P&L for this symbol/leg" gets surfaced in three places
-    # on this page, computed from three independent sources:
-    #   - Strategy Breakdown total: Σ strategy_rows.total_pnl
-    #     (positions_summary mart / int_strategy_classification)
-    #   - Breakdown by Type total:  Σ breakdown_rows.total_pnl
-    #     (closed_equity_df + closed_legs_df + current_df + dividends)
-    #   - Chart terminal:           chart_data["total"][-1]
-    #     (mart_daily_pnl, walked through _build_chart_from_daily_pnl)
+    # Σ strategy_rows.total_pnl is NOT a reliable ledger rollup — attribution
+    # spreads equity realization across strategies (Wheel, CSP, Dividend/Buy &
+    # Hold, …). Summing labeled rows may disagree with ledger paths while still
+    # being "correct by label" (May 2026 BE: breakdown ≈ chart; strategy rows
+    # lower by ~ dividends + equity credited elsewhere).
     #
-    # In a healthy pipeline these three numbers must reconcile within rounding
-    # noise (≈ $1 from sequential rounding). When they diverge, something
-    # upstream is duplicating, dropping, or miscounting rows — exactly the May
-    # 2026 BE/Sara symptom the user reported as "tons of dupes" / "$5,128 vs
-    # -$10k chart". Surface the disagreement to admins so it can't hide on a
-    # shipped page until a user finds it. Non-admin users never see this card
-    # (it's a developer-facing canary, not user content).
+    # Compare three full-symbol measures grounded in fills + mart spine:
+    #   - Hero KPI total_return — realized (+ unreal + Σ summary dividends).
+    #   - Breakdown by Type — Σ equity/options/dividend rollups above Strategy.
+    #   - Chart terminal — mart_daily_pnl walk.
+    #
+    # Partition drift (Σ strategies vs KPI) logs at INFO for debugging only.
     invariant_warning = None
     try:
-        sb_total = round(sum(float(r.get("total_pnl") or 0) for r in strategy_rows), 2)
+        strategy_partition_sum = round(
+            sum(float(r.get("total_pnl") or 0) for r in strategy_rows), 2
+        )
+        kpi_total = round(float(kpis.get("total_return") or 0), 2) if kpis else 0.0
         # ``breakdown_rows`` dicts come from ``_compute_breakdown_by_type``,
-        # which emits ``"total"`` (not ``"total_pnl"`` — that key belongs to
-        # the strategy_rows shape from positions_summary). Mismatching the
-        # key silently floors this to 0 and trips the invariant for the wrong
-        # reason; the dividend row also uses ``"total"``. Keep both shapes
-        # straight when editing either source.
+        # which emits ``"total"`` (not ``"total_pnl"`` — that key belongs to the
+        # strategy_rows shape from positions_summary).
         bt_total = round(sum(float(r.get("total") or 0) for r in breakdown_rows), 2)
         chart_terminal = round(float((chart_data.get("total") or [0.0])[-1] or 0.0), 2)
-        # Tolerance: $1 absorbs sequential rounding without hiding real bugs.
-        worst_gap = max(
-            abs(sb_total - bt_total),
-            abs(bt_total - chart_terminal),
-            abs(sb_total - chart_terminal),
-        )
-        if worst_gap > 1.0:
-            invariant_warning = {
-                "strategy_breakdown_total": sb_total,
-                "breakdown_by_type_total": bt_total,
-                "chart_terminal": chart_terminal,
-                "worst_gap": round(worst_gap, 2),
-            }
-            app.logger.warning(
-                "position_detail invariant: %s/%s totals disagree — "
-                "strategy_breakdown=%.2f, breakdown_by_type=%.2f, chart_terminal=%.2f "
-                "(gap=%.2f)",
-                selected_account or "ALL", safe_symbol,
-                sb_total, bt_total, chart_terminal, worst_gap,
+        if abs(strategy_partition_sum - kpi_total) > 1.0:
+            app.logger.info(
+                "position_detail strategy partition sum vs KPI: %s/%s "
+                "partition=%.2f kpi=%.2f (labels need not match ledger rollups)",
+                selected_account or "ALL",
+                safe_symbol,
+                strategy_partition_sum,
+                kpi_total,
             )
+        # Skip when the by-type card didn't render — nothing to reconcile.
+        if breakdown_rows:
+            worst_gap = max(
+                abs(kpi_total - bt_total),
+                abs(bt_total - chart_terminal),
+                abs(kpi_total - chart_terminal),
+            )
+            if worst_gap > 1.0:
+                invariant_warning = {
+                    "hero_total_return": kpi_total,
+                    "breakdown_by_type_total": bt_total,
+                    "chart_terminal": chart_terminal,
+                    "worst_gap": round(worst_gap, 2),
+                }
+                app.logger.warning(
+                    "position_detail invariant: %s/%s ledger totals disagree — "
+                    "kpi=%.2f, breakdown_by_type=%.2f, chart_terminal=%.2f (gap=%.2f)",
+                    selected_account or "ALL",
+                    safe_symbol,
+                    kpi_total,
+                    bt_total,
+                    chart_terminal,
+                    worst_gap,
+                )
     except Exception as exc:
         # Invariant computation must never break the page render. Log and move
         # on — the worst case here is "no canary" not "broken page".
@@ -3505,6 +3762,22 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
     }
 
 
+CHART_SUBSTITUTION_KPI_MARGIN = 25.0  # slack when judging mart vs substitute vs KPI headline
+
+
+def _chart_data_terminal(chart_data):
+    """Last ``total`` point from cumulative P&amp;L chart payload, or 0."""
+    if not chart_data:
+        return 0.0
+    pts = chart_data.get("total")
+    if not pts:
+        return 0.0
+    try:
+        return round(float(pts[-1] or 0), 2)
+    except Exception:
+        return 0.0
+
+
 CHART_KPI_ALIGN_TOLERANCE_DOLLARS = 1.00
 
 
@@ -3742,7 +4015,90 @@ def _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg):
     }
 
 
+def _collapse_mart_daily_pnl_duplicate_grain(daily_df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse duplicate ``mart_daily_pnl`` rows before stateful equity P&L.
+
+    Natural grain is ``(account, user_id, symbol, date)``. Sync/backfill bugs
+    can emit identical twins — ``_build_chart_from_daily_pnl`` processes each
+    row and sums ``equity_*`` deltas, doubling buys/sells and inflating terminal
+    P&L (May 2026 BE chart ~2× hero).
+
+    Prefers populated ``user_id`` over ``NULL`` when deduping
+    ``(account, symbol, date)``, then merges strict four-key collisions with
+    ``keep=\"last\"`` (later ingestion wins).
+    """
+    if daily_df is None or daily_df.empty:
+        return daily_df
+    if not {"account", "symbol", "date"}.issubset(daily_df.columns):
+        return daily_df
+    df = daily_df.copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
+    stab = "__r_i__"
+    df[stab] = range(len(df))
+    ks3 = ["account", "symbol", "date"]
+
+    if "user_id" in df.columns:
+        uid_col = pd.to_numeric(df["user_id"], errors="coerce")
+        df["__prefer_uid__"] = uid_col.notna().astype(int)
+        df = df.sort_values(
+            by=ks3 + ["__prefer_uid__", "user_id", stab],
+            ascending=[True, True, True, False, True, True],
+            na_position="last",
+        )
+        df = df.drop_duplicates(subset=ks3, keep="first").drop(
+            columns=["__prefer_uid__"]
+        )
+        ks4 = ks3 + ["user_id"]
+        df = df.sort_values(by=ks4 + [stab]).drop_duplicates(
+            subset=ks4, keep="last"
+        )
+    else:
+        df = df.sort_values(by=ks3 + [stab]).drop_duplicates(subset=ks3, keep="last")
+
+    return df.drop(columns=[stab]).reset_index(drop=True)
+
+
 def _build_chart_from_daily_pnl(daily_df, current_df):
+    """Chart builder entrypoint — partitions ``mart_daily_pnl`` rows so each
+    ``(account × user_id)`` slice runs its **own** equity cost-basis state
+    machine.
+
+    Without partitioning, ``position_detail`` with multiple brokerage labels
+    merged into one symbol view feeds interleaved rows into a single walker —
+    sells on account A partially consume basis accumulated from account B,
+    corrupting cumulative equity (often reading as ~2× hero KPI vs mart).
+    """
+    empty = {
+        "dates": [], "equity": [], "options": [], "dividends": [],
+        "total": [], "underlying_price": [], "has_underlying_price": False,
+    }
+    if daily_df is None or daily_df.empty:
+        return empty
+    work = _collapse_mart_daily_pnl_duplicate_grain(daily_df.copy())
+    if work.empty:
+        return empty
+    part_cols = ["account"]
+    if "user_id" in work.columns:
+        part_cols.append("user_id")
+    gb = work.groupby(part_cols, dropna=False)
+    if gb.ngroups <= 1:
+        return _build_chart_from_daily_pnl_partition(work.sort_values("date"), current_df)
+    parts = []
+    for key, sub in gb:
+        if isinstance(key, tuple):
+            acct = key[0]
+            uid_k = key[1] if len(key) > 1 else None
+        else:
+            acct = key
+            uid_k = None
+        cdf = _filter_current_for_chart_partition(current_df, acct, uid_k)
+        parts.append(
+            _build_chart_from_daily_pnl_partition(sub.sort_values("date"), cdf)
+        )
+    return _merge_position_pnl_chart_payloads(parts)
+
+
+def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     """
     Build cumulative P&L chart from pre-aggregated mart_daily_pnl data.
 
@@ -3756,23 +4112,6 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     }
     if daily_df.empty:
         return empty
-
-    # Same dedup as _build_account_chart_from_daily_pnl. mart_daily_pnl is
-    # keyed on (account, user_id, symbol, date); during user_id backfill
-    # windows, both NULL- and populated-user_id rows for the same
-    # business key can pass through ``_filter_df_by_user``'s Stage 0/1
-    # leniency and double-process the buy/sell ledger here. Prefer the
-    # populated-user_id row when both exist.
-    if {"account", "symbol", "date"}.issubset(daily_df.columns):
-        sort_keys = ["account", "symbol", "date"]
-        if "user_id" in daily_df.columns:
-            sort_keys.append("user_id")
-            daily_df = daily_df.sort_values(sort_keys, na_position="last")
-        else:
-            daily_df = daily_df.sort_values(sort_keys)
-        daily_df = daily_df.drop_duplicates(
-            subset=["account", "symbol", "date"], keep="first"
-        )
 
     daily_df = daily_df.sort_values("date")
 
@@ -3994,8 +4333,10 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         # snapshot is missing or the user fully closed today, fall
         # back to the running-cost-basis trade-history calc.
         if not eq_row.empty:
-            mv_col = float(eq_row["market_value"].iloc[0] or 0) \
+            mv_col = (
+                float(eq_row["market_value"].sum())
                 if "market_value" in eq_row.columns else 0.0
+            )
             # ``cost_basis`` is the canonical name (int_enriched_current,
             # CURRENT_POSITIONS_QUERY). ``cost_bases`` is the original
             # CSV-seed typo that survives in some test fixtures and the
@@ -4004,7 +4345,7 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
             cb_col = 0.0
             for cb_name in ("cost_basis", "cost_bases"):
                 if cb_name in eq_row.columns:
-                    cb_col = float(eq_row[cb_name].iloc[0] or 0)
+                    cb_col = float(eq_row[cb_name].sum())
                     break
             unreal_snap = (mv_col - cb_col) if (mv_col or cb_col) else None
             if unreal_snap is not None:
@@ -4019,8 +4360,9 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
                         unreal -= (short_shares * p - short_cost_basis)
                     today_eq = cum_realized + unreal
         today_price = None
-        if not eq_row.empty:
-            today_price = float(eq_row["current_price"].iloc[0] or 0) or None
+        if not eq_row.empty and "current_price" in eq_row.columns:
+            cp_nonnull = pd.to_numeric(eq_row["current_price"], errors="coerce").dropna()
+            today_price = float(cp_nonnull.iloc[0]) if len(cp_nonnull) else None
 
         if dates[-1] == today_str:
             equity_s[-1] = round(today_eq, 2)
@@ -4610,30 +4952,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     if daily_df.empty:
         return empty
 
-    # Defense against duplicate (account, symbol, date) rows in
-    # mart_daily_pnl. The mart's natural grain is
-    # (account, user_id, symbol, date) — when the same business key has
-    # both a legacy NULL-user_id row AND a populated-user_id row (which
-    # can sit side-by-side during a user_id backfill window because
-    # ``_filter_df_by_user`` Stage 0/1 keeps NULLs as a leniency leg),
-    # both rows reach this helper. The buy/sell loops below would then
-    # accumulate buy_qty / buy_cost N times AND the unrealized loop
-    # would run N times, giving N**2-shaped amplification of equity P&L
-    # (a real ~$700k LEAP spike with 5 dups rendered as $17M on /accounts).
-    # Dedup here so the chart is correct regardless of upstream backfill
-    # state. Prefer rows with populated user_id so we keep the
-    # tenant-tagged version.
-    if {"account", "symbol", "date"}.issubset(daily_df.columns):
-        sort_keys = ["account", "symbol", "date"]
-        if "user_id" in daily_df.columns:
-            sort_keys.append("user_id")
-            daily_df = daily_df.sort_values(sort_keys, na_position="last")
-        else:
-            daily_df = daily_df.sort_values(sort_keys)
-        daily_df = daily_df.drop_duplicates(
-            subset=["account", "symbol", "date"], keep="first"
-        )
-
+    daily_df = _collapse_mart_daily_pnl_duplicate_grain(daily_df)
     daily_df = daily_df.sort_values("date")
     all_dates = sorted(daily_df["date"].dropna().unique())
 
