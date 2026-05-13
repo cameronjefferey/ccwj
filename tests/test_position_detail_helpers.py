@@ -637,6 +637,71 @@ def test_breakdown_by_type_filters_dividends_by_leg_predicate():
     assert eq["count_open"] == 1
 
 
+def test_breakdown_by_type_admin_scope_none_runs_dividend_query():
+    """Admin views (`?account=` empty + non-tenant user) flow
+    `strat_accounts_scope=None` into `_compute_breakdown_by_type`.
+
+    The pre-fix gate `strat_accounts_scope is not None and len(...) > 0`
+    short-circuited admin entirely, leaving `div_total = 0.0`. That zero
+    then propagated up to `kpis["dividend_income"]` via the override
+    block in routes.py (line ~3216, "pin hero total_return to ledger"),
+    so admin users saw $0 dividends in Hero / Breakdown-by-Type while
+    Strategy Breakdown showed the correct positions_summary value (real
+    JEPI bug May 2026: $0 vs $77,780 split).
+
+    Admin must run the query unscoped (`_account_sql_and(None) == ""`)
+    so all tenants' dividends roll up. `_filter_df_by_accounts(df, None)`
+    is a no-op for admin (per `_filter_df_by_user` short-circuit).
+    """
+    dividends = pd.DataFrame([
+        {"account": "Schwab ••••0044", "user_id": 8, "symbol": "JEPI",
+         "trade_date": pd.Timestamp("2024-08-01"), "amount": 578.0},
+        {"account": "Schwab ••••4828", "user_id": 8, "symbol": "JEPI",
+         "trade_date": pd.Timestamp("2024-08-01"), "amount": 578.0},
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(dividends),
+        safe_symbol="JEPI",
+        strat_accounts_scope=None,  # admin
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame(),
+        leg_predicate=None,
+    )
+    div = _bd_lookup(rows, "Dividends")
+    assert div["realized"] == 1156.0, (
+        f"Admin (scope=None) must see all $1156 of JEPI dividends, "
+        f"not $0 (gate regression). Got: {div}"
+    )
+    assert div["count"] == 2
+
+
+def test_breakdown_by_type_empty_account_list_still_short_circuits():
+    """A logged-in user with ZERO linked accounts (`strat_accounts_scope=[]`)
+    has no data to show — the dividend query SHOULD still be skipped.
+    The fix that opens up admin (None) must NOT let through the genuine
+    empty-list case (tenant exists but is unlinked / freshly signed up).
+    """
+    dividends = pd.DataFrame([
+        {"account": "Schwab ••••0044", "user_id": 8, "symbol": "JEPI",
+         "trade_date": pd.Timestamp("2024-08-01"), "amount": 578.0},
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(dividends),
+        safe_symbol="JEPI",
+        strat_accounts_scope=[],  # logged in but no linked accounts
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame(),
+        leg_predicate=None,
+    )
+    # No equity, no options, no dividends queried → no rows at all
+    assert rows == [], (
+        "Empty account list must still short-circuit (no data to show); "
+        f"got {rows}"
+    )
+
+
 def test_breakdown_by_type_dividend_query_failure_is_non_fatal():
     """A schema drift on int_dividend_events must not 500 the position page.
     The breakdown card should still render with a 0-dividend row."""

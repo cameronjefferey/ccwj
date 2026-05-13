@@ -2419,7 +2419,17 @@ def _compute_breakdown_by_type(
 
     div_total = 0.0
     div_count = 0
-    if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+    # Admin (`strat_accounts_scope is None`) must run the query unscoped so
+    # `_account_sql_and(None)` returns an empty filter and the admin sees
+    # every tenant's data — same precedent as the rest of the position page.
+    # Pre-fix the `is not None` guard short-circuited admin browsers and
+    # `breakdown_rows.Dividends.total = 0` then OVERRODE the correctly-
+    # computed Hero `dividend_income` (line ~3216 sync block) with $0,
+    # producing the May 2026 JEPI bug: $0 dividends in Hero / Breakdown-
+    # by-Type while Strategy Breakdown showed $77,780 (the same data).
+    # Empty list `[]` (logged-in user with zero linked accounts) still
+    # short-circuits — that's the correct "no data to show" path.
+    if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
         try:
             acct_filter = _account_sql_and(strat_accounts_scope, col="account")
             div_df = client.query(
@@ -3142,9 +3152,13 @@ def position_detail(symbol):
     strat_accounts_scope = (
         [selected_account] if selected_account else user_accounts
     )
+    # See `_compute_breakdown_by_type`'s gate comment — `is None` means
+    # admin and must NOT short-circuit. `_fetch_int_strategy_classification_by_symbol`
+    # already passes `None` through to `_account_sql_and` (no filter).
+    # Empty list still short-circuits (genuine "no accounts" state).
     if leg_param and _leg_ranges:
         summary_for_strat = pd.DataFrame()
-        if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+        if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
             int_raw = _fetch_int_strategy_classification_by_symbol(
                 client, safe_symbol, strat_accounts_scope
             )
@@ -3158,7 +3172,7 @@ def position_detail(symbol):
                     summary_for_strat = _rollup_int_strategy_to_summary_shape(int_raw)
     else:
         summary_for_strat = summary_df
-        if strat_accounts_scope is not None and len(strat_accounts_scope) > 0:
+        if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
             int_raw = _fetch_int_strategy_classification_by_symbol(
                 client, safe_symbol, strat_accounts_scope
             )
