@@ -59,11 +59,20 @@ with_prev as (
     from running
 ),
 
+-- Float-precision-aware zero check (1e-9 share epsilon).
+-- See identical guard in `int_equity_sessions`.sessions for the bug
+-- this prevents (Emmory IYW round-trip + new lot fused into one
+-- session_id because IEEE 754 sum returned -1e-17 instead of 0).
 sessions as (
     select
         *,
         sum(
-            case when prev_running_qty = 0 and running_qty > 0 then 1 else 0 end
+            case
+                when abs(prev_running_qty) < 1e-9
+                 and running_qty > 1e-9
+                then 1
+                else 0
+            end
         ) over (
             partition by account, user_id, symbol
             order by trade_date, action
@@ -170,6 +179,24 @@ user_other_holdings as (
     group by 1, 2
 ),
 
+-- Same-account snapshot of open equity qty (aggregates across NULL vs
+-- populated user_id rows). When legacy session rows have user_id NULL but
+-- the live lot is stamped with a populated id (or vice versa),
+-- ``user_other_holdings`` alone misses intra-account holdings and we emit a
+-- phantom "Cost Written Off" for shares that are still on the books (IYW
+-- Dec 2025: buy-and-hold replot as -100% loss + chart vs hero split).
+account_symbol_holdings as (
+    select
+        account,
+        trim(coalesce(underlying_symbol, '')) as symbol,
+        sum(abs(coalesce(quantity, 0))) as shares_held_on_account
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+      and coalesce(quantity, 0) != 0
+      and trim(coalesce(underlying_symbol, '')) != ''
+    group by 1, 2
+),
+
 writeoffs as (
     select
         sac.account,
@@ -205,6 +232,9 @@ writeoffs as (
     left join user_other_holdings uoh
         on (sac.user_id is not distinct from uoh.user_id)
         and sac.symbol = uoh.symbol
+    left join account_symbol_holdings ash
+        on sac.account = ash.account
+        and sac.symbol = ash.symbol
     where ss.status = 'Closed'
       and sac.total_buy_qty > sac.total_sell_qty
       and (sac.total_buy_qty - sac.total_sell_qty) > 0
@@ -212,6 +242,10 @@ writeoffs as (
       -- another account the user owns. coalesce → 0 when no shares are
       -- held anywhere; that's the only case the residual truly is lost.
       and coalesce(uoh.shares_held_elsewhere, 0)
+          < (sac.total_buy_qty - sac.total_sell_qty)
+      -- Suppress when the symbol is still held on THIS account under any
+      -- user_id stamp (same-tenant NULL vs populated split).
+      and coalesce(ash.shares_held_on_account, 0)
           < (sac.total_buy_qty - sac.total_sell_qty)
       -- Defensive guard against orphan / duplicated buy rows: when trade
       -- history shows pure buys with NO sells AND the user holds zero

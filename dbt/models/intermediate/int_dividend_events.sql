@@ -1,15 +1,24 @@
 /*
     Per-event dividend rows for every (account, user_id, symbol, trade_date).
 
-    Produced from two sources:
+    Produced from three sources:
 
     1) `csv` source — explicit dividend rows from `stg_history.action = 'dividend'`.
        Manual Schwab CSV exports include "Cash Dividend" / "Qualified Dividend"
        lines; we trust them when present.
 
-    2) `synthetic` source — yfinance ex-div per-share dividend
+    2) `drip` source — fractional `equity_buy` rows that Schwab Connect emits
+       on ex-dividend dates. These are dividend reinvestments where the broker
+       takes the cash dividend and immediately buys fractional shares; the
+       absolute dollar amount of the buy IS the dividend the user received.
+       Surfaces as a real, broker-confirmed dividend event (more accurate
+       than synthetic for accounts on DRIP). Detected in
+       `int_drip_fills` (sibling intermediate model).
+
+    3) `synthetic` source — yfinance ex-div per-share dividend
        (`stg_daily_prices.dividend`) × the user's running share count on the
-       ex-div date, derived from `stg_history` equity events.
+       ex-div date, derived from `stg_history` equity events. Fallback for
+       accounts with neither CSV dividend rows nor DRIP fills.
 
        Schwab Connect (OAuth sync) doesn't return dividends cleanly, and most
        users have never run a manual CSV upload. JEPI / JEPQ / SCHD / VYM
@@ -18,10 +27,11 @@
        on each ex-div date, so we can reconstruct what the user actually
        received without depending on the broker pipeline.
 
-    Precedence: if any CSV `dividend` row exists for an
-    (account, user_id, symbol) tuple, we keep ONLY the CSV rows for that
-    tuple — assume a user who uploaded one dividend uploaded all of them and
-    avoid double-counting between yfinance and the broker.
+    Precedence (per (account, user_id, symbol) tuple):
+      - if any CSV `dividend` row exists, keep ONLY CSV rows
+      - else if any DRIP fill exists, keep ONLY DRIP rows
+      - else fall back to synthetic
+    Avoids double-counting between yfinance and the broker.
 
     Holdings clip: yfinance dividends extend through today even after the
     user no longer holds a symbol. For accounts where the symbol no longer
@@ -99,6 +109,14 @@ csv_dividend_keys as (
     where action = 'dividend'
 ),
 
+drip_keys as (
+    select distinct
+        account,
+        user_id,
+        underlying_symbol as symbol
+    from {{ ref('int_drip_fills') }}
+),
+
 shares_on_exdiv as (
     select
         hm.account,
@@ -140,8 +158,13 @@ synthetic_events as (
         on  cdk.account = s.account
         and (cdk.user_id is not distinct from s.user_id)
         and cdk.symbol  = s.symbol
+    left join drip_keys dk
+        on  dk.account = s.account
+        and (dk.user_id is not distinct from s.user_id)
+        and dk.symbol  = s.symbol
     where s.shares_held > 0
       and cdk.account is null
+      and dk.account   is null
       and (
           s.has_current_shares = 1
           or s.ex_div_date <= s.last_trade_date
@@ -158,8 +181,28 @@ csv_events as (
         'csv' as source
     from {{ ref('stg_history') }}
     where action = 'dividend'
+),
+
+drip_events as (
+    -- Per (account, user_id, symbol): keep DRIPs only when there's no
+    -- CSV dividend stream for the same tuple (CSV always wins).
+    select
+        d.account,
+        d.user_id,
+        d.underlying_symbol as symbol,
+        d.trade_date,
+        round(d.drip_amount, 2) as amount,
+        'drip' as source
+    from {{ ref('int_drip_fills') }} d
+    left join csv_dividend_keys cdk
+        on  cdk.account = d.account
+        and (cdk.user_id is not distinct from d.user_id)
+        and cdk.symbol  = d.underlying_symbol
+    where cdk.account is null
 )
 
 select * from csv_events
+union all
+select * from drip_events
 union all
 select * from synthetic_events

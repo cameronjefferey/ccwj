@@ -734,9 +734,19 @@
                                 <tr>
                                     <td class="text-nowrap">{{ t.trade_date }}</td>
                                     <td>
+                                        {% if t.is_dividend_reinvestment %}
+                                        <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.6rem;" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares.">DRIP</span>
+                                        {% else %}
                                         <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.6rem;">{{ t.action }}</span>
+                                        {% endif %}
                                     </td>
-                                    <td>{{ "{:,.0f}".format(t.quantity) if t.quantity else '' }}</td>
+                                    <td>
+                                        {% if t.quantity is number and (t.quantity % 1) != 0 %}
+                                        {{ "{:,.4f}".format(t.quantity) }}
+                                        {% elif t.quantity %}
+                                        {{ "{:,.0f}".format(t.quantity) }}
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
                                     <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
                                     <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
@@ -812,11 +822,21 @@
                             <td class="text-nowrap">{{ t.trade_date }}</td>
                             <td>{{ t.account }}</td>
                             <td>
+                                {% if t.is_dividend_reinvestment %}
+                                <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>
+                                {% else %}
                                 <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem">{{ t.action }}</span>
+                                {% endif %}
                             </td>
                             <td>{{ t.instrument_type }}</td>
                             <td class="small">{{ t.description }}</td>
-                            <td>{{ "{:,.0f}".format(t.quantity) }}</td>
+                            <td>
+                                {% if t.quantity is number and (t.quantity % 1) != 0 %}
+                                {{ "{:,.4f}".format(t.quantity) }}
+                                {% else %}
+                                {{ "{:,.0f}".format(t.quantity) }}
+                                {% endif %}
+                            </td>
                             <td>${{ "{:,.2f}".format(t.price) }}</td>
                             <td>${{ "{:,.2f}".format(t.fees) }}</td>
                             <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">

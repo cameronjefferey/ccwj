@@ -692,5 +692,320 @@ def test_equity_raw_trades_clips_future_partial_sells():
     assert {r["trade_date"] for r in first} == {date(2024, 7, 31), date(2026, 4, 15)}
 
 
+def test_chart_partition_current_falls_back_when_snapshot_user_id_null():
+    """Mart partition carries populated user_id; enriched_current still NULL
+    until backfill — strict match used to drop all rows and skip live MTM."""
+    from app.routes import _filter_current_for_chart_partition
+
+    cdf = pd.DataFrame(
+        [
+            {
+                "account": "Emmory Investment",
+                "user_id": None,
+                "instrument_type": "Equity",
+                "market_value": 2369.7,
+                "cost_basis": 2019.8,
+                "unrealized_pnl": 349.9,
+                "current_price": 236.97,
+            },
+        ]
+    )
+    out = _filter_current_for_chart_partition(cdf, "Emmory Investment", 9)
+    assert len(out) == 1
+    assert float(out["unrealized_pnl"].iloc[0]) == pytest.approx(349.9, rel=0, abs=0.01)
+
+
+def test_drop_phantom_equity_writeoffs_strips_when_broker_still_holds():
+    """IYW-shaped: 10-share open lot in current_df + bogus 10-share Cost
+    Written Off in closed_equity_df → strip the writeoff."""
+    from app.routes import _drop_phantom_equity_writeoffs
+
+    closed_equity = pd.DataFrame([
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "trade_symbol": "IYW",
+            "quantity": 10,
+            "cost_basis": 1966.78,
+            "realized_pnl": -1966.78,
+            "description": "Cost Written Off",
+        },
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "trade_symbol": "IYW",
+            "quantity": 2,
+            "cost_basis": 393.36,
+            "realized_pnl": 9.46,
+            "description": "Equity Sold",
+        },
+    ])
+    current = pd.DataFrame([
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "instrument_type": "Equity",
+            "quantity": 10,
+            "market_value": 2369.7,
+            "cost_basis": 2019.8,
+            "unrealized_pnl": 349.9,
+        },
+    ])
+    kept, removed = _drop_phantom_equity_writeoffs(closed_equity, current)
+    assert len(kept) == 1
+    assert str(kept["description"].iloc[0]).lower() == "equity sold"
+    assert len(removed) == 1
+    assert float(removed["realized_pnl"].iloc[0]) == pytest.approx(-1966.78)
+
+
+def test_drop_phantom_equity_writeoffs_keeps_writeoff_when_no_open_shares():
+    """No matching open lot → real loss → keep the row."""
+    from app.routes import _drop_phantom_equity_writeoffs
+
+    closed_equity = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "XYZ",
+            "trade_symbol": "XYZ",
+            "quantity": 10,
+            "realized_pnl": -1000.0,
+            "description": "Cost Written Off",
+        },
+    ])
+    current = pd.DataFrame()
+    kept, removed = _drop_phantom_equity_writeoffs(closed_equity, current)
+    assert len(kept) == 1
+    assert removed.empty
+
+
+def test_drop_phantom_equity_writeoffs_keeps_when_open_shares_too_few():
+    """Open 3 shares but writeoff for 10 — broker can't absorb residual,
+    so the writeoff is plausibly real (off-platform transfer of 7)."""
+    from app.routes import _drop_phantom_equity_writeoffs
+
+    closed_equity = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "XYZ",
+            "trade_symbol": "XYZ",
+            "quantity": 10,
+            "realized_pnl": -1000.0,
+            "description": "Cost Written Off",
+        },
+    ])
+    current = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "XYZ",
+            "instrument_type": "Equity",
+            "quantity": 3,
+        },
+    ])
+    kept, removed = _drop_phantom_equity_writeoffs(closed_equity, current)
+    assert len(kept) == 1
+    assert removed.empty
+
+
+def test_drop_phantom_equity_writeoffs_account_isolation():
+    """Open 10 shares in account A must not absorb a 10-share writeoff
+    in account B (different masked accounts = different real holdings)."""
+    from app.routes import _drop_phantom_equity_writeoffs
+
+    closed_equity = pd.DataFrame([
+        {
+            "account": "B",
+            "symbol": "XYZ",
+            "trade_symbol": "XYZ",
+            "quantity": 10,
+            "realized_pnl": -1000.0,
+            "description": "Cost Written Off",
+        },
+    ])
+    current = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "XYZ",
+            "instrument_type": "Equity",
+            "quantity": 10,
+        },
+    ])
+    kept, removed = _drop_phantom_equity_writeoffs(closed_equity, current)
+    assert len(kept) == 1
+    assert removed.empty
+
+
+def test_addback_phantom_writeoffs_to_summary_corrects_closed_dividend_row():
+    """IYW-shaped Strategy Breakdown: positions_summary still carries the
+    phantom -$1,966.78 in a Closed Dividend row. Once the writeoff is
+    stripped, the addback must restore that row's realized so it shows
+    the small +$9.47 from the real interim sells, not -$1,957."""
+    from app.routes import _addback_phantom_writeoffs_to_summary
+
+    summary = pd.DataFrame([
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "strategy": "Buy and Hold",
+            "status": "Open",
+            "realized_pnl": 0.0,
+            "total_pnl": 349.90,
+            "total_return": 349.90,
+        },
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "strategy": "Dividend",
+            "status": "Closed",
+            "realized_pnl": -1957.31,
+            "total_pnl": -1956.92,
+            "total_return": -1956.92,
+        },
+    ])
+    removed = pd.DataFrame([
+        {
+            "account": "Emmory Investment",
+            "symbol": "IYW",
+            "trade_symbol": "IYW",
+            "quantity": 10,
+            "realized_pnl": -1966.78,
+            "description": "Cost Written Off",
+        },
+    ])
+    out = _addback_phantom_writeoffs_to_summary(summary, removed)
+    closed = out[out["status"].astype(str).str.strip().eq("Closed")].iloc[0]
+    assert float(closed["realized_pnl"]) == pytest.approx(9.47, abs=0.02)
+    assert float(closed["total_pnl"]) == pytest.approx(9.86, abs=0.02)
+    assert float(closed["total_return"]) == pytest.approx(9.86, abs=0.02)
+    open_row = out[out["status"].astype(str).str.strip().eq("Open")].iloc[0]
+    assert float(open_row["realized_pnl"]) == 0.0
+    assert float(open_row["total_pnl"]) == pytest.approx(349.90, abs=0.02)
+
+
+def test_addback_phantom_writeoffs_noop_when_no_removed_rows():
+    from app.routes import _addback_phantom_writeoffs_to_summary
+
+    summary = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "X",
+            "status": "Closed",
+            "realized_pnl": -100.0,
+            "total_pnl": -100.0,
+            "total_return": -100.0,
+        }
+    ])
+    out = _addback_phantom_writeoffs_to_summary(summary, pd.DataFrame())
+    assert float(out["realized_pnl"].iloc[0]) == -100.0
+
+
+def test_addback_phantom_writeoffs_isolated_to_matching_account_symbol():
+    """Writeoff stripped on A/IYW must not adjust B/IYW or A/MSFT rows."""
+    from app.routes import _addback_phantom_writeoffs_to_summary
+
+    summary = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "IYW",
+            "status": "Closed",
+            "realized_pnl": -1957.31,
+            "total_pnl": -1956.92,
+            "total_return": -1956.92,
+        },
+        {
+            "account": "B",
+            "symbol": "IYW",
+            "status": "Closed",
+            "realized_pnl": -1957.31,
+            "total_pnl": -1957.31,
+            "total_return": -1957.31,
+        },
+        {
+            "account": "A",
+            "symbol": "MSFT",
+            "status": "Closed",
+            "realized_pnl": -1957.31,
+            "total_pnl": -1957.31,
+            "total_return": -1957.31,
+        },
+    ])
+    removed = pd.DataFrame([
+        {
+            "account": "A",
+            "symbol": "IYW",
+            "trade_symbol": "IYW",
+            "quantity": 10,
+            "realized_pnl": -1966.78,
+            "description": "Cost Written Off",
+        },
+    ])
+    out = _addback_phantom_writeoffs_to_summary(summary, removed)
+    a_iyw = out[(out["account"] == "A") & (out["symbol"] == "IYW")].iloc[0]
+    b_iyw = out[(out["account"] == "B") & (out["symbol"] == "IYW")].iloc[0]
+    a_msft = out[(out["account"] == "A") & (out["symbol"] == "MSFT")].iloc[0]
+    assert float(a_iyw["realized_pnl"]) == pytest.approx(9.47, abs=0.02)
+    assert float(b_iyw["realized_pnl"]) == -1957.31
+    assert float(a_msft["realized_pnl"]) == -1957.31
+
+
+def test_equity_slice_for_live_chart_is_case_insensitive():
+    from app.routes import _equity_slice_for_live_chart
+
+    df = pd.DataFrame(
+        [
+            {"instrument_type": " equity ", "unrealized_pnl": 3.0},
+            {"instrument_type": "Call", "unrealized_pnl": 99.0},
+        ]
+    )
+    out = _equity_slice_for_live_chart(df)
+    assert len(out) == 1
+    assert float(out["unrealized_pnl"].iloc[0]) == 3.0
+
+
+def test_snap_chart_terminal_to_breakdown_moves_last_equity_when_ledger_known():
+    from app.routes import _snap_position_chart_terminal_to_breakdown
+
+    chart = {
+        "dates": ["2025-12-29", "2025-12-30"],
+        "equity": [62.48, -1957.31],
+        "options": [0.0, 0.0],
+        "dividends": [0.0, 0.39],
+        "total": [62.48, -1956.92],
+        "underlying_price": [230.0, 236.0],
+        "has_underlying_price": True,
+    }
+    breakdown_rows = [
+        {"type": "Equity", "total": -1607.41},
+        {"type": "Options", "total": 0.0},
+        {"type": "Dividends", "total": 0.39},
+    ]
+    _snap_position_chart_terminal_to_breakdown(chart, breakdown_rows)
+    assert chart["total"][-1] == pytest.approx(-1607.02, abs=0.02)
+    assert chart["equity"][-1] == pytest.approx(-1607.41, abs=0.02)
+
+
+def test_chart_partition_current_prefers_explicit_user_id_when_both_present():
+    from app.routes import _filter_current_for_chart_partition
+
+    cdf = pd.DataFrame(
+        [
+            {
+                "account": "A",
+                "user_id": None,
+                "instrument_type": "Equity",
+                "unrealized_pnl": 1.0,
+            },
+            {
+                "account": "A",
+                "user_id": 9,
+                "instrument_type": "Equity",
+                "unrealized_pnl": 888.0,
+            },
+        ]
+    )
+    out = _filter_current_for_chart_partition(cdf, "A", 9)
+    assert len(out) == 1
+    assert float(out["unrealized_pnl"].iloc[0]) == 888.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

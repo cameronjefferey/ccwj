@@ -243,35 +243,79 @@ amount_signed as (
     from cleaned c
 ),
 
--- Orphan-tenant backfill: when broker sync runs BEFORE a user links the
--- account in the Postgres app DB, the resulting CSV rows land with
--- ``user_id = NULL``. After the user later links it, new sync rows
--- arrive tagged with the real user_id. The broker account label
--- (e.g. ``Schwab ••••0044``) is the SAME on both batches because the
--- broker doesn't change masks across syncs.
+-- Orphan-tenant backfill: TWO failure modes, both seen in production.
 --
--- Without this CTE, downstream models that partition by
+-- (A) NULL → populated.  Broker sync runs BEFORE a user links the
+--     account in the Postgres app DB, the resulting CSV rows land with
+--     ``user_id = NULL``. After the user later links it, new sync rows
+--     arrive tagged with the real user_id. The broker account label
+--     (e.g. ``Schwab ••••0044``) is the SAME on both batches because
+--     the broker doesn't change masks across syncs.
+--
+-- (B) Stale-uid → canonical-uid.  Trade-history rows are stamped with
+--     a user_id that no longer exists in any current-positions or
+--     account-balances surface (i.e. the broker no longer sees this
+--     account under that user). Happens when:
+--       - A user record gets renumbered or merged (e.g. test data
+--         imported under uid=2 by a one-off script, while the
+--         actually-logged-in user is uid=9 and owns the snapshot).
+--       - A user re-links the same Schwab account under a NEW uid
+--         after deleting the old account row in the app DB.
+--     Detection: if `stg_current` ∪ `stg_account_balances` shows the
+--     account under exactly ONE user_id, that uid is canonical and any
+--     other uid in trade history is stale and gets re-stamped.
+--
+-- Without these backfills, downstream models that partition by
 -- ``(account, user_id)`` (positions_summary, int_strategy_classification,
--- mart_daily_pnl, int_dividend_events, …) treat the NULL-uid rows and
--- the real-uid rows as TWO DIFFERENT positions: a buy that never
--- closed sits in one bucket while sells with no opening sit in
--- another. The user's Position Detail page reads $0 realized P&L on
--- a fully-closed position with thousands of dollars of actual
--- proceeds, and the dividend stream attaches to the wrong tenant
--- entirely (real example May 2026: JEPI on Schwab ••••0044 showed
--- $0 realized + $0 dividends despite having buy + 2 sells totaling
--- ~$4,300 of realized P&L; the recon banner caught a $2,560 chart
--- vs $0 mart gap).
+-- mart_daily_pnl, int_dividend_events, int_equity_sessions, …) treat
+-- mismatched-uid rows as TWO DIFFERENT positions: buys sit in one
+-- bucket while the current snapshot sits in another. The user's
+-- Position Detail page reads $0 realized P&L on a fully-closed
+-- position with thousands of dollars of actual proceeds, and the
+-- dividend stream attaches to the wrong tenant entirely.
 --
--- The rule we use is the safest possible inference:
---   "If every non-NULL row this account has ever produced points to
---    the SAME user_id, then NULL really means that user."
+-- Real examples:
+--   May 2026 (A): JEPI on Schwab ••••0044 showed $0 realized +
+--   $0 dividends despite buy + 2 sells totaling ~$4,300 of realized
+--   P&L. Recon banner caught a $2,560 chart vs $0 mart gap.
 --
--- ``count(distinct user_id) = 1`` enforces unambiguity. If two
--- different users have ever produced rows for a single account label
--- (e.g. a shared demo seed like ``investment1``), the backfill
--- refuses to fire and the NULLs survive — better to keep an orphan
--- than to attribute one user's trades to another.
+--   May 2026 (B): IYW on Emmory Investment showed two "Leg 1" pills,
+--   a phantom "Dividend Closed -$1,957" strategy row, and a chart
+--   terminal of -$1,957 vs hero $396.67 (the trade history rows were
+--   stamped uid=2 and the current snapshot was stamped uid=9; the
+--   account is the same broker account in both cases).
+--
+-- Safety guard: ``count(distinct user_id) = 1`` enforces unambiguity
+-- in BOTH backfills. If two different users have ever produced rows
+-- for a single account label (e.g. a shared demo seed like
+-- ``investment1``), neither backfill fires and the NULL / stale stamp
+-- survives — better to keep an orphan than to attribute one user's
+-- trades to another.
+
+-- (B) Canonical owner per account derived from CURRENT-state surfaces
+-- (positions snapshot + account-balances snapshot). The broker is the
+-- source of truth for "who owns this account RIGHT NOW", so any
+-- trade-history row whose uid disagrees with the broker is presumed
+-- stale.
+canonical_account_owner as (
+    select
+        account,
+        any_value(user_id) as canonical_user_id
+    from (
+        select account, user_id
+        from {{ ref('stg_current') }}
+        where user_id is not null
+        union distinct
+        select account, user_id
+        from {{ ref('stg_account_balances') }}
+        where user_id is not null
+    )
+    group by 1
+    having count(distinct user_id) = 1
+),
+
+-- (A) Trade-history-only fallback when no current/balance snapshot
+-- exists for the account (fully-closed accounts, pre-history holdings).
 account_owner as (
     select
         account,
@@ -285,7 +329,13 @@ account_owner as (
 backfilled as (
     select
         a.account,
-        coalesce(a.user_id, ao.inferred_user_id) as user_id,
+        -- Precedence:
+        --   1) canonical_user_id (broker-confirmed current owner) —
+        --      wins EVEN OVER a populated a.user_id, because we trust
+        --      a non-ambiguous broker snapshot over a stale stamp.
+        --   2) raw a.user_id (already populated, broker unambiguous-or-silent).
+        --   3) trade-history-only inferred uid (NULL → populated fallback).
+        coalesce(co.canonical_user_id, a.user_id, ao.inferred_user_id) as user_id,
         a.trade_date, a.action_raw, a.action,
         a.trade_symbol, a.underlying_symbol,
         a.option_expiry, a.option_strike, a.option_type,
@@ -293,7 +343,25 @@ backfilled as (
         a.quantity, a.price, a.fees, a.amount
     from amount_signed a
     left join account_owner ao using (account)
+    left join canonical_account_owner co using (account)
 )
+
+-- NOTE on dividend reinvestment (DRIP) classification.
+--
+-- Detection lives DOWNSTREAM of stg_history in
+-- ``int_drip_fills`` (intermediate/), not here. Reason: detection
+-- requires joining to ``stg_daily_prices`` (yfinance ex-div calendar
+-- — a fractional buy is a DRIP only when its trade_date is the
+-- broker's payable date for a recent ex-div on the same symbol).
+--
+-- Putting that join in ``stg_history`` would move stg_history into
+-- ``stg_daily_prices+`` and the CI workflow's two-pass build
+-- (``dbt build --exclude "stg_daily_prices+"`` then
+-- ``dbt build --select "stg_daily_prices+"``) would skip stg_history
+-- (and effectively the whole warehouse) in Pass 1.
+--
+-- Consumers that need the DRIP flag join to ``int_drip_fills`` on
+-- ``(account, user_id, trade_date, underlying_symbol)``.
 
 select
     account, user_id, trade_date, action_raw, action, trade_symbol, underlying_symbol,

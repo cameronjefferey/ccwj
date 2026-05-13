@@ -553,6 +553,101 @@ def test_merge_collapses_byte_identical_quintuple_landing(monkeypatch):
     )
 
 
+def test_dedup_collapses_drift_within_new_df_even_when_existing_empty(monkeypatch):
+    """Schwab's transactions API can return the SAME fill twice in a single
+    sync response with float-text drift (``100`` vs ``100.0``,
+    ``-7660`` vs ``-7660.0``). The old merge had three early-return paths
+    that bypassed dedup entirely when the existing seed scope was empty:
+
+      1. ``existing_content is None`` (HTTP 404 from GitHub Contents API)
+      2. ``existing_content`` is whitespace-only (manually truncated)
+      3. ``existing_df.empty`` (file exists but has only a header)
+
+    AND a fourth subtle path inside the HISTORY_PATH branch:
+
+      4. ``existing_account_df.empty`` — when the syncing user has no
+         prior rows for this account (freshly-linked account, no legacy
+         user_id="" rows for this account label, all existing rows owned
+         by other tenants)
+
+    All four paths shipped the broker's drift dupes verbatim. Bug
+    landed May 2026 in commit ``cafc0713`` (Sara Investment ASTS x2 —
+    both ``100`` and ``100.0`` forms ended up in
+    ``dbt/seeds/trade_history.csv`` and tripped the warehouse-side
+    ``stg_history_no_duplicate_fills_per_tenant`` test). The fix
+    factors dedup into ``_dedup_history_rows`` and runs it on every
+    HISTORY merge regardless of whether the existing scope is empty.
+
+    Each parametrized scenario must collapse the broker's two fills
+    into one canonical row. Last-write-wins picks the second form.
+    """
+    new_with_drift = pd.DataFrame([
+        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100.0, 76.6, -7660.0, desc="ASTS"),
+        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100, 76.6, -7660, desc="ASTS"),
+    ])
+
+    # Path 1: file does not exist (404).
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
+    out = _parse(_upload._merge_seed_with_existing(
+        HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
+        HISTORY_SEED_COLUMNS, user_id=9,
+    ))
+    assert len(out) == 1, f"Path 1 (404) failed to dedup, got {len(out)} rows"
+
+    # Path 2: file exists but content is whitespace-only.
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: "   ")
+    out = _parse(_upload._merge_seed_with_existing(
+        HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
+        HISTORY_SEED_COLUMNS, user_id=9,
+    ))
+    assert len(out) == 1, f"Path 2 (empty file) failed to dedup, got {len(out)} rows"
+
+    # Path 3: parsed CSV is empty (header only, no rows).
+    _stub_existing(monkeypatch, ",".join(HISTORY_SEED_COLUMNS) + "\n")
+    out = _parse(_upload._merge_seed_with_existing(
+        HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
+        HISTORY_SEED_COLUMNS, user_id=9,
+    ))
+    assert len(out) == 1, f"Path 3 (header-only) failed to dedup, got {len(out)} rows"
+
+    # Path 4: existing has rows BUT none for the syncing tenant under this
+    # account label (all existing rows belong to a different user).
+    _stub_existing(monkeypatch, _csv_from_rows([
+        _row("Sara Investment", 2, "01/01/2025", "Buy", "SPY", 1, 500, -500, desc="SPY ETF"),
+    ]))
+    out = _parse(_upload._merge_seed_with_existing(
+        HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
+        HISTORY_SEED_COLUMNS, user_id=9,
+    ))
+    asts = out.loc[out["Symbol"] == "ASTS"]
+    assert len(asts) == 1, (
+        f"Path 4 (other-tenant only, syncing user empty scope) failed to "
+        f"dedup, got {len(asts)} ASTS rows: {asts.to_dict('records')}"
+    )
+    # Other tenant's row preserved.
+    assert (out["Symbol"] == "SPY").sum() == 1, "other tenant's SPY row was dropped"
+
+
+def test_dedup_helper_is_idempotent_and_preserves_distinct_trades():
+    """``_dedup_history_rows`` must be a true idempotent dedup — running
+    it twice gives the same result, and it never collapses rows that
+    represent genuinely distinct trades (different symbols, different
+    dates, or the same shape on different days).
+    """
+    df = pd.DataFrame([
+        _row("A", 1, "01/01/2025", "Buy", "SPY", 1, 500, -500),
+        _row("A", 1, "01/02/2025", "Buy", "SPY", 1, 500, -500),  # different date — distinct
+        _row("A", 1, "01/01/2025", "Buy", "QQQ", 1, 500, -500),  # different symbol — distinct
+        _row("A", 1, "01/01/2025", "Buy", "SPY", 1, 500, -500),  # exact dupe of row 0
+    ])
+    once = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    twice = _upload._dedup_history_rows(once, HISTORY_SEED_COLUMNS)
+    assert len(once) == 3, f"expected 3 distinct trades, got {len(once)}"
+    assert len(twice) == len(once), "dedup must be idempotent"
+    syms = sorted(once["Symbol"].tolist())
+    assert syms == ["QQQ", "SPY", "SPY"], f"unexpected symbol set: {syms}"
+
+
 def test_canonicalize_seed_cell_collapses_known_drift_forms():
     """Direct unit test for the helper that fixes Bug C."""
     c = _upload._canonicalize_seed_cell

@@ -701,6 +701,15 @@ class TestWealthQueryTenancy:
         assert "account" in sql
         assert "user_id" in sql
 
+    def test_match_linked_account_resolves_whitespace_and_case(self):
+        from app.wealth import _match_linked_account
+
+        assert _match_linked_account(
+            ["Cameron Investment", "Other"],
+            "cameron  investment ",
+        ) == "Cameron Investment"
+        assert _match_linked_account(["Acct A"], "nope") is None
+
     def test_chart_payload_aggregates_per_date_only_within_scope(self):
         """``_build_chart_payload`` is what feeds the chart JSON. If a
         cross-tenant row ever slipped through to the route, the chart

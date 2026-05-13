@@ -5,29 +5,59 @@ alwaysApply: true
 
 # Position Detail — orphan tenancy + reconciliation (non‑negotiable)
 
-## The failure mode (May 2026)
+## The failure mode (May 2026) — three flavors of "same position split across partitions"
 
-Schwab Connect can sync trade history **before** the Postgres app links `user_id` to the broker account mask. Rows land with **`user_id = NULL`**. After linking, newer sync writes the **same masked `account`** with **`user_id` populated**.
+Almost every mart partitions by **`(account, user_id)`** (`positions_summary`, `int_strategy_classification`, `mart_daily_pnl`, `int_dividend_events`, `int_equity_sessions`, synthetic dividends, …). When the **same real position** lands across **multiple partitions**, KPIs / Strategy Breakdown read **\$0 realized**, **\$0 dividends**, wrong strategy classification, and the **admin reconciliation banner fires**. Three known root causes:
 
-Almost every mart partitions by **`(account, user_id)`** (`positions_summary`, `int_strategy_classification`, `mart_daily_pnl`, `int_dividend_events`, synthetic dividends, …). Buy and sell **halves of the same real position** land in **different partitions**:
+### (A) NULL → populated (sync ran before linking)
 
-- KPIs / Strategy Breakdown read **\$0 realized**, **\$0 dividends**, wrong strategy classification.
-- The chart built from **`mart_daily_pnl`** still shows **non‑zero totals** — different partition merge / dense spine exposes the orphan half separately.
-- The **admin reconciliation banner** fires (Strategy breakdown vs breakdown-by-type vs chart terminal). **Treat that banner as a ship‑stop.** Do not rationalize \$0 JEPI dividends as “dividend pipeline broken” until you have ruled out tenancy split.
+Schwab Connect syncs trade history **before** the Postgres app links `user_id` to the broker account mask. Rows land with **`user_id = NULL`**. After linking, newer sync writes the **same masked `account`** with **`user_id` populated**. Buys and sells of the same physical position split across `(account, NULL)` and `(account, real_uid)`.
 
-**Symptoms to recognize:** Dividend ETFs (JEPI/JEPQ) with **\$0 dividends** despite years of holdings; closed position with absurd chart vs \$0 headings; JEPI BUY only under NULL and SELLS only under uid (query `stg_history` grouped by `account, user_id`).
+### (B) Stale-uid → canonical-uid (renumbered or re-linked user)
 
-## Where the fix lives
+Trade history rows are stamped with a `user_id` that **no longer appears in any current-positions or account-balances surface**. The broker has the account under uid=Y today; trade history was committed under uid=X (an old user record that got renumbered, merged, or re-imported under a different stamp). Marts split: trade history sits in `(account, X)` while the snapshot sits in `(account, Y)`.
 
-Staging backfill (only when **`count(distinct user_id)` among non‑NULL rows = 1` per account**):
+**Real example (IYW Emmory Investment, May 2026):** trade history under `uid=2`, current snapshot under `uid=9`. Page rendered as **two phantom "Leg 1" pills**, a **"Dividend Closed -\$1,957" strategy row**, hero **\$396.67** vs chart terminal **-\$1,957**.
 
-- `dbt/models/staging/stg_history.sql`
-- `dbt/models/staging/stg_current.sql`
-- `dbt/models/staging/stg_account_balances.sql`
+### (C) Float-precision session boundary (round-trip + new lot fused)
 
-Regression test: **`dbt/tests/no_orphan_user_id_per_account.sql`** — **no `(account)` may have BOTH NULL and populated `user_id`** rows in those three staging outputs.
+`int_equity_sessions` and `int_closed_equity_legs` detect new sessions via `prev_running_qty = 0 AND running_qty > 0`. With FLOAT64 share counts a perfectly-closed round-trip can leave running_qty at **`-0.000000000000000000` ≈ -1e-17**, not exactly 0. The strict equality fails, the next buy doesn't open a new session, and a closed round-trip + a fresh new lot get **fused into one `session_id`** with closed-loss math even though the new lot is genuinely Open. Rendered as ONE "Leg 1" Closed (huge phantom loss) plus an Open snapshot session under a different uid (overlapping bug C with bug B).
 
-Related chart/mart drift fixes (dense spine UTC “tomorrow”, live‑today patch, **`cost_basis` vs `cost_bases`**) live in `app/routes.py` **`_build_chart_from_daily_pnl`** and `int_equity_sessions` / `int_option_contract_daily_pnl` — see commit message around **orphan‑tenant backfill**.
+**Symptoms (any of A/B/C):**
+
+- Dividend ETFs (JEPI/JEPQ) with **\$0 dividends** despite years of holdings.
+- Closed position with absurd chart vs \$0 headings.
+- **Two pills with the same `display_leg_num`** for the same `(account, symbol)` — different `user_id`s.
+- A **"Dividend Closed -\$N,NNN" strategy row** equal to `Σ all_buys − Σ sells` (cost-write-off math; the still-held shares are in a different partition).
+- Hero ≠ chart terminal **and** Strategy Breakdown total ≠ Breakdown-by-Type total.
+- Query `stg_history` grouped by `(account, user_id)`: any non-NULL uid that doesn't appear in `stg_current` ∪ `stg_account_balances` for the same account is **stale**.
+
+## Where the fixes live
+
+**(A) NULL backfill** (only when `count(distinct user_id)` among non-NULL rows = 1 per account):
+
+- `dbt/models/staging/stg_history.sql` — `account_owner` CTE
+- `dbt/models/staging/stg_current.sql` — same pattern
+- `dbt/models/staging/stg_account_balances.sql` — same pattern
+
+**(B) Canonical-uid backfill** (when `stg_current` ∪ `stg_account_balances` agree on exactly ONE uid for an account, that uid wins over any other non-NULL uid in trade history):
+
+- `dbt/models/staging/stg_history.sql` — `canonical_account_owner` CTE; `coalesce(co.canonical_user_id, a.user_id, ao.inferred_user_id)` precedence in `backfilled`.
+- Asymmetric on purpose: `stg_history` reads from `stg_current` + `stg_account_balances` (the broker is canonical for "who owns this RIGHT NOW"); the inverse would be a cycle.
+
+**(C) Float-precision session boundary** — epsilon zero check (`abs(prev_running_qty) < 1e-9 AND running_qty > 1e-9`):
+
+- `dbt/models/intermediate/int_equity_sessions.sql` — `sessions` CTE
+- `dbt/models/intermediate/int_closed_equity_legs.sql` — `sessions` CTE
+- 1e-9 is 5 orders of magnitude tighter than any real fractional fill (broker minimum ≈ 0.0001).
+
+Regression tests:
+
+- **`dbt/tests/no_orphan_user_id_per_account.sql`** — no `(account)` may have BOTH NULL and populated `user_id` (covers A).
+- **`dbt/tests/no_stale_user_id_in_history.sql`** — no `stg_history` row's `user_id` may disagree with the unambiguous canonical uid from `stg_current` ∪ `stg_account_balances` (covers B).
+- **`tests/test_orphan_tenant_iyw.py`** — symbol-anchored regression for IYW Emmory: must render exactly 2 sessions (1 Closed + 1 Open) and exactly 1 strategy row (covers B + C).
+
+Related chart/mart drift fixes (dense spine UTC "tomorrow", live‑today patch, **`cost_basis` vs `cost_bases`**) live in `app/routes.py` **`_build_chart_from_daily_pnl`** and `int_equity_sessions` / `int_option_contract_daily_pnl`.
 
 ## Verification before declaring Position Detail / chart / attribution work done
 
@@ -36,7 +66,10 @@ Never “looks good on BE / one symbol.” Minimum bar:
 1. **Multiple symbols** — at least **one dividend‑heavy ETF** (e.g. JEPI), **one mixed equity+option**, **one options‑heavy**.
 2. **Multiple accounts / tenants** if the change touches staging — especially any account that ever synced **before** linking.
 3. **BigQuery invariant:** banner inputs must agree — compare **Σ `positions_summary.total_pnl`** (scoped account/symbol) to **terminal `chart_data["total"][-1]`** after `_build_chart_from_daily_pnl` with the **same `int_enriched_current` shape prod uses** (`cost_basis`, not typo `cost_bases`).
-4. If the **reconciliation invariant** fires in dev/admin, assume **upstream split or phantom shares** until proven otherwise; grep `no_orphan_user_id` test and **`stg_history`** for NULL vs non‑NULL `user_id` on the same **`account`** string.
+4. If the **reconciliation invariant** fires in dev/admin, assume **upstream split or phantom shares** until proven otherwise; in this exact order:
+    1. Grep `no_orphan_user_id_per_account` test and `stg_history` for **NULL vs non-NULL** `user_id` on the same `account` string (case A).
+    2. Grep `no_stale_user_id_in_history` test and run `SELECT DISTINCT user_id FROM stg_history WHERE account = '...'` vs `SELECT DISTINCT user_id FROM stg_current WHERE account = '...'` — any mismatched non-NULL pair is the **stale-uid split** (case B).
+    3. Run `SELECT user_id, session_id, status, last_trade_date FROM int_equity_sessions WHERE account='...' AND symbol='...'`. If the closed session's `last_trade_date` is **a buy date** (not the final sell date), the **float-precision boundary bug** has fused a closed round-trip with a fresh new lot (case C).
 5. If Strategy total **exceeds** chart but Breakdown‑by‑Type matches chart, grep **`_supplement_summary_with_rolled`**: **`Dividend`** (mart rename) vs **`Buy and Hold`** (classification rollup) is **one equity slot per (account, symbol)** — dup adds exactly the duplicate **realized** wedge (May 2026 JEPI banner gap = realized equity twice).
 
 ## Do not confuse with

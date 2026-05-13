@@ -225,7 +225,16 @@ def _filter_current_for_chart_partition(
     """Slice ``int_enriched_current`` rows for one chart partition
     (``account`` × optional ``user_id``). Required when ``mart_daily_pnl``
     spans multiple partitions for the same symbol — the live today-row patch
-    must not mix snapshots across tenants."""
+    must not mix snapshots across tenants.
+
+    When the mart partition has a populated ``user_id`` but Schwab/sync
+    snapshot rows still have ``user_id IS NULL`` (Stage 0 backfill lag),
+    strict equality would yield an **empty** slice, skipping the entire
+    live MTM patch — chart terminal sticks on realized-only while hero
+    and Breakdown-by-type include broker unrealized (IYW-style gap).
+    Prefer exact ``user_id`` match; fall back to NULL-id rows **only**
+    for the same ``account`` (DataFrame already passed
+    ``_filter_df_by_accounts``)."""
     if current_df is None or current_df.empty or "account" not in current_df.columns:
         return pd.DataFrame()
     m = current_df["account"].astype(str) == str(account).strip()
@@ -235,8 +244,212 @@ def _filter_current_for_chart_partition(
             m &= uid_series.isna()
         else:
             uk = float(pd.to_numeric(pd.Series([user_id_key]), errors="coerce").iloc[0])
-            m &= uid_series == uk
+            m_uk = uid_series == uk
+            if m_uk.any():
+                m &= m_uk
+            else:
+                m &= uid_series.isna()
     return current_df.loc[m].copy()
+
+
+def _drop_phantom_equity_writeoffs(
+    closed_equity_df: pd.DataFrame, current_df: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Strip ``int_closed_equity_legs`` "Cost Written Off" rows when the
+    broker snapshot still shows the symbol held on the same ``account``.
+
+    Returns ``(kept_df, removed_df)`` so callers can reverse the bogus
+    realized contribution out of any other mart (e.g. ``positions_summary``)
+    that aggregated the same writeoff into a strategy rollup.
+
+    Mirrors the ``account_symbol_holdings`` suppression added to
+    ``int_closed_equity_legs.sql`` so the position page renders correctly
+    even before BigQuery has been re-built. Failure mode pinned by IYW /
+    Emmory Investment (May 2026): an orphan-tenant split (Schwab synced
+    before ``user_id`` was linked to the masked ``account``) leaves a
+    session with ``total_buy_qty > total_sell_qty`` under one
+    ``(account, user_id)`` partition while the **same shares** are still
+    open under another partition. dbt emits a phantom *Cost Written Off*
+    for the residual; that row poisons everything downstream — Position
+    Legs adds a bogus 10-share -$1,966 line, Breakdown by Type rolls
+    realized down to -$1,957, Strategy Breakdown shows a fake
+    "Dividend (Closed)" -$1,957 row, the chart-substitute path inherits
+    that cliff, and the reconciliation banner fires.
+
+    Suppression rule (matches dbt): drop the writeoff row when
+    ``int_enriched_current`` shows shares of the same ``(account, symbol)``
+    >= the writeoff row's residual quantity. Otherwise the row may be a
+    real loss (genuine off-platform transfer / corporate action) and is
+    left alone."""
+    empty_removed = pd.DataFrame()
+    if closed_equity_df is None or closed_equity_df.empty:
+        return closed_equity_df, empty_removed
+    if "description" not in closed_equity_df.columns:
+        return closed_equity_df, empty_removed
+    desc = closed_equity_df["description"].astype(str).str.strip().str.lower()
+    is_writeoff = desc.eq("cost written off")
+    if not is_writeoff.any():
+        return closed_equity_df, empty_removed
+    sym_col = next(
+        (c for c in ("symbol", "trade_symbol") if c in closed_equity_df.columns),
+        None,
+    )
+    if sym_col is None or "account" not in closed_equity_df.columns \
+            or "quantity" not in closed_equity_df.columns:
+        return closed_equity_df, empty_removed
+    if current_df is None or current_df.empty \
+            or "instrument_type" not in current_df.columns:
+        return closed_equity_df, empty_removed
+    it = current_df["instrument_type"].astype(str).str.strip().str.lower()
+    eq_open = current_df.loc[it.eq("equity")]
+    if eq_open.empty:
+        return closed_equity_df, empty_removed
+    cur_sym_col = next(
+        (c for c in ("symbol", "underlying_symbol") if c in eq_open.columns),
+        None,
+    )
+    if cur_sym_col is None or "account" not in eq_open.columns \
+            or "quantity" not in eq_open.columns:
+        return closed_equity_df, empty_removed
+    held = (
+        pd.DataFrame({
+            "account": eq_open["account"].astype(str).str.strip(),
+            "symbol": eq_open[cur_sym_col].astype(str).str.strip(),
+            "qty": pd.to_numeric(eq_open["quantity"], errors="coerce")
+                .fillna(0).abs(),
+        })
+        .groupby(["account", "symbol"], as_index=False)["qty"].sum()
+    )
+    held_map = {
+        (r.account, r.symbol): float(r.qty)
+        for r in held.itertuples(index=False)
+    }
+    cw_acct = closed_equity_df["account"].astype(str).str.strip()
+    cw_sym = closed_equity_df[sym_col].astype(str).str.strip()
+    cw_qty = pd.to_numeric(
+        closed_equity_df["quantity"], errors="coerce"
+    ).fillna(0).abs()
+    held_for_row = pd.Series(
+        [held_map.get((a, s), 0.0) for a, s in zip(cw_acct, cw_sym)],
+        index=closed_equity_df.index,
+        dtype=float,
+    )
+    drop_mask = is_writeoff & (cw_qty > 0) & (held_for_row >= cw_qty)
+    if not drop_mask.any():
+        return closed_equity_df, empty_removed
+    return (
+        closed_equity_df.loc[~drop_mask].copy(),
+        closed_equity_df.loc[drop_mask].copy(),
+    )
+
+
+def _addback_phantom_writeoffs_to_summary(
+    summary_df: pd.DataFrame, removed_writeoffs: pd.DataFrame
+) -> pd.DataFrame:
+    """Reverse the bogus realized contribution from
+    ``_drop_phantom_equity_writeoffs`` out of ``positions_summary``.
+
+    ``positions_summary`` aggregates ``int_closed_equity_legs`` into per
+    ``(account, symbol, strategy, status)`` rollups. When dbt still
+    emits a phantom "Cost Written Off" row, ``positions_summary``'s
+    Closed strategy row for that ``(account, symbol)`` carries the
+    bogus realized P&L. After the Python strip, that strategy row would
+    still show the phantom number — so Strategy Breakdown disagrees
+    with Position Legs + Breakdown by Type.
+
+    Per ``(account, symbol)`` writeoff bucket: find the Closed strategy
+    row with the realized P&L closest to ``-addback`` and add the
+    writeoff back to ``realized_pnl`` / ``total_pnl`` / ``total_return``.
+    Trade and date counters are left alone — the underlying fills are
+    real, only the writeoff *amount* was the dbt artifact."""
+    if summary_df is None or summary_df.empty:
+        return summary_df
+    if removed_writeoffs is None or removed_writeoffs.empty:
+        return summary_df
+    if "realized_pnl" not in summary_df.columns:
+        return summary_df
+    if "realized_pnl" not in removed_writeoffs.columns:
+        return summary_df
+    sym_col_wo = next(
+        (c for c in ("symbol", "trade_symbol")
+         if c in removed_writeoffs.columns),
+        None,
+    )
+    sym_col_s = next(
+        (c for c in ("symbol", "trade_symbol") if c in summary_df.columns),
+        None,
+    )
+    if sym_col_wo is None or sym_col_s is None \
+            or "account" not in removed_writeoffs.columns \
+            or "account" not in summary_df.columns:
+        return summary_df
+    addbacks = (
+        removed_writeoffs.assign(
+            _addback=pd.to_numeric(
+                removed_writeoffs["realized_pnl"], errors="coerce"
+            ).fillna(0).abs()
+        )
+        .groupby(
+            [
+                removed_writeoffs["account"].astype(str).str.strip(),
+                removed_writeoffs[sym_col_wo].astype(str).str.strip(),
+            ],
+            as_index=True,
+        )["_addback"]
+        .sum()
+    )
+    if addbacks.empty:
+        return summary_df
+    out = summary_df.copy()
+    s_acct = out["account"].astype(str).str.strip()
+    s_sym = out[sym_col_s].astype(str).str.strip()
+    s_status = (
+        out["status"].astype(str).str.strip().str.lower()
+        if "status" in out.columns else None
+    )
+    money_cols = [
+        c for c in (
+            "realized_pnl", "total_pnl", "total_return"
+        ) if c in out.columns
+    ]
+    for (acct, sym), addback in addbacks.items():
+        if not addback or addback <= 0:
+            continue
+        mask = s_acct.eq(acct) & s_sym.eq(sym)
+        if s_status is not None:
+            mask = mask & s_status.eq("closed")
+        candidates = out.loc[mask]
+        if candidates.empty:
+            continue
+        # Pick the row whose realized_pnl is most-closely the writeoff
+        # carrier (realized ≈ -addback). On exact match this lands on
+        # the dominant carrier; on partial overlap it still shrinks the
+        # row that absorbed the most writeoff.
+        cand_realized = pd.to_numeric(
+            candidates["realized_pnl"], errors="coerce"
+        ).fillna(0)
+        target_idx = (cand_realized + addback).abs().idxmin()
+        for col in money_cols:
+            cur = float(pd.to_numeric(
+                pd.Series([out.at[target_idx, col]]), errors="coerce"
+            ).fillna(0).iloc[0])
+            out.at[target_idx, col] = round(cur + float(addback), 2)
+    return out
+
+
+def _equity_slice_for_live_chart(current_df: pd.DataFrame) -> pd.DataFrame:
+    """Rows that carry equity MTM for the LIVE today-row patch.
+
+    Match case-insensitively and strip whitespace — BQ/pandas sometimes
+    surface ``\"equity\"`` or padded values; strict ``== \"Equity\"``
+    skipped the patch so the chart terminal stayed at the walker's
+    realized-only value while KPIs used broker ``unrealized_pnl``."""
+    if current_df is None or current_df.empty:
+        return pd.DataFrame()
+    if "instrument_type" not in current_df.columns:
+        return pd.DataFrame()
+    it = current_df["instrument_type"].astype(str).str.strip().str.lower()
+    return current_df.loc[it.eq("equity")].copy()
 
 
 def _merge_position_pnl_chart_payloads(parts: list) -> dict:
@@ -1451,26 +1664,41 @@ POSITION_SUMMARY_QUERY = """
 
 POSITION_TRADES_QUERY = """
     SELECT
-        account,
-        underlying_symbol AS symbol,
-        trade_date,
-        action,
-        action_raw,
-        trade_symbol,
-        instrument_type,
-        description,
-        quantity,
-        price,
-        fees,
-        amount
-    FROM `ccwj-dbt.analytics.stg_history`
-    WHERE trade_date IS NOT NULL
+        h.account,
+        h.underlying_symbol AS symbol,
+        h.trade_date,
+        -- Surface DRIPs as their own action so the Raw Transaction Log
+        -- and trade-history aggregations can show "I didn't choose to
+        -- buy this — Schwab reinvested my dividend" rather than a
+        -- chaotic stream of tiny equity_buy fills. Detection lives
+        -- in `int_drip_fills` (downstream of `stg_daily_prices` so
+        -- stg_history stays out of the price-dependent build pass).
+        CASE WHEN d.matched_ex_div_date IS NOT NULL
+             THEN 'dividend_reinvest'
+             ELSE h.action
+        END AS action,
+        h.action_raw,
+        h.trade_symbol,
+        h.instrument_type,
+        h.description,
+        h.quantity,
+        h.price,
+        h.fees,
+        h.amount,
+        (d.matched_ex_div_date IS NOT NULL) AS is_dividend_reinvestment
+    FROM `ccwj-dbt.analytics.stg_history` h
+    LEFT JOIN `ccwj-dbt.analytics.int_drip_fills` d
+        ON  d.account            = h.account
+        AND (d.user_id IS NOT DISTINCT FROM h.user_id)
+        AND d.trade_date         = h.trade_date
+        AND d.underlying_symbol  = h.underlying_symbol
+    WHERE h.trade_date IS NOT NULL
       AND (
-        UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
-        OR UPPER(TRIM(SPLIT(COALESCE(trade_symbol, ''), ' ')[SAFE_OFFSET(0)])) = UPPER(TRIM('{symbol}'))
+        UPPER(TRIM(COALESCE(h.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
+        OR UPPER(TRIM(SPLIT(COALESCE(h.trade_symbol, ''), ' ')[SAFE_OFFSET(0)])) = UPPER(TRIM('{symbol}'))
       )
     {account_filter}
-    ORDER BY trade_date DESC
+    ORDER BY h.trade_date DESC
 """
 
 POSITION_CURRENT_QUERY = """
@@ -2368,12 +2596,15 @@ def position_detail(symbol):
     try:
         _pos_acct = _account_sql_and(pos_accounts_scope, col="account")
         _pos_sc_acct = _account_sql_and(pos_accounts_scope, col="sc.account")
+        # POSITION_TRADES_QUERY joins stg_history (alias h) to int_drip_fills (alias d);
+        # both tables have an `account` column so the filter must be scoped to h.
+        _pos_h_acct = _account_sql_and(pos_accounts_scope, col="h.account")
         dfs = _bq_parallel(client, {
             "summary": POSITION_SUMMARY_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
             ),
             "trades": POSITION_TRADES_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, account_filter=_pos_h_acct
             ),
             "current": POSITION_CURRENT_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
@@ -2605,6 +2836,37 @@ def position_detail(symbol):
             closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
     if selected_strategy and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
         closed_legs_df = closed_legs_df[closed_legs_df["strategy"] == selected_strategy]
+    # Defense in depth: drop ``int_closed_equity_legs`` "Cost Written Off"
+    # rows when ``int_enriched_current`` still shows the symbol held on
+    # the same account. dbt's ``account_symbol_holdings`` suppression is
+    # the source of truth, but BigQuery may serve stale rows until the
+    # next ``dbt build``. Doing the same suppression here prevents
+    # phantom writeoffs from poisoning legs / breakdown / chart-substitute
+    # in the meantime. See ``_drop_phantom_equity_writeoffs`` doc.
+    pre_strip_n = len(closed_equity_df)
+    closed_equity_df, _stripped_writeoffs = _drop_phantom_equity_writeoffs(
+        closed_equity_df, current_df
+    )
+    if len(closed_equity_df) != pre_strip_n:
+        try:
+            app.logger.info(
+                "position_detail: stripped %d phantom Cost Written Off "
+                "row(s) for %s/%s — broker still holds the shares; "
+                "dbt int_closed_equity_legs.account_symbol_holdings will "
+                "make this redundant after the next build.",
+                pre_strip_n - len(closed_equity_df),
+                selected_account or "ALL",
+                safe_symbol,
+            )
+        except Exception:
+            pass
+        # ``positions_summary`` aggregates the same phantom row into a
+        # Closed strategy rollup. Reverse it so Strategy Breakdown
+        # agrees with Position Legs + Breakdown by Type until dbt
+        # rebuilds and the source row is gone.
+        summary_df = _addback_phantom_writeoffs_to_summary(
+            summary_df, _stripped_writeoffs
+        )
     # Before leg scoping, keep copies for "first/last activity" on the page
     closed_legs_pre_leg = closed_legs_df.copy()
     closed_equity_pre_leg = closed_equity_df.copy()
@@ -3087,6 +3349,9 @@ def position_detail(symbol):
 
     if kpis:
         _align_position_pnl_chart_with_kpi(chart_data, kpis)
+        _snap_position_chart_terminal_to_breakdown(
+            chart_data, breakdown_rows
+        )
 
     # Trade history rows
     trades_for_table = trades_df.copy()
@@ -3765,6 +4030,49 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
 CHART_SUBSTITUTION_KPI_MARGIN = 25.0  # slack when judging mart vs substitute vs KPI headline
 
 
+def _snap_position_chart_terminal_to_breakdown(
+    chart_data: dict | None, breakdown_rows: list | None
+) -> None:
+    """Pinned hero + Breakdown-by-type both use Σ ``breakdown_rows`` totals.
+
+    The cumulative chart can still end on a mart-only realization (broker
+    open-equity unreal and/or dividend cumulative missing on the spine)
+    when substitution or LIVE patching does not fully apply — IYW Emmory:
+    hero ≈ -$1.607 vs chart ≈ realized -$1.957 .
+
+    Bump **only** the last plotted bucket (not proportional history
+    rescale): adjust ``total[-1]`` to the ledger and apply the delta to the
+    equity stream so stacked components remain consistent."""
+    tol = 1.0  # Must match CHART_KPI_ALIGN_TOLERANCE_DOLLARS.
+    if not chart_data or not breakdown_rows or not chart_data.get("total"):
+        return
+    totals = chart_data["total"]
+    n = len(totals)
+    if n < 1:
+        return
+    ledger = round(
+        sum(float(r.get("total") or 0) for r in breakdown_rows), 2,
+    )
+    tail = round(float(totals[-1] or 0), 2)
+    if abs(ledger - tail) <= tol:
+        return
+    delta = round(ledger - tail, 2)
+    try:
+        app.logger.info(
+            "snap chart terminal to breakdown ledger: Δ=%.2f ledger=%.2f "
+            "was_tail=%.2f",
+            delta,
+            ledger,
+            tail,
+        )
+    except Exception:
+        pass
+    totals[-1] = round(float(totals[-1] or 0) + delta, 2)
+    eq = chart_data.get("equity")
+    if eq is not None and len(eq) == n:
+        eq[-1] = round(float(eq[-1] or 0) + delta, 2)
+
+
 def _chart_data_terminal(chart_data):
     """Last ``total`` point from cumulative P&amp;L chart payload, or 0."""
     if not chart_data:
@@ -4128,6 +4436,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     )
     last_cumulative_options_realized = 0.0
     last_open_options_unrealized = 0.0
+    last_cumulative_other_pnl = 0.0
     # Track when option series steps (realization or MTM change) so the
     # "skip quiet days for closed positions" branch doesn't drop a real
     # event day. Without this an OTM-expiry crystallization (no fill in
@@ -4227,6 +4536,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         opt_pnl = cum_realized_opt + open_unreal_opt
         div_pnl = float(row.get("cumulative_dividends_pnl") or 0)
         oth_pnl = float(row.get("cumulative_other_pnl") or 0)
+        last_cumulative_other_pnl = oth_pnl
         last_cumulative_options_realized = cum_realized_opt
         last_open_options_unrealized = open_unreal_opt
 
@@ -4319,46 +4629,53 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         else:
             opt_unreal_today = last_open_options_unrealized
         today_option_pnl = last_cumulative_options_realized + opt_unreal_today
-        eq_row = current_df[current_df["instrument_type"] == "Equity"]
+        eq_row = _equity_slice_for_live_chart(current_df)
         today_eq = equity_s[-1]
         # When the broker's live snapshot has equity AND a current
-        # price, prefer the snapshot's market_value - cost_basis as
-        # today's unrealized. This is the same number positions_summary
-        # surfaces in the headline KPI / Strategy Breakdown row, and
-        # it correctly accounts for shares the trader holds that
-        # aren't in trade history (broker-side journal entries,
-        # transfer-ins, dividend reinvestments — Schwab's sync
-        # occasionally drops these from the transactions feed but
-        # always reflects them in the positions snapshot). When the
-        # snapshot is missing or the user fully closed today, fall
-        # back to the running-cost-basis trade-history calc.
+        # price, prefer the snapshot's unrealized columns. Sum of
+        # ``unrealized_pnl`` matches positions_summary / Breakdown-by-
+        # type and works even when the mart trade-history walker thinks
+        # shares_flat (e.g. bogus same-day churn in ``mart_daily_pnl``).
+        #
+        # If we only trusted mv−cb and (mv,cb) were both falsy because
+        # columns were missing, we fell through to ``shares_held > 0`` —
+        # but that's false when the walker already flattened the lot —
+        # so we'd leave ``today_eq`` at the walker terminal (pure
+        # realized −\$1,957) while KPIs added +\$349 broker unreal —
+        # IYW invariant gap (May 2026).
         if not eq_row.empty:
-            mv_col = (
-                float(eq_row["market_value"].sum())
-                if "market_value" in eq_row.columns else 0.0
-            )
-            # ``cost_basis`` is the canonical name (int_enriched_current,
-            # CURRENT_POSITIONS_QUERY). ``cost_bases`` is the original
-            # CSV-seed typo that survives in some test fixtures and the
-            # raw ``current_positions`` seed schema; accept either so
-            # this helper works against both production and test data.
-            cb_col = 0.0
-            for cb_name in ("cost_basis", "cost_bases"):
-                if cb_name in eq_row.columns:
-                    cb_col = float(eq_row[cb_name].sum())
-                    break
-            unreal_snap = (mv_col - cb_col) if (mv_col or cb_col) else None
-            if unreal_snap is not None:
-                today_eq = cum_realized + unreal_snap
-            elif shares_held > 0 or short_shares > 0:
-                p = float(eq_row["current_price"].iloc[0] or 0)
-                if p:
-                    unreal = 0
-                    if shares_held > 0:
-                        unreal = shares_held * p - total_cost
-                    if short_shares > 0:
-                        unreal -= (short_shares * p - short_cost_basis)
-                    today_eq = cum_realized + unreal
+            if "unrealized_pnl" in eq_row.columns:
+                ur_sum = pd.to_numeric(
+                    eq_row["unrealized_pnl"], errors="coerce"
+                ).fillna(0.0).sum()
+                today_eq = cum_realized + float(ur_sum)
+            else:
+                mv_col = (
+                    float(eq_row["market_value"].sum())
+                    if "market_value" in eq_row.columns else 0.0
+                )
+                # ``cost_basis`` is the canonical name (int_enriched_current,
+                # CURRENT_POSITIONS_QUERY). ``cost_bases`` is the original
+                # CSV-seed typo that survives in some test fixtures and the
+                # raw ``current_positions`` seed schema; accept either so
+                # this helper works against both production and test data.
+                cb_col = 0.0
+                for cb_name in ("cost_basis", "cost_bases"):
+                    if cb_name in eq_row.columns:
+                        cb_col = float(eq_row[cb_name].sum())
+                        break
+                unreal_snap = (mv_col - cb_col) if (mv_col or cb_col) else None
+                if unreal_snap is not None:
+                    today_eq = cum_realized + unreal_snap
+                elif shares_held > 0 or short_shares > 0:
+                    p = float(eq_row["current_price"].iloc[0] or 0)
+                    if p:
+                        unreal = 0
+                        if shares_held > 0:
+                            unreal = shares_held * p - total_cost
+                        if short_shares > 0:
+                            unreal -= (short_shares * p - short_cost_basis)
+                        today_eq = cum_realized + unreal
         today_price = None
         if not eq_row.empty and "current_price" in eq_row.columns:
             cp_nonnull = pd.to_numeric(eq_row["current_price"], errors="coerce").dropna()
@@ -4368,7 +4685,9 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             equity_s[-1] = round(today_eq, 2)
             options_s[-1] = round(today_option_pnl, 2)
             total_s[-1] = round(
-                today_eq + today_option_pnl + dividends_s[-1], 2
+                today_eq + today_option_pnl + dividends_s[-1]
+                + last_cumulative_other_pnl,
+                2,
             )
             if today_price is not None:
                 price_s[-1] = round(today_price, 2)
@@ -4379,7 +4698,11 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             dividends_s.append(dividends_s[-1])
             price_s.append(round(today_price, 2) if today_price else None)
             total_s.append(
-                round(today_eq + today_option_pnl + dividends_s[-1], 2)
+                round(
+                    today_eq + today_option_pnl + dividends_s[-1]
+                    + last_cumulative_other_pnl,
+                    2,
+                )
             )
 
     return {

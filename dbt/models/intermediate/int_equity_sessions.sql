@@ -56,12 +56,31 @@ with_prev as (
     from running
 ),
 
--- Assign session IDs: increment each time the position transitions from 0 → positive
+-- Assign session IDs: increment each time the position transitions from 0 → positive.
+--
+-- Float-precision-aware zero check (1e-9 share epsilon).
+-- Why: signed_quantity is FLOAT64 (IEEE 754 double). A round-trip like
+-- ``+1 + 0.0006 + 0.0005 + 1 + 0.0006 + 0.0006 - 0.0023 - 2`` doesn't
+-- evaluate to exactly 0 — it evaluates to ``-0.000000000000000000``
+-- (≈ -1e-17). The strict check ``prev_running_qty = 0`` fails, the
+-- next buy doesn't start a new session, and an entire 2025 round-trip
+-- + a fresh 2025-12-30 lot get fused into one session_id=1 with
+-- closed-loss math even though the 12/30 lot is genuinely OPEN.
+-- Real bug: Emmory Investment IYW (2026-05-13) — chart terminal
+-- $-1,957 instead of $396.67. Smallest broker fractional share
+-- precision is ~0.0001, so 1e-9 is 5 orders of magnitude tighter than
+-- any real fractional fill could ever be. ``running_qty > 1e-9``
+-- guards the same case symmetrically.
 sessions as (
     select
         *,
         sum(
-            case when prev_running_qty = 0 and running_qty > 0 then 1 else 0 end
+            case
+                when abs(prev_running_qty) < 1e-9
+                 and running_qty > 1e-9
+                then 1
+                else 0
+            end
         ) over (
             partition by account, user_id, symbol
             order by trade_date, action

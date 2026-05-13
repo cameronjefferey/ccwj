@@ -31,6 +31,7 @@ at the bottom of this file.
 """
 
 from datetime import date
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -256,6 +257,52 @@ def test_open_long_call_shows_mtm_no_realized():
     out = _build_chart_from_daily_pnl(df, long_call_today)
     idx = out["dates"].index("2026-05-08")
     assert out["options"][idx] == 200.0
+
+
+def test_buy_hold_equity_live_patch_matches_broker_unreal_when_walker_flat():
+    r"""Mart equity walker can end flat (shares_held=0 + large negative
+    cumulative realized) while ``int_enriched_current`` still shows an
+    open equity lot. KPIs sum ``unrealized_pnl`` — the chart LIVE row
+    must use the same broker unrealized, otherwise the terminal stays at
+    realized-only (e.g. -$1,957 vs about -$1,607 invariant gap).
+
+    Patches ``app.routes.date`` so spine last day hits the REPLACE branch."""
+
+    class _PatchDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 5, 11)
+
+    df = pd.DataFrame([
+        _daily_row(
+            "2026-05-10",
+            equity_buy_qty=10,
+            equity_buy_cost=2019.8,
+            close_price=237.0,
+            has_trade=True,
+        ),
+        _daily_row(
+            "2026-05-11",
+            equity_sell_qty=10,
+            equity_sell_proceeds=0.0,
+            close_price=237.0,
+            has_trade=True,
+        ),
+    ])
+    cur = pd.DataFrame([{
+        "instrument_type": "Equity",
+        "market_value": 2369.7,
+        "cost_basis": 2019.8,
+        "unrealized_pnl": 349.9,
+        "current_price": 236.97,
+    }])
+    with patch("app.routes.date", _PatchDate):
+        out = _build_chart_from_daily_pnl(df, cur)
+    assert out["dates"][-1] == "2026-05-11"
+    # Walker terminal: full lot sold for $0 proceeds -> about -$2,019.8 realized;
+    # broker still shows +$349.9 unreal on the open stub -> about -$1,669.9 equity.
+    assert out["equity"][-1] == pytest.approx(-1669.90, abs=0.05)
+    assert out["total"][-1] == pytest.approx(-1669.90, abs=0.05)
 
 
 def test_today_row_patch_uses_live_unrealized_not_market_value():

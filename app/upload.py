@@ -362,6 +362,46 @@ def _canonicalize_seed_cell(value):
     return out
 
 
+def _dedup_history_rows(df, seed_columns):
+    """Collapse byte-different but value-identical history rows.
+
+    Used for ``HISTORY_PATH`` writes only. Schwab's transactions API
+    has been observed returning the SAME fill twice in one response
+    with different float-text formatting (``100`` vs ``100.0`` /
+    ``-7660`` vs ``-7660.0``); without an explicit canonicalize+dedup
+    step those byte-different forms both survive and produce phantom
+    doubled trades downstream (positions_summary, mart_daily_pnl,
+    every UI surface).
+
+    Match grain: the trade key columns from ``seed_columns``,
+    excluding ``account`` and ``user_id`` (tenant metadata, not part
+    of the trade's identity). Last-write-wins on collision so a fresh
+    sync always overrides a stale row when both are pinned to the
+    syncing user.
+
+    Bug shipped May 2026 (commit ``cafc0713``: Sara Investment ASTS
+    x2 — both float-drift forms in one Schwab sync response, the
+    pre-existing dedup branch was bypassed because
+    ``existing_account_df.empty == True`` for a freshly-linked
+    account). Regression test:
+    ``tests/test_upload_merge.py::test_dedup_collapses_drift_within_new_df_even_when_existing_empty``.
+    """
+    if df is None or df.empty:
+        return df
+    key_cols = [
+        c for c in seed_columns
+        if str(c).lower() not in ("account", "user_id")
+    ]
+    if not key_cols:
+        return df
+    canon = df[key_cols].copy()
+    for c in key_cols:
+        if c in canon.columns:
+            canon[c] = canon[c].map(_canonicalize_seed_cell)
+    keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
+    return df.loc[keep_mask].reset_index(drop=True)
+
+
 def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_id=None):
     """
     Merge new account data with existing seed data.
@@ -393,6 +433,8 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
             if col not in new_df.columns:
                 new_df[col] = ""
         merged = new_df[seed_columns]
+        if path == HISTORY_PATH:
+            merged = _dedup_history_rows(merged, seed_columns)
         return merged.to_csv(index=False)
     if not existing_content.strip():
         # File exists but is empty (e.g. someone manually truncated it).
@@ -401,6 +443,8 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
             if col not in new_df.columns:
                 new_df[col] = ""
         merged = new_df[seed_columns]
+        if path == HISTORY_PATH:
+            merged = _dedup_history_rows(merged, seed_columns)
         return merged.to_csv(index=False)
 
     # Parse existing CSV. Refuse to proceed on parse failure rather than
@@ -419,7 +463,10 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
         for col in seed_columns:
             if col not in new_df.columns:
                 new_df[col] = ""
-        return new_df[seed_columns].to_csv(index=False)
+        merged = new_df[seed_columns]
+        if path == HISTORY_PATH:
+            merged = _dedup_history_rows(merged, seed_columns)
+        return merged.to_csv(index=False)
 
     # Normalize Account column name (may be "Account" or "account" from CSV)
     acct_col = None
@@ -473,44 +520,53 @@ def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_
     if path == HISTORY_PATH:
         # History: append and de-duplicate within this account.
         # New rows take precedence when keys collide.
-        if existing_account_df.empty:
-            merged_account = new_df.copy()
-        else:
-            # Tag rows by source so the dedup keeps the NEW row on key
-            # collisions. Use integer sentinels (0=old, 1=new) — the
-            # previous "old"/"new" string sentinels sorted alphabetically
-            # ("new" < "old") and silently put NEW rows BEFORE OLD ones,
-            # which made keep="last" retain the legacy row instead of
-            # the freshly-tagged sync row. Multi-account users with
-            # pre-tenancy seed data ended up losing every re-synced
-            # trade to that misordering. Regression-tested in
-            # tests/test_upload_merge.py.
-            existing_account_df = existing_account_df.copy()
-            new_tagged = new_df.copy()
-            existing_account_df["__src"] = 0
-            new_tagged["__src"] = 1
-            combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
+        #
+        # Tag rows by source so the dedup keeps the NEW row on key
+        # collisions. Use integer sentinels (0=old, 1=new) — the
+        # previous "old"/"new" string sentinels sorted alphabetically
+        # ("new" < "old") and silently put NEW rows BEFORE OLD ones,
+        # which made keep="last" retain the legacy row instead of
+        # the freshly-tagged sync row. Multi-account users with
+        # pre-tenancy seed data ended up losing every re-synced
+        # trade to that misordering. Regression-tested in
+        # tests/test_upload_merge.py.
+        #
+        # IMPORTANT: dedup runs on EVERY history merge — including
+        # when ``existing_account_df`` is empty (first sync for this
+        # tenant after account linking). Schwab's transactions API has
+        # been observed returning the SAME fill twice in one response
+        # with float-drift formatting (``100`` vs ``100.0`` /
+        # ``-7660`` vs ``-7660.0``); the previous "if empty: just
+        # copy new_df" shortcut let both forms survive into the seed.
+        # Bug shipped May 2026 (commit cafc0713: Sara Investment ASTS
+        # x2). Regression test:
+        # tests/test_upload_merge.py::test_dedup_collapses_drift_within_new_df_even_when_existing_empty
+        existing_account_df = existing_account_df.copy()
+        new_tagged = new_df.copy()
+        existing_account_df["__src"] = 0
+        new_tagged["__src"] = 1
+        combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
 
-            # Normalize key columns so duplicates match: NaN != NaN in pandas,
-            # so fill nulls with a sentinel before dedupe. ``user_id`` is
-            # excluded from the dedupe key because it's tenant metadata,
-            # not part of the trade's identity — without this exclusion a
-            # legacy row (``user_id=""``) and the same-trade re-sync row
-            # (``user_id=5``) would both be kept, double-counting the
-            # trade. The combined frame is already scoped to the syncing
-            # user + legacy rows, so excluding user_id is safe (other
-            # users' rows can't reach this dedup at all).
-            key_cols = [
-                c for c in seed_columns
-                if str(c).lower() not in ("account", "user_id")
-            ]
-            for c in key_cols:
-                if c in combined.columns:
-                    combined[c] = combined[c].map(_canonicalize_seed_cell)
+        # Normalize key columns so duplicates match: NaN != NaN in pandas,
+        # so fill nulls with a sentinel before dedupe. ``user_id`` is
+        # excluded from the dedupe key because it's tenant metadata,
+        # not part of the trade's identity — without this exclusion a
+        # legacy row (``user_id=""``) and the same-trade re-sync row
+        # (``user_id=5``) would both be kept, double-counting the
+        # trade. The combined frame is already scoped to the syncing
+        # user + legacy rows, so excluding user_id is safe (other
+        # users' rows can't reach this dedup at all).
+        key_cols = [
+            c for c in seed_columns
+            if str(c).lower() not in ("account", "user_id")
+        ]
+        for c in key_cols:
+            if c in combined.columns:
+                combined[c] = combined[c].map(_canonicalize_seed_cell)
 
-            combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
-            combined = combined.drop_duplicates(subset=key_cols, keep="last")
-            merged_account = combined.drop(columns=["__src"])
+        combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
+        combined = combined.drop_duplicates(subset=key_cols, keep="last")
+        merged_account = combined.drop(columns=["__src"])
     else:
         # Current positions (snapshot): replace that account entirely
         merged_account = new_df
