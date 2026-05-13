@@ -16,6 +16,7 @@ scoping) and every DataFrame is then passed through
 import json
 from datetime import date, timedelta
 
+import pandas as pd
 from flask import render_template, request
 from flask_login import current_user, login_required
 
@@ -65,6 +66,56 @@ def _user_account_list():
     if is_admin(current_user.username):
         return None
     return get_accounts_for_user(current_user.id)
+
+
+def _norm_account_label(val) -> str:
+    """Normalize free-form labels for resilient URL/session matching."""
+    return " ".join(str(val or "").strip().split())
+
+
+def _match_linked_account(user_accounts, requested: str):
+    """If ``requested`` identifies one of the user's linked accounts (exact or
+    case/whitespace-insensitive after normalization), return the canonical
+    Postgres label so SQL IN (...) agrees with Schwab/sync naming."""
+    if not user_accounts or not (requested or "").strip():
+        return None
+    want = _norm_account_label(requested).lower()
+    if not want:
+        return None
+    for a in user_accounts:
+        if _norm_account_label(a).lower() == want:
+            return a
+    return None
+
+
+def _collapse_wealth_daily_duplicate_grain(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep one Wealth mart row per ``(account, date)`` before chart/summary sums.
+
+    ``_filter_df_by_accounts`` Stage 0/1 leniency can leave **both** legacy
+    ``user_id IS NULL`` and populated-ID rows for the same account/day.
+    ``groupby(\"date\").sum()`` would then double cash/equity (visible as a
+    ~2× spike mid-range while hero matches the deduped last day).
+    """
+    if df is None or df.empty:
+        return df
+    if not {"account", "date"}.issubset(df.columns):
+        return df
+    out = df.copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
+    stab = "__r_i__"
+    out[stab] = range(len(out))
+    ks = ["account", "date"]
+    if "user_id" in out.columns:
+        uid_col = pd.to_numeric(out["user_id"], errors="coerce")
+        out["__prefer_uid__"] = uid_col.notna().astype(int)
+        out = out.sort_values(
+            by=ks + ["__prefer_uid__", "user_id", stab],
+            ascending=[True, True, False, True, True],
+            na_position="last",
+        ).drop_duplicates(subset=ks, keep="first").drop(columns=["__prefer_uid__"])
+    else:
+        out = out.sort_values(by=ks + [stab]).drop_duplicates(subset=ks, keep="last")
+    return out.drop(columns=[stab]).reset_index(drop=True)
 
 
 def _resolve_range(arg_value, default_days):
@@ -228,24 +279,44 @@ def wealth():
         return bounce
 
     user_accounts = _user_account_list()
-    selected_account = (request.args.get("account") or "").strip()
+    selected_raw = (request.args.get("account") or "").strip()
     range_arg = request.args.get("range", "")
 
     effective_accounts = user_accounts
-    if selected_account:
+    selected_account = selected_raw
+
+    # ``?account=`` drills into one linked label — must canonicalize casing /
+    # whitespace against Postgres so `_account_sql_and` matches Schwab/sync
+    # rows. Previously `str ==` mis-matched (`Cameron+Investment` URL vs
+    # stored `"Cameron Investment"`), and `or user_accounts` silently ignored
+    # the choice and plotted all balances.
+    if selected_raw:
         if user_accounts is None:
-            effective_accounts = [selected_account]
+            effective_accounts = [_norm_account_label(selected_raw)]
+            selected_account = effective_accounts[0]
         else:
-            effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
+            matched = _match_linked_account(user_accounts, selected_raw)
+            if matched is not None:
+                effective_accounts = [matched]
+                selected_account = matched
+            else:
+                effective_accounts = []
 
     start_date, end_date = _resolve_range(range_arg, default_days=180)
     account_filter = _account_sql_and(effective_accounts)
+
+    picker_accounts = sorted(user_accounts) if user_accounts else []
+    wealth_no_match = bool(selected_raw) and effective_accounts == []
 
     context = {
         "title": "Wealth",
         "selected_account": selected_account,
         "selected_range": (range_arg or "180").lower(),
-        "accounts": [],
+        # Linked labels for the picker; admins also get names seen in BQ
+        # once the query succeeds.
+        "wealth_account_choices": picker_accounts,
+        "accounts": picker_accounts,
+        "wealth_no_match": wealth_no_match,
         "summary": None,
         "income_panel": None,
         "chart_json": json.dumps({
@@ -257,28 +328,38 @@ def wealth():
     }
 
     try:
-        from google.cloud import bigquery
-        client = get_bigquery_client()
-        sql = WEALTH_DAILY_QUERY.format(account_filter=account_filter)
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
-                bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-            ]
-        )
-        df = client.query(sql, job_config=job_config).to_dataframe()
-        # Defense-in-depth tenant filter on the DataFrame — even if a
-        # SQL change ever drops the account_filter, this strips any
-        # row whose ``user_id`` doesn't match the signed-in user.
-        df = _filter_df_by_accounts(df, effective_accounts)
+        df = None
+        if not wealth_no_match:
+            from google.cloud import bigquery
+            client = get_bigquery_client()
+            sql = WEALTH_DAILY_QUERY.format(account_filter=account_filter)
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
+                    bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
+                ]
+            )
+            df = client.query(sql, job_config=job_config).to_dataframe()
+            # Defense-in-depth tenant filter on the DataFrame — even if a
+            # SQL change ever drops the account_filter, this strips any
+            # row whose ``user_id`` doesn't match the signed-in user.
+            df = _filter_df_by_accounts(df, effective_accounts)
+            df = _collapse_wealth_daily_duplicate_grain(df)
+
+        if df is None:
+            df = pd.DataFrame()
 
         if df.empty:
             return render_template("wealth.html", **context)
 
-        # Account picker source: every account that has any wealth
-        # data in the user-scoped result.
-        if "account" in df.columns:
-            context["accounts"] = sorted(df["account"].dropna().unique().tolist())
+        if (
+            user_accounts is None
+            and "account" in df.columns
+            and df["account"].notna().any()
+        ):
+            admin_names = sorted(df["account"].dropna().unique().tolist())
+            context["wealth_account_choices"] = admin_names
+            context["accounts"] = admin_names
 
         context["summary"] = _build_summary(df)
         context["income_panel"] = _build_income_panel(df)

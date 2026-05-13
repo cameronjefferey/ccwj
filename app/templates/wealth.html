@@ -165,6 +165,37 @@
         <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or
         <a href="{{ url_for('upload') }}">uploading your trade history</a>.</p>
 </div>
+{% elif wealth_no_match %}
+<div class="alert alert-warning">
+    <strong>Unknown account filter.</strong>
+    <p class="mb-0 mt-2 small"><code>{{ selected_account }}</code> is not one of your linked account names.
+        Use the account dropdown below (or pick an account on your
+        <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page) so the label matches exactly.</p>
+</div>
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
+    <form method="get" class="d-inline-flex align-items-center gap-2 mb-0">
+        <label class="form-label small mb-0 text-muted">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                style="min-width: 200px;"
+                onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in wealth_account_choices %}
+            <option value="{{ a }}">{{ a | account_label }}</option>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="range" value="{{ selected_range }}">
+    </form>
+    {% endif %}
+
+    <div class="range-toggle ms-auto">
+        {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
+        {% for value, label in ranges %}
+        <a href="{{ url_for('wealth', account='', range=value) }}"
+           class="{{ 'active' if selected_range == value }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+</div>
 {% elif not summary %}
 <div class="alert alert-info">
     <strong>No daily balance snapshots yet.</strong>
@@ -179,14 +210,14 @@
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    {% if accounts and accounts|length > 1 %}
+    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
     <form method="get" class="d-inline-flex align-items-center gap-2 mb-0">
         <label class="form-label small mb-0 text-muted">Account</label>
         <select name="account" class="form-select form-select-sm"
                 style="min-width: 200px;"
                 onchange="this.form.submit()">
             <option value="">All Accounts</option>
-            {% for a in accounts %}
+            {% for a in wealth_account_choices %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
             {% endfor %}
         </select>
