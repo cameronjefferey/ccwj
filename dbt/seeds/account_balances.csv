@@ -1,3 +1,5 @@
 account,user_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
 Alpaca Paper Account,2,cash,79397.95,,,,79.327658
 Alpaca Paper Account,2,account_total,100088.61,,,,
+Alpaca Paper Account,6,cash,79397.95,,,,79.355868
+Alpaca Paper Account,6,account_total,100053.03,,,,
