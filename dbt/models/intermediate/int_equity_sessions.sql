@@ -9,23 +9,49 @@
     Open sessions are enriched with current market data from stg_current.
 */
 
+-- Split-adjusted equity trades.
+--
+-- Quantity is multiplied by ``cumulative_split_factor`` (forward, from
+-- trade_date to today) so a buy of 1700 shares on 2025-10-29 followed by
+-- a 2:1 split on 2025-12-05 followed by a sell of 1500 shares on
+-- 2026-04-27 becomes:
+--   - buy: 1700 * 2.0 = 3400 effective shares
+--   - sell: 1500 * 1.0 = 1500 effective shares
+--   - running qty after sell: 3400 - 1500 = 1900 (matches snapshot)
+-- Without this the running qty would be 200 (1700 - 1500), the snapshot
+-- would show 1900, and FIFO cost basis would compare 1500 split-adjusted
+-- shares to a $90 pre-split avg cost — phantom $66K realized loss.
+--
+-- ``amount`` (cash flow) is split-invariant: the user paid $153,561 no
+-- matter how the broker re-partitioned the share count later. The
+-- session-level avg cost downstream is therefore total_buy_cost /
+-- adjusted_total_buy_qty = $153,561 / 3400 = $45.165 per share — which
+-- matches the broker snapshot's per-share basis.
+--
+-- Adjustment is no-op (factor = 1.0) for any symbol with no splits ever
+-- AND for any trade after all known splits. Most tickers never split.
+--
+-- See dbt/models/intermediate/int_split_factors.sql for the factor.
 with equity_trades as (
     select
-        account,
-        user_id,
-        underlying_symbol as symbol,
-        trade_date,
-        action,
+        h.account,
+        h.user_id,
+        h.underlying_symbol as symbol,
+        h.trade_date,
+        h.action,
         case
-            when action = 'equity_buy'        then  quantity
-            when action = 'equity_sell'       then -quantity
-            when action = 'equity_sell_short' then -quantity
+            when h.action = 'equity_buy'        then  h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
+            when h.action = 'equity_sell'       then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
+            when h.action = 'equity_sell_short' then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
             else 0
         end as signed_quantity,
-        quantity,
-        amount
-    from {{ ref('stg_history') }}
-    where instrument_type = 'Equity'
+        h.quantity * coalesce(sf.cumulative_split_factor, 1.0) as quantity,
+        h.amount
+    from {{ ref('stg_history') }} h
+    left join {{ ref('int_split_factors') }} sf
+        on  sf.symbol     = h.underlying_symbol
+        and sf.trade_date = h.trade_date
+    where h.instrument_type = 'Equity'
 ),
 
 -- Running share count.

@@ -126,7 +126,9 @@ What's working:
 
 **Orphan tenancy + reconciliation (critical):** If Schwab synced **before** the user linked `user_id`, history can sit under **`user_id = NULL`** and later fills under **the same masked `account` + real `user_id`**. Marts partition `(account, user_id)` → buys and sells **split**, producing **\$0 dividends / \$0 KPIs while the chart is non‑zero** and tripping the **admin reconciliation invariant** (Strategy breakdown vs breakdown-by-type vs chart terminal). Fix is staging backfill in `stg_history` / `stg_current` / `stg_account_balances`; regression test **`dbt/tests/no_orphan_user_id_per_account.sql`**. Details: `.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`.
 
-**Verification:** Never ship Position Detail / `mart_daily_pnl` / `_build_chart_from_daily_pnl` changes validated on **one symbol only**. Always check at least **one dividend ETF** (JEPI‑class), a **mixed equity+option** position, and **multiple tenants/accounts**.
+**Stock splits (critical):** Schwab ships `stg_history.quantity` in the **share-units that existed at the fill time** — pre-split for old buys, post-split for new sells. The broker snapshot (`stg_current`) is always in **today's** share-units. Without explicit split-adjustment, FIFO cost basis on a buy → split → sell mismatches units and produces **massive phantom realized losses** (XLU May 2026: $-65,925 phantom on a position whose real realized was +$1,822.50). Splits land in `daily_split_events` (loader: `current_position_stock_price.py`) → `stg_split_events` → `int_split_factors`, then JOINed and applied to quantity in `int_equity_sessions`, `int_closed_equity_legs`, `int_dividend_events`, and `mart_daily_pnl`. Cash flow is split-invariant. Regression: `dbt/tests/equity_running_qty_matches_snapshot_after_splits.sql` + `tests/test_stock_splits.py`. Details: `.cursor/rules/stock-splits-share-unit.mdc`.
+
+**Verification:** Never ship Position Detail / `mart_daily_pnl` / `_build_chart_from_daily_pnl` changes validated on **one symbol only**. Always check at least **one dividend ETF** (JEPI‑class), a **mixed equity+option** position, **multiple tenants/accounts**, and — if the change touches running share counts — at least **one symbol with a known split during the user's window** (XLU is the canonical regression case).
 
 Known issues:
 - Heavy Python computation: `_build_chart_from_daily_pnl` iterates every row to compute
@@ -602,5 +604,6 @@ Before shipping a change, ask:
 3. Does this increase clarity?
 4. Does this reduce cognitive noise?
 5. If the change touches `stg_history` / staging `user_id`, `mart_daily_pnl`, or `_build_chart_from_daily_pnl`: did you validate **multiple symbols** (including at least one dividend-heavy position like JEPI) and rule out **`user_id`-NULL splits** on the same `account` mask? See `.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`.
+6. If the change touches running share counts, FIFO cost basis, or anything that JOINs `stg_history.quantity` to `stg_current`: did you validate against at least one symbol with a known stock split during the user's trade window (XLU is the canonical anchor)? See `.cursor/rules/stock-splits-share-unit.mdc`.
 
 If not, reconsider.

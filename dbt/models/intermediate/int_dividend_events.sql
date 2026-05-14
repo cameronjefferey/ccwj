@@ -46,19 +46,35 @@
       - `app/routes.py DATE_FILTERED_QUERY` (via int_dividends)
 */
 
+-- Split-adjusted equity events. Synthetic dividends compute as
+-- ``shares_held × div_per_share`` and yfinance reports dividends in
+-- TODAY's per-share units (a $0.50 pre-2:1-split dividend shows as
+-- $0.25 in stg_daily_prices.dividend). To get the right dollar amount
+-- we must multiply by the same-unit holdings, i.e. the split-adjusted
+-- share count.
+--
+-- Example XLU: user holds 1700 pre-split shares on a 2025-09-22 ex-div
+-- date. yfinance reports $0.284/share on that date (pre-2:1-split-
+-- adjusted to current shares). Pre-fix: 1700 × $0.284 = $482.80
+-- (under-counted by 50%). Correct: 3400 split-adjusted × $0.284 =
+-- $965.60 (matches the broker's actual cash dividend the user would
+-- have received).
 with equity_events as (
     select
-        account,
-        user_id,
-        underlying_symbol as symbol,
-        trade_date,
+        h.account,
+        h.user_id,
+        h.underlying_symbol as symbol,
+        h.trade_date,
         case
-            when action = 'equity_buy'                          then  quantity
-            when action in ('equity_sell', 'equity_sell_short') then -quantity
+            when h.action = 'equity_buy'                          then  h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
+            when h.action in ('equity_sell', 'equity_sell_short') then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
             else 0
         end as signed_qty
-    from {{ ref('stg_history') }}
-    where instrument_type = 'Equity'
+    from {{ ref('stg_history') }} h
+    left join {{ ref('int_split_factors') }} sf
+        on  sf.symbol     = h.underlying_symbol
+        and sf.trade_date = h.trade_date
+    where h.instrument_type = 'Equity'
 ),
 
 ex_divs as (

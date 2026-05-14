@@ -16,6 +16,25 @@ sources:
           - name: date
           - name: close_price
           - name: dividend
+      - name: daily_split_events
+        description: >
+          Stock-split corporate actions per symbol, written by
+          current_position_stock_price.py (yfinance ticker.splits).
+          Schema: (symbol, split_date, split_ratio). split_ratio uses
+          yfinance's "shares-after / shares-before" convention — 2.0
+          for a 2:1 forward split, 0.0333 for a 1:30 reverse.
+          Symbol-grain (no account/user_id) — splits apply to every
+          tenant who held the symbol. Consumed by stg_split_events →
+          int_split_factors → int_equity_sessions / int_closed_equity_legs
+          to express pre-split fills in the same share-unit as the
+          post-split snapshot. Without this, a 1700-share buy followed
+          by a 2:1 split followed by a 1500-share sell looks like a
+          $66K phantom realized loss (1500 × pre-split $90 cost vs
+          1500 × post-split $46 sell). See the XLU regression May 2026.
+        columns:
+          - name: symbol
+          - name: split_date
+          - name: split_ratio
       - name: symbol_metadata
         description: >
           Sector / subsector / market cap / company name per symbol, fetched

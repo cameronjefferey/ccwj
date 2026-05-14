@@ -59,36 +59,55 @@
       surfaces reconcile by construction.
 */
 
+-- Split-adjust equity quantities. The chart's running average-cost
+-- equity P&L (computed in app/routes.py _build_chart_from_daily_pnl)
+-- needs every fill expressed in TODAY's share-units so a buy of 1700
+-- shares pre-2:1-split and a sell of 1500 shares post-split don't
+-- mismatch on basis. ``amount`` is split-invariant — cash flow doesn't
+-- change when the broker re-partitions the shares — so equity_buy_cost
+-- and equity_sell_proceeds need NO adjustment.
+--
+-- Without this the XLU chart drew a $66K phantom realized loss on
+-- 2026-04-27 (1500 sold shares × pre-split avg cost vs post-split sell
+-- price), even though int_equity_sessions / int_closed_equity_legs
+-- already report the true +$1,822.50.
 with trade_daily as (
     select
-        account,
-        user_id,
-        underlying_symbol as symbol,
-        trade_date as date,
+        h.account,
+        h.user_id,
+        h.underlying_symbol as symbol,
+        h.trade_date as date,
 
-        sum(case when instrument_type in ('Call', 'Put')
-            then amount else 0 end)                                     as options_amount,
+        sum(case when h.instrument_type in ('Call', 'Put')
+            then h.amount else 0 end)                                   as options_amount,
 
-        sum(case when instrument_type = 'Equity' and action = 'equity_buy'
-            then abs(amount) else 0 end)                                as equity_buy_cost,
+        sum(case when h.instrument_type = 'Equity' and h.action = 'equity_buy'
+            then abs(h.amount) else 0 end)                              as equity_buy_cost,
 
-        sum(case when instrument_type = 'Equity' and action = 'equity_buy'
-            then abs(coalesce(quantity, 0)) else 0 end)                 as equity_buy_qty,
+        sum(case when h.instrument_type = 'Equity' and h.action = 'equity_buy'
+            then abs(coalesce(h.quantity, 0))
+                 * coalesce(sf.cumulative_split_factor, 1.0)
+            else 0 end)                                                 as equity_buy_qty,
 
-        sum(case when instrument_type = 'Equity'
-                      and action in ('equity_sell', 'equity_sell_short')
-            then amount else 0 end)                                     as equity_sell_proceeds,
+        sum(case when h.instrument_type = 'Equity'
+                      and h.action in ('equity_sell', 'equity_sell_short')
+            then h.amount else 0 end)                                   as equity_sell_proceeds,
 
-        sum(case when instrument_type = 'Equity'
-                      and action in ('equity_sell', 'equity_sell_short')
-            then abs(coalesce(quantity, 0)) else 0 end)                 as equity_sell_qty,
+        sum(case when h.instrument_type = 'Equity'
+                      and h.action in ('equity_sell', 'equity_sell_short')
+            then abs(coalesce(h.quantity, 0))
+                 * coalesce(sf.cumulative_split_factor, 1.0)
+            else 0 end)                                                 as equity_sell_qty,
 
-        sum(case when instrument_type not in ('Call', 'Put', 'Equity', 'Dividend')
-            then amount else 0 end)                                     as other_amount
+        sum(case when h.instrument_type not in ('Call', 'Put', 'Equity', 'Dividend')
+            then h.amount else 0 end)                                   as other_amount
 
-    from {{ ref('stg_history') }}
-    where trade_date is not null
-      and underlying_symbol is not null
+    from {{ ref('stg_history') }} h
+    left join {{ ref('int_split_factors') }} sf
+        on  sf.symbol     = h.underlying_symbol
+        and sf.trade_date = h.trade_date
+    where h.trade_date is not null
+      and h.underlying_symbol is not null
     group by 1, 2, 3, 4
 ),
 
@@ -120,13 +139,73 @@ dividend_daily as (
 -- and showed up as a chart whose options line was 2× the real per-tenant
 -- value (May 2026 BE/Sara screenshot, see SKILL.md 2026-05-11). Price is
 -- a public datum keyed on (symbol, date); user_id is not part of its identity.
-prices as (
+--
+-- Split-adjustment of CLOSE PRICES (May 2026, XLU). The yfinance loader
+-- (current_position_stock_price.py) explicitly UN-adjusts split-back-
+-- adjustments — e.g. it stores XLU 2025-10-29 close as $90.33 (the raw
+-- broker price the user actually saw that day) instead of yfinance's
+-- back-adjusted $45.16 (per current share). This was a deliberate fix
+-- for an earlier bug where 8000 RAW RVSN shares × $2,214 back-adjusted
+-- close produced a $17.7M phantom equity peak.
+--
+-- But the chart's running average-cost equity walk is now in
+-- SPLIT-ADJUSTED share-units (via int_split_factors applied to
+-- equity_buy_qty / equity_sell_qty in trade_daily). Multiplying
+-- adjusted_qty (3400) × raw_close ($90) = $306K of phantom equity on
+-- the chart on dates BEFORE the split, falling off a cliff to the
+-- correct value once close_price catches up at the split boundary.
+--
+-- Fix: divide raw close_price by cumulative_split_factor for the date
+-- so the chart consumes consistent units (adjusted_qty × adjusted_close
+-- = real $ value). Today's broker_today_prices is broker-native and
+-- already in current units — its branch in the case below is unchanged.
+--
+-- Why inline here instead of changing stg_daily_prices: stg_daily_prices
+-- is a view consumed by many surfaces (per-day price overlays, broker
+-- reconciliation diagnostics, etc.) that legitimately want the RAW
+-- broker price for "what did this stock close at THAT day". The chart
+-- is the only consumer that needs adjusted_to_current_share units.
+date_split_factors as (
     select
-        account,
         symbol,
         date,
-        any_value(close_price) as close_price
-    from {{ ref('stg_daily_prices') }}
+        coalesce(
+            exp(sum(
+                case
+                    when s.split_date is not null
+                     and s.split_date > date
+                    then ln(s.split_ratio)
+                    else 0
+                end
+            )),
+            1.0
+        ) as cumulative_split_factor
+    from (
+        select distinct symbol, date
+        from {{ ref('stg_daily_prices') }}
+    ) d
+    left join {{ ref('stg_split_events') }} s
+        using (symbol)
+    group by 1, 2
+),
+
+prices as (
+    select
+        sdp.account,
+        sdp.symbol,
+        sdp.date,
+        any_value(sdp.close_price) as raw_close_price,
+        -- Split-adjusted close (current share units). Equals raw close
+        -- when no future splits exist — the common case for most days
+        -- and most symbols. Never zero (split_ratio > 0 by stg_split_events
+        -- contract; cumulative_split_factor is exp(...) so always > 0).
+        any_value(sdp.close_price)
+            / coalesce(any_value(dsf.cumulative_split_factor), 1.0)
+            as close_price
+    from {{ ref('stg_daily_prices') }} sdp
+    left join date_split_factors dsf
+        on  dsf.symbol = sdp.symbol
+        and dsf.date   = sdp.date
     group by 1, 2, 3
 ),
 

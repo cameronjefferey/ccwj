@@ -52,6 +52,25 @@ today = date.today()
 end_date = (today + timedelta(days=1)).isoformat()
 all_data = []
 
+# Stock-split ledger. Per-symbol (de-duplicated below) so a single split
+# event is not written N times when the same symbol appears across many
+# (account, user_id) pairs. Schema: (symbol, split_date, split_ratio).
+#
+# yfinance's `ticker.splits` ratio convention: 2.0 for a 2:1 forward
+# split (1 share becomes 2), 0.0333 for a 1:30 reverse (30 shares
+# become 1). Apply forward to all trades BEFORE split_date to express
+# pre-split fills in the same share-unit as the post-split snapshot.
+# `int_split_factors` does the cumulative product downstream.
+#
+# Why a separate table (vs. piggybacking daily_position_performance):
+# splits are SYMBOL-grain, not (account, user_id, symbol, date)-grain.
+# Splitting them onto the per-tenant per-day table wastes ~10x rows
+# and forces split-adjustment models into ``stg_daily_prices+`` (the
+# CI two-pass build's pass-2 bucket). Keeping them in their own source
+# means `int_split_factors` builds in pass 1 alongside `int_equity_sessions`,
+# which is where split-adjusted running quantities matter most.
+splits_seen = {}  # (symbol, split_date) -> split_ratio (last write wins)
+
 for _, row in positions_df.iterrows():
     account = row["account"]
     user_id = row["user_id"] if "user_id" in row else None
@@ -100,9 +119,30 @@ for _, row in positions_df.iterrows():
             for sd, ratio in zip(split_dates, split_ratios):
                 if not (ratio > 0):
                     continue
-                mask = hist_dates < sd
+                # Compare CALENDAR DATES, not timestamps. yfinance ships
+                # split timestamps at 09:30 ET (the moment of the split,
+                # at market open) while history rows are indexed at
+                # midnight ET. A naive ``hist_dates < sd`` comparison
+                # treats the split-day close (4:00 PM ET) as pre-split
+                # and incorrectly multiplies it by the ratio — producing
+                # a one-day chart spike (May 2026 XLU: 2025-12-05 close
+                # stored as $85.36 instead of the actual $42.68 post-
+                # split close, drawing a $137K MTM cliff on the chart
+                # for a single day). yfinance already returns the close
+                # in POST-split units on the split day itself; only
+                # PRE-split-DATE closes need un-adjustment.
+                try:
+                    sd_date = sd.date() if hasattr(sd, "date") else sd
+                except Exception:
+                    sd_date = sd
+                mask = pd.Series(hist_dates).dt.date < sd_date
+                mask.index = hist_dates
                 if mask.any():
                     close.loc[mask] = close.loc[mask] * ratio
+                # Record this split for the daily_split_events table.
+                # Same symbol may iterate many times (one per tenant) —
+                # dict de-dup ensures one row per (symbol, split_date).
+                splits_seen[(symbol, sd_date)] = ratio
             hist["Close"] = close
 
         hist = hist[["Close", "Dividends"]].reset_index()
@@ -137,3 +177,45 @@ if all_data:
     print("Upload successful.")
 else:
     print("No data to upload.")
+
+# Step 5: Upload stock-split events to BigQuery (separate table).
+#
+# WRITE_TRUNCATE on every run so a yfinance correction (e.g. retroactively
+# de-listed split, mis-reported ratio) self-heals without manual cleanup.
+# Schema is symbol-grain (no account/user_id) — splits are corporate
+# actions and apply identically to every tenant who held the symbol.
+splits_table_id = "ccwj-dbt.analytics.daily_split_events"
+if splits_seen:
+    splits_df = pd.DataFrame(
+        [
+            {"symbol": sym, "split_date": sd, "split_ratio": float(ratio)}
+            for (sym, sd), ratio in splits_seen.items()
+            if ratio is not None and float(ratio) > 0
+        ]
+    )
+else:
+    # Always emit an EMPTY table so the dbt source registration has a
+    # relation to bind to on first deploy. Without this, the very first
+    # CI build of a fresh deploy would fail when stg_split_events tries
+    # to read a non-existent table.
+    splits_df = pd.DataFrame(
+        columns=["symbol", "split_date", "split_ratio"]
+    )
+
+if not splits_df.empty:
+    splits_df["split_date"] = pd.to_datetime(splits_df["split_date"]).dt.date
+
+splits_job = client.load_table_from_dataframe(
+    splits_df,
+    splits_table_id,
+    job_config=bigquery.LoadJobConfig(
+        write_disposition="WRITE_TRUNCATE",
+        schema=[
+            bigquery.SchemaField("symbol", "STRING"),
+            bigquery.SchemaField("split_date", "DATE"),
+            bigquery.SchemaField("split_ratio", "FLOAT64"),
+        ],
+    ),
+)
+splits_job.result()
+print(f"Uploaded {len(splits_df)} split event(s) to {splits_table_id}.")

@@ -1,0 +1,86 @@
+---
+description: Stock splits — share-unit consistency between trade history and broker snapshot
+globs: dbt/models/intermediate/int_equity_sessions.sql, dbt/models/intermediate/int_closed_equity_legs.sql, dbt/models/intermediate/int_dividend_events.sql, dbt/models/marts/mart_daily_pnl.sql, dbt/models/intermediate/int_split_factors.sql, dbt/models/staging/stg_history.sql, dbt/models/staging/stg_split_events.sql, current_position_stock_price.py
+alwaysApply: false
+---
+
+# Stock splits — share-unit consistency (non-negotiable)
+
+## The failure mode (May 2026, XLU)
+
+Schwab Connect ships `stg_history.quantity` and `stg_history.price` in the **share-units that existed at the time of the fill** (broker prints raw trade tickets and never back-adjusts old fills for later corporate actions).
+
+The broker snapshot (`stg_current.quantity`, `cost_basis`, `market_value`) is in **today's share-units** (always reflects the current outstanding shares per the broker's books).
+
+When a stock splits BETWEEN a buy and a sell, those two surfaces **measure different things**. Without an explicit split-adjustment layer:
+
+- A buy of 1700 shares at $90.33 = $153,561 (recorded in pre-split units).
+- A 2:1 split happens on 2025-12-05.
+- A sell of 1500 post-split shares at $46.38 = $69,570.
+- **Trade-derived running qty: 1700 − 1500 = 200** (mixing units, **wrong**).
+- **Broker snapshot qty: 1900** (post-split: 3400 split-adjusted − 1500 sold).
+- FIFO realized = 1500 × ($153,561 / 1700) − $69,570 = **$-65,925 phantom loss**.
+- True realized = 1500 × ($153,561 / 3400) − $69,570 = **+$1,822.50**.
+
+The page rendered $-62,697.60 total return on a position that was actually +$6,115.80. The reconciliation banner did not fire (every consumer was wrong by the same factor) — the only signal was "the user looked at the page and said 'this is way off'".
+
+## Where the fix lives
+
+Source of truth (yfinance):
+
+- `current_position_stock_price.py` — collects `ticker.splits` per symbol AND writes them to `daily_split_events` (a SEPARATE BQ table — not piggybacked on `daily_position_performance`).
+
+dbt layer:
+
+- `dbt/models/staging/stg_split_events.sql` — defensive read with `adapter.get_relation()` for first-deploy resilience.
+- `dbt/models/intermediate/int_split_factors.sql` — per `(symbol, trade_date)`: `cumulative_split_factor = PRODUCT(split_ratio for splits where split_date > trade_date)`. Independent of `stg_daily_prices` so this stays in CI pass 1.
+- Consumers that JOIN `int_split_factors` and multiply quantity by the factor:
+  - `int_equity_sessions.sql` — running qty + session boundary detection.
+  - `int_closed_equity_legs.sql` — FIFO avg-cost denominator and per-leg cost basis.
+  - `int_dividend_events.sql` — synthetic `shares_held × div_per_share` (yfinance dividends are also in post-split units, so holdings must match).
+  - `mart_daily_pnl.sql` — `equity_buy_qty` / `equity_sell_qty` for the chart's running average-cost walk.
+
+**The chart-side trap (May 2026, "you're getting closer but still not quite there"):** quantity adjustment alone is not enough. `mart_daily_pnl.close_price` must ALSO be in current share-units, otherwise the chart's MTM walk multiplies adjusted_qty × raw_pre-split_close and reports a phantom equity peak (XLU: 3400 split-adjusted shares × $90 raw close = $306K from 2025-10-29 to 2025-12-04, falling off a cliff to the correct value once the close caught up at the split boundary). Fix lives in `mart_daily_pnl`'s `date_split_factors` CTE — divides raw close by the cumulative factor for the date.
+
+**The loader-side trap (same chat):** the loader's split-back-adjustment compares `hist_dates < sd` where `hist_dates` is midnight-indexed and `sd` is 09:30-ET-indexed. That treats the SPLIT-DAY close (4:00 PM ET, already post-split per yfinance) as pre-split and inflates it — drawing a one-day chart spike at the split. Use `hist_dates.dt.date < sd.date()` so the comparison is by calendar day.
+
+Regression invariant (dbt singular test):
+
+- `dbt/tests/equity_running_qty_matches_snapshot_after_splits.sql` — for every symbol with a known split DURING the user's trade window, snapshot qty must not exceed trade-derived open qty by a split-shaped factor. Catches "new consumer forgot to apply the split factor".
+
+Pytest BQ tests:
+
+- `tests/test_stock_splits.py` — pins XLU as the canonical regression case, plus:
+  - architectural assertion that non-split symbols have `cumulative_split_factor = 1.0` everywhere
+  - mart_daily_pnl.close_price is in current share-units (`test_xlu_mart_daily_pnl_close_prices_are_split_adjusted`)
+  - end-to-end chart walk terminal matches positions_summary within $1 (`test_xlu_chart_walk_terminal_matches_positions_summary`) — a single canonical reconciliation that catches both quantity and price unit mismatches in one assertion
+
+## Rules for any change touching `stg_history.quantity` or running share counts
+
+1. **Default assumption: split-adjust.** If your code does ANY of these, JOIN `int_split_factors` on `(symbol, trade_date)` and multiply `quantity` by `cumulative_split_factor` BEFORE the math:
+   - Running window sum to detect session boundaries.
+   - FIFO / avg-cost basis division.
+   - `holdings × per_share_dividend` (yfinance dividends are post-split adjusted).
+   - Comparing trade-derived qty to broker snapshot qty.
+   - Anywhere else where "the user really had N shares at moment T" matters.
+2. **Cash flow is split-invariant.** `amount`, `equity_buy_cost`, `equity_sell_proceeds`, `total_buy_cost` — all DOLLAR fields stay raw. The user paid $153,561 no matter how the broker re-partitioned shares afterward. Only quantities and per-share prices change unit.
+3. **Per-share price = amount / split-adjusted qty.** Don't read `price` directly for math that crosses a split. Derive it: `effective_price = abs(amount) / (raw_qty × factor)` is equivalent to `raw_price / factor`.
+4. **Option strikes need their own treatment.** This rule does NOT cover OCC option-strike adjustment (a 2:1 stock split typically converts a $90C into a $45C with the same contract count, OR keeps the strike but doubles the deliverable). XLU's options happened to all close before or open after the split, so we deferred this. If a contract straddles a split, expect the trade log to show the broker-original strike (which is what Schwab also shows) but the option P&L math will still net out because it's all cash flow.
+5. **Don't read split data through `stg_daily_prices`.** That would push every consumer of `int_split_factors` into `stg_daily_prices+`, breaking the CI two-pass build (the entire warehouse would cascade to pass 2). Splits live in their own source table on purpose.
+
+## Before marking work complete
+
+- [ ] Verify with at least one symbol that has a known split in the user's window (XLU is the canonical anchor — 2025-12-05 2:1).
+- [ ] Verify with one symbol that has NO splits (JEPI, IYW) — numbers must be unchanged.
+- [ ] Run `dbt test --select equity_running_qty_matches_snapshot_after_splits` AND `RUN_BQ_TESTS=1 pytest tests/test_stock_splits.py`.
+- [ ] If you added a new consumer of `stg_history.quantity`, document why it does or does not need split adjustment in a code comment.
+
+## Failure mode to remember
+
+`stg_history` says 1700 shares bought, 1500 sold = 200 open. Snapshot says 1900 open. **The 1700-share gap IS the split.** Three commits in a row tried to "fix" the chart math, the FIFO logic, and the snapshot comparison — none of them noticed the gap was structurally a 2:1 ratio (snapshot ÷ trade-derived = 1900 ÷ 200 — not clean, but trade_derived_open_after_split (3400) − sold (1500) = 1900 which IS clean). The fix has to happen at the share-unit layer, not at any consumer downstream of it.
+
+## Do not confuse with
+
+- **`bigquery-tenant-isolation.mdc`** — different bug class (other users' rows leaking).
+- **`position-detail-orphan-tenancy-reconciliation.mdc`** — also a snapshot-vs-trade-history mismatch, but caused by `(account, user_id)` partition splits, not corporate actions. Diagnostic: an orphan-tenancy split shows up across MANY symbols on a single account; a stock-split miss shows up on ONE symbol with a known split-shape ratio gap.
+- **Snapshot residual transfer-ins** (e.g. AMZN Coco snap=11 vs trade=6 on a non-split-affected symbol). Different bug class, see `snapshot_equity_sessions` in `int_equity_sessions`.
