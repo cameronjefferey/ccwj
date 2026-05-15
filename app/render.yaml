@@ -91,21 +91,29 @@ services:
   # Vanguard, Robinhood, IBKR, Tradier, etc.) connected through the
   # SnapTrade aggregator. Same shape as the Schwab cron above:
   # iterates every row in `snaptrade_accounts`, normalizes activities
-  # + positions + balances, pushes seed CSVs to GitHub which triggers
-  # the dbt rebuild.
+  # + positions + balances + recent_orders, pushes seed CSVs to GitHub
+  # which triggers the dbt rebuild.
   #
-  # Schedule offset by 30 minutes from the Schwab cron so the two
-  # crons don't push to GitHub in the same minute. The
+  # Schedule: 21:01 UTC = 4:01pm EST (winter) / 5:01pm EDT (summer),
+  # i.e. always at least 1 minute after the 4pm ET market close. The
+  # design goal is "users get to review same-day activity before the
+  # next session opens." Picking a UTC time that's post-close in winter
+  # means it drifts to ~1 hour post-close in summer; we accept the
+  # drift in exchange for never accidentally firing pre-close.
+  #
+  # Offset 29 minutes from `happytrader-schwab-sync` (21:30 UTC) so the
+  # two crons don't push to GitHub in the same minute. The
   # `concurrency: cancel-in-progress: true` setting in the Actions
   # workflow means coincident pushes silently lose work — staggering
-  # them lets each one's dbt build complete.
-  #
-  # Schedule: 22:00 UTC = 5pm EST / 6pm EDT. After Schwab (21:30 UTC).
+  # them lets each one's dbt build complete. The 1-minute gap from
+  # `happy-trader-schwab-sync-close` (20:01 UTC) is moot because that
+  # cron runs an hour earlier in winter (when `1 21` fires post-close)
+  # and 60 min earlier in summer.
   # ──────────────────────────────────────────────────────────────────
   - type: cron
     name: happytrader-snaptrade-sync
     env: python
-    schedule: "0 22 * * 1-5"
+    schedule: "1 21 * * 1-5"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.snaptrade_sync_cli
     envVars:
