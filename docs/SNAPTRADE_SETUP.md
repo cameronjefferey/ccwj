@@ -42,16 +42,28 @@ Add to `.env` (local) or set as environment variables on Render:
 SNAPTRADE_CLIENT_ID=your-client-id
 SNAPTRADE_CONSUMER_KEY=your-consumer-key
 
-# Where SnapTrade returns the user after they finish the Connection
-# Portal flow. Must match a redirect URI you registered in the
-# SnapTrade dashboard (HTTPS in production).
+# OPTIONAL — where SnapTrade returns the user after the Connection
+# Portal flow. Unlike Schwab, SnapTrade does NOT require a pre-registered
+# allow-list of redirect URIs; we pass this value per-session via the
+# ``customRedirect`` parameter of ``login_snap_trade_user`` and SnapTrade
+# honors whatever we send. If unset, the code falls back to Flask's
+# ``url_for("snaptrade_callback", _external=True)`` which auto-builds
+# the right URL from the request host (works locally and in prod).
+# Set this only if you want to override the host (e.g. point to a
+# different domain than the request hostname).
 SNAPTRADE_REDIRECT_URI=https://your-domain.com/snaptrade/callback
 ```
 
-For local development, you can use the same ngrok / HTTPS tunnel
-strategy documented in `SCHWAB_API_SETUP.md` — register
-`https://abc123.ngrok-free.app/snaptrade/callback` in the SnapTrade
-dashboard, then export `SNAPTRADE_REDIRECT_URI=...` matching it.
+Unlike Schwab, you do **not** need to register this URL anywhere in the
+SnapTrade dashboard — there is no "allowed redirect URIs" list. SnapTrade
+stores ONE default redirect URI per Client ID (visible via the Get Client
+Info endpoint) which is used only as a fallback when `customRedirect`
+isn't passed; our code always passes `customRedirect`, so the dashboard
+default is effectively bypassed.
+
+For local development, just leave `SNAPTRADE_REDIRECT_URI` unset and
+visit the app over `http://127.0.0.1:5000`. SnapTrade's Connection
+Portal accepts non-HTTPS localhost URIs for development.
 
 ## Step 4 — Verify the integration
 
