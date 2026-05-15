@@ -107,26 +107,37 @@ services:
   # + positions + balances + recent_orders, pushes seed CSVs to GitHub
   # which triggers the dbt rebuild.
   #
-  # Schedule: 21:02 UTC = 4:02pm EST (winter) / 5:02pm EDT (summer),
-  # i.e. always at least 2 minutes after the 4pm ET market close. The
-  # design goal is "users get to review same-day activity before the
-  # next session opens." Picking a UTC time that's post-close in winter
-  # means it drifts to ~1 hour post-close in summer; we accept the
-  # drift in exchange for never accidentally firing pre-close.
+  # Schedule: 21:06 UTC = 4:06pm EST (winter) / 5:06pm EDT (summer),
+  # i.e. always at least 6 minutes after the 4pm ET market close. In
+  # the user's local Pacific time (their preferred frame): 1:06pm PST
+  # in winter, 2:06pm PDT in summer. Picking a UTC time that's
+  # post-close in winter means it drifts to ~1 hour post-close in
+  # summer; we accept the drift in exchange for never accidentally
+  # firing pre-close.
   #
-  # Stagger logic: 21:01 UTC is held by the manually-managed
-  # `happy-trader-schwab-sync-close` cron (NOT Blueprint-managed; lives
-  # in the Render dashboard only — its schedule must be updated there,
-  # not here). We sit at 21:02 to give Schwab its 1-minute head start
-  # and avoid coincident GitHub pushes — the Actions workflow's
-  # `concurrency: cancel-in-progress: true` setting silently drops
-  # duplicate-minute pushes otherwise. The 28-minute gap to the daily
-  # Schwab backup at 21:30 UTC stays comfortably wide.
+  # Stagger choreography (post-close window, year-round):
+  #   21:01 UTC → `happy-trader-schwab-sync-close` (Schwab primary)
+  #   21:06 UTC → `happytrader-snaptrade-sync`     (this cron, SnapTrade)
+  #   21:30 UTC → `happytrader-schwab-sync`        (Schwab backup)
+  #
+  # The 5-minute gap from `_close` is well clear of the 1-minute
+  # collision window the Actions workflow's `concurrency:
+  # cancel-in-progress: true` setting would otherwise drop, AND it
+  # gives the Schwab cron's GitHub push enough head start that the
+  # dbt build is past the seed-load step before the SnapTrade push
+  # arrives — keeps the two pushes from queueing on the same Action
+  # run. The 24-minute gap to the daily Schwab backup at 21:30 UTC
+  # stays comfortably wide.
+  #
+  # `_close` lives in the Render dashboard only (NOT Blueprint-managed
+  # — predates this Blueprint covering Schwab). Its schedule must be
+  # edited at dashboard.render.com/cron/crn-d7ptctebn58s73867bh0/settings,
+  # not here.
   # ──────────────────────────────────────────────────────────────────
   - type: cron
     name: happytrader-snaptrade-sync
     env: python
-    schedule: "2 21 * * 1-5"
+    schedule: "6 21 * * 1-5"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.snaptrade_sync_cli
     envVars:
