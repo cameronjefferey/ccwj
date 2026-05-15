@@ -20,7 +20,7 @@
 {% if execute %}
     {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
-    {%- set _bal_cols  = adapter.get_columns_in_relation(ref('schwab_account_balances')) | map(attribute='name') | list -%}
+    {%- set _bal_cols  = adapter.get_columns_in_relation(ref('account_balances')) | map(attribute='name') | list -%}
 {% else %}
     {%- set _curr_cols = [] -%}
     {%- set _demo_cols = [] -%}
@@ -95,7 +95,7 @@ account_total_rows as (
     where lower(trim(coalesce(symbol, ''))) in ('account total', 'positions total')
 ),
 
-schwab_bal_rows as (
+broker_bal_rows as (
     select
         trim(cast(account as string)) as account,
         safe_cast(safe_cast(nullif(trim({{ _bal_user_id_expr }}), '') as float64) as int64) as user_id,
@@ -108,22 +108,22 @@ schwab_bal_rows as (
         safe_cast(trim(replace(replace(replace(cast(unrealized_pnl as string), '$', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl,
         safe_cast(trim(replace(replace(replace(cast(unrealized_pnl_pct as string), '%', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl_pct,
         safe_cast(trim(replace(replace(cast(percent_of_account as string), '%', ''), ',', '')) as float64) as percent_of_account
-    from {{ ref('schwab_account_balances') }}
+    from {{ ref('account_balances') }}
     where trim(coalesce(cast(account as string), '')) != ''
       and lower(trim(coalesce(cast(row_type as string), ''))) in ('cash', 'account_total')
 ),
 
 -- Dedupe across the three sources. The same (account, user_id, row_type)
 -- can appear in *both* current_positions (manual export seed) AND
--- schwab_account_balances (Schwab sync seed) once a user has uploaded a
--- CSV and then connected Schwab — both seeds carry the cash + account
--- total rows. Without this, snapshot_account_balances_daily's MERGE
--- fails with "must match at most one source row for each target row"
--- (its unique_key is (account, row_type) — see the snapshot's docstring
--- for the Stage 0/1 grain rationale). Prefer the Schwab row when it
--- exists (more authoritative / live-synced); else the export row.
+-- account_balances (broker sync seed — Schwab native and SnapTrade both
+-- write here) once a user has uploaded a CSV and then connected a broker.
+-- Without this, snapshot_account_balances_daily's MERGE fails with
+-- "must match at most one source row for each target row" (its
+-- unique_key is (account, row_type) — see the snapshot's docstring for
+-- the Stage 0/1 grain rationale). Prefer the broker row when it exists
+-- (more authoritative / live-synced); else the export row.
 unioned as (
-    select *, 1 as src_priority from schwab_bal_rows
+    select *, 1 as src_priority from broker_bal_rows
     union all
     select *, 2 as src_priority from cash_rows
     union all

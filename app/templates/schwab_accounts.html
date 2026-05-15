@@ -92,11 +92,14 @@
         {# Default the "pull full history" toggle on whenever any account
            is still pending its first sync — that's the case where the
            routine ~60-day window would silently leave most of the user's
-           trade history out. Mirrors the same default on profile.html. #}
-        {% set _any_first_pending = false %}
+           trade history out. Mirrors the same default on profile.html.
+           Use a Jinja2 namespace() because plain {% set %} inside
+           {% for %} doesn't escape loop scope (silent no-op pre-fix). #}
+        {% set _ns = namespace(any_first_pending=false) %}
         {% for c in connected_accounts %}
-            {% if not c.first_sync_completed %}{% set _any_first_pending = true %}{% endif %}
+            {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
         {% endfor %}
+        {% set _any_first_pending = _ns.any_first_pending %}
         <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form mb-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="sync_all" value="1">

@@ -94,13 +94,14 @@ CURRENT_SEED_COLUMNS = [
 HISTORY_PATH = "dbt/seeds/trade_history.csv"
 CURRENT_PATH = "dbt/seeds/current_positions.csv"
 
-# Schwab-only extra seed (cash + account-total rows for equity snapshots).
-# Schwab sync writes trade history into trade_history.csv and open positions
-# into current_positions.csv — the same seeds the manual upload path uses —
-# so there's a single pipeline into dbt.
-SCHWAB_ACCOUNT_BALANCES_PATH = "dbt/seeds/schwab_account_balances.csv"
+# Broker-agnostic balance seed (cash + account-total rows for equity
+# snapshots). Native Schwab sync, SnapTrade sync, and any future
+# broker connector write here. Trade history goes to trade_history.csv
+# and open positions to current_positions.csv — the same seeds the
+# manual upload path uses — so there's a single pipeline into dbt.
+BALANCE_SEED_PATH = "dbt/seeds/account_balances.csv"
 
-SCHWAB_BALANCE_COLUMNS = [
+BALANCE_SEED_COLUMNS = [
     "account",
     "user_id",
     "row_type",
@@ -110,6 +111,12 @@ SCHWAB_BALANCE_COLUMNS = [
     "unrealized_pnl_pct",
     "percent_of_account",
 ]
+
+# Backwards-compat aliases for callers that still import the Schwab-named
+# constants (third-party scripts, older imports). Safe to remove once a
+# repo-wide grep returns no hits.
+SCHWAB_ACCOUNT_BALANCES_PATH = BALANCE_SEED_PATH
+SCHWAB_BALANCE_COLUMNS = BALANCE_SEED_COLUMNS
 
 
 def _github_repo() -> str:
@@ -399,7 +406,62 @@ def _dedup_history_rows(df, seed_columns):
         if c in canon.columns:
             canon[c] = canon[c].map(_canonicalize_seed_cell)
     keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
-    return df.loc[keep_mask].reset_index(drop=True)
+    df = df.loc[keep_mask].reset_index(drop=True)
+
+    # ---- Second pass: cross-source dedup -----------------------------------
+    # SnapTrade has TWO sources of truth for the same trade. The
+    # ``recent_orders`` endpoint reflects executed orders within seconds
+    # (real-time); the ``activities`` endpoint takes hours-to-days to
+    # ingest the same fills. Our pipeline writes both, so the same
+    # economic trade can land twice in one merge — once with a thin
+    # Description ("NVIDIA Corporation", from orders) and once with a
+    # richer Description ("Bought 98 NVDA at market", from activities).
+    # The strict-key dedup above does NOT catch this because Description
+    # differs (and so does ``fees_and_comm`` and often ``Amount`` —
+    # orders derives Amount = qty * exec_price at full precision while
+    # activities carries the broker's cent-rounded Amount).
+    #
+    # Cross-source key: (Date, Action, Symbol, Quantity, Price). These
+    # five cells uniquely identify a trade fill. ``Amount`` is omitted
+    # because it's derived from Quantity * Price ± rounding direction
+    # — keying on it lets sub-cent FP drift between the two sources
+    # defeat the dedup. ``Description`` and ``fees_and_comm`` are
+    # omitted because they're the cells the two sources legitimately
+    # disagree on.
+    #
+    # Risk analysis for omitting Amount: two trades with identical
+    # Date+Action+Symbol+Quantity+Price MUST have identical Amount
+    # modulo rounding (Amount = ±qty × price). Any case where
+    # Amount differs but the other five agree is a rounding artifact,
+    # not a different trade. Keeping both rows would double-count the
+    # same money.
+    #
+    # On collision, prefer the row with the LONGER non-empty
+    # Description (heuristic: activities-source has the broker's
+    # original wording, which is more useful to users than the
+    # symbol-name fallback orders-source emits).
+    cross_key_lower = {"date", "action", "symbol", "quantity", "price"}
+    cross_key_cols = [
+        c for c in seed_columns
+        if str(c).lower() in cross_key_lower
+    ]
+    if len(cross_key_cols) < len(cross_key_lower):
+        # Caller's seed_columns doesn't have the full identity set —
+        # bail out rather than dedup with a partial key.
+        return df
+    if "Description" not in df.columns:
+        return df
+    canon2 = df[cross_key_cols].copy()
+    for c in cross_key_cols:
+        canon2[c] = canon2[c].map(_canonicalize_seed_cell)
+    # Stable sort: longer description first within each duplicate
+    # group, so ``keep="first"`` retains the richer row.
+    desc_lens = df["Description"].fillna("").astype(str).str.len()
+    order = (-desc_lens).argsort(kind="stable")
+    df_sorted = df.iloc[order].reset_index(drop=True)
+    canon2_sorted = canon2.iloc[order].reset_index(drop=True)
+    keep_mask2 = ~canon2_sorted.duplicated(subset=cross_key_cols, keep="first")
+    return df_sorted.loc[keep_mask2].reset_index(drop=True)
 
 
 def _merge_seed_with_existing(path, account_name, new_df, seed_columns, *, user_id=None):
@@ -768,8 +830,9 @@ def merge_and_push_seeds(
             into every emitted row's ``user_id`` column so BigQuery rows
             are tenant-keyed by ``(user_id, account_name)`` rather than
             by ``account_name`` alone. See ``docs/USER_ID_TENANCY.md``.
-        balances_df: optional Schwab cash + account_total rows shaped for
-            SCHWAB_BALANCE_COLUMNS. Committed atomically with the others.
+        balances_df: optional cash + account_total rows shaped for
+            BALANCE_SEED_COLUMNS. Committed atomically with the others.
+            Any broker connector (Schwab, SnapTrade) writes here.
         skip_history: when True, commit positions only (and balances if given).
 
     Returns:
@@ -853,18 +916,18 @@ def merge_and_push_seeds(
         balances_prepared = _prepare_seed_df(
             balances_df,
             account_name,
-            SCHWAB_BALANCE_COLUMNS,
+            BALANCE_SEED_COLUMNS,
             account_col="account",
             user_id=user_id_int,
         )
         bal_content = _merge_seed_with_existing(
-            SCHWAB_ACCOUNT_BALANCES_PATH,
+            BALANCE_SEED_PATH,
             account_name,
             balances_prepared,
-            SCHWAB_BALANCE_COLUMNS,
+            BALANCE_SEED_COLUMNS,
             user_id=user_id_int,
         )
-        path_contents.append((SCHWAB_ACCOUNT_BALANCES_PATH, bal_content))
+        path_contents.append((BALANCE_SEED_PATH, bal_content))
 
     history_rows = len(history_df) if history_df is not None else 0
     current_rows = len(current_df)
@@ -917,7 +980,7 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     seed_specs = [
         (HISTORY_PATH, HISTORY_SEED_COLUMNS),
         (CURRENT_PATH, CURRENT_SEED_COLUMNS),
-        (SCHWAB_ACCOUNT_BALANCES_PATH, SCHWAB_BALANCE_COLUMNS),
+        (BALANCE_SEED_PATH, BALANCE_SEED_COLUMNS),
     ]
 
     path_contents = []

@@ -19,7 +19,7 @@ What the script does:
      on the wrong rows** — exactly the leak this whole migration is
      designed to prevent.
   4. Rewrite ``dbt/seeds/{trade_history,current_positions,
-     schwab_account_balances}.csv`` in place, populating the
+     account_balances}.csv`` in place, populating the
      ``user_id`` column where it is currently empty and the
      ``account_name`` resolves to a single owner.
   5. Print a summary (rows backfilled / left NULL / skipped due to
@@ -48,7 +48,7 @@ SEED_DIR = Path(__file__).resolve().parent.parent / "dbt" / "seeds"
 SEED_FILES = [
     SEED_DIR / "trade_history.csv",
     SEED_DIR / "current_positions.csv",
-    SEED_DIR / "schwab_account_balances.csv",
+    SEED_DIR / "account_balances.csv",
 ]
 
 ACCOUNT_COLS = {"Account", "account"}

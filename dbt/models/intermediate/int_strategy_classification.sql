@@ -217,7 +217,7 @@ options_classified as (
     --
     -- Defensive dedup: this join used to match raw `equity_sessions` directly,
     -- and a duplicated `int_equity_sessions` row (from a poisoned source — see
-    -- 2026-05-11 entry in ~/.cursor/skills/schwab-sync-safety/SKILL.md) would
+    -- 2026-05-11 entry in ~/.cursor/skills/broker-sync-safety/SKILL.md) would
     -- fan a single option contract into multiple classification rows. The same
     -- option fill then showed up as both "Naked Call" and "Covered Call" under
     -- the same trade_symbol on the position page, depending on which join

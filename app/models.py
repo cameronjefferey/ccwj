@@ -256,6 +256,48 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_feedback_unresolved_created
         ON feedback (created_at DESC) WHERE resolved_at IS NULL
         """,
+        # SnapTrade aggregator: one row per HappyTrader user. Stores the
+        # SnapTrade-issued userId/userSecret pair we need to call every
+        # SnapTrade endpoint on the user's behalf. Mirrors the per-grant
+        # nature of OAuth — one SnapTrade user can carry many linked
+        # broker accounts (Fidelity + Vanguard + Robinhood + ...).
+        # See plan: SnapTrade multi-broker integration.
+        """
+        CREATE TABLE IF NOT EXISTS snaptrade_connections (
+            user_id            INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            snaptrade_user_id  TEXT NOT NULL UNIQUE,
+            snaptrade_secret   TEXT NOT NULL,
+            created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        # SnapTrade per-account rows. Mirrors schwab_connections grain
+        # (one row per linked broker account). ``account_name`` is the
+        # warehouse-facing tenant label that flows into seed.Account —
+        # follow ``docs/USER_ID_TENANCY.md`` rules: never rename it
+        # after first sync. ``broker_slug`` is SnapTrade's canonical
+        # broker identifier ('SCHWAB', 'FIDELITY', 'VANGUARD', ...) so
+        # the UI can show broker logos / branding without an extra
+        # API round-trip. ``connection_broken_at`` mirrors
+        # ``refresh_token_invalid_at`` from schwab_connections.
+        """
+        CREATE TABLE IF NOT EXISTS snaptrade_accounts (
+            id                          SERIAL PRIMARY KEY,
+            user_id                     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            snaptrade_account_id        TEXT NOT NULL,
+            broker_slug                 TEXT NOT NULL,
+            account_number_masked       TEXT,
+            account_name                TEXT NOT NULL,
+            display_nickname            TEXT,
+            first_sync_completed        BOOLEAN NOT NULL DEFAULT FALSE,
+            last_sync_at                TIMESTAMPTZ,
+            last_sync_error             TEXT,
+            connection_broken_at        TIMESTAMPTZ,
+            created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, snaptrade_account_id)
+        )
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -267,6 +309,7 @@ def init_db():
     _migrate_community_posts_strategy_column()
     _migrate_account_name_unique_index()
     _migrate_users_email_column()
+    _migrate_snaptrade_force_refresh_columns()
 
 
 def _migrate_schwab_first_sync_column():
@@ -297,6 +340,35 @@ def _migrate_schwab_refresh_token_invalid_at_column():
         _log.warning(
             "schwab_connections refresh_token_invalid_at migration skipped: %s", e,
         )
+
+
+def _migrate_snaptrade_force_refresh_columns():
+    """Idempotent: add columns supporting the user-initiated
+    "Refresh from broker" button on /snaptrade/accounts.
+
+    - ``brokerage_authorization_id``: SnapTrade's per-connection
+      auth UUID. Cached so the refresh button doesn't spend an extra
+      ``get_user_account_details`` round-trip every press. Looked up
+      lazily on first refresh and stamped here for re-use.
+    - ``last_force_refresh_at``: throttle anchor. ``refresh_brokerage_
+      authorization`` is BILLED PER CALL by SnapTrade — without a
+      throttle a misbehaving (or impatient) user could spam it and
+      run up our SnapTrade bill in a few seconds.
+    """
+    try:
+        execute(
+            "ALTER TABLE snaptrade_accounts "
+            "ADD COLUMN IF NOT EXISTS brokerage_authorization_id TEXT"
+        )
+    except Exception as e:
+        _log.warning("snaptrade_accounts brokerage_authorization_id migration skipped: %s", e)
+    try:
+        execute(
+            "ALTER TABLE snaptrade_accounts "
+            "ADD COLUMN IF NOT EXISTS last_force_refresh_at TIMESTAMPTZ"
+        )
+    except Exception as e:
+        _log.warning("snaptrade_accounts last_force_refresh_at migration skipped: %s", e)
 
 
 def _migrate_schwab_display_nickname_column():
@@ -1019,6 +1091,320 @@ def get_expired_schwab_connections(user_id):
     except Exception as exc:
         _log.warning("get_expired_schwab_connections failed: %s", exc)
         return []
+
+
+# ------------------------------------------------------------------
+# SnapTrade aggregator connections
+# ------------------------------------------------------------------
+#
+# SnapTrade is an OAuth-style brokerage aggregator that gives us a single
+# integration covering ~20 brokers (Schwab, Fidelity, Vanguard, Robinhood,
+# IBKR, Tradier, ...). Per HappyTrader user we store ONE
+# ``snaptrade_connections`` row (the SnapTrade userId/userSecret pair) and
+# MANY ``snaptrade_accounts`` rows (one per linked brokerage account, same
+# grain as ``schwab_connections``).
+#
+# Tenancy: ``account_name`` is the warehouse-facing label that flows into
+# ``seed.Account``. NEVER rename it after first sync — that detaches every
+# committed seed row from the user. ``display_nickname`` is UI-only and
+# safe to change.
+
+_MAX_SNAPTRADE_NICKNAME_LEN = 80
+
+
+def save_snaptrade_user(user_id, snaptrade_user_id, snaptrade_secret):
+    """
+    Store (or refresh) the SnapTrade user credentials for a HappyTrader
+    user. Idempotent: re-running with new credentials updates the row.
+
+    Mirrors ``save_schwab_connection``'s "always upsert" semantic so the
+    SnapTrade /connect route can blindly call this on every flow.
+    """
+    execute(
+        """INSERT INTO snaptrade_connections
+           (user_id, snaptrade_user_id, snaptrade_secret, updated_at)
+           VALUES (%s, %s, %s, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET
+               snaptrade_user_id = EXCLUDED.snaptrade_user_id,
+               snaptrade_secret  = EXCLUDED.snaptrade_secret,
+               updated_at        = NOW()""",
+        (user_id, snaptrade_user_id, snaptrade_secret),
+    )
+
+
+def get_snaptrade_user(user_id):
+    """Return the SnapTrade userId/userSecret row, or None."""
+    if user_id is None:
+        return None
+    return fetch_one(
+        "SELECT snaptrade_user_id, snaptrade_secret, created_at, updated_at "
+        "FROM snaptrade_connections WHERE user_id = %s",
+        (user_id,),
+    )
+
+
+def remove_snaptrade_user(user_id):
+    """Drop the SnapTrade user record. ON DELETE CASCADE removes account rows."""
+    execute(
+        "DELETE FROM snaptrade_connections WHERE user_id = %s",
+        (user_id,),
+    )
+
+
+def upsert_snaptrade_account(
+    user_id,
+    snaptrade_account_id,
+    *,
+    broker_slug,
+    account_number_masked,
+    account_name,
+):
+    """Insert or update a SnapTrade-managed broker account.
+
+    ``account_name`` is the warehouse tenancy label and is overwritten on
+    every upsert — SnapTrade can change the label between runs (e.g. user
+    renames an account at the broker), but renaming after first sync
+    orphans seed rows. Callers (the /snaptrade/callback handler) are
+    expected to pass a stable label derived from broker + masked number.
+    """
+    execute(
+        """INSERT INTO snaptrade_accounts
+           (user_id, snaptrade_account_id, broker_slug, account_number_masked,
+            account_name, updated_at)
+           VALUES (%s, %s, %s, %s, %s, NOW())
+           ON CONFLICT (user_id, snaptrade_account_id) DO UPDATE SET
+               broker_slug           = EXCLUDED.broker_slug,
+               account_number_masked = EXCLUDED.account_number_masked,
+               account_name          = EXCLUDED.account_name,
+               connection_broken_at  = NULL,
+               updated_at            = NOW()""",
+        (
+            user_id,
+            snaptrade_account_id,
+            broker_slug,
+            account_number_masked,
+            account_name,
+        ),
+    )
+
+
+def get_snaptrade_accounts(user_id):
+    """Lightweight metadata for every SnapTrade account the user owns.
+
+    Mirrors ``get_schwab_connections`` shape — every column the multi-
+    account UI and bulk sync loop need is SELECTed here, including
+    ``first_sync_completed`` (drives full-history-vs-routine lookback
+    on the first sync per row, same pattern as Schwab).
+    """
+    if user_id is None:
+        return []
+    return fetch_all(
+        "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
+        "account_name, display_nickname, first_sync_completed, last_sync_at, "
+        "last_sync_error, connection_broken_at, brokerage_authorization_id, "
+        "last_force_refresh_at, created_at "
+        "FROM snaptrade_accounts WHERE user_id = %s "
+        "ORDER BY created_at",
+        (user_id,),
+    )
+
+
+def get_snaptrade_account(user_id, snaptrade_account_id):
+    """Return one SnapTrade account row, or None."""
+    return fetch_one(
+        "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
+        "account_name, display_nickname, first_sync_completed, last_sync_at, "
+        "last_sync_error, connection_broken_at, brokerage_authorization_id, "
+        "last_force_refresh_at "
+        "FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
+        (user_id, snaptrade_account_id),
+    )
+
+
+def set_snaptrade_brokerage_authorization_id(user_id, snaptrade_account_id, authorization_id):
+    """Cache SnapTrade's per-connection auth UUID on the account row.
+
+    Looked up via ``account_information.get_user_account_details`` on the
+    first force-refresh and re-used on every subsequent press so the
+    button doesn't burn an extra API call to re-discover it. Idempotent
+    (UPDATE is a no-op when the value matches).
+    """
+    auth_id = (authorization_id or "").strip() or None
+    if not auth_id:
+        return False
+    try:
+        execute(
+            "UPDATE snaptrade_accounts "
+            "SET brokerage_authorization_id = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (auth_id, user_id, snaptrade_account_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("set_snaptrade_brokerage_authorization_id failed: %s", exc)
+        return False
+
+
+def stamp_snaptrade_force_refresh_attempt(user_id, snaptrade_account_id):
+    """Stamp ``last_force_refresh_at = NOW()`` for throttle accounting.
+
+    Called AFTER a successful ``refresh_brokerage_authorization`` SDK
+    call so the next press is rate-limited. Stamping on attempt-success
+    (not on attempt-start) means a 5xx from SnapTrade doesn't burn the
+    user's throttle window.
+    """
+    try:
+        execute(
+            "UPDATE snaptrade_accounts "
+            "SET last_force_refresh_at = NOW(), updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (user_id, snaptrade_account_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("stamp_snaptrade_force_refresh_attempt failed: %s", exc)
+        return False
+
+
+def mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id):
+    """Flip the per-row first-sync flag after a successful pull. Same
+    semantic as ``mark_schwab_first_sync_completed`` — newly added
+    accounts default to full-history on their first sync; subsequent
+    syncs use the routine lookback window."""
+    execute(
+        "UPDATE snaptrade_accounts SET first_sync_completed = TRUE, updated_at = NOW() "
+        "WHERE user_id = %s AND snaptrade_account_id = %s",
+        (user_id, snaptrade_account_id),
+    )
+
+
+def update_snaptrade_account_nickname(user_id, snaptrade_account_id, nickname):
+    """UI-only label, never writes to ``account_name`` (tenancy key)."""
+    label = (nickname or "").strip()
+    if len(label) > _MAX_SNAPTRADE_NICKNAME_LEN:
+        label = label[:_MAX_SNAPTRADE_NICKNAME_LEN]
+    value = label or None
+    try:
+        execute(
+            "UPDATE snaptrade_accounts SET display_nickname = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (value, user_id, snaptrade_account_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("update_snaptrade_account_nickname failed: %s", exc)
+        return False
+
+
+def record_snaptrade_sync_attempt(user_id, snaptrade_account_id, *, error=None):
+    """Stamp ``last_sync_at`` and (optionally) ``last_sync_error`` for the
+    given account. Pass ``error=None`` on success to clear any prior
+    error message; pass a string to record a failure for the UI."""
+    execute(
+        "UPDATE snaptrade_accounts "
+        "SET last_sync_at = NOW(), last_sync_error = %s, updated_at = NOW() "
+        "WHERE user_id = %s AND snaptrade_account_id = %s",
+        (error, user_id, snaptrade_account_id),
+    )
+
+
+def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
+    """Flag a SnapTrade account as needing reconnection (broker grant
+    revoked, broker side error, etc). Idempotent on the timestamp so
+    the banner does not reset on every cron run.
+    """
+    try:
+        execute(
+            "UPDATE snaptrade_accounts "
+            "SET connection_broken_at = COALESCE(connection_broken_at, NOW()), "
+            "    updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (user_id, snaptrade_account_id),
+        )
+    except Exception as exc:
+        _log.warning("mark_snaptrade_connection_broken failed: %s", exc)
+
+
+def clear_snaptrade_connection_broken(user_id, snaptrade_account_id):
+    """Clear the broken-connection flag after a successful sync."""
+    try:
+        execute(
+            "UPDATE snaptrade_accounts SET connection_broken_at = NULL, updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (user_id, snaptrade_account_id),
+        )
+    except Exception as exc:
+        _log.warning("clear_snaptrade_connection_broken failed: %s", exc)
+
+
+def get_expired_snaptrade_accounts(user_id):
+    """Rows with ``connection_broken_at`` set — drives the SnapTrade
+    "Reconnect" banner. Shape mirrors ``get_expired_schwab_connections``
+    so banner code can render both lists with the same template.
+    """
+    if user_id is None:
+        return []
+    try:
+        return fetch_all(
+            "SELECT snaptrade_account_id, broker_slug, account_name, display_nickname, "
+            "connection_broken_at "
+            "FROM snaptrade_accounts "
+            "WHERE user_id = %s AND connection_broken_at IS NOT NULL "
+            "ORDER BY created_at",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_expired_snaptrade_accounts failed: %s", exc)
+        return []
+
+
+def remove_snaptrade_account(user_id, snaptrade_account_id):
+    """Disconnect one SnapTrade-managed account. The Postgres user's
+    SnapTrade userId/userSecret in ``snaptrade_connections`` is
+    preserved so they can re-add accounts without re-registering."""
+    execute(
+        "DELETE FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
+        (user_id, snaptrade_account_id),
+    )
+
+
+def list_all_snaptrade_accounts():
+    """Iterate every (user_id, snaptrade_account_id) pair across all
+    users. Used by the cron CLI (``app.snaptrade_sync_cli``) — same
+    pattern as ``get_all_schwab_connections`` for the Schwab cron.
+    Returns the same column set as ``get_snaptrade_accounts`` plus
+    ``user_id`` so the CLI knows whose secret to fetch."""
+    return fetch_all(
+        "SELECT user_id, id, snaptrade_account_id, broker_slug, "
+        "account_number_masked, account_name, display_nickname, "
+        "first_sync_completed, connection_broken_at "
+        "FROM snaptrade_accounts ORDER BY user_id, created_at",
+    )
+
+
+def get_snaptrade_account_nicknames(user_id):
+    """``{account_name: display_label}`` for SnapTrade accounts. Mirrors
+    ``get_account_nicknames`` (Schwab) so the request-scoped label
+    filter can union the two."""
+    if user_id is None:
+        return {}
+    try:
+        rows = fetch_all(
+            "SELECT account_name, display_nickname "
+            "FROM snaptrade_accounts WHERE user_id = %s",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_snaptrade_account_nicknames failed: %s", exc)
+        return {}
+    out = {}
+    for r in rows:
+        name = (r.get("account_name") or "").strip()
+        if not name:
+            continue
+        nick = (r.get("display_nickname") or "").strip()
+        out[name] = nick or name
+    return out
 
 
 # ------------------------------------------------------------------

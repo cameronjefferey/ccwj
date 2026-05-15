@@ -85,3 +85,57 @@ services:
         sync: false
       - key: GITHUB_BRANCH
         sync: false
+
+  # ──────────────────────────────────────────────────────────────────
+  # Daily SnapTrade sync — covers every NON-Schwab broker (Fidelity,
+  # Vanguard, Robinhood, IBKR, Tradier, etc.) connected through the
+  # SnapTrade aggregator. Same shape as the Schwab cron above:
+  # iterates every row in `snaptrade_accounts`, normalizes activities
+  # + positions + balances, pushes seed CSVs to GitHub which triggers
+  # the dbt rebuild.
+  #
+  # Schedule offset by 30 minutes from the Schwab cron so the two
+  # crons don't push to GitHub in the same minute. The
+  # `concurrency: cancel-in-progress: true` setting in the Actions
+  # workflow means coincident pushes silently lose work — staggering
+  # them lets each one's dbt build complete.
+  #
+  # Schedule: 22:00 UTC = 5pm EST / 6pm EDT. After Schwab (21:30 UTC).
+  # ──────────────────────────────────────────────────────────────────
+  - type: cron
+    name: happytrader-snaptrade-sync
+    env: python
+    schedule: "0 22 * * 1-5"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.snaptrade_sync_cli
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        sync: false
+
+      # Each daily run only needs a small overlapping window. The
+      # routine-vs-full-history decision happens per row inside the CLI
+      # (first sync gets full window; subsequent syncs get this).
+      - key: SCHWAB_SYNC_TRANSACTION_DAYS
+        value: "3"
+
+      # SnapTrade SDK credentials — set ONCE in the Render dashboard.
+      # SNAPTRADE_REDIRECT_URI is only used by the OAuth callback flow
+      # and is not needed by the cron.
+      - key: SNAPTRADE_CLIENT_ID
+        sync: false
+      - key: SNAPTRADE_CONSUMER_KEY
+        sync: false
+
+      - key: GITHUB_PAT
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_BRANCH
+        sync: false

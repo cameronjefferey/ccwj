@@ -104,7 +104,7 @@ all_intervals_raw as (
 -- record fix is upstream (the `_canonicalize_seed_cell` dedup in the seed
 -- merge + the dbt singular test on stg_history), but this guard means a
 -- future regression in either upstream model can't split a leg by accident.
--- See ~/.cursor/skills/schwab-sync-safety/SKILL.md (2026-05-11).
+-- See ~/.cursor/skills/broker-sync-safety/SKILL.md (2026-05-11).
 all_intervals as (
     select
         account,

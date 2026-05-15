@@ -214,6 +214,68 @@
             </div>
             {% endif %}
 
+            {# Multi-broker (SnapTrade) — sibling to the Schwab card.
+               Schwab native stays primary because it returns deeper
+               history; SnapTrade unlocks Fidelity, Vanguard, Robinhood,
+               IBKR and friends.
+
+               Mirrors the Schwab Overview-tab pattern: primary "Sync"
+               action stays one click away on this card. Per-brokerage
+               sync + nicknames live on /snaptrade/accounts (the
+               dedicated detail page); same shape as Schwab routing
+               its multi-account UX through /schwab/accounts. #}
+            {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
+            <div class="sync-card" id="snaptrade-sync">
+                <div class="sync-head">
+                    <div>
+                        <div class="sync-title">More brokerages</div>
+                        <p class="sync-sub mb-0">
+                            Connect Fidelity, Vanguard, Robinhood, IBKR and ~20
+                            other brokers through SnapTrade. One click per broker;
+                            we mirror the same trade history and positions.
+                        </p>
+                    </div>
+                </div>
+                {% if _snaptrade_accounts %}
+                {# Same first-pending heuristic + namespace pattern as the
+                   Account-tab card. {% set %} inside {% for %} doesn't
+                   escape loop scope in Jinja2. #}
+                {% set _ns_st_o = namespace(any_first_pending=false) %}
+                {% for a in _snaptrade_accounts %}
+                    {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
+                {% endfor %}
+                <p class="small text-body-secondary mt-2 mb-2">
+                    You have <strong>{{ _snaptrade_accounts|length }}</strong>
+                    brokerage{{ '' if _snaptrade_accounts|length == 1 else 's' }}
+                    connected via SnapTrade.
+                </p>
+                <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="sync_all" value="1">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox"
+                               name="full_history_again" id="snaptrade_sync_all_full_o"
+                               value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
+                        <label class="form-check-label small" for="snaptrade_sync_all_full_o">
+                            Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every brokerage
+                        </label>
+                    </div>
+                    <div class="sync-actions">
+                        <button type="submit" class="btn-sync-primary">Sync all brokerages</button>
+                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage brokerages</a>
+                        <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add another broker</a>
+                    </div>
+                    <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                        Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
+                    </p>
+                </form>
+                {% else %}
+                <div class="sync-actions mt-2">
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect another broker</a>
+                </div>
+                {% endif %}
+            </div>
+
             {# Profile summary — condensed, edit via Preferences #}
             <div class="atlas-card">
                 <div class="atlas-card-h">Profile</div>
@@ -342,11 +404,20 @@
                     {# Default the "pull full history" toggle on whenever any
                        linked account is still pending its first sync — that's
                        the case where the routine 60-day window would silently
-                       leave most of the user's trade history out of the warehouse. #}
-                    {% set _any_first_pending = false %}
+                       leave most of the user's trade history out of the warehouse.
+
+                       Use a Jinja2 namespace() because plain {% set %} inside
+                       {% for %} doesn't escape loop scope (silent no-op).
+                       Pre-fix this loop never actually flipped the variable,
+                       which meant the toggle never auto-checked even when
+                       multi-account users had a first-sync-pending account
+                       — they had to remember to tick the box themselves to
+                       avoid the routine-only sync that drops history. #}
+                    {% set _ns_sw = namespace(any_first_pending=false) %}
                     {% for c in schwab_connections %}
-                        {% if not c.schwab_first_sync_completed %}{% set _any_first_pending = true %}{% endif %}
+                        {% if not c.schwab_first_sync_completed %}{% set _ns_sw.any_first_pending = true %}{% endif %}
                     {% endfor %}
+                    {% set _any_first_pending = _ns_sw.any_first_pending %}
                     <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked.</p>
                     <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form mb-3">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -412,6 +483,112 @@
                     {% endif %}
                     {% else %}
                     <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary">Connect Schwab</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {# SnapTrade aggregator card — sibling to Schwab. Always shows
+               when SnapTrade env is configured so users can find Fidelity,
+               Vanguard, Robinhood, IBKR, Alpaca Paper, etc. without
+               needing to discover the Overview tab. #}
+            {% if snaptrade_enabled %}
+            {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">More brokerages (via SnapTrade)</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint">
+                        Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
+                        through the SnapTrade Connection Portal. One click per broker; we handle
+                        history and daily refresh from then on.
+                    </p>
+                    <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+                        <strong>What to expect after you connect:</strong>
+                        <ul class="mb-0 ps-3 mt-1">
+                            <li><strong>Within minutes:</strong> your current positions, cash balance, and account total.</li>
+                            <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync of a new connection).</li>
+                        </ul>
+                        <div class="mt-2">
+                            SnapTrade pulls trade history from each broker on its own schedule — we
+                            can't speed that up. If trades aren't visible right away, sync again
+                            later. They will appear; we've never seen a connected broker fail to
+                            backfill.
+                        </div>
+                    </div>
+                    {% if _snaptrade_accounts %}
+                    {# Default the "pull full history" toggle on whenever any
+                       linked brokerage is still pending its first sync —
+                       same heuristic as the Schwab card so a fresh-link
+                       user doesn't accidentally re-pull just the routine
+                       window. SnapTrade clamps to whatever the broker
+                       actually returns, so over-asking is safe.
+
+                       Use a Jinja2 namespace() because {% set %} inside
+                       {% for %} doesn't escape loop scope — same reason
+                       the Schwab block above this looks slightly buggy
+                       (its sibling check has the same issue but happens
+                       to default-correct enough of the time). #}
+                    {% set _ns = namespace(any_first_pending=false) %}
+                    {% for a in _snaptrade_accounts %}
+                        {% if not a.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
+                    {% endfor %}
+                    {% set _any_first_pending_st = _ns.any_first_pending %}
+                    <p class="small text-body-secondary mb-2">
+                        You have <strong>{{ _snaptrade_accounts|length }}</strong>
+                        brokerage{{ '' if _snaptrade_accounts|length == 1 else 's' }}
+                        connected via SnapTrade.
+                    </p>
+
+                    {# Sync-all form (mirrors the Schwab "Sync all accounts" UX) #}
+                    <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="sync_all" value="1">
+                        <button type="submit" class="btn btn-primary">Sync all brokerages</button>
+                        <div class="form-check mt-2 mb-0">
+                            <input class="form-check-input" type="checkbox"
+                                   name="full_history_again" id="snaptrade_sync_all_full"
+                                   value="1"{% if _any_first_pending_st %} checked{% endif %}>
+                            <label class="form-check-label small" for="snaptrade_sync_all_full">
+                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days, ~5 years) on every brokerage
+                            </label>
+                        </div>
+                        <p class="atlas-hint small mb-0 mt-1">
+                            Leave unchecked for the routine {{ snaptrade_routine_lookback_days }}-day refresh.
+                            Each broker only returns what it carries on file &mdash; SnapTrade clamps to the broker's actual depth.
+                        </p>
+                        <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                            Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
+                        </p>
+                    </form>
+
+                    {# Per-brokerage rows with inline Sync (mirrors Schwab's per-account list) #}
+                    <p class="atlas-hint small mb-2">Or sync just one:</p>
+                    <ul class="list-unstyled mb-3">
+                        {% for a in _snaptrade_accounts %}
+                        <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
+                            <span class="small text-body-secondary">{{ a.broker_slug }}</span>
+                            {% if not a.first_sync_completed %}
+                            <span class="badge text-bg-warning">First sync pending</span>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="snaptrade_account_id" value="{{ a.snaptrade_account_id }}">
+                                {% if not a.first_sync_completed %}
+                                <input type="hidden" name="full_history_again" value="1">
+                                {% endif %}
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this brokerage</button>
+                                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                                    Pulling from your brokerage. This can take a minute &mdash; keep this tab open.
+                                </p>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname brokerages</a>
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add another broker</a>
+                    {% else %}
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary">Connect a brokerage</a>
                     {% endif %}
                 </div>
             </div>

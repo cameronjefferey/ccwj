@@ -2,88 +2,6 @@
 
 {% block head %}
 <style>
-    .accordion-button:not(.collapsed) {
-        background: #f0f4ff;
-        color: #1a1a2e;
-    }
-    .accordion-button { padding: .6rem 1rem; }
-
-    /* ── Accordion header grid ──────────────────────────────────── */
-    .sym-row {
-        display: grid;
-        grid-template-columns: 64px 100px 1fr 80px 170px;
-        align-items: center;
-        gap: .5rem;
-        width: 100%;
-        padding-right: .5rem;
-    }
-    .sym-ticker { font-weight: 700; font-size: .95rem; }
-    .sym-pnl {
-        font-size: .82rem;
-        font-weight: 700;
-        padding: .25em .6em;
-        border-radius: 6px;
-        color: #fff;
-        text-align: center;
-        white-space: nowrap;
-    }
-    .sym-pnl-pos { background: #198754; }
-    .sym-pnl-neg { background: #dc3545; }
-    .sym-pnl-zero { background: #6c757d; }
-    .sym-strategies {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .25rem;
-        overflow: hidden;
-    }
-    .sym-trades {
-        text-align: right;
-        font-size: .78rem;
-        color: #6c757d;
-        white-space: nowrap;
-    }
-    .sym-account {
-        text-align: right;
-        font-size: .72rem;
-        color: #9ca3af;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .badge-strategy {
-        font-size: .6rem;
-        font-weight: 600;
-        padding: .25em .5em;
-        border-radius: 5px;
-        color: #fff;
-        white-space: nowrap;
-    }
-
-    /* ── Sort controls ──────────────────────────────────────────── */
-    .sort-btn { font-size: .8rem; }
-    .sort-btn.active { font-weight: 700; }
-    .sort-btn .arrow { font-size: .65rem; opacity: .6; }
-
-    /* ── Stats ──────────────────────────────────────────────────── */
-    .stat-card { text-align: center; padding: .75rem; }
-    .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: #6c757d; }
-    .stat-value { font-size: 1.1rem; font-weight: 700; }
-
-    .chart-container {
-        background: #fff;
-        border-radius: 10px;
-        padding: 1rem;
-        box-shadow: 0 1px 6px rgba(0,0,0,.04);
-        margin-bottom: 1rem;
-    }
-
-    .trade-table-wrap {
-        max-height: 420px;
-        overflow-y: auto;
-    }
-    .trade-table-wrap table th { position: sticky; top: 0; z-index: 1; background: #f8f9fa; }
-
     /* ── Hero ───────────────────────────────────────────────────── */
     .sym-hero {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -99,13 +17,75 @@
         .sym-hero h1 { font-size: 1.2rem; }
         .sym-hero .lede { font-size: .85rem; }
     }
+
+    /* ── Active symbol pane ─────────────────────────────────────── */
+    .sym-pane { display: none; }
+    .sym-pane.active { display: block; }
+
+    .sym-pane-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin: 0 0 .85rem;
+        padding-bottom: .35rem;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .sym-pane-header h2 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: -0.01em;
+    }
+    .sym-pane-header .sym-account {
+        font-size: .75rem;
+        color: #6c757d;
+    }
+    .sym-pane-header .sym-strats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .25rem;
+    }
+
+    .badge-strategy {
+        font-size: .65rem;
+        font-weight: 600;
+        padding: .25em .5em;
+        border-radius: 5px;
+        color: #fff;
+        white-space: nowrap;
+    }
+
+    /* ── Stats ──────────────────────────────────────────────────── */
+    .stat-card { text-align: center; padding: .75rem; background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+    .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: #6c757d; }
+    .stat-value { font-size: 1.1rem; font-weight: 700; }
+
+    .chart-container {
+        background: #fff;
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 1px 6px rgba(0,0,0,.04);
+        margin-bottom: 1rem;
+    }
+
+    /* ── Empty pane state ───────────────────────────────────────── */
+    .sym-empty {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 1px 6px rgba(0,0,0,.04);
+        padding: 2.5rem 1.5rem;
+        text-align: center;
+        color: #6b7280;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="sym-hero">
     <h1>Daily P&amp;L by symbol</h1>
-    <p class="lede">Day-by-day performance for every ticker you've held. See exactly when winners ran and where slow bleeds happened &mdash; click any symbol to drill into its full history.</p>
+    <p class="lede">Day-by-day performance for every ticker you've held. Click a tab (or use ← / →) to flip between symbols &mdash; the chart, stats, and trades update instantly.</p>
 </div>
 
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
@@ -131,7 +111,7 @@
 </div>
 {% else %}
 
-{# ── Filters ──────────────────────────────────────────────────────── #}
+{# ── Filters (account / open-only / positions-only) ──────────────── #}
 <form method="get" class="filter-bar">
     {% if accounts and accounts|length > 1 %}
     <div>
@@ -169,37 +149,7 @@
     {% endif %}
 </form>
 
-{# ── Search + Sort controls ───────────────────────────────────────── #}
-{# Sort is client-side (no form submit) so we use a .seg-toggle for the
-   buttons but keep them as plain <button> elements with sortBtn JS. #}
-<div class="filter-bar">
-    <div>
-        <label class="lblh">Filter</label>
-        <input type="text" id="symbolFilter" class="form-control form-control-sm"
-               style="min-width: 14rem;" placeholder="Filter symbols...">
-    </div>
-    <div>
-        <label class="lblh">Sort by</label>
-        <div class="seg-toggle">
-            <button type="button" class="sort-btn active" id="sortPnl" data-dir="desc">
-                P&amp;L <span class="arrow">&#9660;</span>
-            </button>
-            <button type="button" class="sort-btn" id="sortSymbol" data-dir="none">
-                Symbol
-            </button>
-            <button type="button" class="sort-btn" id="sortTrades" data-dir="none">
-                Trades
-            </button>
-        </div>
-    </div>
-</div>
-
-<p class="text-muted small mb-3">
-    {{ symbol_data | length }} symbol{{ 's' if symbol_data | length != 1 }} &middot;
-    Chart shows cumulative realized P&amp;L over time. The final point includes unrealized P&amp;L for open positions.
-</p>
-
-{# ── Strategy badge color map ─────────────────────────────────────── #}
+{# ── Strategy badge color map (used in pane header) ─────────────── #}
 {% set colors = {
     'Covered Call':     '#0d6efd',
     'Cash-Secured Put': '#6f42c1',
@@ -215,235 +165,237 @@
     'Other Option':     '#6c757d'
 } %}
 
-{# ── Accordion ────────────────────────────────────────────────────── #}
-<div class="accordion mb-5" id="symbolAccordion">
+{# ── Tab strip ────────────────────────────────────────────────── #}
+{% if symbol_data %}
+{% include "_symbol_tabstrip.html" with context %}
+
+<p class="text-muted small mb-3">
+    Chart shows cumulative realized P&amp;L over time. The final point includes unrealized P&amp;L for open positions.
+    {% if symbol_data|length > 1 %}<span class="ms-2 d-none d-md-inline">Tip: tap <kbd>&larr;</kbd> / <kbd>&rarr;</kbd> to flip tabs.</span>{% endif %}
+</p>
+
+{# ── Symbol panes (one is visible at a time) ─────────────────── #}
+<div id="symbolPanes">
     {% for sym in symbol_data %}
-    <div class="accordion-item symbol-item"
-         data-symbol="{{ sym.symbol }}"
-         data-pnl="{{ sym.total_return }}"
-         data-trades="{{ sym.num_trades }}"
-         data-account="{{ sym.account }}">
-        <h2 class="accordion-header" id="heading-{{ loop.index0 }}">
-            <button class="accordion-button collapsed" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#panel-{{ loop.index0 }}"
-                    aria-expanded="false" aria-controls="panel-{{ loop.index0 }}">
-                <div class="sym-row">
-                    <span class="sym-ticker">{{ sym.symbol }}</span>
+    {% set _is_active = (sym.symbol == active_symbol) %}
+    <section class="sym-pane {{ 'active' if _is_active }}"
+             id="pane-{{ loop.index0 }}"
+             data-idx="{{ loop.index0 }}"
+             data-symbol="{{ sym.symbol }}"
+             {% if not _is_active %}hidden{% endif %}>
 
-                    {% if sym.total_return > 0 %}
-                    <span class="sym-pnl sym-pnl-pos">${{ "{:,.0f}".format(sym.total_return) }}</span>
-                    {% elif sym.total_return < 0 %}
-                    <span class="sym-pnl sym-pnl-neg">${{ "{:,.0f}".format(sym.total_return) }}</span>
-                    {% else %}
-                    <span class="sym-pnl sym-pnl-zero">$0</span>
-                    {% endif %}
-
-                    <div class="sym-strategies">
-                        {% for strat in sym.strategies %}
-                        <span class="badge badge-strategy"
-                              style="background:{{ colors.get(strat, '#6c757d') }}">{{ strat }}</span>
-                        {% endfor %}
-                    </div>
-
-                    <span class="sym-trades">{{ sym.num_trades }} trades</span>
-                    <span class="sym-account">{{ sym.account }}</span>
-                </div>
-            </button>
-        </h2>
-
-        <div id="panel-{{ loop.index0 }}" class="accordion-collapse collapse"
-             aria-labelledby="heading-{{ loop.index0 }}">
-            <div class="accordion-body">
-
-                {# ── Summary Stats Row ────────────────────────────────── #}
-                <div class="row g-2 mb-3">
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">
-                                {% if positions_only|default(false) %}Closed P&amp;L{% else %}Realized{% endif %}
-                            </div>
-                            <div class="stat-value {{ 'text-positive' if sym.total_realized >= 0 else 'text-negative' }}">
-                                ${{ "{:,.2f}".format(sym.total_realized) }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">
-                                {% if positions_only|default(false) %}Open P&amp;L{% else %}Unrealized{% endif %}
-                            </div>
-                            <div class="stat-value {{ 'text-positive' if sym.unrealized >= 0 else 'text-negative' }}">
-                                ${{ "{:,.2f}".format(sym.unrealized) }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">Total Return</div>
-                            <div class="stat-value {{ 'text-positive' if sym.total_return >= 0 else 'text-negative' }}">
-                                ${{ "{:,.2f}".format(sym.total_return) }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">Trades</div>
-                            <div class="stat-value">{{ sym.num_trades }}</div>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">First Trade</div>
-                            <div class="stat-value" style="font-size:.9rem;">{{ sym.first_date }}</div>
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="stat-card">
-                            <div class="stat-label">Last Trade</div>
-                            <div class="stat-value" style="font-size:.9rem;">{{ sym.last_date }}</div>
-                        </div>
-                    </div>
-                </div>
-
-                {# ── Cumulative P&L Chart ─────────────────────────────── #}
-                <div class="chart-container">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="fw-bold mb-0">Cumulative P&amp;L</h6>
-                        <div class="text-muted small">
-                            {% if sym.story_days_in_position is not none %}
-                            <span class="me-3">In this position: <strong>{{ sym.story_days_in_position }} days</strong></span>
-                            {% endif %}
-                            {% if sym.story_open_legs or sym.story_closed_legs %}
-                            <span>Legs — Open: <strong>{{ sym.story_open_legs }}</strong>, Closed: <strong>{{ sym.story_closed_legs }}</strong></span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div style="height:300px;">
-                        <canvas id="chart-{{ loop.index0 }}" data-idx="{{ loop.index0 }}"></canvas>
-                    </div>
-                </div>
-
-                {% if sym.story_best_leg or sym.story_worst_leg %}
-                <div class="row g-2 mb-3">
-                    {% if sym.story_best_leg %}
-                    <div class="col-md-6">
-                        <div class="stat-card text-start">
-                            <div class="stat-label">Best leg in this position</div>
-                            <div class="small mt-1">
-                                <strong title="{{ sym.story_best_leg.trade_symbol }}">{{ sym.story_best_leg.trade_symbol|option_symbol }}</strong>
-                                {% if sym.story_best_leg.strategy %}<span class="text-muted">({{ sym.story_best_leg.strategy }})</span>{% endif %}<br>
-                                Closed {{ sym.story_best_leg.close_date }} for
-                                <span class="{{ 'text-positive' if sym.story_best_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
-                                    ${{ "{:,.2f}".format(sym.story_best_leg.total_pnl) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                    {% if sym.story_worst_leg %}
-                    <div class="col-md-6">
-                        <div class="stat-card text-start">
-                            <div class="stat-label">Toughest leg in this position</div>
-                            <div class="small mt-1">
-                                <strong title="{{ sym.story_worst_leg.trade_symbol }}">{{ sym.story_worst_leg.trade_symbol|option_symbol }}</strong>
-                                {% if sym.story_worst_leg.strategy %}<span class="text-muted">({{ sym.story_worst_leg.strategy }})</span>{% endif %}<br>
-                                Closed {{ sym.story_worst_leg.close_date }} for
-                                <span class="{{ 'text-positive' if sym.story_worst_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
-                                    ${{ "{:,.2f}".format(sym.story_worst_leg.total_pnl) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
+        <div class="sym-pane-header">
+            <div>
+                <h2>{{ sym.symbol }}</h2>
+                {% if sym.account %}
+                <div class="sym-account">{{ sym.account | account_label }}</div>
                 {% endif %}
+            </div>
+            <div class="sym-strats">
+                {% for strat in sym.strategies %}
+                <span class="badge badge-strategy"
+                      style="background:{{ colors.get(strat, '#6c757d') }}">{{ strat }}</span>
+                {% endfor %}
+            </div>
+        </div>
 
-                {# ── Positions (open + closed legs for this position) ── #}
-                {% if sym.current_positions %}
-                <h6 class="fw-bold mt-3 mb-2">Positions</h6>
-                <div class="table-responsive mb-3">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Status</th>
-                                <th>Symbol</th>
-                                <th>Description</th>
-                                <th>Open Date</th>
-                                <th>Close Date</th>
-                                <th>Qty</th>
-                                <th>Price</th>
-                                <th>Value / Proceeds</th>
-                                <th>Cost Basis</th>
-                                <th>P&amp;L</th>
-                                <th>Return %</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for pos in sym.current_positions %}
-                            <tr>
-                                <td>
-                                    {% if pos.status == 'Open' %}
-                                    <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Open</span>
-                                    {% elif pos.status == 'Closed' %}
-                                    <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem;">Closed</span>
-                                    {% else %}
-                                    <span class="badge bg-light text-muted" style="font-size:.65rem;">{{ pos.status }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="fw-semibold small" {% if pos.trade_symbol %}title="{{ pos.trade_symbol }}"{% endif %}>{{ pos.trade_symbol|option_symbol }}</td>
-                                <td class="text-muted small">{{ pos.description }}</td>
-                                <td class="text-nowrap">
-                                    {{ pos.open_date if pos.open_date is defined and pos.open_date }}
-                                </td>
-                                <td class="text-nowrap">
-                                    {{ pos.close_date if pos.close_date is defined and pos.close_date }}
-                                </td>
-                                <td>{{ pos.quantity if pos.quantity is not none else '' }}</td>
-                                <td>
-                                    {% if pos.current_price is not none %}
-                                    ${{ "{:,.2f}".format(pos.current_price) }}
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if pos.market_value is not none %}
-                                    ${{ "{:,.2f}".format(pos.market_value) }}
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if pos.cost_basis is not none %}
-                                    ${{ "{:,.2f}".format(pos.cost_basis) }}
-                                    {% endif %}
-                                </td>
-                                <td class="{% if pos.unrealized_pnl is not none %}{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold{% endif %}">
-                                    {% if pos.unrealized_pnl is not none %}
-                                    ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
-                                    {% endif %}
-                                </td>
-                                <td class="{% if pos.unrealized_pnl_pct is not none %}{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}{% endif %}">
-                                    {% if pos.unrealized_pnl_pct is not none %}
-                                    {{ "{:.2f}".format(pos.unrealized_pnl_pct) }}%
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        {# ── Summary Stats Row ────────────────────────────────── #}
+        <div class="row g-2 mb-3">
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">
+                        {% if positions_only|default(false) %}Closed P&amp;L{% else %}Realized{% endif %}
+                    </div>
+                    <div class="stat-value {{ 'text-positive' if sym.total_realized >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(sym.total_realized) }}
+                    </div>
                 </div>
-                {% endif %}
-
-                {# ── Link to Full Position Detail ──────────────────── #}
-                <div class="text-center mt-3 mb-1">
-                    <a href="/position/{{ sym.symbol }}{% if selected_account %}?account={{ selected_account }}{% endif %}"
-                       class="btn btn-sm btn-outline-primary">
-                        View full position detail &rarr;
-                    </a>
+            </div>
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">
+                        {% if positions_only|default(false) %}Open P&amp;L{% else %}Unrealized{% endif %}
+                    </div>
+                    <div class="stat-value {{ 'text-positive' if sym.unrealized >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(sym.unrealized) }}
+                    </div>
                 </div>
+            </div>
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">Total Return</div>
+                    <div class="stat-value {{ 'text-positive' if sym.total_return >= 0 else 'text-negative' }}">
+                        ${{ "{:,.2f}".format(sym.total_return) }}
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">Trades</div>
+                    <div class="stat-value">{{ sym.num_trades }}</div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">First Trade</div>
+                    <div class="stat-value" style="font-size:.9rem;">{{ sym.first_date }}</div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="stat-card">
+                    <div class="stat-label">Last Trade</div>
+                    <div class="stat-value" style="font-size:.9rem;">{{ sym.last_date }}</div>
+                </div>
+            </div>
+        </div>
 
-            </div>{# end accordion-body #}
-        </div>{# end collapse #}
-    </div>{# end accordion-item #}
+        {# ── Cumulative P&L Chart ─────────────────────────────── #}
+        <div class="chart-container">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0">Cumulative P&amp;L</h6>
+                <div class="text-muted small">
+                    {% if sym.story_days_in_position is not none %}
+                    <span class="me-3">In this position: <strong>{{ sym.story_days_in_position }} days</strong></span>
+                    {% endif %}
+                    {% if sym.story_open_legs or sym.story_closed_legs %}
+                    <span>Legs — Open: <strong>{{ sym.story_open_legs }}</strong>, Closed: <strong>{{ sym.story_closed_legs }}</strong></span>
+                    {% endif %}
+                </div>
+            </div>
+            <div style="height:300px;">
+                <canvas id="chart-{{ loop.index0 }}" data-idx="{{ loop.index0 }}"></canvas>
+            </div>
+        </div>
+
+        {% if sym.story_best_leg or sym.story_worst_leg %}
+        <div class="row g-2 mb-3">
+            {% if sym.story_best_leg %}
+            <div class="col-md-6">
+                <div class="stat-card text-start">
+                    <div class="stat-label">Best leg in this position</div>
+                    <div class="small mt-1">
+                        <strong title="{{ sym.story_best_leg.trade_symbol }}">{{ sym.story_best_leg.trade_symbol|option_symbol }}</strong>
+                        {% if sym.story_best_leg.strategy %}<span class="text-muted">({{ sym.story_best_leg.strategy }})</span>{% endif %}<br>
+                        Closed {{ sym.story_best_leg.close_date }} for
+                        <span class="{{ 'text-positive' if sym.story_best_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            ${{ "{:,.2f}".format(sym.story_best_leg.total_pnl) }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if sym.story_worst_leg %}
+            <div class="col-md-6">
+                <div class="stat-card text-start">
+                    <div class="stat-label">Toughest leg in this position</div>
+                    <div class="small mt-1">
+                        <strong title="{{ sym.story_worst_leg.trade_symbol }}">{{ sym.story_worst_leg.trade_symbol|option_symbol }}</strong>
+                        {% if sym.story_worst_leg.strategy %}<span class="text-muted">({{ sym.story_worst_leg.strategy }})</span>{% endif %}<br>
+                        Closed {{ sym.story_worst_leg.close_date }} for
+                        <span class="{{ 'text-positive' if sym.story_worst_leg.total_pnl >= 0 else 'text-negative' }} fw-semibold">
+                            ${{ "{:,.2f}".format(sym.story_worst_leg.total_pnl) }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# ── Positions (open + closed legs for this position) ── #}
+        {% if sym.current_positions %}
+        <h6 class="fw-bold mt-3 mb-2">Positions</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Status</th>
+                        <th>Symbol</th>
+                        <th>Description</th>
+                        <th>Open Date</th>
+                        <th>Close Date</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Value / Proceeds</th>
+                        <th>Cost Basis</th>
+                        <th>P&amp;L</th>
+                        <th>Return %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pos in sym.current_positions %}
+                    <tr>
+                        <td>
+                            {% if pos.status == 'Open' %}
+                            <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Open</span>
+                            {% elif pos.status == 'Closed' %}
+                            <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem;">Closed</span>
+                            {% else %}
+                            <span class="badge bg-light text-muted" style="font-size:.65rem;">{{ pos.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-semibold small" {% if pos.trade_symbol %}title="{{ pos.trade_symbol }}"{% endif %}>{{ pos.trade_symbol|option_symbol }}</td>
+                        <td class="text-muted small">{{ pos.description }}</td>
+                        <td class="text-nowrap">
+                            {{ pos.open_date if pos.open_date is defined and pos.open_date }}
+                        </td>
+                        <td class="text-nowrap">
+                            {{ pos.close_date if pos.close_date is defined and pos.close_date }}
+                        </td>
+                        <td>{{ pos.quantity if pos.quantity is not none else '' }}</td>
+                        <td>
+                            {% if pos.current_price is not none %}
+                            ${{ "{:,.2f}".format(pos.current_price) }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if pos.market_value is not none %}
+                            ${{ "{:,.2f}".format(pos.market_value) }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if pos.cost_basis is not none %}
+                            ${{ "{:,.2f}".format(pos.cost_basis) }}
+                            {% endif %}
+                        </td>
+                        <td class="{% if pos.unrealized_pnl is not none %}{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold{% endif %}">
+                            {% if pos.unrealized_pnl is not none %}
+                            ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
+                            {% endif %}
+                        </td>
+                        <td class="{% if pos.unrealized_pnl_pct is not none %}{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}{% endif %}">
+                            {% if pos.unrealized_pnl_pct is not none %}
+                            {{ "{:.2f}".format(pos.unrealized_pnl_pct) }}%
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {# ── Link to Full Position Detail ──────────────────── #}
+        <div class="text-center mt-3 mb-1">
+            <a href="/position/{{ sym.symbol }}{% if selected_account %}?account={{ selected_account }}{% endif %}"
+               class="btn btn-sm btn-outline-primary">
+                View full position detail &rarr;
+            </a>
+        </div>
+    </section>
     {% endfor %}
 </div>
+{% else %}
+{# Filters resulted in no symbols #}
+{% if not (accounts is defined and accounts|length == 0 and not selected_account) %}
+<div class="sym-empty">
+    <p class="mb-0">No symbols match the current filters.</p>
+    {% if selected_account or open_only or positions_only %}
+    <p class="mb-0 mt-2"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('symbols_detail') }}">Clear filters</a></p>
+    {% endif %}
+</div>
+{% endif %}
+{% endif %}
 
 {% endif %}{# end error check #}
 {% endblock %}
@@ -451,196 +403,136 @@
 {% block scripts %}
 <script>
 (function () {
-    /* ── Chart data (injected from Flask) ─────────────────────── */
+    /* ── Chart data (preloaded, parallel to symbol_data order) ────────── */
     var allCharts = {{ chart_data_json | safe }};
     var chartInstances = {};
+    var panes = Array.from(document.querySelectorAll('#symbolPanes .sym-pane'));
+    var paneBySymbol = {};
+    panes.forEach(function (p) { paneBySymbol[p.dataset.symbol] = p; });
 
-    /* ── Render chart on accordion open ───────────────────────── */
-    document.querySelectorAll('.accordion-collapse').forEach(function (el) {
-        el.addEventListener('shown.bs.collapse', function () {
-            var canvas = el.querySelector('canvas');
-            if (!canvas) return;
-            var idx = parseInt(canvas.dataset.idx);
-            if (chartInstances[idx]) return;
+    /* ── Render the cumulative P&L chart for one pane (idempotent) ───── */
+    function renderChart(idx) {
+        if (chartInstances[idx]) return;
+        var pane = panes[idx];
+        if (!pane) return;
+        var canvas = pane.querySelector('canvas');
+        if (!canvas) return;
 
-            var d = allCharts[idx];
-            if (!d || !d.dates.length) return;
+        var d = allCharts[idx];
+        if (!d || !d.dates || !d.dates.length) return;
 
-            var datasets = [];
-            var hasData = function (arr) { return arr.some(function (v) { return v !== 0; }); };
+        var datasets = [];
+        var hasData = function (arr) { return arr && arr.some(function (v) { return v !== 0; }); };
 
-            if (hasData(d.equity)) {
-                datasets.push({
-                    label: 'Equity', data: d.equity,
-                    borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)',
-                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
-                });
-            }
-            if (hasData(d.options)) {
-                datasets.push({
-                    label: 'Options', data: d.options,
-                    borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,.08)',
-                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
-                });
-            }
-            if (hasData(d.dividends)) {
-                datasets.push({
-                    label: 'Dividends', data: d.dividends,
-                    borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
-                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
-                });
-            }
+        if (hasData(d.equity)) {
             datasets.push({
-                label: 'Total', data: d.total,
-                borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
-                fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
+                label: 'Equity', data: d.equity,
+                borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
-            var hasUnderlyingPrice = d.underlying_price && d.underlying_price.some(function(v) { return v != null; });
-            if (hasUnderlyingPrice) {
-                datasets.push({
-                    label: 'Stock Price', data: d.underlying_price,
-                    borderColor: '#fd7e14', tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5,
-                    yAxisID: 'yPrice'
-                });
-            }
+        }
+        if (hasData(d.options)) {
+            datasets.push({
+                label: 'Options', data: d.options,
+                borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        }
+        if (hasData(d.dividends)) {
+            datasets.push({
+                label: 'Dividends', data: d.dividends,
+                borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
+                fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
+            });
+        }
+        datasets.push({
+            label: 'Total', data: d.total,
+            borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
+            fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
+        });
+        var hasUnderlyingPrice = d.underlying_price && d.underlying_price.some(function (v) { return v != null; });
+        if (hasUnderlyingPrice) {
+            datasets.push({
+                label: 'Stock Price', data: d.underlying_price,
+                borderColor: '#fd7e14', tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5,
+                yAxisID: 'yPrice'
+            });
+        }
 
-            var scalesConfig = {
-                x: {
-                    type: 'category',
-                    ticks: { maxTicksLimit: 12, maxRotation: 45 },
-                    grid: { display: false }
+        var scalesConfig = {
+            x: {
+                type: 'category',
+                ticks: { maxTicksLimit: 12, maxRotation: 45 },
+                grid: { display: false }
+            },
+            y: {
+                ticks: {
+                    callback: function (v) {
+                        return '$' + (Math.abs(v) >= 1000
+                            ? (v / 1000).toFixed(1) + 'k'
+                            : v.toFixed(0));
+                    }
                 },
-                y: {
-                    ticks: {
-                        callback: function (v) {
-                            return '$' + (Math.abs(v) >= 1000
-                                ? (v / 1000).toFixed(1) + 'k'
-                                : v.toFixed(0));
-                        }
-                    },
-                    grid: {
-                        color: function (ctx) {
-                            return ctx.tick.value === 0 ? '#333' : '#e9ecef';
-                        }
+                grid: {
+                    color: function (ctx) {
+                        return ctx.tick.value === 0 ? '#333' : '#e9ecef';
                     }
                 }
-            };
-            if (hasUnderlyingPrice) {
-                var priceVals = d.underlying_price.filter(function(v) { return v != null; });
-                scalesConfig.yPrice = {
-                    type: 'linear',
-                    position: 'right',
-                    min: priceVals.length ? Math.min.apply(null, priceVals) * 0.98 : 0,
-                    max: priceVals.length ? Math.max.apply(null, priceVals) * 1.02 : 100,
-                    ticks: { callback: function(v) { return '$' + v.toFixed(2); } },
-                    grid: { display: false }
-                };
             }
+        };
+        if (hasUnderlyingPrice) {
+            var priceVals = d.underlying_price.filter(function (v) { return v != null; });
+            scalesConfig.yPrice = {
+                type: 'linear',
+                position: 'right',
+                min: priceVals.length ? Math.min.apply(null, priceVals) * 0.98 : 0,
+                max: priceVals.length ? Math.max.apply(null, priceVals) * 1.02 : 100,
+                ticks: { callback: function (v) { return '$' + v.toFixed(2); } },
+                grid: { display: false }
+            };
+        }
 
-            chartInstances[idx] = new Chart(canvas, {
-                type: 'line',
-                data: { labels: d.dates, datasets: datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                            labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function (ctx) {
-                                    return ctx.dataset.label + ': $' +
-                                        ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 });
-                                }
+        chartInstances[idx] = new Chart(canvas, {
+            type: 'line',
+            data: { labels: d.dates, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ctx.dataset.label + ': $' +
+                                    ctx.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 });
                             }
                         }
-                    },
-                    scales: scalesConfig
-                }
-            });
-        });
-    });
-
-    /* ── Symbol Search / Filter ───────────────────────────────── */
-    var filterInput = document.getElementById('symbolFilter');
-    if (filterInput) {
-        filterInput.addEventListener('input', function () {
-            var q = this.value.toUpperCase();
-            document.querySelectorAll('.symbol-item').forEach(function (item) {
-                var sym = item.dataset.symbol || '';
-                item.style.display = sym.toUpperCase().indexOf(q) > -1 ? '' : 'none';
-            });
-        });
-    }
-
-    /* ── Sorting ──────────────────────────────────────────────── */
-    var accordion = document.getElementById('symbolAccordion');
-    var sortBtns = document.querySelectorAll('.sort-btn');
-
-    function doSort(key, dir) {
-        var items = Array.from(accordion.querySelectorAll('.symbol-item'));
-        items.sort(function (a, b) {
-            var va, vb;
-            if (key === 'symbol') {
-                va = a.dataset.symbol || '';
-                vb = b.dataset.symbol || '';
-                return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-            } else if (key === 'pnl') {
-                va = parseFloat(a.dataset.pnl) || 0;
-                vb = parseFloat(b.dataset.pnl) || 0;
-            } else if (key === 'trades') {
-                va = parseInt(a.dataset.trades) || 0;
-                vb = parseInt(b.dataset.trades) || 0;
+                    }
+                },
+                scales: scalesConfig
             }
-            return dir === 'asc' ? va - vb : vb - va;
         });
-        items.forEach(function (item) { accordion.appendChild(item); });
     }
 
-    function updateArrow(btn, dir) {
-        var arrow = btn.querySelector('.arrow');
-        if (!arrow) {
-            arrow = document.createElement('span');
-            arrow.className = 'arrow';
-            btn.appendChild(document.createTextNode(' '));
-            btn.appendChild(arrow);
-        }
-        arrow.innerHTML = dir === 'asc' ? '&#9650;' : '&#9660;';
-    }
-
-    sortBtns.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var key = btn.id.replace('sort', '').toLowerCase();
-            var currentDir = btn.dataset.dir;
-            var newDir;
-
-            if (currentDir === 'none' || currentDir === 'asc') {
-                newDir = 'desc';
-            } else {
-                newDir = 'asc';
-            }
-
-            // Reset all buttons
-            sortBtns.forEach(function (b) {
-                b.classList.remove('active');
-                b.dataset.dir = 'none';
-                var a = b.querySelector('.arrow');
-                if (a) a.remove();
-            });
-
-            btn.classList.add('active');
-            btn.dataset.dir = newDir;
-            updateArrow(btn, newDir);
-
-            doSort(key, newDir);
+    /* ── Pane swap (called by the tab strip via window.symbolTabSwap) ── */
+    window.symbolTabSwap = function (symbol) {
+        var pane = paneBySymbol[symbol];
+        if (!pane) return;
+        panes.forEach(function (p) {
+            var on = (p === pane);
+            p.classList.toggle('active', on);
+            if (on) p.removeAttribute('hidden'); else p.setAttribute('hidden', '');
         });
-    });
+        renderChart(parseInt(pane.dataset.idx));
+    };
 
-    // Initial arrow on P&L button
-    updateArrow(document.getElementById('sortPnl'), 'desc');
+    /* Initial render: paint the chart for the active pane on page load. */
+    var initial = document.querySelector('#symbolPanes .sym-pane.active');
+    if (initial) renderChart(parseInt(initial.dataset.idx));
 })();
 </script>
 {% endblock %}

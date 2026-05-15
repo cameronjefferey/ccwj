@@ -669,3 +669,162 @@ def test_canonicalize_seed_cell_collapses_known_drift_forms():
     assert c("Buy to Close") == "Buy to Close"
     assert c("CFLT  241220C00030000") == "CFLT  241220C00030000"
     assert c(" 11/14/2024 ") == "11/14/2024"
+
+
+# ---------------------------------------------------------------------------
+# Cross-source dedup — orders endpoint vs activities endpoint for the
+# same trade. SnapTrade exposes both with hours-to-days lag between the
+# two; our pipeline reads both. Without this dedup, every fresh trade
+# would land twice (orders-row + later activities-row) once the
+# activity feed catches up.
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_collapses_orders_row_with_richer_activities_row():
+    """orders_to_history_df emits Description = ``"NVIDIA Corporation"``
+    (just the company name). When activities catches up later with the
+    same fill but a richer Description (broker text — ``"Bought 98 NVDA
+    at market"``), the dedup must collapse the two to ONE row and keep
+    the activities row (richer Description).
+
+    Same fill identity = (Date, Action, Symbol, Quantity, Price,
+    Amount). Different cells: Description (thin vs rich) and
+    fees_and_comm (orders-source has no fees; activities does).
+    """
+    df = pd.DataFrame([
+        # orders-source row (sync 1, when activities lagged)
+        _row(
+            "Alpaca Paper Account", 6, "5/14/2026", "Buy", "NVDA",
+            98, 234.026429, -22934.59,
+            desc="NVIDIA Corporation",
+            fees="",
+        ),
+        # activities-source row (sync 2, after SnapTrade indexed it)
+        _row(
+            "Alpaca Paper Account", 6, "5/14/2026", "Buy", "NVDA",
+            98, 234.026429, -22934.59,
+            desc="Bought 98 NVDA at market",  # richer broker text
+            fees=0.0,
+        ),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"expected 1 row after cross-source dedup, got {len(out)}"
+    # Activities row wins — its Description is longer.
+    kept_desc = str(out.iloc[0]["Description"])
+    assert kept_desc == "Bought 98 NVDA at market", \
+        f"expected activities Description to win, got {kept_desc!r}"
+
+
+def test_dedup_keeps_orders_row_when_activities_not_yet_caught_up():
+    """Sync 1: only the orders-source row exists (activities lag).
+    The orders row must survive — it's the only signal we have."""
+    df = pd.DataFrame([
+        _row(
+            "Alpaca Paper Account", 6, "5/14/2026", "Buy", "NVDA",
+            98, 234.026429, -22934.59,
+            desc="NVIDIA Corporation",
+        ),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1
+    assert str(out.iloc[0]["Description"]) == "NVIDIA Corporation"
+
+
+def test_dedup_does_not_collapse_distinct_trades_with_same_symbol():
+    """Two BUYs of NVDA at different prices / quantities / dates are
+    distinct trades — the cross-source dedup must NOT touch them.
+    Identity is (Date, Action, Symbol, Quantity, Price); any of those
+    five cells differing means different trades."""
+    df = pd.DataFrame([
+        # Same date, same action, same symbol — but different price → distinct
+        _row("X", 6, "5/14/2026", "Buy", "NVDA", 98, 234.02, -22934.0, desc="Bought NVDA"),
+        _row("X", 6, "5/14/2026", "Buy", "NVDA", 98, 235.50, -23079.0, desc="Bought NVDA later"),
+        # Same shape but different date → distinct
+        _row("X", 6, "5/15/2026", "Buy", "NVDA", 98, 234.02, -22934.0, desc="Bought NVDA Friday"),
+        # Same shape but different action → distinct
+        _row("X", 6, "5/14/2026", "Sell", "NVDA", 98, 234.02, 22934.0, desc="Sold NVDA"),
+        # Same shape but different quantity → distinct (partial fill report)
+        _row("X", 6, "5/14/2026", "Buy", "NVDA", 60, 234.02, -14041.2, desc="Partial fill 1"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 5, f"distinct trades collapsed; expected 5 rows, got {len(out)}"
+
+
+def test_dedup_collapses_orders_vs_activities_under_float_precision_drift():
+    """Real risk: orders-source derives Amount = qty * exec_price at
+    full precision (-22934.589242), activities-source carries the
+    broker's cent-rounded Amount (-22934.59). The two genuinely differ
+    by sub-cent for the same trade. The cross-source dedup must
+    collapse them anyway — Amount is intentionally omitted from the
+    cross-source key BECAUSE of this rounding drift. Identity is
+    (Date, Action, Symbol, Quantity, Price); any two rows agreeing on
+    those five cells refer to the same fill."""
+    df = pd.DataFrame([
+        _row("X", 6, "5/14/2026", "Buy", "NVDA",
+             98, 234.026429, -22934.589242,  # broker would never report this Amount
+             desc="NVIDIA Corporation"),
+        _row("X", 6, "5/14/2026", "Buy", "NVDA",
+             98, 234.026429, -22934.59,
+             desc="Bought 98 NVDA at market"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, "Amount FP drift must not defeat cross-source dedup"
+    # Activities row wins — its Description is longer.
+    assert str(out.iloc[0]["Description"]) == "Bought 98 NVDA at market"
+
+
+def test_dedup_collapses_when_price_has_trailing_zero_drift():
+    """Same trade, but orders-source string-parses Price as
+    ``234.0264290000`` (10 chars from the broker) while activities
+    delivers ``234.026429`` as a float. ``_canonicalize_seed_cell``
+    normalizes both to ``"234.026429"`` so the cross-source key
+    matches."""
+    df = pd.DataFrame([
+        _row("X", 6, "5/14/2026", "Buy", "NVDA",
+             98, 234.0264290000, -22934.59,
+             desc="NVIDIA Corporation"),
+        _row("X", 6, "5/14/2026", "Buy", "NVDA",
+             98, 234.026429, -22934.59,
+             desc="Bought 98 NVDA at market"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1
+    assert str(out.iloc[0]["Description"]) == "Bought 98 NVDA at market"
+
+
+def test_dedup_orders_then_activities_then_resync_yields_one_row():
+    """End-to-end-ish: simulate the real flow over three syncs.
+    Sync 1: orders carries the trade, activities lags → 1 row.
+    Sync 2: activities catches up; we re-sync; combined input has
+            BOTH the existing orders-row AND the new activities-row.
+    Sync 3: activities still there; orders also still there for ~30
+            days; combined input has both again. Must still be 1 row.
+    """
+    orders_row = _row(
+        "X", 6, "5/14/2026", "Buy", "NVDA",
+        98, 234.026429, -22934.59,
+        desc="NVIDIA Corporation",
+    )
+    activities_row = _row(
+        "X", 6, "5/14/2026", "Buy", "NVDA",
+        98, 234.026429, -22934.59,
+        desc="Bought 98 NVDA at market",
+        fees=0.0,
+    )
+
+    sync1 = _upload._dedup_history_rows(
+        pd.DataFrame([orders_row]), HISTORY_SEED_COLUMNS,
+    )
+    assert len(sync1) == 1
+
+    sync2 = _upload._dedup_history_rows(
+        pd.DataFrame([orders_row, activities_row]), HISTORY_SEED_COLUMNS,
+    )
+    assert len(sync2) == 1
+    assert str(sync2.iloc[0]["Description"]) == "Bought 98 NVDA at market"
+
+    sync3 = _upload._dedup_history_rows(
+        pd.DataFrame([orders_row, activities_row, orders_row]), HISTORY_SEED_COLUMNS,
+    )
+    assert len(sync3) == 1
+    assert str(sync3.iloc[0]["Description"]) == "Bought 98 NVDA at market"

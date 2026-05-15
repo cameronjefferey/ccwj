@@ -244,6 +244,34 @@ def profile():
         if _c:
             schwab_first_sync_completed = bool(_c.get("schwab_first_sync_completed"))
         schwab_routine_lookback_days = _schwab_transaction_lookback_days()
+
+    # SnapTrade aggregator (covers Fidelity / Vanguard / Robinhood / IBKR /
+    # Tradier / etc.). Sibling card to the Schwab one — independent enable
+    # flag because the two integrations have different env var lists.
+    snaptrade_enabled = False
+    snaptrade_accounts = []
+    snaptrade_routine_lookback_days = schwab_routine_lookback_days
+    snaptrade_full_history_lookback_days = schwab_full_history_lookback_days
+    try:
+        from app.snaptrade import (
+            snaptrade_enabled as _snaptrade_enabled_fn,
+            _routine_lookback_days as _snap_routine_fn,
+            SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS as _snap_full_days,
+        )
+        from app.models import get_snaptrade_accounts as _get_snaptrade_accounts
+
+        snaptrade_enabled = _snaptrade_enabled_fn()
+        # Show existing connections even when env is not configured so a
+        # user who connected before a config change isn't dropped silently.
+        snaptrade_accounts = _get_snaptrade_accounts(current_user.id) or []
+        snaptrade_routine_lookback_days = int(_snap_routine_fn())
+        snaptrade_full_history_lookback_days = int(_snap_full_days)
+    except Exception as _exc:
+        # Don't block /profile rendering if the SnapTrade module isn't
+        # importable (e.g. SDK not installed in dev shell). Keep the
+        # native Schwab card and CSV upload visible.
+        snaptrade_enabled = False
+        snaptrade_accounts = []
     fc, fwing = follow_counts(current_user.id)
     my_published = list_public_published_trades(current_user.id, limit=100)
     show_names = bool(prof.get("show_account_names_on_published")) if prof else False
@@ -265,6 +293,10 @@ def profile():
         schwab_first_sync_completed=schwab_first_sync_completed,
         schwab_routine_lookback_days=schwab_routine_lookback_days,
         schwab_full_history_lookback_days=schwab_full_history_lookback_days,
+        snaptrade_enabled=snaptrade_enabled,
+        snaptrade_accounts=snaptrade_accounts,
+        snaptrade_routine_lookback_days=snaptrade_routine_lookback_days,
+        snaptrade_full_history_lookback_days=snaptrade_full_history_lookback_days,
         follower_count=fc,
         following_count=fwing,
         my_published_trades=my_published,

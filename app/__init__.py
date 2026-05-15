@@ -81,8 +81,13 @@ def _account_label_filter(account_name):
             return account_name
         nicknames = getattr(g, "_account_nicknames", None)
         if nicknames is None:
-            from app.models import get_account_nicknames
-            nicknames = get_account_nicknames(current_user.id)
+            from app.models import get_account_nicknames, get_snaptrade_account_nicknames
+            schwab = get_account_nicknames(current_user.id) or {}
+            snap = get_snaptrade_account_nicknames(current_user.id) or {}
+            # Schwab wins on overlap (its rows are the older / canonical
+            # source for any account label that pre-dates the SnapTrade
+            # connector); SnapTrade fills in the rest.
+            nicknames = {**snap, **schwab}
             g._account_nicknames = nicknames
         return nicknames.get(account_name, account_name)
     except Exception:
@@ -323,6 +328,7 @@ from app import weekly_review
 from app import wealth  # noqa: F401  registers /wealth route
 from app import admin  # noqa: F401  registers /admin/* routes
 from app import schwab
+from app import snaptrade  # noqa: F401  registers /snaptrade/* routes
 from app import first_look
 from app import strategies
 from app import profile_community

@@ -277,7 +277,7 @@ writeoffs as (
       -- which is true here. Skipping the writeoff makes the page
       -- silently drop the phantom "Cost Written Off -$47,639" row that
       -- the May 2026 BE/Sara position-page screenshot reported.
-      -- See ~/.cursor/skills/schwab-sync-safety/SKILL.md (2026-05-11).
+      -- See ~/.cursor/skills/broker-sync-safety/SKILL.md (2026-05-11).
       and not (sac.total_sell_qty = 0
                and coalesce(uoh.shares_held_elsewhere, 0) = 0)
 ),

@@ -89,6 +89,7 @@ zipp==3.21.0
 yfinance
 google-genai
 schwab-py
+snaptrade-python-sdk>=11.0.191,<12
 pytest>=8.0
 sentry-sdk[flask]>=2.0
 psycopg[binary]>=3.2,<4

@@ -45,7 +45,7 @@ You CANNOT flip the filter on day one. The order matters:
 
 ### Stage 0 — Plumbing (this branch's first commits)
 - Add `user_id` (nullable `INT64`) column to every user-tied seed CSV
-  (`trade_history`, `current_positions`, `schwab_account_balances`,
+  (`trade_history`, `current_positions`, `account_balances`,
   `demo_history`, `demo_current`).
 - Update `dbt/seeds/schema.yml` to declare the column.
 - Update Schwab sync (`app/schwab.py::_run_sync`) and CSV upload

@@ -26,7 +26,7 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 | `demo_history.csv` | Demo user history |
 | `demo_current.csv` | Demo user current positions |
 | `cflt_prices.csv` | Optional price seed |
-| `schwab_account_balances.csv` | Schwab cash + account_total rows for equity snapshots (Schwab-only; no equivalent from manual uploads) |
+| `account_balances.csv` | Cash + account_total rows for equity snapshots. Written by any broker connector (Schwab native, SnapTrade); no equivalent from manual uploads. |
 
 ## Usage
 

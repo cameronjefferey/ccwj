@@ -1,6 +1,6 @@
 {#
   Daily snapshot of account-level balances (cash + account total).
-  Source: stg_account_balances (export seeds + schwab_account_balances seed).
+  Source: stg_account_balances (export seeds + account_balances seed).
   Run after each upload so we never lose history; full-refresh does not wipe this table.
 
   ``unique_key`` includes ``user_id`` because the cross-tenant guard

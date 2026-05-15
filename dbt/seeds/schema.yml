@@ -63,11 +63,12 @@ seeds:
         security_type: string
         margin_requirement: string
 
-  # Schwab cash + account-total rows used by stg_account_balances for
-  # equity snapshots. Manual upload and Schwab sync both write trades into
-  # trade_history.csv and open positions into current_positions.csv, so no
-  # Schwab-specific seed is needed for those.
-  - name: schwab_account_balances
+  # Cash + account-total rows used by stg_account_balances for
+  # equity snapshots. Any broker connector (Schwab, SnapTrade, manual
+  # upload) writes here. Manual upload and broker sync both write trades
+  # into trade_history.csv and open positions into current_positions.csv,
+  # so no broker-specific seed is needed for those.
+  - name: account_balances
     config:
       column_types:
         account: string

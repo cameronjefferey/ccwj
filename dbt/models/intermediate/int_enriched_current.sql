@@ -28,7 +28,7 @@
       that multiplied per-share-price by quantity. The schwab.py side was
       patched alongside this model (see `_schwab_position_cost_basis` /
       "averagePrice mislabeled as Price" entry in
-      ~/.cursor/skills/schwab-sync-safety/SKILL.md), but we ALSO
+      ~/.cursor/skills/broker-sync-safety/SKILL.md), but we ALSO
       defensively derive `mv / qty` here so the model is correct even if
       a future seed-write regression ever puts the wrong number back into
       `Price`.

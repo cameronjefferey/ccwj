@@ -18,7 +18,7 @@
     (cryptic BigQuery MERGE error and a broken nightly job).
 
     Recovery procedure for any future failure: see the
-    ``schwab-sync-safety`` skill register entry "snapshot target-side
+    ``broker-sync-safety`` skill register entry "snapshot target-side
     triple-write poisoning".
 */
 

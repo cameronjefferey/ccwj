@@ -2,240 +2,337 @@
 
 {% block head %}
 <style>
-    .get-started-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    .gs-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
         border-radius: 16px;
-        padding: 2.5rem;
+        padding: 2.25rem 2.5rem;
         color: #fff;
-        margin-bottom: 2rem;
+        margin-bottom: 1.75rem;
     }
-    .get-started-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
-    .step-card {
-        border: none;
+    .gs-hero h1 { font-size: 1.85rem; font-weight: 700; margin-bottom: .35rem; }
+    .gs-hero p { font-size: 1rem; margin-bottom: 0; opacity: .92; }
+
+    .gs-step {
+        background: #fff;
+        border: 1px solid #e9ecef;
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        padding: 1.25rem 1.5rem;
+        padding: 1.5rem 1.65rem;
         margin-bottom: 1rem;
         display: flex;
         align-items: flex-start;
-        gap: 1rem;
+        gap: 1.1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.03);
     }
-    .step-number {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 1rem;
-        flex-shrink: 0;
+    .gs-step-num {
+        width: 36px; height: 36px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: 1rem; flex-shrink: 0;
     }
-    .step-pending { background: #0d6efd; color: #fff; }
-    .step-done { background: #198754; color: #fff; }
-    .step-waiting { background: #6c757d; color: #fff; }
-    .step-card h6 { margin-bottom: .25rem; }
-    .step-card p { margin-bottom: 0; font-size: .9rem; color: #6c757d; }
-    .step-detail {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
-        margin-top: .75rem;
+    .gs-step-pending { background: #0d6efd; color: #fff; }
+    .gs-step-done    { background: #198754; color: #fff; }
+    .gs-step-waiting { background: #e9ecef; color: #6c757d; }
+    .gs-step-body { flex: 1; min-width: 0; }
+    .gs-step-body h6 { font-weight: 700; margin-bottom: .35rem; font-size: 1.05rem; }
+    .gs-step-body .lead-sub { color: #6c757d; font-size: .92rem; margin-bottom: 1rem; }
+
+    .gs-path-row { display: grid; gap: 1rem; margin-top: .75rem; }
+    .gs-path-row.dual   { grid-template-columns: 1fr 1fr; }
+    .gs-path-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+    @media (max-width: 980px) { .gs-path-row.triple { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 720px) {
+        .gs-path-row.dual   { grid-template-columns: 1fr; }
+        .gs-path-row.triple { grid-template-columns: 1fr; }
+    }
+
+    .gs-path {
+        border: 1px solid #e2e6ea;
+        border-radius: 12px;
+        padding: 1.25rem;
+        background: #fff;
+        display: flex; flex-direction: column;
+    }
+    .gs-path.featured {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 3px rgba(13,110,253,.06);
+    }
+    .gs-path .gs-label {
+        font-size: .68rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: #6c757d; margin-bottom: .35rem;
+    }
+    .gs-path .gs-label.featured { color: #0d6efd; }
+    .gs-path h6 { font-weight: 700; font-size: 1.05rem; margin-bottom: .4rem; }
+    .gs-path .pitch { font-size: .9rem; color: #495057; margin-bottom: .85rem; }
+    .gs-path ul.checklist {
+        list-style: none; padding: 0; margin: 0 0 1.1rem;
+        font-size: .85rem; color: #495057;
+    }
+    .gs-path ul.checklist li {
+        padding-left: 1.35rem; position: relative; margin-bottom: .3rem;
+    }
+    .gs-path ul.checklist li::before {
+        content: "✓"; position: absolute; left: 0; color: #198754; font-weight: 700;
+    }
+    .gs-path .cta-row { margin-top: auto; padding-top: .25rem; }
+    .gs-path .fine-print {
+        font-size: .78rem; color: #6c757d; margin: .85rem 0 0;
+        padding-top: .85rem; border-top: 1px solid #f1f3f5;
+    }
+
+    details.gs-export {
+        margin-top: .85rem; padding: .65rem .85rem;
+        background: #f8f9fa; border-radius: 8px;
         font-size: .85rem;
     }
-    .step-detail ol { margin-bottom: .5rem; padding-left: 1.25rem; }
-    .done-banner {
+    details.gs-export[open] { padding-bottom: 1rem; }
+    details.gs-export summary {
+        cursor: pointer; font-weight: 600; color: #495057;
+        list-style: none;
+    }
+    details.gs-export summary::-webkit-details-marker { display: none; }
+    details.gs-export summary::after {
+        content: "▾"; float: right; transition: transform .15s; color: #6c757d;
+    }
+    details.gs-export[open] summary::after { transform: rotate(180deg); }
+    details.gs-export ol { margin: .5rem 0 .35rem 1.35rem; padding: 0; }
+    details.gs-export ol li { margin-bottom: .2rem; }
+    details.gs-export .step-block { margin-top: .65rem; }
+    details.gs-export strong { color: #212529; }
+
+    .gs-done {
         background: linear-gradient(135deg, #198754 0%, #157347 100%);
-        border-radius: 12px;
-        padding: 2rem;
-        color: #fff;
-        text-align: center;
-        margin-bottom: 1.5rem;
+        border-radius: 14px; padding: 2rem; color: #fff;
+        text-align: center; margin-bottom: 1.5rem;
     }
-    .done-banner h4 { font-weight: 700; margin-bottom: .5rem; }
-    .path-pick { margin-top: .25rem; }
-    .path-card {
-        border: 1px solid #e9ecef;
-        border-radius: 12px;
-        padding: 1.1rem 1.25rem;
-        height: 100%;
-        background: #fff;
+    .gs-done h4 { font-weight: 700; margin-bottom: .5rem; }
+    .gs-done p { opacity: .9; margin-bottom: 1.1rem; }
+
+    .gs-server-note {
+        margin-top: .85rem; font-size: .85rem; color: #6c757d;
+        background: #f1f3f5; padding: .65rem .85rem; border-radius: 8px;
     }
-    .path-card h6 { font-size: 1rem; }
-    .path-card p:last-child, .path-card .small:last-child { margin-bottom: 0; }
-    .path-card ul { margin-bottom: 0.75rem; font-size: .85rem; color: #6c757d; }
+    .gs-server-note strong { color: #495057; }
 </style>
 {% endblock %}
 
 {% block content %}
+
+{# Reusable Schwab CSV export instructions block #}
+{% macro export_instructions() %}
+<details class="gs-export">
+    <summary>How to export from Schwab.com</summary>
+    <div class="step-block">
+        <strong>Trade history</strong>
+        <ol>
+            <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>History</strong> &rarr; <strong>Transactions</strong></li>
+            <li>Select your account</li>
+            <li>Set filter to <strong>All Transactions</strong></li>
+            <li>Choose a date range, click <strong>Search</strong></li>
+            <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+        </ol>
+    </div>
+    <div class="step-block">
+        <strong>Current positions</strong>
+        <ol>
+            <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>Positions</strong></li>
+            <li>Select your account</li>
+            <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+        </ol>
+    </div>
+</details>
+{% endmacro %}
+
+{# Wider column when we have THREE link options (Schwab + SnapTrade + CSV)
+   so the cards don't get crushed. Falls back to the cosier col-lg-8 when
+   only one or two link options are showing. #}
+{% set _wide_layout = (schwab_enabled and snaptrade_enabled) and not has_uploaded %}
 <div class="row justify-content-center">
-    <div class="col-lg-7">
+    <div class="{% if _wide_layout %}col-lg-11 col-xl-10{% else %}col-lg-8{% endif %}">
 
         {% if has_uploaded and has_data %}
-        {# ── All done ── #}
-        <div class="done-banner">
-            <h4>You're all set!</h4>
-            <p class="mb-3 opacity-90">Your data has been processed and your home feed is ready.</p>
-            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Go to Home</a>
+        {# ── All set — collapse the steps entirely ── #}
+        <div class="gs-done">
+            <h4>You're all set, {{ current_user.username }}.</h4>
+            <p>Your Trading Mirror is ready to read.</p>
+            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Open Weekly Review</a>
         </div>
+        <p class="text-center text-muted small">
+            Re-upload anytime from <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled or snaptrade_enabled %} or manage broker connections in <a href="{{ url_for('profile', tab='account') }}">Account settings</a>{% endif %}.
+        </p>
         {% else %}
-        <div class="get-started-hero">
-            <h1>Welcome, {{ current_user.username }}!</h1>
-            <p class="mb-0 opacity-90">Link your data, then we process it. Three steps &mdash; start by choosing <strong>Connect Schwab</strong> or <strong>Manual upload</strong>.</p>
-        </div>
-        {% endif %}
 
-        {# ── Step 1: Link data (Schwab API or CSV) ── #}
-        <div class="step-card">
-            <span class="step-number {% if has_uploaded %}step-done{% else %}step-pending{% endif %}">
-                {% if has_uploaded %}&#10003;{% else %}1{% endif %}
-            </span>
-            <div class="flex-grow-1">
-                <h6 class="fw-bold">
-                    {% if has_uploaded %}
-                    Data linked
-                    {% else %}
-                    Link your portfolio
-                    {% endif %}
-                </h6>
+        <div class="gs-hero">
+            <h1>Welcome, {{ current_user.username }}</h1>
+            <p>
+                {% if schwab_enabled and snaptrade_enabled %}
+                Three ways to bring your trades in &mdash; pick the one that fits your broker. We'll do the rest.
+                {% elif schwab_enabled or snaptrade_enabled %}
+                Two ways to bring your trades in &mdash; pick one. We'll do the rest.
+                {% else %}
+                Two CSVs from Schwab and we'll start mirroring your trading.
+                {% endif %}
+            </p>
+        </div>
+
+        {# ── Step 1: Link your data ── #}
+        <div class="gs-step">
+            <span class="gs-step-num {% if has_uploaded %}gs-step-done{% else %}gs-step-pending{% endif %}">{% if has_uploaded %}&#10003;{% else %}1{% endif %}</span>
+            <div class="gs-step-body">
 
                 {% if has_uploaded %}
-                <p class="text-muted">Your data is being processed. Re-upload from the
-                    <a href="{{ url_for('upload') }}">Upload</a> page, or use <strong>Account</strong> to manage Schwab connection and sync.</p>
-                <p class="mb-0"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('upload') }}">Upload</a>
-                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('profile', tab='account') }}">Account settings</a></p>
+                <h6>Data linked</h6>
+                <p class="lead-sub mb-2">Your trades are in. Re-upload anytime, or manage your broker connections in Account settings.</p>
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('upload') }}">Re-upload CSVs</a>
+                {% if schwab_enabled or snaptrade_enabled %}
+                <a class="btn btn-outline-secondary btn-sm ms-1" href="{{ url_for('profile', tab='account') }}">Account settings</a>
+                {% endif %}
+
                 {% else %}
-                <p class="text-muted">Pick <strong>one</strong> path to get started. This step is complete when your first file upload or Schwab import is registered. You can change approach later.</p>
+                <h6>Link your portfolio</h6>
+                <p class="lead-sub">Pick <strong>one</strong> path. You can always switch later.</p>
 
-                <div class="row g-3 path-pick">
-                    {% if schwab_enabled %}
-                    <div class="col-md-6">
-                        <div class="path-card">
-                            <h6 class="fw-bold mb-2">Connect Schwab</h6>
-                            <p class="small text-muted mb-2">OAuth link to Schwab. One-time history pull, then background syncs.</p>
-                            <ul>
-                                <li>First import: up to <strong>{{ schwab_full_history_days|int }} days</strong> of history in one go (about five years) so the analytics have depth.</li>
-                                <li>After that, scheduled syncs pull a rolling <strong>{{ schwab_routine_days|int }}&ndash;day</strong> window of new transactions &mdash; no daily export from you.</li>
-                            </ul>
-                            {% if schwab_connected %}
-                            <p class="small text-success mb-2"><strong>Connection saved</strong> &mdash; finish or review sync in Account.</p>
-                            {% endif %}
-                            <a class="btn btn-primary btn-sm" href="{{ url_for('profile', tab='account') }}">Connect in Account</a>
-                            <p class="small text-muted mt-2 mb-0 pt-2 border-top">
-                                <strong class="text-secondary">Your sign-in stays with Schwab.</strong>
-                                HappyTrader never stores your password. You type it only on Schwab&rsquo;s own page; after that, Schwab gives the app a short permission to read your activity&mdash;like a hall pass, not a copy of your password. You can remove access anytime in Account.
-                            </p>
-                        </div>
+                {# Reusable card components so the row layout below can compose them
+                   based on which features are enabled, without duplicating markup. #}
+
+                {% macro card_schwab() %}
+                <div class="gs-path featured">
+                    <div class="gs-label featured">Recommended</div>
+                    <h6>Connect Schwab</h6>
+                    <p class="pitch">One-time OAuth, then automatic syncs in the background.</p>
+                    <ul class="checklist">
+                        <li>Up to <strong>{{ schwab_full_history_days|int }} days</strong> of history at first connection</li>
+                        <li>Then a <strong>{{ schwab_routine_days|int }}&ndash;day</strong> rolling sync &mdash; no daily upload chore</li>
+                        <li>Read-only access &mdash; removable anytime</li>
+                    </ul>
+                    <div class="cta-row">
+                        {% if schwab_connected %}
+                        <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#schwab-sync">Continue sync &rarr;</a>
+                        <span class="text-success small ms-2">Connection saved</span>
+                        {% else %}
+                        <a class="btn btn-primary" href="{{ url_for('profile', tab='account') }}#schwab-sync">Connect Schwab</a>
+                        {% endif %}
                     </div>
-                    <div class="col-md-6">
-                    {% else %}
-                    <div class="col-12">
-                    {% endif %}
-                        <div class="path-card">
-                            <h6 class="fw-bold mb-2">Manual CSV upload</h6>
-                            <p class="small text-muted mb-2">You export the same two CSVs from schwab.com and upload them here.</p>
-                            <ul>
-                                <li>Each <strong>update</strong> is a new export and upload. To keep the mirror current with trading, most people re-upload <strong>after the trading day</strong> (a daily habit) or on a <strong>fixed cadence</strong> (for example weekly).</li>
-                            </ul>
-                            <a class="btn btn-primary btn-sm" href="{{ url_for('upload') }}">Go to upload</a>
-                        </div>
-                    {% if schwab_enabled %}
+                    <p class="fine-print">
+                        <strong>Your sign-in stays with Schwab.</strong> You enter your password on Schwab's own page; they hand HappyTrader a short read-only pass &mdash; like a hall pass, not your password.
+                    </p>
+                </div>
+                {% endmacro %}
+
+                {% macro card_snaptrade() %}
+                <div class="gs-path">
+                    <div class="gs-label">Other brokers</div>
+                    <h6>Connect another broker</h6>
+                    <p class="pitch">Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Tradier, Webull, and more &mdash; through the SnapTrade aggregator.</p>
+                    <ul class="checklist">
+                        <li>One-time OAuth via SnapTrade's secure portal</li>
+                        <li>Positions arrive within minutes; trade history within hours</li>
+                        <li>Read-only access &mdash; revoke anytime from your broker</li>
+                    </ul>
+                    <div class="cta-row">
+                        {% if snaptrade_connected %}
+                        <a class="btn btn-success" href="{{ url_for('snaptrade_accounts_page') }}">Continue sync &rarr;</a>
+                        <span class="text-success small ms-2">Connection saved</span>
+                        {% else %}
+                        <a class="btn btn-primary" href="{{ url_for('snaptrade_connect') }}">Connect a broker</a>
+                        {% endif %}
                     </div>
-                    {% else %}
+                    <p class="fine-print">
+                        <strong>You sign in on your broker's own page.</strong> SnapTrade hands HappyTrader a read-only pass &mdash; we never see your broker password.
+                    </p>
+                </div>
+                {% endmacro %}
+
+                {% macro card_csv(featured=false) %}
+                <div class="gs-path">
+                    <div class="gs-label">Manual</div>
+                    <h6>Upload CSVs</h6>
+                    <p class="pitch">Export two files from schwab.com and drop them here.</p>
+                    <ul class="checklist">
+                        <li>Works without enabling any broker connection</li>
+                        <li>Re-upload weekly (or daily) to stay current</li>
+                        <li>Good for one-off historical imports</li>
+                    </ul>
+                    <div class="cta-row">
+                        <a class="btn {% if featured %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('upload') }}">Upload CSVs</a>
                     </div>
-                    <p class="small text-muted mt-1 mb-0 col-12">Schwab API connection is not enabled on this server. Use manual upload, or ask your host to add Schwab app credentials.</p>
-                    {% endif %}
+                    {{ export_instructions() }}
+                </div>
+                {% endmacro %}
+
+                {# ── Layout the available paths ── #}
+                {% if schwab_enabled and snaptrade_enabled %}
+                {# THREE options: native Schwab | SnapTrade aggregator | manual CSV #}
+                <div class="gs-path-row triple">
+                    {{ card_schwab() }}
+                    {{ card_snaptrade() }}
+                    {{ card_csv() }}
                 </div>
 
-                <hr class="my-3">
-
-                <p class="mb-2 small text-muted" id="manual-csv">Manual path &mdash; export from Schwab (same as upload page)</p>
-                <div class="step-detail">
-                    <strong>Trade history</strong>
-                    <ol class="mt-1">
-                        <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>History</strong> &rarr; <strong>Transactions</strong></li>
-                        <li>Select your account</li>
-                        <li>Set filter to <strong>All Transactions</strong></li>
-                        <li>Choose a date range, click <strong>Search</strong></li>
-                        <li>Click <strong>Export</strong> &rarr; save the CSV</li>
-                    </ol>
-
-                    <strong>Current positions</strong>
-                    <ol class="mt-1 mb-2">
-                        <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>Positions</strong></li>
-                        <li>Select your account</li>
-                        <li>Click <strong>Export</strong> &rarr; save the CSV</li>
-                    </ol>
-
-                    <a href="{{ url_for('upload') }}" class="btn btn-primary btn-sm">Upload files</a>
+                {% elif schwab_enabled %}
+                {# TWO options: native Schwab | manual CSV. SnapTrade not configured. #}
+                <div class="gs-path-row dual">
+                    {{ card_schwab() }}
+                    {{ card_csv() }}
                 </div>
+
+                {% elif snaptrade_enabled %}
+                {# TWO options: SnapTrade aggregator | manual CSV. Schwab native not configured. #}
+                <div class="gs-path-row dual">
+                    {{ card_snaptrade() }}
+                    {{ card_csv() }}
+                </div>
+
+                {% else %}
+                {# Neither broker integration is enabled on this server — single
+                   full-width Manual card, with the export instructions tucked
+                   inside (no duplicate "export from Schwab" section). #}
+                <div class="gs-path-row">
+                    {{ card_csv(featured=true) }}
+                </div>
+                <p class="gs-server-note">
+                    <strong>Want auto-sync?</strong> No broker connector is enabled on this server. Ask your host to add Schwab or SnapTrade credentials and the OAuth paths will appear here.
+                </p>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
 
         {# ── Step 2: Processing ── #}
-        <div class="step-card">
-            <span class="step-number {% if has_data %}step-done{% elif has_uploaded %}step-pending{% else %}step-waiting{% endif %}">
-                {% if has_data %}&#10003;{% else %}2{% endif %}
-            </span>
-            <div>
-                <h6 class="fw-bold">
-                    {% if has_data %}
-                    Data processed
-                    {% elif has_uploaded %}
-                    Processing your data...
-                    {% else %}
-                    Wait for processing
-                    {% endif %}
-                </h6>
-
+        <div class="gs-step">
+            <span class="gs-step-num {% if has_data %}gs-step-done{% elif has_uploaded %}gs-step-pending{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}2{% endif %}</span>
+            <div class="gs-step-body">
                 {% if has_data %}
-                <p>Your positions and strategies are ready to view.</p>
+                <h6>Your data is processed</h6>
+                <p class="lead-sub mb-0">Trade-level analytics, strategy classification, and your behavioral baselines are computed and ready.</p>
                 {% elif has_uploaded %}
-                <p>We're crunching your trades right now. This usually takes 3-5 minutes.
-                    <a href="{{ url_for('get_started') }}">Refresh this page</a> to check.</p>
+                <h6>Crunching your trades&hellip;</h6>
+                <p class="lead-sub mb-2">This usually takes 3&ndash;5 minutes. We're computing every closed trade, classifying strategies, and building your behavioral baseline.</p>
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
                 {% else %}
-                <p>After uploading, your data will be processed automatically.</p>
+                <h6>We process your data</h6>
+                <p class="lead-sub mb-0">Once your files are in, processing finishes in 3&ndash;5 minutes. We classify strategies, compute trade-level P&amp;L, and build the baselines that drive your Weekly Review.</p>
                 {% endif %}
             </div>
         </div>
 
-        {# ── Step 3: Weekly Review ── #}
-        <div class="step-card">
-            <span class="step-number {% if has_data %}step-done{% else %}step-waiting{% endif %}">
-                {% if has_data %}&#10003;{% else %}3{% endif %}
-            </span>
-            <div>
-                <h6 class="fw-bold">
-                    {% if has_data %}
-                    Weekly Review ready
-                    {% else %}
-                    View your Weekly Review
-                    {% endif %}
-                </h6>
-
+        {# ── Step 3: Open the Mirror ── #}
+        <div class="gs-step">
+            <span class="gs-step-num {% if has_data %}gs-step-done{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}3{% endif %}</span>
+            <div class="gs-step-body">
                 {% if has_data %}
-                <p>
-                    <a href="{{ url_for('weekly_review') }}" class="btn btn-primary btn-sm">Go to Home</a>
-                </p>
+                <h6>Your Trading Mirror is ready</h6>
+                <p class="lead-sub mb-2">Weekly Review is the daily anchor &mdash; how you traded this week vs your own history, given the market.</p>
+                <a class="btn btn-primary" href="{{ url_for('weekly_review') }}">Open Weekly Review</a>
                 {% else %}
-                <p>Once processing is complete, your positions and strategy analytics will be here.</p>
+                <h6>Open your Trading Mirror</h6>
+                <p class="lead-sub mb-0">You'll land on Weekly Review &mdash; a behavioral mirror, not a P&amp;L dashboard. We compare you to <em>yourself</em>, not to other traders.</p>
                 {% endif %}
             </div>
         </div>
-
-        {% if has_uploaded and not has_data %}
-        <div class="text-center mt-3">
-            <a href="{{ url_for('get_started') }}" class="btn btn-outline-primary btn-sm">
-                Refresh to check status
-            </a>
-            <span class="text-muted small d-block mt-1">Usually ready in 3-5 minutes</span>
-        </div>
-        {% endif %}
 
         <div class="text-center mt-4">
             <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to home</a>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

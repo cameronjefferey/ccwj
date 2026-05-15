@@ -22,6 +22,7 @@ import math
 import os
 import pandas as pd
 import json
+from urllib.parse import quote_plus
 
 
 def _bq_parallel(client, queries):
@@ -1346,6 +1347,27 @@ def get_started():
     schwab_full_history_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
     schwab_routine_days = _schwab_transaction_lookback_days()
 
+    # SnapTrade aggregator (Alpaca / Fidelity / Vanguard / Robinhood /
+    # IBKR / Tradier / Webull / etc. via a single OAuth flow). Sibling
+    # to Schwab native — independent enable flag, independent connection
+    # state. Same swallow-on-import-failure posture as profile.html so
+    # /get-started always renders even when the SDK isn't installed
+    # locally. See app/profile_community.py for the canonical pattern.
+    snaptrade_enabled = False
+    snaptrade_connected = False
+    try:
+        from app.snaptrade import snaptrade_enabled as _snaptrade_enabled_fn
+        from app.models import get_snaptrade_accounts as _get_snaptrade_accounts
+
+        snaptrade_enabled = bool(_snaptrade_enabled_fn())
+        if snaptrade_enabled:
+            snaptrade_connected = bool(_get_snaptrade_accounts(current_user.id))
+    except Exception as exc:
+        app.logger.warning(
+            "get_started snaptrade enable check failed for user_id=%s: %s",
+            current_user.id, exc,
+        )
+
     return render_template(
         "get_started.html",
         title="Get Started",
@@ -1355,6 +1377,8 @@ def get_started():
         schwab_connected=schwab_connected,
         schwab_full_history_days=schwab_full_history_days,
         schwab_routine_days=schwab_routine_days,
+        snaptrade_enabled=snaptrade_enabled,
+        snaptrade_connected=snaptrade_connected,
     )
 
 
@@ -1793,6 +1817,28 @@ POSITION_LEGS_QUERY = """
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
     ORDER BY account, display_leg_num
+"""
+
+# Lightweight per-(account,symbol) rollup for the position-detail tab strip.
+# Reads `positions_summary` (the precomputed mart) so the tab strip lists
+# every symbol the user has ever traded with one trip to BQ. We deliberately
+# keep the projection minimal — the strip only needs total_return for the
+# pill, num_trades for the title, and a single "Open if any leg open"
+# status for the dot. SCOPED with `_account_sql_and` per
+# `.cursor/rules/bigquery-tenant-isolation.mdc`; the resulting frame also
+# passes through `_filter_df_by_accounts` in Python before serialization.
+SYMBOL_TABS_QUERY = """
+    SELECT
+        account,
+        symbol,
+        SUM(COALESCE(total_return, 0)) AS total_return,
+        SUM(COALESCE(num_individual_trades, 0)) AS num_trades,
+        MAX(IF(LOWER(TRIM(COALESCE(status, ''))) = 'open', 1, 0)) AS has_open_leg,
+        STRING_AGG(DISTINCT strategy, '|' ORDER BY strategy) AS strategies_pipe
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE symbol IS NOT NULL
+      {account_filter}
+    GROUP BY account, symbol
 """
 
 POSITION_MATRIX_QUERY = """
@@ -2631,6 +2677,11 @@ def position_detail(symbol):
             "legs": POSITION_LEGS_QUERY.format(
                 symbol=safe_symbol, account_filter=_pos_acct
             ),
+            # Lightweight all-symbols rollup that powers the symbol tab strip
+            # at the top of the page. Scoped by `pos_accounts_scope` so the
+            # tabs match the page's account filter (when ?account= is set the
+            # strip narrows; otherwise it spans the viewer's accounts).
+            "tabs": SYMBOL_TABS_QUERY.format(account_filter=_pos_acct),
         })
         summary_df = dfs["summary"]
         trades_df = dfs["trades"]
@@ -2639,6 +2690,7 @@ def position_detail(symbol):
         closed_equity_df = dfs["closed_equity"]
         matrix_df = dfs["matrix"]
         legs_df = dfs["legs"]
+        tabs_df = dfs["tabs"]
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -2646,6 +2698,7 @@ def position_detail(symbol):
         closed_equity_df = _df_normalize_account_column(closed_equity_df)
         matrix_df = _df_normalize_account_column(matrix_df)
         legs_df = _df_normalize_account_column(legs_df)
+        tabs_df = _df_normalize_account_column(tabs_df)
     except Exception as exc:
         return render_template(
             "position_detail.html",
@@ -2666,6 +2719,11 @@ def position_detail(symbol):
             symbol_sector="",
             symbol_subsector="",
             symbol_company="",
+            tabs=[],
+            active_symbol=symbol,
+            tab_href_base="/position/",
+            tab_href_suffix="",
+            mode="navigate",
         )
 
     # Clean numeric types for summary
@@ -2708,6 +2766,8 @@ def position_detail(symbol):
     closed_legs_df = _filter_df_by_accounts(closed_legs_df, pos_accounts_scope)
     closed_equity_df = _filter_df_by_accounts(closed_equity_df, pos_accounts_scope)
     matrix_df = _filter_df_by_accounts(matrix_df, pos_accounts_scope)
+    # Tab strip data has the same tenancy boundary as everything else above.
+    tabs_df = _filter_df_by_accounts(tabs_df, pos_accounts_scope)
 
     # Joined closed legs are empty: int_option_contracts can fail to match while
     # int_strategy_classification still has closed option P&L — use classification only.
@@ -3660,6 +3720,50 @@ def position_detail(symbol):
             "position_detail invariant calc failed for %s: %s", safe_symbol, exc
         )
 
+    # Build the symbol tab strip payload from the lightweight `tabs_df`
+    # rollup. One row per (symbol) — when the user spans multiple accounts we
+    # collapse so each ticker shows up once in the strip with combined P&L
+    # and trade count, and "open" wins over "closed" for the dot.
+    tabs = []
+    if not tabs_df.empty:
+        tdf = tabs_df.copy()
+        for col in ("total_return", "num_trades"):
+            if col in tdf.columns:
+                tdf[col] = pd.to_numeric(tdf[col], errors="coerce").fillna(0)
+        if "has_open_leg" in tdf.columns:
+            tdf["has_open_leg"] = pd.to_numeric(tdf["has_open_leg"], errors="coerce").fillna(0).astype(int)
+        # Collapse to one row per symbol across the in-scope accounts.
+        agg_funcs = {
+            "total_return": "sum",
+            "num_trades": "sum",
+            "has_open_leg": "max",
+        }
+        if "strategies_pipe" in tdf.columns:
+            agg_funcs["strategies_pipe"] = lambda s: "|".join(sorted({
+                p for v in s.dropna() for p in str(v).split("|") if p
+            }))
+        if "account" in tdf.columns:
+            agg_funcs["account"] = lambda s: ", ".join(sorted({str(v) for v in s.dropna() if str(v).strip()}))
+        rolled = tdf.groupby("symbol", as_index=False).agg(agg_funcs)
+        rolled = rolled.sort_values("total_return", ascending=False)
+        for r in rolled.to_dict(orient="records"):
+            strats_pipe = str(r.get("strategies_pipe") or "")
+            tabs.append({
+                "symbol": r.get("symbol"),
+                "account": r.get("account") or "",
+                "total_return": round(float(r.get("total_return") or 0.0), 2),
+                "num_trades": int(r.get("num_trades") or 0),
+                "status": "Open" if int(r.get("has_open_leg") or 0) else "Closed",
+                "strategies": [s for s in strats_pipe.split("|") if s] if strats_pipe else [],
+            })
+
+    # Tab strip uses navigate-mode anchors. Preserve ?account= so the
+    # destination page stays in the same scope (admin + non-admin tenancy
+    # reasoning above continues to hold).
+    tab_qs = ""
+    if selected_account:
+        tab_qs = "?account=" + quote_plus(selected_account)
+
     return render_template(
         "position_detail.html",
         symbol=symbol,
@@ -3684,6 +3788,11 @@ def position_detail(symbol):
         symbol_company=symbol_company,
         invariant_warning=invariant_warning,
         viewer_is_admin=is_admin(current_user.username),
+        tabs=tabs,
+        active_symbol=symbol,
+        tab_href_base="/position/",
+        tab_href_suffix=tab_qs,
+        mode="navigate",
     )
 
 
@@ -5227,10 +5336,26 @@ def symbols_detail():
     for item in symbol_data:
         del item["_chart_idx"]
 
+    # Resolve the active symbol for the tab strip. Honor ?symbol= when it
+    # matches a tab (cheap defense against stale bookmarks); otherwise fall
+    # back to the top-of-sort row (current "P&L desc" default).
+    requested_symbol = (request.args.get("symbol") or "").strip().upper()
+    available_symbols = {str(s.get("symbol") or "").upper() for s in symbol_data}
+    active_symbol = (
+        requested_symbol
+        if requested_symbol and requested_symbol in available_symbols
+        else (symbol_data[0]["symbol"] if symbol_data else "")
+    )
+
     return render_template(
         "symbols.html",
         title="Daily P&L by symbol",
         symbol_data=symbol_data,
+        # `tabs` is the same list of dicts; the partial reads
+        # {symbol, account, total_return, num_trades, story_open_legs, strategies}
+        tabs=symbol_data,
+        active_symbol=active_symbol,
+        mode="swap",
         chart_data_json=json.dumps(sorted_charts),
         accounts=accounts,
         selected_account=selected_account,

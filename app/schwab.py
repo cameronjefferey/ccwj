@@ -245,7 +245,7 @@ def _schwab_float(bal, *keys, default=0.0):
 
 def _schwab_build_balance_seed_rows(acct_data, open_position_rows):
     """
-    Two rows for schwab_account_balances.csv (cash + account_total), derived
+    Two rows for account_balances.csv (cash + account_total), derived
     from Schwab currentBalances. open_position_rows: API positions only
     (list of dicts with market_value/cost_basis). Account column is added
     by merge_and_push_seeds.
@@ -1376,7 +1376,7 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
         # the option fallback (its per-share-of-underlying semantic matches
         # the CSV upload path's "Price" column already in use downstream).
         # The bug + fix is logged in
-        # ~/.cursor/skills/schwab-sync-safety/SKILL.md under
+        # ~/.cursor/skills/broker-sync-safety/SKILL.md under
         # "averagePrice mislabeled as Price".
         is_equity = inst_type in ("EQUITY", "ETF", "COLLECTIVE_INVESTMENT")
         seed_price = avg
@@ -1527,7 +1527,7 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
         )
     if balances_df is not None and not balances_df.empty:
         balances_df.to_csv(
-            os.path.join(out_dir, f"{safe_name}_schwab_account_balances.csv"),
+            os.path.join(out_dir, f"{safe_name}_account_balances.csv"),
             index=False,
         )
 

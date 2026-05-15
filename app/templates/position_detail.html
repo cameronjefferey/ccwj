@@ -80,9 +80,14 @@
 {% endblock %}
 
 {% block content %}
-<div class="mb-3">
+<div class="mb-2">
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
+
+{# ── Symbol tab strip (spreadsheet-style switcher) ── #}
+{% if tabs and tabs|length > 1 %}
+{% include "_symbol_tabstrip.html" with context %}
+{% endif %}
 
 {# Admin-only canary: hero KPI vs Breakdown-by-type vs chart terminal disagree
    by more than $1. See app/routes.py invariant_warning block. Strategy-row sums

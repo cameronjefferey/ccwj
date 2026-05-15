@@ -112,7 +112,7 @@ Create `.github/workflows/schwab-sync.yml` to run the sync on a schedule.
 ```
 Schwab API
   → current positions + transactions (lookback window; default 60 days, see SCHWAB_SYNC_TRANSACTION_DAYS)
-  → merged into the SAME seeds manual upload uses: trade_history.csv and current_positions.csv (+ schwab_account_balances.csv for cash/equity snapshots)
+  → merged into the SAME seeds manual upload uses: trade_history.csv and current_positions.csv (+ account_balances.csv for cash/equity snapshots; broker-agnostic)
   → if GITHUB_PAT (+ GITHUB_REPO) is set: commit to GitHub **triggers the same CI as CSV upload** (workflow `Update Daily Position Performance` in `.github/workflows/bigquery_update.yml`): dbt `build` (seeds + models) and the daily price script, so **BigQuery updates without a manual `dbt` run** (typically a few minutes; watch **GitHub → Actions**). Use branch **`master` or `main`** and set `GITHUB_BRANCH` in production to match.
   → always: also writes data/schwab_sync/{account}_*.csv on the server (local/debug; ephemeral on Render)
 ```

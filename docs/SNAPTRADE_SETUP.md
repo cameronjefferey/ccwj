@@ -1,0 +1,120 @@
+# SnapTrade (multi-broker) Setup Guide
+
+Connect HappyTrader to ~20 brokerages (Fidelity, Vanguard, Robinhood,
+IBKR, Tradier, etc.) via the [SnapTrade](https://snaptrade.com) aggregator.
+SnapTrade is a sibling to the native Schwab connector — **Schwab users
+should keep using the native Schwab connector** (it returns deeper
+history). SnapTrade is the path for every NON-Schwab broker.
+
+## Prerequisites
+
+- A SnapTrade developer account ([sign up](https://dashboard.snaptrade.com/signup))
+- Your `clientId` and `consumerKey` from the SnapTrade dashboard
+- Python 3.10+ (for the `snaptrade-python-sdk` package, already pinned in `requirements.txt`)
+
+## Step 1 — Create a SnapTrade developer account
+
+1. Go to [dashboard.snaptrade.com/signup](https://dashboard.snaptrade.com/signup) and create an account.
+2. Verify your email and complete the onboarding checklist.
+3. Pricing: SnapTrade charges per **connected user**, not per request.
+   The first sandbox is free; production accounts have a per-user fee.
+   Confirm the current plan on [snaptrade.com/pricing](https://snaptrade.com/pricing)
+   before opening this up to non-beta users.
+
+## Step 2 — Get your credentials
+
+In the SnapTrade dashboard:
+
+- **Client ID** — public identifier for your app.
+- **Consumer Key** — secret used to authenticate API calls.
+- **Webhook Secret** (optional, Phase 3) — for event-driven syncs.
+
+Both Client ID and Consumer Key are bearer credentials. Treat them
+like database passwords; never commit them to git.
+
+## Step 3 — Configure HappyTrader
+
+Add to `.env` (local) or set as environment variables on Render:
+
+```bash
+# SnapTrade aggregator (covers Fidelity, Vanguard, Robinhood, IBKR,
+# Tradier, etc.). Optional — feature is hidden when not configured.
+SNAPTRADE_CLIENT_ID=your-client-id
+SNAPTRADE_CONSUMER_KEY=your-consumer-key
+
+# Where SnapTrade returns the user after they finish the Connection
+# Portal flow. Must match a redirect URI you registered in the
+# SnapTrade dashboard (HTTPS in production).
+SNAPTRADE_REDIRECT_URI=https://your-domain.com/snaptrade/callback
+```
+
+For local development, you can use the same ngrok / HTTPS tunnel
+strategy documented in `SCHWAB_API_SETUP.md` — register
+`https://abc123.ngrok-free.app/snaptrade/callback` in the SnapTrade
+dashboard, then export `SNAPTRADE_REDIRECT_URI=...` matching it.
+
+## Step 4 — Verify the integration
+
+1. Restart the app so it picks up the new env vars.
+2. Sign in as any user (the demo user blocks SnapTrade writes).
+3. Visit `/profile?tab=account` and look for the **More brokerages**
+   card with a **Connect another broker** button.
+4. Click through the SnapTrade Connection Portal in sandbox mode and
+   pick the SnapTrade demo broker.
+5. After the redirect, `/snaptrade/accounts` should list the demo
+   account. Click **Sync now** — the result is committed to GitHub
+   (just like a Schwab sync), which triggers the dbt rebuild and
+   feeds Position Detail / Weekly Review like any other tenant.
+
+## Architecture notes
+
+- **No new seed CSVs.** SnapTrade writes to the same `trade_history.csv`,
+  `current_positions.csv`, and `account_balances.csv` files Schwab and
+  manual upload write to. The convergence point is
+  `app.upload.merge_and_push_seeds`.
+- **Tenant scoping.** Every SnapTrade-emitted DataFrame stamps
+  `account_name` and `user_id` on every row, exactly like Schwab. The
+  broker-sync-safety invariants (dedup, monotonic merge, canonical
+  uid) all apply automatically because they live in the merge
+  function, not in the connector.
+- **Data isolation.** SnapTrade userId/userSecret pairs are stored in
+  Postgres `snaptrade_connections` (one row per HappyTrader user) and
+  per-broker accounts in `snaptrade_accounts` (mirrors the
+  one-row-per-account grain of `schwab_connections`).
+- **Cron schedule.** A separate cron entry
+  (`happytrader-snaptrade-sync` in `app/render.yaml`) runs daily,
+  offset by 30 minutes from the Schwab cron so they don't push to
+  GitHub in the same minute (the GitHub Actions concurrency policy
+  silently drops a duplicate push otherwise).
+
+## Limitations
+
+- **History depth varies by broker.** Schwab via SnapTrade can give
+  multi-year history; some brokers (e.g. Robinhood) only return
+  ~90 days. Don't migrate existing Schwab users away from the native
+  connector — they'd lose deep history.
+- **Action vocabulary is incremental.** SnapTrade ships a normalized
+  activity feed, but every broker has quirks (Vanguard cash sweeps,
+  Robinhood crypto, etc). The first sync from a new broker may
+  surface activity types we haven't mapped — they're logged as
+  warnings and skipped. Add new entries to
+  `SNAPTRADE_ACTIVITY_TO_ACTION` in `app/snaptrade_normalize.py` as
+  needed.
+- **Vendor risk.** A SnapTrade outage takes down all SnapTrade-
+  connected users until they recover. Native Schwab is unaffected.
+  This hybrid posture is the mitigation.
+
+## Troubleshooting
+
+**`Multi-broker connect is not configured`** — `SNAPTRADE_CLIENT_ID`
+or `SNAPTRADE_CONSUMER_KEY` is empty. Re-check `.env` (or the Render
+service config), restart the app.
+
+**The SDK is missing** — `snaptrade_enabled()` short-circuits to
+False when `import snaptrade_client` fails. `pip install -r
+requirements.txt` to install.
+
+**Reconnect banner stuck after re-auth** — `connection_broken_at` is
+cleared on the next successful sync. If a SnapTrade callback didn't
+clear it (e.g. callback failed silently), trigger a manual sync via
+`/snaptrade/sync`.

@@ -441,6 +441,32 @@
             </div>
         </div>
         {% endif %}
+
+        {# Same banner shape for SnapTrade-managed brokerages whose
+           connection has been revoked at the broker. Set by
+           `_inject_snaptrade_reauth_needed` in app/snaptrade.py from
+           the `connection_broken_at` column on snaptrade_accounts. #}
+        {% if snaptrade_reauth_needed and snaptrade_reauth_needed|length %}
+        <div class="alert alert-warning d-flex align-items-start gap-3 mt-3 mb-3" role="alert">
+            <div class="flex-grow-1">
+                <strong>One of your brokerage connections expired.</strong>
+                <div class="small mt-1">
+                    {% if snaptrade_reauth_needed|length == 1 %}
+                        We couldn&rsquo;t sync
+                        <code>{{ snaptrade_reauth_needed[0].display_nickname or snaptrade_reauth_needed[0].account_name }}</code>
+                        ({{ snaptrade_reauth_needed[0].broker_slug | title }}).
+                    {% else %}
+                        We couldn&rsquo;t sync
+                        {% for c in snaptrade_reauth_needed %}
+                            <code>{{ c.display_nickname or c.account_name }}</code>{% if not loop.last %}, {% endif %}
+                        {% endfor %}.
+                    {% endif %}
+                    Reconnect from the brokerages page to resume daily syncs.
+                </div>
+                <a class="btn btn-sm btn-warning mt-2" href="{{ url_for('snaptrade_accounts_page') }}">Manage brokerages</a>
+            </div>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </div>
 

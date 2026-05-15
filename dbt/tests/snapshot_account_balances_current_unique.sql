@@ -11,7 +11,7 @@
 
     Catches target-side poisoning at build time so we never have to
     debug it from a cryptic MERGE error in the next nightly job.
-    Recovery procedure: see ``schwab-sync-safety`` skill register entry
+    Recovery procedure: see ``broker-sync-safety`` skill register entry
     "snapshot target-side triple-write poisoning".
 */
 

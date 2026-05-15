@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .broker-mgr-shell { max-width: 920px; margin: 0 auto; padding: 0 1rem; }
+    .broker-mgr-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.25rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+    }
+    .broker-mgr-hero h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .35rem; }
+    .broker-mgr-hero p { margin: 0; opacity: .85; line-height: 1.55; max-width: 60ch; }
+    .broker-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 1.4rem 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .broker-card h2 {
+        font-size: 1rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #475569;
+        margin-bottom: 1rem;
+    }
+    .broker-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        padding: .9rem 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .broker-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .broker-row:first-child { padding-top: 0; }
+    .broker-row .who { flex: 1 1 220px; }
+    .broker-row .who .name { font-weight: 600; color: #0f172a; }
+    .broker-row .who .label { font-size: .8125rem; color: #475569; }
+    .broker-row .who .num { font-size: .8125rem; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .broker-row .who .broker-tag {
+        display: inline-block;
+        font-size: .7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #1e40af;
+        background: #dbeafe;
+        padding: .15rem .55rem;
+        border-radius: 999px;
+        margin-bottom: .35rem;
+    }
+    .broker-row .meta { font-size: .8125rem; color: #475569; }
+    .broker-row form { margin: 0; }
+    .broker-row .nick {
+        flex: 1 1 220px;
+        display: flex;
+        gap: .4rem;
+        align-items: center;
+    }
+    .broker-row .nick input {
+        flex: 1 1 auto;
+        font-size: .875rem;
+        padding: .35rem .55rem;
+    }
+    .broker-row .nick .btn { white-space: nowrap; }
+    .empty-hint {
+        color: #6b7280;
+        font-size: .9rem;
+        line-height: 1.55;
+        margin: 0;
+    }
+    .broker-mgr-back { font-size: .875rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="broker-mgr-shell">
+    <div class="broker-mgr-hero">
+        <div class="text-uppercase small fw-semibold opacity-75 mb-2" style="letter-spacing:.08em">Multi-broker</div>
+        <h1>Connected brokerages</h1>
+        <p>Add Fidelity, Vanguard, Robinhood, IBKR, and other brokers
+            through SnapTrade. Each connection appears below — sync the
+            ones you want to mirror, leave the rest alone.</p>
+    </div>
+
+    <div class="broker-card">
+        <h2>Connected accounts</h2>
+        <p class="empty-hint mb-3">
+            Add a nickname (e.g. <em>Roth IRA</em>, <em>Joint brokerage</em>) so you
+            can tell your accounts apart. The nickname is just for display —
+            your synced data stays linked to the same account underneath.
+            <strong>Tip:</strong> save each nickname before you sync, so the
+            cleaner labels appear everywhere downstream.
+        </p>
+
+        <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+            <div class="mb-1"><strong>About the data lag &mdash; please read once:</strong></div>
+            SnapTrade pulls <strong>positions and balances in real time</strong>
+            (within seconds of a sync). <strong>Trade history</strong> is a
+            separate ingestion that SnapTrade runs against each broker on its
+            own schedule &mdash; <strong>typically a few hours, sometimes up
+            to 24 hours</strong> for a brand-new connection or for a trade you
+            just placed. If you see "0 trades" right after connecting or
+            placing a trade, that's <strong>SnapTrade still indexing</strong>,
+            not data loss. Sync again later &mdash; the trades will appear.
+        </div>
+
+
+        {% if accounts %}
+        {% for c in accounts %}
+        {% set heading = c.display_nickname or c.account_name %}
+        {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
+        <div class="broker-row">
+            <div class="who">
+                {% if c.broker_slug %}
+                <span class="broker-tag">{{ c.broker_slug | title }}</span>
+                {% endif %}
+                <div class="name">{{ heading }}</div>
+                {% if show_label %}
+                <div class="label">{{ c.account_name }}</div>
+                {% endif %}
+                {% if c.account_number_masked %}
+                <div class="num">••••{{ c.account_number_masked[-4:] }}</div>
+                {% endif %}
+            </div>
+            <form method="POST" action="{{ url_for('snaptrade_account_nickname') }}" class="nick">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                <input type="text" name="nickname" maxlength="80"
+                       class="form-control form-control-sm"
+                       placeholder="Add a nickname"
+                       value="{{ c.display_nickname or '' }}"
+                       aria-label="Nickname for {{ c.account_name }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+            </form>
+            <div class="meta">
+                {% if c.connection_broken_at %}
+                <span class="badge text-bg-danger">Reconnect needed</span>
+                {% elif c.first_sync_completed %}
+                <span class="badge text-bg-light">Synced before</span>
+                {% else %}
+                <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
+                {% endif %}
+            </div>
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="schwab-sync-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
+                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your broker. This can take a minute — keep this tab open.</p>
+            </form>
+            {# "Refresh from broker" — asks SnapTrade to repoll the
+               broker BEFORE we sync. Useful right after placing a
+               trade. SnapTrade bills per refresh, so this is rate-
+               limited to once per ~10 min server-side; the title
+               attribute hints at that without making the user think
+               it's broken when they hit the limit. #}
+            <form method="POST" action="{{ url_for('snaptrade_refresh_broker') }}" class="schwab-sync-form"
+                  onsubmit="return confirm('Ask SnapTrade to fetch fresh data from your broker, then sync? Useful right after placing a trade. Limited to once per ~10 minutes per brokerage.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                <button type="submit" class="btn btn-sm btn-outline-warning"
+                        title="Triggers a fresh poll of your broker before syncing — costs a billing call to SnapTrade, so use only when you've just placed a trade.">
+                    Refresh from broker
+                </button>
+            </form>
+            <form method="POST" action="{{ url_for('snaptrade_disconnect') }}"
+                  onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+            </form>
+        </div>
+        {% endfor %}
+
+        {% if accounts|length > 1 %}
+        {# Bulk sync sits BELOW the per-account rows so users see and
+           save their nicknames first. Default the "pull full history"
+           toggle on whenever any account is still pending its first
+           sync — same UX rule as the Schwab manager. Use a Jinja2
+           namespace() because plain {% set %} inside {% for %} doesn't
+           escape loop scope (silent no-op pre-fix). #}
+        {% set _ns = namespace(any_first_pending=false) %}
+        {% for c in accounts %}
+            {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
+        {% endfor %}
+        {% set _any_first_pending = _ns.any_first_pending %}
+        <div class="mt-4 pt-3" style="border-top: 1px solid #e5e7eb;">
+            <p class="empty-hint mb-2" style="font-size:.85rem">
+                <strong>Save every nickname first.</strong> Once you sync,
+                the account label flows into your warehouse — renaming
+                later still works for display, but cleaner labels from
+                the start mean cleaner reports.
+            </p>
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="schwab-sync-form mb-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sync_all" value="1">
+                <button type="submit" class="btn btn-primary">Sync all accounts</button>
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox"
+                           name="full_history_again" id="snaptrade_mgr_sync_all_full"
+                           value="1"{% if _any_first_pending %} checked{% endif %}>
+                    <label class="form-check-label small" for="snaptrade_mgr_sync_all_full">
+                        Pull full history on every account
+                    </label>
+                </div>
+                <p class="empty-hint mb-0 mt-1" style="font-size:.75rem">
+                    Leave unchecked for the routine refresh. (Some brokers via
+                    SnapTrade only return 90 days; we ask for the longest window
+                    they support.)
+                </p>
+                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
+            </form>
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="empty-hint">No brokerages connected yet through SnapTrade.</p>
+        {% endif %}
+    </div>
+
+    <div class="broker-card">
+        <h2>Add another brokerage</h2>
+        {% if snaptrade_enabled %}
+        <p class="empty-hint mb-3">
+            Click below to open the SnapTrade connection portal. Pick your
+            broker, sign in there, and you'll be returned here with the new
+            account ready to sync.
+        </p>
+        <form method="POST" action="{{ url_for('snaptrade_connect') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">Connect a brokerage</button>
+        </form>
+        {% else %}
+        <p class="empty-hint">
+            Multi-broker connect is not configured in this environment.
+            Contact the administrator to enable SnapTrade.
+        </p>
+        {% endif %}
+    </div>
+
+    <p class="broker-mgr-back">
+        <a href="{{ url_for('profile', tab='account') }}">← Back to Accounts &amp; data</a>
+    </p>
+</div>
+{% endblock %}
