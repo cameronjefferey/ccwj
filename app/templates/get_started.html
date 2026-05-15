@@ -222,6 +222,19 @@
                     <div class="gs-label">Other brokers</div>
                     <h6>Connect another broker</h6>
                     <p class="pitch">Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Tradier, Webull, and more &mdash; through the SnapTrade aggregator.</p>
+                    {# Steer Schwab users to the dedicated card on the left.
+                       SnapTrade doesn't carry Schwab, and our native Schwab
+                       integration returns deeper history with no aggregator
+                       indexing lag. This macro only renders alongside the
+                       Schwab card (see the schwab_enabled+snaptrade_enabled
+                       branch below), so the "Schwab card on the left" wording
+                       is always accurate. #}
+                    {% if schwab_enabled %}
+                    <p class="fine-print" style="color:#1e3a8a;">
+                        <strong>Have Schwab?</strong> Use the Schwab card
+                        instead &mdash; SnapTrade doesn't support Schwab.
+                    </p>
+                    {% endif %}
                     <ul class="checklist">
                         <li>One-time OAuth via SnapTrade's secure portal</li>
                         <li>Positions arrive within minutes; trade history within hours</li>

@@ -234,6 +234,14 @@
                             other brokers through SnapTrade. One click per broker;
                             we mirror the same trade history and positions.
                         </p>
+                        {% if schwab_enabled %}
+                        {# Same Schwab callout as the Account-tab card — kept
+                           short here because the Overview is the summary view. #}
+                        <p class="sync-sub mb-0 mt-2 small" style="color:#1e3a8a;">
+                            <strong>Schwab?</strong> Use the <strong>Schwab sync</strong>
+                            card above — SnapTrade doesn't support Schwab.
+                        </p>
+                        {% endif %}
                     </div>
                 </div>
                 {% if _snaptrade_accounts %}
@@ -395,7 +403,12 @@
 
             {% if tab == 'account' %}
             {% if schwab_enabled %}
-            <div class="atlas-card">
+            {# id="schwab-sync" is the deep-link anchor used by the Schwab
+               callouts on /snaptrade/accounts (and elsewhere). Mirrors the
+               id on the Overview-tab Schwab card so the same hash works
+               regardless of which tab the user happens to be on when they
+               click the link. #}
+            <div class="atlas-card" id="schwab-sync">
                 <div class="atlas-card-h">Schwab sync</div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint">Connect once and every sync stays in sync with your Schwab account automatically.</p>
@@ -515,6 +528,20 @@
                             backfill.
                         </div>
                     </div>
+                    {% if schwab_enabled %}
+                    {# Schwab is NOT in SnapTrade's roster — point Schwab users
+                       at our native button (above this card) so they don't
+                       waste a click hunting for it in the SnapTrade portal
+                       and then bounce. Native Schwab is also faster and
+                       deeper history (no aggregator indexing lag). #}
+                    <div class="alert alert-info small mb-3" role="alert" style="background:#eff6ff; border-color:#bfdbfe; color:#1e3a8a;">
+                        <strong>Have a Schwab account?</strong>
+                        SnapTrade doesn't include Schwab in its broker list.
+                        Use the <strong>Connect Schwab</strong> card above instead — our
+                        native Schwab integration is faster and pulls deeper history
+                        (no aggregator indexing lag).
+                    </div>
+                    {% endif %}
                     {% if _snaptrade_accounts %}
                     {# Default the "pull full history" toggle on whenever any
                        linked brokerage is still pending its first sync —

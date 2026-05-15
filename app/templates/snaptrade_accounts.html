@@ -85,6 +85,21 @@
         <p>Add Fidelity, Vanguard, Robinhood, IBKR, and other brokers
             through SnapTrade. Each connection appears below — sync the
             ones you want to mirror, leave the rest alone.</p>
+        {% if schwab_enabled %}
+        {# Schwab is NOT in SnapTrade's roster. Make that visible up-front
+           so a Schwab user landing here doesn't try to find Schwab in the
+           SnapTrade connection portal and bounce. Native Schwab is also
+           faster and pulls deeper history. Link goes to the Account tab
+           (where the Schwab card lives) rather than schwab_accounts which
+           assumes you're already connected. #}
+        <p class="mb-0 mt-2 small" style="opacity:.85">
+            <strong>Schwab account?</strong> SnapTrade doesn't include
+            Schwab — connect it through our
+            <a href="{{ url_for('profile', tab='account') }}#schwab-sync"
+               style="color:inherit; text-decoration:underline">native Schwab
+            sync</a> instead.
+        </p>
+        {% endif %}
     </div>
 
     <div class="broker-card">
@@ -229,6 +244,19 @@
             broker, sign in there, and you'll be returned here with the new
             account ready to sync.
         </p>
+        {% if schwab_enabled %}
+        {# Belt-and-suspenders Schwab callout — also shown in the hero, but
+           a user might scroll straight to the connect button. SnapTrade's
+           portal lists ~20 brokers and Schwab isn't one of them; spelling
+           that out here saves the round-trip into the portal. #}
+        <p class="empty-hint mb-3" style="background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; padding:.6rem .8rem; border-radius:.4rem;">
+            <strong>Note:</strong> SnapTrade doesn't carry Schwab. To
+            connect a Schwab account, use the
+            <a href="{{ url_for('profile', tab='account') }}#schwab-sync"
+               style="color:inherit; text-decoration:underline;">native
+            Schwab sync</a> on the Account tab instead.
+        </p>
+        {% endif %}
         <form method="POST" action="{{ url_for('snaptrade_connect') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary">Connect a brokerage</button>

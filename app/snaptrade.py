@@ -488,11 +488,20 @@ def snaptrade_accounts_page():
     rename, disconnect. Mirrors ``schwab_accounts.html``.
     """
     rows = get_snaptrade_accounts(current_user.id) or []
+    # ``schwab_enabled`` so the template can steer Schwab users away from
+    # SnapTrade (which doesn't carry Schwab) and toward our native Schwab
+    # connect. Same env-var heuristic used in app/routes.py and
+    # app/profile_community.py — kept inline rather than centralized
+    # because the import-vs-cycle risk isn't worth a helper for a one-liner.
+    schwab_enabled = bool(
+        os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET")
+    )
     return render_template(
         "snaptrade_accounts.html",
         title="Connected brokerages",
         accounts=rows,
         snaptrade_enabled=snaptrade_enabled(),
+        schwab_enabled=schwab_enabled,
     )
 
 
