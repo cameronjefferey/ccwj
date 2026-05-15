@@ -11,6 +11,19 @@
 # as additional `type: cron` entries below. After editing, push to
 # master and click "Sync" on the Blueprint in the Render dashboard for
 # Render to apply the changes.
+#
+# OUTSIDE THIS FILE (Blueprint can't see them):
+#   - `happy-trader-schwab-sync-close` (crn-d7ptctebn58s73867bh0):
+#     manual cron, created in the Render dashboard before this Blueprint
+#     existed. Same code (python -m app.schwab_sync_cli) and same env
+#     vars as `happytrader-schwab-sync` below; runs at 21:01 UTC for the
+#     primary post-close pull. To change its schedule, edit it in the
+#     Render dashboard (https://dashboard.render.com/cron/crn-d7ptctebn58s73867bh0/settings).
+#     The Blueprint Sync button does NOT touch it.
+#   - `ccwj` web service (srv-d0qea7ripnbc73ea9v5g): the Flask app at
+#     happytrader.me. Manually managed for the rename/downtime reason
+#     stated above.
+#
 services:
 
   # ──────────────────────────────────────────────────────────────────
@@ -94,26 +107,26 @@ services:
   # + positions + balances + recent_orders, pushes seed CSVs to GitHub
   # which triggers the dbt rebuild.
   #
-  # Schedule: 21:01 UTC = 4:01pm EST (winter) / 5:01pm EDT (summer),
-  # i.e. always at least 1 minute after the 4pm ET market close. The
+  # Schedule: 21:02 UTC = 4:02pm EST (winter) / 5:02pm EDT (summer),
+  # i.e. always at least 2 minutes after the 4pm ET market close. The
   # design goal is "users get to review same-day activity before the
   # next session opens." Picking a UTC time that's post-close in winter
   # means it drifts to ~1 hour post-close in summer; we accept the
   # drift in exchange for never accidentally firing pre-close.
   #
-  # Offset 29 minutes from `happytrader-schwab-sync` (21:30 UTC) so the
-  # two crons don't push to GitHub in the same minute. The
-  # `concurrency: cancel-in-progress: true` setting in the Actions
-  # workflow means coincident pushes silently lose work — staggering
-  # them lets each one's dbt build complete. The 1-minute gap from
-  # `happy-trader-schwab-sync-close` (20:01 UTC) is moot because that
-  # cron runs an hour earlier in winter (when `1 21` fires post-close)
-  # and 60 min earlier in summer.
+  # Stagger logic: 21:01 UTC is held by the manually-managed
+  # `happy-trader-schwab-sync-close` cron (NOT Blueprint-managed; lives
+  # in the Render dashboard only — its schedule must be updated there,
+  # not here). We sit at 21:02 to give Schwab its 1-minute head start
+  # and avoid coincident GitHub pushes — the Actions workflow's
+  # `concurrency: cancel-in-progress: true` setting silently drops
+  # duplicate-minute pushes otherwise. The 28-minute gap to the daily
+  # Schwab backup at 21:30 UTC stays comfortably wide.
   # ──────────────────────────────────────────────────────────────────
   - type: cron
     name: happytrader-snaptrade-sync
     env: python
-    schedule: "1 21 * * 1-5"
+    schedule: "2 21 * * 1-5"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.snaptrade_sync_cli
     envVars:
