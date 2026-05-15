@@ -52,16 +52,20 @@ services:
     name: happy-trader-schwab-sync-close
     env: python
     schedule: "1 20 * * 1-5"
-    # --no-cache-dir bypasses pip's wheel cache entirely. Render's
-    # "Clear build cache & deploy" button clears Render's build
-    # artifact cache but NOT pip's ~/.cache/pip on the cron's
-    # filesystem. A single corrupt cached wheel (e.g. from a partial
-    # download in a previous failed deploy) then re-poisons every
-    # subsequent build with "PACKAGES DO NOT MATCH THE HASHES" until
-    # the volume is destroyed. --no-cache-dir = re-download every
-    # wheel from PyPI on every build. ~30 sec slower; for a daily
-    # cron that's free.
-    buildCommand: pip install --no-cache-dir -r requirements.txt
+    # The 3x retry chain below absorbs Render's transient network
+    # blips on the PyPI download path. Without it, a single dropped
+    # mid-download wheel surfaces as "PACKAGES DO NOT MATCH THE
+    # HASHES FROM THE REQUIREMENTS FILE" with `unknown package` (pip
+    # interprets a truncated wheel as a hash failure — see pip issue
+    # pypa/pip#12424, closed wontfix). The OS shell runs left to right
+    # on `||`, succeeds on the first attempt that exits 0, and only
+    # exits non-zero (failing the build) if ALL THREE attempts fail
+    # — at which point the issue is no longer transient.
+    #
+    # `--no-cache-dir` is preserved so a corrupted on-disk wheel can't
+    # poison subsequent builds; combined with retry, this makes the
+    # cron build maximally robust to environment quirks.
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
     startCommand: python -m app.schwab_sync_cli
     envVars:
       - key: PYTHON_VERSION
@@ -111,8 +115,8 @@ services:
     name: happytrader-snaptrade-sync
     env: python
     schedule: "6 20 * * 1-5"
-    # See _close cron above for why --no-cache-dir.
-    buildCommand: pip install --no-cache-dir -r requirements.txt
+    # See _close cron above for why --no-cache-dir + 3x retry.
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
     startCommand: python -m app.snaptrade_sync_cli
     envVars:
       - key: PYTHON_VERSION
@@ -164,8 +168,8 @@ services:
     name: happytrader-schwab-sync
     env: python
     schedule: "31 20 * * 1-5"
-    # See _close cron above for why --no-cache-dir.
-    buildCommand: pip install --no-cache-dir -r requirements.txt
+    # See _close cron above for why --no-cache-dir + 3x retry.
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
     startCommand: python -m app.schwab_sync_cli
     envVars:
       # Pin Python explicitly. Render now defaults new services to
