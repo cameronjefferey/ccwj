@@ -4868,10 +4868,10 @@ def symbols_detail():
         closed_legs_df = dfs["closed_legs"]
         closed_equity_df = dfs["closed_equity"]
     except Exception as exc:
-        app.logger.exception("Daily P&L by symbol load failed: %s", exc)
+        app.logger.exception("Daily P&L load failed: %s", exc)
         return render_template(
             "symbols.html",
-            title="Daily P&L by symbol",
+            title="Daily P&L",
             error=str(exc),
             symbol_data=[],
             chart_data_json="[]",
@@ -5349,7 +5349,7 @@ def symbols_detail():
 
     return render_template(
         "symbols.html",
-        title="Daily P&L by symbol",
+        title="Daily P&L",
         symbol_data=symbol_data,
         # `tabs` is the same list of dicts; the partial reads
         # {symbol, account, total_return, num_trades, story_open_legs, strategies}
