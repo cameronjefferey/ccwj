@@ -1,6 +1,4 @@
 account,user_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
-Schwab ••••6134,8,cash,2314.04,,,,1.845966
-Schwab ••••6134,8,account_total,125356.61,96677.2800000304,28679.329999969603,29.665015,
 Schwab ••••4828,8,cash,3657.94,,,,0.267054
 Schwab ••••4828,8,account_total,1369739.83,1168473.2199996363,201266.61000036355,17.224752,
 Schwab ••••0044,8,cash,0.0,,,,0.0
@@ -19,3 +17,5 @@ Schwab ••••7577,8,cash,21.1,,,,0.133823
 Schwab ••••7577,8,account_total,15767.12,11601.9400000002,4165.1799999998,35.90072,
 Cameron Investment,13,cash,0.0,,,,0.0
 Cameron Investment,13,account_total,32625.25,40001.9,-7376.6500000000015,-18.440749,
+Schwab ••••6134,8,cash,2314.04,,,,1.847652
+Schwab ••••6134,8,account_total,125242.21,96677.2800000304,28564.92999996961,29.546684,
