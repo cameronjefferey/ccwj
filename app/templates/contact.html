@@ -34,18 +34,40 @@
         margin-top: .5rem;
     }
     .contact-cta:hover { background: #1e3a8a; color: #fff; }
+    .contact-cta-ghost {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        background: #fff;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
+        padding: .6rem 1rem;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        margin-top: .5rem;
+    }
+    .contact-cta-ghost:hover { background: #f1f5f9; color: #0f172a; }
+    .static-card .meta {
+        color: #6b7280;
+        font-size: .875rem;
+        margin-top: 1.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid #e5e7eb;
+    }
+    .static-card .meta a { color: #1e3a8a; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="static-hero">
     <h1>Contact</h1>
-    <p>Questions, bug reports, feature requests — we want to hear it.</p>
+    <p>Questions, bug reports, feature requests — we want to hear from you.</p>
 </div>
 
 <div class="static-card">
     <h2>Email us</h2>
-    <p>The fastest way to reach us is email. We read every message and usually reply within a business day.</p>
+    <p>Email is the fastest way to reach us. We read every message and typically reply within one business day (Monday&ndash;Friday, U.S. Pacific time).</p>
     <p>
         <a href="mailto:support@happytrader.me?subject=HappyTrader%20support" class="contact-cta">
             support@happytrader.me
@@ -54,12 +76,35 @@
 
     <h2>What helps us help you</h2>
     <ul>
-        <li>Your username (so we can look up your account)</li>
-        <li>Which page you were on and what happened</li>
-        <li>A screenshot if you can</li>
+        <li>Your HappyTrader username or the email you signed up with (so we can look up your account)</li>
+        <li>The page you were on and what you were trying to do</li>
+        <li>A screenshot if you can — especially for chart, sync, or layout issues</li>
+        <li>For broker-sync issues: which broker, the masked account number (last 4 digits is enough), and roughly when the sync ran</li>
     </ul>
 
+    <h2>Brokerage connections</h2>
+    <p>HappyTrader connects to brokerages two ways:</p>
+    <ul>
+        <li><strong>Charles Schwab</strong> &mdash; via Schwab's official Trader API. Your sign-in stays with Schwab; we receive a read-only token.</li>
+        <li><strong>Fidelity, Vanguard, Robinhood, IBKR, Alpaca, and others</strong> &mdash; via our connectivity partner <a href="https://snaptrade.com" rel="noopener noreferrer">SnapTrade</a>. SnapTrade handles the OAuth flow with your broker; HappyTrader receives a read-only data feed.</li>
+    </ul>
+    <p>If you have a question about how HappyTrader uses your broker data, email us. If you have a question about your brokerage account itself (balances, settlement, transfers, tax forms), please contact your broker directly &mdash; we don't have access to those systems.</p>
+
+    <h2>Report a security issue</h2>
+    <p>If you believe you've found a vulnerability, please email us with the subject line "Security" so we can route it appropriately. We'll acknowledge within one business day and won't pursue legal action against good-faith research.</p>
+    <p>
+        <a href="mailto:support@happytrader.me?subject=Security" class="contact-cta-ghost">
+            support@happytrader.me &mdash; Subject: Security
+        </a>
+    </p>
+
     <h2>Heads up</h2>
-    <p>HappyTrader is an analytics tool. We can't give investment advice, place trades for you, or troubleshoot your brokerage account directly. For Schwab account questions, contact Schwab support.</p>
+    <p>HappyTrader is a behavioral analytics tool &mdash; a "trading mirror." We don't give investment advice, place trades, manage funds, or hold custody of any assets. We are not a broker-dealer, investment adviser, or financial planner.</p>
+
+    <p class="meta">
+        See also: <a href="{{ url_for('privacy') }}">Privacy</a> &middot;
+        <a href="{{ url_for('terms') }}">Terms</a> &middot;
+        <a href="{{ url_for('faq') }}">FAQ</a>
+    </p>
 </div>
 {% endblock %}
