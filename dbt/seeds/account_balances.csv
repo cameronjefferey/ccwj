@@ -1,8 +1,8 @@
 account,user_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
-Alpaca Paper Account,2,cash,79397.95,,,,79.327658
-Alpaca Paper Account,2,account_total,100088.61,,,,
-Alpaca Paper Account,6,cash,79397.95,,,,79.355868
-Alpaca Paper Account,6,account_total,100053.03,,,,
+Alpaca Paper Account,2.0,cash,79397.95,,,,79.327658
+Alpaca Paper Account,2.0,account_total,100088.61,,,,
+Alpaca Paper Account,6.0,cash,79397.95,,,,79.355868
+Alpaca Paper Account,6.0,account_total,100053.03,,,,
 Schwab Account,7.0,cash,0.0,,,,0.0
 Schwab Account,7.0,account_total,36764.08,40989.880000000005,-4225.800000000003,-10.309374,
 Schwab ••••5167,7.0,cash,28.13,,,,0.182573
@@ -21,8 +21,6 @@ Cameron Investment,9.0,cash,0.0,,,,0.0
 Cameron Investment,9.0,account_total,33983.25,40003.23,-6019.979999999996,-15.048735,
 Sara Investment,9.0,cash,0.0,,,,0.0
 Sara Investment,9.0,account_total,681570.82,587499.5999999999,94071.22000000007,16.012133,
-Schwab ••••0044,8.0,cash,0.0,,,,0.0
-Schwab ••••0044,8.0,account_total,1949084.61,1425157.5899998895,523927.0200001104,36.762743,
 Coco,8.0,cash,201.37,,,,0.717983
 Coco,8.0,account_total,28046.63,13578.286672521306,14468.343327478697,106.555,
 Schwab ••••8602,8.0,cash,87.5,,,,0.292241
@@ -33,3 +31,5 @@ Schwab ••••4828,8.0,cash,3657.94,,,,0.264559
 Schwab ••••4828,8.0,account_total,1382654.71,1168473.2199996363,214181.49000036367,18.33003,
 Schwab ••••6134,8.0,cash,2314.04,,,,1.806555
 Schwab ••••6134,8.0,account_total,128091.31,96677.2800000304,31414.0299999696,32.493705,
+Schwab ••••0044,8.0,cash,0.0,,,,0.0
+Schwab ••••0044,8.0,account_total,1921286.61,1425156.0499998902,496130.56000010995,34.812367,
