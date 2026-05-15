@@ -1,6 +1,4 @@
 account,user_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
-Sara Investment,13,cash,0.0,,,,0.0
-Sara Investment,13,account_total,639488.7,587519.4599999998,51969.24000000011,8.845535,
 Schwab ••••0044,8,cash,0.0,,,,0.0
 Schwab ••••0044,8,account_total,1923519.61,1425156.0499998902,498363.56000011,34.969052,
 Schwab ••••9437,13,cash,25838.36,,,,47.937686
@@ -20,4 +18,6 @@ Schwab ••••6134,8,account_total,125238.5,96677.2800000304,28561.21999996
 Cameron Investment,13,cash,0.0,,,,0.0
 Cameron Investment,13,account_total,32630.25,40001.9,-7371.6500000000015,-18.42825,
 Schwab ••••4828,8,cash,3657.94,,,,0.267451
-Schwab ••••4828,8,account_total,1367703.4,1168473.2199996365,199230.18000036338,17.05047,
+Schwab ••••4828,8,account_total,1367703.4,1168473.2199996363,199230.18000036335,17.05047,
+Sara Investment,13,cash,0.0,,,,0.0
+Sara Investment,13,account_total,639751.86,587519.4599999998,52232.40000000014,8.890327,
