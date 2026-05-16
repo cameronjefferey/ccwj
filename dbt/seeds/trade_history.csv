@@ -9199,16 +9199,6 @@ Schwab ••••4828,8.0,03/18/2026,Sell to Open,JPM   260417C00305000,JPMORG
 Schwab ••••4828,8.0,03/18/2026,Buy,CURRENCY_USD,USD currency,0.83,,,-0.83
 Schwab ••••4828,8.0,03/18/2026,Sell to Open,RDDT  260417C00155000,REDDIT INC 04/17/2026 $155 Call,2,6.2,,1240
 Schwab ••••4828,8.0,03/16/2026,Buy,ED,ED,2.3781,114.8583,,-273.14
-Fidelity ••••6342,14.0,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14.0,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
-Fidelity ••••6342,14.0,04/10/2026,Cash Dividend,2328,dividend,3.095,,,733.11
-Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OQFB,fees,2.67,,,-2.67
-Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OQFC,fees,0.504,,,-4.88
-Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OVBQ,fees,0.373,,,-7.76
-Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,2328,fees,0.139,,,-31.82
-Fidelity ••••6342,14.0,03/31/2026,Cash Dividend,OQFB,dividend,64.16,,,64.16
-Fidelity ••••6342,14.0,03/31/2026,Cash Dividend,OQFC,dividend,13.562,,,131.28
-Fidelity ••••6342,14.0,03/20/2026,Cash Dividend,OVBQ,dividend,5.163,,,103.26
 Fidelity ••••6342,14.0,02/27/2026,Cash Dividend,OQFC,dividend,12.167,,,120.21
 Fidelity ••••6342,14.0,02/27/2026,Cash Dividend,OQFB,dividend,58.04,,,58.04
 Fidelity ••••6342,14.0,01/30/2026,Cash Dividend,OQFB,dividend,64.86,,,64.86
@@ -9296,3 +9286,13 @@ Fidelity ••••6342,14.0,06/28/2024,Cash Dividend,OQFC,dividend,11.292,,,1
 Fidelity ••••6342,14.0,06/21/2024,Cash Dividend,OVBQ,dividend,26.057,,,411.45
 Fidelity ••••6342,14.0,05/31/2024,Cash Dividend,OQFC,dividend,11.364,,,107.05
 Fidelity ••••6342,14.0,05/31/2024,Cash Dividend,OQQL,dividend,86.86,,,86.86
+Fidelity ••••6342,14.0,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14.0,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14.0,04/10/2026,Cash Dividend,2328,dividend,3.095,,,733.11
+Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OQFB,fees,2.67,,,-2.67
+Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OQFC,fees,0.504,,,-4.88
+Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,OVBQ,fees,0.373,,,-7.76
+Fidelity ••••6342,14.0,04/02/2026,ADR Mgmt Fee,2328,fees,0.139,,,-31.82
+Fidelity ••••6342,14.0,03/31/2026,Cash Dividend,OQFB,dividend,64.16,,,64.16
+Fidelity ••••6342,14.0,03/31/2026,Cash Dividend,OQFC,dividend,13.562,,,131.28
+Fidelity ••••6342,14.0,03/20/2026,Cash Dividend,OVBQ,dividend,5.163,,,103.26
