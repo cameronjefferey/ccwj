@@ -123,7 +123,9 @@ def test_sync_one_marks_connection_broken_on_auth_error(monkeypatch, _patched_mo
     monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
 
     def _boom(*args, **kwargs):
-        raise _snap._SnapTradeAuthError("401 Unauthorized")
+        raise _snap._SnapTradeAuthError(
+            "get_user_account_positions", RuntimeError("401 Unauthorized"),
+        )
 
     monkeypatch.setattr(_snap, "_run_sync", _boom)
 

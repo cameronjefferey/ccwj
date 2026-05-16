@@ -992,10 +992,29 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days):
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
             "github_skip_reason": result.get("github_skip_reason"),
         })
-    except _SnapTradeAuthError:
+    except _SnapTradeAuthError as auth_exc:
+        # Log the SDK exception we classified as auth-revoked BEFORE
+        # flagging the row, so admin debugging of "why is this brand-new
+        # connection flagged broken" is a one-line grep rather than
+        # silent state. See broker-sync-safety SKILL.md (first-Fidelity-
+        # connection misclassification, May 2026): the `_looks_like_auth_error`
+        # heuristic catches any "401"/"403" substring, which is too broad
+        # for Fidelity's first-sync handshake window where SnapTrade
+        # sometimes returns 4xx for non-revocation reasons.
+        from app import app as _app
+        orig = getattr(auth_exc, "original", auth_exc)
+        endpoint = getattr(auth_exc, "endpoint", "unknown")
+        broker_slug = acc_row.get("broker_slug") or "unknown"
+        first_done = bool(acc_row.get("first_sync_completed"))
+        _app.logger.warning(
+            "SnapTrade sync flagged connection_broken for user_id=%s "
+            "account=%s broker=%s first_done=%s endpoint=%s exc_type=%s msg=%s",
+            user_id, snaptrade_account_id, broker_slug, first_done,
+            endpoint, type(orig).__name__, str(orig)[:500],
+        )
         mark_snaptrade_connection_broken(user_id, snaptrade_account_id)
         record_snaptrade_sync_attempt(
-            user_id, snaptrade_account_id, error="connection_broken",
+            user_id, snaptrade_account_id, error=f"connection_broken:{endpoint}",
         )
         out["error"] = "connection_broken"
     except Exception as exc:
@@ -1110,7 +1129,19 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
 class _SnapTradeAuthError(RuntimeError):
     """Raised when SnapTrade reports the broker connection is broken
     (user revoked access at the broker, MFA expired, etc). Caught by
-    ``_sync_one_connection`` to flag the account for reconnection."""
+    ``_sync_one_connection`` to flag the account for reconnection.
+
+    Carries ``endpoint`` (which SnapTrade call failed) and the original
+    exception so the caller can log a single line that pinpoints which
+    surface SnapTrade rejected. Without this, the silent flagging of
+    ``connection_broken_at`` was a debugging black box — see
+    broker-sync-safety SKILL.md note on first-Fidelity-connection
+    misclassification (May 2026)."""
+
+    def __init__(self, endpoint: str, exc: Exception):
+        self.endpoint = endpoint
+        self.original = exc
+        super().__init__(f"{endpoint}: {exc}")
 
 
 def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
@@ -1274,7 +1305,7 @@ def _fetch_activities(client, snap_user_id, snap_secret, account_id, start_date,
             )
         except Exception as exc:
             if _looks_like_auth_error(exc):
-                raise _SnapTradeAuthError(str(exc))
+                raise _SnapTradeAuthError("get_account_activities", exc)
             raise
         page = _coerce_paginated_data(resp)
         if not page:
@@ -1325,7 +1356,7 @@ def _fetch_positions(client, snap_user_id, snap_secret, account_id):
         )
     except Exception as exc:
         if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError(str(exc))
+            raise _SnapTradeAuthError("get_user_account_positions", exc)
         raise
     return _coerce_list(resp)
 
@@ -1349,7 +1380,7 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
         )
     except Exception as exc:
         if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError(str(exc))
+            raise _SnapTradeAuthError("get_user_account_recent_orders", exc)
         # Don't fail the whole sync on an orders-fetch error — the
         # activities path is the canonical source. Log and return
         # empty so the rest of _run_sync proceeds.
@@ -1387,7 +1418,7 @@ def _fetch_balances(client, snap_user_id, snap_secret, account_id):
         )
     except Exception as exc:
         if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError(str(exc))
+            raise _SnapTradeAuthError("get_user_account_balance", exc)
         raise
     return _coerce_list(resp)
 
@@ -1401,7 +1432,7 @@ def _fetch_account_summary(client, snap_user_id, snap_secret, account_id):
         )
     except Exception as exc:
         if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError(str(exc))
+            raise _SnapTradeAuthError("get_user_account_details", exc)
         raise
     data = _unwrap_body(resp)
     if isinstance(data, dict):
