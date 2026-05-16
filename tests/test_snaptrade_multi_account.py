@@ -218,6 +218,55 @@ def test_looks_like_auth_error_pattern_matches(msg, expected):
     assert _snap._looks_like_auth_error(RuntimeError(msg)) is expected
 
 
+def test_fetch_recent_orders_swallows_403_when_activities_already_succeeded():
+    """Fidelity-via-SnapTrade ships a bare ``(403)`` on the orders
+    endpoint for brand-new connections that legitimately have no recent
+    orders (or whose account class doesn't expose the order stream).
+    The orders endpoint is the real-time fallback to activities — by the
+    time ``_fetch_recent_orders`` is called, ``_fetch_activities`` has
+    already proven the auth is valid. Escalating a 403 here was
+    misclassifying the connection as broken and locking users out of
+    their fresh Fidelity link (production bug, 2026-05-15).
+
+    The non-fatal contract: any exception from this endpoint logs and
+    returns ``[]``; only ``_fetch_activities`` / ``_fetch_positions`` /
+    ``_fetch_balances`` may raise ``_SnapTradeAuthError``."""
+
+    class _ApiException(Exception):
+        def __str__(self):
+            return "(403)"
+
+    class _Boom:
+        class account_information:
+            @staticmethod
+            def get_user_account_recent_orders(**_):
+                raise _ApiException()
+
+    result = _snap._fetch_recent_orders(_Boom, "u", "s", "acc")
+    assert result == []
+
+
+def test_fetch_positions_still_raises_auth_error_on_403():
+    """Counter-test to the orders-endpoint relaxation: positions IS one
+    of the authoritative auth surfaces (alongside activities/balances/
+    details). A 403 there must still escalate so a genuinely-revoked
+    grant gets caught and flagged."""
+
+    class _ApiException(Exception):
+        def __str__(self):
+            return "(403)"
+
+    class _Boom:
+        class account_information:
+            @staticmethod
+            def get_user_account_positions(**_):
+                raise _ApiException()
+
+    with pytest.raises(_snap._SnapTradeAuthError) as exc_info:
+        _snap._fetch_positions(_Boom, "u", "s", "acc")
+    assert exc_info.value.endpoint == "get_user_account_positions"
+
+
 # ---------------------------------------------------------------------------
 # Postgres helpers — pure SQL spies (no DB)
 # ---------------------------------------------------------------------------

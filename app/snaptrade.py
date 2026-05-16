@@ -1379,14 +1379,30 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("get_user_account_recent_orders", exc)
-        # Don't fail the whole sync on an orders-fetch error — the
-        # activities path is the canonical source. Log and return
-        # empty so the rest of _run_sync proceeds.
+        # Orders endpoint is the real-time fallback for the activities
+        # feed (see broker-sync-safety SKILL.md, 2026-05-14 PM entry).
+        # By the time we reach this helper, ``_fetch_activities`` has
+        # ALREADY been called once and either succeeded (proving the
+        # broker auth is intact) or raised _SnapTradeAuthError itself
+        # (in which case _run_sync never gets here). So a 4xx from
+        # ``get_user_account_recent_orders`` alone is endpoint-specific
+        # — not a revoked grant. Don't escalate it.
+        #
+        # Real-world cause (2026-05-15, Fidelity first-sync via SnapTrade):
+        # SnapTrade returned a bare ``(403)`` on this endpoint for a
+        # brand-new Fidelity connection that had just successfully
+        # answered activities/positions/balances. Likely Fidelity
+        # doesn't expose the order-stream API for this account class,
+        # or has no recent orders to surface. Either way, the
+        # ``_looks_like_auth_error`` substring heuristic
+        # over-classified the bare 403 and marked the row
+        # connection_broken, locking the user out of their fresh
+        # connection. Log loudly and continue — the canonical
+        # activities path is the auth signal that matters.
         app.logger.warning(
             "SnapTrade _fetch_recent_orders failed for account=%s: %s — "
-            "falling back to activities-only history.",
+            "falling back to activities-only history (orders endpoint is "
+            "best-effort; auth was already proven by _fetch_activities).",
             account_id, exc,
         )
         return []
