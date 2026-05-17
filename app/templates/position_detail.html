@@ -134,13 +134,28 @@
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
             {% endif %}
-            {% if symbol_subsector and symbol_subsector != 'Unknown' %}
-            <div class="mt-1">
+            {% if (symbol_subsector and symbol_subsector != 'Unknown') or symbol_next_earnings %}
+            <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
+                {% if symbol_subsector and symbol_subsector != 'Unknown' %}
                 <a href="{{ url_for('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
                    class="text-decoration-none"
                    style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
                     {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
                 </a>
+                {% endif %}
+                {# Earnings pill — symbol-level context, hidden when no upcoming
+                   earnings (ETFs, indices, crypto). Tone shifts as the date
+                   approaches: amber within a week, red within 2 days. #}
+                {% if symbol_next_earnings %}
+                <span title="Next earnings: {{ symbol_next_earnings.date }}"
+                      style="display:inline-flex; align-items:center; gap:.4rem; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+                             {% if symbol_next_earnings.days_until is not none and symbol_next_earnings.days_until <= 2 %}background: rgba(248,113,113,.22); color: #fecaca;
+                             {% elif symbol_next_earnings.days_until is not none and symbol_next_earnings.days_until <= 7 %}background: rgba(251,191,36,.22); color: #fde68a;
+                             {% else %}background: rgba(255,255,255,.12); color: #fff;
+                             {% endif %}">
+                    Earnings {{ symbol_next_earnings.display }}{% if symbol_next_earnings.days_until is not none %} <span style="opacity:.7;">({{ symbol_next_earnings.days_until }}d)</span>{% endif %}
+                </span>
+                {% endif %}
             </div>
             {% endif %}
             {% if kpis %}

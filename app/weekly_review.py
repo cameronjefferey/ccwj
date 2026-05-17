@@ -263,6 +263,44 @@ GROUP BY 1, 2, 3
 ORDER BY exposure DESC
 """
 
+# Upcoming earnings for currently-held holdings (next 14 days).
+#
+# Source: stg_earnings_calendar (per-symbol next_earnings_date from
+# yfinance, populated by scripts/refresh_earnings_calendar.py). Joined to
+# distinct underlyings currently held via int_enriched_current — TENANT
+# SCOPE applied inside the holdings CTE via {account_filter}, mirroring
+# the same predicate used by OPEN_POSITIONS_QUERY below. The resulting
+# rows are symbol-grain (no account column); the symbol set is already
+# narrowed to the user's holdings, so no Python-side _filter_df_by_accounts
+# is needed (and would be a no-op anyway).
+#
+# Why open holdings (vs everything ever traded): "earnings this week" is
+# only useful for positions the trader currently has exposure to. A
+# closed-out position from six months ago reporting earnings is noise.
+EARNINGS_UPCOMING_QUERY = """
+WITH holdings AS (
+    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      {account_filter}
+)
+SELECT
+    e.symbol,
+    e.next_earnings_date,
+    e.earnings_window_start,
+    e.earnings_window_end,
+    DATE_DIFF(e.next_earnings_date, CURRENT_DATE(), DAY) AS days_until,
+    m.long_name,
+    m.sector,
+    m.subsector
+FROM `ccwj-dbt.analytics.stg_earnings_calendar` e
+JOIN holdings h USING (symbol)
+LEFT JOIN `ccwj-dbt.analytics.stg_symbol_metadata` m USING (symbol)
+WHERE e.next_earnings_date BETWEEN CURRENT_DATE()
+                              AND DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY)
+ORDER BY e.next_earnings_date, e.symbol
+"""
+
 OPEN_POSITIONS_QUERY = """
 WITH latest_prices AS (
     SELECT symbol, close_price
@@ -1952,6 +1990,7 @@ def weekly_review():
                 "stock_moves": (WEEKLY_STOCK_MOVEMENT_QUERY.format(account_filter=account_filter), week_range_cfg),
                 "calendar": (DAILY_CALENDAR_QUERY.format(account_filter=account_filter), cal_cfg),
                 "trading_days": (TRADING_DAYS_QUERY, week_range_cfg),
+                "earnings": EARNINGS_UPCOMING_QUERY.format(account_filter=account_filter),
             })
         except Exception as e:
             if app.debug:
@@ -2379,6 +2418,46 @@ def weekly_review():
         except Exception as e:
             if app.debug:
                 app.logger.warning("Open positions query failed: %s", e)
+
+        # ── Process: Upcoming earnings (next 14 days for currently-held symbols) ──
+        # Symbol-only data already tenant-scoped via {account_filter} in the
+        # holdings CTE of EARNINGS_UPCOMING_QUERY. Bucket into "this week"
+        # (next 7d) and "next week" (8-14d) so the template can choose which
+        # to show prominently based on mode (Friday/Monday/mid-week).
+        context["upcoming_earnings_this_week"] = []
+        context["upcoming_earnings_next_week"] = []
+        try:
+            earn_df = batch.get("earnings", pd.DataFrame())
+            if not earn_df.empty:
+                for _, row in earn_df.iterrows():
+                    ed = row.get("next_earnings_date")
+                    if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
+                        continue
+                    if hasattr(ed, "date"):
+                        ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
+                    else:
+                        ed_date = ed
+                    days_until = row.get("days_until")
+                    try:
+                        days_until = int(days_until) if days_until is not None else None
+                    except (TypeError, ValueError):
+                        days_until = None
+                    item = {
+                        "symbol": str(row["symbol"]),
+                        "company": str(row.get("long_name") or ""),
+                        "sector": str(row.get("sector") or "") if row.get("sector") not in (None, "Unknown") else "",
+                        "subsector": str(row.get("subsector") or "") if row.get("subsector") not in (None, "Unknown") else "",
+                        "earnings_date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                        "earnings_date_display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                        "days_until": days_until,
+                    }
+                    if days_until is not None and days_until <= 7:
+                        context["upcoming_earnings_this_week"].append(item)
+                    else:
+                        context["upcoming_earnings_next_week"].append(item)
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Upcoming earnings processing failed: %s", e)
 
         # ── Process: Since you last looked (daily-pull diff) ──
         context["since_last_looked"] = None

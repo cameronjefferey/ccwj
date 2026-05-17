@@ -1863,6 +1863,25 @@ POSITION_MATRIX_QUERY = """
     {account_filter}
 """
 
+# Next-earnings date for a single symbol. Symbol-level public market data
+# (yfinance via scripts/refresh_earnings_calendar.py) — no account or
+# user_id column in stg_earnings_calendar, so no tenant filter is needed
+# or possible here. The page itself is already tenant-scoped via the
+# other position queries above; this just decorates the hero with
+# "next earnings in N days" context.
+POSITION_EARNINGS_QUERY = """
+    SELECT
+        next_earnings_date,
+        earnings_window_start,
+        earnings_window_end,
+        DATE_DIFF(next_earnings_date, CURRENT_DATE(), DAY) AS days_until
+    FROM `ccwj-dbt.analytics.stg_earnings_calendar`
+    WHERE UPPER(TRIM(symbol)) = UPPER(TRIM('{symbol}'))
+      AND next_earnings_date >= CURRENT_DATE()
+    ORDER BY next_earnings_date
+    LIMIT 1
+"""
+
 def _equity_raw_trades_for_partial_close_outcome(
     trades: list,
     *,
@@ -2682,6 +2701,9 @@ def position_detail(symbol):
             # tabs match the page's account filter (when ?account= is set the
             # strip narrows; otherwise it spans the viewer's accounts).
             "tabs": SYMBOL_TABS_QUERY.format(account_filter=_pos_acct),
+            # Symbol-level next-earnings date for the hero pill. No account
+            # filter — stg_earnings_calendar is symbol-grain public data.
+            "earnings": POSITION_EARNINGS_QUERY.format(symbol=safe_symbol),
         })
         summary_df = dfs["summary"]
         trades_df = dfs["trades"]
@@ -2691,6 +2713,7 @@ def position_detail(symbol):
         matrix_df = dfs["matrix"]
         legs_df = dfs["legs"]
         tabs_df = dfs["tabs"]
+        earnings_df = dfs["earnings"]
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -2719,6 +2742,7 @@ def position_detail(symbol):
             symbol_sector="",
             symbol_subsector="",
             symbol_company="",
+            symbol_next_earnings=None,
             tabs=[],
             active_symbol=symbol,
             tab_href_base="/position/",
@@ -2768,6 +2792,12 @@ def position_detail(symbol):
     matrix_df = _filter_df_by_accounts(matrix_df, pos_accounts_scope)
     # Tab strip data has the same tenancy boundary as everything else above.
     tabs_df = _filter_df_by_accounts(tabs_df, pos_accounts_scope)
+    # earnings_df is symbol-grain public market data (no account / user_id
+    # columns) so this call is a no-op today — keep it for parity with the
+    # rest of the batch and future-proofing if the table ever gains tenancy
+    # columns. Per .cursor/rules/bigquery-tenant-isolation.mdc: "no exceptions
+    # for 'this query is just for one symbol.'"
+    earnings_df = _filter_df_by_accounts(earnings_df, pos_accounts_scope)
 
     # Joined closed legs are empty: int_option_contracts can fail to match while
     # int_strategy_classification still has closed option P&L — use classification only.
@@ -3655,6 +3685,31 @@ def position_detail(symbol):
     symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
+    # Next-earnings pill for the hero. dict form: {"date": "YYYY-MM-DD",
+    # "display": "Tue Jun 15", "days_until": 28} or None if the symbol
+    # has no upcoming earnings (ETFs, indices, crypto, or a symbol whose
+    # last yfinance fetch returned no calendar). Template hides the pill
+    # entirely when None — no "NaT" / "None" leaks to the UI.
+    symbol_next_earnings = None
+    try:
+        if earnings_df is not None and not earnings_df.empty:
+            erow = earnings_df.iloc[0]
+            ed = erow.get("next_earnings_date")
+            if ed is not None and not (hasattr(ed, "__float__") and pd.isna(ed)):
+                ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
+                days_until_raw = erow.get("days_until")
+                try:
+                    days_until = int(days_until_raw) if days_until_raw is not None else None
+                except (TypeError, ValueError):
+                    days_until = None
+                symbol_next_earnings = {
+                    "date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                    "display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                    "days_until": days_until,
+                }
+    except Exception:
+        symbol_next_earnings = None
+
     # Cross-source reconciliation invariant.
     #
     # Σ strategy_rows.total_pnl is NOT a reliable ledger rollup — attribution
@@ -3786,6 +3841,7 @@ def position_detail(symbol):
         symbol_sector=symbol_sector,
         symbol_subsector=symbol_subsector,
         symbol_company=symbol_company,
+        symbol_next_earnings=symbol_next_earnings,
         invariant_warning=invariant_warning,
         viewer_is_admin=is_admin(current_user.username),
         tabs=tabs,

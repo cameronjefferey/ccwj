@@ -50,3 +50,21 @@ sources:
           - name: market_cap
           - name: long_name
           - name: fetched_at
+      - name: earnings_calendar
+        description: >
+          Next-earnings date per symbol, fetched via yfinance
+          (Ticker.calendar) by scripts/refresh_earnings_calendar.py.
+          Symbol-only — no account column, safe to share across tenants.
+          Crypto and benchmark ETFs (SPY/QQQ) are filtered out at load
+          time; other ETFs / indices / symbols with no fundamentals are
+          persisted with NULL dates as a negative cache.
+          yfinance often returns a single date but occasionally a 1-2
+          element window (estimate ± a day) — we store both
+          earnings_window_start and earnings_window_end and surface the
+          minimum as next_earnings_date.
+        columns:
+          - name: symbol
+          - name: next_earnings_date
+          - name: earnings_window_start
+          - name: earnings_window_end
+          - name: fetched_at
