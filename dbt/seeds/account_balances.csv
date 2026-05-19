@@ -25,8 +25,6 @@ Coinbase Account,9.0,cash,0.0,,,,0.0
 Coinbase Account,9.0,account_total,39600.22750157023,,,,
 Fidelity ••••6342,14.0,cash,0.0,,,,0.0
 Fidelity ••••6342,14.0,account_total,413989.3,,,,
-Cameron Investment,13.0,cash,0.0,,,,0.0
-Cameron Investment,13.0,account_total,32015.25,39795.23,-7779.979999999996,-19.550031,
 Schwab ••••4828,8.0,cash,3658.0,,,,0.267871
 Schwab ••••4828,8.0,account_total,1365582.33,1168034.8899996364,197547.44000036363,16.912803,
 Sara Investment,13.0,cash,0.0,,,,0.0
@@ -46,4 +44,6 @@ Sara IRA,13.0,account_total,177062.04,73393.33999997887,103668.70000002114,141.2
 Schwab ••••7577,8.0,cash,21.1,,,,0.135402
 Schwab ••••7577,8.0,account_total,15583.26,11601.9400000002,3981.3199999998,34.315985,
 Schwab ••••6134,8.0,cash,2314.04,,,,1.855858
-Schwab ••••6134,8.0,account_total,124688.4,96677.2800000304,28011.119999969596,28.97384,
+Schwab ••••6134,8.0,account_total,124688.4,96677.2800000304,28011.1199999696,28.97384,
+Cameron Investment,13.0,cash,0.0,,,,0.0
+Cameron Investment,13.0,account_total,30966.25,39795.229999999996,-8828.979999999996,-22.186026,
