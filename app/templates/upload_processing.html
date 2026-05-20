@@ -41,7 +41,7 @@
         This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
     </p>
     <p class="processing-sub mb-4">
-        When it’s ready, your <strong>Weekly Review</strong> and <strong>Daily P&amp;L</strong>
+        When it’s ready, your <strong>Daily Review</strong> and <strong>Daily P&amp;L</strong>
         pages will show the latest numbers.
     </p>
 
@@ -50,15 +50,15 @@
     {% endif %}
     <div class="mb-3">
         <a href="{{ url_for('weekly_review', from_upload=1) }}" class="btn btn-outline-primary">
-            Go to Weekly Review now
+            Go to Daily Review now
         </a>
     </div>
 
     <p class="processing-sub small mb-0">
         {% if head_sha %}
-        We’ll take you to Weekly Review when the run completes, or you can go anytime.
+        We’ll take you to Daily Review when the run completes, or you can go anytime.
         {% else %}
-        You’ll be redirected to Weekly Review automatically in a few minutes.
+        You’ll be redirected to Daily Review automatically in a few minutes.
         {% endif %}
     </p>
 </div>

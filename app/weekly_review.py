@@ -1,11 +1,26 @@
 """
-Weekly Review — temporal hub with three modes:
+Daily Review — single-mode end-of-day pulse page.
 
-  Friday Review   → "What happened this week?"
-  Monday Check    → "How am I showing up?"
-  Mid-Week Check  → "Am I deviating?"
+The page used to fork into Friday Review / Monday Check / Mid-Week Check.
+That made it three different products glued together: behavior-baseline
+narrative on Friday, exposure tables on Monday, "today" framing in the
+middle. Users actually want the same answer EVERY day at the close:
 
-Reads pre-aggregated data from mart_weekly_summary where possible.
+    1. What happened today.
+    2. What's coming that I need to watch (earnings, expiries, ex-div).
+    3. How are my positions doing in total (G/L stock vs option vs div).
+    4. Same breakdown rolled up by strategy.
+    5. Same breakdown rolled up by sector / subsector.
+
+So we collapsed to one mode. The old mode-pills, behavioral baseline,
+coaching-take, and Mon-Fri "diary" sections were removed from render. The
+helper functions that produced them are kept in this module — tests pin
+them and we don't want to thrash CI — but they aren't called from the
+view. Future cleanup may delete them entirely once the daily shape settles.
+
+Tenancy: every BQ read passes through `_account_sql_and` (SQL-level) and
+every DataFrame is filtered via `_filter_df_by_accounts` BEFORE any
+merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -29,20 +44,40 @@ import pandas as pd
 
 
 def _bq_parallel(client, queries):
-    """Run multiple BigQuery queries in parallel. Returns dict of {name: DataFrame}."""
+    """Run multiple BigQuery queries in parallel. Returns dict of {name: DataFrame}.
+
+    Resilience contract: a failure in ONE query must not blank the entire
+    page. Pre-fix, a SQL typo in the "attribution" query crashed the
+    whole batch — the caller's outer `except` swallowed it, set
+    ``batch = {}``, and EVERY downstream section (snapshots, positions,
+    movers, breakdowns) rendered em-dashes. Per-key isolation means one
+    bad query produces one empty DataFrame, logged loudly, while the
+    other eight sections still render real data. Mirrors the contract
+    on ``app.routes._bq_parallel``.
+    """
     results = {}
 
     def _run(name, spec):
-        if isinstance(spec, tuple):
-            sql, cfg = spec
-            return name, client.query(sql, job_config=cfg).to_dataframe()
-        return name, client.query(spec).to_dataframe()
+        try:
+            if isinstance(spec, tuple):
+                sql, cfg = spec
+                return name, client.query(sql, job_config=cfg).to_dataframe(), None
+            return name, client.query(spec).to_dataframe(), None
+        except Exception as exc:
+            return name, pd.DataFrame(), exc
 
     with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
         futures = [pool.submit(_run, n, s) for n, s in queries.items()]
         for f in futures:
-            name, df = f.result()
+            name, df, exc = f.result()
             results[name] = df
+            if exc is not None:
+                try:
+                    app.logger.error(
+                        "_bq_parallel: query %r failed: %s", name, exc,
+                    )
+                except Exception:
+                    pass
 
     return results
 
@@ -98,6 +133,7 @@ def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, s
 from app.routes import (
     _account_sql_and,  # noqa: E402,F401  -- re-exported for local SQL formatters
     _account_sql_filter as _account_sql_where,  # noqa: E402,F401
+    _filter_df_by_accounts,  # noqa: E402,F401 -- DataFrame-level tenant filter
 )
 
 
@@ -301,6 +337,284 @@ WHERE e.next_earnings_date BETWEEN CURRENT_DATE()
 ORDER BY e.next_earnings_date, e.symbol
 """
 
+# Position-level P&L attribution: one row per (account, user_id, symbol)
+# with equity P&L, option P&L, dividend income, capital deployed, status,
+# and sector context. Mirrors the per-position spreadsheet the user
+# tracks in Excel ("CC Trading Summary": G/L Stock | G/L Option | Dividend
+# | Net | Annualized). Powers the position / strategy / sector breakdown
+# tables on the Daily Review.
+#
+# Capital deployed (the denominator of the annualized return) is the sum
+# of:
+#   • equity buy cash      — abs(amount) on stg_history.action='equity_buy'
+#   • option buy cash      — abs(amount) on stg_history.action='option_buy'
+#   • current equity cost  — broker snapshot cost_basis on Equity rows
+#                            still held (covers transferred-in lots that
+#                            don't have a buy row in stg_history)
+# It's a PROXY for peak-capital-deployed, not a financial-accountant's
+# average-cost-base. Good enough for "what was at risk" annualized math.
+# Falls back to abs(net_pnl) when nothing else is available so the
+# annualized column doesn't go ±infinity on a free-money dividend lot.
+#
+# Tenancy: every CTE that hits a user-data table carries {account_filter}.
+POSITION_ATTRIBUTION_QUERY = """
+WITH classification AS (
+    SELECT account, user_id, symbol, trade_group_type, total_pnl,
+           status, open_date, close_date
+    FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE 1=1 {account_filter}
+),
+per_sym_pnl AS (
+    SELECT
+        account, user_id, symbol,
+        SUM(CASE WHEN trade_group_type='equity_session'  THEN total_pnl ELSE 0 END) AS equity_pnl,
+        SUM(CASE WHEN trade_group_type='option_contract' THEN total_pnl ELSE 0 END) AS option_pnl,
+        COUNTIF(trade_group_type='equity_session'  AND status='Open') AS num_equity_open,
+        COUNTIF(trade_group_type='option_contract' AND status='Open') AS num_option_open,
+        COUNTIF(trade_group_type='option_contract' AND status='Closed') AS num_option_closed,
+        COUNTIF(trade_group_type='equity_session'  AND status='Closed') AS num_equity_closed,
+        MIN(open_date) AS first_open_date,
+        MAX(COALESCE(close_date, CURRENT_DATE())) AS last_activity_date
+    FROM classification
+    GROUP BY 1, 2, 3
+),
+per_sym_div AS (
+    SELECT account, user_id, symbol,
+           total_dividend_income AS dividend_income,
+           dividend_count, last_dividend_date
+    FROM `ccwj-dbt.analytics.int_dividends`
+    WHERE 1=1 {account_filter}
+),
+per_sym_capital AS (
+    -- stg_history exposes ``trade_symbol`` (raw broker fill symbol) and
+    -- ``underlying_symbol`` (canonical per-position label that matches
+    -- int_strategy_classification.symbol). We attribute capital to the
+    -- underlying so option fills roll up with their equity siblings.
+    SELECT
+        account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
+        SUM(CASE WHEN action='equity_buy' THEN ABS(amount) ELSE 0 END) AS equity_capital,
+        SUM(CASE WHEN action='option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
+        SUM(CASE WHEN action='option_sell' THEN ABS(amount) ELSE 0 END) AS option_premium_collected
+    FROM `ccwj-dbt.analytics.stg_history`
+    WHERE underlying_symbol IS NOT NULL
+      {account_filter}
+    GROUP BY 1, 2, 3
+),
+per_sym_holdings AS (
+    SELECT
+        account, user_id, underlying_symbol AS symbol,
+        SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(cost_basis, 0) ELSE 0 END) AS current_equity_cost,
+        SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(market_value, 0) ELSE 0 END) AS current_equity_value,
+        SUM(CASE WHEN instrument_type IN ('Call','Put')
+                 THEN COALESCE(market_value, 0) ELSE 0 END) AS current_option_value,
+        SUM(CASE WHEN instrument_type IN ('Call','Put')
+                 THEN COALESCE(unrealized_pnl, 0) ELSE 0 END) AS current_option_unrealized,
+        SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(unrealized_pnl, 0) ELSE 0 END) AS current_equity_unrealized,
+        SUM(CASE WHEN instrument_type='Equity' THEN ABS(COALESCE(quantity, 0)) ELSE 0 END) AS current_equity_shares,
+        COUNTIF(instrument_type='Equity') AS num_equity_legs,
+        COUNTIF(instrument_type IN ('Call','Put')) AS num_option_legs,
+        MAX(current_price) AS current_price
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      {account_filter}
+    GROUP BY 1, 2, 3
+),
+sym_meta AS (
+    -- stg_symbol_metadata exposes symbol/sector/subsector/long_name/market_cap;
+    -- dividend_yield is not (yet) materialized at this layer — see int_dividends
+    -- for the historical per-symbol dividend stream consumed by per_sym_div.
+    SELECT symbol, sector, subsector, long_name, market_cap
+    FROM `ccwj-dbt.analytics.stg_symbol_metadata`
+)
+SELECT
+    p.account,
+    p.user_id,
+    p.symbol,
+    ROUND(COALESCE(p.equity_pnl, 0), 2) AS equity_pnl,
+    ROUND(COALESCE(p.option_pnl, 0), 2) AS option_pnl,
+    ROUND(COALESCE(d.dividend_income, 0), 2) AS dividend_income,
+    ROUND(COALESCE(p.equity_pnl, 0) + COALESCE(p.option_pnl, 0)
+          + COALESCE(d.dividend_income, 0), 2) AS net_pnl,
+    ROUND(COALESCE(c.equity_capital, 0), 2)            AS equity_capital,
+    ROUND(COALESCE(c.option_capital_paid, 0), 2)       AS option_capital_paid,
+    ROUND(COALESCE(c.option_premium_collected, 0), 2)  AS option_premium_collected,
+    ROUND(COALESCE(h.current_equity_cost, 0), 2)       AS current_equity_cost,
+    ROUND(COALESCE(h.current_equity_value, 0), 2)      AS current_equity_value,
+    ROUND(COALESCE(h.current_option_value, 0), 2)      AS current_option_value,
+    ROUND(COALESCE(h.current_option_unrealized, 0), 2) AS current_option_unrealized,
+    ROUND(COALESCE(h.current_equity_unrealized, 0), 2) AS current_equity_unrealized,
+    COALESCE(h.current_equity_shares, 0)               AS current_equity_shares,
+    COALESCE(h.num_equity_legs, 0)                     AS num_equity_legs,
+    COALESCE(h.num_option_legs, 0)                     AS num_option_legs,
+    COALESCE(p.num_equity_open + p.num_option_open, 0) AS num_open_groups,
+    COALESCE(p.num_equity_closed + p.num_option_closed, 0) AS num_closed_groups,
+    h.current_price,
+    p.first_open_date,
+    p.last_activity_date,
+    DATE_DIFF(p.last_activity_date, p.first_open_date, DAY) AS days_held,
+    CASE
+        WHEN (COALESCE(p.num_equity_open, 0) + COALESCE(p.num_option_open, 0)
+              + COALESCE(h.num_equity_legs, 0) + COALESCE(h.num_option_legs, 0)) > 0
+        THEN 'Open'
+        ELSE 'Closed'
+    END AS status,
+    COALESCE(m.sector, 'Unknown')    AS sector,
+    COALESCE(m.subsector, 'Unknown') AS subsector,
+    m.long_name                      AS company_name,
+    d.last_dividend_date,
+    COALESCE(d.dividend_count, 0)    AS dividend_count
+FROM per_sym_pnl p
+LEFT JOIN per_sym_div d
+    ON p.account = d.account
+    AND (p.user_id IS NOT DISTINCT FROM d.user_id)
+    AND p.symbol = d.symbol
+LEFT JOIN per_sym_capital c
+    ON p.account = c.account
+    AND (p.user_id IS NOT DISTINCT FROM c.user_id)
+    AND p.symbol = c.symbol
+LEFT JOIN per_sym_holdings h
+    ON p.account = h.account
+    AND (p.user_id IS NOT DISTINCT FROM h.user_id)
+    AND p.symbol = h.symbol
+LEFT JOIN sym_meta m
+    ON UPPER(TRIM(p.symbol)) = m.symbol
+"""
+
+# Today's price moves for currently-held symbols. Joins the user's
+# current equity holdings to two-day-window daily prices so we can
+# render "biggest movers right now" with a $ impact per position.
+TODAY_MOVES_QUERY = """
+WITH holdings AS (
+    SELECT
+        underlying_symbol AS symbol,
+        SUM(CASE WHEN instrument_type='Equity' THEN ABS(COALESCE(quantity, 0)) ELSE 0 END) AS shares,
+        SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(market_value, 0) ELSE 0 END) AS market_value
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      {account_filter}
+    GROUP BY 1
+),
+recent_prices AS (
+    SELECT
+        symbol,
+        date,
+        close_price,
+        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+      AND close_price IS NOT NULL AND close_price > 0
+),
+pair AS (
+    SELECT
+        cur.symbol,
+        cur.date AS today_date,
+        cur.close_price AS today_close,
+        prev.date AS prev_date,
+        prev.close_price AS prev_close
+    FROM recent_prices cur
+    JOIN recent_prices prev
+      ON cur.symbol = prev.symbol AND cur.rn = 1 AND prev.rn = 2
+)
+SELECT
+    h.symbol,
+    h.shares,
+    h.market_value AS current_value,
+    p.today_close,
+    p.prev_close,
+    p.today_date,
+    p.prev_date,
+    ROUND(p.today_close - p.prev_close, 4) AS price_change,
+    ROUND(SAFE_DIVIDE(p.today_close - p.prev_close, p.prev_close) * 100, 2) AS price_change_pct,
+    ROUND(h.shares * (p.today_close - p.prev_close), 2) AS dollar_impact
+FROM holdings h
+JOIN pair p USING (symbol)
+WHERE h.shares > 0
+"""
+
+# Projected next ex-dividend dates for holdings, inferred from yfinance
+# historical cadence (stg_daily_prices.dividend > 0). Reads the last 6
+# distinct ex-div dates per symbol, computes median spacing in days, and
+# projects last_ex_div + median_spacing. This is a HEURISTIC — corporate
+# actions can move ex-div dates — but quarterly issuers stay tight to
+# pattern and the column is labeled "projected" in the UI.
+#
+# We need real future ex-div dates (yfinance Calendar) for full
+# accuracy; that's a refresher-script TODO. In the meantime this gets
+# JEPI / JEPQ / SCHD / VYM / DELL etc. surfaced for the day-before-ex
+# dividend reminder.
+UPCOMING_DIVIDENDS_QUERY = """
+WITH holdings AS (
+    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      AND instrument_type = 'Equity'
+      {account_filter}
+),
+ex_divs AS (
+    SELECT
+        UPPER(TRIM(symbol)) AS symbol,
+        date AS ex_div_date,
+        dividend AS amount_per_share,
+        ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(symbol)) ORDER BY date DESC) AS rn
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE dividend IS NOT NULL AND dividend > 0
+),
+recent AS (
+    SELECT
+        symbol,
+        ex_div_date,
+        amount_per_share,
+        LAG(ex_div_date) OVER (PARTITION BY symbol ORDER BY ex_div_date) AS prev_ex_div_date
+    FROM ex_divs
+    WHERE rn <= 6
+),
+spacings AS (
+    SELECT symbol, DATE_DIFF(ex_div_date, prev_ex_div_date, DAY) AS spacing_days
+    FROM recent
+    WHERE prev_ex_div_date IS NOT NULL
+),
+cadence AS (
+    SELECT
+        symbol,
+        APPROX_QUANTILES(spacing_days, 2)[OFFSET(1)] AS median_spacing_days
+    FROM spacings
+    GROUP BY symbol
+),
+last_event AS (
+    SELECT symbol, ex_div_date AS last_ex_div_date,
+           amount_per_share AS last_amount_per_share
+    FROM ex_divs
+    WHERE rn = 1
+),
+projected AS (
+    SELECT
+        le.symbol,
+        le.last_ex_div_date,
+        le.last_amount_per_share,
+        c.median_spacing_days,
+        DATE_ADD(le.last_ex_div_date,
+                 INTERVAL COALESCE(c.median_spacing_days, 91) DAY) AS projected_next_ex_div_date
+    FROM last_event le
+    LEFT JOIN cadence c USING (symbol)
+)
+SELECT
+    h.symbol,
+    p.last_ex_div_date,
+    p.last_amount_per_share,
+    p.median_spacing_days,
+    p.projected_next_ex_div_date,
+    DATE_DIFF(p.projected_next_ex_div_date, CURRENT_DATE(), DAY) AS days_until_projected,
+    m.sector,
+    m.subsector,
+    m.long_name
+FROM holdings h
+JOIN projected p USING (symbol)
+LEFT JOIN `ccwj-dbt.analytics.stg_symbol_metadata` m USING (symbol)
+WHERE p.projected_next_ex_div_date BETWEEN CURRENT_DATE()
+                                      AND DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)
+ORDER BY p.projected_next_ex_div_date
+"""
+
 OPEN_POSITIONS_QUERY = """
 WITH latest_prices AS (
     SELECT symbol, close_price
@@ -361,62 +675,69 @@ WHERE date BETWEEN @start_date AND @end_date
   AND close_price > 0
 """
 
-# Daily P&L calendar: realized closed-trade P&L + dividends, by date.
+# Daily Account Δ calendar: day-over-day change in BROKERAGE ACCOUNT VALUE.
 #
-# We deliberately do NOT read mart_account_snapshots_enriched.delta_1d here
-# even though the column literally measures "daily account value change".
-# Two reasons:
-#   1) The calendar's promise is "Daily P&L", not "Daily portfolio swing" —
-#      account value delta includes deposits / withdrawals / Schwab Journal
-#      transfers between accounts, which is noise in a trading mirror.
-#   2) mart_account_snapshots_enriched is fed by dbt snapshots of broker
-#      balance exports. Most users only have a handful of snapshot days,
-#      so the calendar would render mostly empty. Here we want the calendar
-#      to be "as full as the user's trade history allows" — months of data
-#      out of the box.
+# What this measures: "how much did my account total swing today" — the raw
+# end-of-day broker-reported account value, differenced against the prior
+# trading day. Not trade-event P&L. Not realized closures. The trader's
+# net worth motion as the market sees it.
 #
-# Trade-shaped daily P&L = realized P&L from closed positions on close_date
-#                          + dividend income received on trade_date.
-# Both are user-action-driven and cover every day with activity.
+# Source: `mart_account_snapshots_enriched.delta_1d`.
+#   account_value comes from snapshot_account_balances_daily account_total
+#   rows (Schwab's reported "Account Total" at end-of-day) deduped to the
+#   latest snapshot per (account, user_id, date).
+#   delta_1d = account_value(d) - account_value(prior_snapshot_date)
+#   "prior_snapshot_date" is the most recent earlier date this account has
+#   a snapshot — so the first day a new account reports has NULL delta,
+#   and Monday's delta is against the previous Friday's close.
+#
+# Multi-account scope: we SUM delta_1d across all accounts in the user's
+# filter (mirrors mart_account_equity_daily which is per-account). For a
+# single-account filter this collapses to the trivial pass-through.
+#
+# Caveats — surface but don't filter out (matches product intent):
+#   1) DEPOSITS / WITHDRAWALS land in account_value, so a paycheck transfer
+#      shows as a positive delta — that's literally "my account got bigger
+#      today" from the trader's perspective. Surface, don't subtract.
+#   2) JOURNAL TRANSFERS between two of the trader's own accounts net to
+#      zero at the user level but each leg shows on its own account row.
+#      Multi-account view nets correctly; single-account filter sees one leg.
+#   3) Pre-snapshot history is blank. Account-balance snapshots only
+#      accumulate going forward from when broker sync started capturing
+#      end-of-day. New users or pre-sync history → empty cells.
+#
+# Pre-fix history:
+#   - First implementation: `int_strategy_classification` realized closures
+#     summed on close_date + `int_dividend_events`. Showed cells only on
+#     closure / dividend days → calendar was mostly blank for an options
+#     trader who opened Mon and closed Fri.
+#   - Second iteration: `mart_daily_pnl` book-P&L delta (cumulative_options
+#     + open_options_unrealized). Captured option MTM motion on still-open
+#     contracts but missed equity daily moves entirely (no running
+#     equity-held qty in the mart).
+#   - Current: account-value delta — strictly more general than either. The
+#     broker already integrates equity MTM, option MTM, dividends,
+#     deposits, journal transfers into one number every day. We just
+#     report the day-over-day change of that number.
 DAILY_CALENDAR_QUERY = """
-WITH closed_trade_daily AS (
+WITH daily AS (
     SELECT
-        close_date AS date,
-        SUM(total_pnl) AS realized_pnl
-    FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE status = 'Closed'
-      AND close_date IS NOT NULL
-      AND close_date >= @start_date
-      AND close_date <= @end_date
+        date,
+        -- SUM across accounts so multi-account scopes net correctly.
+        -- Single-account scope is a trivial pass-through.
+        SUM(account_value)             AS account_value,
+        SUM(COALESCE(delta_1d, 0))     AS delta_1d
+    FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
+    WHERE date >= @start_date
+      AND date <= @end_date
       {account_filter}
-    GROUP BY close_date
-),
-div_daily AS (
-    SELECT
-        trade_date AS date,
-        SUM(amount) AS dividends
-    FROM `ccwj-dbt.analytics.int_dividend_events`
-    WHERE trade_date >= @start_date
-      AND trade_date <= @end_date
-      {account_filter}
-    GROUP BY trade_date
-),
-combined AS (
-    SELECT date, realized_pnl, NULL AS dividends FROM closed_trade_daily
-    UNION ALL
-    SELECT date, NULL AS realized_pnl, dividends FROM div_daily
+    GROUP BY date
 )
 SELECT
     date,
-    -- account_value is unused by the calendar grid but retained for any
-    -- caller that imports this query and pivots downstream.
-    NULL AS account_value,
-    ROUND(
-        COALESCE(SUM(realized_pnl), 0) + COALESCE(SUM(dividends), 0),
-        2
-    ) AS daily_change
-FROM combined
-GROUP BY date
+    account_value,
+    ROUND(delta_1d, 2) AS daily_change
+FROM daily
 ORDER BY date
 """
 
@@ -1798,21 +2119,450 @@ def _aggregate_weekly_rows(rows):
     return summary
 
 
+# ──────────────────────────────────────────────────────────────────
+# Per-symbol attribution + rollups
+# ──────────────────────────────────────────────────────────────────
+#
+# Powers the three breakdown tables on the Daily Review:
+#
+#   • Positions ── one row per (symbol). The "CC Trading Summary" the
+#                   user already maintains in Excel — G/L Stock | G/L
+#                   Option | Dividend | Net | Annualized.
+#   • Strategies ── same shape grouped by strategy label.
+#   • Sectors    ── same shape grouped by yfinance sector (Tech /
+#                   Energy / Financials / …) and subsector.
+#
+# All three pull from the same `POSITION_ATTRIBUTION_QUERY` result so
+# the totals reconcile.
+
+# Floor on the annualized-return denominator. Reading $5 of dividend
+# income from a $1 dust-lot must not extrapolate to "20,000%/yr". A
+# $200 floor caps annualized to a reasonable upper bound on tiny
+# positions while leaving real cost basis untouched.
+ANNUALIZED_DENOMINATOR_FLOOR = 200.0
+# And a minimum holding window — if you opened a position yesterday and
+# made $40, 365/1 = 365x scaling is dishonest math. Anchor the
+# annualized window at 30 days minimum.
+ANNUALIZED_MIN_DAYS = 30
+
+
+def _annualized_pct(net_pnl, capital_at_risk, days_held):
+    """Simple holding-period annualized return %.
+
+    annualized = (net / capital) * (365 / max(days_held, 30)) * 100
+
+    Returns None when capital is too small to be meaningful (see
+    ANNUALIZED_DENOMINATOR_FLOOR — protects against $0.50 cost basis
+    producing 10,000%).
+    """
+    try:
+        cap = float(capital_at_risk or 0)
+    except (TypeError, ValueError):
+        return None
+    if cap < ANNUALIZED_DENOMINATOR_FLOOR:
+        return None
+    try:
+        net = float(net_pnl or 0)
+    except (TypeError, ValueError):
+        return None
+    days = max(int(days_held or 0), ANNUALIZED_MIN_DAYS)
+    return round(net / cap * (365.0 / days) * 100.0, 1)
+
+
+def _strategy_for_symbol(symbol, strategy_breakdown_lookup):
+    """Best-effort: when a symbol has more than one strategy attached,
+    pick the one with the largest absolute P&L (matches the headline
+    "primary strategy" we already use on /positions). Returns None when
+    no classification exists for the symbol — caller should fall back to
+    'Buy and Hold' or 'Unclassified'."""
+    rows = strategy_breakdown_lookup.get(symbol)
+    if not rows:
+        return None
+    top = max(rows, key=lambda r: abs(float(r.get("total_pnl") or 0)))
+    return top.get("strategy") or None
+
+
+def _build_position_breakdown(attribution_df, strategy_by_symbol, *, week_start=None):
+    """Per-symbol breakdown rows for the Positions table.
+
+    Input is the raw `POSITION_ATTRIBUTION_QUERY` DataFrame already
+    filtered to the current tenant. Aggregates across accounts so the
+    "All Accounts" view collapses to one row per symbol (single-account
+    view is the same shape, trivially).
+
+    Scope filter (Daily Review semantic): when ``week_start`` is
+    provided, only symbols that are CURRENTLY OPEN or whose most recent
+    activity is on/after ``week_start`` are returned. Without this
+    filter the table runs to dozens of historically-closed symbols
+    (76 rows in May 2026 testing) which buries the few positions the
+    user actually needs to look at end-of-day. The strategy / sector
+    / subsector rollups inherit this filter for free because they
+    aggregate over the returned rows.
+    """
+    if attribution_df is None or attribution_df.empty:
+        return []
+
+    grouped = (
+        attribution_df.groupby("symbol", dropna=False)
+        .agg(
+            equity_pnl=("equity_pnl", "sum"),
+            option_pnl=("option_pnl", "sum"),
+            dividend_income=("dividend_income", "sum"),
+            net_pnl=("net_pnl", "sum"),
+            equity_capital=("equity_capital", "sum"),
+            option_capital_paid=("option_capital_paid", "sum"),
+            option_premium_collected=("option_premium_collected", "sum"),
+            current_equity_cost=("current_equity_cost", "sum"),
+            current_equity_value=("current_equity_value", "sum"),
+            current_option_value=("current_option_value", "sum"),
+            current_equity_shares=("current_equity_shares", "sum"),
+            num_equity_legs=("num_equity_legs", "sum"),
+            num_option_legs=("num_option_legs", "sum"),
+            num_open_groups=("num_open_groups", "sum"),
+            num_closed_groups=("num_closed_groups", "sum"),
+            first_open_date=("first_open_date", "min"),
+            last_activity_date=("last_activity_date", "max"),
+            dividend_count=("dividend_count", "sum"),
+            sector=("sector", "first"),
+            subsector=("subsector", "first"),
+            company_name=("company_name", "first"),
+        )
+        .reset_index()
+    )
+
+    rows = []
+    for _, r in grouped.iterrows():
+        sym = str(r.get("symbol") or "")
+        if not sym:
+            continue
+        equity_cap = float(r.get("equity_capital") or 0)
+        opt_cap_paid = float(r.get("option_capital_paid") or 0)
+        opt_cap_coll = float(r.get("option_premium_collected") or 0)
+        cur_eq_cost = float(r.get("current_equity_cost") or 0)
+        # Capital at risk: trade-history buys cover most cases; for
+        # transferred-in lots (no buy row) we add the current snapshot's
+        # cost basis so the denominator isn't $0.
+        capital_at_risk = max(equity_cap + opt_cap_paid + opt_cap_coll, cur_eq_cost)
+        # Days held: from first trade to last activity (close date or
+        # today for still-open positions).
+        try:
+            first_d = r.get("first_open_date")
+            last_d = r.get("last_activity_date")
+            if hasattr(first_d, "date"):
+                first_d = first_d.date()
+            if hasattr(last_d, "date"):
+                last_d = last_d.date()
+            days_held = (last_d - first_d).days if first_d and last_d else 0
+        except Exception:
+            days_held = 0
+
+        net_pnl = float(r.get("net_pnl") or 0)
+        pct_return = None
+        if capital_at_risk >= ANNUALIZED_DENOMINATOR_FLOOR:
+            pct_return = round(net_pnl / capital_at_risk * 100.0, 1)
+        annualized = _annualized_pct(net_pnl, capital_at_risk, days_held)
+
+        is_open = (
+            int(r.get("num_open_groups") or 0) > 0
+            or int(r.get("num_equity_legs") or 0) > 0
+            or int(r.get("num_option_legs") or 0) > 0
+        )
+        rows.append({
+            "symbol": sym,
+            "company_name": str(r.get("company_name") or "") or None,
+            "equity_pnl": round(float(r.get("equity_pnl") or 0), 2),
+            "option_pnl": round(float(r.get("option_pnl") or 0), 2),
+            "dividend_income": round(float(r.get("dividend_income") or 0), 2),
+            "net_pnl": round(net_pnl, 2),
+            "capital_at_risk": round(capital_at_risk, 2),
+            "current_equity_cost": round(cur_eq_cost, 2),
+            "current_equity_value": round(float(r.get("current_equity_value") or 0), 2),
+            "current_option_value": round(float(r.get("current_option_value") or 0), 2),
+            "current_equity_shares": float(r.get("current_equity_shares") or 0),
+            "num_equity_legs": int(r.get("num_equity_legs") or 0),
+            "num_option_legs": int(r.get("num_option_legs") or 0),
+            "num_open_groups": int(r.get("num_open_groups") or 0),
+            "num_closed_groups": int(r.get("num_closed_groups") or 0),
+            "dividend_count": int(r.get("dividend_count") or 0),
+            "first_open_date": (first_d.isoformat() if first_d else None),
+            "last_activity_date": (last_d.isoformat() if last_d else None),
+            "days_held": days_held,
+            "pct_return": pct_return,
+            "annualized_pct": annualized,
+            "status": "Open" if is_open else "Closed",
+            "strategy": strategy_by_symbol.get(sym),
+            "sector": str(r.get("sector") or "Unknown") or "Unknown",
+            "subsector": str(r.get("subsector") or "Unknown") or "Unknown",
+        })
+
+    # Daily Review scope: open positions + positions closed this week.
+    # ``last_activity_date`` is the actual close_date for Closed symbols
+    # and today for Open ones (see POSITION_ATTRIBUTION_QUERY) so this
+    # filter is symmetric across both branches.
+    if week_start is not None:
+        def _is_in_scope(row):
+            if row["status"] == "Open":
+                return True
+            last = row.get("last_activity_date")
+            if not last:
+                return False
+            try:
+                last_d = date.fromisoformat(last) if isinstance(last, str) else last
+            except (TypeError, ValueError):
+                return False
+            return last_d >= week_start
+        rows = [r for r in rows if _is_in_scope(r)]
+
+    rows.sort(key=lambda x: x["net_pnl"], reverse=True)
+    return rows
+
+
+def _aggregate_breakdown_by(rows, key, label_name="bucket"):
+    """Group per-symbol breakdown rows by a categorical key (strategy /
+    sector / subsector). Returns rows in the same shape so the template
+    renders all three tables with one macro.
+
+    Annualized for the bucket uses summed capital_at_risk and the MAX
+    days_held in the bucket (longest-running position anchors the
+    window — picking max instead of mean prevents brand-new positions
+    in the bucket from dragging the bucket's annualized math to
+    "everything's a moonshot").
+    """
+    by = {}
+    for r in rows:
+        k = r.get(key) or "Unclassified"
+        slot = by.setdefault(k, {
+            label_name: k,
+            "equity_pnl": 0.0,
+            "option_pnl": 0.0,
+            "dividend_income": 0.0,
+            "net_pnl": 0.0,
+            "capital_at_risk": 0.0,
+            "current_equity_value": 0.0,
+            "current_option_value": 0.0,
+            "max_days_held": 0,
+            "symbols": [],
+            "num_open": 0,
+            "num_closed": 0,
+            "num_winners": 0,
+            "num_losers": 0,
+        })
+        slot["equity_pnl"] += float(r.get("equity_pnl") or 0)
+        slot["option_pnl"] += float(r.get("option_pnl") or 0)
+        slot["dividend_income"] += float(r.get("dividend_income") or 0)
+        slot["net_pnl"] += float(r.get("net_pnl") or 0)
+        slot["capital_at_risk"] += float(r.get("capital_at_risk") or 0)
+        slot["current_equity_value"] += float(r.get("current_equity_value") or 0)
+        slot["current_option_value"] += float(r.get("current_option_value") or 0)
+        if int(r.get("days_held") or 0) > slot["max_days_held"]:
+            slot["max_days_held"] = int(r.get("days_held") or 0)
+        slot["symbols"].append(r.get("symbol"))
+        if r.get("status") == "Open":
+            slot["num_open"] += 1
+        else:
+            slot["num_closed"] += 1
+        net = float(r.get("net_pnl") or 0)
+        if net > 0:
+            slot["num_winners"] += 1
+        elif net < 0:
+            slot["num_losers"] += 1
+
+    out = []
+    for k, s in by.items():
+        cap = s["capital_at_risk"]
+        net = s["net_pnl"]
+        pct = round(net / cap * 100.0, 1) if cap >= ANNUALIZED_DENOMINATOR_FLOOR else None
+        ann = _annualized_pct(net, cap, s["max_days_held"])
+        s_total = {
+            label_name: k,
+            "equity_pnl": round(s["equity_pnl"], 2),
+            "option_pnl": round(s["option_pnl"], 2),
+            "dividend_income": round(s["dividend_income"], 2),
+            "net_pnl": round(net, 2),
+            "capital_at_risk": round(cap, 2),
+            "current_equity_value": round(s["current_equity_value"], 2),
+            "current_option_value": round(s["current_option_value"], 2),
+            "current_value": round(s["current_equity_value"] + s["current_option_value"], 2),
+            "max_days_held": s["max_days_held"],
+            "pct_return": pct,
+            "annualized_pct": ann,
+            "num_symbols": len(s["symbols"]),
+            "symbols": s["symbols"],
+            "num_open": s["num_open"],
+            "num_closed": s["num_closed"],
+            "num_winners": s["num_winners"],
+            "num_losers": s["num_losers"],
+        }
+        out.append(s_total)
+    out.sort(key=lambda x: x["net_pnl"], reverse=True)
+    return out
+
+
+def _build_breakdown_totals(rows):
+    """Footer-row totals for any of the breakdown tables."""
+    if not rows:
+        return None
+    equity = sum(float(r.get("equity_pnl") or 0) for r in rows)
+    option = sum(float(r.get("option_pnl") or 0) for r in rows)
+    div = sum(float(r.get("dividend_income") or 0) for r in rows)
+    net = sum(float(r.get("net_pnl") or 0) for r in rows)
+    cap = sum(float(r.get("capital_at_risk") or 0) for r in rows)
+    eq_profitable = sum(1 for r in rows if float(r.get("equity_pnl") or 0) > 0)
+    eq_losing = sum(1 for r in rows if float(r.get("equity_pnl") or 0) < 0)
+    opt_profitable = sum(1 for r in rows if float(r.get("option_pnl") or 0) > 0)
+    opt_losing = sum(1 for r in rows if float(r.get("option_pnl") or 0) < 0)
+    net_profitable = sum(1 for r in rows if float(r.get("net_pnl") or 0) > 0)
+    net_losing = sum(1 for r in rows if float(r.get("net_pnl") or 0) < 0)
+    # For "Profitability scorecard" footer (matches the user's
+    # spreadsheet ratio at the bottom): only count symbols that had
+    # exposure in that asset class.
+    eq_with_exposure = sum(1 for r in rows if float(r.get("equity_pnl") or 0) != 0)
+    opt_with_exposure = sum(1 for r in rows if float(r.get("option_pnl") or 0) != 0)
+    return {
+        "equity_pnl": round(equity, 2),
+        "option_pnl": round(option, 2),
+        "dividend_income": round(div, 2),
+        "net_pnl": round(net, 2),
+        "capital_at_risk": round(cap, 2),
+        "pct_return": round(net / cap * 100.0, 1) if cap >= ANNUALIZED_DENOMINATOR_FLOOR else None,
+        "num_symbols": len(rows),
+        "equity_profitable": eq_profitable,
+        "equity_losing": eq_losing,
+        "equity_with_exposure": eq_with_exposure,
+        "option_profitable": opt_profitable,
+        "option_losing": opt_losing,
+        "option_with_exposure": opt_with_exposure,
+        "net_profitable": net_profitable,
+        "net_losing": net_losing,
+        "equity_win_pct": round(eq_profitable / eq_with_exposure * 100.0, 1) if eq_with_exposure else None,
+        "option_win_pct": round(opt_profitable / opt_with_exposure * 100.0, 1) if opt_with_exposure else None,
+        "net_win_pct": round(net_profitable / len(rows) * 100.0, 1) if rows else None,
+    }
+
+
+def _build_today_movers(today_moves_df, account_total_value=None):
+    """Today's biggest stock moves on currently-held symbols.
+
+    Returns at most 8 winners and 8 losers, sorted by absolute $ impact.
+    """
+    if today_moves_df is None or today_moves_df.empty:
+        return {"winners": [], "losers": [], "total_impact": 0.0, "as_of": None}
+    df = today_moves_df.copy()
+    for col in ["shares", "today_close", "prev_close", "price_change",
+                "price_change_pct", "dollar_impact", "current_value"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    total_impact = float(df["dollar_impact"].sum()) if "dollar_impact" in df.columns else 0.0
+    items = []
+    as_of = None
+    for _, r in df.iterrows():
+        td = r.get("today_date")
+        if as_of is None and td is not None:
+            as_of = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
+        items.append({
+            "symbol": str(r.get("symbol") or ""),
+            "shares": float(r.get("shares") or 0),
+            "current_value": round(float(r.get("current_value") or 0), 2),
+            "price_change": round(float(r.get("price_change") or 0), 2),
+            "price_change_pct": round(float(r.get("price_change_pct") or 0), 2),
+            "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
+            "today_close": round(float(r.get("today_close") or 0), 2),
+        })
+
+    winners = sorted([i for i in items if i["dollar_impact"] > 0],
+                     key=lambda x: x["dollar_impact"], reverse=True)[:8]
+    losers = sorted([i for i in items if i["dollar_impact"] < 0],
+                    key=lambda x: x["dollar_impact"])[:8]
+    return {
+        "winners": winners,
+        "losers": losers,
+        "total_impact": round(total_impact, 2),
+        "as_of": as_of,
+    }
+
+
+def _build_upcoming_dividends(div_df):
+    """Projected next ex-div dates for held dividend-paying symbols."""
+    if div_df is None or div_df.empty:
+        return []
+    out = []
+    for _, r in div_df.iterrows():
+        proj = r.get("projected_next_ex_div_date")
+        last = r.get("last_ex_div_date")
+        try:
+            d_until = int(r.get("days_until_projected")) if r.get("days_until_projected") is not None else None
+        except (TypeError, ValueError):
+            d_until = None
+        proj_s = (
+            proj.isoformat() if hasattr(proj, "isoformat") and not isinstance(proj, str)
+            else str(proj)[:10] if proj is not None else None
+        )
+        last_s = (
+            last.isoformat() if hasattr(last, "isoformat") and not isinstance(last, str)
+            else str(last)[:10] if last is not None else None
+        )
+        out.append({
+            "symbol": str(r.get("symbol") or ""),
+            "company": str(r.get("long_name") or "") or None,
+            "sector": str(r.get("sector") or "") if r.get("sector") not in (None, "Unknown") else "",
+            "subsector": str(r.get("subsector") or "") if r.get("subsector") not in (None, "Unknown") else "",
+            "projected_date": proj_s,
+            "last_ex_div_date": last_s,
+            "last_amount_per_share": float(r.get("last_amount_per_share") or 0),
+            "days_until": d_until,
+            "median_spacing_days": int(r.get("median_spacing_days") or 0) or None,
+        })
+    out.sort(key=lambda x: x.get("days_until") if x.get("days_until") is not None else 999)
+    return out
+
+
+def _today_headline(today_pulse, today_movers, equity_snapshot):
+    """One-liner that anchors the page: '"Today: -$2,134 (-0.11%)"`.
+
+    Falls back gracefully when the broker snapshot isn't there yet
+    (cold-start, mid-day, weekend)."""
+    if not today_pulse:
+        return None
+    delta = float(today_pulse.get("delta") or 0)
+    sign = "+" if delta >= 0 else "-"
+    pct = None
+    if equity_snapshot and equity_snapshot.get("account_value"):
+        base = float(equity_snapshot["account_value"]) - delta
+        if base > 0:
+            pct = round(delta / base * 100, 2)
+    pct_str = f" ({'+' if pct is not None and pct >= 0 else ''}{pct:.2f}%)" if pct is not None else ""
+    return f"Today: {sign}${abs(delta):,.0f}{pct_str}"
+
+
+# Decorator order is intentional: ``/daily-review`` is the inner (applied
+# first) so Flask registers it first in the url_map, and ``url_for(
+# 'weekly_review')`` returns ``/daily-review``. ``/weekly-review`` stays
+# attached as a legacy alias so external bookmarks keep working.
 @app.route("/weekly-review")
+@app.route("/daily-review")
 @login_required
 def weekly_review():
-    """Temporal hub: Friday Review / Monday Risk Check / Mid-Week Check-In."""
+    """Daily Review — end-of-day pulse: today, watch list, position /
+    strategy / sector breakdowns. Single mode (the old friday / monday /
+    midweek toggle was removed in favor of a consistent daily shape).
+
+    Endpoint name kept as ``weekly_review`` so the 30+ ``url_for()``
+    callsites across templates, auth, profile, upload, admin etc.
+    continue to work without a coordinated cross-cut rename. The URL
+    is exposed under both ``/daily-review`` (canonical) and
+    ``/weekly-review`` (legacy alias for bookmarks).
+    """
     user_accounts = _user_account_list()
 
-    # Optional: focus on a single account (multi-account support)
+    # Account focus (multi-account support). Regular users can only
+    # restrict to accounts they own; admins can ad-hoc any label.
     selected_account = request.args.get("account", "")
     effective_accounts = user_accounts
     if selected_account:
         if user_accounts is None:
-            # Admin: allow ad-hoc focus on a single account
             effective_accounts = [selected_account]
         else:
-            # Regular user: only allow accounts they actually own
             effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
 
     account_filter = _account_sql_and(effective_accounts)
@@ -1821,201 +2571,123 @@ def weekly_review():
     user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
     today = _date_in_user_tz(user_tz)
     this_week = _iso_week_start(today)
-
-    mode = request.args.get("mode") or _auto_mode(today)
-    if mode not in ("friday", "monday", "midweek"):
-        mode = _auto_mode(today)
+    week_end = this_week + timedelta(days=6)
 
     from_upload = request.args.get("from_upload") == "1"
     from_sync = request.args.get("from_sync") == "1"
 
-    # Brand-new accounts have user_accounts == [] (an empty list, not None).
-    # Bounce them to /get-started BEFORE touching any per-user state
-    # (visit anchor, queries) so a user who never uploaded data doesn't
-    # get a "still being calculated" banner or a bumped last-visit
-    # timestamp. _redirect_if_no_accounts also short-circuits on
-    # ?from_upload=1 / ?from_sync=1 so the post-upload processing screen
-    # still works.
+    # Brand-new accounts with zero linked broker accounts → bounce to
+    # /get-started so they don't sit on a "still calculating" banner
+    # forever. _redirect_if_no_accounts also short-circuits on the
+    # post-upload / post-sync flows so the processing screen still works.
     from app.routes import _redirect_if_no_accounts
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce
 
-    # ── Visit anchors for "Since you last looked" ──
-    # bump_review_visit returns the row state BEFORE this request and
-    # debounces rapid reloads, so prior_visit['last_visit_at'] is literally
-    # "the time of your previous distinct visit" — what we want to diff
-    # against. None means this is the user's first visit ever.
+    # ── Visit anchor for "Since you last looked" ──
     prior_visit = bump_review_visit(current_user.id, datetime.now(ZoneInfo("UTC")))
     since_anchor_dt = prior_visit.get("last_visit_at") if prior_visit else None
 
-    # Title leans on mode: "Today" pulls people in daily; "Friday Review"
-    # is the recap; "Monday Check" frames the start of week.
-    _titles = {
-        "friday":  "Friday Review",
-        "monday":  "Monday Check",
-        "midweek": "Today",
-    }
-
     context = {
-        "title": _titles.get(mode, "Weekly Review"),
-        "mode": mode,
+        "title": "Daily Review",
+        # `mode` stays in the context so legacy templates that reference
+        # it during the rebuild don't KeyError. Always "daily" now.
+        "mode": "daily",
         "week_start": this_week,
-        "week_end": this_week + timedelta(days=6),
+        "week_end": week_end,
         "user_timezone": user_tz,
         "today": today,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
         "error": None,
-        "review": None,
-        "prev_review": None,
-        "exposure": None,
-        "mirror_score": None,
-        "mirror_history": None,
-        "opens_this_week": None,
-        "ai_insight": None,
-        "is_backfilled": False,
-        "week_mart_empty": False,
-        "last_activity_week": None,
-        "market_session": None,
-        "market": None,
         "equity_snapshot": None,
-        "trades_this_week": [],
+        "today_snapshots_by_account": [],
+        "today_strip": [],
+        "expiring_options": [],
+        "upcoming_earnings_this_week": [],
+        "upcoming_earnings_next_week": [],
+        "upcoming_ex_dividends": [],
+        "today_movers": None,
+        "today_pulse": None,
+        "today_snapshots_total": None,
+        "today_headline": None,
         "from_upload": from_upload,
-        "strategy_breakdown_week": [],
+        "market": None,
+        "market_session": None,
+        "market_neutral_line": None,
+        "since_last_looked": None,
+        "calendar_grid": [],
+        "calendar_weeks_back": DAILY_CALENDAR_WEEKS,
+        "calendar_default_weeks": DAILY_CALENDAR_DEFAULT_WEEKS,
+        "calendar_extra_weeks": max(0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS),
+        "daily_calendar_no_query_rows": True,
+        "position_breakdown": [],
+        "position_breakdown_totals": None,
+        "strategy_breakdown": [],
+        "strategy_breakdown_totals": None,
+        "sector_breakdown": [],
+        "subsector_breakdown": [],
         "community_profile_visibility": "private",
         "community_publish_ready": False,
-        "since_last_looked": None,
     }
 
-    # Daily P&L lookup, populated from BigQuery if available. Initialized here
-    # so the diary builder at the bottom of the function can read it even when
-    # the outer BigQuery try-block fails.
     daily_changes_map = {}
 
     try:
         client = get_bigquery_client()
 
-        prev_week = this_week - timedelta(days=7)
-
-        # Fetch this week + prev week from mart_weekly_summary in a single query
-        combined_cfg = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ArrayQueryParameter("week_starts", "DATE", [this_week, prev_week]),
-            ]
-        )
-        combined_df = client.query(
-            WEEKLY_SUMMARY_COMBINED_QUERY.format(account_filter=account_filter),
-            job_config=combined_cfg,
-        ).to_dataframe()
-
-        if not combined_df.empty and "week_start" in combined_df.columns:
-            combined_df["week_start"] = pd.to_datetime(combined_df["week_start"]).dt.date
-            this_rows = combined_df[combined_df["week_start"] == this_week]
-        else:
-            this_rows = pd.DataFrame()
-
-        # No row in mart_weekly_summary for *this* calendar week (pipe lag / new week).
-        # A row with zero trades is still "we have a week" — do not conflate with empty.
-        has_mart_row_for_week = not this_rows.empty
-        # Do not replace the visible week with "latest week in mart" — that caused
-        # snapshot / return / labels to point at different weeks. Show the calendar
-        # week in the user’s TZ; show a banner only when there is no week row at all.
-        context["week_mart_empty"] = not has_mart_row_for_week
-        context["last_activity_week"] = None
-        if not has_mart_row_for_week:
-            try:
-                latest_df = client.query(
-                    LATEST_ACTIVE_WEEK_QUERY.format(account_filter=account_filter)
-                ).to_dataframe()
-                if not latest_df.empty and pd.notna(latest_df.iloc[0]["latest_week"]):
-                    lw = latest_df.iloc[0]["latest_week"]
-                    if hasattr(lw, "date"):
-                        lw = lw.date()
-                    elif not isinstance(lw, date):
-                        lw = date.fromisoformat(str(lw)[:10])
-                    context["last_activity_week"] = lw
-            except Exception:
-                pass
-        context["week_start"] = this_week
-        context["week_end"] = this_week + timedelta(days=6)
-
-        # Split combined result into this_week and prev_week
-        if not combined_df.empty and "week_start" in combined_df.columns:
-            for target_week, key in [(this_week, "review"), (prev_week, "prev_review")]:
-                subset = combined_df[combined_df["week_start"] == target_week]
-                if not subset.empty:
-                    context[key] = _aggregate_weekly_rows(subset.to_dict(orient="records"))
-
-        week_end = this_week + timedelta(days=6)
-
-        # ── Parallel batch: all independent queries after week is determined ──
-        # Calendar shows a rolling N-week window ending at the Monday of the
-        # current week + Friday so it's always populated (the old "current
-        # calendar month" version was empty on the 1st of every month, and
-        # the previous 4-week cap was throwing away months of available data
-        # for active users — see DAILY_CALENDAR_WEEKS).
         cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
-        cal_end = this_week + timedelta(days=4)     # this Friday
+        cal_end = this_week + timedelta(days=4)
 
-        week_cfg = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("week_start", "DATE", this_week)]
-        )
-        week_range_cfg = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
-                bigquery.ScalarQueryParameter("end_date", "DATE", week_end),
-            ]
-        )
-        cal_cfg = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("start_date", "DATE", cal_start),
-                bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
-            ]
-        )
+        cal_cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("start_date", "DATE", cal_start),
+            bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
+        ])
+
+        # Strategy-by-symbol lookup so the per-symbol breakdown can
+        # carry a strategy label (largest abs-PnL slot wins per symbol).
+        strategy_by_symbol_query = """
+        SELECT account, user_id, symbol, strategy, SUM(total_pnl) AS total_pnl
+        FROM `ccwj-dbt.analytics.int_strategy_classification`
+        WHERE 1=1 {account_filter}
+        GROUP BY 1, 2, 3, 4
+        """.format(account_filter=account_filter)
 
         try:
             batch = _bq_parallel(client, {
                 "account_value": ACCOUNT_VALUE_QUERY.format(account_filter=account_filter),
-                "returns": (WEEKLY_RETURNS_QUERY.format(account_filter=account_filter), week_cfg),
                 "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(account_filter=account_filter),
-                "behavior": (WEEKLY_BEHAVIOR_QUERY.format(account_filter=account_filter),
-                             bigquery.QueryJobConfig(query_parameters=[
-                                 bigquery.ScalarQueryParameter("week_start", "DATE", this_week)])),
-                "strategy": (WEEKLY_STRATEGY_BREAKDOWN_QUERY.format(account_filter=account_filter), week_range_cfg),
-                "trades": (WEEKLY_TRADES_MART_QUERY.format(account_filter=account_filter),
-                           bigquery.QueryJobConfig(query_parameters=[
-                               bigquery.ScalarQueryParameter("week_start", "DATE", this_week)])),
                 "positions": OPEN_POSITIONS_QUERY.format(account_filter=account_filter),
-                "stock_moves": (WEEKLY_STOCK_MOVEMENT_QUERY.format(account_filter=account_filter), week_range_cfg),
                 "calendar": (DAILY_CALENDAR_QUERY.format(account_filter=account_filter), cal_cfg),
-                "trading_days": (TRADING_DAYS_QUERY, week_range_cfg),
                 "earnings": EARNINGS_UPCOMING_QUERY.format(account_filter=account_filter),
+                "attribution": POSITION_ATTRIBUTION_QUERY.format(account_filter=account_filter),
+                "strategy_by_sym": strategy_by_symbol_query,
+                "today_moves": TODAY_MOVES_QUERY.format(account_filter=account_filter),
+                "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(account_filter=account_filter),
             })
         except Exception as e:
             if app.debug:
-                app.logger.warning("Weekly review parallel batch failed: %s", e)
+                app.logger.warning("Daily review parallel batch failed: %s", e)
             batch = {}
 
-        # Market performance (SPY, QQQ) for comparison
-        context["market"] = _get_market_performance(this_week, today)
+        # Defense in depth: every BQ DataFrame goes through the tenant
+        # filter before we touch it. The SQL also carries the predicate,
+        # but the rule (and 2026 incident history) says "both layers".
+        for k in ("account_value", "snapshots", "positions", "calendar",
+                 "attribution", "strategy_by_sym", "today_moves"):
+            df = batch.get(k)
+            if df is not None and not df.empty and "account" in df.columns:
+                batch[k] = _filter_df_by_accounts(df, effective_accounts)
 
-        # U.S. session (Eastern) — not inferred from "latest price date" in BQ
+        # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
+        # NOT a "you outperformed" badge (manifesto: framing, not scoring).
+        context["market"] = _get_market_performance(this_week, today)
         context["market_session"] = _us_market_session()
         context["market_open_today"] = context["market_session"]["state"] == "open"
+        context["market_neutral_line"] = _neutral_market_line(context.get("market"))
 
-        # ── Process: Trading days (count in this calendar week) ──
-        try:
-            td_df = batch.get("trading_days", pd.DataFrame())
-            if not td_df.empty:
-                row = td_df.iloc[0]
-                context["trading_days"] = int(row.get("trading_days", 0) or 0)
-            else:
-                context["trading_days"] = 0
-        except Exception:
-            context["trading_days"] = 0
-
-        # ── Process: Account value ──
+        # ── Account value (cash / invested split) ─────────────────────
         try:
             av_df = batch.get("account_value", pd.DataFrame())
             if not av_df.empty:
@@ -2023,9 +2695,7 @@ def weekly_review():
                 account_value = float(row.get("account_value", 0) or 0)
                 cash_balance = float(row.get("cash_balance", 0) or 0)
                 invested_value = account_value - cash_balance
-                pct_invested = None
-                if account_value > 0:
-                    pct_invested = round(invested_value / account_value * 100, 1)
+                pct_invested = round(invested_value / account_value * 100, 1) if account_value > 0 else None
                 context["equity_snapshot"] = {
                     "account_value": account_value,
                     "cash_balance": cash_balance,
@@ -2034,23 +2704,12 @@ def weekly_review():
                 }
         except Exception as e:
             if app.debug:
-                app.logger.warning("Equity snapshot processing failed: %s", e)
+                app.logger.warning("Equity snapshot failed: %s", e)
 
-        # ── Process: Weekly returns ──
-        start_value_by_account = {}
-        ret_df = batch.get("returns", pd.DataFrame())
-        try:
-            if not ret_df.empty and "account" in ret_df.columns and "start_value" in ret_df.columns:
-                for _, r in ret_df.iterrows():
-                    start_value_by_account[str(r["account"])] = float(r.get("start_value") or 0)
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Weekly returns processing failed: %s", e)
-
-        # ── Process: Today's snapshot ──
-        context["today_snapshots_by_account"] = []
+        # ── Account snapshots per account (day / week / month deltas) ─
         try:
             snap_df = batch.get("snapshots", pd.DataFrame())
+            seen_accounts = set()
             if not snap_df.empty and "date" in snap_df.columns and "account" in snap_df.columns:
                 if hasattr(snap_df["date"].iloc[0], "date"):
                     snap_df["date"] = snap_df["date"].dt.date
@@ -2065,9 +2724,10 @@ def weekly_review():
                     except (TypeError, ValueError):
                         return None
 
-                # Latest row per account (query is ORDER BY date DESC, so first row per account is latest)
-                latest_per_account = snap_df.sort_values("date", ascending=False).groupby("account").first().reset_index()
-                seen_accounts = set()
+                latest_per_account = (
+                    snap_df.sort_values("date", ascending=False)
+                    .groupby("account").first().reset_index()
+                )
                 for _, row in latest_per_account.iterrows():
                     acct = row["account"]
                     seen_accounts.add(acct)
@@ -2096,28 +2756,8 @@ def weekly_review():
                             "has_data": row.get("base_1m_value") is not None and pd.notna(row.get("base_1m_value")),
                         },
                     }
-                    # Compared to start of week (same week as mart_account_weekly_returns; $ and %)
-                    vs_week_start = None
-                    start_val = start_value_by_account.get(str(acct))
-                    if start_val is not None and start_val > 0 and today_value is not None:
-                        delta_week = round(today_value - start_val, 2)
-                        delta_week_pct = round((today_value - start_val) / start_val * 100, 2)
-                        vs_week_start = {
-                            "delta": delta_week,
-                            "delta_pct": delta_week_pct,
-                            "has_data": True,
-                            "base_date": this_week,
-                        }
-                    elif start_val is not None and start_val == 0 and today_value is not None:
-                        vs_week_start = {
-                            "delta": round(today_value, 2),
-                            "delta_pct": None,
-                            "has_data": True,
-                            "base_date": this_week,
-                        }
-                    if vs_week_start is None:
-                        vs_week_start = {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week}
-
+                    # vs week start: derived from week comparison's base_date matching this Monday
+                    vs_week_start = {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week}
                     context["today_snapshots_by_account"].append({
                         "account": acct,
                         "today_value": today_value,
@@ -2126,219 +2766,30 @@ def weekly_review():
                         "vs_week_start": vs_week_start,
                     })
 
-                # One row per account: add placeholder rows for any account with no snapshot yet
-                if effective_accounts:
-                    for acct in effective_accounts:
-                        if acct not in seen_accounts:
-                            context["today_snapshots_by_account"].append({
-                                "account": acct,
-                                "today_value": None,
-                                "today_date": None,
-                                "comparisons": {
-                                    "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                                    "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                                    "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                                },
-                                "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
-                            })
-                    # Keep row order consistent with account list
-                    acct_order = {a: i for i, a in enumerate(effective_accounts)}
-                    context["today_snapshots_by_account"].sort(
-                        key=lambda s: acct_order.get(s["account"], 999)
-                    )
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Today snapshot (enriched) query failed: %s", e)
+            # Fill placeholder rows for any account with no snapshot row yet.
             if effective_accounts:
                 for acct in effective_accounts:
-                    context["today_snapshots_by_account"].append({
-                        "account": acct,
-                        "today_value": None,
-                        "today_date": None,
-                        "comparisons": {
-                            "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                            "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                            "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                        },
-                        "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
-                    })
-
-        # Your week: closed P&L plus % account change this week (reuse weekly returns if we have it)
-        context["your_week"] = None
-        review_ctx = context.get("review") or {}
-        total_pnl = float(review_ctx.get("total_pnl", 0) or 0)
-        trades_closed = int(review_ctx.get("trades_closed", 0) or 0)
-
-        acct_pct = None
-        if not ret_df.empty:
-            total_start = float(ret_df["start_value"].sum() or 0)
-            total_end = float(ret_df["end_value"].sum() or 0)
-            if total_start > 0:
-                acct_pct = round((total_end - total_start) / total_start * 100, 2)
-
-        context["your_week"] = {
-            "dollars": total_pnl,
-            "acct_pct": acct_pct,
-            "trades_closed": trades_closed,
-        }
-
-        # ── Process: Behavior baseline ──
-        context["behavior_mirror"] = None
-        try:
-            beh_df = batch.get("behavior", pd.DataFrame())
-            if not beh_df.empty:
-                # Aggregate across accounts for this user scope
-                for col in [
-                    "trades_closed",
-                    "total_pnl",
-                    "num_winners",
-                    "num_losers",
-                    "avg_trades_closed_8w",
-                    "avg_total_pnl_8w",
-                    "avg_win_rate_8w",
-                    "baseline_weeks_8w",
-                ]:
-                    if col in beh_df.columns:
-                        beh_df[col] = pd.to_numeric(beh_df[col], errors="coerce").fillna(0)
-
-                total_trades = int(beh_df["trades_closed"].sum() or 0)
-                total_winners = int(beh_df["num_winners"].sum() or 0)
-                total_losers = int(beh_df["num_losers"].sum() or 0)
-                closed_trades = total_winners + total_losers
-                win_rate_week = None
-                if closed_trades > 0:
-                    win_rate_week = round(total_winners / closed_trades * 100, 1)
-
-                # Baseline: simple average of per-account 8-week baselines
-                baseline_trades = float(beh_df["avg_trades_closed_8w"].mean() or 0)
-                baseline_pnl = float(beh_df["avg_total_pnl_8w"].mean() or 0)
-                baseline_win_rate = None
-                if "avg_win_rate_8w" in beh_df.columns:
-                    baseline_win_rate = float(beh_df["avg_win_rate_8w"].mean() or 0) * 100
-
-                context["behavior_mirror"] = {
-                    "has_baseline": bool(beh_df["baseline_weeks_8w"].sum() > 0),
-                    "volume": {
-                        "value": total_trades,
-                        "baseline": baseline_trades,
-                        "diff": total_trades - baseline_trades if baseline_trades else None,
-                    },
-                    "win_rate": {
-                        "value": win_rate_week,
-                        "baseline": baseline_win_rate,
-                        "diff": (win_rate_week - baseline_win_rate) if (win_rate_week is not None and baseline_win_rate is not None) else None,
-                    },
-                    "pnl": {
-                        "value": float(beh_df["total_pnl"].sum() or 0),
-                        "baseline": baseline_pnl,
-                        "diff": float(beh_df["total_pnl"].sum() or 0) - baseline_pnl if baseline_pnl else None,
-                    },
-                }
+                    if acct not in seen_accounts:
+                        context["today_snapshots_by_account"].append({
+                            "account": acct,
+                            "today_value": None,
+                            "today_date": None,
+                            "comparisons": {
+                                "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                                "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                                "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                            },
+                            "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
+                        })
+                acct_order = {a: i for i, a in enumerate(effective_accounts)}
+                context["today_snapshots_by_account"].sort(
+                    key=lambda s: acct_order.get(s["account"], 999)
+                )
         except Exception as e:
             if app.debug:
-                app.logger.warning("Weekly behavior baseline query failed: %s", e)
+                app.logger.warning("Snapshots processing failed: %s", e)
 
-        # ── Process: Strategy breakdown ──
-        try:
-            strat_df = batch.get("strategy", pd.DataFrame())
-            if not strat_df.empty:
-                w_total = lambda r: int(r.get("winners", 0) or 0) + int(r.get("losers", 0) or 0)
-                context["strategy_breakdown_week"] = [
-                    {
-                        "strategy": row.get("strategy") or "Unclassified",
-                        "total_pnl": round(float(row.get("total_pnl") or 0), 2),
-                        "trades": int(row.get("trades") or 0),
-                        "winners": int(row.get("winners") or 0),
-                        "losers": int(row.get("losers") or 0),
-                        "win_rate_pct": round(
-                            int(row.get("winners", 0) or 0) / w_total(row) * 100,
-                            1,
-                        ) if w_total(row) > 0 else None,
-                    }
-                    for _, row in strat_df.iterrows()
-                ]
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Weekly strategy breakdown query failed: %s", e)
-
-        # ── Process: Trades this week ──
-        try:
-            trades_df = batch.get("trades", pd.DataFrame())
-            published_fps = get_published_trade_fingerprints(current_user.id)
-            if not trades_df.empty:
-                trades_list = []
-                for _, row in trades_df.iterrows():
-                    status = str(row.get("status", "") or "")
-                    # Open + num_trades=0 = snapshot-only in our warehouse (see int_option_contracts
-                    # / int_equity_sessions). Skip for "trades this week" when the column exists.
-                    if "num_trades" in trades_df.columns:
-                        nt_raw = row.get("num_trades")
-                        try:
-                            num_trades = int(nt_raw) if nt_raw is not None and not (
-                                hasattr(nt_raw, "__float__") and pd.isna(nt_raw)
-                            ) else None
-                        except (TypeError, ValueError):
-                            num_trades = None
-                        if status.lower() == "open" and (num_trades is not None) and num_trades == 0:
-                            continue
-                    open_d = row.get("open_date")
-                    close_d = row.get("close_date")
-                    open_d = open_d.isoformat() if hasattr(open_d, "isoformat") else (str(open_d)[:10] if open_d is not None else "")
-                    close_d = close_d.isoformat() if hasattr(close_d, "isoformat") else (str(close_d)[:10] if close_d is not None else "")
-                    total_pnl = row.get("total_pnl")
-                    total_pnl = float(total_pnl) if total_pnl is not None else None
-                    # Open: show unrealized P/L; Closed: show realized P/L (total_pnl)
-                    is_closed = status == "Closed"
-                    if is_closed:
-                        display_pnl = total_pnl
-                    else:
-                        display_pnl = float(row["current_unrealized_pnl"]) if row.get("current_unrealized_pnl") is not None else None
-                    acct = str(row.get("account", ""))
-                    sym = str(row.get("symbol", ""))
-                    strat = str(row.get("strategy", ""))
-                    tsym = str(row.get("trade_symbol", "")) if row.get("trade_symbol") else ""
-                    fp = trade_fingerprint(
-                        current_user.id, acct, sym, tsym, open_d, close_d, strat,
-                    )
-                    trades_list.append({
-                        "account": acct,
-                        "symbol": sym,
-                        "strategy": strat,
-                        "trade_symbol": tsym,
-                        "open_date": open_d,
-                        "close_date": close_d,
-                        "total_pnl": total_pnl,
-                        "status": status,
-                        "cost_basis": float(row["trade_cost"]) if row.get("trade_cost") is not None else None,
-                        "market_value": float(row["current_market_value"]) if row.get("current_market_value") is not None else None,
-                        "current_pnl": display_pnl,
-                        "trade_fingerprint": fp,
-                        "published_to_community": fp in published_fps,
-                    })
-                context["trades_this_week"] = trades_list
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Weekly trades mart query failed: %s", e)
-
-        # Risk drift (from mart data)
-        this_opens = context["review"]["trades_opened"] if context["review"] else 0
-        prev_opens = context["prev_review"]["trades_opened"] if context["prev_review"] else 0
-        if context["review"] is None:
-            context["review"] = {
-                "trades_closed": 0, "total_pnl": 0, "num_winners": 0, "num_losers": 0,
-                "premium_received": 0, "premium_paid": 0, "trades_opened": 0,
-                "best_trade": None, "worst_trade": None, "largest_mistake": None,
-                "most_consistent_strategy": None,
-            }
-        context["review"]["risk_drift"] = {
-            "this_week_opens": this_opens,
-            "prev_week_opens": prev_opens,
-            "diff": this_opens - prev_opens,
-        }
-
-        # ── Process: Open positions (today strip + expiring options) ──
-        context["today_strip"] = []
-        context["expiring_options"] = []
+        # ── Open positions: today strip + expiring options ────────────
         try:
             all_pos_df = batch.get("positions", pd.DataFrame())
             if not all_pos_df.empty:
@@ -2347,7 +2798,6 @@ def weekly_review():
                     if col in all_pos_df.columns:
                         all_pos_df[col] = pd.to_numeric(all_pos_df[col], errors="coerce").fillna(0)
 
-                # --- Today strip: group by symbol ---
                 symbols_agg = all_pos_df.groupby("symbol").agg(
                     total_mv=("market_value", "sum"),
                     total_cost=("cost_basis", "sum"),
@@ -2367,7 +2817,7 @@ def weekly_review():
                     mv = float(row["total_mv"])
                     cost = float(row["total_cost"])
                     upnl = float(row["total_upnl"])
-                    upnl_pct = round(upnl / cost * 100, 1) if cost and cost != 0 else None
+                    upnl_pct = round(upnl / cost * 100, 1) if cost else None
                     context["today_strip"].append({
                         "symbol": sym,
                         "market_value": round(mv, 2),
@@ -2378,17 +2828,20 @@ def weekly_review():
                     })
                 context["today_strip"].sort(key=lambda x: abs(x["market_value"]), reverse=True)
 
-                # --- Expiring options: filter from same dataframe ---
                 opts = all_pos_df[all_pos_df["instrument_type"].isin(["Call", "Put"])].copy()
                 if not opts.empty and "option_expiry" in opts.columns:
                     opts["option_expiry"] = pd.to_datetime(opts["option_expiry"])
-                    expiry_cutoff = pd.Timestamp(today + timedelta(days=7))
-                    expiring = opts[opts["option_expiry"].notna() & (opts["option_expiry"] <= expiry_cutoff)]
+                    # 14 day window for the daily review's "expiring soon" — a
+                    # weekly review's 7d hides the next-Mon expirations from a
+                    # trader checking on a Wednesday.
+                    expiry_cutoff = pd.Timestamp(today + timedelta(days=14))
+                    expiring = opts[opts["option_expiry"].notna()
+                                    & (opts["option_expiry"] <= expiry_cutoff)]
 
                     for _, row in expiring.iterrows():
                         sym = str(row.get("symbol", ""))
                         strike = float(row.get("option_strike") or 0)
-                        opt_type = str(row.get("option_type") or "")  # raw OSI char ("C"/"P") for the $141.0 C meta line
+                        opt_type = str(row.get("option_type") or "")
                         stock_price = float(eq_prices.get(sym, 0)) or float(row.get("latest_stock_price") or 0)
                         expiry = row.get("option_expiry")
                         expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else str(expiry)[:10]
@@ -2400,10 +2853,10 @@ def weekly_review():
                             stock_price=stock_price,
                             strike=strike,
                         )
-
                         context["expiring_options"].append({
                             "symbol": sym,
                             "trade_symbol": str(row.get("trade_symbol", "")),
+                            "instrument_type": row.get("instrument_type"),
                             "option_type": opt_type,
                             "strike": strike,
                             "expiry": expiry_str,
@@ -2415,17 +2868,14 @@ def weekly_review():
                             "itm": itm,
                             "distance": distance,
                         })
+                    context["expiring_options"].sort(
+                        key=lambda x: (x.get("days_to_exp") if x.get("days_to_exp") is not None else 999)
+                    )
         except Exception as e:
             if app.debug:
-                app.logger.warning("Open positions query failed: %s", e)
+                app.logger.warning("Open positions processing failed: %s", e)
 
-        # ── Process: Upcoming earnings (next 14 days for currently-held symbols) ──
-        # Symbol-only data already tenant-scoped via {account_filter} in the
-        # holdings CTE of EARNINGS_UPCOMING_QUERY. Bucket into "this week"
-        # (next 7d) and "next week" (8-14d) so the template can choose which
-        # to show prominently based on mode (Friday/Monday/mid-week).
-        context["upcoming_earnings_this_week"] = []
-        context["upcoming_earnings_next_week"] = []
+        # ── Upcoming earnings ─────────────────────────────────────────
         try:
             earn_df = batch.get("earnings", pd.DataFrame())
             if not earn_df.empty:
@@ -2433,13 +2883,9 @@ def weekly_review():
                     ed = row.get("next_earnings_date")
                     if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
                         continue
-                    if hasattr(ed, "date"):
-                        ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
-                    else:
-                        ed_date = ed
-                    days_until = row.get("days_until")
+                    ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
                     try:
-                        days_until = int(days_until) if days_until is not None else None
+                        days_until = int(row.get("days_until")) if row.get("days_until") is not None else None
                     except (TypeError, ValueError):
                         days_until = None
                     item = {
@@ -2457,10 +2903,55 @@ def weekly_review():
                         context["upcoming_earnings_next_week"].append(item)
         except Exception as e:
             if app.debug:
-                app.logger.warning("Upcoming earnings processing failed: %s", e)
+                app.logger.warning("Earnings processing failed: %s", e)
 
-        # ── Process: Since you last looked (daily-pull diff) ──
-        context["since_last_looked"] = None
+        # ── Today's stock movers (held symbols) ───────────────────────
+        try:
+            tm_df = batch.get("today_moves", pd.DataFrame())
+            context["today_movers"] = _build_today_movers(tm_df, account_total_value=
+                (context.get("equity_snapshot") or {}).get("account_value"))
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Today movers processing failed: %s", e)
+
+        # ── Projected ex-dividend dates ───────────────────────────────
+        try:
+            ud_df = batch.get("upcoming_divs", pd.DataFrame())
+            context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df)
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Upcoming ex-div processing failed: %s", e)
+
+        # ── Per-symbol P&L attribution (and strategy / sector rollups) ─
+        try:
+            attr_df = batch.get("attribution", pd.DataFrame())
+            sb_df = batch.get("strategy_by_sym", pd.DataFrame())
+            strategy_by_symbol = {}
+            if sb_df is not None and not sb_df.empty:
+                grouped = sb_df.groupby("symbol")
+                for sym, sub in grouped:
+                    top = sub.iloc[sub["total_pnl"].abs().argmax()]
+                    strategy_by_symbol[sym] = str(top.get("strategy") or "")
+            position_rows = _build_position_breakdown(
+                attr_df, strategy_by_symbol, week_start=this_week,
+            )
+            context["position_breakdown"] = position_rows
+            context["position_breakdown_totals"] = _build_breakdown_totals(position_rows)
+            context["strategy_breakdown"] = _aggregate_breakdown_by(
+                position_rows, "strategy", label_name="strategy"
+            )
+            context["strategy_breakdown_totals"] = _build_breakdown_totals(context["strategy_breakdown"])
+            context["sector_breakdown"] = _aggregate_breakdown_by(
+                position_rows, "sector", label_name="sector"
+            )
+            context["subsector_breakdown"] = _aggregate_breakdown_by(
+                position_rows, "subsector", label_name="subsector"
+            )
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Attribution processing failed: %s", e)
+
+        # ── Since you last looked (daily-pull diff) ───────────────────
         try:
             context["since_last_looked"] = _since_last_looked(
                 client=client,
@@ -2476,113 +2967,7 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Since-last-looked failed: %s", e)
 
-        # ── Process: Position Impact (stock movement vs option P&L) ──
-        context["position_impact"] = []
-        context["position_impact_summary"] = None
-        try:
-            stock_df = batch.get("stock_moves", pd.DataFrame())
-            trades_list = context.get("trades_this_week", [])
-            all_pos_df_impact = batch.get("positions", pd.DataFrame())
-
-            if not stock_df.empty and trades_list:
-                for col in ["start_price", "end_price"]:
-                    stock_df[col] = pd.to_numeric(stock_df[col], errors="coerce")
-
-                # Aggregate stock prices across accounts (weighted avg not needed — use first account's prices as proxy)
-                stock_by_sym = (
-                    stock_df.groupby("symbol")
-                    .agg(start_price=("start_price", "first"), end_price=("end_price", "first"))
-                    .reset_index()
-                )
-                price_map = {
-                    row["symbol"]: {"start": float(row["start_price"]), "end": float(row["end_price"])}
-                    for _, row in stock_by_sym.iterrows()
-                    if pd.notna(row["start_price"]) and row["start_price"] > 0
-                }
-
-                # Equity share counts from current positions
-                shares_map = {}
-                if not all_pos_df_impact.empty and "instrument_type" in all_pos_df_impact.columns:
-                    eq = all_pos_df_impact[all_pos_df_impact["instrument_type"] == "Equity"].copy()
-                    if not eq.empty:
-                        eq["quantity"] = pd.to_numeric(eq["quantity"], errors="coerce").fillna(0)
-                        shares_map = dict(eq.groupby("symbol")["quantity"].sum())
-
-                # Option P&L by symbol from closed trades
-                option_pnl_map = {}
-                for t in trades_list:
-                    if t.get("status") == "Closed" and t.get("current_pnl") is not None:
-                        sym = t["symbol"]
-                        option_pnl_map[sym] = option_pnl_map.get(sym, 0) + float(t["current_pnl"])
-
-                # Symbols that had option trades this week
-                traded_symbols = set(option_pnl_map.keys())
-                total_option_pnl = 0.0
-                total_equity_impact = 0.0
-                impacts = []
-
-                for sym in sorted(traded_symbols):
-                    prices = price_map.get(sym)
-                    if not prices:
-                        continue
-                    start_p = prices["start"]
-                    end_p = prices["end"]
-                    price_change = end_p - start_p
-                    price_change_pct = (price_change / start_p) * 100 if start_p else 0
-
-                    shares = shares_map.get(sym, 0)
-                    equity_impact = shares * price_change if shares else None
-                    opt_pnl = option_pnl_map.get(sym, 0)
-                    net = (equity_impact or 0) + opt_pnl
-
-                    total_option_pnl += opt_pnl
-                    if equity_impact is not None:
-                        total_equity_impact += equity_impact
-
-                    impacts.append({
-                        "symbol": sym,
-                        "start_price": round(start_p, 2),
-                        "end_price": round(end_p, 2),
-                        "price_change": round(price_change, 2),
-                        "price_change_pct": round(price_change_pct, 1),
-                        "shares": int(shares) if shares else 0,
-                        "equity_impact": round(equity_impact, 2) if equity_impact is not None else None,
-                        "option_pnl": round(opt_pnl, 2),
-                        "net_impact": round(net, 2),
-                    })
-
-                impacts.sort(key=lambda x: abs(x["net_impact"]), reverse=True)
-                context["position_impact"] = impacts
-
-                has_equity = any(i["equity_impact"] is not None and i["shares"] > 0 for i in impacts)
-                if impacts:
-                    context["position_impact_summary"] = {
-                        "total_option_pnl": round(total_option_pnl, 2),
-                        "total_equity_impact": round(total_equity_impact, 2) if has_equity else None,
-                        "total_net": round(total_equity_impact + total_option_pnl, 2) if has_equity else None,
-                        "num_symbols": len(impacts),
-                        "has_equity": has_equity,
-                    }
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Position impact processing failed: %s", e)
-
-        # ── Process: Daily P&L — rolling N-week grid ──
-        # The grid renders DAILY_CALENDAR_WEEKS rows in the DOM; the template
-        # shows DAILY_CALENDAR_DEFAULT_WEEKS by default and a JS toggle reveals
-        # the rest. The section heading is intentionally generic ("Daily P&L")
-        # — earlier copy hard-coded "last 4 weeks" but that becomes wrong the
-        # moment a user expands the view, and the dates on each row already
-        # tell them the window.
-        context["daily_calendar"] = []
-        context["calendar_grid"] = []
-        context["calendar_weeks_back"] = DAILY_CALENDAR_WEEKS
-        context["calendar_default_weeks"] = DAILY_CALENDAR_DEFAULT_WEEKS
-        context["calendar_extra_weeks"] = max(
-            0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS
-        )
-        context["daily_calendar_no_query_rows"] = True
-        daily_changes_map = {}
+        # ── Daily account Δ calendar grid ─────────────────────────────
         try:
             cal_df = batch.get("calendar", pd.DataFrame())
             if not cal_df.empty:
@@ -2598,49 +2983,9 @@ def weekly_review():
             context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)
         except Exception as e:
             if app.debug:
-                app.logger.warning("Daily calendar query failed: %s", e)
+                app.logger.warning("Calendar grid failed: %s", e)
             context["daily_calendar_no_query_rows"] = True
             context["calendar_grid"] = _build_calendar_grid({}, today)
-
-        # Mode-specific data
-        # AI Insight summary (for Friday review)
-        context["ai_insight"] = get_insight_for_user(current_user.id)
-
-        if mode == "monday":
-            # Open positions exposure
-            exposure_df = client.query(
-                EXPOSURE_QUERY.format(account_filter=account_filter)
-            ).to_dataframe()
-            if not exposure_df.empty:
-                for col in ["exposure"]:
-                    exposure_df[col] = pd.to_numeric(exposure_df[col], errors="coerce").fillna(0)
-                context["exposure"] = {
-                    "total": float(exposure_df["exposure"].sum()),
-                    "by_symbol": exposure_df.head(10).to_dict(orient="records"),
-                    "num_positions": len(exposure_df),
-                }
-
-            # Mirror Score
-            context["mirror_score"] = get_mirror_score_for_user(current_user.id)
-            context["mirror_history"] = get_mirror_score_history(current_user.id, limit=8)
-
-        elif mode == "midweek":
-            # Trades opened this week so far
-            opens_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("start_date", "DATE", this_week),
-                    bigquery.ScalarQueryParameter("end_date", "DATE", today),
-                ]
-            )
-            opens_df = client.query(
-                OPENS_THIS_WEEK_QUERY.format(account_filter=account_filter),
-                job_config=opens_config,
-            ).to_dataframe()
-            if not opens_df.empty:
-                context["opens_this_week"] = {
-                    "count": len(opens_df),
-                    "symbols": opens_df["symbol"].unique().tolist()[:15],
-                }
 
     except Exception as e:
         context["error"] = str(e)
@@ -2649,216 +2994,13 @@ def weekly_review():
         context["market_session"] = _us_market_session()
         context["market_open_today"] = context["market_session"]["state"] == "open"
 
-    context["narrative"] = _build_narrative(
-        mode=mode,
-        review=context.get("review"),
-        prev_review=context.get("prev_review"),
-        behavior_mirror=context.get("behavior_mirror"),
-        market=context.get("market"),
-        today=today,
-        week_start=this_week,
-        trading_days=context.get("trading_days", 0),
-        market_session=context.get("market_session"),
-    )
-    context["key_observation"] = _key_observation(
-        review=context.get("review"),
-        behavior_mirror=context.get("behavior_mirror"),
-        strategy_breakdown=context.get("strategy_breakdown_week", []),
-    )
     context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
     context["today_snapshots_total"] = _today_totals(context.get("today_snapshots_by_account", []))
-
-    # Dual-hero behavior sentence: process-first 1-liner that anchors the page
-    # for a Trading Mirror (vs the old P&L-first hero).
-    context["behavior_sentence"] = _build_behavior_sentence(
-        review=context.get("review"),
-        behavior_mirror=context.get("behavior_mirror"),
-        mode=mode,
+    context["today_headline"] = _today_headline(
+        context.get("today_pulse"),
+        context.get("today_movers"),
+        context.get("equity_snapshot"),
     )
-
-    # Neutral market context: replaces the "Outperforming/Trailing both indexes"
-    # badge that scored the user against the market on first paint. The product
-    # manifesto explicitly says "the market is framing, not scoring."
-    context["market_neutral_line"] = _neutral_market_line(context.get("market"))
-
-    # Auto-mode UI: surface that the page picked your mode from the day, but
-    # let advanced users override via the chip.
-    context["mode_label"] = _MODE_LABELS.get(mode, "Weekly Review")
-    context["mode_was_auto"] = (request.args.get("mode") in (None, ""))
-
-    # ── Pattern detection (all modes) ──
-    context["patterns"] = []
-    try:
-        client = get_bigquery_client()
-        week_end = this_week + timedelta(days=6)
-        context["patterns"] = _detect_patterns(client, account_filter, this_week, week_end)
-    except Exception:
-        pass
-
-    # ── Coach's Take: exit timing for this week's closed trades (Friday mode) ──
-    context["coaching_take"] = None
-    if mode == "friday":
-        try:
-            week_end_date = this_week + timedelta(days=6)
-            exit_cfg = bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
-                bigquery.ScalarQueryParameter("week_end", "DATE", week_end_date),
-            ])
-            exit_df = client.query(
-                WEEKLY_EXIT_ANALYSIS_QUERY.format(account_filter=account_filter),
-                job_config=exit_cfg,
-            ).to_dataframe()
-
-            coaching_take = {
-                "exits": [],
-                "total_given_back": 0,
-                "total_exits": 0,
-                "avg_giveback_pct": 0,
-                "coaching_signals": [],
-            }
-
-            if not exit_df.empty:
-                for col in ["pnl_given_back", "giveback_pct", "actual_pnl",
-                             "peak_unrealized_pnl", "days_held_past_peak"]:
-                    if col in exit_df.columns:
-                        exit_df[col] = pd.to_numeric(exit_df[col], errors="coerce").fillna(0)
-
-                coaching_take["total_exits"] = len(exit_df)
-                coaching_take["total_given_back"] = round(float(exit_df["pnl_given_back"].sum()), 2)
-                gb_nonzero = exit_df[exit_df["pnl_given_back"] > 0]
-                if not gb_nonzero.empty:
-                    coaching_take["avg_giveback_pct"] = round(float(gb_nonzero["giveback_pct"].mean()), 0)
-
-                for _, r in exit_df.head(5).iterrows():
-                    coaching_take["exits"].append({
-                        "symbol": str(r.get("underlying_symbol", "")),
-                        "strategy": str(r.get("strategy", "")),
-                        "actual_pnl": round(float(r.get("actual_pnl", 0)), 2),
-                        "peak_pnl": round(float(r.get("peak_unrealized_pnl", 0)), 2),
-                        "given_back": round(float(r.get("pnl_given_back", 0)), 2),
-                        "days_past_peak": int(r.get("days_held_past_peak", 0) or 0),
-                        "pct_premium_captured": float(r.get("pct_of_premium_captured") or 0),
-                        "optimal": bool(r.get("optimal_exit")),
-                    })
-
-            # Aggregate coaching signals
-            try:
-                where_clause = _account_sql_where(effective_accounts)
-                signals_df = client.query(
-                    COACHING_SIGNALS_WEEKLY_QUERY.format(where=where_clause)
-                ).to_dataframe()
-                if not signals_df.empty:
-                    roll_num_cols = [
-                        "avg_giveback_pct", "avg_days_held_past_peak",
-                        "total_pnl_given_back", "optimal_exit_rate",
-                        "num_rolls", "avg_dte_at_roll",
-                        "rolls_after_losing_leg", "pct_rolls_after_losing_leg",
-                        "rolls_at_0_or_1_dte", "pct_rolls_at_0_or_1_dte",
-                        "rolls_with_spot_for_itm", "pct_rolls_sold_short_itm_when_known",
-                    ]
-                    for col in roll_num_cols:
-                        if col in signals_df.columns:
-                            signals_df[col] = pd.to_numeric(signals_df[col], errors="coerce").fillna(0)
-
-                    total_given_back_all = float(signals_df["total_pnl_given_back"].sum())
-                    avg_days_past = float(signals_df["avg_days_held_past_peak"].mean())
-                    num_rolls = int(signals_df.iloc[0].get("num_rolls", 0))
-
-                    if total_given_back_all > 50:
-                        coaching_take["coaching_signals"].append(
-                            f"Across all your trading, you've left ${total_given_back_all:,.0f} "
-                            f"on the table by holding past peak profit (avg {avg_days_past:.0f} days past peak)."
-                        )
-                    if num_rolls >= 3:
-                        row0 = signals_df.iloc[0]
-                        avg_dte = float(row0.get("avg_dte_at_roll", 0))
-                        pct_loss_leg = float(row0.get("pct_rolls_after_losing_leg", 0) or 0)
-                        rolls_01 = int(row0.get("rolls_at_0_or_1_dte", 0) or 0)
-                        pct_01 = float(row0.get("pct_rolls_at_0_or_1_dte", 0) or 0)
-                        n_spot = int(row0.get("rolls_with_spot_for_itm", 0) or 0)
-                        pct_itm = float(row0.get("pct_rolls_sold_short_itm_when_known", 0) or 0)
-
-                        parts = [
-                            f"You've rolled {num_rolls} detectable times; on average the closed leg still had "
-                            f"about {avg_dte:.0f} DTE left — a timing pattern we can see from daily option marks."
-                        ]
-                        if pct_loss_leg >= 40:
-                            parts.append(
-                                f"About {pct_loss_leg:.0f}% of those followed a losing close on the leg you "
-                                f"replaced — often consistent with managing a challenged short premium leg "
-                                f"rather than \"rolling for fun.\""
-                            )
-                        if rolls_01 >= 2 and pct_01 >= 25:
-                            parts.append(
-                                f"{rolls_01} were at 0–1 DTE ({pct_01:.0f}% of rolls), when many traders extend "
-                                f"to avoid assignment or keep control of the stock."
-                            )
-                        if n_spot >= 3 and pct_itm >= 35:
-                            parts.append(
-                                f"Where we have a same-day stock close, about {pct_itm:.0f}% of your sold "
-                                f"short legs were in the money at the roll — i.e. stock vs strike lines up "
-                                f"with defensive timing, not just the next contract's win rate."
-                            )
-                        parts.append(
-                            "The useful signal is usually when you extend, not a simple "
-                            "\"you roll and lose\" score on the replacement trade."
-                        )
-                        coaching_take["coaching_signals"].append(" ".join(parts))
-            except Exception:
-                pass
-
-            if coaching_take["total_exits"] > 0 or coaching_take["coaching_signals"]:
-                context["coaching_take"] = coaching_take
-        except Exception as e:
-            if app.debug:
-                app.logger.warning("Coaching take query failed: %s", e)
-
-    # ── Watch Next Week (Friday mode) ──
-    context["watch_next_week"] = None
-    if mode == "friday":
-        watch_items = []
-        expiring_count = len(context.get("expiring_options", []))
-        if expiring_count > 0:
-            watch_items.append(f"{expiring_count} option{'s' if expiring_count != 1 else ''} expiring within 7 days")
-        open_count = len(context.get("today_strip", []))
-        if open_count > 0:
-            watch_items.append(f"{open_count} open position{'s' if open_count != 1 else ''} to manage")
-        # Streak awareness
-        for p in context["patterns"]:
-            if p["type"] == "week_streak":
-                streak_note = f"Currently on a {p['headline'].lower()}"
-                watch_items.append(streak_note)
-                break
-        if watch_items:
-            context["watch_next_week"] = watch_items
-
-    # Diary: Mon→Fri timeline of activity. Centerpiece of the redesigned
-    # Weekly Review — turns the page from a dashboard into a trading journal.
-    try:
-        context["diary"] = _build_week_diary(
-            week_start=this_week,
-            today=today,
-            trades=context.get("trades_this_week") or [],
-            daily_changes=daily_changes_map,
-            expiring_options=context.get("expiring_options") or [],
-        )
-    except Exception as e:
-        if app.debug:
-            app.logger.warning("Week diary build failed: %s", e)
-        context["diary"] = []
-
-    # "What we noticed" merges Key Observation + Patterns + Coach's Take into
-    # a single panel of up to 3 cards (was 3 separate sections).
-    try:
-        context["noticed"] = _build_noticed(
-            key_observation=context.get("key_observation"),
-            patterns=context.get("patterns") or [],
-            coaching_take=context.get("coaching_take"),
-        )
-    except Exception as e:
-        if app.debug:
-            app.logger.warning("Noticed panel build failed: %s", e)
-        context["noticed"] = []
 
     _prof = get_user_profile(current_user.id)
     _vis = (_prof.get("profile_visibility") or "private").lower()

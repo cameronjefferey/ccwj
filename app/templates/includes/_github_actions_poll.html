@@ -13,25 +13,25 @@
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (!d) {
-                    if (label) label.textContent = "Couldn’t check progress, but you can open Weekly Review now or try again in a few minutes.";
+                    if (label) label.textContent = "Couldn’t check progress, but you can open Daily Review now or try again in a few minutes.";
                     return;
                 }
                 if (d.state === "error" && d.error) {
-                    if (label) label.textContent = "We’ll take you to Weekly Review in a few minutes, or you can go there now with the button above.";
+                    if (label) label.textContent = "We’ll take you to Daily Review in a few minutes, or you can go there now with the button above.";
                     if (n === 0) { setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000); }
                     return;
                 }
                 if (!d.ok) {
-                    if (label) label.textContent = "Couldn’t read progress, but you can open Weekly Review or try again in a few minutes.";
+                    if (label) label.textContent = "Couldn’t read progress, but you can open Daily Review or try again in a few minutes.";
                     return;
                 }
                 if (d.state === "success") {
-                    if (label) label.textContent = "All set—bringing you to Weekly Review…";
+                    if (label) label.textContent = "All set—bringing you to Daily Review…";
                     window.location.href = doneUrl;
                     return;
                 }
                 if (d.state === "failure") {
-                    if (label) label.textContent = "We couldn’t finish this update. Try again in a little while, or open Weekly Review to see what’s there.";
+                    if (label) label.textContent = "We couldn’t finish this update. Try again in a little while, or open Daily Review to see what’s there.";
                     return;
                 }
                 if (d.state === "pending") {
@@ -44,7 +44,7 @@
                 if (n < 120) {
                     setTimeout(tick, 8000);
                 } else {
-                    if (label) label.textContent = "Still going—try Weekly Review in a few minutes. Your new data might already be there.";
+                    if (label) label.textContent = "Still going—try Daily Review in a few minutes. Your new data might already be there.";
                 }
             })
             .catch(function () {
@@ -62,7 +62,7 @@
 (function () {
     var doneUrl = {{ _done|tojson }};
     var label = document.getElementById("pipelineStateLabel");
-    if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Weekly Review in a few minutes, or you can go there now."; }
+    if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Daily Review in a few minutes, or you can go there now."; }
     setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000);
 })();
 </script>

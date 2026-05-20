@@ -1,52 +1,94 @@
 {% extends "base.html" %}
 
+{# ════════════════════════════════════════════════════════════════════════
+   Daily Review — end-of-day pulse for an active options trader.
+
+   The page used to fork into Friday / Monday / Mid-Week modes; that's
+   collapsed to a single daily flow. Sections, top to bottom:
+
+     1. Today hero        — account total today + day delta + market
+     2. Since you last looked — diff vs prior visit (kept from master)
+     3. Account snapshot   — per-account today / vs day / week / month
+     4. Today's movers     — biggest $ impact from stock moves on holdings
+     5. Watch list         — earnings, expiring options, projected ex-div
+     6. Daily account Δ    — rolling 12-week heatmap
+     7. Current positions  — at-a-glance cards
+     8. Positions breakdown — per-symbol G/L Stock | G/L Option | Div | Net
+     9. Strategy breakdown — same shape rolled up by strategy
+    10. Sector breakdown   — same shape rolled up by sector
+    11. Subsector breakdown — same shape rolled up by subsector
+
+   The "Numbers" disclosure / mode-pills / behavioral-baseline / coaching-
+   take / Mon-Fri diary sections were removed — they were mode-specific
+   pieces of a temporal hub that no longer exists. The dbt models that fed
+   them (mart_weekly_summary, mart_weekly_behavior_enriched, etc.) are
+   still in the warehouse for other surfaces (Mirror Score, Insights).
+   ════════════════════════════════════════════════════════════════════════ #}
+
 {% block head %}
 <style>
-    /* ── Hero ── */
     .review-hero {
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         border-radius: 16px;
-        padding: 2.5rem 2rem;
+        padding: 2rem 2rem;
         color: #fff;
         margin-bottom: 1.5rem;
     }
-    .mode-pill {
-        padding: .35rem .9rem;
-        border-radius: 20px;
-        text-decoration: none;
+    .review-hero .hero-kicker {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
+        color: rgba(255,255,255,.5); font-weight: 700; margin-bottom: .35rem;
+    }
+    .review-hero .hero-headline {
+        font-size: 1.65rem; font-weight: 700; line-height: 1.2; margin: 0 0 .35rem;
+    }
+    .review-hero .hero-headline .delta-num { font-variant-numeric: tabular-nums; }
+    .review-hero .hero-subtitle {
+        font-size: .9rem; color: rgba(255,255,255,.65); margin: 0;
+    }
+    .review-hero .hero-meta {
+        margin-top: .85rem; font-size: .76rem; color: rgba(255,255,255,.4);
+        display: flex; flex-wrap: wrap; gap: .65rem; align-items: center;
+    }
+    .review-hero .badge { font-size: .65rem; padding: .2rem .55rem; }
+
+    /* Section card */
+    .review-section {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 8px rgba(0,0,0,.05);
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.25rem;
+    }
+    .section-label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: 1.1px;
+        color: #9ca3af;
         font-weight: 600;
-        font-size: .75rem;
-        letter-spacing: .3px;
-        transition: all .15s;
-        border: 1px solid rgba(255,255,255,.18);
-        color: rgba(255,255,255,.5);
+        margin-bottom: 1rem;
     }
-    .mode-pill.active {
-        background: rgba(255,255,255,.12);
-        color: #fff;
-        border-color: rgba(255,255,255,.35);
+    .section-sub {
+        font-size: .82rem; color: #64748b; margin: -.5rem 0 1rem;
+        max-width: 56rem;
     }
-    .mode-pill:not(.active):hover {
-        border-color: rgba(255,255,255,.3);
-        color: rgba(255,255,255,.8);
+
+    .text-positive { color: #15803d; }
+    .text-negative { color: #b91c1c; }
+
+    /* ── Filter bar ── */
+    .filter-bar {
+        display: flex; align-items: center; flex-wrap: wrap;
+        gap: .85rem; margin-bottom: 1rem;
     }
-    .hero-headline {
-        font-size: 1.65rem;
-        font-weight: 700;
-        line-height: 1.25;
-        margin: 0 0 .5rem;
+    .filter-bar .lblh {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
+        color: #94a3b8; display: block; margin-bottom: .15rem;
     }
-    .hero-subtitle {
-        font-size: .93rem;
-        color: rgba(255,255,255,.6);
-        margin: 0;
-        max-width: 560px;
+    .filter-reset {
+        font-size: .75rem; color: #64748b; text-decoration: none;
+        padding: .3rem .6rem; border-radius: 6px; border: 1px solid #e2e8f0;
     }
-    .hero-meta {
-        margin-top: .75rem;
-        font-size: .78rem;
-        color: rgba(255,255,255,.35);
-    }
+    .filter-reset:hover { color: #1e293b; border-color: #cbd5e1; text-decoration: none; }
 
     /* ── Since you last looked ── */
     .since-card {
@@ -58,48 +100,29 @@
         box-shadow: 0 1px 8px rgba(234, 179, 8, .08);
     }
     .since-kicker {
-        font-size: .68rem;
-        text-transform: uppercase;
-        letter-spacing: 1.1px;
-        color: #b45309;
-        font-weight: 700;
-        margin-bottom: .2rem;
-        display: flex;
-        align-items: center;
-        gap: .4rem;
+        font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
+        color: #b45309; font-weight: 700; margin-bottom: .2rem;
+        display: flex; align-items: center; gap: .4rem;
     }
     .since-kicker .since-dot {
         width: 7px; height: 7px; border-radius: 50%;
         background: #f59e0b;
         animation: since-pulse 2.2s infinite;
     }
-    @keyframes since-pulse {
-        0%, 100% { opacity: .5; }
-        50%      { opacity: 1; }
-    }
+    @keyframes since-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
     .since-headline {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #1e293b;
-        margin: 0 0 .65rem;
+        font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0 0 .65rem;
     }
     .since-row {
         display: flex; flex-wrap: wrap; gap: .5rem .9rem;
-        font-size: .85rem;
-        margin-bottom: .35rem;
+        font-size: .85rem; margin-bottom: .35rem;
     }
     .since-row:last-child { margin-bottom: 0; }
     .since-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: .35rem;
-        padding: .25rem .65rem;
-        border-radius: 14px;
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        font-size: .8rem;
-        text-decoration: none;
-        color: inherit;
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .25rem .65rem; border-radius: 14px;
+        background: #fff; border: 1px solid #e5e7eb;
+        font-size: .8rem; text-decoration: none; color: inherit;
         white-space: nowrap;
     }
     .since-chip:hover { border-color: #cbd5e1; color: inherit; text-decoration: none; }
@@ -108,16 +131,11 @@
     .since-chip.down { border-color: rgba(220,53,69,.3);  background: rgba(220,53,69,.05); }
     .since-chip.warn { border-color: rgba(234,179,8,.4);  background: rgba(234,179,8,.08); }
     .since-section-label {
-        font-size: .68rem;
-        text-transform: uppercase;
-        letter-spacing: .6px;
-        color: #94a3b8;
-        font-weight: 600;
-        margin-right: .25rem;
-        align-self: center;
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .6px;
+        color: #94a3b8; font-weight: 600; margin-right: .25rem; align-self: center;
     }
 
-    /* ── Account snapshot ── */
+    /* ── Snapshot section ── */
     .snapshot-section { padding: 1.25rem 1.75rem; }
     .snapshot-row {
         display: grid;
@@ -139,23 +157,15 @@
         .snap-cell:nth-child(odd) { border-right: 1px solid #f0f0f0; padding-right: .75rem; margin-right: .75rem; }
         .snap-cell:nth-child(5) { border-right: none; }
     }
-
-    /* Multi-account consolidated table — Schwab-style "see each account at
-       a glance plus a total" layout. Used only when there is more than one
-       account; single-account view keeps the original tile row above. */
     .snapshot-table {
         display: grid;
         grid-template-columns: minmax(140px, 1.4fr) repeat(5, 1fr);
-        gap: 0;
-        align-items: baseline;
+        gap: 0; align-items: baseline;
     }
     .snapshot-table-head, .snapshot-table-row { display: contents; }
     .snapshot-table-head > div {
-        font-size: .68rem;
-        text-transform: uppercase;
-        letter-spacing: .4px;
-        color: #9ca3af;
-        font-weight: 600;
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .4px;
+        color: #9ca3af; font-weight: 600;
         padding: 0 .6rem .5rem 0;
         border-bottom: 1px solid #e5e7eb;
     }
@@ -167,535 +177,142 @@
         border-top: 2px solid #d1d5db;
         border-bottom: none;
         background: #f8fafc;
-        padding-top: .85rem;
-        padding-bottom: .85rem;
+        padding-top: .85rem; padding-bottom: .85rem;
     }
-    .snapshot-table .acct-name {
-        font-weight: 600;
-        color: #1f2937;
-        font-size: .9rem;
-        line-height: 1.2;
-    }
-    .snapshot-table .acct-meta {
-        font-size: .68rem;
-        color: #9ca3af;
-        margin-top: .1rem;
-    }
+    .snapshot-table .acct-name { font-weight: 600; color: #1f2937; font-size: .9rem; line-height: 1.2; }
+    .snapshot-table .acct-meta { font-size: .68rem; color: #9ca3af; margin-top: .1rem; }
     .snapshot-table-row.total .acct-name { color: #0f172a; }
-    .snapshot-table .snap-cell-val {
-        font-weight: 700;
-        font-size: .98rem;
-        line-height: 1.15;
-    }
+    .snapshot-table .snap-cell-val { font-weight: 700; font-size: .98rem; line-height: 1.15; }
     .snapshot-table-row.total .snap-cell-val { font-size: 1.1rem; }
     .snapshot-table .snap-cell-pct { font-size: .72rem; color: #6c757d; margin-top: .15rem; }
     .snapshot-table .snap-cell-dash { color: #cbd5e1; font-weight: 600; }
     @media (max-width: 720px) {
-        /* Drop "vs 1 Month" first on narrow viewports — least immediately
-           actionable for a daily check-in. */
         .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(4, 1fr); }
         .snapshot-table .snap-col-month { display: none; }
     }
-    @media (max-width: 540px) {
-        .snapshot-table { grid-template-columns: minmax(95px, 1.1fr) repeat(3, 1fr); }
-        .snapshot-table .snap-col-week-ago { display: none; }
-        .snapshot-table-row > div { padding: .5rem .35rem .5rem 0; }
-        .snapshot-table-head > div { padding: 0 .35rem .4rem 0; font-size: .62rem; }
-        .snapshot-table .snap-cell-val { font-size: .9rem; }
-        .snapshot-table-row.total .snap-cell-val { font-size: 1rem; }
-    }
 
-    /* ── Pattern cards ── */
-    .patterns-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-    .pattern-card {
-        flex: 1 1 220px;
-        border-radius: 12px;
-        padding: .85rem 1.1rem;
-        font-size: .88rem;
-        line-height: 1.45;
-        border-left: 4px solid;
+    /* ── Today's movers ── */
+    .movers-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;
     }
-    .pattern-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #166534; }
-    .pattern-card.warning  { background: rgba(234,179,8,.08); border-left-color: #ca8a04; color: #854d0e; }
-    .pattern-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: #1e3a5f; }
-    .pattern-headline { font-weight: 700; font-size: .82rem; text-transform: uppercase; letter-spacing: .3px; margin-bottom: .3rem; }
-    .pattern-detail { font-weight: 400; }
-
-    /* ── Watch Next Week ── */
-    .watch-card {
-        background: linear-gradient(135deg, #1e293b, #334155);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
-        color: #fff;
-        margin-bottom: 1.25rem;
-    }
-    .watch-card .section-label { color: rgba(255,255,255,.5); }
-    .watch-item { padding: .35rem 0; font-size: .9rem; color: rgba(255,255,255,.85); display: flex; align-items: center; gap: .5rem; }
-    .watch-dot { width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; flex-shrink: 0; }
-
-    /* ── Week Story ── */
-    .week-story {
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.25rem 1.5rem;
-        margin-bottom: 1.25rem;
-        font-size: .93rem;
-        line-height: 1.65;
-        color: #334155;
-    }
-    .week-story p { margin: 0 0 .75rem; }
-    .week-story p:last-child { margin-bottom: 0; }
-
-    /* ── Key observation ── */
-    .obs-card {
-        border-radius: 12px;
-        padding: 1rem 1.25rem;
-        display: flex;
-        align-items: flex-start;
-        gap: .85rem;
-        margin-bottom: 1.25rem;
-        font-size: .93rem;
-        font-weight: 500;
-        line-height: 1.45;
-    }
-    .obs-card .obs-icon {
-        font-size: 1.1rem;
-        line-height: 1.45;
-        flex-shrink: 0;
-        opacity: .85;
-    }
-    .obs-card.positive { background: rgba(25,135,84,.07); border: 1px solid rgba(25,135,84,.2); color: #166534; }
-    .obs-card.negative { background: rgba(220,53,69,.07); border: 1px solid rgba(220,53,69,.2); color: #7f1d1d; }
-    .obs-card.warning  { background: rgba(234,179,8,.1);  border: 1px solid rgba(234,179,8,.3);  color: #713f12; }
-    .obs-card.neutral  { background: rgba(13,110,253,.06); border: 1px solid rgba(13,110,253,.15); color: #1e3a5f; }
-
-    /* ── Section cards ── */
-    .review-section {
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.75rem;
-        margin-bottom: 1.25rem;
-    }
-    .section-label {
-        font-size: .72rem;
-        text-transform: uppercase;
-        letter-spacing: 1.1px;
-        color: #9ca3af;
-        font-weight: 600;
-        margin-bottom: 1.1rem;
-    }
-
-    /* ── Week stats bar ── */
-    .week-stats {
-        display: flex;
-        gap: 0;
-    }
-    .week-stat {
-        flex: 1;
-        text-align: center;
-        padding: .5rem;
-        border-right: 1px solid #f0f0f0;
-    }
-    .week-stat:last-child { border-right: none; }
-    .week-stat-value { font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
-    .week-stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .2rem; }
-
-    /* ── Trade highlights ── */
-    .trade-highlight {
-        padding: 1rem 1.25rem;
-        border-radius: 12px;
-        background: #f8f9fa;
-    }
-    .trade-highlight.best  { border-left: 4px solid var(--color-positive); }
-    .trade-highlight.worst { border-left: 4px solid var(--color-negative); }
-    .trade-highlight.strategy { border-left: 4px solid #3b82f6; }
-
-    /* ── Exposure bars ── */
-    .exposure-bar { height: 5px; border-radius: 3px; background: #e9ecef; overflow: hidden; }
-    .exposure-bar-fill { height: 100%; border-radius: 3px; background: #3b82f6; }
-
-    /* ── Mirror score mini-bars ── */
-    .mirror-bar-wrap {
-        display: flex;
-        align-items: flex-end;
-        gap: 4px;
-        height: 36px;
-    }
-    .mirror-bar-item {
-        flex: 1;
-        border-radius: 3px 3px 0 0;
-        min-height: 4px;
-    }
-
-    /* ── Pace track ── */
-    .pace-track {
-        background: #f0f4ff;
+    @media (max-width: 700px) { .movers-grid { grid-template-columns: 1fr; } }
+    .movers-list { display: flex; flex-direction: column; gap: .35rem; }
+    .mover-row {
+        display: grid; grid-template-columns: 4rem 1fr auto;
+        gap: .75rem; align-items: center;
+        padding: .55rem .65rem;
         border-radius: 10px;
-        padding: 1rem 1.25rem;
-        border: 1px solid #dbeafe;
-    }
-
-    /* ── Prompt card ── */
-    .prompt-card {
-        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 1.5rem 1.75rem;
-        margin-bottom: 1.25rem;
-    }
-    .prompt-q {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #1e293b;
-        margin-bottom: .35rem;
-    }
-
-    /* ── Strategy pills ── */
-    .strat-pill {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: .6rem 1rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border-left: 3px solid #3b82f6;
-    }
-    .strat-pill .strat-meta { font-size: .78rem; color: #6c757d; margin-top: .1rem; }
-
-    /* ── Market comparison ── */
-    .market-vs-section { padding: 1.25rem 1.75rem; }
-    .market-tagline {
-        font-size: .82rem;
-        font-weight: 600;
-        padding: .3rem .75rem;
-        border-radius: 20px;
-        white-space: nowrap;
-    }
-    .market-tagline.positive { background: rgba(25,135,84,.1); color: #166534; }
-    .market-tagline.negative { background: rgba(220,53,69,.1); color: #7f1d1d; }
-    .market-tagline.neutral  { background: rgba(100,116,139,.1); color: #475569; }
-    .market-compare-row {
-        display: flex;
-        gap: 0;
-    }
-    .mc-col {
-        flex: 1;
-        text-align: center;
-        padding: .5rem .5rem .25rem;
-        border-right: 1px solid #f0f0f0;
-    }
-    .mc-col:last-child { border-right: none; }
-    .mc-col.you { background: rgba(59,130,246,.04); border-radius: 8px; }
-    .mc-ticker { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; margin-bottom: .2rem; }
-    .mc-pct { font-size: 1.25rem; font-weight: 800; line-height: 1.1; }
-    .mc-sub { font-size: .72rem; color: #9ca3af; margin-top: .2rem; }
-
-    /* ── Trades table ── */
-    .trades-table th { font-size: .75rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
-    .trades-table td { font-size: .88rem; }
-
-    /* ── Today Strip ── */
-    .today-strip { display: flex; gap: .75rem; overflow-x: auto; padding-bottom: .5rem; }
-    .strip-card {
-        min-width: 150px; flex-shrink: 0;
-        background: #fff; border-radius: 12px;
-        border: 1px solid #e5e7eb;
-        padding: .85rem 1rem;
-        transition: box-shadow .15s;
-        text-decoration: none; color: inherit;
-    }
-    .strip-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); text-decoration: none; color: inherit; }
-    .strip-sym { font-weight: 700; font-size: 1rem; color: #1e293b; }
-    .strip-price { font-size: .75rem; color: #9ca3af; margin-top: .15rem; }
-    .strip-pnl { font-size: 1.05rem; font-weight: 700; margin-top: .4rem; }
-    .strip-pct { font-size: .72rem; opacity: .75; }
-    .strip-legs { font-size: .65rem; color: #9ca3af; margin-top: .25rem; }
-
-    /* ── Expiring options ── */
-    .expiry-card {
-        display: flex; align-items: center; gap: 1rem;
-        padding: .75rem 1rem; border-radius: 10px;
-        background: #fff; border: 1px solid #e5e7eb;
-        margin-bottom: .5rem;
-    }
-    .expiry-days {
-        font-size: 1.5rem; font-weight: 800; min-width: 2.5rem;
-        text-align: center; line-height: 1;
-    }
-    .expiry-days-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .3px; color: #9ca3af; text-align: center; }
-    .expiry-details { flex: 1; }
-    .expiry-sym { font-weight: 700; font-size: .85rem; }
-    .expiry-meta { font-size: .75rem; color: #6c757d; }
-    .expiry-badge {
-        font-size: .65rem; font-weight: 700; padding: .2rem .5rem;
-        border-radius: 4px; letter-spacing: .3px;
-    }
-    .expiry-badge.itm { background: rgba(220,53,69,.1); color: #991b1b; }
-    .expiry-badge.otm { background: rgba(25,135,84,.1); color: #166534; }
-    .expiry-badge.atm { background: rgba(234,179,8,.1); color: #713f12; }
-
-    /* ── Upcoming earnings (mirrors expiry-card visual rhythm) ── */
-    .earnings-card {
-        display: flex; align-items: center; gap: 1rem;
-        padding: .75rem 1rem; border-radius: 10px;
-        background: #fff; border: 1px solid #e5e7eb;
-        margin-bottom: .5rem;
-        text-decoration: none; color: inherit;
-    }
-    .earnings-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); text-decoration: none; color: inherit; }
-    .earnings-days {
-        font-size: 1.5rem; font-weight: 800; min-width: 2.5rem;
-        text-align: center; line-height: 1;
-    }
-    .earnings-days-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .3px; color: #9ca3af; text-align: center; }
-    .earnings-details { flex: 1; }
-    .earnings-sym { font-weight: 700; font-size: .95rem; color: #1e293b; }
-    .earnings-company { font-size: .75rem; color: #6c757d; }
-    .earnings-sector-pill {
-        display: inline-block; font-size: .65rem; font-weight: 600;
-        padding: .15rem .5rem; border-radius: 4px;
-        background: rgba(99,102,241,.1); color: #4338ca;
-        margin-left: .35rem; letter-spacing: .2px;
-    }
-    .earnings-date { text-align: right; font-size: .85rem; font-weight: 600; color: #1e293b; }
-
-    /* ── Calendar heatmap ──
-       Trading-week only (Mon–Fri): 5 columns, no weekends. Capped width so
-       the cells don't balloon to 200px+ on wide screens. */
-    .cal-grid {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 4px;
-        max-width: 32rem;
-    }
-    .cal-header {
-        font-size: .6rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: .5px; color: #9ca3af; text-align: center;
-        padding: .2rem 0;
-    }
-    .cal-day {
-        aspect-ratio: 1; border-radius: 6px;
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        font-size: .7rem; font-weight: 600;
-        position: relative;
-    }
-    .cal-day.empty { background: transparent; }
-    .cal-day.no-data { background: #f3f4f6; color: #d1d5db; }
-    .cal-day.today { box-shadow: inset 0 0 0 2px #3b82f6; }
-    .cal-day-num { line-height: 1; }
-    .cal-day-pnl { font-size: .6rem; font-weight: 700; margin-top: 2px; }
-
-    /* ── Mirror wall (publish) ── */
-    .wm-strip {
-        background: linear-gradient(135deg, #0c1222 0%, #1a2744 42%, #243b53 100%);
-        color: #f8fafc;
-        border: 1px solid rgba(148,163,184,.25);
-        box-shadow: 0 12px 40px -12px rgba(15,23,42,.45);
-    }
-    .wm-strip::before {
-        content: ""; position: absolute; inset: 0;
-        background: radial-gradient(ellipse 70% 80% at 0% 0%, rgba(251,191,36,.12), transparent 50%);
-        pointer-events: none;
-    }
-    .wm-strip-kicker { color: #fbbf24; }
-    .wm-strip-badge { opacity: .85; }
-    .wm-wall-btn {
-        font-weight: 700 !important;
-        letter-spacing: .02em;
-        border: none !important;
-        background: linear-gradient(135deg, #f59e0b, #ea580c) !important;
-        color: #fff !important;
-        box-shadow: 0 2px 12px rgba(234,88,12,.35);
-        transition: transform .12s, box-shadow .12s;
-    }
-    .wm-wall-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 18px rgba(234,88,12,.45); color: #fff !important; }
-    .wm-wall-done {
-        background: rgba(15,23,42,.06) !important;
-        color: #0f766e !important;
-        border: 1px solid rgba(13,148,136,.35) !important;
-        font-weight: 600 !important;
-        box-shadow: none !important;
-    }
-
-    /* ──────────────────────────────────────────────────────────────────
-       Mobile pass (≤ 640px)
-       The page was designed for laptop-width hero/snapshot/grid layouts;
-       on a phone the hero overflows, the snapshot row crowds, and the
-       trades / open-positions tables push horizontally. These overrides
-       keep the existing desktop layout intact and only kick in on
-       narrow viewports. We do NOT touch table data — overflow-x:auto
-       on table containers lets the table scroll instead of breaking.
-       ────────────────────────────────────────────────────────────── */
-    @media (max-width: 640px) {
-        .review-hero {
-            padding: 1.5rem 1.1rem;
-            border-radius: 14px;
-            margin-bottom: 1rem;
-        }
-        .hero-headline { font-size: 1.25rem; line-height: 1.3; }
-        .hero-subtitle { font-size: .85rem; }
-        .hero-meta { font-size: .7rem; }
-        .mode-pill { padding: .3rem .65rem; font-size: .7rem; }
-
-        .snapshot-section { padding: .85rem 1rem; }
-        .snap-value { font-size: .95rem; }
-        .snap-label { font-size: .65rem; }
-
-        .pattern-card { flex: 1 1 100%; padding: .75rem .9rem; font-size: .82rem; }
-        .pattern-headline { font-size: .72rem; }
-
-        .watch-card { padding: 1rem 1.1rem; }
-        .watch-item { font-size: .82rem; }
-
-        /* Make any table.responsive-on-mobile actually respect the wrap. */
-        .table-responsive { -webkit-overflow-scrolling: touch; }
-
-        /* Account-filter row should stack on phones, not run off the side. */
-        form.d-flex.flex-wrap { gap: .5rem !important; }
-    }
-
-    /* ── Dual-hero (Trading Mirror redesign) ──
-       Hero leads with a behavior sentence (process-first), and the P&L /
-       trade count / market context get a smaller supporting line. */
-    .review-hero .hero-mode-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: .5rem;
-        font-size: .72rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: .5px;
-        padding: .25rem .7rem;
-        border-radius: 20px;
-        background: rgba(255,255,255,.1);
-        color: rgba(255,255,255,.85);
-        border: 1px solid rgba(255,255,255,.18);
+        border: 1px solid #f1f5f9;
+        background: #fafbfc;
         text-decoration: none;
+        color: inherit;
     }
-    .review-hero .hero-mode-chip:hover { background: rgba(255,255,255,.18); color: #fff; }
-    .review-hero .hero-mode-chip .auto-flag { color: rgba(255,255,255,.5); font-weight: 500; }
-    .review-hero .hero-overrides { display: inline-flex; gap: .35rem; }
-    .review-hero .hero-overrides a {
-        font-size: .68rem; padding: .15rem .55rem; border-radius: 14px;
-        text-decoration: none; color: rgba(255,255,255,.5);
-        border: 1px solid rgba(255,255,255,.15);
+    .mover-row:hover { background: #f1f5f9; color: inherit; text-decoration: none; }
+    .mover-sym { font-weight: 700; font-size: .9rem; }
+    .mover-pct { font-size: .72rem; color: #6b7280; }
+    .mover-dollar {
+        font-weight: 700; font-size: .9rem;
+        font-variant-numeric: tabular-nums; text-align: right;
     }
-    .review-hero .hero-overrides a:hover { color: #fff; border-color: rgba(255,255,255,.4); }
-    .dual-hero-pnl {
-        margin-top: .65rem;
-        font-size: .92rem;
-        color: rgba(255,255,255,.85);
-        font-variant-numeric: tabular-nums;
-    }
-    .dual-hero-pnl .pnl-num { font-weight: 700; }
-    .dual-hero-pnl .market-extra {
-        margin-left: .65rem;
-        color: rgba(255,255,255,.55);
-        font-weight: 500;
-    }
+    .mover-meta { font-size: .68rem; color: #94a3b8; }
 
-    /* ── Diary (Mon→Fri timeline) ──
-       Centerpiece of the redesigned Weekly Review: a chronological journal
-       of what happened each day, with a 1-line summary. Process-first. */
-    .diary-section { padding: 1.25rem 1.5rem; }
-    .diary-row {
-        display: grid;
-        grid-template-columns: 4rem 1fr auto;
+    /* ── Watch list ── */
+    .watch-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    .watch-block { background: #f8fafc; border-radius: 12px; padding: 1rem 1.1rem; }
+    .watch-block .wb-title {
+        font-size: .7rem; text-transform: uppercase; letter-spacing: .6px;
+        color: #64748b; font-weight: 700; margin-bottom: .65rem;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .watch-block .wb-empty { font-size: .8rem; color: #94a3b8; font-style: italic; }
+    .watch-item {
+        display: grid; grid-template-columns: 3.2rem 1fr auto;
+        gap: .65rem; padding: .55rem .15rem;
+        border-bottom: 1px solid #eef2f7;
+        text-decoration: none; color: inherit;
         align-items: center;
-        gap: .9rem;
-        padding: .6rem .25rem;
-        border-bottom: 1px solid #f1f5f9;
-        transition: background-color .12s;
     }
-    .diary-row:last-child { border-bottom: none; }
-    .diary-row.is-today {
-        background: rgba(59,130,246,.05);
-        border-radius: 8px;
-        padding-left: .75rem; padding-right: .75rem;
-    }
-    .diary-row.is-future { opacity: .45; }
-    .diary-day {
-        display: flex; flex-direction: column;
+    .watch-item:last-child { border-bottom: none; }
+    .watch-item:hover { background: #fff; color: inherit; text-decoration: none; border-radius: 8px; padding-left: .5rem; padding-right: .5rem; }
+    .watch-days {
+        font-weight: 700; font-size: 1.15rem;
+        text-align: center; line-height: 1;
         font-variant-numeric: tabular-nums;
     }
-    .diary-day-label {
-        font-size: .82rem; font-weight: 700; color: #1e293b;
-        line-height: 1.1;
+    .watch-days-label {
+        font-size: .55rem; text-transform: uppercase; letter-spacing: .5px;
+        color: #94a3b8; text-align: center; margin-top: .15rem;
     }
-    .diary-row.is-today .diary-day-label { color: #1d4ed8; }
-    .diary-row.is-future .diary-day-label { color: #94a3b8; }
-    .diary-day-date {
-        font-size: .68rem; color: #94a3b8; text-transform: uppercase;
-        letter-spacing: .4px; margin-top: .15rem;
+    .watch-sym { font-weight: 700; font-size: .9rem; color: #0f172a; }
+    .watch-meta { font-size: .72rem; color: #64748b; margin-top: .1rem; }
+    .watch-aux { text-align: right; font-size: .72rem; color: #64748b; font-variant-numeric: tabular-nums; }
+    .watch-badge {
+        display: inline-block; padding: .12rem .45rem; border-radius: 10px;
+        font-size: .65rem; font-weight: 700; margin-left: .3rem;
+        background: #e2e8f0; color: #475569;
     }
-    .diary-summary {
-        font-size: .9rem; color: #334155; line-height: 1.5;
-    }
-    .diary-row.is-future .diary-summary { color: #cbd5e1; font-style: italic; }
-    .diary-pnl {
-        font-size: .85rem; font-weight: 700;
-        font-variant-numeric: tabular-nums;
-    }
-    .diary-pnl.flat { color: #94a3b8; font-weight: 500; }
+    .watch-badge.itm { background: rgba(220,53,69,.1); color: #b91c1c; }
+    .watch-badge.atm { background: rgba(234,179,8,.12); color: #854d0e; }
+    .watch-badge.otm { background: rgba(25,135,84,.08); color: #15803d; }
 
-    /* ── "What we noticed" merged panel ──
-       Replaces 3 separate sections (Key Observation, Patterns, Coach's Take). */
-    .noticed-grid {
+    /* ── Today strip (open positions cards) ── */
+    .today-strip {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: .75rem;
     }
-    .noticed-card {
-        border-radius: 12px;
-        padding: .9rem 1.1rem;
-        font-size: .9rem;
-        line-height: 1.5;
-        border-left: 4px solid;
+    .strip-card {
+        padding: .85rem 1rem;
+        background: #f8fafc;
+        border-radius: 10px;
+        text-decoration: none;
+        color: inherit;
+        border: 1px solid #f1f5f9;
+        transition: all .15s;
     }
-    .noticed-card.positive { background: rgba(25,135,84,.06);  border-left-color: #198754; color: #166534; }
-    .noticed-card.negative { background: rgba(220,53,69,.06);  border-left-color: #dc3545; color: #7f1d1d; }
-    .noticed-card.warning  { background: rgba(234,179,8,.08);  border-left-color: #ca8a04; color: #854d0e; }
-    .noticed-card.neutral  { background: rgba(13,110,253,.05); border-left-color: #0d6efd; color: #1e3a5f; }
-    .noticed-headline {
-        font-size: .7rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .35px; opacity: .85; margin-bottom: .25rem;
-    }
-    .noticed-detail { font-weight: 400; }
+    .strip-card:hover { background: #fff; color: inherit; text-decoration: none; border-color: #cbd5e1; box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .strip-sym { font-weight: 700; font-size: 1rem; color: #0f172a; }
+    .strip-price { font-size: .75rem; color: #64748b; margin-top: .1rem; }
+    .strip-pnl { font-size: .95rem; font-weight: 700; margin-top: .35rem; font-variant-numeric: tabular-nums; }
+    .strip-pct { font-size: .75rem; margin-top: .1rem; font-variant-numeric: tabular-nums; }
+    .strip-legs { font-size: .65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; margin-top: .25rem; }
 
-    /* ── Rolling N-week calendar ──
-       Replaces the "current calendar month so far" grid that was empty on
-       the 1st of every month. Default view is the last 4 weeks × Mon-Fri;
-       a "Show earlier weeks" button below the grid reveals up to 12 weeks
-       of history (already in the DOM, marked .cal-extra and hidden by
-       default — no extra request when the user expands). */
+    /* ── Calendar heatmap ── */
+    .cal-section-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 1rem; max-width: 36rem; margin-bottom: .5rem;
+    }
     .cal-grid-rolling {
         display: grid;
         grid-template-columns: 5rem repeat(5, 1fr);
         gap: 4px;
         max-width: 36rem;
     }
-    .cal-grid-rolling .cal-rolling-header {
+    .cal-rolling-header {
         font-size: .6rem; font-weight: 600; text-transform: uppercase;
         letter-spacing: .5px; color: #9ca3af; text-align: center;
         padding: .2rem 0;
     }
-    .cal-grid-rolling .cal-rolling-week-label {
+    .cal-rolling-week-label {
         font-size: .68rem; color: #94a3b8; text-transform: uppercase;
         letter-spacing: .4px; align-self: center; padding-left: .25rem;
     }
-    /* Older history rendered server-side but hidden until the toggle fires. */
     .cal-grid-rolling .cal-extra { display: none; }
     .cal-grid-rolling.is-expanded .cal-extra { display: flex; }
-    .cal-grid-rolling.is-expanded .cal-rolling-week-label.cal-extra {
-        display: block;
+    .cal-grid-rolling.is-expanded .cal-rolling-week-label.cal-extra { display: block; }
+    .cal-day {
+        border-radius: 6px;
+        padding: .4rem .25rem;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        min-height: 2.6rem;
+        font-variant-numeric: tabular-nums;
     }
-    .cal-section-head {
-        display: flex; align-items: baseline; justify-content: space-between;
-        gap: 1rem; max-width: 36rem; margin-bottom: .5rem;
-    }
+    .cal-day .cal-day-num { font-size: .68rem; color: inherit; opacity: .8; line-height: 1; }
+    .cal-day .cal-day-pnl { font-size: .68rem; font-weight: 700; margin-top: .15rem; line-height: 1; }
+    .cal-day.today { outline: 2px solid #2563eb; }
     .cal-toggle-btn {
         background: transparent; border: 0; padding: .25rem 0;
         font-size: .68rem; font-weight: 600;
@@ -703,34 +320,79 @@
         color: #2563eb; cursor: pointer; white-space: nowrap;
     }
     .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
-    .cal-toggle-btn[hidden] { display: none; }
 
-    /* ── Numbers disclosure (collapsible) ──
-       The richer P&L tables are kept (don't lose data!) but tucked behind
-       a single disclosure so they don't dominate the page. */
-    details.numbers-disclosure { margin-bottom: 1.25rem; }
-    details.numbers-disclosure > summary {
-        cursor: pointer;
-        list-style: none;
-        font-size: .82rem;
-        font-weight: 600;
-        color: #475569;
-        padding: .65rem 1rem;
-        border-radius: 10px;
+    /* ── Breakdown table (positions / strategies / sectors) ── */
+    .breakdown-wrap { overflow-x: auto; }
+    .breakdown-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .87rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .breakdown-table th, .breakdown-table td {
+        padding: .55rem .65rem;
+        border-bottom: 1px solid #f1f5f9;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .breakdown-table th {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
+        color: #94a3b8; font-weight: 700;
+        border-bottom: 2px solid #e5e7eb;
+        background: #fafbfc;
+        position: sticky; top: 0; z-index: 1;
+    }
+    .breakdown-table th.left, .breakdown-table td.left { text-align: left; }
+    .breakdown-table tbody tr:hover { background: #fafbfc; }
+    .breakdown-table .row-symbol {
+        font-weight: 700; color: #0f172a; text-decoration: none;
+    }
+    .breakdown-table .row-symbol:hover { color: #2563eb; }
+    .breakdown-table .row-company {
+        font-size: .7rem; color: #94a3b8; font-weight: 400; margin-top: .1rem;
+    }
+    .breakdown-table .row-meta {
+        font-size: .68rem; color: #94a3b8; margin-top: .1rem;
+    }
+    .breakdown-table tr.totals-row td {
+        border-top: 2px solid #d1d5db;
+        border-bottom: none;
+        font-weight: 700;
         background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        padding-top: .75rem; padding-bottom: .75rem;
     }
-    details.numbers-disclosure > summary::-webkit-details-marker { display: none; }
-    details.numbers-disclosure > summary::after {
-        content: "Show ▾"; font-weight: 500; color: #94a3b8; font-size: .78rem;
+    .pill-status {
+        display: inline-block; font-size: .65rem; padding: .15rem .5rem;
+        border-radius: 10px; text-transform: uppercase; letter-spacing: .4px;
+        font-weight: 700;
     }
-    details.numbers-disclosure[open] > summary::after { content: "Hide ▴"; }
-    details.numbers-disclosure[open] > summary { background: #f1f5f9; }
-    details.numbers-disclosure > .numbers-body {
-        padding-top: 1.25rem;
+    .pill-status.open { background: rgba(25,135,84,.08); color: #15803d; }
+    .pill-status.closed { background: rgba(100,116,139,.12); color: #475569; }
+
+    /* Profitability scorecard (Excel-style footer card) */
+    .scorecard {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 1.25rem;
+        margin-top: 1.25rem;
+        padding: 1rem 1.25rem;
+        background: #f8fafc;
+        border-radius: 12px;
+        border: 1px solid #eef2f7;
+    }
+    @media (max-width: 600px) { .scorecard { grid-template-columns: 1fr; } }
+    .scorecard .sc-cell { text-align: left; }
+    .scorecard .sc-label {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
+        color: #64748b; font-weight: 700; margin-bottom: .25rem;
+    }
+    .scorecard .sc-line {
+        font-size: .85rem; color: #334155; font-variant-numeric: tabular-nums;
+        line-height: 1.6;
+    }
+    .scorecard .sc-pct {
+        font-size: 1.4rem; font-weight: 700; color: #0f172a;
+        line-height: 1; margin-top: .3rem;
     }
 </style>
 {% endblock %}
@@ -750,17 +412,13 @@
             {% endfor %}
         </select>
     </div>
-    {# Mode is selected via the in-hero pills (Friday / Monday / Mid-Week);
-       preserve it across account changes so the review stays in the same
-       mode the user picked. #}
-    {% if mode %}<input type="hidden" name="mode" value="{{ mode }}">{% endif %}
     {% if selected_account %}
-    <a class="filter-reset" href="{{ url_for('weekly_review', mode=mode or none) }}">Reset</a>
+    <a class="filter-reset" href="{{ url_for('weekly_review') }}">Reset</a>
     {% endif %}
 </form>
 {% endif %}
 
-{% if error %}<div class="alert alert-danger small">We're having trouble loading your weekly review right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
+{% if error %}<div class="alert alert-danger small">We're having trouble loading your daily review right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% if from_upload %}
 <div class="alert alert-info small mb-3">
@@ -768,86 +426,54 @@
 </div>
 {% endif %}
 
-{% if week_mart_empty %}
-<div class="alert alert-warning small mb-3" role="status">
-    <strong>Heads up:</strong> Your weekly numbers are still being calculated for the week of
-    {{ week_start }} ({{ user_timezone|replace('_', ' ') }}). Some sections will fill in once we finish processing —
-    check back in a few minutes.
-    {% if last_activity_week %}
-    <span class="d-block mt-1 text-muted">Most recent completed week: <strong>week of {{ last_activity_week }}</strong>.</span>
-    {% endif %}
-</div>
-{% endif %}
-
 {# ════════════════════════════════════
-   HERO (dual: behavior sentence + small P&L line)
+   HERO — today's pulse
    ════════════════════════════════════ #}
 <div class="review-hero">
-    {# Auto-mode chip with optional override links — replaces the noisy
-       3-button mode-pill row. Page already auto-detects the right mode
-       from your day-of-week; the override links are there for power users. #}
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        {# Mode pills kept from master (Mid-Week → "Today" reframe). My
-           earlier auto-chip experiment is dropped per the rebase directive:
-           leave master's UI and layer the redesign around it. #}
-        <a href="{{ url_for('weekly_review', mode='friday', account=selected_account) if selected_account else url_for('weekly_review', mode='friday') }}"
-           class="mode-pill {% if mode == 'friday' %}active{% endif %}">Friday Review</a>
-        <a href="{{ url_for('weekly_review', mode='monday', account=selected_account) if selected_account else url_for('weekly_review', mode='monday') }}"
-           class="mode-pill {% if mode == 'monday' %}active{% endif %}">Monday Check</a>
-        <a href="{{ url_for('weekly_review', mode='midweek', account=selected_account) if selected_account else url_for('weekly_review', mode='midweek') }}"
-           class="mode-pill {% if mode == 'midweek' %}active{% endif %}">Today</a>
-    </div>
-
-    {# Big behavior sentence — the answer to "did I trade like myself?" — and
-       a smaller supporting P&L / market line. P&L is no longer the headline. #}
-    {% if behavior_sentence %}
-    <p class="hero-headline">{{ behavior_sentence }}</p>
-    {% else %}
-    <p class="hero-headline">Weekly Review</p>
-    {% endif %}
-
-    {% if review and (review.trades_closed > 0 or (review.dividends_amount or 0) != 0) %}
-    {% set _wr_pct = (review.num_winners / review.trades_closed * 100) if review.trades_closed > 0 else None %}
-    {% set _hero_pnl = review.total_return if review.total_return is defined else review.total_pnl %}
-    {% set _has_div = (review.dividends_amount or 0) != 0 %}
-    <div class="dual-hero-pnl">
-        <span class="pnl-num {% if _hero_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}"
-              title="{% if _has_div %}Trade P&L ${{ '{:,.0f}'.format(review.total_pnl) }} + dividends ${{ '{:,.0f}'.format(review.dividends_amount) }}{% else %}Closed trades P&L this week{% endif %}">
-            {{ "+" if _hero_pnl >= 0 else "" }}${{ "{:,.0f}".format(_hero_pnl) }}
+    <div class="hero-kicker">Daily Review &middot; {{ today.strftime('%A, %b %-d') }}</div>
+    {% if today_pulse %}
+    {% set _pos = today_pulse.delta >= 0 %}
+    <p class="hero-headline">
+        Today:
+        <span class="delta-num {% if _pos %}text-positive{% else %}text-negative{% endif %}"
+              style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
+            {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(today_pulse.delta|abs) }}
         </span>
-        {% if review.trades_closed > 0 %}
-        · {{ review.trades_closed }} close{{ 's' if review.trades_closed != 1 else '' }}
-        {% if _wr_pct is not none %} · {{ "%.0f%%"|format(_wr_pct) }} wins{% endif %}
+        {% if equity_snapshot and equity_snapshot.account_value and (equity_snapshot.account_value - today_pulse.delta) > 0 %}
+        {% set _pct = today_pulse.delta / (equity_snapshot.account_value - today_pulse.delta) * 100 %}
+        <span style="font-size:1rem; color: rgba(255,255,255,.6); font-weight:500;">
+            ({{ "+" if _pct >= 0 else "" }}{{ "%.2f"|format(_pct) }}%)
+        </span>
         {% endif %}
-        {% if _has_div %}
-        · <span class="text-positive" title="Cash dividends received this week — peer to equity and option P&L.">${{ "{:,.0f}".format(review.dividends_amount) }} divs</span>
+        {% if equity_snapshot and equity_snapshot.account_value %}
+        <span style="font-size:.85rem; color: rgba(255,255,255,.45); font-weight:500;">
+            &middot; ${{ "{:,.0f}".format(equity_snapshot.account_value) }} total
+        </span>
         {% endif %}
-        {% if market_neutral_line %}
-        <span class="market-extra">· {{ market_neutral_line.replace('Market context this week: ', '') }}</span>
-        {% endif %}
-    </div>
-    {% elif market_neutral_line %}
-    <div class="dual-hero-pnl">
-        <span class="market-extra">{{ market_neutral_line }}</span>
-    </div>
+    </p>
+    {% else %}
+    <p class="hero-headline">Daily Review</p>
     {% endif %}
+
+    <p class="hero-subtitle">
+        End of day: one place to see what just happened and what to watch tomorrow.
+    </p>
 
     <div class="hero-meta">
-        Week of {{ week_start }} &mdash; {{ week_end }}
-        <span class="text-muted">·</span>
-        <span class="text-muted" style="font-size:.75rem" title="Profile → Settings: timezone for week boundaries and which day drives Friday / Monday / mid-week.">Today: <strong class="text-body-secondary">{{ today }}</strong> ({{ user_timezone|replace('_', ' ') }})</span>
         {% if market_session %}
-        <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %} ms-2" style="font-size:.7rem" title="{{ market_session.label }}">U.S. market: {{ market_session.state|replace('_', ' ') }}</span>
+        <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %}" title="{{ market_session.label }}">
+            U.S. market: {{ market_session.state|replace('_', ' ') }}
+        </span>
         {% endif %}
+        {% if market_neutral_line %}
+        <span style="color: rgba(255,255,255,.65);">{{ market_neutral_line }}</span>
+        {% endif %}
+        <span style="color: rgba(255,255,255,.4);">Times in {{ user_timezone|replace('_', ' ') }}</span>
     </div>
 </div>
 
 {# ════════════════════════════════════
-   SINCE YOU LAST LOOKED (daily-pull diff) — kept from master.
-
-   Renders only when there's something genuinely new vs the user's previous
-   visit: stock moves on open positions, trades that opened/closed, options
-   that newly entered the 7-day expiry window, or options that just went ITM.
+   SINCE YOU LAST LOOKED — daily-pull diff
    ════════════════════════════════════ #}
 {% if since_last_looked %}
 {% set sll = since_last_looked %}
@@ -864,7 +490,6 @@
         {% endif %}
     </p>
 
-    {# Stock moves on open positions #}
     {% if sll.moves %}
     <div class="since-row">
         <span class="since-section-label">Moves</span>
@@ -879,7 +504,6 @@
     </div>
     {% endif %}
 
-    {# Newly in the money — strongest signal, surface up top with stronger styling #}
     {% if sll.newly_itm %}
     <div class="since-row">
         <span class="since-section-label">Newly ITM</span>
@@ -889,21 +513,17 @@
            title="Stock moved across the {{ '%.2f' % opt.strike }} strike since your last visit">
             <span class="sym">{{ opt.symbol }}</span>
             <span>{{ opt.option_type|lower }} {{ '%.0f' % opt.strike }}</span>
-            {% if opt.days_to_exp is not none %}
-            <span class="text-muted">{{ opt.days_to_exp }}d</span>
-            {% endif %}
+            {% if opt.days_to_exp is not none %}<span class="text-muted">{{ opt.days_to_exp }}d</span>{% endif %}
         </a>
         {% endfor %}
     </div>
     {% endif %}
 
-    {# Options that just entered the 7-day expiry window #}
     {% if sll.newly_near_expiry %}
     <div class="since-row">
         <span class="since-section-label">Now expiring soon</span>
         {% for opt in sll.newly_near_expiry %}
-        <a class="since-chip"
-           href="{{ url_for('position_detail', symbol=opt.symbol) }}">
+        <a class="since-chip" href="{{ url_for('position_detail', symbol=opt.symbol) }}">
             <span class="sym">{{ opt.symbol }}</span>
             <span>{{ opt.option_type|lower }} {{ '%.0f' % (opt.strike or 0) }}</span>
             <span class="text-muted">{{ opt.days_to_exp }}d</span>
@@ -912,7 +532,6 @@
     </div>
     {% endif %}
 
-    {# Trades that closed since #}
     {% if sll.closed_trades %}
     <div class="since-row">
         <span class="since-section-label">Closed</span>
@@ -929,13 +548,11 @@
     </div>
     {% endif %}
 
-    {# Trades that opened since #}
     {% if sll.opened_trades %}
     <div class="since-row">
         <span class="since-section-label">Opened</span>
         {% for t in sll.opened_trades %}
-        <a class="since-chip"
-           href="{{ url_for('position_detail', symbol=t.symbol) }}">
+        <a class="since-chip" href="{{ url_for('position_detail', symbol=t.symbol) }}">
             <span class="sym">{{ t.symbol }}</span>
             {% if t.strategy %}<span class="text-muted">{{ t.strategy }}</span>{% endif %}
             <span class="text-muted">{{ t.open_date }}</span>
@@ -947,76 +564,42 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   ACCOUNT SNAPSHOT — daily hook (master) + redesign comment context.
-
-   Lives directly under "Since you last looked" so the page answers
-   "what just happened?" → "how am I doing today / this week / this month?"
-   in two stacked sections, before the diary and the rest of the redesign
-   take over below.
+   ACCOUNT SNAPSHOT
    ════════════════════════════════════ #}
 {% if today_snapshots_by_account %}
-{# ── Single-account: original tile row ─────────────────────────────────── #}
 {% if today_snapshots_by_account|length == 1 %}
 {% set snap = today_snapshots_by_account[0] %}
-<div class="review-section snapshot-section mb-3">
+<div class="review-section snapshot-section">
     <div class="snapshot-row">
         <div class="snap-cell">
             <div class="snap-label">Account Value</div>
             {% if snap.today_value is not none %}
             <div class="snap-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
             {% if snap.today_date %}<div class="snap-meta">{{ snap.today_date }}</div>{% endif %}
-            {% else %}
-            <div class="snap-value text-muted">—</div>
-            {% endif %}
-        </div>
-        {% set d = snap.comparisons.day %}
-        <div class="snap-cell">
-            <div class="snap-label">vs Yesterday</div>
-            {% if d.has_data and d.delta is not none %}
-            {% set d_pos = d.delta >= 0 %}
-            <div class="snap-value {% if d_pos %}text-positive{% else %}text-negative{% endif %}">
-                {% if d_pos %}+${{ "{:,.0f}".format(d.delta) }}{% else %}-${{ "{:,.0f}".format(d.delta|abs) }}{% endif %}
-            </div>
-            {% if d.delta_pct is not none %}<div class="snap-meta">{{ "+" if d.delta_pct >= 0 else "" }}{{ "%.2f"|format(d.delta_pct) }}%</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
-        {% set sw = snap.vs_week_start %}
+        {% for key, label in [('day', 'vs Yesterday'), ('week', 'vs 1 Week'), ('month', 'vs 1 Month')] %}
+        {% set c = snap.comparisons[key] %}
         <div class="snap-cell">
-            <div class="snap-label" title="Change since start-of-week value for the week of {{ week_start }}">vs week start</div>
-            {% if sw and sw.has_data and sw.delta is not none %}
-            {% set sw_pos = sw.delta >= 0 %}
-            <div class="snap-value {% if sw_pos %}text-positive{% else %}text-negative{% endif %}">
-                {% if sw_pos %}+${{ "{:,.0f}".format(sw.delta) }}{% else %}-${{ "{:,.0f}".format(sw.delta|abs) }}{% endif %}
+            <div class="snap-label">{{ label }}</div>
+            {% if c.has_data and c.delta is not none %}
+            {% set pos = c.delta >= 0 %}
+            <div class="snap-value {% if pos %}text-positive{% else %}text-negative{% endif %}">
+                {% if pos %}+${{ "{:,.0f}".format(c.delta) }}{% else %}-${{ "{:,.0f}".format(c.delta|abs) }}{% endif %}
             </div>
-            {% if sw.delta_pct is not none %}<div class="snap-meta">{{ "+" if sw.delta_pct >= 0 else "" }}{{ "%.2f"|format(sw.delta_pct) }}%</div>{% endif %}
+            {% if c.delta_pct is not none %}<div class="snap-meta">{{ "+" if c.delta_pct >= 0 else "" }}{{ "%.2f"|format(c.delta_pct) }}%</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
-        {% set w = snap.comparisons.week %}
+        {% endfor %}
         <div class="snap-cell">
-            <div class="snap-label">vs 1 Week</div>
-            {% if w.has_data and w.delta is not none %}
-            {% set w_pos = w.delta >= 0 %}
-            <div class="snap-value {% if w_pos %}text-positive{% else %}text-negative{% endif %}">
-                {% if w_pos %}+${{ "{:,.0f}".format(w.delta) }}{% else %}-${{ "{:,.0f}".format(w.delta|abs) }}{% endif %}
-            </div>
-            {% if w.delta_pct is not none %}<div class="snap-meta">{{ "+" if w.delta_pct >= 0 else "" }}{{ "%.2f"|format(w.delta_pct) }}%</div>{% endif %}
-            {% else %}<div class="snap-value text-muted">—</div>{% endif %}
-        </div>
-        {% set m = snap.comparisons.month %}
-        <div class="snap-cell">
-            <div class="snap-label">vs 1 Month</div>
-            {% if m.has_data and m.delta is not none %}
-            {% set m_pos = m.delta >= 0 %}
-            <div class="snap-value {% if m_pos %}text-positive{% else %}text-negative{% endif %}">
-                {% if m_pos %}+${{ "{:,.0f}".format(m.delta) }}{% else %}-${{ "{:,.0f}".format(m.delta|abs) }}{% endif %}
-            </div>
-            {% if m.delta_pct is not none %}<div class="snap-meta">{{ "+" if m.delta_pct >= 0 else "" }}{{ "%.2f"|format(m.delta_pct) }}%</div>{% endif %}
+            <div class="snap-label">Cash / Invested</div>
+            {% if equity_snapshot %}
+            <div class="snap-value">${{ "{:,.0f}".format(equity_snapshot.cash_balance) }}</div>
+            <div class="snap-meta">{{ equity_snapshot.pct_invested or 0 }}% invested</div>
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
     </div>
 </div>
-
-{# ── Multi-account: consolidated table with TOTAL row ─────────────────── #}
 {% else %}
 {% macro money_cell(comp, dash="—") %}
     {% if comp and comp.has_data and comp.delta is not none %}
@@ -1029,19 +612,17 @@
         {{ "+" if comp.delta_pct >= 0 else "" }}{{ "%.2f"|format(comp.delta_pct) }}%
     </div>
     {% endif %}
-    {% else %}
-    <div class="snap-cell-val snap-cell-dash">{{ dash }}</div>
-    {% endif %}
+    {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
 {% endmacro %}
-<div class="review-section snapshot-section mb-3">
+<div class="review-section snapshot-section">
     <div class="snapshot-table">
         <div class="snapshot-table-head">
             <div>Account</div>
             <div>Value</div>
             <div>vs Yesterday</div>
-            <div class="snap-col-week-ago" title="Change since start-of-week value for the week of {{ week_start }}">vs Week Start</div>
-            <div class="snap-col-week-ago">vs 1 Week</div>
+            <div>vs 1 Week</div>
             <div class="snap-col-month">vs 1 Month</div>
+            <div>Today vs Open</div>
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
@@ -1052,14 +633,12 @@
             <div>
                 {% if snap.today_value is not none %}
                 <div class="snap-cell-val">${{ "{:,.0f}".format(snap.today_value) }}</div>
-                {% else %}
-                <div class="snap-cell-val snap-cell-dash">—</div>
-                {% endif %}
+                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(snap.comparisons.day) }}</div>
-            <div class="snap-col-week-ago">{{ money_cell(snap.vs_week_start) }}</div>
-            <div class="snap-col-week-ago">{{ money_cell(snap.comparisons.week) }}</div>
+            <div>{{ money_cell(snap.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
+            <div>{{ money_cell(snap.comparisons.day) }}</div>
         </div>
         {% endfor %}
         {% if today_snapshots_total %}
@@ -1071,14 +650,12 @@
             <div>
                 {% if today_snapshots_total.today_value is not none %}
                 <div class="snap-cell-val">${{ "{:,.0f}".format(today_snapshots_total.today_value) }}</div>
-                {% else %}
-                <div class="snap-cell-val snap-cell-dash">—</div>
-                {% endif %}
+                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
-            <div class="snap-col-week-ago">{{ money_cell(today_snapshots_total.vs_week_start) }}</div>
-            <div class="snap-col-week-ago">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
+            <div>{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
+            <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
         </div>
         {% endif %}
     </div>
@@ -1087,186 +664,171 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   DIARY (Mon→Fri timeline) — centerpiece of the redesigned page
+   TODAY'S MOVERS — biggest stock $ impact on holdings
    ════════════════════════════════════ #}
-{% if diary %}
-<div class="review-section diary-section mb-3">
-    <div class="section-label">Your Week, Day by Day</div>
-    {% for d in diary %}
-    <div class="diary-row {% if d.is_today %}is-today{% elif d.is_future %}is-future{% endif %}">
-        <div class="diary-day">
-            <div class="diary-day-label">{{ d.label }}</div>
-            <div class="diary-day-date">{{ d.date.strftime("%b %d") }}</div>
-        </div>
-        <div class="diary-summary">
-            {{ d.summary or '—' }}
-        </div>
-        <div>
-            {% if d.is_future %}
-            {# nothing #}
-            {% elif d.daily_change is not none and d.daily_change != 0 %}
-            <span class="diary-pnl {% if d.daily_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if d.daily_change > 0 else "" }}${{ "{:,.0f}".format(d.daily_change) }}
-            </span>
-            {% elif d.daily_change == 0 %}
-            <span class="diary-pnl flat">$0</span>
-            {% endif %}
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   WHAT WE NOTICED — merged narrative panel
-   (replaces Key Observation + Patterns + Coach's Take section bodies)
-   ════════════════════════════════════ #}
-{% if noticed %}
-<div class="review-section mb-3">
-    <div class="section-label">What we noticed</div>
-    <div class="noticed-grid">
-        {% for n in noticed %}
-        <div class="noticed-card {{ n.severity }}">
-            {% if n.headline %}<div class="noticed-headline">{{ n.headline }}</div>{% endif %}
-            <div class="noticed-detail">{{ n.detail }}</div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-
-{# ════════════════════════════════════════════════════════
-   TODAY STRIP — Open positions at a glance
-   ════════════════════════════════════════════════════════ #}
-{% if today_strip %}
+{% if today_movers and (today_movers.winners or today_movers.losers) %}
 <div class="review-section">
-    <div class="section-label">Your Positions Right Now</div>
-    <div class="today-strip">
-        {% for pos in today_strip %}
-        <a href="/position/{{ pos.symbol }}" class="strip-card">
-            <div class="strip-sym">{{ pos.symbol }}</div>
-            {% if pos.price %}
-            <div class="strip-price">${{ "{:,.2f}".format(pos.price) }}</div>
-            {% endif %}
-            <div class="strip-pnl {% if pos.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if pos.unrealized_pnl >= 0 else "" }}${{ "{:,.0f}".format(pos.unrealized_pnl) }}
-            </div>
-            {% if pos.unrealized_pnl_pct is not none %}
-            <div class="strip-pct {% if pos.unrealized_pnl_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if pos.unrealized_pnl_pct >= 0 else "" }}{{ pos.unrealized_pnl_pct }}%
-            </div>
-            {% endif %}
-            {% if pos.num_legs > 1 %}
-            <div class="strip-legs">{{ pos.num_legs }} legs</div>
-            {% endif %}
-        </a>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-
-{# ════════════════════════════════════════════════════════
-   UPCOMING EARNINGS — currently-held symbols reporting soon.
-   Source: scripts/refresh_earnings_calendar.py → stg_earnings_calendar,
-   joined to currently-held holdings in app/weekly_review.py
-   (EARNINGS_UPCOMING_QUERY, tenant-scoped via {account_filter}).
-
-   Mode-aware framing matches the rest of the page:
-     - Friday Review  → "Earnings Next Week" (Mon–Fri ahead)
-     - Monday Check   → "Earnings This Week"
-     - Mid-week       → "Earnings Coming Up"
-   Earnings that already passed this week aren't shown — yfinance moves
-   them to the next report quarter as soon as the date passes.
-   ════════════════════════════════════════════════════════ #}
-{% set _upcoming = (upcoming_earnings_this_week or []) + (upcoming_earnings_next_week or []) %}
-{% if _upcoming %}
-<div class="review-section">
-    <div class="section-label">
-        {% if mode == 'friday' %}Earnings Next Week
-        {% elif mode == 'monday' %}Earnings This Week
-        {% else %}Earnings Coming Up
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>Today's Biggest Movers (your holdings)</span>
+        {% if today_movers.total_impact %}
+        {% set ti = today_movers.total_impact %}
+        <span style="font-size: .8rem; color: {% if ti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
+            Net price impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+        </span>
         {% endif %}
     </div>
-    <p class="text-muted small mb-3" style="margin-top:-.5rem;">
-        {{ _upcoming|length }} of your holding{{ 's' if _upcoming|length != 1 }} report{{ '' if _upcoming|length != 1 else 's' }} earnings in the next 14 days. Expect volatility.
+    <p class="section-sub">
+        Stock-price moves today on currently-held shares, weighted by your share count.
+        Doesn't include options-MTM or realized closures (those are in the breakdown tables below).
     </p>
-    {% for e in _upcoming %}
-    <a href="/position/{{ e.symbol }}" class="earnings-card">
+    <div class="movers-grid">
         <div>
-            <div class="earnings-days {% if e.days_until is not none and e.days_until <= 1 %}text-danger{% elif e.days_until is not none and e.days_until <= 7 %}text-warning{% else %}text-muted{% endif %}">
-                {{ e.days_until if e.days_until is not none else '?' }}
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up today</div>
+            <div class="movers-list">
+                {% for m in today_movers.winners %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
+                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No green names today.</div>
+                {% endfor %}
             </div>
-            <div class="earnings-days-label">{{ 'day' if e.days_until == 1 else 'days' }}</div>
         </div>
-        <div class="earnings-details">
-            <div class="earnings-sym">
-                {{ e.symbol }}
-                {% if e.subsector %}<span class="earnings-sector-pill">{{ e.subsector }}</span>
-                {% elif e.sector %}<span class="earnings-sector-pill">{{ e.sector }}</span>
-                {% endif %}
-            </div>
-            {% if e.company %}<div class="earnings-company">{{ e.company }}</div>{% endif %}
-        </div>
-        <div class="earnings-date">{{ e.earnings_date_display }}</div>
-    </a>
-    {% endfor %}
-</div>
-{% endif %}
-
-
-{# ════════════════════════════════════════════════════════
-   EXPIRING THIS WEEK — Options near expiry
-   ════════════════════════════════════════════════════════ #}
-{% if expiring_options %}
-<div class="review-section">
-    <div class="section-label">Expiring Soon</div>
-    <p class="text-muted small mb-3" style="margin-top:-.5rem;">{{ expiring_options|length }} option{{ 's' if expiring_options|length != 1 }} expiring in the next 7 days. Do you need to act?</p>
-    {% for opt in expiring_options %}
-    <div class="expiry-card">
         <div>
-            <div class="expiry-days {% if opt.days_to_exp is not none and opt.days_to_exp <= 1 %}text-danger{% elif opt.days_to_exp is not none and opt.days_to_exp <= 3 %}text-warning{% else %}text-muted{% endif %}">
-                {{ opt.days_to_exp if opt.days_to_exp is not none else '?' }}
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down today</div>
+            <div class="movers-list">
+                {% for m in today_movers.losers %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
+                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No red names today.</div>
+                {% endfor %}
             </div>
-            <div class="expiry-days-label">{{ 'day' if opt.days_to_exp == 1 else 'days' }}</div>
-        </div>
-        <div class="expiry-details">
-            <div class="expiry-sym">
-                <span title="{{ opt.trade_symbol }}">{{ opt.trade_symbol|option_symbol }}</span>
-                {% if opt.itm is not none %}
-                    {% if opt.distance is not none and opt.distance|abs < 0.50 %}
-                    <span class="expiry-badge atm">ATM</span>
-                    {% elif opt.itm %}
-                    <span class="expiry-badge itm">ITM ${{ "{:,.2f}".format(opt.distance|abs) }}</span>
-                    {% else %}
-                    <span class="expiry-badge otm">OTM ${{ "{:,.2f}".format(opt.distance|abs) }}</span>
-                    {% endif %}
-                {% endif %}
-            </div>
-            <div class="expiry-meta">
-                {{ opt.quantity }} contract{{ 's' if opt.quantity|abs != 1 }} &middot;
-                ${{ opt.strike }} {{ opt.option_type }} &middot;
-                Stock @ ${{ "{:,.2f}".format(opt.stock_price) }}
-            </div>
-        </div>
-        <div class="text-end">
-            <div class="fw-bold {% if opt.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" style="font-size:.9rem;">
-                {{ "+" if opt.unrealized_pnl >= 0 else "" }}${{ "{:,.0f}".format(opt.unrealized_pnl) }}
-            </div>
-            <div class="text-muted" style="font-size:.7rem;">mkt ${{ "{:,.0f}".format(opt.market_value) }}</div>
         </div>
     </div>
-    {% endfor %}
 </div>
 {% endif %}
 
+{# ════════════════════════════════════
+   WATCH LIST — earnings, expiring opts, projected ex-div
+   ════════════════════════════════════ #}
+{% set _all_earnings = (upcoming_earnings_this_week or []) + (upcoming_earnings_next_week or []) %}
+{% if _all_earnings or expiring_options or upcoming_ex_dividends %}
+<div class="review-section">
+    <div class="section-label">On Your Radar (next ~14 days)</div>
+    <div class="watch-grid">
+        <div class="watch-block">
+            <div class="wb-title">
+                <span>Earnings</span>
+                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ _all_earnings|length }} held</span>
+            </div>
+            {% if _all_earnings %}
+            {% for e in _all_earnings[:10] %}
+            <a href="{{ url_for('position_detail', symbol=e.symbol) }}" class="watch-item">
+                <div>
+                    <div class="watch-days {% if e.days_until is not none and e.days_until <= 1 %}text-negative{% elif e.days_until is not none and e.days_until <= 7 %}text-warning{% else %}text-muted{% endif %}">{{ e.days_until if e.days_until is not none else '?' }}</div>
+                    <div class="watch-days-label">{{ 'day' if e.days_until == 1 else 'days' }}</div>
+                </div>
+                <div>
+                    <div class="watch-sym">{{ e.symbol }}{% if e.subsector %}<span class="watch-badge">{{ e.subsector }}</span>{% endif %}</div>
+                    {% if e.company %}<div class="watch-meta">{{ e.company }}</div>{% endif %}
+                </div>
+                <div class="watch-aux">{{ e.earnings_date_display }}</div>
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="wb-empty">Nothing in the next 14 days.</div>
+            {% endif %}
+        </div>
 
-{# ════════════════════════════════════════════════════════
-   DAILY P&L — rolling N-week grid (always populated)
-   ════════════════════════════════════════════════════════ #}
+        <div class="watch-block">
+            <div class="wb-title">
+                <span>Expiring Options</span>
+                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ expiring_options|length }} contract{{ 's' if expiring_options|length != 1 }}</span>
+            </div>
+            {% if expiring_options %}
+            {% for opt in expiring_options[:10] %}
+            <a href="{{ url_for('position_detail', symbol=opt.symbol) }}" class="watch-item">
+                <div>
+                    <div class="watch-days {% if opt.days_to_exp is not none and opt.days_to_exp <= 1 %}text-negative{% elif opt.days_to_exp is not none and opt.days_to_exp <= 3 %}text-warning{% else %}text-muted{% endif %}">{{ opt.days_to_exp if opt.days_to_exp is not none else '?' }}</div>
+                    <div class="watch-days-label">{{ 'day' if opt.days_to_exp == 1 else 'days' }}</div>
+                </div>
+                <div>
+                    <div class="watch-sym">
+                        {{ opt.symbol }}
+                        {% if opt.itm is not none %}
+                            {% if opt.distance is not none and opt.distance|abs < 0.50 %}
+                            <span class="watch-badge atm">ATM</span>
+                            {% elif opt.itm %}
+                            <span class="watch-badge itm">ITM ${{ "{:,.2f}".format(opt.distance|abs) }}</span>
+                            {% else %}
+                            <span class="watch-badge otm">OTM ${{ "{:,.2f}".format(opt.distance|abs) }}</span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="watch-meta">{{ opt.quantity }} {{ opt.option_type or '' }} ${{ '{:,.2f}'.format(opt.strike) }} exp {{ opt.expiry }}</div>
+                </div>
+                <div class="watch-aux {% if opt.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {{ "+" if opt.unrealized_pnl >= 0 else "-" }}${{ "{:,.0f}".format(opt.unrealized_pnl|abs) }}
+                </div>
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="wb-empty">Nothing expiring soon.</div>
+            {% endif %}
+        </div>
+
+        <div class="watch-block">
+            <div class="wb-title">
+                <span>Upcoming Ex-Div <span class="watch-badge" title="Projected from past cadence — not guaranteed">projected</span></span>
+                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">next 30d</span>
+            </div>
+            {% if upcoming_ex_dividends %}
+            {% for d in upcoming_ex_dividends[:10] %}
+            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="watch-item">
+                <div>
+                    <div class="watch-days {% if d.days_until is not none and d.days_until <= 3 %}text-warning{% else %}text-muted{% endif %}">{{ d.days_until if d.days_until is not none else '?' }}</div>
+                    <div class="watch-days-label">{{ 'day' if d.days_until == 1 else 'days' }}</div>
+                </div>
+                <div>
+                    <div class="watch-sym">{{ d.symbol }}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
+                    <div class="watch-meta">
+                        ${{ "%.4f"|format(d.last_amount_per_share) }} last
+                        {% if d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
+                    </div>
+                </div>
+                <div class="watch-aux">{{ d.projected_date }}</div>
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="wb-empty">No projected ex-dividends in the next 30 days.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
+   DAILY ACCOUNT Δ — calendar heatmap (12 weeks, 4 visible by default)
+   ════════════════════════════════════ #}
 {% if calendar_grid %}
-{# Compute a max-magnitude value once for color intensity. #}
 {% set _cal_max = namespace(val=1) %}
 {% for r in calendar_grid %}{% for c in r.cells %}
     {% if c.has_data and c.daily_change|abs > _cal_max.val %}
@@ -1275,15 +837,11 @@
 {% endfor %}{% endfor %}
 <div class="review-section">
     <div class="cal-section-head">
-        <div class="section-label" style="margin:0;">Daily P&amp;L</div>
+        <div class="section-label" style="margin:0;">Daily Account &Delta;</div>
         {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
-        <button type="button"
-                id="cal-toggle-btn"
-                class="cal-toggle-btn"
+        <button type="button" id="cal-toggle-btn" class="cal-toggle-btn"
                 data-extra="{{ calendar_extra_weeks }}"
-                data-default="{{ calendar_default_weeks|default(4) }}"
-                aria-controls="cal-grid-rolling"
-                aria-expanded="false">
+                aria-controls="cal-grid-rolling" aria-expanded="false">
             Show {{ calendar_extra_weeks }} earlier week{{ 's' if calendar_extra_weeks != 1 else '' }} &uarr;
         </button>
         {% endif %}
@@ -1300,8 +858,7 @@
             <div class="cal-rolling-week-label{{ extra_cls }}">{{ r.week_label }}</div>
             {% for c in r.cells %}
                 {% if c.is_future %}
-                    {% set bg = "#f9fafb" %}
-                    {% set fg = "#cbd5e1" %}
+                    {% set bg = "#f9fafb" %}{% set fg = "#cbd5e1" %}
                 {% elif c.has_data %}
                     {% set intensity = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
                     {% if c.daily_change > 0 %}
@@ -1311,12 +868,10 @@
                         {% set bg = "rgba(220,53,69," ~ (0.08 + intensity * 0.007) ~ ")" %}
                         {% set fg = "#991b1b" %}
                     {% else %}
-                        {% set bg = "#f9fafb" %}
-                        {% set fg = "#6b7280" %}
+                        {% set bg = "#f9fafb" %}{% set fg = "#6b7280" %}
                     {% endif %}
                 {% else %}
-                    {% set bg = "#f3f4f6" %}
-                    {% set fg = "#d1d5db" %}
+                    {% set bg = "#f3f4f6" %}{% set fg = "#d1d5db" %}
                 {% endif %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
@@ -1346,587 +901,244 @@
     {% endif %}
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
-        Daily account snapshots haven&rsquo;t arrived yet. New Schwab syncs and uploads take a few minutes to show up here.
-        If it&rsquo;s been longer, double-check the <strong>account name</strong> on your data matches your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
+        Daily account snapshots haven&rsquo;t arrived yet. New syncs and uploads take a few minutes to show up.
     </p>
     {% endif %}
 </div>
 {% endif %}
 
-
-{# ════════════════════════════════════════════════════════
-   FRIDAY MODE
-   The new structure leads with AI Observation (the story), then tucks the
-   richer P&L tables behind a single "Numbers" disclosure so the diary +
-   noticed panel above can lead the page.
-   ════════════════════════════════════════════════════════ #}
-{% if mode == 'friday' %}
-
-{% if review and review.trades_closed > 0 %}
-
-{# ── AI Observation: full narrative paragraph ── #}
-{% if insights_enabled %}
-{% if ai_insight %}
+{# ════════════════════════════════════
+   CURRENT POSITIONS — at-a-glance cards
+   ════════════════════════════════════ #}
+{% if today_strip %}
 <div class="review-section">
-    <div class="section-label">AI Observation</div>
-    <p style="font-size:.95rem; color:#334155; line-height:1.6; margin:0 0 .75rem">{{ ai_insight.summary }}</p>
-    <div class="d-flex align-items-center gap-3">
-        <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-primary">Full Analysis &rarr;</a>
-        <span class="small text-muted">{{ ai_insight.generated_at }}</span>
-    </div>
-</div>
-{% else %}
-<div class="review-section">
-    <div class="section-label">AI Observation</div>
-    <p class="text-muted mb-2" style="font-size:.9rem">No AI analysis generated yet.</p>
-    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="btn btn-sm btn-outline-secondary">Generate Insights</a>
-</div>
-{% endif %}
-{% endif %}
-
-{# ── Numbers disclosure: deeper P&L breakdown ──
-   Default-closed. Holds the trades table (with best/worst highlighted),
-   strategy breakdown, position impact, exit-timing detail, behavior
-   baseline, and the historical comparison snapshots. The page leads with
-   the diary and the "what we noticed" panel; this is for power users. #}
-<details class="numbers-disclosure">
-<summary>Numbers — trades, strategies, position impact, exit timing</summary>
-<div class="numbers-body">
-
-{# ── Position Impact: stock movement vs option P&L ── #}
-{% if position_impact %}
-<div class="review-section">
-    <div class="section-label">Position Impact</div>
-    {% if position_impact_summary %}
-    <div class="narrative mb-3">
-        Your closed options earned
-        <strong class="{% if position_impact_summary.total_option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if position_impact_summary.total_option_pnl >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_option_pnl) }}
-        </strong>
-        across {{ position_impact_summary.num_symbols }} symbol{{ "s" if position_impact_summary.num_symbols != 1 else "" }} this week.
-        {% if position_impact_summary.has_equity and position_impact_summary.total_equity_impact is not none %}
-        The underlying shares moved
-        <strong class="{% if position_impact_summary.total_equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if position_impact_summary.total_equity_impact >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_equity_impact) }}
-        </strong>.
-        Net position impact:
-        <strong class="{% if position_impact_summary.total_net >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if position_impact_summary.total_net >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_net) }}
-        </strong>.
-        {% endif %}
-    </div>
-    {% endif %}
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Symbol</th>
-                    <th class="text-end">Stock Move</th>
-                    <th class="text-end">Shares</th>
-                    <th class="text-end">Equity Impact</th>
-                    <th class="text-end">Option P&amp;L</th>
-                    <th class="text-end">Net</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in position_impact %}
-                <tr>
-                    <td>
-                        <a href="{{ url_for('position_detail', symbol=p.symbol) }}" class="fw-semibold text-decoration-none">{{ p.symbol }}</a>
-                        <span class="d-block small text-muted" style="font-size:.72rem">${{ "{:,.2f}".format(p.start_price) }} → ${{ "{:,.2f}".format(p.end_price) }}</span>
-                    </td>
-                    <td class="text-end {% if p.price_change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {{ "+" if p.price_change_pct >= 0 else "" }}{{ p.price_change_pct }}%
-                    </td>
-                    <td class="text-end text-muted">
-                        {% if p.shares %}{{ p.shares }}{% else %}<span class="small">—</span>{% endif %}
-                    </td>
-                    <td class="text-end {% if p.equity_impact is not none and p.equity_impact != 0 %}{% if p.equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}{% else %}text-muted{% endif %}">
-                        {% if p.equity_impact is not none and p.shares %}{{ "+" if p.equity_impact >= 0 else "" }}${{ "{:,.2f}".format(p.equity_impact) }}{% else %}<span class="small">No shares</span>{% endif %}
-                    </td>
-                    <td class="text-end fw-semibold {% if p.option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {{ "+" if p.option_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.option_pnl) }}
-                    </td>
-                    <td class="text-end fw-bold {% if p.net_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {{ "+" if p.net_impact >= 0 else "" }}${{ "{:,.2f}".format(p.net_impact) }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-{# ── Trades this week — Best/Worst folded in as ★/▼ row highlights ── #}
-{% if trades_this_week %}
-{# Best/Worst keys: symbol|close_date is good enough for our marts —
-   collisions happen when the same symbol closes multiple legs the same day,
-   in which case all rows of that family will be highlighted (acceptable). #}
-{% set _best_key = (review.best_trade.symbol ~ '|' ~ review.best_trade.close_date) if (review and review.best_trade and review.best_trade.symbol and review.best_trade.close_date) else '' %}
-{% set _worst_key = (review.worst_trade.symbol ~ '|' ~ review.worst_trade.close_date) if (review and review.worst_trade and review.worst_trade.symbol and review.worst_trade.close_date and review.worst_trade.total_pnl < 0) else '' %}
-<div class="review-section">
-    <div class="section-label">All Trades This Week</div>
-    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">
-        Trades closed this calendar week. Open positions with <strong>no</strong> trade history in your data yet (broker snapshot only) are excluded so this list matches real activity.
-        {% if _best_key %}<span class="ms-1">Best of the week marked <span class="text-positive fw-bold">★</span>{% if _worst_key %}, worst marked <span class="text-negative fw-bold">▼</span>{% endif %}.</span>{% endif %}
-    </p>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 trades-table">
-            <thead class="table-light">
-                <tr>
-                    <th>Symbol</th>
-                    <th>Strategy</th>
-                    <th>Date</th>
-                    <th class="text-end">P&amp;L</th>
-                    {% if community_enabled %}
-                    <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
-                    {% endif %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for t in trades_this_week %}
-                {% set _row_key = (t.symbol or '') ~ '|' ~ (t.close_date or '') %}
-                {% set _is_best = (_best_key and _row_key == _best_key) %}
-                {% set _is_worst = (_worst_key and _row_key == _worst_key) %}
-                <tr {% if _is_best %}style="background:rgba(25,135,84,.05)"{% elif _is_worst %}style="background:rgba(220,53,69,.04)"{% endif %}>
-                    <td>
-                        {% if _is_best %}<span title="Best trade this week" class="text-positive me-1 fw-bold">★</span>{% elif _is_worst %}<span title="Worst trade this week" class="text-negative me-1 fw-bold">▼</span>{% endif %}
-                        <a href="{{ url_for('position_detail', symbol=t.symbol) }}" class="fw-semibold text-decoration-none">{{ t.symbol }}</a>
-                        {% if t.trade_symbol %}<span class="d-block small text-muted" style="font-size:.75rem" title="{{ t.trade_symbol }}">{{ t.trade_symbol|option_symbol }}</span>{% endif %}
-                    </td>
-                    <td class="text-muted small">{{ t.strategy }}</td>
-                    <td class="small">
-                        {{ t.close_date if t.close_date else t.open_date }}
-                        {% if t.status == 'Closed' %}
-                        <span class="badge bg-light text-muted ms-1" style="font-size:.68rem">closed</span>
-                        {% else %}
-                        <span class="badge bg-primary bg-opacity-10 text-primary ms-1" style="font-size:.68rem">open</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
-                        {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
-                    </td>
-                    {% if community_enabled %}
-                    <td class="text-end">
-                        {% if t.trade_fingerprint %}
-                        <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
-                                style="font-size:.68rem"
-                                data-bs-toggle="modal" data-bs-target="#communityTradeModal"
-                                data-fp="{{ t.trade_fingerprint }}"
-                                data-published="{{ 1 if t.published_to_community else 0 }}"
-                                data-account="{{ t.account|e }}"
-                                data-symbol="{{ t.symbol|e }}"
-                                data-strategy="{{ t.strategy|e }}"
-                                data-trade-symbol="{{ t.trade_symbol|e }}"
-                                data-open="{{ t.open_date|e }}"
-                                data-close="{{ t.close_date|e }}"
-                                data-status="{{ t.status|e }}"
-                                data-pnl="{{ t.current_pnl if t.current_pnl is not none else '' }}">
-                            {% if t.published_to_community %}On wall{% else %}Show{% endif %}
-                        </button>
-                        {% else %}<span class="small text-muted">—</span>{% endif %}
-                    </td>
-                    {% endif %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-{# ── Strategy breakdown ── #}
-{% if strategy_breakdown_week %}
-<div class="review-section">
-    <div class="section-label">This Week by Strategy</div>
-    <div class="d-flex flex-column gap-2">
-        {% for s in strategy_breakdown_week %}
-        <div class="strat-pill">
-            <div>
-                <div class="fw-semibold">{{ s.strategy }}</div>
-                <div class="strat-meta">
-                    {{ s.trades }} trade{{ 's' if s.trades != 1 else '' }}
-                    {% if s.win_rate_pct is not none %}&middot; {{ "%.0f" % s.win_rate_pct }}% win rate{% endif %}
-                </div>
+    <div class="section-label">Your Positions Right Now</div>
+    <div class="today-strip">
+        {% for pos in today_strip %}
+        <a href="{{ url_for('position_detail', symbol=pos.symbol) }}" class="strip-card">
+            <div class="strip-sym">{{ pos.symbol }}</div>
+            {% if pos.price %}<div class="strip-price">${{ "{:,.2f}".format(pos.price) }}</div>{% endif %}
+            <div class="strip-pnl {% if pos.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if pos.unrealized_pnl >= 0 else "" }}${{ "{:,.0f}".format(pos.unrealized_pnl) }}
             </div>
-            <div class="fw-bold {% if s.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if s.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(s.total_pnl) }}
+            {% if pos.unrealized_pnl_pct is not none %}
+            <div class="strip-pct {% if pos.unrealized_pnl_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if pos.unrealized_pnl_pct >= 0 else "" }}{{ pos.unrealized_pnl_pct }}%
             </div>
-        </div>
+            {% endif %}
+            {% if pos.num_legs > 1 %}<div class="strip-legs">{{ pos.num_legs }} legs</div>{% endif %}
+        </a>
         {% endfor %}
     </div>
-    <a href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}" class="small d-block mt-2">Full strategy history &rarr;</a>
 </div>
 {% endif %}
 
-{# ── Pattern Insight: exit timing observation ── #}
-{% if coaching_take %}
+{# ════════════════════════════════════
+   POSITIONS BREAKDOWN — per-symbol G/L attribution
+   (mirrors the trader's spreadsheet:
+    Stock | G/L Stock | G/L Option | Dividend | Net | Annualized)
+   ════════════════════════════════════ #}
+{% macro net_cell(val) %}
+<td class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
+    {% if val == 0 %}<span class="text-muted">$0</span>
+    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+</td>
+{% endmacro %}
+{% macro pct_cell(val) %}
+<td class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
+    {% if val is none %}<span class="text-muted">—</span>
+    {% else %}{{ "+" if val > 0 else "" }}{{ "%.1f"|format(val) }}%{% endif %}
+</td>
+{% endmacro %}
+
+{% if position_breakdown %}
 <div class="review-section">
-    <div class="section-label">Pattern Insight — Exit Timing</div>
-    <p class="small text-muted mb-3" style="margin-top:-.5rem">Based on contracts with daily snapshot data (40%+ coverage).</p>
-    {% if coaching_take.total_exits > 0 %}
-    <div class="d-flex flex-wrap gap-3 mb-3">
-        <div>
-            <div class="week-stat-label mb-1">Reliable Exits This Week</div>
-            <div class="fw-bold" style="font-size:1.1rem">{{ coaching_take.total_exits }}</div>
-        </div>
-        {% if coaching_take.total_given_back > 0 %}
-        <div>
-            <div class="week-stat-label mb-1">Left on Table</div>
-            <div class="fw-bold text-warning" style="font-size:1.1rem">${{ "{:,.0f}".format(coaching_take.total_given_back) }}</div>
-        </div>
-        {% endif %}
-        {% if coaching_take.avg_giveback_pct > 0 %}
-        <div>
-            <div class="week-stat-label mb-1">Avg Giveback</div>
-            <div class="fw-bold" style="font-size:1.1rem">{{ "{:.0f}".format(coaching_take.avg_giveback_pct) }}%</div>
-        </div>
-        {% endif %}
-    </div>
-    {% if coaching_take.exits %}
-    <div class="table-responsive mb-3">
-        <table class="table table-hover align-middle mb-0 trades-table">
-            <thead class="table-light">
+    <div class="section-label">Position Breakdown — Open + Closed This Week</div>
+    <p class="section-sub">
+        Scoped to currently-open positions plus anything closed since
+        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}.
+        Numbers themselves are lifetime per symbol: equity P&amp;L vs option P&amp;L vs dividends,
+        net total, % return on capital deployed, and a holding-period annualized estimate.
+        Annualized assumes a 30-day minimum window and a $200 capital floor so freshly-opened or
+        tiny positions don't extrapolate to absurd numbers.
+    </p>
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
                 <tr>
-                    <th>Symbol</th>
-                    <th>Strategy</th>
-                    <th class="text-end">Actual P&amp;L</th>
-                    <th class="text-end">Peak P&amp;L</th>
-                    <th class="text-end">Left on Table</th>
-                    <th class="text-center">Days Past Peak</th>
+                    <th class="left">Symbol</th>
+                    <th>G/L Stock</th>
+                    <th>G/L Option</th>
+                    <th>Dividend</th>
+                    <th>Net</th>
+                    <th>Capital</th>
+                    <th>Days</th>
+                    <th>%&nbsp;Return</th>
+                    <th>Annualized</th>
+                    <th class="left">Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for e in coaching_take.exits %}
-                {% if e.given_back > 0 %}
+                {% for r in position_breakdown %}
                 <tr>
-                    <td class="fw-semibold">{{ e.symbol }}</td>
-                    <td class="text-muted small">{{ e.strategy }}</td>
-                    <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.0f}".format(e.actual_pnl) }}</td>
-                    <td class="text-end text-positive">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
-                    <td class="text-end text-warning fw-semibold">${{ "{:,.0f}".format(e.given_back) }}</td>
-                    <td class="text-center">{{ e.days_past_peak }}d</td>
+                    <td class="left">
+                        <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
+                        {% if r.company_name %}<div class="row-company">{{ r.company_name }}</div>{% endif %}
+                        {% if r.strategy %}<div class="row-meta">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
+                    </td>
+                    {{ net_cell(r.equity_pnl) }}
+                    {{ net_cell(r.option_pnl) }}
+                    {{ net_cell(r.dividend_income) }}
+                    {{ net_cell(r.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                    <td>{{ r.days_held }}</td>
+                    {{ pct_cell(r.pct_return) }}
+                    {{ pct_cell(r.annualized_pct) }}
+                    <td class="left"><span class="pill-status {{ r.status|lower }}">{{ r.status }}</span></td>
+                </tr>
+                {% endfor %}
+                {% if position_breakdown_totals %}
+                {% set t = position_breakdown_totals %}
+                <tr class="totals-row">
+                    <td class="left">Total &middot; {{ t.num_symbols }} symbol{{ 's' if t.num_symbols != 1 }}</td>
+                    {{ net_cell(t.equity_pnl) }}
+                    {{ net_cell(t.option_pnl) }}
+                    {{ net_cell(t.dividend_income) }}
+                    {{ net_cell(t.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
+                    <td></td>
+                    {{ pct_cell(t.pct_return) }}
+                    <td></td>
+                    <td></td>
                 </tr>
                 {% endif %}
-                {% endfor %}
             </tbody>
         </table>
     </div>
-    {% endif %}
-    {% endif %}
-    {% if coaching_take.coaching_signals %}
-    <div class="mt-2">
-        {% for signal in coaching_take.coaching_signals %}
-        <p class="small mb-2" style="color:#475569; line-height:1.5">{{ signal }}</p>
-        {% endfor %}
+
+    {% if position_breakdown_totals %}
+    {% set t = position_breakdown_totals %}
+    <div class="scorecard">
+        <div class="sc-cell">
+            <div class="sc-label">Stock — Profitable</div>
+            <div class="sc-line">{{ t.equity_profitable }} of {{ t.equity_with_exposure }} positions</div>
+            {% if t.equity_win_pct is not none %}<div class="sc-pct text-positive">{{ "%.1f"|format(t.equity_win_pct) }}%</div>{% endif %}
+        </div>
+        <div class="sc-cell">
+            <div class="sc-label">Options — Profitable</div>
+            <div class="sc-line">{{ t.option_profitable }} of {{ t.option_with_exposure }} positions</div>
+            {% if t.option_win_pct is not none %}<div class="sc-pct {% if t.option_win_pct >= 50 %}text-positive{% else %}text-negative{% endif %}">{{ "%.1f"|format(t.option_win_pct) }}%</div>{% endif %}
+        </div>
+        <div class="sc-cell">
+            <div class="sc-label">Net — Profitable</div>
+            <div class="sc-line">{{ t.net_profitable }} of {{ t.num_symbols }} positions</div>
+            {% if t.net_win_pct is not none %}<div class="sc-pct {% if t.net_win_pct >= 50 %}text-positive{% else %}text-negative{% endif %}">{{ "%.1f"|format(t.net_win_pct) }}%</div>{% endif %}
+        </div>
     </div>
-    {% endif %}
-    {% if insights_enabled %}
-    <a href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}" class="small d-block mt-2">Full insights analysis &rarr;</a>
     {% endif %}
 </div>
 {% endif %}
 
-{# ── Behavioral mirror: this week vs baseline ── #}
-{% if behavior_mirror %}
+{# ════════════════════════════════════
+   STRATEGY BREAKDOWN — same shape rolled up by strategy
+   ════════════════════════════════════ #}
+{% if strategy_breakdown %}
 <div class="review-section">
-    <div class="section-label">How This Week Compares to Your Normal</div>
-    <div class="row g-3">
-        <div class="col-md-4">
-            <div class="week-stat-label mb-1">Trade Volume</div>
-            <div class="fw-bold" style="font-size:1.1rem">{{ behavior_mirror.volume.value or 0 }} trades</div>
-            {% if behavior_mirror.has_baseline and behavior_mirror.volume.baseline %}
-            <div class="small text-muted">
-                Avg {{ "%.1f" % behavior_mirror.volume.baseline }}/week
-                {% if behavior_mirror.volume.diff is not none %}
-                &middot;
-                <span class="{% if behavior_mirror.volume.diff > 0 %}text-warning{% elif behavior_mirror.volume.diff < 0 %}text-muted{% else %}text-muted{% endif %}">
-                    {{ "+" if behavior_mirror.volume.diff >= 0 else "" }}{{ "%.1f" % behavior_mirror.volume.diff }}
-                </span>
-                {% endif %}
-            </div>
-            {% else %}
-            <div class="small text-muted">Building baseline&hellip;</div>
-            {% endif %}
-        </div>
-        <div class="col-md-4">
-            <div class="week-stat-label mb-1">Win Rate</div>
-            {% set w = behavior_mirror.win_rate %}
-            <div class="fw-bold {% if w.value is not none and w.baseline is not none and w.value >= w.baseline %}text-positive{% elif w.value is not none and w.baseline is not none %}text-negative{% endif %}" style="font-size:1.1rem">
-                {% if w.value is not none %}{{ "%.1f" % w.value }}%{% else %}—{% endif %}
-            </div>
-            {% if behavior_mirror.has_baseline and w.baseline is not none %}
-            <div class="small text-muted">Avg {{ "%.1f" % w.baseline }}%{% if w.diff is not none %} &middot; {{ "+" if w.diff >= 0 else "" }}{{ "%.1f" % w.diff }} pts{% endif %}</div>
-            {% else %}
-            <div class="small text-muted">Need more weeks</div>
-            {% endif %}
-        </div>
-        <div class="col-md-4">
-            <div class="week-stat-label mb-1">P&amp;L vs Normal</div>
-            {% set p = behavior_mirror.pnl %}
-            <div class="fw-bold {% if p.value >= 0 %}text-positive{% else %}text-negative{% endif %}" style="font-size:1.1rem">
-                {{ "+" if p.value >= 0 else "" }}${{ "{:,.0f}".format(p.value or 0) }}
-            </div>
-            {% if behavior_mirror.has_baseline and p.baseline %}
-            <div class="small text-muted">Avg ${{ "{:,.0f}".format(p.baseline) }}/week{% if p.diff is not none %} &middot; {{ "+" if p.diff >= 0 else "" }}${{ "{:,.0f}".format(p.diff) }}{% endif %}</div>
-            {% else %}
-            <div class="small text-muted">Baseline building&hellip;</div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-</div>{# /numbers-body #}
-</details>{# /numbers-disclosure #}
-
-{% else %}{# review has no closed trades #}
-<div class="review-section text-center py-4">
-    <p class="text-muted mb-0">No closed trades this week yet. Come back when something closes.</p>
-</div>
-{% endif %}{# end review.trades_closed > 0 #}
-
-{% endif %}{# end mode == friday #}
-
-
-{# ════════════════════════════════════════════════════════
-   MONDAY MODE
-   ════════════════════════════════════════════════════════ #}
-{% if mode == 'monday' %}
-
-{# ── Mirror Score — lead with the behavioral signal ── #}
-<div class="review-section">
-    <div class="section-label">Your Mirror Score</div>
-    {% if mirror_score %}
-    <div class="d-flex align-items-start gap-4 mb-3">
-        <div style="font-size:3rem; font-weight:800; line-height:1; color:var(--color-mirror)">{{ mirror_score.mirror_score|int }}</div>
-        <div>
-            {% if mirror_score.mirror_score >= 70 %}
-            <p class="fw-semibold mb-1" style="color:#166534">You&rsquo;re trading like yourself.</p>
-            <p class="small text-muted mb-0">Behavior aligned with your 30-day baseline.</p>
-            {% elif mirror_score.mirror_score >= 50 %}
-            <p class="fw-semibold mb-1" style="color:#713f12">Some drift.</p>
-            <p class="small text-muted mb-0">A few signals suggest your behavior shifted last week.</p>
-            {% else %}
-            <p class="fw-semibold mb-1 text-negative">Significant deviation.</p>
-            <p class="small text-muted mb-0">Last week looked different from your norm. Worth understanding why before trading this week.</p>
-            {% endif %}
-            {% if mirror_score.diagnostic_sentence %}
-            <p class="small text-muted mt-1 mb-0">{{ mirror_score.diagnostic_sentence }}</p>
-            {% endif %}
-        </div>
-    </div>
-    {% if mirror_history and mirror_history|length > 1 %}
-    <div class="mirror-bar-wrap mb-3">
-        {% for s in mirror_history %}
-        <div class="mirror-bar-item" style="height:{{ (s.mirror_score / 100 * 100)|round(0) }}%;
-             background:{% if s.mirror_score >= 70 %}var(--color-positive){% elif s.mirror_score >= 50 %}#fbbf24{% else %}var(--color-negative){% endif %};"></div>
-        {% endfor %}
-    </div>
-    <div class="small text-muted mb-2">Last {{ mirror_history|length }} weeks</div>
-    {% endif %}
-    
-    {% else %}
-    <p class="text-muted small mb-0">No Mirror Score yet. Trade for a few weeks to build your baseline.</p>
-    {% endif %}
-</div>
-
-{# ── Open exposure ── #}
-<div class="review-section">
-    <div class="section-label">What You&rsquo;re Carrying</div>
-    {% if exposure %}
-    <p class="mb-3" style="font-size:.93rem; color:#334155">
-        <strong>{{ exposure.num_positions }} open position{{ 's' if exposure.num_positions != 1 else '' }}</strong> &mdash;
-        ${{ "{:,.0f}".format(exposure.total) }} in exposure.
-    </p>
-    {% if exposure.by_symbol %}
-    {% set max_exp = exposure.by_symbol[0].exposure if exposure.by_symbol else 1 %}
-    {% for pos in exposure.by_symbol[:8] %}
-    <div class="d-flex align-items-center gap-2 mb-2">
-        <a href="{{ url_for('position_detail', symbol=pos.symbol) }}" class="fw-semibold text-decoration-none" style="min-width:64px; font-size:.88rem">{{ pos.symbol }}</a>
-        <div class="exposure-bar flex-grow-1">
-            <div class="exposure-bar-fill" style="width:{{ (pos.exposure / max_exp * 100)|round(0) }}%"></div>
-        </div>
-        <span class="small text-muted" style="min-width:72px; text-align:right">${{ "{:,.0f}".format(pos.exposure) }}</span>
-    </div>
-    {% endfor %}
-    {% endif %}
-    {% else %}
-    <p class="text-muted small mb-0">No open positions found.</p>
-    {% endif %}
-</div>
-
-{# ── Last week recap ── #}
-{% if prev_review %}
-<div class="review-section">
-    <div class="section-label">Last Week Recap</div>
-    <p style="font-size:.95rem; color:#334155; margin:0">
-        {% if prev_review.trades_closed > 0 %}
-        You closed <strong>{{ prev_review.trades_closed }}</strong> trade{{ 's' if prev_review.trades_closed != 1 else '' }} for
-        <strong class="{% if prev_review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if prev_review.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(prev_review.total_pnl) }}</strong>.
-        {% if prev_review.best_trade %}
-        Best: <a href="{{ url_for('position_detail', symbol=prev_review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ prev_review.best_trade.symbol }}</a>
-        (+${{ "{:,.2f}".format(prev_review.best_trade.total_pnl) }}).
-        {% endif %}
-        {% else %}
-        No closed trades last week.
-        {% endif %}
-        {% if prev_review.trades_opened %}Opened {{ prev_review.trades_opened }} new position{{ 's' if prev_review.trades_opened != 1 else '' }}.{% endif %}
-    </p>
-</div>
-{% endif %}
-
-{# market section moved to always-visible block above #}
-
-{# ── Intention prompt ── #}
-{% endif %}{# end monday #}
-
-
-{# ════════════════════════════════════════════════════════
-   MID-WEEK MODE
-   ════════════════════════════════════════════════════════ #}
-{% if mode == 'midweek' %}
-
-{# ── Pace check ── #}
-<div class="review-section">
-    <div class="section-label">Pace Check</div>
-    {% if opens_this_week %}
-    {% set pace_baseline = behavior_mirror.volume.baseline if behavior_mirror else none %}
-    <div class="pace-track mb-3">
-        <div class="d-flex justify-content-between align-items-baseline mb-1">
-            <span class="fw-semibold">{{ opens_this_week.count }} opened so far</span>
-            {% if pace_baseline %}
-            <span class="small text-muted">baseline: {{ "%.1f"|format(pace_baseline) }}/week</span>
-            {% endif %}
-        </div>
-        {% if pace_baseline and pace_baseline > 0 %}
-        <div class="exposure-bar mt-1">
-            <div class="exposure-bar-fill" style="width:{{ [((opens_this_week.count / pace_baseline) * 100)|round(0), 100]|min }}%"></div>
-        </div>
-        {% endif %}
-    </div>
-    <p class="mb-0" style="font-size:.93rem; color:#334155">
-        {% if review and review.risk_drift %}
-        {% if opens_this_week.count > (review.risk_drift.prev_week_opens or 0) %}
-        Already above last week&rsquo;s pace ({{ review.risk_drift.prev_week_opens }} total). <strong>Intentional?</strong>
-        {% elif opens_this_week.count == 0 %}
-        No new positions yet. Patience or hesitation?
-        {% else %}
-        On track with your usual rhythm.
-        {% endif %}
-        {% endif %}
-    </p>
-    {% if opens_this_week.symbols %}
-    <p class="small text-muted mt-2 mb-0">{{ opens_this_week.symbols|join(", ") }}</p>
-    {% endif %}
-    {% else %}
-    <p class="text-muted mb-0 small">No new positions opened yet this week.</p>
-    {% endif %}
-</div>
-
-{# ── Results so far ── #}
-{% if review and review.trades_closed > 0 %}
-<div class="review-section">
-    <div class="section-label">Results So Far</div>
-    <p style="font-size:.95rem; color:#334155; margin:0">
-        <strong>{{ review.trades_closed }}</strong> trade{{ 's' if review.trades_closed != 1 else '' }} closed for
-        <strong class="{% if review.total_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "+" if review.total_pnl >= 0 else "" }}${{ "{:,.2f}".format(review.total_pnl) }}</strong>.
-        {% if review.best_trade %}
-        Best so far: <a href="{{ url_for('position_detail', symbol=review.best_trade.symbol) }}" class="fw-semibold text-decoration-none">{{ review.best_trade.symbol }}</a>
-        (+${{ "{:,.2f}".format(review.best_trade.total_pnl) }}).
-        {% endif %}
-    </p>
-</div>
-{% endif %}
-
-{# ── Position Impact (mid-week) ── #}
-{% if position_impact %}
-<div class="review-section">
-    <div class="section-label">Position Impact So Far</div>
-    {% if position_impact_summary and position_impact_summary.has_equity and position_impact_summary.total_equity_impact is not none %}
-    <p class="narrative small mb-2">
-        Options: <strong class="{% if position_impact_summary.total_option_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_option_pnl >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_option_pnl) }}</strong>
-        &middot; Underlying shares: <strong class="{% if position_impact_summary.total_equity_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_equity_impact >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_equity_impact) }}</strong>
-        &middot; Net: <strong class="{% if position_impact_summary.total_net >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if position_impact_summary.total_net >= 0 else "" }}${{ "{:,.2f}".format(position_impact_summary.total_net) }}</strong>
-    </p>
-    {% endif %}
-    <div class="d-flex flex-wrap gap-2">
-        {% for p in position_impact[:6] %}
-        <div class="card border-0 shadow-sm px-3 py-2" style="border-radius:10px; min-width:140px">
-            <div class="fw-semibold small">{{ p.symbol }}</div>
-            <div class="small {% if p.price_change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                Stock {{ "+" if p.price_change_pct >= 0 else "" }}{{ p.price_change_pct }}%
-            </div>
-            {% if p.shares %}
-            <div class="small text-muted">{{ p.shares }} shares &middot;
-                <span class="{% if p.net_impact >= 0 %}text-positive{% else %}text-negative{% endif %}">Net {{ "+" if p.net_impact >= 0 else "" }}${{ "{:,.0f}".format(p.net_impact) }}</span>
-            </div>
-            {% else %}
-            <div class="small text-muted">No shares held</div>
-            {% endif %}
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{# ── Trades this week (mid-week view) ── #}
-{% if trades_this_week %}
-<div class="review-section">
-    <div class="section-label">Trades This Week</div>
-    <p class="small text-muted mb-2" style="font-size:.84rem; max-width:48rem">Same week as the hero. Snapshot-only positions (no fills in our history) are excluded.</p>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0 trades-table">
-            <thead class="table-light">
+    <div class="section-label">Strategy Breakdown — Same lens, rolled up by strategy</div>
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
                 <tr>
-                    <th>Symbol</th>
-                    <th>Strategy</th>
-                    <th>Status</th>
-                    <th class="text-end">P&amp;L</th>
-                    {% if community_enabled %}
-                    <th class="text-end small" style="white-space:nowrap;min-width:5.5rem"><span class="text-muted">Show</span></th>
-                    {% endif %}
+                    <th class="left">Strategy</th>
+                    <th>Symbols</th>
+                    <th>G/L Stock</th>
+                    <th>G/L Option</th>
+                    <th>Dividend</th>
+                    <th>Net</th>
+                    <th>Capital</th>
+                    <th>Max Days</th>
+                    <th>%&nbsp;Return</th>
+                    <th>Annualized</th>
                 </tr>
             </thead>
             <tbody>
-                {% for t in trades_this_week %}
+                {% for r in strategy_breakdown %}
                 <tr>
-                    <td><a href="{{ url_for('position_detail', symbol=t.symbol) }}" class="fw-semibold text-decoration-none">{{ t.symbol }}</a></td>
-                    <td class="text-muted small">{{ t.strategy }}</td>
-                    <td>
-                        {% if t.status == 'Closed' %}
-                        <span class="badge bg-secondary" style="font-size:.7rem">closed</span>
-                        {% else %}
-                        <span class="badge bg-primary bg-opacity-75" style="font-size:.7rem">open</span>
-                        {% endif %}
+                    <td class="left">
+                        <a href="{{ url_for('strategies') }}#{{ r.strategy }}" class="row-symbol">{{ r.strategy }}</a>
+                        <div class="row-meta">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
                     </td>
-                    <td class="text-end fw-semibold {% if t.current_pnl is not none %}{% if t.current_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
-                        {% if t.current_pnl is not none %}{{ "+" if t.current_pnl >= 0 else "" }}${{ "{:,.2f}".format(t.current_pnl) }}{% else %}—{% endif %}
+                    <td>{{ r.num_symbols }}</td>
+                    {{ net_cell(r.equity_pnl) }}
+                    {{ net_cell(r.option_pnl) }}
+                    {{ net_cell(r.dividend_income) }}
+                    {{ net_cell(r.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                    <td>{{ r.max_days_held }}</td>
+                    {{ pct_cell(r.pct_return) }}
+                    {{ pct_cell(r.annualized_pct) }}
+                </tr>
+                {% endfor %}
+                {% if strategy_breakdown_totals %}
+                {% set t = strategy_breakdown_totals %}
+                <tr class="totals-row">
+                    <td class="left">Total &middot; {{ t.num_symbols }} strategy bucket{{ 's' if t.num_symbols != 1 }}</td>
+                    <td></td>
+                    {{ net_cell(t.equity_pnl) }}
+                    {{ net_cell(t.option_pnl) }}
+                    {{ net_cell(t.dividend_income) }}
+                    {{ net_cell(t.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
+                    <td></td>
+                    {{ pct_cell(t.pct_return) }}
+                    <td></td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
+   SECTOR BREAKDOWN — by yfinance sector
+   ════════════════════════════════════ #}
+{% if sector_breakdown %}
+<div class="review-section">
+    <div class="section-label">Sector Breakdown — Where the work is paying off</div>
+    <p class="section-sub">
+        Sectors come from the yfinance symbol metadata (Technology / Financial Services / Energy / etc).
+        "Unknown" means yfinance has no sector for the symbol (often crypto, ETFs without classification,
+        or freshly listed names).
+    </p>
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th class="left">Sector</th>
+                    <th>Symbols</th>
+                    <th>G/L Stock</th>
+                    <th>G/L Option</th>
+                    <th>Dividend</th>
+                    <th>Net</th>
+                    <th>Current Value</th>
+                    <th>%&nbsp;Return</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in sector_breakdown %}
+                <tr>
+                    <td class="left">
+                        <span class="row-symbol">{{ r.sector }}</span>
+                        <div class="row-meta">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
                     </td>
-                    {% if community_enabled %}
-                    <td class="text-end">
-                        {% if t.trade_fingerprint %}
-                        <button type="button" class="btn btn-sm py-1 px-2 rounded-pill {% if t.published_to_community %}wm-wall-done{% else %}wm-wall-btn{% endif %}"
-                                style="font-size:.68rem"
-                                data-bs-toggle="modal" data-bs-target="#communityTradeModal"
-                                data-fp="{{ t.trade_fingerprint }}"
-                                data-published="{{ 1 if t.published_to_community else 0 }}"
-                                data-account="{{ t.account|e }}"
-                                data-symbol="{{ t.symbol|e }}"
-                                data-strategy="{{ t.strategy|e }}"
-                                data-trade-symbol="{{ t.trade_symbol|e }}"
-                                data-open="{{ t.open_date|e }}"
-                                data-close="{{ t.close_date|e }}"
-                                data-status="{{ t.status|e }}"
-                                data-pnl="{{ t.current_pnl if t.current_pnl is not none else '' }}">
-                            {% if t.published_to_community %}On wall{% else %}Show{% endif %}
-                        </button>
-                        {% else %}<span class="small text-muted">—</span>{% endif %}
-                    </td>
-                    {% endif %}
+                    <td>{{ r.num_symbols }}</td>
+                    {{ net_cell(r.equity_pnl) }}
+                    {{ net_cell(r.option_pnl) }}
+                    {{ net_cell(r.dividend_income) }}
+                    {{ net_cell(r.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(r.current_value) }}</td>
+                    {{ pct_cell(r.pct_return) }}
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1935,11 +1147,46 @@
 </div>
 {% endif %}
 
-
-{% endif %}{# end midweek #}
-
-{% if community_enabled %}
-{% include "_community_trade_modal.html" %}
+{# ════════════════════════════════════
+   SUBSECTOR BREAKDOWN — by yfinance industry / subsector
+   ════════════════════════════════════ #}
+{% if subsector_breakdown and subsector_breakdown|length > 1 %}
+<div class="review-section">
+    <div class="section-label">Industry Breakdown — Finer-grained than sector</div>
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th class="left">Industry</th>
+                    <th>Symbols</th>
+                    <th>G/L Stock</th>
+                    <th>G/L Option</th>
+                    <th>Dividend</th>
+                    <th>Net</th>
+                    <th>Current Value</th>
+                    <th>%&nbsp;Return</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in subsector_breakdown %}
+                <tr>
+                    <td class="left">
+                        <span class="row-symbol">{{ r.subsector }}</span>
+                        <div class="row-meta">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
+                    </td>
+                    <td>{{ r.num_symbols }}</td>
+                    {{ net_cell(r.equity_pnl) }}
+                    {{ net_cell(r.option_pnl) }}
+                    {{ net_cell(r.dividend_income) }}
+                    {{ net_cell(r.net_pnl) }}
+                    <td>${{ "{:,.0f}".format(r.current_value) }}</td>
+                    {{ pct_cell(r.pct_return) }}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endif %}
 
 {% endblock %}

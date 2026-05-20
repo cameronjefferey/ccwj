@@ -153,7 +153,7 @@
         <div class="gs-done">
             <h4>You're all set, {{ current_user.username }}.</h4>
             <p>Your Trading Mirror is ready to read.</p>
-            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Open Weekly Review</a>
+            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Open Daily Review</a>
         </div>
         <p class="text-center text-muted small">
             Re-upload anytime from <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled or snaptrade_enabled %} or manage broker connections in <a href="{{ url_for('profile', tab='account') }}">Account settings</a>{% endif %}.
@@ -322,7 +322,7 @@
                 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
                 {% else %}
                 <h6>We process your data</h6>
-                <p class="lead-sub mb-0">Once your files are in, processing finishes in 3&ndash;5 minutes. We classify strategies, compute trade-level P&amp;L, and build the baselines that drive your Weekly Review.</p>
+                <p class="lead-sub mb-0">Once your files are in, processing finishes in 3&ndash;5 minutes. We classify strategies, compute trade-level P&amp;L, and build the baselines that drive your Daily Review.</p>
                 {% endif %}
             </div>
         </div>
@@ -333,11 +333,11 @@
             <div class="gs-step-body">
                 {% if has_data %}
                 <h6>Your Trading Mirror is ready</h6>
-                <p class="lead-sub mb-2">Weekly Review is the daily anchor &mdash; how you traded this week vs your own history, given the market.</p>
-                <a class="btn btn-primary" href="{{ url_for('weekly_review') }}">Open Weekly Review</a>
+                <p class="lead-sub mb-2">Daily Review is the end-of-day anchor &mdash; what just happened, what to watch, and how every position / strategy / sector is doing in total.</p>
+                <a class="btn btn-primary" href="{{ url_for('weekly_review') }}">Open Daily Review</a>
                 {% else %}
                 <h6>Open your Trading Mirror</h6>
-                <p class="lead-sub mb-0">You'll land on Weekly Review &mdash; a behavioral mirror, not a P&amp;L dashboard. We compare you to <em>yourself</em>, not to other traders.</p>
+                <p class="lead-sub mb-0">You'll land on Daily Review &mdash; a behavioral mirror, not a P&amp;L dashboard. We compare you to <em>yourself</em>, not to other traders.</p>
                 {% endif %}
             </div>
         </div>

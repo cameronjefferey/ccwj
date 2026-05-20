@@ -318,7 +318,7 @@ def _pick_key_insight(p):
                 f"{p.get('num_symbols', 0)} symbols. The data is here. "
                 f"The question is: what patterns are hiding in it?"
             ),
-            "action": "Check your Weekly Review for patterns in your most recent trades.",
+            "action": "Check your Daily Review for patterns in your most recent trades.",
         })
 
     return max(insights, key=lambda i: i["priority"])

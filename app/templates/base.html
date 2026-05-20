@@ -252,7 +252,7 @@
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
-                       href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Review</a>
+                       href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Daily Review</a>
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
