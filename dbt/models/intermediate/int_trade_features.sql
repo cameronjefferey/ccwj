@@ -42,6 +42,7 @@ options as (
     select
         oc.account,
         oc.user_id,
+        oc.broker_account_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         s.strategy,
@@ -95,6 +96,7 @@ equity as (
     select
         es.account,
         es.user_id,
+        es.broker_account_id,
         concat(es.symbol, '_session_', cast(es.session_id as string)) as trade_symbol,
         es.symbol                                                 as underlying_symbol,
         coalesce(s.strategy, 'Buy and Hold')                      as strategy,
@@ -137,6 +139,7 @@ unioned as (
 select
     account,
     user_id,
+    broker_account_id,
     trade_symbol,
     underlying_symbol,
     coalesce(strategy, 'Other')                       as strategy,

@@ -17,6 +17,7 @@ with daily as (
     select
         account,
         user_id,
+        broker_account_id,
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
@@ -26,6 +27,7 @@ with_weeks as (
     select
         account,
         user_id,
+        broker_account_id,
         date_trunc(date, isoweek) as week_start,
         date,
         account_value
@@ -36,6 +38,8 @@ week_bounds as (
     select
         account,
         user_id,
+        -- Stage 2 broker_account_id passthrough.
+        any_value(broker_account_id) as broker_account_id,
         week_start,
         min_by(account_value, date) as start_value,
         max_by(account_value, date) as end_value
@@ -43,6 +47,7 @@ week_bounds as (
         select
             account,
             user_id,
+            broker_account_id,
             week_start,
             date,
             account_value
@@ -54,6 +59,7 @@ week_bounds as (
 select
     account,
     user_id,
+    broker_account_id,
     week_start,
     start_value,
     end_value,

@@ -15,6 +15,7 @@ with option_contracts as (
     select
         account,
         user_id,
+        broker_account_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -56,6 +57,9 @@ enriched as (
     select
         oc.account,
         oc.user_id,
+        -- Stage 2 broker_account_id passthrough (int_option_contracts already
+        -- carries it; we re-select for clarity).
+        oc.broker_account_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         oc.option_expiry,

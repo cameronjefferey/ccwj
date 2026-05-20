@@ -434,4 +434,15 @@ final as (
         and s.symbol = uth.symbol
 )
 
-select * from final
+-- Stage 2 broker_account_id passthrough (see docs/BROKER_ACCOUNT_ID_MIGRATION.md).
+-- Wrap final and left-join dim_broker_accounts on (account, user_id).
+-- broker_account_id is functional on the join key — orphan rows that
+-- don't appear in the seed-sourced dim get NULL, which is the
+-- Stage 3 filter's security guarantee.
+select
+    f.*,
+    d.broker_account_id
+from final f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)

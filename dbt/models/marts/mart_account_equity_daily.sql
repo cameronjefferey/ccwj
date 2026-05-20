@@ -23,7 +23,14 @@ with raw as (
         market_value,
         snapshot_date,
         dbt_valid_from
-    from {{ ref('snapshot_account_balances_daily') }}
+    -- Canonical-uid wrapper view (May 2026): preserves historical
+    -- account-total / cash rows across the canonical-owner
+    -- consolidation. See `stg_snapshot_account_balances_daily` for
+    -- the full incident write-up — without this, the daily-account
+    -- value series fragments across stale and canonical uids and the
+    -- "Daily Account Δ" calendar shows blank on the consolidation
+    -- boundary.
+    from {{ ref('stg_snapshot_account_balances_daily') }}
     where account != 'Demo Account'
 ),
 
@@ -61,7 +68,10 @@ option_raw as (
         market_value,
         snapshot_date,
         dbt_valid_from
-    from {{ ref('snapshot_options_market_values_daily') }}
+    -- Canonical-uid wrapper view (May 2026): preserves historical
+    -- MTM rows across the canonical-owner consolidation. See
+    -- `stg_snapshot_options_market_values_daily` for details.
+    from {{ ref('stg_snapshot_options_market_values_daily') }}
     where account != 'Demo Account'
 ),
 
@@ -126,16 +136,28 @@ snapshot_result as (
       on b.account = o.account
      and (b.user_id is not distinct from o.user_id)
      and b.date    = o.date
+),
+
+-- Stage 2 broker_account_id passthrough — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+all_rows as (
+    select account, user_id, date, equity_value, option_value, cash_value, account_value
+    from snapshot_result
+    where account_value > 0
+    union all
+    -- int_demo_equity_daily emits user_id NULL by design (the demo user_id
+    -- is environment-specific). The app's demo path filters by
+    -- ``account = 'Demo Account'`` rather than user_id — see
+    -- docs/USER_ID_TENANCY.md.
+    select account, user_id, date, equity_value, option_value, cash_value, account_value
+    from {{ ref('int_demo_equity_daily') }}
 )
 
-select * from snapshot_result
-where account_value > 0
-union all
--- int_demo_equity_daily emits user_id NULL by design (the demo user_id
--- is environment-specific). The app's demo path filters by
--- ``account = 'Demo Account'`` rather than user_id — see
--- docs/USER_ID_TENANCY.md.
-select account, user_id, date, equity_value, option_value, cash_value, account_value
-from {{ ref('int_demo_equity_daily') }}
-order by account, user_id, date
+select
+    f.*,
+    d.broker_account_id
+from all_rows f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)
+order by f.account, f.user_id, f.date
 

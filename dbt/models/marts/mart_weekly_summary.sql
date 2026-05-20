@@ -115,6 +115,8 @@ all_weeks as (
 select
     aw.account,
     aw.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     aw.week_start,
     date_add(aw.week_start, interval 6 day) as week_end,
 
@@ -175,5 +177,8 @@ left join ranked_strategy rs
     on aw.account = rs.account
     and (aw.user_id is not distinct from rs.user_id)
     and aw.week_start = rs.week_start and rs.rn = 1
+left join {{ ref('dim_broker_accounts') }} dba
+    on aw.account = dba.account_name
+    and (aw.user_id is not distinct from dba.user_id)
 
 order by aw.account, aw.user_id, aw.week_start

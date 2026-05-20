@@ -22,11 +22,18 @@
 {% endif %}
 {% set _hist_user_id_expr = "cast(user_id as string)" if 'user_id' in _hist_cols else "cast(null as string)" %}
 {% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
+{# Stage 0 broker_account_id passthrough — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+   Detected via adapter.get_columns_in_relation so this model keeps building
+   during the deploy gap when the BQ seed table hasn't been rewritten with
+   the new schema yet. #}
+{% set _hist_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _hist_cols else "cast(null as string)" %}
+{% set _demo_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _demo_cols else "cast(null as string)" %}
 
 with trade_history_as_strings as (
     select
         cast(Account as string) as Account,
         {{ _hist_user_id_expr }} as user_id,
+        {{ _hist_brk_id_expr }} as broker_account_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
@@ -42,6 +49,7 @@ demo_as_strings as (
     select
         cast(Account as string) as Account,
         {{ _demo_user_id_expr }} as user_id,
+        {{ _demo_brk_id_expr }} as broker_account_id,
         cast(Date as string) as Date,
         cast(Action as string) as Action,
         cast(Symbol as string) as Symbol,
@@ -105,6 +113,12 @@ cleaned as (
         -- tenancy across the whole warehouse. Going via FLOAT64 -> INT64
         -- accepts "9.0" and still safe-fails on truly bogus strings.
         safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
+
+        -- New stable tenant key — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+        -- Same FLOAT64-then-INT64 cast as user_id (seed CSV serializes
+        -- Postgres BIGINT identically). Nullable through Stages 0-3;
+        -- Stage 4 tightens to NOT NULL across the warehouse.
+        safe_cast(safe_cast(nullif(trim(broker_account_id), '') as float64) as int64) as broker_account_id,
 
         -- Parse the effective date: use the "as of" date when present, otherwise the main date
         safe.parse_date(
@@ -285,34 +299,29 @@ amount_signed as (
 --   stamped uid=2 and the current snapshot was stamped uid=9; the
 --   account is the same broker account in both cases).
 --
--- Safety guard: ``count(distinct user_id) = 1`` enforces unambiguity
--- in BOTH backfills. If two different users have ever produced rows
--- for a single account label (e.g. a shared demo seed like
--- ``investment1``), neither backfill fires and the NULL / stale stamp
--- survives — better to keep an orphan than to attribute one user's
--- trades to another.
-
--- (B) Canonical owner per account derived from CURRENT-state surfaces
--- (positions snapshot + account-balances snapshot). The broker is the
--- source of truth for "who owns this account RIGHT NOW", so any
--- trade-history row whose uid disagrees with the broker is presumed
--- stale.
-canonical_account_owner as (
-    select
-        account,
-        any_value(user_id) as canonical_user_id
-    from (
-        select account, user_id
-        from {{ ref('stg_current') }}
-        where user_id is not null
-        union distinct
-        select account, user_id
-        from {{ ref('stg_account_balances') }}
-        where user_id is not null
-    )
-    group by 1
-    having count(distinct user_id) = 1
-),
+-- (B) Canonical owner per account. As of May 2026 this lives in its
+-- own staging model: ``stg_canonical_account_owner``. The previous
+-- in-line CTE pulled from stg_current ∪ stg_account_balances with a
+-- ``count(distinct user_id) = 1`` guard, which silently failed to fire
+-- when the BROKER surfaces were themselves dual-stamped (real example:
+-- Cameron Investment / PLTR — same account stamped under uid=9 and
+-- uid=13 across history AND current AND balances; every page surface
+-- doubled). The new model picks the uid with the most recent trade
+-- activity per account, which uniquely identifies the live tenant even
+-- when both uids look "populated."
+--
+-- Read order (precedence, lowest to highest):
+--   3) trade-history-only inferred uid (NULL → populated fallback)
+--   2) raw a.user_id (the row's stamp)
+--   1) canonical_user_id from stg_canonical_account_owner (wins ALWAYS
+--      when set — the broker is canonical for "who owns this RIGHT NOW")
+--
+-- After backfill, rows that were stamped under a stale uid have been
+-- rewritten to the canonical uid. They are now exact duplicates of
+-- rows that were already canonical-stamped, so a final dedupe step
+-- collapses them. Rows that ONLY exist under a stale uid (rare —
+-- happens when historical sync stamped a uid that later got
+-- de-linked) survive after the rewrite under the canonical uid.
 
 -- (A) Trade-history-only fallback when no current/balance snapshot
 -- exists for the account (fully-closed accounts, pre-history holdings).
@@ -329,13 +338,8 @@ account_owner as (
 backfilled as (
     select
         a.account,
-        -- Precedence:
-        --   1) canonical_user_id (broker-confirmed current owner) —
-        --      wins EVEN OVER a populated a.user_id, because we trust
-        --      a non-ambiguous broker snapshot over a stale stamp.
-        --   2) raw a.user_id (already populated, broker unambiguous-or-silent).
-        --   3) trade-history-only inferred uid (NULL → populated fallback).
         coalesce(co.canonical_user_id, a.user_id, ao.inferred_user_id) as user_id,
+        a.broker_account_id,
         a.trade_date, a.action_raw, a.action,
         a.trade_symbol, a.underlying_symbol,
         a.option_expiry, a.option_strike, a.option_type,
@@ -343,7 +347,34 @@ backfilled as (
         a.quantity, a.price, a.fees, a.amount
     from amount_signed a
     left join account_owner ao using (account)
-    left join canonical_account_owner co using (account)
+    left join {{ ref('stg_canonical_account_owner') }} co using (account)
+),
+
+-- Dedupe rewritten fills.
+--
+-- When the canonical-uid rewrite collapses two stale stamps onto the
+-- same canonical uid, the resulting rows are EXACT duplicates by
+-- natural composite key (account, user_id, trade_date, trade_symbol,
+-- action, quantity, amount, fees) — the seed-merge had ingested the
+-- same broker fill under each historical uid. Without this dedupe
+-- the page would still double (it'd just be double-stamped under the
+-- canonical uid instead of split across uids). Tie-break is arbitrary
+-- since the rows are byte-identical post-rewrite.
+deduped as (
+    select * from backfilled
+    qualify row_number() over (
+        -- BigQuery rejects FLOAT64 in PARTITION BY of window functions
+        -- (NaN equality semantics). Stringify quantity/amount/fees so the
+        -- byte-identical rewritten rows partition together. Exact-zero
+        -- vs NULL deduplicates fine under this cast — both serialize
+        -- deterministically.
+        partition by
+            account, user_id, trade_date, trade_symbol, action,
+            cast(quantity as string),
+            cast(amount   as string),
+            cast(fees     as string)
+        order by description nulls last
+    ) = 1
 )
 
 -- NOTE on dividend reinvestment (DRIP) classification.
@@ -364,10 +395,11 @@ backfilled as (
 -- ``(account, user_id, trade_date, underlying_symbol)``.
 
 select
-    account, user_id, trade_date, action_raw, action, trade_symbol, underlying_symbol,
+    account, user_id, broker_account_id,
+    trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
-from backfilled
+from deduped
 -- Drop non-tradeable entries that Schwab Connect emits as fake "Buy" rows:
 --   - CURRENCY_USD (cash settlement/transfer pseudo-trades)
 --   - CUSIPs (e.g. "09247X101") — money-market funds and other non-ticker

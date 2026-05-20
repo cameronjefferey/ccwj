@@ -42,10 +42,42 @@
     INVARIANT (enforced by tests/dbt/int_enriched_current_equity_price_consistent.sql):
       For Equity rows with quantity != 0 and market_value > 0,
       abs(quantity * current_price - market_value) <= $0.01.
+
+    OPTION ROWS — auto-close filter:
+
+      Schwab's snapshot lags actual expiry processing by 1-2 trading
+      days, and on expiry day itself the snapshot still carries the
+      contract with a stale cost-to-close. ``int_option_contracts``
+      resolves both ambiguities upstream — its calendar-truth rule
+      realizes past-expiry contracts and the OTM-at-expiry inference
+      realizes Friday's worthless options before the Monday sync. We
+      mirror that decision here by dropping any option row that
+      ``int_option_contracts`` has already marked Closed.
+
+      Without this filter the page double-counts: the chart's live-
+      today override reads ``current_df.unrealized_pnl`` and adds the
+      stale -$183 mark-to-close on top of the realized credit the
+      mart already booked from the auto-close, and the position legs
+      table shows the same contract under both "Open" (current_df)
+      and "Closed" (int_strategy_classification).
 */
 
 with current_positions as (
     select * from {{ ref('stg_current') }}
+),
+
+-- Mirror int_option_contracts' calendar-truth + OTM-at-expiry close
+-- decision so option rows already auto-closed by the contracts model
+-- don't leak back into "currently held" UI surfaces. The status
+-- column is the single source of truth for "is this contract still
+-- live"; see int_option_contracts header.
+option_contract_status as (
+    select
+        account,
+        user_id,
+        trade_symbol,
+        status
+    from {{ ref('int_option_contracts') }}
 ),
 
 latest_prices as (
@@ -99,6 +131,8 @@ priced as (
 select
     p.account,
     p.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     p.trade_symbol,
     p.underlying_symbol,
     p.option_expiry,
@@ -209,3 +243,17 @@ select
 from priced p
 left join symbol_meta sm
     on upper(trim(p.underlying_symbol)) = sm.symbol
+left join option_contract_status oc
+    on p.account = oc.account
+    and (p.user_id is not distinct from oc.user_id)
+    and p.trade_symbol = oc.trade_symbol
+left join {{ ref('dim_broker_accounts') }} dba
+    on p.account = dba.account_name
+    and (p.user_id is not distinct from dba.user_id)
+where not (
+    -- Drop options the contracts model has already realized.
+    -- Equity rows (and option rows with no matching contract) pass
+    -- through unchanged because the first conjunct is false.
+    p.instrument_type in ('Call', 'Put')
+    and oc.status = 'Closed'
+)

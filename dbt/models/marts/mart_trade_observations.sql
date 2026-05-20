@@ -23,6 +23,8 @@ with joined as (
     select
         f.account,
         f.user_id,
+        -- Stage 2 broker_account_id passthrough (int_trade_features carries it).
+        f.broker_account_id,
         f.trade_symbol,
         f.underlying_symbol,
         f.strategy,

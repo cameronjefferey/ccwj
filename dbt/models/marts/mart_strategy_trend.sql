@@ -12,6 +12,8 @@ with closed_trades as (
     select
         account,
         user_id,
+        -- Stage 2 broker_account_id passthrough (upstream already carries it).
+        broker_account_id,
         strategy,
         date_trunc(close_date, month) as month_start,
         total_pnl,
@@ -29,6 +31,7 @@ monthly as (
     select
         account,
         user_id,
+        any_value(broker_account_id) as broker_account_id,
         strategy,
         month_start,
         count(*)                              as trades_closed,
@@ -44,7 +47,7 @@ monthly as (
         sum(premium_received)                 as premium_collected,
         sum(abs(premium_paid))                as premium_paid
     from closed_trades
-    group by 1, 2, 3, 4
+    group by 1, 2, 4, 5
 ),
 
 with_rolling as (
@@ -79,6 +82,7 @@ with_rolling as (
 select
     account,
     user_id,
+    broker_account_id,
     strategy,
     month_start,
     trades_closed,

@@ -22,6 +22,8 @@ with base as (
     select
         account,
         user_id,
+        -- Stage 2 broker_account_id passthrough (positions_summary already carries it).
+        any_value(broker_account_id) as broker_account_id,
         strategy,
         sum(total_pnl)              as total_pnl,
         sum(trade_only_pnl)         as trade_only_pnl,
@@ -40,7 +42,7 @@ with base as (
         avg(avg_days_in_trade)      as avg_days_in_trade
     from {{ ref('positions_summary') }}
     where strategy is not null and trim(strategy) != ''
-    group by 1, 2, 3
+    group by 1, 2, 4
 ),
 
 with_win_rate as (
@@ -53,6 +55,7 @@ with_win_rate as (
 select
     account,
     user_id,
+    broker_account_id,
     strategy,
     round(total_pnl, 2)           as total_pnl,
     round(trade_only_pnl, 2)      as trade_only_pnl,

@@ -21,7 +21,12 @@ with opt_snapshot as (
         cost_basis,
         snapshot_date,
         dbt_valid_from
-    from {{ ref('snapshot_options_market_values_daily') }}
+    -- Canonical-uid wrapper view (May 2026): the raw snapshot
+    -- accumulates historical rows under stale user_id stamps that no
+    -- longer match the canonical owner in `int_option_contracts`.
+    -- See `stg_snapshot_options_market_values_daily` for the full
+    -- write-up.
+    from {{ ref('stg_snapshot_options_market_values_daily') }}
     where snapshot_date is not null
 ),
 
@@ -44,16 +49,27 @@ latest_per_option_day as (
         from opt_snapshot
     )
     where rn = 1
+),
+
+-- Stage 2 broker_account_id passthrough — wrap and left-join dim.
+_pre_broker as (
+    select
+        account,
+        user_id,
+        underlying_symbol as symbol,
+        snapshot_date     as date,
+        sum(market_value) as option_market_value,
+        sum(cost_basis)   as option_cost_basis
+    from latest_per_option_day
+    where underlying_symbol is not null and trim(underlying_symbol) != ''
+    group by 1, 2, 3, 4
 )
 
 select
-    account,
-    user_id,
-    underlying_symbol as symbol,
-    snapshot_date     as date,
-    sum(market_value) as option_market_value,
-    sum(cost_basis)   as option_cost_basis
-from latest_per_option_day
-where underlying_symbol is not null and trim(underlying_symbol) != ''
-group by 1, 2, 3, 4
-order by 1, 2, 3, 4
+    f.*,
+    d.broker_account_id
+from _pre_broker f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)
+order by f.account, f.user_id, f.symbol, f.date

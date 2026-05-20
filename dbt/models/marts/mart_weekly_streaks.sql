@@ -12,6 +12,7 @@ with weeks as (
     select
         account,
         user_id,
+        broker_account_id,
         week_start,
         total_pnl,
         case when total_pnl >= 0 then 'winning' else 'losing' end as week_result
@@ -35,6 +36,7 @@ streaks as (
     select
         account,
         user_id,
+        broker_account_id,
         week_start,
         total_pnl,
         week_result as streak_type,
@@ -48,6 +50,7 @@ streaks as (
 select
     account,
     user_id,
+    broker_account_id,
     week_start,
     total_pnl      as week_pnl,
     streak_type,

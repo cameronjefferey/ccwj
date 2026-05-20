@@ -94,13 +94,14 @@ with contracts as (
 -- and added 2*cost_basis to the chart (real example: PLTR
 -- 270115C00120000 long LEAP showed +$18,025 instead of -$4,285).
 --
--- DEDUP: snapshot_options_market_values_daily can carry multiple
--- ``dbt_valid_from`` versions for the same (account, user_id,
--- trade_symbol, snapshot_date) when the sync ran more than once on a
--- given day. ``int_daily_option_value`` already deduplicates this way
--- (latest dbt_valid_from wins); we mirror that here so the per-
--- contract grain doesn't fan out and double-count MTM on multi-sync
--- days.
+-- DEDUP: the staging wrapper `stg_snapshot_options_market_values_daily`
+-- already collapses multiple ``dbt_valid_from`` versions per
+-- (account, user_id, trade_symbol, snapshot_date) — keeping the
+-- latest. It also rewrites historical `user_id` stamps to the
+-- canonical owner via `stg_canonical_account_owner`, so the JOIN to
+-- `int_option_contracts` (which is also canonical-uid) doesn't drop
+-- snapshot rows that were captured under a pre-consolidation stale
+-- stamp. See the staging view for the May 2026 PLTR incident notes.
 snapshots as (
     select
         account,
@@ -115,19 +116,10 @@ snapshots as (
             then coalesce(market_value, 0) + coalesce(cost_basis, 0)
             else coalesce(market_value, 0) - coalesce(cost_basis, 0)
         end as mtm_unrealized_pnl
-    from (
-        select
-            *,
-            row_number() over (
-                partition by account, user_id, trade_symbol, snapshot_date
-                order by dbt_valid_from desc
-            ) as rn
-        from {{ ref('snapshot_options_market_values_daily') }}
-        where snapshot_date is not null
-          and underlying_symbol is not null
-          and trim(underlying_symbol) != ''
-    )
-    where rn = 1
+    from {{ ref('stg_snapshot_options_market_values_daily') }}
+    where snapshot_date is not null
+      and underlying_symbol is not null
+      and trim(underlying_symbol) != ''
 ),
 
 -- Per-contract last snapshot date. Used to cap the lifetime spine —
@@ -377,8 +369,19 @@ realized_close as (
     from contracts c
     where c.close_date is not null
       and c.status = 'Closed'
+),
+
+-- Stage 2 broker_account_id passthrough.
+all_rows as (
+    select * from open_mtm
+    union all
+    select * from realized_close
 )
 
-select * from open_mtm
-union all
-select * from realized_close
+select
+    f.*,
+    d.broker_account_id
+from all_rows f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)

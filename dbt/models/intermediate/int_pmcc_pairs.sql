@@ -97,9 +97,11 @@ paired as (
 )
 
 select
-    account,
-    user_id,
-    underlying_symbol,
+    p.account,
+    p.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
+    p.underlying_symbol,
     long_trade_symbol,
     short_trade_symbol,
     -- Long call details
@@ -139,4 +141,7 @@ select
         greatest(long_open_date, short_open_date),
         day
     ) + 1 as overlap_days
-from paired
+from paired p
+left join {{ ref('dim_broker_accounts') }} dba
+    on p.account = dba.account_name
+    and (p.user_id is not distinct from dba.user_id)

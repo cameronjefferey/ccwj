@@ -30,7 +30,10 @@ with opt_snapshot as (
         unrealized_pnl,
         snapshot_date,
         dbt_valid_from
-    from {{ ref('snapshot_options_market_values_daily') }}
+    -- Canonical-uid wrapper view (May 2026): preserves historical
+    -- MTM rows across the canonical-owner consolidation. See
+    -- `stg_snapshot_options_market_values_daily` for details.
+    from {{ ref('stg_snapshot_options_market_values_daily') }}
     where snapshot_date is not null
 ),
 
@@ -91,6 +94,8 @@ strat as (
 select
     d.account,
     d.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     d.trade_symbol,
     d.underlying_symbol,
     d.option_expiry,
@@ -138,3 +143,6 @@ left join strat s
     on d.account = s.account
     and (d.user_id is not distinct from s.user_id)
     and d.trade_symbol = s.trade_symbol
+left join {{ ref('dim_broker_accounts') }} dba
+    on d.account = dba.account_name
+    and (d.user_id is not distinct from dba.user_id)

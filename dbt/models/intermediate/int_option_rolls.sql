@@ -105,6 +105,8 @@ candidates as (
 select
     c.account,
     c.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     c.underlying_symbol,
     c.option_type,
 
@@ -153,4 +155,7 @@ left join {{ ref('stg_daily_prices') }} dp
     and (c.user_id is not distinct from dp.user_id)
     and c.underlying_symbol = dp.symbol
     and c.old_close_date = dp.date
+left join {{ ref('dim_broker_accounts') }} dba
+    on c.account = dba.account_name
+    and (c.user_id is not distinct from dba.user_id)
 where c.match_rank = 1

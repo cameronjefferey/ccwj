@@ -85,6 +85,8 @@ peak_dates as (
 select
     c.account,
     c.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     c.trade_symbol,
     c.underlying_symbol,
     c.strategy,
@@ -165,3 +167,6 @@ left join peak_dates pd
     on c.account = pd.account
     and (c.user_id is not distinct from pd.user_id)
     and c.trade_symbol = pd.trade_symbol
+left join {{ ref('dim_broker_accounts') }} dba
+    on c.account = dba.account_name
+    and (c.user_id is not distinct from dba.user_id)

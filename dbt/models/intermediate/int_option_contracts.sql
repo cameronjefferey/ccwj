@@ -225,10 +225,136 @@ all_contracts as (
     select * from contract_summary
     union all
     select * from snapshot_only_options
+),
+
+-- OTM-at-expiry inference (worthless-expiry auto-close).
+--
+-- The existing calendar-truth rule (``option_expiry < current_date()``
+-- below) realizes a contract the FIRST DAY AFTER expiry — but on
+-- expiry day itself it still reads as Open until BigQuery's
+-- ``current_date()`` advances past expiry. That gap matters: a trader
+-- whose Friday-expiry short call closes OTM at 4:00 PM ET sees the
+-- broker snapshot's stale cost-to-close (e.g. -$183) all evening and
+-- weekend long — even though the contract is unambiguously worthless
+-- and the premium is fully realized. The Monday broker sync ships an
+-- explicit ``option_expired`` action and the existing close_type
+-- precedence then fires, but we shouldn't have to wait two calendar
+-- days for the page to be honest about something Friday's closing
+-- print already determined.
+--
+-- The fix: when the underlying's daily close on the expiry date is
+-- strictly OTM relative to the strike, infer that the contract
+-- expired worthless and realize at ``net_cash_flow`` immediately.
+-- Strict OTM only (close < strike for calls; close > strike for
+-- puts) — at-the-money or ITM expiries are left as Open because the
+-- broker still has discretion (auto-exercise threshold) and the
+-- realized number would differ between assignment vs. exercise.
+-- For ITM, wait for the broker's explicit action.
+--
+-- The yfinance daily close for the expiry day lives in
+-- ``stg_daily_prices`` and lands via the price loader after market
+-- close (Render cron at ~21:30 UTC weekdays). The CI dbt build then
+-- picks it up. Anyone hitting the page over the weekend sees the
+-- realized credit; the Monday broker sync still ships
+-- ``option_expired`` and the existing close_type precedence
+-- harmlessly takes over with the same ``net_cash_flow``.
+--
+-- Why this is safe to do BEFORE the broker confirms:
+--   net_cash_flow is the sum of explicit fills only. For an OTM
+--   expiry there is no closing fill (the option just dies), so
+--   net_cash_flow = premium received (or paid). That's exactly
+--   what the broker's ``option_expired`` event with amount=$0 will
+--   crystallize too. No double-counting, no risk of disagreement.
+expiry_close_lookup as (
+    select
+        account,
+        user_id,
+        symbol     as underlying_symbol,
+        date       as expiry_date,
+        close_price
+    from {{ ref('stg_daily_prices') }}
+    where date        is not null
+      and close_price is not null
+),
+
+otm_at_expiry as (
+    select
+        c.account,
+        c.user_id,
+        c.trade_symbol,
+        case
+            -- Strict OTM call: underlying closed BELOW the strike.
+            when c.option_expiry = current_date()
+                 and c.option_strike is not null
+                 and c.option_type   = 'C'
+                 and e.close_price is not null
+                 and e.close_price < c.option_strike
+            then true
+            -- Strict OTM put: underlying closed ABOVE the strike.
+            when c.option_expiry = current_date()
+                 and c.option_strike is not null
+                 and c.option_type   = 'P'
+                 and e.close_price is not null
+                 and e.close_price > c.option_strike
+            then true
+            else false
+        end as inferred_otm_today
+    from all_contracts c
+    left join expiry_close_lookup e
+        on c.account            = e.account
+        and (c.user_id is not distinct from e.user_id)
+        and c.underlying_symbol = e.underlying_symbol
+        and c.option_expiry     = e.expiry_date
 )
 
 select
-    c.*,
+    c.account,
+    c.user_id,
+    -- Stage 2 broker_account_id passthrough (see docs/BROKER_ACCOUNT_ID_MIGRATION.md).
+    dba.broker_account_id,
+    c.trade_symbol,
+    c.underlying_symbol,
+    c.option_expiry,
+    c.option_strike,
+    c.option_type,
+    c.direction,
+    c.open_date,
+
+    -- Effective close_date: original (history closing-action OR past-
+    -- expiry calendar branch) is the strongest signal. When neither
+    -- has fired yet but the same-day OTM inference is true, fall
+    -- back to the option_expiry date so downstream
+    -- (int_option_contract_daily_pnl realized_close branch) emits
+    -- the realized credit on the right calendar day.
+    coalesce(
+        c.close_date,
+        case when iotm.inferred_otm_today then c.option_expiry end
+    ) as close_date,
+
+    c.contracts_sold_to_open,
+    c.contracts_bought_to_open,
+    c.contracts_closed,
+    c.premium_received,
+    c.premium_paid,
+    c.cost_to_close,
+    c.proceeds_from_close,
+    c.net_cash_flow,
+    c.total_fees,
+
+    -- close_type: preserve broker-confirmed values when present.
+    -- ``ExpiredOTM`` is reserved for the inferred-from-yfinance branch
+    -- so admin debugging can distinguish "we deduced this" from
+    -- "broker confirmed this." When the Monday sync ships an explicit
+    -- ``option_expired`` event, ``c.close_type`` becomes 'Expired'
+    -- and overrides this value in the next build (same realized
+    -- credit either way — net_cash_flow doesn't change).
+    case
+        when c.close_type is not null then c.close_type
+        when iotm.inferred_otm_today  then 'ExpiredOTM'
+        else c.close_type
+    end as close_type,
+
+    c.num_trades,
 
     -- Status
     --
@@ -246,9 +372,14 @@ select
     -- close_type from history (Assigned / Exercised / Expired explicit
     -- event) still wins above the calendar fallback because it's the
     -- highest-precision signal we have.
+    --
+    -- The ``inferred_otm_today`` branch handles expiry day itself:
+    -- when the underlying closed strictly OTM, realize before the
+    -- broker confirms on Monday. See ``otm_at_expiry`` CTE header.
     case
         when c.close_type is not null         then 'Closed'
         when c.option_expiry < current_date() then 'Closed'
+        when iotm.inferred_otm_today          then 'Closed'
         when cur.trade_symbol is not null     then 'Open'
         else 'Open'
     end as status,
@@ -261,16 +392,17 @@ select
     --
     -- Calendar truth wins over snapshot presence: a contract whose
     -- ``status`` says Closed (because ``close_type`` is set OR
-    -- ``option_expiry`` is past) MUST realize via ``net_cash_flow``
-    -- regardless of whether Schwab's stale snapshot still carries
-    -- it. Pre-fix the case branch keyed off ``cur.trade_symbol is
-    -- not null`` and silently used ``cur.unrealized_pnl`` for
-    -- expired-but-still-snapshotted contracts (real example May 2026:
-    -- NVDA 6/5 230C closed via assignment 4/24, snapshot stale at
-    -- mv=-1375 → total_pnl rendered as -$546 instead of the true
-    -- realized +$838). This made the Strategy Breakdown / chart /
-    -- positions_summary disagree with int_option_contract_daily_pnl
-    -- (which correctly emits realized at close_date).
+    -- ``option_expiry`` is past OR ``inferred_otm_today`` fired) MUST
+    -- realize via ``net_cash_flow`` regardless of whether Schwab's
+    -- stale snapshot still carries it. Pre-fix the case branch keyed
+    -- off ``cur.trade_symbol is not null`` and silently used
+    -- ``cur.unrealized_pnl`` for expired-but-still-snapshotted
+    -- contracts (real example May 2026: NVDA 6/5 230C closed via
+    -- assignment 4/24, snapshot stale at mv=-1375 → total_pnl
+    -- rendered as -$546 instead of the true realized +$838). This
+    -- made the Strategy Breakdown / chart / positions_summary
+    -- disagree with int_option_contract_daily_pnl (which correctly
+    -- emits realized at close_date).
     --
     -- CLOSED: ``c.net_cash_flow`` is the only truth (sum of all
     -- fills from stg_history). The matching status logic at the
@@ -287,10 +419,9 @@ select
     -- back to ``net_cash_flow`` when the snapshot is missing
     -- (pre-snapshot warm-up window for newly opened contracts).
     case
-        -- Calendar precedence: if status is Closed, realize at
-        -- net_cash_flow no matter what stg_current still carries.
         when c.close_type is not null         then c.net_cash_flow
         when c.option_expiry < current_date() then c.net_cash_flow
+        when iotm.inferred_otm_today          then c.net_cash_flow
         when cur.trade_symbol is not null
              and cur.unrealized_pnl is not null
         then cur.unrealized_pnl
@@ -303,16 +434,30 @@ select
     --
     -- For closed contracts (close_date set) use the close_date even if
     -- the broker's stale snapshot still carries the contract — calendar
-    -- truth wins, same precedence as the ``status`` column above.
+    -- truth wins, same precedence as the ``status`` column above. The
+    -- coalesce mirrors the effective close_date above so the duration
+    -- of an inferred-OTM contract reflects open → expiry, not
+    -- open → today.
     date_diff(
-        coalesce(c.close_date, current_date()),
+        coalesce(
+            c.close_date,
+            case when iotm.inferred_otm_today then c.option_expiry end,
+            current_date()
+        ),
         c.open_date,
         day
     ) as days_in_trade
 
 from all_contracts c
+left join otm_at_expiry iotm
+    on c.account = iotm.account
+    and (c.user_id is not distinct from iotm.user_id)
+    and c.trade_symbol = iotm.trade_symbol
 left join {{ ref('stg_current') }} cur
     on c.account = cur.account
     and (c.user_id is not distinct from cur.user_id)
     and c.trade_symbol = cur.trade_symbol
     and cur.instrument_type in ('Call', 'Put')
+left join {{ ref('dim_broker_accounts') }} dba
+    on c.account = dba.account_name
+    and (c.user_id is not distinct from dba.user_id)

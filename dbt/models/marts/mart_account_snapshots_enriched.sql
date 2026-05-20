@@ -99,10 +99,12 @@ joined as (
 )
 
 select
-    account,
-    user_id,
-    date,
-    account_value,
+    j.account,
+    j.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
+    j.date,
+    j.account_value,
 
     base_1d_date,
     case when base_1d_value > 0 then base_1d_value end as base_1d_value,
@@ -128,5 +130,8 @@ select
          then safe_divide(account_value - base_1m_value, base_1m_value) * 100
     end as delta_1m_pct
 
-from joined
-order by account, user_id, date
+from joined j
+left join {{ ref('dim_broker_accounts') }} dba
+    on j.account = dba.account_name
+    and (j.user_id is not distinct from dba.user_id)
+order by j.account, j.user_id, j.date

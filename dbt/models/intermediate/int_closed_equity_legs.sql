@@ -298,5 +298,12 @@ all_legs as (
     from writeoffs
 )
 
-select * from all_legs
-order by account, symbol, close_date
+-- Stage 2 broker_account_id passthrough.
+select
+    f.*,
+    d.broker_account_id
+from all_legs f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)
+order by f.account, f.symbol, f.close_date

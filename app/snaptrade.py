@@ -52,7 +52,10 @@ from app.models import (
     stamp_snaptrade_force_refresh_attempt,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
+    get_or_create_broker_account,
+    SNAPTRADE_BROKER_SLUG,
 )
+from app.db import execute
 from app.schwab import (
     SCHWAB_FULL_HISTORY_LOOKBACK_DAYS as _FULL_HISTORY_LOOKBACK_DAYS,
     _bulk_sync_lookback_days,
@@ -67,6 +70,49 @@ from app.snaptrade_normalize import (
 from app.utils import demo_block_writes
 
 _log = logging.getLogger(__name__)
+
+
+def _ensure_snaptrade_broker_account_id(user_id, snaptrade_account_id, account_name):
+    """Resolve (and persist) the ``broker_accounts.id`` for a SnapTrade
+    account row.
+
+    Mirror of ``app.schwab._ensure_schwab_broker_account_id``.
+    ``snaptrade_account_id`` is SnapTrade's per-account UUID — stable
+    for the life of the broker connection and survives renames. The
+    pair ``(broker_slug='snaptrade', broker_external_id=<uuid>)`` is
+    globally unique per HappyTrader user.
+
+    Idempotent: first call creates the ``broker_accounts`` row and
+    stamps its id onto ``snaptrade_accounts.broker_account_id``; later
+    calls return the cached id.
+
+    See ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+    """
+    ext_id = (snaptrade_account_id or "").strip()
+    if not ext_id:
+        raise ValueError("SnapTrade account row has no snaptrade_account_id")
+    label = (account_name or "SnapTrade Account").strip() or "SnapTrade Account"
+    broker_account_id = get_or_create_broker_account(
+        user_id=user_id,
+        broker_slug=SNAPTRADE_BROKER_SLUG,
+        broker_external_id=ext_id,
+        account_name=label,
+    )
+    try:
+        execute(
+            "UPDATE snaptrade_accounts "
+            "SET broker_account_id = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s "
+            "  AND (broker_account_id IS NULL OR broker_account_id <> %s)",
+            (broker_account_id, int(user_id), ext_id, broker_account_id),
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "Could not cache broker_account_id on snaptrade_accounts "
+            "(user_id=%s, snaptrade_account_id=%s): %s",
+            user_id, ext_id, exc,
+        )
+    return broker_account_id
 
 # Reuse the Schwab full-history cap for symmetric UX. SnapTrade's
 # per-broker history depth varies (Schwab via SnapTrade can go years;
@@ -367,6 +413,22 @@ def snaptrade_callback():
                 user_id, snaptrade_account_id, auth_id,
             )
         add_account_for_user(user_id, account_name)
+        # Stage 0+ tenancy: register the broker_accounts row so the
+        # first sync after callback has a real broker_account_id to
+        # stamp into seed rows. Idempotent on re-callback.
+        # See docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+        try:
+            _ensure_snaptrade_broker_account_id(
+                user_id=user_id,
+                snaptrade_account_id=snaptrade_account_id,
+                account_name=account_name,
+            )
+        except Exception as exc:
+            app.logger.warning(
+                "broker_accounts registration deferred for SnapTrade user_id=%s "
+                "snaptrade_account_id=%s: %s",
+                user_id, snaptrade_account_id, exc,
+            )
         saved += 1
 
     flash(
@@ -1156,6 +1218,16 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     snap_user_id = snap["snaptrade_user_id"]
     snap_secret = snap["snaptrade_secret"]
 
+    # Stage 0+ tenancy: resolve broker_account_id BEFORE any external
+    # API calls so a SnapTrade error doesn't leave us without a stable
+    # tenant key. Idempotent / lazily creates the row for legacy
+    # snaptrade_accounts entries that pre-date this code.
+    broker_account_id = _ensure_snaptrade_broker_account_id(
+        user_id=user_id,
+        snaptrade_account_id=snaptrade_account_id,
+        account_name=account_name,
+    )
+
     end_date = date.today()
     start_date = end_date - timedelta(days=int(lookback_days))
 
@@ -1267,6 +1339,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             current_df,
             commit_message=commit_msg,
             user_id=user_id,
+            broker_account_id=broker_account_id,
             skip_history=skip_history,
             balances_df=balances_df,
         )

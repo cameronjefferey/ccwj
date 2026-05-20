@@ -196,6 +196,8 @@ base as (
 select
     b.account,
     b.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     b.strategy,
 
     coalesce(e.total_closed, 0)                 as total_closed,
@@ -251,3 +253,6 @@ left join worst_dte wd
     on b.account = wd.account
    and (b.user_id is not distinct from wd.user_id)
    and b.strategy = wd.strategy
+left join {{ ref('dim_broker_accounts') }} dba
+    on b.account = dba.account_name
+    and (b.user_id is not distinct from dba.user_id)

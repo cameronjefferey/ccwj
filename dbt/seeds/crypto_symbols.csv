@@ -1,0 +1,54 @@
+symbol,asset_class,note
+BTC,Crypto,Bitcoin
+ETH,Crypto,Ethereum
+SOL,Crypto,Solana
+USDC,Crypto,USD Coin (stablecoin)
+USDT,Crypto,Tether (stablecoin)
+DAI,Crypto,Dai (stablecoin)
+ADA,Crypto,Cardano
+AVAX,Crypto,Avalanche
+DOGE,Crypto,Dogecoin
+DOT,Crypto,Polkadot
+LINK,Crypto,Chainlink
+LTC,Crypto,Litecoin
+MATIC,Crypto,Polygon
+XRP,Crypto,Ripple
+ATOM,Crypto,Cosmos
+BCH,Crypto,Bitcoin Cash
+ALGO,Crypto,Algorand
+XLM,Crypto,Stellar
+NEAR,Crypto,NEAR Protocol
+APT,Crypto,Aptos
+ARB,Crypto,Arbitrum
+OP,Crypto,Optimism
+SHIB,Crypto,Shiba Inu
+UNI,Crypto,Uniswap
+ETC,Crypto,Ethereum Classic
+FIL,Crypto,Filecoin
+SUI,Crypto,Sui
+TON,Crypto,Toncoin
+TRX,Crypto,TRON
+PEPE,Crypto,Pepe
+INJ,Crypto,Injective
+SEI,Crypto,Sei
+HBAR,Crypto,Hedera
+ICP,Crypto,Internet Computer
+GRT,Crypto,The Graph
+AAVE,Crypto,Aave
+MKR,Crypto,Maker
+SNX,Crypto,Synthetix
+COMP,Crypto,Compound
+CRV,Crypto,Curve DAO
+LDO,Crypto,Lido DAO
+RNDR,Crypto,Render
+FET,Crypto,Fetch.ai
+TAO,Crypto,Bittensor
+JUP,Crypto,Jupiter
+WIF,Crypto,Dogwifhat
+BONK,Crypto,Bonk
+PYUSD,Crypto,PayPal USD (stablecoin)
+AURORA,Crypto,Aurora (Near ecosystem)
+BOBA,Crypto,Boba Network
+EOS,Crypto,EOS.io
+MORPHO,Crypto,Morpho Labs
+OMG,Crypto,OMG Network

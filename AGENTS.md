@@ -19,6 +19,8 @@ This document describes how AI agents are used in this repository and how to wor
 
 **BigQuery is multi-tenant in practice:** a shared dataset can contain many `account` labels. Unscoped symbol-only (or unfiltered) queries have leaked other users’ rows to a signed-in user before. **Every BQ read for user-facing pages must be scoped in SQL and/or with `_filter_df_by_accounts` on every DataFrame before merge or render.** See `.cursor/rules/bigquery-tenant-isolation.mdc` (always on for agents) — follow it for every change under `app/` that touches queries.
 
+**Tenant key is migrating from `(account_name, user_id)` to a stable `broker_account_id`** — see `docs/BROKER_ACCOUNT_ID_MIGRATION.md`. **Stages 0, 1, 2A, 2B, 3A, 4A all live as of 2026-05-20.** Stage 0 (Postgres `broker_accounts` table + stamping at every writer + nullable column on every seed CSV) is in. Stage 1 (one-shot seed backfill via `scripts/backfill_seed_broker_account_ids.py`) has stamped 12 resolvable `(account, user_id)` tuples (3,726 rows); 20 tuples (~7,389 rows) referencing deleted Postgres users remain NULL pending operator triage. Stage 2A built `dim_broker_accounts` (sourced from seed CSVs directly, NOT staging — staging's canonical-owner CTE would assign deleted-user uids and break the mapping) and propagated `broker_account_id` through `int_strategy_classification`, `positions_summary`, and `mart_daily_pnl`. **Stage 2B finished propagation through every remaining intermediate and mart model the Flask app reads from** (~35 models, three patterns: inline LEFT JOIN to dim for staging readers, passthrough for downstream readers, wrap-and-join for union/aggregation shapes). `int_split_factors` is symbol-only and intentionally does not carry the column. Stage 3A added Flask helpers `_broker_account_sql_and`, `_broker_account_sql_filter`, `_filter_df_by_broker_account_ids`, `_resolve_filter_broker_account_ids` in `app/routes.py` (TESTED but NOT yet wired into routes — Stage 3B is operator-gated). Stage 4A added 5 warning-severity dbt singular tests (`every_broker_account_id_exists_in_dim_broker_accounts`, `seed_broker_account_id_unique_per_account_user`, `dim_broker_accounts_unique_per_id`, `dim_broker_accounts_unique_per_user_account_pair`, `every_seed_row_has_broker_account_id`). The remaining ~7,389 orphan rows currently have NULL `broker_account_id` and surface in `every_seed_row_has_broker_account_id` (58 distinct rows in the test output — the Stage 4B punch list) — pending operator triage (delete / reassign / recreate / quarantine). Stage 3B (wire defense-in-depth into routes) and Stage 4B (drop legacy CTEs + leniency) are deferred to follow-up operator passes. **DO NOT** flip the filter ahead of Stage 3B — production data shows `mart_account_equity_daily` / `mart_wealth_daily` rows can have NULL `broker_account_id` even for live users because `stg_canonical_account_owner` rewrites historical snapshot user_ids to stale values that don't appear in dim; the right Stage 3B pattern is additive (`broker_account_id IS NULL OR broker_account_id IN (...)` on top of the existing `(account, user_id)` filter), one route at a time. Any new sync code or writer must pass `broker_account_id` to `merge_and_push_seeds` (it's required); derive it via `get_or_create_broker_account(...)` from the connection / account row.
+
 **Brokerage sync is the most failure-prone surface in the product** — both the native Schwab connector and the SnapTrade aggregator (Fidelity/Vanguard/Robinhood/IBKR). Three production regressions shipped in a single chat in May 2026 (banner persistence, bulk lookback, seed merge dedup+tenancy). Before editing `app/schwab.py`, `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/schwab_sync_cli.py`, `app/snaptrade_sync_cli.py`, the `dbt/seeds/*.csv` shape, `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/schwab/accounts` / `/snaptrade/accounts`, or any column on `schwab_connections` / `snaptrade_connections` / `snaptrade_accounts` (`refresh_token_invalid_at`, `connection_broken_at`, `schwab_first_sync_completed`, `first_sync_completed`, `token_json`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped (across BOTH connectors), the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
 
 ---
@@ -58,32 +60,63 @@ It reflects behavior back to the trader.
 
 ## Page-by-Page Status
 
-### Weekly Review (`/weekly-review`) — PRIMARY EXPERIENCE
-**Status: Working well. Core anchor of the product.**
+### Daily Review (`/daily-review` — endpoint still named `weekly_review` for url_for() compat) — PRIMARY EXPERIENCE
+**Status: Rebuilt May 2026. End-of-day pulse page; mode-switching removed.**
 
-This is the page a paying customer opens daily. It should answer:
-> "How did I trade this week compared to my own historical behavior, given the market context?"
+This is the page a paying customer opens at market close every day. It should answer:
+> "What just happened, what should I watch, and how is every position / strategy / sector
+> doing in total?"
 
-What's working:
-- Comparison table (vs yesterday, last week, last month, start of week)
-- Market comparison row (SPY / QQQ) with "outperforming X indexes" summary
-- Today Strip (open positions with live prices)
-- Expiring This Week section
-- Daily P&L Calendar Heatmap
-- Best / Worst trade of the week cards
-- Trades table for the week
-- Friday / Monday / mid-week mode switching
-- Market performance from BigQuery (replaced yfinance for speed)
-- Combined queries for weekly summary and open positions (performance win)
+The previous Friday / Monday / Mid-week mode toggle was deleted. Users want the same answer
+every day — the modes were three pages glued together. The endpoint name is still
+`weekly_review` (route URL is `/daily-review` with `/weekly-review` kept as a legacy alias for
+bookmarks) so the 30+ `url_for('weekly_review', ...)` callers across templates, auth,
+profile, upload, admin, etc. don't break.
 
-What was removed:
-- All journal prompts, mood tracking, behavioral anomaly sections, and reflection CTAs
-- Journal is fully removed from the product (see Journal section below)
+What's working (May 2026 rebuild):
+- Today hero: account total + day delta + market context line
+- Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
+- Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
+- Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
+- Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
+- Current positions strip (open-position cards with live prices)
+- Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
+  Capital | Days | %Return | Annualized — same shape as the trader's external Excel
+- Strategy breakdown: same shape rolled up by classified strategy
+- Sector breakdown: same shape rolled up by yfinance sector
+- Subsector breakdown: same shape by yfinance industry
+
+What was removed in the rebuild:
+- Friday / Monday / Mid-week mode pill toggle
+- Mon-Fri "diary" timeline (kept as a helper for tests; not rendered)
+- Behavioral baseline cards (volume / win-rate / pnl vs 8-week average)
+- "Numbers" disclosure with weekly best/worst trades
+- "What we noticed" / Patterns / Coach's Take cards
+- Watch Next Week (Friday-only) section
+
+Implementation notes:
+- The new POSITION_ATTRIBUTION_QUERY joins `int_strategy_classification` (for equity vs
+  option P&L split) + `int_dividends` (for div income) + `stg_history` (for buy-cash
+  capital) + `int_enriched_current` (for current-leg snapshot). Tenancy-scoped at the
+  SQL level via {account_filter} on every CTE, and the resulting DataFrame is filtered
+  via `_filter_df_by_accounts` defensively (both layers, per the bigquery-tenant-isolation
+  rule).
+- Annualized return uses (net / capital) × (365 / max(days_held, 30)) with a $200
+  capital floor so dust-lot dividends don't extrapolate to four-digit %.
+- Strategy / sector / subsector breakdowns are pure pandas groupby on the per-symbol
+  rows — totals reconcile by construction.
+- Projected ex-dividend dates come from a cadence heuristic on `stg_daily_prices.dividend`
+  (median spacing of last 6 events). Labeled "projected" in UI; the long-term fix is a
+  yfinance Calendar refresher script that ships real future ex-div dates.
 
 What could be better:
-- Friday mode could have a stronger "week in review" narrative
-- Pattern detection ("losses clustered after prior losses") is not yet surfaced here
-- No streak tracking (consecutive winning/losing weeks)
+- "Today's $ impact" right now only covers equity price-moves. Option MTM moves and
+  dividends paid today aren't yet in the today-net number.
+- Position attribution capital is a proxy (sum of buy-cash). Doesn't account for cash
+  released by closures or for variance margin on shorts.
+- No "what I expected vs what happened" framing — could use a 1-line summary that
+  surfaces above the snapshot table.
 
 ### Position Detail (`/position/<symbol>`) — DEEP DIVE PAGE
 **Status: Functional with recent fixes. Complex page with the most logic.**
@@ -449,6 +482,28 @@ filters live `current_df` rows by `option_expiry >= today` to avoid
 double-counting an expired contract that the broker hasn't dropped yet.
 Both layers must keep this invariant.
 
+**OTM-at-expiry inference (same-day auto-close).** The calendar-truth
+rule above only fires the DAY AFTER expiry — on expiry day itself
+(`option_expiry = current_date()`) the contract stays Open until BQ's
+`current_date()` advances. That gap matters when a Friday-expiry short
+call closes OTM at 4:00 PM ET: the trader checking the page Friday
+evening or over the weekend would otherwise see the broker snapshot's
+stale cost-to-close baked into the live override, even though the
+bell already settled the contract at $0. The `otm_at_expiry` CTE in
+`int_option_contracts` joins `stg_daily_prices` on the underlying's
+expiry-day close and marks the contract Closed (with
+`close_type='ExpiredOTM'`) when the close is STRICTLY OTM relative to
+the strike (call: `close < strike`; put: `close > strike`). ITM/ATM
+expiries are left as Open because the broker still has discretion
+(auto-exercise threshold) and the realized number differs by
+assignment vs. exercise — wait for the broker action. The Monday sync
+ships explicit `option_expired` and the existing `close_type` branch
+takes over with the same `net_cash_flow`. `int_enriched_current`
+mirrors the decision by filtering out option rows whose
+`int_option_contracts.status='Closed'`, so the chart's live override
+and `_compute_breakdown_by_type` don't double-count the broker's
+stale mark on top of the mart's already-realized credit.
+
 **Reconciliation invariant.** `cumulative_options_pnl(today) +
 open_options_unrealized_pnl(today)`, summed across all (account,
 user_id, symbol) rows for a position, MUST equal
@@ -599,7 +654,7 @@ The product succeeds if:
 ## Internal Design Check
 
 Before shipping a change, ask:
-1. Does this make the Weekly Review stronger?
+1. Does this make the Daily Review stronger?
 2. Does this move logic out of Flask and into dbt?
 3. Does this increase clarity?
 4. Does this reduce cognitive noise?

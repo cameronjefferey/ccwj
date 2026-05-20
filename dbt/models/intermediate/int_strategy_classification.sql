@@ -15,6 +15,10 @@
       - Naked Call         (sold call without equity)
       - Poor Man Covered Call (sold call covered by long call on same underlying, e.g. diagonal)
       - Buy and Hold       (equity only, no associated options)
+      - Crypto             (crypto holding — can't have options, so it's structurally
+                            a buy-and-hold, but we surface it as its own bucket so the
+                            mirror reflects asset-class choice rather than fusing BTC
+                            with the trader's VOO / JEPI buckets)
 */
 
 with equity_sessions as (
@@ -23,6 +27,14 @@ with equity_sessions as (
 
 option_contracts as (
     select * from {{ ref('int_option_contracts') }}
+),
+
+-- Crypto whitelist (see stg_crypto_symbols header comment). Used to
+-- route equity-session rows for BTC / ETH / USDC / etc. into the
+-- 'Crypto' strategy below. Crypto can't have options so the
+-- covered-call / wheel / spread branches never need to consider it.
+crypto_symbols as (
+    select symbol from {{ ref('stg_crypto_symbols') }}
 ),
 
 ---------------------------------------------------------------------
@@ -312,6 +324,15 @@ equity_classified as (
         cast(0 as float64)                     as premium_paid,
 
         case
+            -- Crypto wins first: BTC / ETH / USDC etc. land here from a
+            -- broker (Coinbase via SnapTrade today) where options aren't
+            -- a thing. We surface them as their own bucket so dashboards
+            -- don't conflate the trader's BTC sit-and-hold with their
+            -- VOO sit-and-hold — different asset class, different mental
+            -- model, different tax treatment. See
+            -- ``stg_crypto_symbols`` for the whitelist.
+            when cs.symbol is not null
+                then 'Crypto'
             when efa.session_id is not null and eos.num_sold_calls > 0
                 then 'Wheel'
             when efa.session_id is not null
@@ -339,11 +360,41 @@ equity_classified as (
         and (e.user_id is not distinct from sr.user_id)
         and e.symbol = sr.symbol
         and e.session_id = sr.session_id
-)
+    left join crypto_symbols cs
+        on upper(trim(e.symbol)) = cs.symbol
+),
 
 ---------------------------------------------------------------------
 -- 6. Union all classified trade groups
 ---------------------------------------------------------------------
-select * from options_classified
-union all
-select * from equity_classified
+classified as (
+    select * from options_classified
+    union all
+    select * from equity_classified
+)
+
+---------------------------------------------------------------------
+-- 7. Stage 2 broker_account_id passthrough.
+--
+-- Rather than threading broker_account_id through every CTE above,
+-- we resolve it once at the model's output by joining against
+-- dim_broker_accounts on (account, user_id). This is safe because:
+--   - dim_broker_accounts is built BEFORE this model in the DAG.
+--   - (account, user_id) → broker_account_id is functional in the
+--     warehouse (enforced by seed_broker_account_id_unique_per_account_user
+--     dbt singular test).
+--   - Orphan rows (NULL broker_account_id in seed, no dim entry)
+--     get NULL here. The Stage 3 Flask filter drops them, which is
+--     the security upgrade.
+--
+-- Stage 4 will refactor this once broker_account_id is the JOIN
+-- key directly. For now, additive — does not change row count or
+-- any existing column.
+---------------------------------------------------------------------
+select
+    c.*,
+    d.broker_account_id
+from classified c
+left join {{ ref('dim_broker_accounts') }} d
+    on c.account = d.account_name
+    and (c.user_id is not distinct from d.user_id)

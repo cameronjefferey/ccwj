@@ -23,6 +23,9 @@
 {% endif %}
 {% set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" %}
 {% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
+{# Stage 0 broker_account_id passthrough — see docs/BROKER_ACCOUNT_ID_MIGRATION.md. #}
+{% set _curr_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _curr_cols else "cast(null as string)" %}
+{% set _demo_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _demo_cols else "cast(null as string)" %}
 
 {%- set common_string_cols -%}
         cast(Account as string) as Account,
@@ -61,6 +64,7 @@
 with current_as_strings as (
     select
         {{ _curr_user_id_expr }} as user_id,
+        {{ _curr_brk_id_expr }} as broker_account_id,
         {{ common_string_cols }}
     from {{ ref('current_positions') }}
 ),
@@ -68,6 +72,7 @@ with current_as_strings as (
 demo_as_strings as (
     select
         {{ _demo_user_id_expr }} as user_id,
+        {{ _demo_brk_id_expr }} as broker_account_id,
         {{ common_string_cols }}
     from {{ ref('demo_current') }}
 ),
@@ -120,6 +125,10 @@ cleaned_raw as (
         -- silently NULLed user_id for every Schwab-synced row.
         safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
 
+        -- New stable tenant key — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+        -- Same FLOAT64-then-INT64 cast as user_id.
+        safe_cast(safe_cast(nullif(trim(broker_account_id), '') as float64) as int64) as broker_account_id,
+
         -- Full trade symbol
         trim(symbol) as trade_symbol,
 
@@ -157,7 +166,20 @@ cleaned_raw as (
                 nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
                 osi_cp
             ) = 'P' then 'Put'
-            when lower(trim(coalesce(security_type, ''))) in ('equity', 'etfs & closed end funds') then 'Equity'
+            -- Crypto rows (SnapTrade emits ``security_type='Cryptocurrency'``
+            -- on positions whose symbol type code is crypto — see
+            -- ``app/snaptrade_normalize.py``) are EQUITY-MECHANICS for the
+            -- mart pipeline: they go through int_equity_sessions /
+            -- int_closed_equity_legs / int_enriched_current the same way a
+            -- stock holding does (buy → hold → sell, no dividends, no
+            -- splits, no options). The Crypto label is applied LATER at
+            -- ``int_strategy_classification`` time via the
+            -- ``stg_crypto_symbols`` whitelist. Mapping to ``Equity`` here
+            -- means we don't have to fork every downstream
+            -- ``where instrument_type = 'Equity'`` to also include 'Crypto'.
+            when lower(trim(coalesce(security_type, ''))) in (
+                'equity', 'etfs & closed end funds', 'cryptocurrency'
+            ) then 'Equity'
             else 'Other'
         end as instrument_type,
 
@@ -235,10 +257,36 @@ cleaned as (
 -- the most-populated market_value as a deterministic tiebreak. Mirrors
 -- the same defense in stg_account_balances.
 -- Orphan-tenant backfill — see stg_history.sql for the full incident
--- write-up. Same shape: when a Schwab account was synced before being
--- linked, snapshot rows landed under user_id=NULL; later snapshots
--- under the linked user_id. Without backfill, downstream partitioning
--- by (account, user_id) treats them as separate positions.
+-- write-up. TWO failure modes, both seen in production:
+--
+--   (A) NULL → populated.  Snapshot synced before user linked the
+--       account; later snapshots under the real user_id. Existing
+--       `account_owner` CTE handles this via the unambiguous-uid
+--       guard (single-non-NULL uid per account).
+--
+--   (B) Stale-uid → canonical-uid.  Same account stamped under
+--       MULTIPLE non-NULL uids (e.g. Cameron Investment / PLTR — May
+--       2026 — uid=9 and uid=13 both have rows for every contract
+--       after a historical re-link). The `count = 1` guard above
+--       refuses to fire because both uids look "populated". Without
+--       resolution, downstream consumers double-count every leg,
+--       every closed trade, every breakdown row.
+--
+-- The canonical resolution lives in `stg_canonical_account_owner` —
+-- a separate staging model that reads trade_history's `trade_date`
+-- to pick the most-recently-active uid per account. We backfill in
+-- precedence order:
+--
+--   1) canonical_user_id (from stg_canonical_account_owner) — wins
+--      EVEN OVER a populated c.user_id, because we trust freshest
+--      trade activity over a stale stamp.
+--   2) raw c.user_id (already populated).
+--   3) inferred_user_id from this model's account_owner (case A).
+--
+-- After the rewrite, rows that were stamped under a stale uid
+-- become exact duplicates of rows already under the canonical uid
+-- (same trade_symbol, same broker snapshot fields). The `deduped`
+-- CTE collapses them.
 account_owner as (
     select
         account,
@@ -252,9 +300,10 @@ account_owner as (
 backfilled as (
     select
         c.* except(user_id),
-        coalesce(c.user_id, ao.inferred_user_id) as user_id
+        coalesce(co.canonical_user_id, c.user_id, ao.inferred_user_id) as user_id
     from cleaned c
     left join account_owner ao using (account)
+    left join {{ ref('stg_canonical_account_owner') }} co using (account)
 ),
 
 deduped as (

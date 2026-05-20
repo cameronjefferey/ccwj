@@ -716,3 +716,127 @@ def test_orders_df_minimal_description_for_dedup_with_activities():
     assert desc == "NVIDIA Corporation"
     # NOT a richer synthesized description
     assert "98" not in desc and "Bought" not in desc and "@" not in desc
+
+
+# ---------------------------------------------------------------------------
+# Crypto classification (Coinbase via SnapTrade)
+# ---------------------------------------------------------------------------
+# Coinbase ships positions as crypto. SnapTrade's UniversalSymbol either
+# carries ``type.code = 'crypto'`` (when the broker exposes it) or omits
+# the type entirely (older Coinbase responses). We classify in both
+# cases — type code preferred, symbol whitelist as fallback — so the
+# resulting seed row carries ``security_type='Cryptocurrency'`` and
+# downstream models surface the position under the ``Crypto`` strategy
+# label.
+
+
+def _coinbase_btc_position(*, with_type_code: bool = True) -> dict:
+    """Builds a SnapTrade-shape position payload for BTC on Coinbase.
+
+    Mirrors the field shape we've seen from SnapTrade in May 2026
+    (snaptrade-python-sdk 11.0.193 + Coinbase): ``symbol`` is a nested
+    UniversalSymbol with ``symbol.symbol.raw_symbol='BTC'`` and an
+    optional ``symbol.symbol.type`` block.
+    """
+    inner = {
+        "raw_symbol": "BTC",
+        "symbol": "BTC",
+        "description": "Bitcoin",
+    }
+    if with_type_code:
+        inner["type"] = {"code": "crypto", "description": "Cryptocurrency"}
+    return {
+        "symbol": {"symbol": inner, "description": "Bitcoin"},
+        "units": 0.0045777,
+        "price": 79125.5718,
+        "average_purchase_price": 34931.2,
+        "open_pnl": 202.27,
+    }
+
+
+def test_positions_df_crypto_with_type_code_marks_security_type():
+    """When SnapTrade ships ``symbol.symbol.type.code = 'crypto'`` we
+    must write ``security_type='Cryptocurrency'`` into the seed so
+    stg_current and stg_crypto_symbols can both recognize it. Pre-fix
+    every non-option position got ``security_type='Equity'`` — which
+    silently fused BTC into the Buy and Hold strategy alongside SPY."""
+    df = positions_to_current_df(
+        [_coinbase_btc_position(with_type_code=True)],
+        account_name="Coinbase Account",
+        user_id=9,
+    )
+    assert len(df) == 1
+    assert df.iloc[0]["security_type"] == "Cryptocurrency"
+    assert df.iloc[0]["Symbol"] == "BTC"
+
+
+def test_positions_df_crypto_without_type_code_falls_back_to_whitelist():
+    """Older Coinbase responses omitted the ``type`` block. The
+    symbol-whitelist fallback (CRYPTO_SYMBOLS in app/upload.py) must
+    still catch BTC / ETH / etc. so the marker doesn't depend on
+    SnapTrade's per-broker normalization quirks."""
+    df = positions_to_current_df(
+        [_coinbase_btc_position(with_type_code=False)],
+        account_name="Coinbase Account",
+        user_id=9,
+    )
+    assert df.iloc[0]["security_type"] == "Cryptocurrency"
+
+
+def test_positions_df_unknown_non_option_still_equity():
+    """A regression guard: a generic equity (no type.code, not on the
+    crypto whitelist) must NOT get misclassified as Cryptocurrency. If
+    the fallback got too aggressive, every equity row from SnapTrade
+    would land in the seed as Cryptocurrency and break stg_current's
+    instrument_type mapping."""
+    spy_position = {
+        "symbol": {
+            "symbol": {"raw_symbol": "SPY", "symbol": "SPY", "description": "SPDR S&P 500"},
+            "description": "SPDR S&P 500",
+        },
+        "units": 100,
+        "price": 510.55,
+        "average_purchase_price": 400.0,
+        "open_pnl": 11055.0,
+    }
+    df = positions_to_current_df([spy_position], account_name="X", user_id=6)
+    assert df.iloc[0]["security_type"] == "Equity"
+
+
+def test_crypto_symbols_whitelist_matches_dbt_seed():
+    """The runtime CRYPTO_SYMBOLS frozenset in app/upload.py mirrors
+    the dbt seed dbt/seeds/crypto_symbols.csv. They MUST stay in sync —
+    if they drift, the Flask page and the BigQuery strategy
+    classification will disagree on whether a position is crypto."""
+    import csv
+    from pathlib import Path
+
+    from app.upload import CRYPTO_SYMBOLS
+
+    seed_path = (
+        Path(__file__).resolve().parents[1]
+        / "dbt"
+        / "seeds"
+        / "crypto_symbols.csv"
+    )
+    with seed_path.open() as fh:
+        reader = csv.DictReader(fh)
+        seed_symbols = {row["symbol"].strip().upper() for row in reader if row.get("symbol")}
+    assert seed_symbols == set(CRYPTO_SYMBOLS), (
+        "dbt/seeds/crypto_symbols.csv and app/upload.py:CRYPTO_SYMBOLS drifted. "
+        f"Only in seed: {sorted(seed_symbols - set(CRYPTO_SYMBOLS))}. "
+        f"Only in runtime: {sorted(set(CRYPTO_SYMBOLS) - seed_symbols)}."
+    )
+
+
+def test_is_crypto_symbol_helper_is_case_insensitive_and_strips():
+    """The ``is_crypto_symbol`` helper accepts mixed case / whitespace
+    because the seed comes through pandas / BQ with various
+    normalizations. False on empty / None / non-whitelisted ticker."""
+    from app.upload import is_crypto_symbol
+    assert is_crypto_symbol("BTC") is True
+    assert is_crypto_symbol("btc") is True
+    assert is_crypto_symbol("  Eth  ") is True
+    assert is_crypto_symbol("PLTR") is False
+    assert is_crypto_symbol("") is False
+    assert is_crypto_symbol(None) is False  # type: ignore[arg-type]

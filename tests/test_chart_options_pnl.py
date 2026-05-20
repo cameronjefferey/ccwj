@@ -342,6 +342,50 @@ def test_today_row_patch_uses_live_unrealized_not_market_value():
         )
 
 
+def test_otm_at_expiry_today_chart_shows_realized_credit_no_double_count():
+    """Friday OTM expiry, auto-closed by the dbt layer.
+
+    The auto-close inference in ``int_option_contracts`` (see the
+    ``otm_at_expiry`` CTE) marks the contract Closed on its expiry day
+    when the underlying's yfinance close is strictly OTM. The mart's
+    ``cumulative_options_pnl`` then includes the realized credit on
+    today, and ``int_enriched_current`` drops the option row so it
+    can't leak back into the live override as stale unrealized.
+
+    The chart at today MUST land at the realized credit — NOT at
+    cumulative + the broker snapshot's stale cost-to-close.
+
+    Pre-fix: trader hit the page Friday afternoon, saw -$183 stale
+    unrealized weighing down a position the bell had already settled
+    at +$208. The Monday broker sync eventually shipped
+    ``option_expired`` and the page snapped to +$208 — too late.
+    """
+    df = pd.DataFrame([
+        _daily_row("2026-05-14", cum_realized=0.0, open_mtm=0.0,
+                   has_trade=True),
+        # Today (expiry day) — mart booked realized $208 after the
+        # OTM auto-close fired in this build. No open MTM contribution
+        # because the contract's lifetime spine ends day-before
+        # close_date.
+        _daily_row(str(date.today()), cum_realized=208.0, open_mtm=0.0),
+    ])
+    # current_df is empty for this contract because int_enriched_current
+    # filtered it out (oc.status='Closed'). Other positions could still
+    # be in current_df; the helper only sums options here.
+    out = _build_chart_from_daily_pnl(df, pd.DataFrame())
+
+    today_str = str(date.today())
+    assert today_str in out["dates"], "today's row should render"
+    idx = out["dates"].index(today_str)
+    assert out["options"][idx] == 208.0, (
+        f"OTM-at-expiry auto-closed contract must land at realized "
+        f"credit (208.0). Got {out['options'][idx]}. If this is "
+        f"~25.0 (208 - 183) the broker's stale snapshot leaked back "
+        f"into the live override — int_enriched_current should have "
+        f"dropped the row."
+    )
+
+
 def test_today_row_excludes_past_expiry_options_from_open_mtm():
     """Schwab's snapshot lags actual expiry by 1-2 trading days. A
     past-expiry contract still in current_df must NOT contribute open

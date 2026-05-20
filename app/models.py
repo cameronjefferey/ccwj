@@ -298,6 +298,41 @@ def init_db():
             UNIQUE (user_id, snaptrade_account_id)
         )
         """,
+        # Broker account tenancy table — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+        #
+        # One row per (user, physical broker account). The SERIAL ``id``
+        # is the stable, immutable tenant key that gets stamped into
+        # every BigQuery seed row. After the staged migration completes,
+        # the warehouse joins on this id, not on the user-typeable
+        # ``account_name`` string.
+        #
+        # ``broker_slug`` ∈ {'schwab', 'snaptrade', 'manual', 'demo'}.
+        # ``broker_external_id`` is the broker-provided immutable handle:
+        #   - schwab    → schwab_connections.account_hash
+        #   - snaptrade → snaptrade_accounts.snaptrade_account_id
+        #   - manual    → synthetic UUID generated at first upload
+        #   - demo      → hard-coded constant per demo seed
+        # The pair (broker_slug, broker_external_id) is globally unique
+        # — two different users linking the same physical Schwab account
+        # each get their own broker_accounts row (different user_id) but
+        # the same broker_external_id, which is the right model because
+        # their warehouse rows are different tenants.
+        """
+        CREATE TABLE IF NOT EXISTS broker_accounts (
+            id                   SERIAL PRIMARY KEY,
+            user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            broker_slug          TEXT NOT NULL,
+            broker_external_id   TEXT NOT NULL,
+            account_name         TEXT NOT NULL,
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, broker_slug, broker_external_id)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_broker_accounts_user
+        ON broker_accounts (user_id)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -310,6 +345,7 @@ def init_db():
     _migrate_account_name_unique_index()
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
+    _migrate_broker_account_id_columns()
 
 
 def _migrate_schwab_first_sync_column():
@@ -340,6 +376,28 @@ def _migrate_schwab_refresh_token_invalid_at_column():
         _log.warning(
             "schwab_connections refresh_token_invalid_at migration skipped: %s", e,
         )
+
+
+def _migrate_broker_account_id_columns():
+    """Idempotent: add nullable ``broker_account_id`` FK columns to the
+    connection tables. See ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+
+    Nullable on purpose for Stage 0 — existing rows survive without one
+    until the operator runs the backfill (Stage 1). New rows created by
+    ``schwab_callback`` / ``_register_account`` (SnapTrade) /
+    ``upload_csv`` populate the column from day one.
+    """
+    for table in ("schwab_connections", "snaptrade_accounts", "uploads"):
+        try:
+            execute(
+                f"ALTER TABLE {table} "
+                "ADD COLUMN IF NOT EXISTS broker_account_id INTEGER "
+                "REFERENCES broker_accounts(id) ON DELETE SET NULL"
+            )
+        except Exception as exc:
+            _log.warning(
+                "%s.broker_account_id migration skipped: %s", table, exc,
+            )
 
 
 def _migrate_snaptrade_force_refresh_columns():
@@ -652,6 +710,110 @@ def remove_account_for_user(user_id, account_name):
     execute(
         "DELETE FROM user_accounts WHERE user_id = %s AND account_name = %s",
         (user_id, account_name),
+    )
+
+
+# ------------------------------------------------------------------
+# Broker account tenancy
+# (see docs/BROKER_ACCOUNT_ID_MIGRATION.md)
+# ------------------------------------------------------------------
+
+MANUAL_BROKER_SLUG = "manual"
+DEMO_BROKER_SLUG = "demo"
+SCHWAB_BROKER_SLUG = "schwab"
+SNAPTRADE_BROKER_SLUG = "snaptrade"
+
+
+def get_or_create_broker_account(
+    user_id, broker_slug, broker_external_id, account_name,
+):
+    """Idempotent upsert for ``broker_accounts``. Returns the row id.
+
+    The natural key is ``(user_id, broker_slug, broker_external_id)`` —
+    a single physical broker account belonging to a single HappyTrader
+    user. Two users linking the same physical Schwab account each get
+    their own row (different ``user_id``) but the same
+    ``broker_external_id``.
+
+    ``account_name`` is captured on FIRST insert and refreshed on
+    re-link only if the new label is non-empty AND different. We never
+    let an empty label overwrite a previously-captured one (broker
+    APIs occasionally ship empty nicknames mid-session).
+    """
+    if user_id is None:
+        raise ValueError("user_id is required")
+    slug = (broker_slug or "").strip().lower()
+    if not slug:
+        raise ValueError("broker_slug is required")
+    ext = (broker_external_id or "").strip()
+    if not ext:
+        raise ValueError("broker_external_id is required")
+    label = (account_name or "").strip()
+    if not label:
+        raise ValueError("account_name is required")
+
+    row = fetch_one(
+        "SELECT id, account_name FROM broker_accounts "
+        "WHERE user_id = %s AND broker_slug = %s AND broker_external_id = %s",
+        (int(user_id), slug, ext),
+    )
+    if row:
+        if label and label != (row.get("account_name") or ""):
+            execute(
+                "UPDATE broker_accounts SET account_name = %s, "
+                "updated_at = NOW() WHERE id = %s",
+                (label, row["id"]),
+            )
+        return int(row["id"])
+
+    new_row = execute_returning(
+        "INSERT INTO broker_accounts "
+        "(user_id, broker_slug, broker_external_id, account_name) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (user_id, broker_slug, broker_external_id) "
+        "DO UPDATE SET updated_at = NOW() "
+        "RETURNING id",
+        (int(user_id), slug, ext, label),
+    )
+    return int(new_row["id"])
+
+
+def get_broker_account_by_id(broker_account_id):
+    """Lookup a single broker_accounts row by primary key."""
+    if broker_account_id is None:
+        return None
+    return fetch_one(
+        "SELECT id, user_id, broker_slug, broker_external_id, account_name, "
+        "created_at, updated_at FROM broker_accounts WHERE id = %s",
+        (int(broker_account_id),),
+    )
+
+
+def get_broker_account_ids_for_user(user_id):
+    """Return the list of ``broker_accounts.id`` owned by this user.
+
+    Stage 3 read path: the Flask filter will use this to scope every
+    BigQuery query to the user's broker_account_ids. Until then it's
+    only used in tests / diagnostics.
+    """
+    if user_id is None:
+        return []
+    rows = fetch_all(
+        "SELECT id FROM broker_accounts WHERE user_id = %s ORDER BY id",
+        (int(user_id),),
+    )
+    return [int(r["id"]) for r in rows]
+
+
+def get_broker_accounts_for_user(user_id):
+    """Return full broker_accounts rows for this user (display use)."""
+    if user_id is None:
+        return []
+    return fetch_all(
+        "SELECT id, user_id, broker_slug, broker_external_id, account_name, "
+        "created_at, updated_at FROM broker_accounts "
+        "WHERE user_id = %s ORDER BY id",
+        (int(user_id),),
     )
 
 

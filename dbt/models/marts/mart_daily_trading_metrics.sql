@@ -89,6 +89,8 @@ holding_times as (
 select
     d.account,
     d.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     d.trade_date,
     d.num_trades,
     d.total_volume,
@@ -113,4 +115,7 @@ left join holding_times ht
     on d.account = ht.account
     and (d.user_id is not distinct from ht.user_id)
     and d.trade_date = ht.trade_date
+left join {{ ref('dim_broker_accounts') }} dba
+    on d.account = dba.account_name
+    and (d.user_id is not distinct from dba.user_id)
 order by d.account, d.user_id, d.trade_date

@@ -75,6 +75,8 @@ exit_prices as (
 select
     p.account,
     p.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     p.symbol,
     p.strategy,
     p.status,
@@ -104,3 +106,6 @@ left join exit_prices xp
     on p.account = xp.account
     and (p.user_id is not distinct from xp.user_id)
     and p.symbol = xp.symbol
+left join {{ ref('dim_broker_accounts') }} dba
+    on p.account = dba.account_name
+    and (p.user_id is not distinct from dba.user_id)

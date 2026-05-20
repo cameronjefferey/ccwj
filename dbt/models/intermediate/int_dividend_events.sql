@@ -215,10 +215,22 @@ drip_events as (
         and (cdk.user_id is not distinct from d.user_id)
         and cdk.symbol  = d.underlying_symbol
     where cdk.account is null
+),
+
+-- Stage 2 broker_account_id passthrough.
+-- Consolidate the union and left-join dim_broker_accounts.
+all_events as (
+    select * from csv_events
+    union all
+    select * from drip_events
+    union all
+    select * from synthetic_events
 )
 
-select * from csv_events
-union all
-select * from drip_events
-union all
-select * from synthetic_events
+select
+    f.*,
+    d.broker_account_id
+from all_events f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)

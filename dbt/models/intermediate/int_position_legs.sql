@@ -232,4 +232,11 @@ final as (
     from aggregated
 )
 
-select * from final
+-- Stage 2 broker_account_id passthrough.
+select
+    f.*,
+    d.broker_account_id
+from final f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)

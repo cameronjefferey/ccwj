@@ -72,6 +72,8 @@ wash_flags as (
 select
     ct.account,
     ct.user_id,
+    -- Stage 2 broker_account_id passthrough.
+    dba.broker_account_id,
     ct.symbol,
     ct.trade_symbol,
     ct.strategy,
@@ -97,3 +99,6 @@ left join wash_flags wf
     and (ct.user_id is not distinct from wf.user_id)
     and ct.symbol     = wf.symbol
     and ct.close_date = wf.loss_close_date
+left join {{ ref('dim_broker_accounts') }} dba
+    on ct.account = dba.account_name
+    and (ct.user_id is not distinct from dba.user_id)

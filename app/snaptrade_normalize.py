@@ -39,11 +39,64 @@ import pandas as pd
 
 from app.upload import (
     BALANCE_SEED_COLUMNS,
+    CRYPTO_SYMBOLS,
     CURRENT_SEED_COLUMNS,
     HISTORY_SEED_COLUMNS,
 )
 
 _log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Crypto detection
+# ---------------------------------------------------------------------------
+# SnapTrade's UniversalSymbol carries a ``type`` block (``code`` +
+# ``description``). The canonical crypto code is ``"crypto"``; some
+# broker-specific feeds emit ``"CRYPTO"``, ``"Cryptocurrency"``, or
+# ``"DIGITAL_ASSET"``. We accept any of those as a positive signal AND
+# fall back to a symbol-whitelist match (``app.upload.CRYPTO_SYMBOLS``)
+# so the classification is consistent with the dbt ``stg_crypto_symbols``
+# whitelist downstream — see ``int_strategy_classification`` for where
+# the warehouse decides "Crypto" vs "Buy and Hold".
+#
+# Why both signals: SnapTrade's per-broker normalization isn't 100%
+# uniform — early Coinbase responses (May 2026) shipped crypto rows
+# WITHOUT the type code set, so the type-only check would miss them.
+# The whitelist guarantees BTC / ETH / USDC etc. get tagged regardless.
+_CRYPTO_TYPE_CODES = frozenset({"CRYPTO", "CRYPTOCURRENCY", "DIGITAL_ASSET"})
+
+
+def _is_crypto(symbol_obj: Mapping) -> bool:
+    """Decide whether a SnapTrade position/activity's symbol is crypto.
+
+    Two signals, OR'd:
+      1. ``symbol.symbol.type.code`` (or ``symbol.type.code`` for flattened
+         payloads) matches a known crypto code.
+      2. Underlying ticker is on the curated CRYPTO_SYMBOLS whitelist.
+
+    Returns False for non-Mapping inputs / unknown shapes — better to
+    fall through to "Equity" than mis-classify an equity row as crypto.
+    """
+    if not isinstance(symbol_obj, Mapping):
+        return False
+    # Type code (preferred — broker-canonical when present)
+    for candidate in (
+        symbol_obj.get("symbol") if isinstance(symbol_obj.get("symbol"), Mapping) else None,
+        symbol_obj,
+    ):
+        if not isinstance(candidate, Mapping):
+            continue
+        type_block = candidate.get("type")
+        if isinstance(type_block, Mapping):
+            code = str(type_block.get("code") or "").strip().upper()
+            if code in _CRYPTO_TYPE_CODES:
+                return True
+            desc = str(type_block.get("description") or "").strip().upper()
+            if "CRYPTO" in desc:
+                return True
+    # Symbol-whitelist fallback
+    underlying = _underlying_from_symbol(symbol_obj).upper()
+    return underlying in CRYPTO_SYMBOLS
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +706,18 @@ def positions_to_current_df(
             gl_dollar = round(market_value - cost_basis, 4)
             gl_percent = round(100.0 * (market_value - cost_basis) / abs(cost_basis), 4)
 
-        security_type = "Option" if is_option else "Equity"
+        if is_option:
+            security_type = "Option"
+        elif _is_crypto(symbol_obj):
+            # ``Cryptocurrency`` is the agreed marker that
+            # ``stg_current`` parses into ``instrument_type='Crypto'``.
+            # Older Coinbase rows in the seed shipped as ``Equity`` and
+            # are retro-classified via the symbol whitelist in
+            # ``stg_crypto_symbols`` — this marker exists so FUTURE
+            # syncs are self-describing without needing the whitelist.
+            security_type = "Cryptocurrency"
+        else:
+            security_type = "Equity"
         description = _description_from_symbol(symbol_obj) or sym_str
 
         rows.append({

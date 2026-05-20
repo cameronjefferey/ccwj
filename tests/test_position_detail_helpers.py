@@ -588,6 +588,61 @@ def test_breakdown_by_type_unfiltered_pltr_shape():
     assert div["count"] == 0
 
 
+def test_breakdown_by_type_otm_at_expiry_today_realizes_not_unrealizes():
+    """Friday OTM expiry: int_option_contracts auto-closes the contract
+    (status='Closed', total_pnl=net_cash_flow), int_strategy_classification
+    surfaces it as a Closed option row, and int_enriched_current drops
+    the option row from the snapshot. Breakdown by Type must therefore
+    show the credit under Options.realized — NOT Options.unrealized.
+
+    Pre-fix (no auto-close, no int_enriched_current filter): the contract
+    landed in BOTH closed_legs_df (because dbt eventually marked it
+    Closed after midnight UTC) AND current_df (because the broker
+    snapshot still carried it for 1-2 days). Options.unrealized double-
+    counted the stale broker mark-to-close while Options.realized
+    showed the same contract's net_cash_flow — Breakdown total
+    disagreed with the chart by exactly the broker's stale mv.
+    """
+    # Closed legs query now returns the auto-closed contract with
+    # total_pnl=net_cash_flow ($208 premium kept on the OTM short call).
+    closed_legs = pd.DataFrame([
+        {
+            "account": "Cameron Investment",
+            "open_date": "2026-05-12",
+            "total_pnl": 208.0,
+        },
+    ])
+    # current_df no longer contains the auto-closed Call (dbt filtered
+    # it). It still carries the position's open equity row.
+    current = pd.DataFrame([
+        {
+            "account": "Cameron Investment",
+            "instrument_type": "Equity",
+            "unrealized_pnl": 0.0,
+        },
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="PLTR",
+        strat_accounts_scope=["Cameron Investment"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=closed_legs,
+        current_df=current,
+        leg_predicate=None,
+    )
+    opt = _bd_lookup(rows, "Options")
+    assert opt["realized"] == 208.0, (
+        f"OTM auto-close credit should land in realized. Got {opt}"
+    )
+    assert opt["unrealized"] == 0.0, (
+        f"int_enriched_current filtered out the auto-closed contract, "
+        f"so Options.unrealized should be 0 (no double-count of the "
+        f"stale broker snapshot). Got {opt}"
+    )
+    assert opt["count"] == 1
+    assert opt["count_open"] == 0
+
+
 def test_breakdown_by_type_returns_empty_when_no_activity():
     """Card must hide entirely when there is nothing to show."""
     rows = _compute_breakdown_by_type(
@@ -727,6 +782,106 @@ def test_breakdown_by_type_dividend_query_failure_is_non_fatal():
     div = _bd_lookup(rows, "Dividends")
     assert div["realized"] == 0.0
     assert div["count"] == 0
+
+
+# --- Crypto positions (Coinbase via SnapTrade) ---------------------------
+
+
+def test_breakdown_by_type_crypto_symbol_relabels_equity_row_as_crypto():
+    """BTC / ETH / USDC sit-and-hold positions go through the same
+    int_equity_sessions → int_closed_equity_legs mechanics as a stock
+    holding (buy → hold → sell). The breakdown card relabels the row
+    as ``Crypto`` so the user sees the asset-class signal in the UI
+    instead of fusing it with their VOO / JEPI Equity total."""
+    # Open BTC position — unrealized only.
+    current_df = pd.DataFrame([
+        {"account": "Coinbase Account", "instrument_type": "Equity",
+         "unrealized_pnl": 202.27},
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="BTC",
+        strat_accounts_scope=["Coinbase Account"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=current_df,
+        leg_predicate=None,
+    )
+    types = [r["type"] for r in rows]
+    assert "Crypto" in types, f"BTC should surface as Crypto, got {types}"
+    assert "Equity" not in types, "BTC must not double-render as Equity"
+    crypto = _bd_lookup(rows, "Crypto")
+    assert crypto["unrealized"] == pytest.approx(202.27)
+    assert crypto["count_open"] == 1
+    assert crypto["count_label"] == "holding"
+
+
+def test_breakdown_by_type_crypto_symbol_suppresses_dividends_row():
+    """Crypto holdings don't pay dividends in our pipeline (no
+    yfinance ex-div feed, no broker dividend events for BTC/ETH).
+    Rendering ``$0 dividends`` on every crypto page is noisy — the
+    breakdown card must skip the row entirely."""
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="ETH",
+        strat_accounts_scope=["Coinbase Account"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame([
+            {"account": "Coinbase Account", "instrument_type": "Equity",
+             "unrealized_pnl": 100.0},
+        ]),
+        leg_predicate=None,
+    )
+    types = [r["type"] for r in rows]
+    assert "Dividends" not in types, (
+        f"Crypto pages must not render a Dividends row; got {types}"
+    )
+
+
+def test_breakdown_by_type_crypto_holding_plural_label():
+    """Multi-fill BTC position (two snapshot rows, e.g. user holds BTC
+    in two sub-wallets that SnapTrade surfaces separately) reads as
+    ``2 holdings`` not ``2 sessions`` — the equity-session terminology
+    doesn't fit the crypto mental model."""
+    current_df = pd.DataFrame([
+        {"account": "Coinbase Account", "instrument_type": "Equity",
+         "unrealized_pnl": 100.0},
+        {"account": "Coinbase Account", "instrument_type": "Equity",
+         "unrealized_pnl": 50.0},
+    ])
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="BTC",
+        strat_accounts_scope=["Coinbase Account"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=current_df,
+        leg_predicate=None,
+    )
+    crypto = _bd_lookup(rows, "Crypto")
+    assert crypto["count"] == 2
+    assert crypto["count_label"] == "holdings"
+
+
+def test_breakdown_by_type_usdc_stablecoin_classifies_as_crypto():
+    """USDC is a stablecoin and lives on a crypto exchange in this
+    product. The user weekly-DCAs ``Buy 100 USDC at $1.00``. It must
+    classify as Crypto (not Equity) so the strategy breakdown matches
+    the rest of the user's Coinbase activity."""
+    rows = _compute_breakdown_by_type(
+        client=_StubBQClient(pd.DataFrame()),
+        safe_symbol="USDC",
+        strat_accounts_scope=["Coinbase Account"],
+        closed_equity_df=pd.DataFrame(),
+        closed_legs_df=pd.DataFrame(),
+        current_df=pd.DataFrame([
+            {"account": "Coinbase Account", "instrument_type": "Equity",
+             "unrealized_pnl": 0.0},
+        ]),
+        leg_predicate=None,
+    )
+    assert _bd_lookup(rows, "Crypto")  # raises if missing
 
 
 def test_equity_raw_trades_clips_future_partial_sells():

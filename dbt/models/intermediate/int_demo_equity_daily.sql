@@ -107,6 +107,8 @@ select
     -- filter by ``account = 'Demo Account'`` rather than ``user_id``, so the
     -- NULL here is intentional — see docs/USER_ID_TENANCY.md.
     cast(null as int64)                                  as user_id,
+    -- Demo has no broker_account_id either; same NULL-by-design rationale.
+    cast(null as int64)                                  as broker_account_id,
     date,
     cast(account_value_raw * (1 - 0.05 - 0.12) as int64) as equity_value,
     cast(account_value_raw * 0.12 as int64)              as option_value,

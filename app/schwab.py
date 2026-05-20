@@ -23,7 +23,10 @@ from app.models import (
     update_schwab_token,
     update_schwab_tokens_for_user,
     add_account_for_user,
+    get_or_create_broker_account,
+    SCHWAB_BROKER_SLUG,
 )
+from app.db import execute, fetch_one
 from app.utils import demo_block_writes
 
 # OAuth state stored in Flask session
@@ -34,6 +37,55 @@ SCHWAB_API_BASE = "https://api.schwabapi.com"
 
 # UI "import full history" uses this many days (cap for API + dbt); routine sync uses env default.
 SCHWAB_FULL_HISTORY_LOOKBACK_DAYS = 1825
+
+
+def _ensure_schwab_broker_account_id(user_id, account_number, account_hash, account_name):
+    """Resolve (and persist) the ``broker_accounts.id`` for a Schwab connection.
+
+    Stage 0+ tenancy: every emitted seed row carries the stable
+    ``broker_account_id`` instead of relying on ``(user_id, account_name)``.
+    Schwab's stable per-account handle is ``account_hash`` (preferred —
+    immutable across renames and broker UI changes) with a fallback to
+    ``account_number`` for legacy rows missing the hash. The pair
+    ``(broker_slug='schwab', broker_external_id=<hash_or_number>)`` is
+    globally unique per user; ``get_or_create_broker_account`` returns
+    the same id on every call for the same connection.
+
+    On a brand-new connection (or any connection whose
+    ``schwab_connections.broker_account_id`` is still NULL — e.g. rows
+    created before this code shipped), we lazily create the
+    ``broker_accounts`` row and stamp its id onto the connection row.
+    This is idempotent: subsequent syncs read the cached id directly.
+
+    See ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+    """
+    ext_id = (account_hash or "").strip() or (account_number or "").strip()
+    if not ext_id:
+        raise ValueError("Schwab connection has no account_hash or account_number")
+    label = (account_name or account_number or "Schwab Account").strip() or "Schwab Account"
+    broker_account_id = get_or_create_broker_account(
+        user_id=user_id,
+        broker_slug=SCHWAB_BROKER_SLUG,
+        broker_external_id=ext_id,
+        account_name=label,
+    )
+    # Best-effort cache on the connection row so the next sync skips
+    # the lookup. Idempotent: NULL → id; id → id (no-op WHERE clause).
+    try:
+        execute(
+            "UPDATE schwab_connections "
+            "SET broker_account_id = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND account_number = %s "
+            "  AND (broker_account_id IS NULL OR broker_account_id <> %s)",
+            (broker_account_id, int(user_id), account_number, broker_account_id),
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "Could not cache broker_account_id on schwab_connections "
+            "(user_id=%s, account_number=%s): %s",
+            user_id, account_number, exc,
+        )
+    return broker_account_id
 
 
 def _schwab_asset_type_to_security_type(asset_type):
@@ -660,6 +712,25 @@ def schwab_callback():
         token_json=token_json,
     )
     add_account_for_user(current_user.id, final_account_name)
+
+    # Stage 0+ tenancy: register the broker_accounts row for this
+    # connection so the first sync after callback has a real
+    # broker_account_id to stamp into seed rows. Idempotent.
+    # See docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+    try:
+        _ensure_schwab_broker_account_id(
+            user_id=current_user.id,
+            account_number=account_number,
+            account_hash=account_hash,
+            account_name=final_account_name,
+        )
+    except Exception as exc:
+        # Don't block OAuth completion on a tenancy-registration hiccup;
+        # _run_sync will retry the same lookup on the next sync.
+        app.logger.warning(
+            "broker_accounts registration deferred for Schwab user_id=%s account_number=%s: %s",
+            current_user.id, account_number, exc,
+        )
 
     # Re-auth covers every account under this Schwab login. Refresh tokens
     # on any pre-existing rows so a sync that targets a sibling connection
@@ -1303,6 +1374,19 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
     account_name = conn_data.get("account_name") or conn_data["account_number"]
     account_number = conn_data["account_number"]
 
+    # Stage 0+ tenancy: resolve the broker_account_id BEFORE any
+    # seed-write happens. The lookup is idempotent and lazily creates
+    # the row for legacy connections that pre-date this code. We do
+    # this here (not inside merge_and_push_seeds) so a sync that fails
+    # for any other reason still leaves the broker_accounts row in
+    # place — every retry uses the same id.
+    broker_account_id = _ensure_schwab_broker_account_id(
+        user_id=user_id,
+        account_number=account_number,
+        account_hash=account_hash,
+        account_name=account_name,
+    )
+
     # Stale hashValue in DB → 401 on /accounts/{hash}. Refresh from accountNumbers first.
     account_hash = _sync_account_hash_from_numbers(
         client, user_id, account_number, account_hash
@@ -1502,6 +1586,7 @@ def _run_sync(user_id, client, *, account_number=None, transaction_lookback_days
             current_df,
             commit_message=commit_msg,
             user_id=user_id,
+            broker_account_id=broker_account_id,
             skip_history=skip_tx,
             balances_df=balances_df,
         )

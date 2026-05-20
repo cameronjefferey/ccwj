@@ -30,20 +30,40 @@ def _bq_parallel(client, queries):
 
     queries: dict of {name: sql_string} or {name: (sql_string, job_config)}
     Returns: dict of {name: DataFrame}
+
+    Resilience contract: a failure in ONE query must not blank the entire
+    page. Pre-fix, a SQL typo in the Daily Review "attribution" query
+    (`stg_history.symbol` instead of `underlying_symbol`) crashed the
+    whole batch — the caller's outer `except` swallowed it, set
+    ``batch = {}``, and EVERY downstream section (snapshots, positions,
+    movers, breakdowns) rendered em-dashes. Per-key isolation here means
+    one bad query produces one empty DataFrame, logged loudly, and the
+    other eight sections still render real data.
     """
     results = {}
 
     def _run(name, spec):
-        if isinstance(spec, tuple):
-            sql, cfg = spec
-            return name, client.query(sql, job_config=cfg).to_dataframe()
-        return name, client.query(spec).to_dataframe()
+        try:
+            if isinstance(spec, tuple):
+                sql, cfg = spec
+                return name, client.query(sql, job_config=cfg).to_dataframe(), None
+            return name, client.query(spec).to_dataframe(), None
+        except Exception as exc:
+            return name, pd.DataFrame(), exc
 
     with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
         futures = [pool.submit(_run, n, s) for n, s in queries.items()]
         for f in futures:
-            name, df = f.result()
+            name, df, exc = f.result()
             results[name] = df
+            if exc is not None:
+                try:
+                    from flask import current_app
+                    current_app.logger.error(
+                        "_bq_parallel: query %r failed: %s", name, exc,
+                    )
+                except Exception:
+                    pass
 
     return results
 
@@ -164,6 +184,111 @@ def _filter_df_by_accounts(df, accounts, col="account", user_col="user_id"):
     return _filter_df_by_user(
         df, _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — broker_account_id filter helpers (see docs/BROKER_ACCOUNT_ID_MIGRATION.md)
+#
+# These helpers add a SECOND tenant predicate alongside the legacy
+# `(account, user_id)` filter — defense in depth. The legacy filter
+# stays in place through Stage 3; both predicates must agree.
+#
+# Stage 4 will (a) drop the legacy filter and the `OR user_id IS NULL`
+# leniency, (b) make these the primary tenancy boundary.
+#
+# Until Stage 2 propagates `broker_account_id` through every mart, only
+# specific routes opt into defense-in-depth via these helpers. The
+# orphan rows in the seed (~7,200 with NULL broker_account_id; see
+# the Stage 1 broker-sync-safety SKILL entry) become invisible to any
+# query that uses this filter — that's the security upgrade.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_filter_broker_account_ids():
+    """Return the list of ``broker_accounts.id`` the current request is
+    allowed to read. Admin returns ``None`` (no filter).
+
+    Mirrors ``_resolve_filter_user_id``'s admin bypass semantics so the
+    two filters can be composed without one accidentally narrowing
+    admin reads.
+    """
+    try:
+        from flask_login import current_user
+        from app.auth import is_admin
+        from app.models import get_broker_account_ids_for_user
+        if not getattr(current_user, "is_authenticated", False):
+            return []
+        if is_admin(getattr(current_user, "username", None)):
+            return None
+        return get_broker_account_ids_for_user(int(current_user.id))
+    except Exception:
+        return []
+
+
+def _broker_account_sql_and(broker_account_ids, col="broker_account_id"):
+    """``AND``-shaped predicate that scopes a BQ read to a set of
+    ``broker_account_id`` values. Returns ``""`` for admin
+    (``broker_account_ids is None``) so the helper composes safely.
+
+    Empty list intentionally produces ``AND 1 = 0`` — an authenticated
+    user with no broker_accounts should see no rows, not all rows.
+
+    Usage::
+
+        sql = QUERY.format(
+            account_filter=_account_sql_and(user_accounts),
+            broker_account_filter=_broker_account_sql_and(
+                _resolve_filter_broker_account_ids()
+            ),
+        )
+    """
+    if broker_account_ids is None:
+        return ""
+    if not broker_account_ids:
+        return "AND 1 = 0"
+    ids = ", ".join(str(int(i)) for i in broker_account_ids)
+    return f"AND {col} IN ({ids})"
+
+
+def _broker_account_sql_filter(broker_account_ids, col="broker_account_id"):
+    """``WHERE``-prefixed sibling for queries that don't already have a
+    ``WHERE`` clause. Returns ``""`` for admin.
+    """
+    if broker_account_ids is None:
+        return ""
+    if not broker_account_ids:
+        return "WHERE 1 = 0"
+    ids = ", ".join(str(int(i)) for i in broker_account_ids)
+    return f"WHERE {col} IN ({ids})"
+
+
+def _filter_df_by_broker_account_ids(df, broker_account_ids, col="broker_account_id"):
+    """DataFrame analogue of ``_broker_account_sql_and``.
+
+    Drops rows whose ``col`` is a populated id not in
+    ``broker_account_ids``. Rows with ``col`` NULL are dropped UNLESS
+    the caller is admin (``broker_account_ids is None``) — orphan rows
+    with NULL ``broker_account_id`` are by design invisible to every
+    signed-in user (see ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``).
+
+    Admin (``broker_account_ids is None``) bypasses the filter.
+    """
+    if df is None or df.empty:
+        return df
+    if broker_account_ids is None:
+        return df
+    if col not in df.columns:
+        # Stage 2 deploy gap: a mart that hasn't propagated the column
+        # yet. Don't fail-closed — return the df unchanged and let the
+        # legacy `(account, user_id)` filter carry the security boundary
+        # for this surface until the mart is migrated.
+        return df
+    if not broker_account_ids:
+        return df.iloc[0:0]  # empty same-shape frame
+    target = {int(i) for i in broker_account_ids}
+    series = pd.to_numeric(df[col], errors="coerce")
+    keep = series.isin(target)
+    return df.loc[keep].reset_index(drop=True)
 
 
 def _dedupe_enriched_current_positions(df: pd.DataFrame) -> pd.DataFrame:
@@ -1738,7 +1863,18 @@ POSITION_CURRENT_QUERY = """
         market_value,
         cost_basis,
         unrealized_pnl,
-        unrealized_pnl_pct
+        unrealized_pnl_pct,
+        -- option_expiry / option_strike / option_type are needed by the
+        -- chart's live-today override so it can defensively drop any
+        -- past-expiry option rows from open-MTM addition (the dbt layer
+        -- already filters auto-closed contracts via
+        -- int_enriched_current.option_contract_status, but selecting
+        -- these columns also lets test fixtures and post-build readers
+        -- run the same expiry mask). See _build_chart_from_daily_pnl
+        -- and the OTM-at-expiry inference in int_option_contracts.
+        option_expiry,
+        option_strike,
+        option_type
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {account_filter}
@@ -2037,12 +2173,13 @@ def _merge_position_strategy_breakdown(
         }
 
     # Equity bucket: positions_summary's "Buy and Hold" row gets reclassified
-    # to "Dividend" when dividend income > trade gain. They occupy the same
+    # to "Dividend" when dividend income > trade gain — and Coinbase / crypto
+    # holdings come through as "Crypto". All three occupy the same
     # equity-strategy slot in the breakdown — only one of them can ever exist
     # for a given (account, symbol). Track which accounts already have one
     # so we don't synthesize a duplicate Buy-and-Hold row alongside a real
-    # Dividend row from the mart.
-    EQUITY_BUCKET = ("Buy and Hold", "Dividend")
+    # Dividend / Crypto row from the mart.
+    EQUITY_BUCKET = ("Buy and Hold", "Dividend", "Crypto")
     equity_covered_accounts: set[str] = set()
     for acct_existing, strat_existing in existing:
         if strat_existing in EQUITY_BUCKET:
@@ -2299,7 +2436,15 @@ def _supplement_summary_with_rolled(
         return summary_df if summary_df is not None else pd.DataFrame()
     if summary_df is None or summary_df.empty:
         return rolled_df
-    _EQUITY_STRAT_SLOT = frozenset({"Buy and Hold", "Dividend"})
+    # ``Crypto`` joins the equity-strategy slot for the same reason
+    # ``Dividend`` does: it's the rename ``positions_summary`` applies
+    # to a ``Buy and Hold`` row whose symbol is on the crypto whitelist
+    # (Coinbase via SnapTrade). Without it, a rolled ``Buy and Hold``
+    # from ``int_strategy_classification`` (which already says
+    # ``Crypto`` for crypto symbols) would supplement on top of the
+    # mart's ``Crypto`` row and double-count the realized P&L for
+    # BTC / ETH / etc.
+    _EQUITY_STRAT_SLOT = frozenset({"Buy and Hold", "Dividend", "Crypto"})
     existing: set[tuple[str, str]] = set()
     equity_slot_covered: set[tuple[str, str]] = set()
     for _, r in summary_df.iterrows():
@@ -2353,20 +2498,25 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
     """
     if current_df is None or current_df.empty:
         return pd.DataFrame()
+    from app.upload import is_crypto_symbol
     rows = []
     for _, r in current_df.iterrows():
         acct = str(r.get("account", "") or "").strip()
         it = str(r.get("instrument_type", "") or "")
+        sym = str(r.get("symbol", "") or "").strip()
         if it == "Call":
             lab = "Long Call"
         elif it == "Put":
             lab = "Long Put"
         elif it == "Equity":
-            lab = "Buy and Hold"
+            # Equity rows for crypto symbols (Coinbase via SnapTrade
+            # currently ship as security_type='Equity') get the Crypto
+            # label so the strategy breakdown matches what the warehouse
+            # would have surfaced via int_strategy_classification.
+            lab = "Crypto" if is_crypto_symbol(sym) else "Buy and Hold"
         else:
             lab = "Open"
         u = float(r.get("unrealized_pnl") or 0)
-        sym = str(r.get("symbol", "") or "").strip()
         rows.append(
             {
                 "account": acct,
@@ -2424,10 +2574,21 @@ def _compute_breakdown_by_type(
         type, total, realized, unrealized, count, count_label, count_open
     Empty list when there is no activity at all (page won't render the card).
 
+    Crypto positions (``safe_symbol`` on the ``CRYPTO_SYMBOLS`` whitelist
+    — Coinbase via SnapTrade today) emit a ``Crypto`` row in place of the
+    Equity row and suppress the Dividends row. The mechanics of crypto
+    holdings on this product are identical to a long equity sit-and-hold
+    (buy → hold → sell, no options, no ex-div) so the math is the same;
+    relabeling preserves the asset-class signal in the UI. See
+    ``app.upload.CRYPTO_SYMBOLS`` and ``stg_crypto_symbols`` for the
+    source of truth.
+
     Numbers should sum to the page-level kpis['total_return'] within
     rounding (positions_summary uses rounded P&L per strategy; the mart's
     open_options unrealized has full precision).
     """
+    from app.upload import is_crypto_symbol
+    is_crypto = is_crypto_symbol(safe_symbol)
     eq_realized = 0.0
     eq_unrealized = 0.0
     eq_session_count = 0
@@ -2494,7 +2655,15 @@ def _compute_breakdown_by_type(
     # by-Type while Strategy Breakdown showed $77,780 (the same data).
     # Empty list `[]` (logged-in user with zero linked accounts) still
     # short-circuits — that's the correct "no data to show" path.
-    if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
+    #
+    # Crypto holdings don't pay dividends in our pipeline (no ex-div
+    # calendar from yfinance, no broker dividend rows for BTC/ETH/etc.).
+    # Skip the query entirely so the breakdown card doesn't render a
+    # noisy ``$0 dividends`` row for every crypto position page. If
+    # staking yield ever lands as a dividend event we'll revisit.
+    if is_crypto:
+        pass
+    elif strat_accounts_scope is None or len(strat_accounts_scope) > 0:
         try:
             acct_filter = _account_sql_and(strat_accounts_scope, col="account")
             div_df = client.query(
@@ -2540,16 +2709,27 @@ def _compute_breakdown_by_type(
     ):
         return []
 
-    return [
-        {
-            "type": "Equity",
-            "total": round(eq_total, 2),
-            "realized": round(eq_realized, 2),
-            "unrealized": round(eq_unrealized, 2),
-            "count": eq_session_count,
-            "count_label": "session" if eq_session_count == 1 else "sessions",
-            "count_open": eq_open_count,
-        },
+    equity_or_crypto_row = {
+        # Relabel the equity row as Crypto for crypto positions. The
+        # underlying math is identical (sessions / realized / unrealized
+        # all come from the same int_equity_sessions →
+        # int_closed_equity_legs path); only the row label changes so
+        # the user sees their BTC / ETH / USDC bucketed by asset class
+        # instead of fused into "Equity" alongside their VOO and JEPI.
+        "type": "Crypto" if is_crypto else "Equity",
+        "total": round(eq_total, 2),
+        "realized": round(eq_realized, 2),
+        "unrealized": round(eq_unrealized, 2),
+        "count": eq_session_count,
+        "count_label": (
+            ("holding" if eq_session_count == 1 else "holdings")
+            if is_crypto
+            else ("session" if eq_session_count == 1 else "sessions")
+        ),
+        "count_open": eq_open_count,
+    }
+    rows = [
+        equity_or_crypto_row,
         {
             "type": "Options",
             "total": round(opt_total, 2),
@@ -2559,7 +2739,12 @@ def _compute_breakdown_by_type(
             "count_label": "contract" if opt_count == 1 else "contracts",
             "count_open": opt_open_count,
         },
-        {
+    ]
+    if not is_crypto:
+        # Suppress the Dividends row for crypto — we never query for it
+        # above (no ex-div feed) and rendering ``$0 dividends`` would
+        # be noisy on every BTC / ETH page.
+        rows.append({
             "type": "Dividends",
             "total": round(div_total, 2),
             "realized": round(div_total, 2),
@@ -2569,8 +2754,8 @@ def _compute_breakdown_by_type(
             "count": div_count,
             "count_label": "event" if div_count == 1 else "events",
             "count_open": 0,
-        },
-    ]
+        })
+    return rows
 
 
 def _realized_pnl_from_closed_frames(

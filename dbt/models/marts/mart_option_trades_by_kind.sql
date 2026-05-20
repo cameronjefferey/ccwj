@@ -17,6 +17,8 @@ agg as (
     select
         account,
         user_id,
+        -- Stage 2 broker_account_id passthrough (upstream already carries it).
+        any_value(broker_account_id) as broker_account_id,
         strategy,
         dte_bucket,
         moneyness_at_open,
@@ -25,7 +27,7 @@ agg as (
         sum(total_pnl) as total_pnl,
         sum(net_cash_flow) as net_cash_flow
     from kinds
-    group by 1, 2, 3, 4, 5, 6
+    group by 1, 2, 4, 5, 6, 7
 ),
 
 -- Strategy-level totals for win rate and ordering
@@ -44,6 +46,7 @@ strategy_totals as (
 select
     a.account,
     a.user_id,
+    a.broker_account_id,
     a.strategy,
     a.dte_bucket,
     a.moneyness_at_open,

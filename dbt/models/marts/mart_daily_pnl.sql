@@ -432,27 +432,52 @@ filled as (
         sum(other_amount) over w      as cumulative_other_pnl
     from joined
     window w as (partition by account, user_id, symbol order by date)
+),
+
+final as (
+    select
+        account,
+        user_id,
+        symbol,
+        date,
+        options_amount,
+        dividends_amount,
+        equity_buy_cost,
+        equity_buy_qty,
+        equity_sell_proceeds,
+        equity_sell_qty,
+        other_amount,
+        close_price,
+        has_trade,
+        option_market_value,
+        option_cost_basis,
+        cumulative_options_pnl,
+        open_options_unrealized_pnl,
+        cumulative_dividends_pnl,
+        cumulative_other_pnl
+    from filled
 )
 
+---------------------------------------------------------------------
+-- Stage 2 broker_account_id passthrough.
+--
+-- mart_daily_pnl has a deep CTE chain (~15 CTEs across staging,
+-- intermediate joins, window-functioned cumulative builds) and the
+-- existing groupby grain is (account, user_id, symbol, date).
+-- broker_account_id is functional on (account, user_id), so we
+-- attach it once at the model output by joining against
+-- dim_broker_accounts. This is identical to the int_strategy_classification
+-- pattern — see that model for the full rationale.
+--
+-- Orphan rows (NULL broker_account_id in seed, no dim entry) get
+-- NULL here. The Stage 3 Flask filter drops them — that's the
+-- security upgrade.
+---------------------------------------------------------------------
 select
-    account,
-    user_id,
-    symbol,
-    date,
-    options_amount,
-    dividends_amount,
-    equity_buy_cost,
-    equity_buy_qty,
-    equity_sell_proceeds,
-    equity_sell_qty,
-    other_amount,
-    close_price,
-    has_trade,
-    option_market_value,
-    option_cost_basis,
-    cumulative_options_pnl,
-    open_options_unrealized_pnl,
-    cumulative_dividends_pnl,
-    cumulative_other_pnl
-from filled
-order by account, user_id, symbol, date
+    f.*,
+    d.broker_account_id
+from final f
+left join {{ ref('dim_broker_accounts') }} d
+    on f.account = d.account_name
+    and (f.user_id is not distinct from d.user_id)
+order by f.account, f.user_id, f.symbol, f.date
