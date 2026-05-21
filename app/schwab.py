@@ -422,23 +422,49 @@ def _schwab_config():
 
 def _is_schwab_refresh_token_invalid(exc):
     """True when the exception came from Schwab rejecting our stored
-    refresh token. Both spellings appear in real production logs:
+    refresh token. All four spellings have appeared in real production
+    logs:
 
-      - ``refresh_token_authentication_error`` — Schwab's OAuth error
-        code returned in the JSON body of a 400.
+      - ``refresh_token_authentication_error`` — older Schwab OAuth
+        error code returned in the JSON body of a 400.
       - ``Failed refresh token authentication`` — phrase from the
         exception message that schwab-py raises with the error body
         embedded.
+      - ``invalid_grant`` — the RFC 6749 canonical OAuth error code
+        Schwab now returns when a refresh token is expired/revoked.
+        For our flow this is unambiguous: the ONLY grant exchange we
+        do against ``/oauth/token`` is the refresh-token swap, so
+        ``invalid_grant`` always means "your stored refresh token is
+        no good".
+      - ``Refresh token is invalid, expired or revoked`` — literal
+        Schwab ``error_description`` text from the JSON body of the
+        same 400. Matched in addition to ``invalid_grant`` so a
+        future Schwab change to either the code or the description
+        doesn't silently re-open the banner-suppression bug.
 
-    Matching either is enough to flip the connection's ``Reconnect
-    Schwab`` banner. We deliberately don't include 401 here because
-    those are usually stale account-hash issues that
+    Matching any of these is enough to flip the connection's
+    ``Reconnect Schwab`` banner. We deliberately don't include bare
+    401 here because those are usually stale account-hash issues that
     ``_sync_account_hash_from_numbers`` recovers from on retry.
+
+    **Why this exists / 2026-05-21 regression.** Before the
+    ``invalid_grant`` branch was added, the May 2026 Schwab daily
+    sync ran 0/11 with refresh-token failures and the in-app
+    ``Reconnect Schwab`` banner never fired — because the production
+    error body reads ``"error":"invalid_grant"`` /
+    ``"error_description":"Refresh token is invalid, expired or
+    revoked"``, neither of which contains the older
+    ``refresh_token_authentication_error`` / ``Failed refresh token
+    authentication`` strings. Users had no in-product signal that
+    their tokens had died and the cron just kept failing silently.
+    See ``~/.cursor/skills/broker-sync-safety/SKILL.md`` 2026-05-21.
     """
     msg = str(exc)
     return (
         "refresh_token_authentication_error" in msg
         or "Failed refresh token authentication" in msg
+        or "invalid_grant" in msg
+        or "Refresh token is invalid, expired or revoked" in msg
     )
 
 

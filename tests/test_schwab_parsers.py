@@ -4,6 +4,7 @@ legacy `transactionItem` shape and silently produced 632 rows of
 Action='Other' with empty symbols — tests here guard against that regression.
 """
 from app.schwab import (
+    _is_schwab_refresh_token_invalid,
     _schwab_action_from_effect,
     _schwab_asset_type_to_security_type,
     _schwab_cash_event_rows,
@@ -487,3 +488,81 @@ def test_trade_rows_legacy_transactionitem_fallback_still_parsed():
     assert len(rows) == 1
     assert rows[0]["symbol"] == "XYZ"
     assert rows[0]["action"] == "Buy"
+
+
+# ---------------------------------------------------------------------------
+# Refresh-token-invalid detector.
+#
+# The detector flips schwab_connections.refresh_token_invalid_at so the
+# in-app "Reconnect Schwab" banner fires. A miss here means the cron
+# keeps logging refresh failures and the user has no in-product signal
+# their tokens died.
+#
+# Real production logs have shipped four distinct spellings; this test
+# pins every one of them. See ~/.cursor/skills/broker-sync-safety/SKILL.md
+# 2026-05-21 for the regression that motivated the additions of
+# `invalid_grant` and the literal Schwab error_description.
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_token_invalid_matches_modern_invalid_grant_error():
+    """Real Schwab API response (May 2026 cron logs):
+
+        unsupported_token_type: 400 Bad Request:
+        "{"error_description":"Refresh token is invalid, expired or
+        revoked","error":"invalid_grant"}"
+
+    Both ``invalid_grant`` and the literal description must trigger
+    the banner — they appear together but matching either is enough.
+    """
+    exc = Exception(
+        'unsupported_token_type: 400 Bad Request: '
+        '"{"error_description":"Refresh token is invalid, expired or '
+        'revoked","error":"invalid_grant"}"'
+    )
+    assert _is_schwab_refresh_token_invalid(exc) is True
+
+
+def test_refresh_token_invalid_matches_bare_invalid_grant_string():
+    """Defensive: any future Schwab response shape that strips the
+    description but keeps the OAuth ``invalid_grant`` error code is
+    still detected. Refresh is the only ``/oauth/token`` grant we do.
+    """
+    assert _is_schwab_refresh_token_invalid(Exception("invalid_grant")) is True
+
+
+def test_refresh_token_invalid_matches_legacy_refresh_token_authentication_error():
+    """Older Schwab response code, still in the matcher to survive a
+    Schwab rollback of the error-code format change."""
+    assert _is_schwab_refresh_token_invalid(
+        Exception("refresh_token_authentication_error: 400 Bad Request")
+    ) is True
+
+
+def test_refresh_token_invalid_matches_legacy_failed_refresh_token_authentication():
+    """Older schwab-py exception phrasing — keep matching it so we
+    don't regress users whose tokens die during a rollback."""
+    assert _is_schwab_refresh_token_invalid(
+        Exception("Failed refresh token authentication")
+    ) is True
+
+
+def test_refresh_token_invalid_does_not_trip_on_unrelated_5xx():
+    """A transient Schwab 500 / connect timeout is NOT a refresh-token
+    problem and must not flip the banner — those recover on the next
+    cron run."""
+    assert _is_schwab_refresh_token_invalid(
+        Exception("500 Internal Server Error")
+    ) is False
+    assert _is_schwab_refresh_token_invalid(
+        Exception("ReadTimeout")
+    ) is False
+
+
+def test_refresh_token_invalid_does_not_trip_on_bare_401():
+    """A bare 401 is usually a stale account_hash that
+    ``_sync_account_hash_from_numbers`` recovers from on retry — do
+    not flip the connection to ``refresh_token_invalid`` for it."""
+    assert _is_schwab_refresh_token_invalid(
+        Exception("401 Unauthorized: Token validation failed")
+    ) is False
