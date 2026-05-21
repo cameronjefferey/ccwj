@@ -39,6 +39,34 @@
     excluded — they're handled by the existing "A" orphan-backfill in
     each staging model.
 
+    CONCURRENT-ACTIVITY GUARD (May 2026): canonical rewrite ONLY fires
+    when there's a CLEAR temporal winner — exactly one uid with activity
+    in the last 90 days. If two or more uids are concurrently active
+    (each has trade history within the last 90 days), they're treated
+    as GENUINELY DIFFERENT TENANTS sharing the same account label —
+    e.g. two family members linked to the same brokerage, or one user
+    holding both an old and new Postgres registration. In that case
+    each uid stays as its own partition: every user sees their own
+    sync's data instead of being silently collapsed onto another
+    tenant's view.
+
+    Real example (May 2026 / Cameron Investment):
+      - uid=9 has 1112 trade fills, last_trade 2026-05-07
+      - uid=13 has 1109 trade fills, last_trade 2026-05-14
+      - Both within the 90-day window → BOTH concurrent → no rewrite.
+      - mart_account_snapshots_enriched keeps the (Cameron Investment,
+        uid=9) and (Cameron Investment, uid=13) partitions separate.
+      - User signed in as uid=9 sees uid=9's view. Signed in as uid=13
+        sees uid=13's view. Daily Review per-account row renders for
+        both (was silently "—" for uid=9 pre-guard because the
+        canonical pick had moved every row onto uid=13's partition).
+
+    The original case-B scenarios — Cameron Investment / PLTR (May 2026)
+    where uid=9 stopped syncing while uid=13 took over, and IYW Emmory
+    (May 2026) where uid=2 had stale 2025 history and uid=9 had fresh
+    2026 snapshots — STILL trigger the rewrite because they have a
+    clear winner (one uid recent, others outside the 90-day window).
+
     Read directly from the trade_history seed (NOT stg_history) so we
     can compute canonical owner BEFORE stg_history's own backfill
     runs. stg_history's pre-backfill state is exactly the seed —
@@ -180,7 +208,23 @@ per_account as (
                 last_activity desc nulls last,
                 -- 3. Larger uid (newer user record) breaks ties.
                 user_id desc nulls last
-        ) as rn
+        ) as rn,
+        -- Concurrent-activity guard: count uids whose most recent
+        -- history activity is inside the last 90 days. When two or
+        -- more uids satisfy this, both are GENUINELY ACTIVE tenants
+        -- syncing the same account label — collapsing them onto one
+        -- canonical pick silently hides one tenant's data from the
+        -- other (the May 2026 Daily Review regression for Cameron
+        -- Investment / Sara IRA / Sara Investment / Schwab ••••9437).
+        --
+        -- Snapshot-only uids (last_activity is null) don't count as
+        -- "concurrent" — they're the case-A NULL-backfill territory
+        -- and are handled inline in each staging model.
+        count(case
+            when last_activity is not null
+             and last_activity >= current_date() - interval 90 day
+            then 1
+        end) over (partition by account) as concurrent_active_uids
     from ranked
     where uid_rn = 1
 )
@@ -191,6 +235,13 @@ select
     last_activity    as canonical_last_activity
 from per_account
 where rn = 1
+  -- Only emit a canonical rewrite when there is a CLEAR temporal
+  -- winner. Multiple concurrently-active uids on the same account
+  -- label are TWO REAL TENANTS — leave them as separate partitions
+  -- so each user sees their own sync data. The original case-B
+  -- scenarios (IYW Emmory / PLTR-doubling) still qualify because
+  -- only one uid was active in the recent window.
+  and concurrent_active_uids <= 1
 
 {% else %}
 
