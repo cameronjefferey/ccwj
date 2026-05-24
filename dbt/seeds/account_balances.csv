@@ -1,3 +1,5 @@
 account,user_id,broker_account_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
 Schwab ••••0044,8,1,cash,0.0,,,,0.0
 Schwab ••••0044,8,1,account_total,1968247.36,1429799.7199998898,538447.6400001103,37.658955,
+Coco,8,4,cash,204.71,,,,0.746639
+Coco,8,4,account_total,27417.54,13578.30000000137,13839.23999999863,101.921743,
