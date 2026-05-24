@@ -2759,11 +2759,19 @@ def weekly_review():
                     })
 
             # Fill placeholder rows for any account with no snapshot row yet.
-            if tenant_ids:
-                for acct in tenant_ids:
-                    if acct not in seen_accounts:
+            # ``seen_accounts`` holds display labels from the mart's ``account``
+            # column ("Alpaca Paper Account", "Interactive Brokers ••••7930"),
+            # so the placeholder fill must iterate display labels too.
+            # Iterating raw ``tenant_ids`` ("snaptrade:<uuid>") would never
+            # match and would produce phantom rows beside the real ones —
+            # the bug visible on Daily Review when two accounts rendered
+            # as four rows (two raw tenant_id labels + two real labels).
+            display_labels = user_accounts or []
+            if display_labels:
+                for label in display_labels:
+                    if label not in seen_accounts:
                         context["today_snapshots_by_account"].append({
-                            "account": acct,
+                            "account": label,
                             "today_value": None,
                             "today_date": None,
                             "comparisons": {
@@ -2773,7 +2781,7 @@ def weekly_review():
                             },
                             "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
                         })
-                acct_order = {a: i for i, a in enumerate(tenant_ids)}
+                acct_order = {a: i for i, a in enumerate(display_labels)}
                 context["today_snapshots_by_account"].sort(
                     key=lambda s: acct_order.get(s["account"], 999)
                 )
