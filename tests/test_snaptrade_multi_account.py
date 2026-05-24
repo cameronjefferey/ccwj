@@ -17,7 +17,7 @@ import pytest
 
 from app import models as _models
 from app import snaptrade as _snap
-from app.schwab import _bulk_sync_lookback_days
+from app.snaptrade import _bulk_sync_lookback_days
 
 
 # ---------------------------------------------------------------------------

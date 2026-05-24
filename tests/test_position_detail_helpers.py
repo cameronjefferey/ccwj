@@ -565,7 +565,7 @@ def test_breakdown_by_type_unfiltered_pltr_shape():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="PLTR",
-        strat_accounts_scope=["Cameron Investment"],
+        tenant_scope=None,
         closed_equity_df=closed_equity,
         closed_legs_df=closed_legs,
         current_df=current,
@@ -624,7 +624,7 @@ def test_breakdown_by_type_otm_at_expiry_today_realizes_not_unrealizes():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="PLTR",
-        strat_accounts_scope=["Cameron Investment"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=closed_legs,
         current_df=current,
@@ -648,7 +648,7 @@ def test_breakdown_by_type_returns_empty_when_no_activity():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="ZZZZ",
-        strat_accounts_scope=["Cameron Investment"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame(),
@@ -675,7 +675,7 @@ def test_breakdown_by_type_filters_dividends_by_leg_predicate():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(dividends),
         safe_symbol="JEPI",
-        strat_accounts_scope=["Cameron Investment"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame([
@@ -717,7 +717,7 @@ def test_breakdown_by_type_admin_scope_none_runs_dividend_query():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(dividends),
         safe_symbol="JEPI",
-        strat_accounts_scope=None,  # admin
+        tenant_scope=None,  # admin
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame(),
@@ -744,7 +744,7 @@ def test_breakdown_by_type_empty_account_list_still_short_circuits():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(dividends),
         safe_symbol="JEPI",
-        strat_accounts_scope=[],  # logged in but no linked accounts
+        tenant_scope=[],  # logged in but no linked tenants
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame(),
@@ -771,7 +771,7 @@ def test_breakdown_by_type_dividend_query_failure_is_non_fatal():
     rows = _compute_breakdown_by_type(
         client=_FailingClient(),
         safe_symbol="PLTR",
-        strat_accounts_scope=["Cameron Investment"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame([
             {"account": "Cameron Investment", "open_date": "2025-06-03", "total_pnl": 100.0},
@@ -801,7 +801,7 @@ def test_breakdown_by_type_crypto_symbol_relabels_equity_row_as_crypto():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="BTC",
-        strat_accounts_scope=["Coinbase Account"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=current_df,
@@ -824,7 +824,7 @@ def test_breakdown_by_type_crypto_symbol_suppresses_dividends_row():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="ETH",
-        strat_accounts_scope=["Coinbase Account"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame([
@@ -853,7 +853,7 @@ def test_breakdown_by_type_crypto_holding_plural_label():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="BTC",
-        strat_accounts_scope=["Coinbase Account"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=current_df,
@@ -872,7 +872,7 @@ def test_breakdown_by_type_usdc_stablecoin_classifies_as_crypto():
     rows = _compute_breakdown_by_type(
         client=_StubBQClient(pd.DataFrame()),
         safe_symbol="USDC",
-        strat_accounts_scope=["Coinbase Account"],
+        tenant_scope=None,
         closed_equity_df=pd.DataFrame(),
         closed_legs_df=pd.DataFrame(),
         current_df=pd.DataFrame([

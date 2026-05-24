@@ -1,5 +1,9 @@
 # Broker-account-id tenancy — design + staged migration
 
+> **SUPERSEDED (2026-05-24).** This v1 migration is archived. Active design:
+> [`docs/V2_TENANT_KEY_DESIGN.md`](../V2_TENANT_KEY_DESIGN.md). Broker connectivity is
+> SnapTrade-only; see `.cursor/rules/snaptrade-only-broker-integrations.mdc`.
+
 ## Why this exists
 
 `docs/USER_ID_TENANCY.md` is the previous tenancy migration. It made

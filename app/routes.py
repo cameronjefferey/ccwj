@@ -4,15 +4,10 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
-from app.schwab import (
-    SCHWAB_FULL_HISTORY_LOOKBACK_DAYS,
-    _schwab_transaction_lookback_days,
-)
 from app.models import (
-    add_account_for_user,
-    get_accounts_for_user,
-    get_schwab_connections,
+    get_broker_tenants_for_user,
     get_strategy_fit_insight_for_user,
+    get_tenant_ids_for_user,
     is_admin,
 )
 from google.cloud import bigquery
@@ -20,6 +15,7 @@ from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import math
 import os
+import re
 import pandas as pd
 import json
 from urllib.parse import quote_plus
@@ -74,11 +70,11 @@ def _redirect_if_no_accounts():
     AND 1=0'd and the UI shows "we're calculating…" forever.
 
     Returns a Flask redirect response when the current user has zero
-    linked accounts (and isn't an admin), or None when the caller should
-    continue rendering normally.
+    linked broker tenants (and isn't an admin), or None when the caller
+    should continue rendering normally.
     """
     if current_user.is_authenticated and not is_admin(current_user.username):
-        if len(get_accounts_for_user(current_user.id)) == 0:
+        if len(get_tenant_ids_for_user(current_user.id)) == 0:
             # Skip if they're already on /get-started or coming back from
             # an upload; the upload-processing screen redirects through
             # weekly-review with from_upload=1 during the 3–5 min lag.
@@ -90,40 +86,88 @@ def _redirect_if_no_accounts():
     return None
 
 
-def _user_account_list():
+def _norm_account_label(val) -> str:
+    """Normalize free-form account labels for URL / display matching."""
+    return " ".join(str(val or "").strip().split())
+
+
+def _tenant_display_label(row) -> str:
+    """Display label for a broker_tenants row (nickname wins over account_name)."""
+    return (row.get("display_nickname") or row.get("account_name") or "").strip()
+
+
+def _user_tenant_list():
+    """Return tenant_ids the current user may read, or None for admin bypass."""
+    if is_admin(current_user.username):
+        return None
+    return get_tenant_ids_for_user(current_user.id) or []
+
+
+def _tenants_for_scope(selected_account=None):
+    """Resolve tenant_ids for the current request scope.
+
+    Admin without ``?account=`` → ``None`` (no SQL filter).
+    Admin with ``?account=`` → tenant_ids whose display label matches.
+    Regular user → active tenant_ids, optionally narrowed via ``?account=``.
+    Unknown ``?account=`` values fall back to all of the user's tenants
+    (same safe default as the v2 design doc).
     """
-    Return the list of accounts the current user is allowed to see,
-    or None if the user is an admin (meaning: no filter, show everything).
+    from app.db import fetch_all
 
-    Includes labels from user_accounts (upload / sync) and from Schwab OAuth
-    rows so BigQuery filters match the Account column in seeds. If Schwab is
-    connected but user_accounts was never populated, we add the Schwab labels
-    here (idempotent) so queries are not forced to AND 1=0.
+    admin = is_admin(current_user.username)
+    selected = (selected_account or "").strip()
 
-    Sharing labels across users is allowed — e.g. a parent and a child
-    can both call their account "Schwab Account". Tenant isolation is
-    enforced at the row level by ``user_id`` everywhere downstream
-    (every BQ query passes through ``_account_sql_and`` / its sibling
-    that adds a ``user_id IS NOT DISTINCT FROM`` predicate, and every
-    DataFrame is then re-filtered by ``_filter_df_by_accounts`` which
-    drops rows whose ``user_id`` is a different populated id). See
-    ``docs/USER_ID_TENANCY.md`` and
-    ``.cursor/rules/bigquery-tenant-isolation.mdc``.
+    if admin and not selected:
+        return None
+
+    def _match_label(row, want_lower: str) -> bool:
+        for label in (row.get("display_nickname"), row.get("account_name")):
+            if label and _norm_account_label(label).lower() == want_lower:
+                return True
+        return False
+
+    if admin:
+        want = _norm_account_label(selected).lower()
+        rows = fetch_all(
+            "SELECT tenant_id, account_name, display_nickname FROM broker_tenants"
+        )
+        matched = [
+            row["tenant_id"]
+            for row in rows
+            if _match_label(row, want)
+        ]
+        return sorted(set(matched))
+
+    tenants = get_broker_tenants_for_user(current_user.id) or []
+    all_ids = [row["tenant_id"] for row in tenants]
+    if not selected:
+        return all_ids
+
+    want = _norm_account_label(selected).lower()
+    matched = [
+        row["tenant_id"]
+        for row in tenants
+        if _match_label(row, want)
+    ]
+    return matched if matched else all_ids
+
+
+def _user_account_list():
+    """Return display account names for the account picker, or None for admin.
+
+    Names come from ``broker_tenants`` (SnapTrade sync), not legacy
+    ``schwab_connections``. Warehouse isolation uses ``tenant_id`` via
+    ``_tenants_for_scope`` / ``_tenant_sql_and``; this list is UI-only.
     """
     if is_admin(current_user.username):
-        return None                     # admin → no restriction
-    names = list(get_accounts_for_user(current_user.id))
-    have = set(names)
-    for row in get_schwab_connections(current_user.id):
-        label = (row.get("account_name") or "").strip() or str(
-            row.get("account_number") or ""
-        ).strip()
-        if not label:
-            continue
-        if label not in have:
-            add_account_for_user(current_user.id, label)
-            have.add(label)
+        return None
+    names = []
+    seen = set()
+    for row in get_broker_tenants_for_user(current_user.id) or []:
+        label = _tenant_display_label(row)
+        if label and label not in seen:
             names.append(label)
+            seen.add(label)
     return sorted(names)
 
 
@@ -145,45 +189,6 @@ def _resolve_filter_user_id():
         return int(current_user.id)
     except Exception:
         return None
-
-
-def _account_sql_filter(accounts, col="account", user_col="user_id"):
-    """Build a ``WHERE`` clause that scopes a BigQuery read to the current
-    tenant. ``accounts=None`` means admin (no account filter).
-
-    Despite the name, this helper now adds a ``user_id`` predicate too —
-    that's the actual security boundary; ``account_name`` alone leaks
-    across tenants when two users share a label. The legacy name is
-    kept so existing call sites pick up the security upgrade for free.
-    See ``docs/USER_ID_TENANCY.md``.
-    """
-    return _user_scoped_filter(
-        _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
-    )
-
-
-def _account_sql_and(accounts, col="account", user_col="user_id"):
-    """``AND``-shaped sibling of ``_account_sql_filter`` for joining onto an
-    existing ``WHERE``. Adds the user_id predicate too. See
-    ``docs/USER_ID_TENANCY.md``.
-    """
-    return _user_scoped_and(
-        _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
-    )
-
-
-def _filter_df_by_accounts(df, accounts, col="account", user_col="user_id"):
-    """Filter a DataFrame to rows owned by the current tenant.
-
-    Like the SQL helpers above, this now drops rows whose ``user_id`` is
-    a different populated id than the current user's. Stage 0/1
-    leniency: rows with NULL ``user_id`` are kept when their ``account``
-    is in the user's allowed list. Admin / unauthenticated bypass the
-    user check. See ``docs/USER_ID_TENANCY.md``.
-    """
-    return _filter_df_by_user(
-        df, _resolve_filter_user_id(), accounts, col=col, user_col=user_col,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +241,8 @@ def _broker_account_sql_and(broker_account_ids, col="broker_account_id"):
     Usage::
 
         sql = QUERY.format(
-            account_filter=_account_sql_and(user_accounts),
-            broker_account_filter=_broker_account_sql_and(
+            tenant_filter=_tenant_sql_and(tenant_ids),
+            broker_tenant_filter=_broker_tenant_sql_and(
                 _resolve_filter_broker_account_ids()
             ),
         )
@@ -288,6 +293,142 @@ def _filter_df_by_broker_account_ids(df, broker_account_ids, col="broker_account
     target = {int(i) for i in broker_account_ids}
     series = pd.to_numeric(df[col], errors="coerce")
     keep = series.isin(target)
+    return df.loc[keep].reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# v2 — tenant_id filter helpers (see docs/V2_TENANT_KEY_DESIGN.md)
+#
+# These replace _account_sql_and / _filter_df_by_accounts and the short-lived
+# Stage 3A broker_account_id helpers above. Wired into routes in Phase 5;
+# additive in Phase 2 (this commit) so the legacy helpers continue to work
+# until the per-route migration is complete.
+#
+# tenant_id format: "<broker_slug>:<broker_uuid>" — broker-stable, never
+# minted by us, collision-proof across Postgres / dataset resets. The
+# structural property that retires the orphan-tenancy and SERIAL-collision
+# bug classes entirely.
+# ---------------------------------------------------------------------------
+
+
+_TENANT_ID_VALID_CHAR_RE = re.compile(r"^[A-Za-z0-9_:.-]+$")
+
+
+def _resolve_filter_tenant_ids(requested=None):
+    """Return the list of ``tenant_id`` strings the current request is
+    allowed to read, or ``None`` for admin bypass (no filter).
+
+    Admin / unauthenticated returns ``None`` — same semantics as
+    ``_resolve_filter_user_id``. The intent is: composable with other
+    filters without accidentally narrowing admin reads.
+
+    Signed-in users return the intersection of
+    ``get_tenant_ids_for_user(current_user.id)`` and the optional
+    ``requested`` list (which would typically come from a URL
+    ``?tenant=`` param). If ``requested`` includes a tenant_id the
+    user doesn't own, it's silently dropped — never allow a URL
+    parameter to widen tenancy.
+
+    Empty list → fail-closed at the SQL boundary (``AND 1 = 0``).
+    """
+    try:
+        from flask_login import current_user
+        from app.auth import is_admin
+        from app.models import get_tenant_ids_for_user
+        if not getattr(current_user, "is_authenticated", False):
+            return []
+        if is_admin(getattr(current_user, "username", None)):
+            return None
+        owned = set(get_tenant_ids_for_user(int(current_user.id)) or [])
+        if requested is None:
+            return sorted(owned)
+        requested_set = {str(t).strip() for t in requested if t}
+        return sorted(owned & requested_set)
+    except Exception:
+        return []
+
+
+def _sanitize_tenant_id(tenant_id):
+    """Defensive escape: only allow ``A-Z a-z 0-9 _ : . -`` characters.
+
+    tenant_ids are well-formed by construction (broker_slug + ':' +
+    broker UUID), so this is belt-and-suspenders. Anything else is
+    dropped on the floor.
+    """
+    if not tenant_id:
+        return None
+    t = str(tenant_id).strip()
+    if not t or not _TENANT_ID_VALID_CHAR_RE.match(t):
+        return None
+    return t
+
+
+def _tenant_sql_and(tenant_ids, col="tenant_id"):
+    """``AND``-shaped predicate scoping a BigQuery read to a set of
+    ``tenant_id`` values. Returns ``""`` for admin (``tenant_ids is None``).
+
+    Empty list returns ``AND 1 = 0`` (fail-closed): an authenticated
+    user with no broker connections sees no rows, not all rows.
+    """
+    if tenant_ids is None:
+        return ""
+    if not tenant_ids:
+        return "AND 1 = 0"
+    safe = [_sanitize_tenant_id(t) for t in tenant_ids]
+    safe = [t for t in safe if t]
+    if not safe:
+        return "AND 1 = 0"
+    safe_col = re.sub(r"[^A-Za-z0-9_.]", "", str(col))
+    quoted = ", ".join(f"'{t}'" for t in safe)
+    return f"AND {safe_col} IN ({quoted})"
+
+
+def _tenant_sql_filter(tenant_ids, col="tenant_id"):
+    """``WHERE``-prefixed sibling for queries that don't already have a
+    ``WHERE`` clause. Returns ``""`` for admin.
+    """
+    if tenant_ids is None:
+        return ""
+    if not tenant_ids:
+        return "WHERE 1 = 0"
+    safe = [_sanitize_tenant_id(t) for t in tenant_ids]
+    safe = [t for t in safe if t]
+    if not safe:
+        return "WHERE 1 = 0"
+    safe_col = re.sub(r"[^A-Za-z0-9_.]", "", str(col))
+    quoted = ", ".join(f"'{t}'" for t in safe)
+    return f"WHERE {safe_col} IN ({quoted})"
+
+
+def _filter_df_by_tenant_ids(df, tenant_ids, col="tenant_id"):
+    """DataFrame-side belt-and-suspenders filter.
+
+    Admin (``tenant_ids is None``) bypasses the filter.
+    Empty list returns an empty same-shape frame.
+    Rows with NULL/missing ``tenant_id`` are DROPPED for non-admin
+    callers — under v2 every legitimate row carries a tenant_id, so
+    NULL is either pre-cutover legacy data or an ingestion bug, both
+    of which are non-tenant data and must not leak to a signed-in user.
+
+    If the column doesn't exist on the frame (deploy-gap: a mart that
+    hasn't propagated tenant_id yet), the helper returns the frame
+    unchanged — the route-level legacy filter is still the active
+    security boundary during the migration window.
+    """
+    if df is None or df.empty:
+        return df
+    if tenant_ids is None:
+        return df
+    if col not in df.columns:
+        return df
+    if not tenant_ids:
+        return df.iloc[0:0]
+    safe = {_sanitize_tenant_id(t) for t in tenant_ids}
+    safe.discard(None)
+    if not safe:
+        return df.iloc[0:0]
+    series = df[col].astype(str)
+    keep = series.isin(safe)
     return df.loc[keep].reset_index(drop=True)
 
 
@@ -953,7 +1094,7 @@ WITH classified AS (
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE open_date <= @end_date
       AND COALESCE(close_date, CURRENT_DATE()) >= @start_date
-      {account_filter}
+      {tenant_filter}
 ),
 
 -- Read dividends from int_dividend_events (per-event). int_dividend_events
@@ -975,7 +1116,7 @@ dividends AS (
     FROM `ccwj-dbt.analytics.int_dividend_events`
     WHERE trade_date >= @start_date
       AND trade_date <= @end_date
-      {account_filter}
+      {tenant_filter}
     GROUP BY 1, 2, 3
 ),
 
@@ -1117,7 +1258,7 @@ ORDER BY account, user_id, symbol, strategy
 DEFAULT_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.positions_summary`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
     ORDER BY account, symbol, strategy
 """
 
@@ -1442,8 +1583,8 @@ def healthz_db():
 @login_required
 def get_started():
     """Onboarding checklist for new users — tracks real progress."""
-    user_accounts = get_accounts_for_user(current_user.id)
-    has_uploaded = len(user_accounts) > 0
+    tenant_ids = get_tenant_ids_for_user(current_user.id) or []
+    has_uploaded = len(tenant_ids) > 0
 
     # Check if data is actually available in BigQuery. We swallow the
     # exception so a transient BQ outage doesn't break the onboarding
@@ -1455,7 +1596,7 @@ def get_started():
     if has_uploaded:
         try:
             client = get_bigquery_client()
-            where = _account_sql_filter(user_accounts)
+            where = _tenant_sql_filter(tenant_ids)
             check_q = f"SELECT COUNT(*) AS cnt FROM `ccwj-dbt.analytics.positions_summary` {where}"
             result = client.query(check_q).to_dataframe()
             has_data = int(result.iloc[0]["cnt"]) > 0 if not result.empty else False
@@ -1465,28 +1606,22 @@ def get_started():
                 current_user.id, exc,
             )
 
-    schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
-    schwab_connected = bool(
-        schwab_enabled and get_schwab_connections(current_user.id)
-    )
-    schwab_full_history_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
-    schwab_routine_days = _schwab_transaction_lookback_days()
-
-    # SnapTrade aggregator (Alpaca / Fidelity / Vanguard / Robinhood /
-    # IBKR / Tradier / Webull / etc. via a single OAuth flow). Sibling
-    # to Schwab native — independent enable flag, independent connection
-    # state. Same swallow-on-import-failure posture as profile.html so
-    # /get-started always renders even when the SDK isn't installed
-    # locally. See app/profile_community.py for the canonical pattern.
     snaptrade_enabled = False
     snaptrade_connected = False
+    snaptrade_full_history_days = 1825
+    snaptrade_routine_days = 60
     try:
-        from app.snaptrade import snaptrade_enabled as _snaptrade_enabled_fn
+        from app.snaptrade import (
+            snaptrade_enabled as _snaptrade_enabled_fn,
+            _routine_lookback_days,
+            SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
+        )
         from app.models import get_snaptrade_accounts as _get_snaptrade_accounts
 
         snaptrade_enabled = bool(_snaptrade_enabled_fn())
-        if snaptrade_enabled:
-            snaptrade_connected = bool(_get_snaptrade_accounts(current_user.id))
+        snaptrade_full_history_days = int(SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS)
+        snaptrade_routine_days = int(_routine_lookback_days())
+        snaptrade_connected = bool(_get_snaptrade_accounts(current_user.id))
     except Exception as exc:
         app.logger.warning(
             "get_started snaptrade enable check failed for user_id=%s: %s",
@@ -1498,12 +1633,10 @@ def get_started():
         title="Get Started",
         has_uploaded=has_uploaded,
         has_data=has_data,
-        schwab_enabled=schwab_enabled,
-        schwab_connected=schwab_connected,
-        schwab_full_history_days=schwab_full_history_days,
-        schwab_routine_days=schwab_routine_days,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_connected=snaptrade_connected,
+        snaptrade_full_history_days=snaptrade_full_history_days,
+        snaptrade_routine_days=snaptrade_routine_days,
     )
 
 
@@ -1521,12 +1654,13 @@ def positions():
         return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    acct_filter = _account_sql_and(user_accounts)
 
     # ------------------------------------------------------------------
     # 1. Read filter params
     # ------------------------------------------------------------------
     selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
     selected_strategy = request.args.get("strategy", "")
     # Multi-select status; default is all (current + history) so users see their
     # full book unless they explicitly narrow it.
@@ -1560,9 +1694,9 @@ def positions():
                     bigquery.ScalarQueryParameter("end_date", "DATE", effective_end),
                 ]
             )
-            df = client.query(DATE_FILTERED_QUERY.format(account_filter=acct_filter), job_config=job_config).to_dataframe()
+            df = client.query(DATE_FILTERED_QUERY.format(tenant_filter=tenant_filter), job_config=job_config).to_dataframe()
         else:
-            df = client.query(DEFAULT_QUERY.format(account_filter=acct_filter)).to_dataframe()
+            df = client.query(DEFAULT_QUERY.format(tenant_filter=tenant_filter)).to_dataframe()
     except Exception as exc:
         ctx = dict(ERROR_DEFAULTS)
         ctx["error"] = str(exc)
@@ -1584,7 +1718,7 @@ def positions():
     # this back below the coercion. See
     # .cursor/rules/bigquery-tenant-isolation.mdc.
     # ------------------------------------------------------------------
-    df = _filter_df_by_accounts(df, user_accounts)
+    df = _filter_df_by_tenant_ids(df, tenant_ids)
 
     # ------------------------------------------------------------------
     # 4. Clean up types (now safe — frame is tenant-scoped)
@@ -1807,7 +1941,7 @@ POSITION_SUMMARY_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {account_filter}
+    {tenant_filter}
     ORDER BY account, strategy
 """
 
@@ -1846,7 +1980,7 @@ POSITION_TRADES_QUERY = """
         UPPER(TRIM(COALESCE(h.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
         OR UPPER(TRIM(SPLIT(COALESCE(h.trade_symbol, ''), ' ')[SAFE_OFFSET(0)])) = UPPER(TRIM('{symbol}'))
       )
-    {account_filter}
+    {tenant_filter}
     ORDER BY h.trade_date DESC
 """
 
@@ -1877,7 +2011,7 @@ POSITION_CURRENT_QUERY = """
         option_type
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {account_filter}
+    {tenant_filter}
 """
 
 POSITION_CLOSED_LEGS_QUERY = """
@@ -1906,7 +2040,7 @@ POSITION_CLOSED_LEGS_QUERY = """
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {sc_account_filter}
+    {sc_tenant_filter}
 """
 
 POSITION_CLOSED_EQUITY_QUERY = """
@@ -1925,7 +2059,7 @@ POSITION_CLOSED_EQUITY_QUERY = """
         description
     FROM `ccwj-dbt.analytics.int_closed_equity_legs`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {account_filter}
+    {tenant_filter}
 """
 
 POSITION_LEGS_QUERY = """
@@ -1951,7 +2085,7 @@ POSITION_LEGS_QUERY = """
         days_held
     FROM `ccwj-dbt.analytics.int_position_legs`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {account_filter}
+    {tenant_filter}
     ORDER BY account, display_leg_num
 """
 
@@ -1973,7 +2107,7 @@ SYMBOL_TABS_QUERY = """
         STRING_AGG(DISTINCT strategy, '|' ORDER BY strategy) AS strategies_pipe
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE symbol IS NOT NULL
-      {account_filter}
+      {tenant_filter}
     GROUP BY account, symbol
 """
 
@@ -1996,7 +2130,7 @@ POSITION_MATRIX_QUERY = """
     WHERE status = 'Closed'
       AND strike_distance IS NOT NULL
       AND UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
-    {account_filter}
+    {tenant_filter}
 """
 
 # Next-earnings date for a single symbol. Symbol-level public market data
@@ -2253,14 +2387,14 @@ def _merge_position_strategy_breakdown(
 
 
 def _fetch_int_strategy_classification_by_symbol(
-    client, safe_symbol: str, user_accounts
+    client, safe_symbol: str, tenant_ids
 ) -> pd.DataFrame:
     """User-scoped rows from int_strategy_classification for one symbol. Used when
     positions_summary is empty but we still need strategy breakdown (mart lag / path gaps).
     """
-    if user_accounts is not None and not user_accounts:
+    if tenant_ids is not None and not tenant_ids:
         return pd.DataFrame()
-    acct = _account_sql_and(user_accounts, col="account")
+    acct = _tenant_sql_and(tenant_ids)
     sql = f"""
     SELECT
         account, symbol, strategy, status, total_pnl, num_trades, is_winner,
@@ -2277,11 +2411,11 @@ def _fetch_int_strategy_classification_by_symbol(
         )
         return pd.DataFrame()
     df = _df_normalize_account_column(df)
-    return _filter_df_by_accounts(df, user_accounts)
+    return _filter_df_by_tenant_ids(df, tenant_ids)
 
 
 def _fetch_closed_option_legs_from_classification(
-    client, safe_symbol: str, user_accounts
+    client, safe_symbol: str, tenant_ids
 ) -> pd.DataFrame:
     """Closed option contract rows from int_strategy_classification only (no join).
 
@@ -2290,9 +2424,9 @@ def _fetch_closed_option_legs_from_classification(
     matches the P&L in classification and is the same grain as the join: one row per
     closed option trade group.
     """
-    if user_accounts is not None and not user_accounts:
+    if tenant_ids is not None and not tenant_ids:
         return pd.DataFrame()
-    acct = _account_sql_and(user_accounts, col="sc.account")
+    acct = _tenant_sql_and(tenant_ids, col="sc.tenant_id")
     sql = f"""
     SELECT
         sc.account,
@@ -2327,7 +2461,7 @@ def _fetch_closed_option_legs_from_classification(
         )
         return pd.DataFrame()
     df = _df_normalize_account_column(df)
-    return _filter_df_by_accounts(df, user_accounts)
+    return _filter_df_by_tenant_ids(df, tenant_ids)
 
 
 def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
@@ -2551,7 +2685,7 @@ def _compute_breakdown_by_type(
     *,
     client,
     safe_symbol: str,
-    strat_accounts_scope,
+    tenant_scope,
     closed_equity_df: pd.DataFrame,
     closed_legs_df: pd.DataFrame,
     current_df: pd.DataFrame,
@@ -2645,8 +2779,8 @@ def _compute_breakdown_by_type(
 
     div_total = 0.0
     div_count = 0
-    # Admin (`strat_accounts_scope is None`) must run the query unscoped so
-    # `_account_sql_and(None)` returns an empty filter and the admin sees
+    # Admin (`tenant_scope is None`) must run the query unscoped so
+    # `_tenant_sql_and(None)` returns an empty filter and the admin sees
     # every tenant's data — same precedent as the rest of the position page.
     # Pre-fix the `is not None` guard short-circuited admin browsers and
     # `breakdown_rows.Dividends.total = 0` then OVERRODE the correctly-
@@ -2663,22 +2797,22 @@ def _compute_breakdown_by_type(
     # staking yield ever lands as a dividend event we'll revisit.
     if is_crypto:
         pass
-    elif strat_accounts_scope is None or len(strat_accounts_scope) > 0:
+    elif tenant_scope is None or len(tenant_scope) > 0:
         try:
-            acct_filter = _account_sql_and(strat_accounts_scope, col="account")
+            tenant_filter = _tenant_sql_and(tenant_scope)
             div_df = client.query(
                 """
                 SELECT account, user_id, symbol, trade_date, amount
                 FROM `ccwj-dbt.analytics.int_dividend_events`
                 WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-                {account_filter}
-                """.format(symbol=safe_symbol, account_filter=acct_filter)
+                {tenant_filter}
+                """.format(symbol=safe_symbol, tenant_filter=tenant_filter)
             ).to_dataframe()
             # Belt-and-suspenders tenancy guard. The SQL is already user_id +
             # account scoped via _account_sql_and, but the BQ-tenant rule
             # requires a Python filter on every BQ result before any
             # re-aggregation. See .cursor/rules/bigquery-tenant-isolation.mdc.
-            div_df = _filter_df_by_accounts(div_df, strat_accounts_scope)
+            div_df = _filter_df_by_tenant_ids(div_df, tenant_scope)
             if not div_df.empty:
                 if leg_predicate is not None and "trade_date" in div_df.columns:
                     div_df = div_df.copy()
@@ -2799,7 +2933,7 @@ CHART_DATA_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.mart_daily_pnl`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-      {account_filter}
+      {tenant_filter}
     ORDER BY date
 """
 
@@ -2807,7 +2941,7 @@ CHART_DATA_QUERY = """
 CHART_DATA_ALL_QUERY = """
     SELECT *
     FROM `ccwj-dbt.analytics.mart_daily_pnl`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
     ORDER BY symbol, date
 """
 
@@ -2824,68 +2958,44 @@ def position_detail(symbol):
     # Escape symbol for SQL (prevent injection)
     safe_symbol = symbol.replace("'", "''")
 
-    # When the URL pins a specific account (drill-in from /positions or any
-    # bookmarked link), narrow the position-level fetches to JUST that account
-    # rather than the viewer's full account list. Two reasons:
-    #
-    # 1. **Admin scope.** `_account_sql_and` drops the user_id predicate for
-    #    admins, so a non-admin's data falls in. But the account-name filter
-    #    is built from `user_accounts` = the viewer's PERSONAL account list
-    #    (Postgres `user_accounts`). For an admin viewing an account they
-    #    don't personally own (e.g. happycameron viewing Sara Investment),
-    #    the filter `account IN ('investment1')` returns ZERO rows and the
-    #    page silently shows empty current_df / closed_legs_df / etc. while
-    #    Strategy Breakdown and the chart (which already use
-    #    `[selected_account]`) populate normally. The reconciliation invariant
-    #    catches the resulting Strategy=$X / Breakdown-by-Type=$0 mismatch
-    #    on the page, but the right fix is to scope the position-level fetch
-    #    consistently with strat/chart.
-    # 2. **Non-admin bookmark.** A non-admin pasting `?account=...` for an
-    #    account they don't own gets `_account_sql_and` adding their
-    #    `user_id` predicate AND `account IN (...)`. SQL returns 0 rows;
-    #    page renders empty. No tenancy leak, just no data — same as today.
-    #
-    # `_account_sql_and` continues to enforce `(user_id = X OR user_id IS NULL)`
-    # for non-admins, so this change does NOT widen the security boundary.
-    pos_accounts_scope = (
-        [request.args.get("account", "").strip()]
-        if request.args.get("account", "").strip()
-        else user_accounts
-    )
+    # `_tenant_sql_and` scopes by broker-stable `tenant_id`; `?account=`
+    # maps to tenant_ids via `_tenants_for_scope`.
+    selected_account = request.args.get("account", "").strip()
+    tenant_scope = _tenants_for_scope(selected_account)
 
     try:
-        _pos_acct = _account_sql_and(pos_accounts_scope, col="account")
-        _pos_sc_acct = _account_sql_and(pos_accounts_scope, col="sc.account")
+        _pos_acct = _tenant_sql_and(tenant_scope)
+        _pos_sc_acct = _tenant_sql_and(tenant_scope, col="sc.tenant_id")
         # POSITION_TRADES_QUERY joins stg_history (alias h) to int_drip_fills (alias d);
         # both tables have an `account` column so the filter must be scoped to h.
-        _pos_h_acct = _account_sql_and(pos_accounts_scope, col="h.account")
+        _pos_h_acct = _tenant_sql_and(tenant_scope, col="h.tenant_id")
         dfs = _bq_parallel(client, {
             "summary": POSITION_SUMMARY_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, tenant_filter=_pos_acct
             ),
             "trades": POSITION_TRADES_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_h_acct
+                symbol=safe_symbol, tenant_filter=_pos_h_acct
             ),
             "current": POSITION_CURRENT_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, tenant_filter=_pos_acct
             ),
             "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(
-                symbol=safe_symbol, sc_account_filter=_pos_sc_acct
+                symbol=safe_symbol, sc_tenant_filter=_pos_sc_acct
             ),
             "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, tenant_filter=_pos_acct
             ),
             "matrix": POSITION_MATRIX_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, tenant_filter=_pos_acct
             ),
             "legs": POSITION_LEGS_QUERY.format(
-                symbol=safe_symbol, account_filter=_pos_acct
+                symbol=safe_symbol, tenant_filter=_pos_acct
             ),
             # Lightweight all-symbols rollup that powers the symbol tab strip
-            # at the top of the page. Scoped by `pos_accounts_scope` so the
+            # at the top of the page. Scoped by `tenant_scope` so the
             # tabs match the page's account filter (when ?account= is set the
             # strip narrows; otherwise it spans the viewer's accounts).
-            "tabs": SYMBOL_TABS_QUERY.format(account_filter=_pos_acct),
+            "tabs": SYMBOL_TABS_QUERY.format(tenant_filter=_pos_acct),
             # Symbol-level next-earnings date for the hero pill. No account
             # filter — stg_earnings_calendar is symbol-grain public data.
             "earnings": POSITION_EARNINGS_QUERY.format(symbol=safe_symbol),
@@ -2966,32 +3076,32 @@ def position_detail(symbol):
 
     # Filter to user's accounts (must run on every BQ frame — queries are by symbol
     # only, so unfiltered closed_legs/closed_equity/matrix would include all tenants.)
-    # Use ``pos_accounts_scope`` so admin viewing a non-personal selected_account
+    # Use ``tenant_scope`` so admin viewing a non-personal selected_account
     # doesn't strip the just-fetched rows. ``_filter_df_by_accounts`` still
     # enforces the user_id boundary for non-admins.
-    summary_df = _filter_df_by_accounts(summary_df, pos_accounts_scope)
-    trades_df = _filter_df_by_accounts(trades_df, pos_accounts_scope)
-    current_df = _filter_df_by_accounts(current_df, pos_accounts_scope)
-    closed_legs_df = _filter_df_by_accounts(closed_legs_df, pos_accounts_scope)
-    closed_equity_df = _filter_df_by_accounts(closed_equity_df, pos_accounts_scope)
-    matrix_df = _filter_df_by_accounts(matrix_df, pos_accounts_scope)
+    summary_df = _filter_df_by_tenant_ids(summary_df, tenant_scope)
+    trades_df = _filter_df_by_tenant_ids(trades_df, tenant_scope)
+    current_df = _filter_df_by_tenant_ids(current_df, tenant_scope)
+    closed_legs_df = _filter_df_by_tenant_ids(closed_legs_df, tenant_scope)
+    closed_equity_df = _filter_df_by_tenant_ids(closed_equity_df, tenant_scope)
+    matrix_df = _filter_df_by_tenant_ids(matrix_df, tenant_scope)
     # Tab strip data has the same tenancy boundary as everything else above.
-    tabs_df = _filter_df_by_accounts(tabs_df, pos_accounts_scope)
+    tabs_df = _filter_df_by_tenant_ids(tabs_df, tenant_scope)
     # earnings_df is symbol-grain public market data (no account / user_id
     # columns) so this call is a no-op today — keep it for parity with the
     # rest of the batch and future-proofing if the table ever gains tenancy
     # columns. Per .cursor/rules/bigquery-tenant-isolation.mdc: "no exceptions
     # for 'this query is just for one symbol.'"
-    earnings_df = _filter_df_by_accounts(earnings_df, pos_accounts_scope)
+    earnings_df = _filter_df_by_tenant_ids(earnings_df, tenant_scope)
 
     # Joined closed legs are empty: int_option_contracts can fail to match while
     # int_strategy_classification still has closed option P&L — use classification only.
     if closed_legs_df.empty and (
-        pos_accounts_scope is None
-        or (isinstance(pos_accounts_scope, list) and len(pos_accounts_scope) > 0)
+        tenant_scope is None
+        or (isinstance(tenant_scope, list) and len(tenant_scope) > 0)
     ):
         _cl_sup = _fetch_closed_option_legs_from_classification(
-            client, safe_symbol, pos_accounts_scope
+            client, safe_symbol, tenant_scope
         )
         if not _cl_sup.empty:
             closed_legs_df = _cl_sup
@@ -3036,7 +3146,7 @@ def position_detail(symbol):
     # the mart rows into the legacy dict shape the template + downstream
     # helpers consume, preserving the leg_id ↔ session_id contract that keeps
     # bookmarked ?leg=<n> URLs working.
-    legs_df = _filter_df_by_accounts(legs_df, pos_accounts_scope)
+    legs_df = _filter_df_by_tenant_ids(legs_df, tenant_scope)
     if selected_account and not legs_df.empty:
         legs_df = legs_df[legs_df["account"] == selected_account]
 
@@ -3419,23 +3529,14 @@ def position_detail(symbol):
     #    scoped correctly. Also skip the supplement step (it would re-inject
     #    full-history numbers).
     #
-    # Account scoping: when the user has filtered to a single account, the
-    # classification fetch MUST be restricted to that account too. Otherwise
-    # int_strategy rows from the user's other accounts get rolled in and the
-    # page shows mixed-account rows even though the URL is scoped
-    # (`?account=X`) — the JEPI/0044 visible bug.
-    strat_accounts_scope = (
-        [selected_account] if selected_account else user_accounts
-    )
     # See `_compute_breakdown_by_type`'s gate comment — `is None` means
-    # admin and must NOT short-circuit. `_fetch_int_strategy_classification_by_symbol`
-    # already passes `None` through to `_account_sql_and` (no filter).
-    # Empty list still short-circuits (genuine "no accounts" state).
+    # admin and must NOT short-circuit.
+    # Empty list still short-circuits (genuine "no tenants" state).
     if leg_param and _leg_ranges:
         summary_for_strat = pd.DataFrame()
-        if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
+        if tenant_scope is None or len(tenant_scope) > 0:
             int_raw = _fetch_int_strategy_classification_by_symbol(
-                client, safe_symbol, strat_accounts_scope
+                client, safe_symbol, tenant_scope
             )
             if not int_raw.empty and "open_date" in int_raw.columns:
                 int_raw = int_raw.copy()
@@ -3447,9 +3548,9 @@ def position_detail(symbol):
                     summary_for_strat = _rollup_int_strategy_to_summary_shape(int_raw)
     else:
         summary_for_strat = summary_df
-        if strat_accounts_scope is None or len(strat_accounts_scope) > 0:
+        if tenant_scope is None or len(tenant_scope) > 0:
             int_raw = _fetch_int_strategy_classification_by_symbol(
-                client, safe_symbol, strat_accounts_scope
+                client, safe_symbol, tenant_scope
             )
             if not int_raw.empty:
                 rolled = _rollup_int_strategy_to_summary_shape(int_raw)
@@ -3484,7 +3585,7 @@ def position_detail(symbol):
     breakdown_rows = _compute_breakdown_by_type(
         client=client,
         safe_symbol=safe_symbol,
-        strat_accounts_scope=strat_accounts_scope,
+        tenant_scope=tenant_scope,
         closed_equity_df=closed_equity_df,
         closed_legs_df=closed_legs_df,
         current_df=current_df,
@@ -3509,11 +3610,11 @@ def position_detail(symbol):
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
     prices_through_date = None
     try:
-        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts)
+        tenant_filter = _tenant_sql_and(_tenants_for_scope(selected_account))
         chart_df = client.query(
-            CHART_DATA_QUERY.format(symbol=safe_symbol, account_filter=acct_filter)
+            CHART_DATA_QUERY.format(symbol=safe_symbol, tenant_filter=tenant_filter)
         ).to_dataframe()
-        chart_df = _filter_df_by_accounts(chart_df, pos_accounts_scope)
+        chart_df = _filter_df_by_tenant_ids(chart_df, tenant_scope)
         chart_df = _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
             chart_df, summary_df
         )
@@ -4058,7 +4159,7 @@ TRADES_QUERY = """
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE underlying_symbol IS NOT NULL
       AND trade_date IS NOT NULL
-      {account_filter}
+      {tenant_filter}
     ORDER BY underlying_symbol, trade_date
 """
 
@@ -4069,7 +4170,7 @@ OPEN_SESSION_START_QUERY = """
         MIN(open_date) AS open_start
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE status = 'Open'
-      {account_filter}
+      {tenant_filter}
     GROUP BY account, symbol
 """
 
@@ -4099,7 +4200,7 @@ CLOSED_LEGS_QUERY = """
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
     WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
-      {closed_legs_account_filter}
+      {closed_legs_tenant_filter}
 """
 
 CLOSED_EQUITY_LEGS_QUERY = """
@@ -4116,7 +4217,7 @@ CLOSED_EQUITY_LEGS_QUERY = """
         realized_pnl,
         description
     FROM `ccwj-dbt.analytics.int_closed_equity_legs`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 CURRENT_POSITIONS_QUERY = """
@@ -4133,19 +4234,19 @@ CURRENT_POSITIONS_QUERY = """
         unrealized_pnl,
         unrealized_pnl_pct
     FROM `ccwj-dbt.analytics.int_enriched_current`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 STRATEGIES_MAP_QUERY = """
     SELECT account, symbol, strategy
     FROM `ccwj-dbt.analytics.positions_summary`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 SYMBOLS_PNL_QUERY = """
     SELECT account, symbol, status, realized_pnl, unrealized_pnl
     FROM `ccwj-dbt.analytics.positions_summary`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 def _build_option_matrices(matrix_df, account, symbol):
@@ -5088,18 +5189,20 @@ def symbols_detail():
         return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    acct_filter = _account_sql_and(user_accounts)
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     try:
         dfs = _bq_parallel(client, {
-            "trades": TRADES_QUERY.format(account_filter=acct_filter),
-            "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
-            "strat": STRATEGIES_MAP_QUERY.format(account_filter=acct_filter),
-            "pnl": SYMBOLS_PNL_QUERY.format(account_filter=acct_filter),
-            "open_start": OPEN_SESSION_START_QUERY.format(account_filter=acct_filter),
+            "trades": TRADES_QUERY.format(tenant_filter=tenant_filter),
+            "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+            "strat": STRATEGIES_MAP_QUERY.format(tenant_filter=tenant_filter),
+            "pnl": SYMBOLS_PNL_QUERY.format(tenant_filter=tenant_filter),
+            "open_start": OPEN_SESSION_START_QUERY.format(tenant_filter=tenant_filter),
             "closed_legs": CLOSED_LEGS_QUERY.format(
-                closed_legs_account_filter=_account_sql_and(user_accounts, col="sc.account")),
-            "closed_equity": CLOSED_EQUITY_LEGS_QUERY.format(account_filter=acct_filter),
+                closed_legs_tenant_filter=_tenant_sql_and(tenant_ids, col="sc.tenant_id")),
+            "closed_equity": CLOSED_EQUITY_LEGS_QUERY.format(tenant_filter=tenant_filter),
         })
         trades_df = dfs["trades"]
         current_df = dfs["current"]
@@ -5170,16 +5273,16 @@ def symbols_detail():
     # ------------------------------------------------------------------
     # Safety-belt: re-filter in Python (SQL already filtered by account)
     # ------------------------------------------------------------------
-    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
-    current_df = _filter_df_by_accounts(current_df, user_accounts)
-    strat_df = _filter_df_by_accounts(strat_df, user_accounts)
-    pnl_df = _filter_df_by_accounts(pnl_df, user_accounts)
+    trades_df = _filter_df_by_tenant_ids(trades_df, tenant_ids)
+    current_df = _filter_df_by_tenant_ids(current_df, tenant_ids)
+    strat_df = _filter_df_by_tenant_ids(strat_df, tenant_ids)
+    pnl_df = _filter_df_by_tenant_ids(pnl_df, tenant_ids)
     if not open_start_df.empty:
-        open_start_df = _filter_df_by_accounts(open_start_df, user_accounts)
+        open_start_df = _filter_df_by_tenant_ids(open_start_df, tenant_ids)
     if not closed_legs_df.empty:
-        closed_legs_df = _filter_df_by_accounts(closed_legs_df, user_accounts)
+        closed_legs_df = _filter_df_by_tenant_ids(closed_legs_df, tenant_ids)
     if not closed_equity_df.empty:
-        closed_equity_df = _filter_df_by_accounts(closed_equity_df, user_accounts)
+        closed_equity_df = _filter_df_by_tenant_ids(closed_equity_df, tenant_ids)
 
     def _unique_accounts(*frames):
         s = set()
@@ -5238,11 +5341,11 @@ def symbols_detail():
 
     # Fetch pre-aggregated chart data from mart
     try:
-        acct_filter = _account_sql_and([selected_account] if selected_account else user_accounts)
+        tenant_filter = _tenant_sql_and(_tenants_for_scope(selected_account))
         all_chart_df = client.query(
-            CHART_DATA_ALL_QUERY.format(account_filter=acct_filter)
+            CHART_DATA_ALL_QUERY.format(tenant_filter=tenant_filter)
         ).to_dataframe()
-        all_chart_df = _filter_df_by_accounts(all_chart_df, user_accounts)
+        all_chart_df = _filter_df_by_tenant_ids(all_chart_df, tenant_ids)
         if selected_account and not all_chart_df.empty:
             all_chart_df = all_chart_df[all_chart_df["account"] == selected_account]
     except Exception:
@@ -5615,14 +5718,14 @@ ACCOUNT_BALANCES_QUERY = """
     SELECT account, row_type, market_value, cost_basis,
            unrealized_pnl, unrealized_pnl_pct, percent_of_account
     FROM `ccwj-dbt.analytics.stg_account_balances`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 STRATEGY_CLASSIFICATION_QUERY = """
     SELECT account, symbol, strategy, status, open_date, close_date,
            total_pnl, num_trades
     FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 """
 
 ACCOUNT_POSITIONS_SUMMARY_QUERY = """
@@ -5638,7 +5741,7 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
            SUM(total_dividend_income) AS dividend_income,
            SUM(total_return) AS total_return
     FROM `ccwj-dbt.analytics.positions_summary`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
     GROUP BY account, strategy
     ORDER BY account, strategy
 """
@@ -5866,7 +5969,7 @@ SECTORS_QUERY = """
         company_name
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
-    {account_filter}
+    {tenant_filter}
 """
 
 
@@ -5886,13 +5989,13 @@ def sectors():
         return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    acct_filter = _account_sql_and(user_accounts)
-
     selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     try:
         df = client.query(
-            SECTORS_QUERY.format(account_filter=acct_filter)
+            SECTORS_QUERY.format(tenant_filter=tenant_filter)
         ).to_dataframe()
     except Exception as exc:
         return render_template(
@@ -5909,7 +6012,7 @@ def sectors():
         )
 
     df = _df_normalize_account_column(df)
-    df = _filter_df_by_accounts(df, user_accounts)
+    df = _filter_df_by_tenant_ids(df, tenant_ids)
 
     if selected_account:
         df = df[df["account"] == selected_account]
@@ -6120,7 +6223,7 @@ STRATEGY_FIT_QUERY = """
         subsector
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
-    {account_filter}
+    {tenant_filter}
 """
 
 # Per-option-contract grain for the DTE / Moneyness slices. Shaped so the
@@ -6145,7 +6248,7 @@ STRATEGY_FIT_OPTIONS_QUERY = """
         CASE WHEN status = 'Closed' AND total_pnl <= 0 THEN 1 ELSE 0 END AS num_losers
     FROM `ccwj-dbt.analytics.int_option_trade_kinds`
     WHERE 1=1
-    {account_filter}
+    {tenant_filter}
 """
 
 # Fixed display order for non-categorical buckets so the dimension reads
@@ -6179,7 +6282,7 @@ def _build_strategy_fit_matrix(
 
     Pure aggregation — no I/O, no tenancy logic. The caller is responsible
     for scoping `df` to the user's accounts (SQL `account_filter` AND
-    `_filter_df_by_accounts(df, user_accounts)`) BEFORE handing it in.
+    `_filter_df_by_tenant_ids(df, tenant_ids)`) BEFORE handing it in.
 
     Required columns on `df`:
         account, symbol, strategy, <col_field>,
@@ -6423,7 +6526,7 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
         return ctx
     try:
         cached = get_strategy_fit_insight_for_user(
-            current_user.id, account_filter=selected_account or ""
+            current_user.id, tenant_filter=selected_account or ""
         )
     except Exception:
         cached = None
@@ -6498,9 +6601,10 @@ def strategy_fit():
         return bounce
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    acct_filter = _account_sql_and(user_accounts)
-
     selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+
     drill_sector = request.args.get("sector", "")  # implies subsector mode
 
     # Resolve the column dimension. Drilling into a sector wins (for
@@ -6523,9 +6627,9 @@ def strategy_fit():
     # for sector/subsector it's the data source, and for dte/moneyness
     # it's where we discover the equity-only strategy set so the matrix
     # can show "N/A — equity" rows.
-    queries = {"summary": STRATEGY_FIT_QUERY.format(account_filter=acct_filter)}
+    queries = {"summary": STRATEGY_FIT_QUERY.format(tenant_filter=tenant_filter)}
     if dim in ("dte", "moneyness"):
-        queries["options"] = STRATEGY_FIT_OPTIONS_QUERY.format(account_filter=acct_filter)
+        queries["options"] = STRATEGY_FIT_OPTIONS_QUERY.format(tenant_filter=tenant_filter)
 
     try:
         dfs = _bq_parallel(client, queries)
@@ -6547,7 +6651,7 @@ def strategy_fit():
         )
 
     summary_df = _df_normalize_account_column(dfs["summary"])
-    summary_df = _filter_df_by_accounts(summary_df, user_accounts)
+    summary_df = _filter_df_by_tenant_ids(summary_df, tenant_ids)
     if selected_account and not summary_df.empty:
         summary_df = summary_df[summary_df["account"] == selected_account].copy()
 
@@ -6584,7 +6688,7 @@ def strategy_fit():
         # Tenancy belt-and-braces: re-filter the per-contract frame by
         # the user's accounts BEFORE any grouping so a SQL regression
         # can't leak another tenant's contracts into the matrix.
-        options_df = _filter_df_by_accounts(options_df, user_accounts)
+        options_df = _filter_df_by_tenant_ids(options_df, tenant_ids)
         if selected_account and not options_df.empty:
             options_df = options_df[options_df["account"] == selected_account].copy()
 
@@ -6650,15 +6754,17 @@ def strategy_fit():
 def accounts():
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    acct_filter = _account_sql_and(user_accounts)
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     try:
         dfs = _bq_parallel(client, {
-            "balances": ACCOUNT_BALANCES_QUERY.format(account_filter=acct_filter),
-            "trades": TRADES_QUERY.format(account_filter=acct_filter),
-            "current": CURRENT_POSITIONS_QUERY.format(account_filter=acct_filter),
-            "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(account_filter=acct_filter),
-            "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(account_filter=acct_filter),
+            "balances": ACCOUNT_BALANCES_QUERY.format(tenant_filter=tenant_filter),
+            "trades": TRADES_QUERY.format(tenant_filter=tenant_filter),
+            "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+            "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
+            "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
         })
         balances_df = dfs["balances"]
         trades_df = dfs["trades"]
@@ -6709,11 +6815,11 @@ def accounts():
     # ------------------------------------------------------------------
     # Safety-belt: re-filter in Python (SQL already filtered by account)
     # ------------------------------------------------------------------
-    balances_df = _filter_df_by_accounts(balances_df, user_accounts)
-    trades_df = _filter_df_by_accounts(trades_df, user_accounts)
-    current_df = _filter_df_by_accounts(current_df, user_accounts)
-    strat_class_df = _filter_df_by_accounts(strat_class_df, user_accounts)
-    strat_summary_df = _filter_df_by_accounts(strat_summary_df, user_accounts)
+    balances_df = _filter_df_by_tenant_ids(balances_df, tenant_ids)
+    trades_df = _filter_df_by_tenant_ids(trades_df, tenant_ids)
+    current_df = _filter_df_by_tenant_ids(current_df, tenant_ids)
+    strat_class_df = _filter_df_by_tenant_ids(strat_class_df, tenant_ids)
+    strat_summary_df = _filter_df_by_tenant_ids(strat_summary_df, tenant_ids)
 
     all_accounts = sorted(trades_df["account"].dropna().unique())
     selected_account = request.args.get("account", "")
@@ -6766,11 +6872,12 @@ def accounts():
     # Chart 1: Cumulative P&L over time (summary) — from mart_daily_pnl
     # ------------------------------------------------------------------
     try:
-        acct_filter_sql = _account_sql_and([selected_account] if selected_account else user_accounts)
+        chart_tenant_ids = _tenants_for_scope(selected_account)
+        chart_tenant_filter = _tenant_sql_and(chart_tenant_ids)
         chart_df = client.query(
-            CHART_DATA_ALL_QUERY.format(account_filter=acct_filter_sql)
+            CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter)
         ).to_dataframe()
-        chart_df = _filter_df_by_accounts(chart_df, user_accounts)
+        chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
         if selected_account and not chart_df.empty:
             chart_df = chart_df[chart_df["account"] == selected_account]
         summary_chart = _build_account_chart_from_daily_pnl(chart_df, current_df)

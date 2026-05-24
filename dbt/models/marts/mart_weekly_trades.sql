@@ -30,7 +30,7 @@ with base as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         symbol,
         strategy,
         trade_symbol,
@@ -50,7 +50,7 @@ calc as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         symbol,
         strategy,
         trade_symbol,

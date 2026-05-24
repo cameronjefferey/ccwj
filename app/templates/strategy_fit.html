@@ -438,7 +438,7 @@
         {% endif %}
     </p>
     <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
-        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Connect your broker</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
     </div>
 </div>

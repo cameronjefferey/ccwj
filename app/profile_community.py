@@ -57,8 +57,6 @@ from app.models import (
     get_accounts_for_user,
     get_post,
     get_published_trade_fingerprints,
-    get_schwab_connection,
-    get_schwab_connections,
     get_uploads_for_user,
     get_user_by_username,
     get_user_profile,
@@ -231,27 +229,11 @@ def profile():
         profile_row = {**prof, "default_route": "weekly_review"}
     accounts = get_accounts_for_user(current_user.id)
     recent_uploads = get_uploads_for_user(current_user.id)
-    schwab_enabled = bool(os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET"))
-    schwab_connections = get_schwab_connections(current_user.id) if schwab_enabled else []
-    schwab_first_sync_completed = False
-    schwab_routine_lookback_days = 60
-    schwab_full_history_lookback_days = 1825
-    if schwab_enabled and schwab_connections:
-        from app.schwab import SCHWAB_FULL_HISTORY_LOOKBACK_DAYS, _schwab_transaction_lookback_days
 
-        schwab_full_history_lookback_days = SCHWAB_FULL_HISTORY_LOOKBACK_DAYS
-        _c = get_schwab_connection(current_user.id)
-        if _c:
-            schwab_first_sync_completed = bool(_c.get("schwab_first_sync_completed"))
-        schwab_routine_lookback_days = _schwab_transaction_lookback_days()
-
-    # SnapTrade aggregator (covers Fidelity / Vanguard / Robinhood / IBKR /
-    # Tradier / etc.). Sibling card to the Schwab one — independent enable
-    # flag because the two integrations have different env var lists.
     snaptrade_enabled = False
     snaptrade_accounts = []
-    snaptrade_routine_lookback_days = schwab_routine_lookback_days
-    snaptrade_full_history_lookback_days = schwab_full_history_lookback_days
+    snaptrade_routine_lookback_days = 60
+    snaptrade_full_history_lookback_days = 1825
     try:
         from app.snaptrade import (
             snaptrade_enabled as _snaptrade_enabled_fn,
@@ -261,15 +243,10 @@ def profile():
         from app.models import get_snaptrade_accounts as _get_snaptrade_accounts
 
         snaptrade_enabled = _snaptrade_enabled_fn()
-        # Show existing connections even when env is not configured so a
-        # user who connected before a config change isn't dropped silently.
         snaptrade_accounts = _get_snaptrade_accounts(current_user.id) or []
         snaptrade_routine_lookback_days = int(_snap_routine_fn())
         snaptrade_full_history_lookback_days = int(_snap_full_days)
-    except Exception as _exc:
-        # Don't block /profile rendering if the SnapTrade module isn't
-        # importable (e.g. SDK not installed in dev shell). Keep the
-        # native Schwab card and CSV upload visible.
+    except Exception:
         snaptrade_enabled = False
         snaptrade_accounts = []
     fc, fwing = follow_counts(current_user.id)
@@ -288,11 +265,6 @@ def profile():
         profile_row=profile_row,
         accounts=accounts,
         recent_uploads=recent_uploads,
-        schwab_enabled=schwab_enabled,
-        schwab_connections=schwab_connections,
-        schwab_first_sync_completed=schwab_first_sync_completed,
-        schwab_routine_lookback_days=schwab_routine_lookback_days,
-        schwab_full_history_lookback_days=schwab_full_history_lookback_days,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_accounts=snaptrade_accounts,
         snaptrade_routine_lookback_days=snaptrade_routine_lookback_days,
@@ -586,7 +558,7 @@ def community_my_trades():
 
     SECURITY: this endpoint MUST stay tenant-scoped — see
     .cursor/rules/bigquery-tenant-isolation.mdc. We scope by account both in
-    SQL ({account_filter}) and in Python via _filter_df_by_accounts.
+    SQL ({tenant_filter}) and in Python via _filter_df_by_tenant_ids.
     """
     try:
         return _community_my_trades_impl()
@@ -602,12 +574,14 @@ def community_my_trades():
 def _community_my_trades_impl():
     from app.routes import (
         _user_account_list,
-        _account_sql_and,
-        _filter_df_by_accounts,
+        _tenants_for_scope,
+        _tenant_sql_and,
+        _filter_df_by_tenant_ids,
     )
 
     user_accounts = _user_account_list()
-    acct_sql = _account_sql_and(user_accounts)
+    tenant_ids = _tenants_for_scope()
+    tenant_sql = _tenant_sql_and(tenant_ids)
 
     # ---- Legs (individual trade groups) --------------------------------
     legs_sql = f"""
@@ -617,7 +591,7 @@ def _community_my_trades_impl():
           total_pnl, current_unrealized_pnl, num_trades
         FROM `ccwj-dbt.analytics.mart_weekly_trades`
         WHERE (open_date IS NOT NULL OR close_date IS NOT NULL)
-          {acct_sql}
+          {tenant_sql}
         ORDER BY COALESCE(close_date, open_date) DESC NULLS LAST,
                  open_date DESC
         LIMIT 120
@@ -641,7 +615,7 @@ def _community_my_trades_impl():
           AND symbol IS NOT NULL
           AND strategy IS NOT NULL
           AND (open_date IS NOT NULL OR close_date IS NOT NULL)
-          {acct_sql}
+          {tenant_sql}
         GROUP BY account, symbol, strategy
         ORDER BY last_activity DESC NULLS LAST
         LIMIT 80
@@ -657,7 +631,7 @@ def _community_my_trades_impl():
         WHERE trade_date IS NOT NULL
           AND action NOT IN ('dividend', 'margin_interest',
                              'credit_interest', 'adr_fee', 'other')
-          {acct_sql}
+          {tenant_sql}
         ORDER BY trade_date DESC, ABS(COALESCE(amount, 0)) DESC
         LIMIT 250
     """
@@ -689,7 +663,7 @@ def _community_my_trades_impl():
     # -- Legs --
     legs = []
     if legs_df is not None:
-        legs_df = _filter_df_by_accounts(legs_df, user_accounts)
+        legs_df = _filter_df_by_tenant_ids(legs_df, tenant_ids)
         for _, row in legs_df.iterrows():
             status = str(row.get("status") or "")
             num_trades_raw = _num_or_none(row.get("num_trades"))
@@ -724,7 +698,7 @@ def _community_my_trades_impl():
     # -- Strategies --
     strategies = []
     if strategies_df is not None:
-        strategies_df = _filter_df_by_accounts(strategies_df, user_accounts)
+        strategies_df = _filter_df_by_tenant_ids(strategies_df, tenant_ids)
         for _, row in strategies_df.iterrows():
             acct = str(row.get("account") or "")
             sym = str(row.get("symbol") or "")
@@ -747,7 +721,7 @@ def _community_my_trades_impl():
     # -- Transactions --
     transactions = []
     if txn_df is not None:
-        txn_df = _filter_df_by_accounts(txn_df, user_accounts)
+        txn_df = _filter_df_by_tenant_ids(txn_df, tenant_ids)
         for _, row in txn_df.iterrows():
             action = str(row.get("action") or "")
             acct = str(row.get("account") or "")

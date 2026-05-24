@@ -361,14 +361,14 @@ def activities_to_history_df(
     *,
     account_name: str,
     user_id,
+    tenant_id: str,
 ) -> pd.DataFrame:
     """Build a HISTORY_SEED_COLUMNS DataFrame from a list of SnapTrade
     activity objects.
 
-    ``user_id`` is stamped on every emitted row — this is the
-    broker-sync-safety invariant that ``merge_and_push_seeds`` enforces
-    at the merge boundary. We do it here too so the per-row
-    ``account_name`` matches the seed.Account column shape.
+    ``user_id`` and ``tenant_id`` are stamped on every emitted row —
+    this is the broker-sync-safety invariant that ``merge_and_push_seeds``
+    enforces at the merge boundary.
 
     Sign convention: dollar amounts emitted as **negative for cash out
     (buys, fees) and positive for cash in (sells, dividends, interest)**
@@ -378,6 +378,7 @@ def activities_to_history_df(
     """
     rows: list[dict] = []
     user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    tenant_id_str = str(tenant_id).strip()
 
     for act in activities or ():
         if not isinstance(act, Mapping):
@@ -448,6 +449,7 @@ def activities_to_history_df(
         rows.append({
             "Account": account_name,
             "user_id": user_id_int,
+            "tenant_id": tenant_id_str,
             "Date": trade_date,
             "Action": action_label,
             "Symbol": sym_str,
@@ -472,6 +474,7 @@ def orders_to_history_df(
     *,
     account_name: str,
     user_id,
+    tenant_id: str,
 ) -> pd.DataFrame:
     """Build a HISTORY_SEED_COLUMNS DataFrame from SnapTrade's
     ``get_user_account_recent_orders`` endpoint.
@@ -514,6 +517,7 @@ def orders_to_history_df(
     """
     rows: list[dict] = []
     user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    tenant_id_str = str(tenant_id).strip()
 
     for order in orders or ():
         if not isinstance(order, Mapping):
@@ -593,6 +597,7 @@ def orders_to_history_df(
         rows.append({
             "Account": account_name,
             "user_id": user_id_int,
+            "tenant_id": tenant_id_str,
             "Date": trade_date,
             "Action": action_label,
             "Symbol": sym_str,
@@ -619,6 +624,7 @@ def positions_to_current_df(
     *,
     account_name: str,
     user_id,
+    tenant_id: str,
 ) -> pd.DataFrame:
     """Build a CURRENT_SEED_COLUMNS DataFrame from SnapTrade positions.
 
@@ -636,6 +642,7 @@ def positions_to_current_df(
     """
     rows: list[dict] = []
     user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    tenant_id_str = str(tenant_id).strip()
 
     for pos in positions or ():
         if not isinstance(pos, Mapping):
@@ -723,6 +730,7 @@ def positions_to_current_df(
         rows.append({
             "Account": account_name,
             "user_id": user_id_int,
+            "tenant_id": tenant_id_str,
             "Symbol": sym_str,
             "Description": description,
             "Quantity": units,
@@ -752,6 +760,7 @@ def balances_to_balance_df(
     positions: Iterable[Mapping],
     account_name: str,
     user_id,
+    tenant_id: str,
 ) -> pd.DataFrame:
     """Two rows for account_balances.csv (cash + account_total).
 
@@ -763,6 +772,7 @@ def balances_to_balance_df(
     SnapTrade doesn't report it on the summary.
     """
     user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    tenant_id_str = str(tenant_id).strip()
 
     cash = 0.0
     if isinstance(balances, Iterable):
@@ -816,6 +826,7 @@ def balances_to_balance_df(
         {
             "account": account_name,
             "user_id": user_id_int,
+            "tenant_id": tenant_id_str,
             "row_type": "cash",
             "market_value": cash,
             "cost_basis": "",
@@ -826,6 +837,7 @@ def balances_to_balance_df(
         {
             "account": account_name,
             "user_id": user_id_int,
+            "tenant_id": tenant_id_str,
             "row_type": "account_total",
             "market_value": total,
             "cost_basis": pos_cb if pos_cb else "",

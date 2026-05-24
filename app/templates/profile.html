@@ -107,7 +107,8 @@
 
 {% block content %}
 {% set vis = profile_row.profile_visibility or 'private' %}
-{% set schwab_connected = schwab_enabled and schwab_connections %}
+{% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
+{% set snaptrade_connected = _snaptrade_accounts|length > 0 %}
 
 <div class="atlas">
 <div class="atlas-shell">
@@ -122,8 +123,8 @@
                 <div class="atlas-stat-row">
                     <div class="atlas-stat"><div class="n">{{ accounts|length }}</div><div class="l">Accounts</div></div>
                     <div class="atlas-stat"><div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div></div>
-                    {% if schwab_connected %}
-                    <div class="atlas-stat"><div class="n">✓</div><div class="l">Schwab</div></div>
+                    {% if snaptrade_connected %}
+                    <div class="atlas-stat"><div class="n">✓</div><div class="l">Broker</div></div>
                     {% endif %}
                 </div>
             </div>
@@ -143,119 +144,30 @@
 
         <div>
             {% if tab == 'overview' %}
-            {# Sync card — primary reason people open this page #}
-            {% if schwab_enabled %}
-            <div class="sync-card" id="schwab-sync">
+            <div class="sync-card" id="snaptrade-sync">
                 <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
                     <div>
-                        <div class="sync-title">Schwab sync</div>
-                        <p class="sync-sub mb-0">Pulls your trades and open positions from Schwab automatically — same data path as a manual upload.</p>
+                        <div class="sync-title">Broker sync</div>
+                        <p class="sync-sub mb-0">
+                            Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 other
+                            brokers through SnapTrade. We mirror trade history and positions
+                            into the same pipeline as manual CSV upload.
+                        </p>
                     </div>
-                    {% if schwab_connected %}
+                    {% if snaptrade_connected %}
                     <span class="sync-status connected"><span class="dot"></span> Connected</span>
                     {% else %}
                     <span class="sync-status disconnected"><span class="dot"></span> Not connected</span>
                     {% endif %}
                 </div>
-
-                {% if schwab_connected %}
-                {% if schwab_connections|length > 1 %}
-                <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked. Sync any one of them on its own page.</p>
-                <div class="sync-actions">
-                    <a href="{{ url_for('schwab_accounts') }}" class="btn-sync-primary">Manage &amp; sync accounts</a>
-                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                </div>
-                {% else %}
-                <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    {% if not schwab_first_sync_completed %}
-                    <div class="mt-2">
-                        <div class="atlas-label mb-2">First sync — how much history?</div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full_o" value="full" checked>
-                            <label class="form-check-label" for="schwab_scope_full_o">Up to {{ schwab_full_history_lookback_days }} days (~5 years) — full history import</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling_o" value="rolling">
-                            <label class="form-check-label" for="schwab_scope_rolling_o">Only last {{ schwab_routine_lookback_days }} days</label>
-                        </div>
-                    </div>
-                    {% else %}
-                    <p class="small text-body-secondary mb-2">Routine sync pulls the last <strong>{{ schwab_routine_lookback_days }} days</strong>.</p>
-                    <div class="form-check mb-1">
-                        <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again_o" value="1">
-                        <label class="form-check-label small" for="schwab_full_again_o">One-time: fetch up to {{ schwab_full_history_lookback_days }} days</label>
-                    </div>
-                    {% endif %}
-
-                    <div class="sync-actions">
-                        <button type="submit" class="btn-sync-primary">Sync now</button>
-                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                        <a href="{{ url_for('schwab_accounts') }}" class="btn-sync-ghost">Add another account</a>
-                    </div>
-                    <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
-                </form>
-                {% endif %}
-                {% else %}
-                <p class="small text-body-secondary mb-0">Connect once and every refresh stays in sync with your Schwab account automatically.</p>
-                <div class="sync-actions">
-                    <a href="{{ url_for('schwab_connect') }}" class="btn-sync-primary">Connect Schwab</a>
-                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                </div>
-                {% endif %}
-            </div>
-            {% else %}
-            <div class="sync-card" id="schwab-sync">
-                <div class="sync-title">Get your data in</div>
-                <p class="sync-sub">Schwab sync isn't configured on this server. You can still drop in a CSV export.</p>
-                <div class="sync-actions">
-                    <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
-                </div>
-            </div>
-            {% endif %}
-
-            {# Multi-broker (SnapTrade) — sibling to the Schwab card.
-               Schwab native stays primary because it returns deeper
-               history; SnapTrade unlocks Fidelity, Vanguard, Robinhood,
-               IBKR and friends.
-
-               Mirrors the Schwab Overview-tab pattern: primary "Sync"
-               action stays one click away on this card. Per-brokerage
-               sync + nicknames live on /snaptrade/accounts (the
-               dedicated detail page); same shape as Schwab routing
-               its multi-account UX through /schwab/accounts. #}
-            {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
-            <div class="sync-card" id="snaptrade-sync">
-                <div class="sync-head">
-                    <div>
-                        <div class="sync-title">More brokerages</div>
-                        <p class="sync-sub mb-0">
-                            Connect Fidelity, Vanguard, Robinhood, IBKR and ~20
-                            other brokers through SnapTrade. One click per broker;
-                            we mirror the same trade history and positions.
-                        </p>
-                        {% if schwab_enabled %}
-                        {# Same Schwab callout as the Account-tab card — kept
-                           short here because the Overview is the summary view. #}
-                        <p class="sync-sub mb-0 mt-2 small" style="color:#1e3a8a;">
-                            <strong>Schwab?</strong> Use the <strong>Schwab sync</strong>
-                            card above — SnapTrade doesn't support Schwab.
-                        </p>
-                        {% endif %}
-                    </div>
-                </div>
                 {% if _snaptrade_accounts %}
-                {# Same first-pending heuristic + namespace pattern as the
-                   Account-tab card. {% set %} inside {% for %} doesn't
-                   escape loop scope in Jinja2. #}
                 {% set _ns_st_o = namespace(any_first_pending=false) %}
                 {% for a in _snaptrade_accounts %}
                     {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
                 {% endfor %}
                 <p class="small text-body-secondary mt-2 mb-2">
                     You have <strong>{{ _snaptrade_accounts|length }}</strong>
-                    brokerage{{ '' if _snaptrade_accounts|length == 1 else 's' }}
-                    connected via SnapTrade.
+                    brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }} linked.
                 </p>
                 <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -265,21 +177,28 @@
                                name="full_history_again" id="snaptrade_sync_all_full_o"
                                value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
                         <label class="form-check-label small" for="snaptrade_sync_all_full_o">
-                            Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every brokerage
+                            Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every account
                         </label>
                     </div>
                     <div class="sync-actions">
-                        <button type="submit" class="btn-sync-primary">Sync all brokerages</button>
-                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage brokerages</a>
+                        <button type="submit" class="btn-sync-primary">Sync all accounts</button>
+                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage accounts</a>
                         <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add another broker</a>
+                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
                     </div>
                     <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
                         Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
                     </p>
                 </form>
-                {% else %}
+                {% elif snaptrade_enabled %}
                 <div class="sync-actions mt-2">
-                    <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect another broker</a>
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
+                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
+                </div>
+                {% else %}
+                <p class="small text-body-secondary mb-0">Broker sync is not configured on this server. You can still upload CSV exports.</p>
+                <div class="sync-actions mt-2">
+                    <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
                 </div>
                 {% endif %}
             </div>
@@ -317,7 +236,7 @@
                 <div class="atlas-card-h">Accounts you’ve linked</div>
                 <div class="atlas-card-b">
                     <div>{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
-                    <p class="atlas-hint mb-0 mt-2">These labels tie uploads and Schwab sync to the rows you see across the app. Manage them under <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.</p>
+                    <p class="atlas-hint mb-0 mt-2">These labels tie uploads and broker sync to the rows you see across the app. Manage them under <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.</p>
                 </div>
             </div>
             {% endif %}
@@ -402,117 +321,13 @@
             {% endif %}
 
             {% if tab == 'account' %}
-            {% if schwab_enabled %}
-            {# id="schwab-sync" is the deep-link anchor used by the Schwab
-               callouts on /snaptrade/accounts (and elsewhere). Mirrors the
-               id on the Overview-tab Schwab card so the same hash works
-               regardless of which tab the user happens to be on when they
-               click the link. #}
-            <div class="atlas-card" id="schwab-sync">
-                <div class="atlas-card-h">Schwab sync</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint">Connect once and every sync stays in sync with your Schwab account automatically.</p>
-                    {% if schwab_connected %}
-                    {% if schwab_connections|length > 1 %}
-                    {# Default the "pull full history" toggle on whenever any
-                       linked account is still pending its first sync — that's
-                       the case where the routine 60-day window would silently
-                       leave most of the user's trade history out of the warehouse.
-
-                       Use a Jinja2 namespace() because plain {% set %} inside
-                       {% for %} doesn't escape loop scope (silent no-op).
-                       Pre-fix this loop never actually flipped the variable,
-                       which meant the toggle never auto-checked even when
-                       multi-account users had a first-sync-pending account
-                       — they had to remember to tick the box themselves to
-                       avoid the routine-only sync that drops history. #}
-                    {% set _ns_sw = namespace(any_first_pending=false) %}
-                    {% for c in schwab_connections %}
-                        {% if not c.schwab_first_sync_completed %}{% set _ns_sw.any_first_pending = true %}{% endif %}
-                    {% endfor %}
-                    {% set _any_first_pending = _ns_sw.any_first_pending %}
-                    <p class="small text-body-secondary mb-2">You have <strong>{{ schwab_connections|length }} Schwab accounts</strong> linked.</p>
-                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form mb-3">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="sync_all" value="1">
-                        <button type="submit" class="btn btn-primary">Sync all accounts</button>
-                        <div class="form-check mt-2 mb-0">
-                            <input class="form-check-input" type="checkbox"
-                                   name="full_history_again" id="schwab_sync_all_full"
-                                   value="1"{% if _any_first_pending %} checked{% endif %}>
-                            <label class="form-check-label small" for="schwab_sync_all_full">
-                                Pull full history (up to {{ schwab_full_history_lookback_days }} days, ~5 years) on every account
-                            </label>
-                        </div>
-                        <p class="atlas-hint small mb-0 mt-1">
-                            Leave unchecked for the routine {{ schwab_routine_lookback_days }}-day refresh.
-                        </p>
-                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab for every linked account. This can take a minute or two — keep this tab open.</p>
-                    </form>
-                    <p class="atlas-hint small mb-2">Or sync just one:</p>
-                    <ul class="list-unstyled mb-3">
-                        {% for c in schwab_connections %}
-                        <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="account-badge mb-0">{{ c.display_nickname or c.account_name or c.account_number }}</span>
-                            <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="account_number" value="{{ c.account_number }}">
-                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this account</button>
-                                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from Schwab. This can take a minute — keep this tab open.</p>
-                            </form>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                    <a href="{{ url_for('schwab_accounts') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
-                    {% else %}
-                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        {% if not schwab_first_sync_completed %}
-                        <p class="small text-body-secondary mb-2"><strong>First sync</strong> — choose how much history to pull (API max ~{{ schwab_full_history_lookback_days }} days).</p>
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_full" value="full" checked>
-                                <label class="form-check-label" for="schwab_scope_full">Up to {{ schwab_full_history_lookback_days }} days (~5 years)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="sync_scope" id="schwab_scope_rolling" value="rolling">
-                                <label class="form-check-label" for="schwab_scope_rolling">Only last {{ schwab_routine_lookback_days }} days</label>
-                            </div>
-                        </div>
-                        {% else %}
-                        <p class="small text-body-secondary mb-2">Routine sync pulls the last <strong>{{ schwab_routine_lookback_days }} days</strong>.</p>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" name="full_history_again" id="schwab_full_again" value="1">
-                            <label class="form-check-label" for="schwab_full_again">One-time: fetch up to {{ schwab_full_history_lookback_days }} days</label>
-                        </div>
-                        {% endif %}
-                        <button type="submit" class="btn btn-primary">Sync now</button>
-                        <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling your latest trades and positions from Schwab. This can take a minute — keep this tab open.</p>
-                    </form>
-                    <p class="atlas-hint mt-3 mb-0">
-                        Have another account under the same Schwab login?
-                        <a href="{{ url_for('schwab_accounts') }}">Add it here.</a>
-                    </p>
-                    {% endif %}
-                    {% else %}
-                    <a href="{{ url_for('schwab_connect') }}" class="btn btn-primary">Connect Schwab</a>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-
-            {# SnapTrade aggregator card — sibling to Schwab. Always shows
-               when SnapTrade env is configured so users can find Fidelity,
-               Vanguard, Robinhood, IBKR, Alpaca Paper, etc. without
-               needing to discover the Overview tab. #}
             {% if snaptrade_enabled %}
-            {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">More brokerages (via SnapTrade)</div>
+            <div class="atlas-card" id="snaptrade-sync">
+                <div class="atlas-card-h">Broker sync (via SnapTrade)</div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint">
-                        Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
-                        through the SnapTrade Connection Portal. One click per broker; we handle
+                        Schwab, Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
+                        through the SnapTrade Connection Portal. Connect once per broker; we handle
                         history and daily refresh from then on.
                     </p>
                     <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
@@ -528,20 +343,6 @@
                             backfill.
                         </div>
                     </div>
-                    {% if schwab_enabled %}
-                    {# Schwab is NOT in SnapTrade's roster — point Schwab users
-                       at our native button (above this card) so they don't
-                       waste a click hunting for it in the SnapTrade portal
-                       and then bounce. Native Schwab is also faster and
-                       deeper history (no aggregator indexing lag). #}
-                    <div class="alert alert-info small mb-3" role="alert" style="background:#eff6ff; border-color:#bfdbfe; color:#1e3a8a;">
-                        <strong>Have a Schwab account?</strong>
-                        SnapTrade doesn't include Schwab in its broker list.
-                        Use the <strong>Connect Schwab</strong> card above instead — our
-                        native Schwab integration is faster and pulls deeper history
-                        (no aggregator indexing lag).
-                    </div>
-                    {% endif %}
                     {% if _snaptrade_accounts %}
                     {# Default the "pull full history" toggle on whenever any
                        linked brokerage is still pending its first sync —
@@ -628,7 +429,7 @@
                     {% if accounts %}
                     <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
                     {% else %}
-                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled %} or connect Schwab{% endif %}.</p>
+                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or <a href="{{ url_for('snaptrade_connect') }}">connect a broker</a>{% endif %}.</p>
                     {% endif %}
                 </div>
             </div>

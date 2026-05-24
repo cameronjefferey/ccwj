@@ -11,20 +11,19 @@ import pandas as pd
 
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.models import get_accounts_for_user, is_admin
+from app.models import is_admin
 
 
 def _user_account_list():
-    if is_admin(current_user.username):
-        return None
-    return get_accounts_for_user(current_user.id)
+    from app.routes import _user_account_list as _routes_user_account_list
+    return _routes_user_account_list()
 
 
-# Use the tenant-scoped helpers from app.routes so we pick up user_id
-# filtering automatically — SQL AND a Python `_filter_df_by_accounts` belt
-# on every DataFrame before groupby/sparklines render. See
-# docs/USER_ID_TENANCY.md and .cursor/rules/bigquery-tenant-isolation.mdc.
-from app.routes import _account_sql_and, _filter_df_by_accounts  # noqa: E402
+from app.routes import (  # noqa: E402
+    _tenants_for_scope,
+    _tenant_sql_and,
+    _filter_df_by_tenant_ids,
+)
 
 
 STRATEGY_PERFORMANCE_QUERY = """
@@ -47,7 +46,7 @@ SELECT
   last_trade_date,
   avg_days_in_trade
 FROM `ccwj-dbt.analytics.mart_strategy_performance`
-WHERE 1=1 {account_filter}
+WHERE 1=1 {tenant_filter}
 ORDER BY total_return DESC
 """
 
@@ -70,7 +69,7 @@ SELECT
   baseline_months,
   trend_signal
 FROM `ccwj-dbt.analytics.mart_strategy_trend`
-WHERE 1=1 {account_filter}
+WHERE 1=1 {tenant_filter}
 ORDER BY strategy, month_start
 """
 
@@ -93,7 +92,7 @@ SELECT
   avg_days_in_trade
 FROM `ccwj-dbt.analytics.positions_summary`
 WHERE strategy = @strategy
-  {account_filter}
+  {tenant_filter}
 ORDER BY total_return DESC
 """
 
@@ -107,7 +106,7 @@ SELECT
   win_rate_pct
 FROM `ccwj-dbt.analytics.mart_option_trades_by_kind`
 WHERE strategy = @strategy
-  {account_filter}
+  {tenant_filter}
 ORDER BY dte_bucket, moneyness_at_open
 """
 
@@ -121,7 +120,7 @@ SELECT
   COUNTIF(status = 'Open') AS num_open_groups
 FROM `ccwj-dbt.analytics.int_strategy_classification`
 WHERE strategy = @strategy
-  {account_filter}
+  {tenant_filter}
 GROUP BY 1
 """
 
@@ -131,7 +130,7 @@ SELECT
   SUM(IFNULL(dividend_count, 0)) AS dividend_events
 FROM `ccwj-dbt.analytics.positions_summary`
 WHERE strategy = @strategy
-  {account_filter}
+  {tenant_filter}
 """
 
 
@@ -337,14 +336,8 @@ def strategies():
     selected_account = request.args.get("account", "")
     selected_strategy = request.args.get("strategy", "")
 
-    effective_accounts = user_accounts
-    if selected_account:
-        if user_accounts is None:
-            effective_accounts = [selected_account]
-        else:
-            effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
-
-    account_filter = _account_sql_and(effective_accounts)
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     context = {
         "title": "Strategies",
@@ -369,10 +362,10 @@ def strategies():
     try:
         client = get_bigquery_client()
         df = client.query(
-            STRATEGY_PERFORMANCE_QUERY.format(account_filter=account_filter)
+            STRATEGY_PERFORMANCE_QUERY.format(tenant_filter=tenant_filter)
         ).to_dataframe()
 
-        df = _filter_df_by_accounts(df, effective_accounts)
+        df = _filter_df_by_tenant_ids(df, tenant_ids)
 
         if df.empty:
             return render_template("strategies.html", **context)
@@ -449,9 +442,9 @@ def strategies():
         trend_df = pd.DataFrame()
         try:
             trend_df = client.query(
-                STRATEGY_TREND_QUERY.format(account_filter=account_filter)
+                STRATEGY_TREND_QUERY.format(tenant_filter=tenant_filter)
             ).to_dataframe()
-            trend_df = _filter_df_by_accounts(trend_df, effective_accounts)
+            trend_df = _filter_df_by_tenant_ids(trend_df, tenant_ids)
         except Exception:
             app.logger.exception("mart_strategy_trend lookup failed")
 
@@ -589,12 +582,12 @@ def strategies():
                         ]
                     )
                     bdf = client.query(
-                        STRATEGY_TYPE_BREAKDOWN_QUERY.format(account_filter=account_filter),
+                        STRATEGY_TYPE_BREAKDOWN_QUERY.format(tenant_filter=tenant_filter),
                         job_config=strat_job,
                     ).to_dataframe()
-                    bdf = _filter_df_by_accounts(bdf, effective_accounts)
+                    bdf = _filter_df_by_tenant_ids(bdf, tenant_ids)
                     div_df = client.query(
-                        STRATEGY_DIVIDEND_ROLLUP_QUERY.format(account_filter=account_filter),
+                        STRATEGY_DIVIDEND_ROLLUP_QUERY.format(tenant_filter=tenant_filter),
                         job_config=strat_job,
                     ).to_dataframe()
                     div_tot, div_ev = 0.0, 0
@@ -613,10 +606,10 @@ def strategies():
                         ]
                     )
                     dte_df = client.query(
-                        DTE_MONEYNESS_QUERY.format(account_filter=account_filter),
+                        DTE_MONEYNESS_QUERY.format(tenant_filter=tenant_filter),
                         job_config=dte_cfg,
                     ).to_dataframe()
-                    dte_df = _filter_df_by_accounts(dte_df, effective_accounts)
+                    dte_df = _filter_df_by_tenant_ids(dte_df, tenant_ids)
                     if not dte_df.empty:
                         for col in ["num_trades", "total_pnl"]:
                             dte_df[col] = pd.to_numeric(dte_df[col], errors="coerce").fillna(0)
@@ -672,14 +665,14 @@ def strategies():
 
                 # Per-symbol breakdown
                 try:
-                    pos_query = STRATEGY_POSITIONS_QUERY.format(account_filter=account_filter)
+                    pos_query = STRATEGY_POSITIONS_QUERY.format(tenant_filter=tenant_filter)
                     job_config = bigquery.QueryJobConfig(
                         query_parameters=[
                             bigquery.ScalarQueryParameter("strategy", "STRING", selected_strategy),
                         ]
                     )
                     pos_df = client.query(pos_query, job_config=job_config).to_dataframe()
-                    pos_df = _filter_df_by_accounts(pos_df, effective_accounts)
+                    pos_df = _filter_df_by_tenant_ids(pos_df, tenant_ids)
                     if not pos_df.empty:
                         sym_rows = []
                         for _, r in pos_df.iterrows():

@@ -111,6 +111,8 @@ def init_db():
             created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # LEGACY (v1 direct Schwab): kept for idempotent init_db until Phase 6
+        # cutover drops the table — see scripts/admin/v2_cutover_reset.py.
         """
         CREATE TABLE IF NOT EXISTS schwab_connections (
             id                            SERIAL PRIMARY KEY,
@@ -332,6 +334,56 @@ def init_db():
         """
         CREATE INDEX IF NOT EXISTS idx_broker_accounts_user
         ON broker_accounts (user_id)
+        """,
+        # broker_tenants — v2 tenancy table (see docs/V2_TENANT_KEY_DESIGN.md).
+        #
+        # Replaces broker_accounts (Postgres SERIAL collisions on resets),
+        # schwab_connections (direct Schwab is being retired), and
+        # snaptrade_accounts (collapsed into this table).
+        #
+        # The tenant_id column is the warehouse join key:
+        #     "<broker_slug>:<broker_uuid>"
+        # e.g. "snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661".
+        #
+        # broker_uuid comes verbatim from the broker (SnapTrade
+        # AccountSimple.id). It is NEVER minted, transformed, hashed,
+        # or re-cased in transit. That property is what makes tenant_id
+        # collision-proof across Postgres resets, dataset re-creates,
+        # and user-id renumbers.
+        #
+        # The (broker_slug, broker_uuid) UNIQUE constraint enforces the
+        # "one physical broker account → one tenant_id" invariant. The
+        # (user_id, snaptrade_connection_id, broker_uuid) UNIQUE
+        # enforces per-user-per-account uniqueness so two users sharing
+        # a brokerage login get two distinct tenant_ids (correct: they
+        # should see different filtered slices).
+        """
+        CREATE TABLE IF NOT EXISTS broker_tenants (
+            tenant_id                 TEXT PRIMARY KEY,
+            user_id                   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            broker_slug               TEXT NOT NULL,
+            broker_uuid               TEXT NOT NULL,
+            account_name              TEXT NOT NULL,
+            account_mask              TEXT,
+            broker_label              TEXT,
+            snaptrade_connection_id   TEXT,
+            connection_status         TEXT NOT NULL DEFAULT 'active',
+            connection_broken_at      TIMESTAMPTZ,
+            first_sync_completed      BOOLEAN NOT NULL DEFAULT FALSE,
+            display_nickname          TEXT,
+            created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (broker_slug, broker_uuid)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_broker_tenants_user
+        ON broker_tenants (user_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_broker_tenants_status
+        ON broker_tenants (connection_status)
+        WHERE connection_status != 'active'
         """,
     ]
     with get_conn() as conn:
@@ -818,6 +870,240 @@ def get_broker_accounts_for_user(user_id):
 
 
 # ------------------------------------------------------------------
+# Broker tenants (v2 tenancy — see docs/V2_TENANT_KEY_DESIGN.md)
+#
+# tenant_id := "<broker_slug>:<broker_uuid>"  — the warehouse join key.
+# broker_uuid is the broker-stable identifier (SnapTrade UUID, etc).
+# Never minted by us, never transformed in transit. The structural
+# guarantee that defeats every drift / collision bug the v1
+# broker_account_id SERIAL produced.
+# ------------------------------------------------------------------
+
+
+def build_tenant_id(broker_slug, broker_uuid):
+    """Compose the warehouse tenant_id from (broker_slug, broker_uuid).
+
+    Format spec (locked in docs/V2_TENANT_KEY_DESIGN.md):
+        tenant_id := "<broker_slug>:<broker_uuid>"
+
+    Raises ``ValueError`` for empty / invalid inputs — fail fast so
+    a None broker_uuid never silently becomes ``"snaptrade:None"``.
+    """
+    slug = (broker_slug or "").strip().lower()
+    if not slug:
+        raise ValueError("broker_slug is required")
+    uuid_part = (broker_uuid or "").strip()
+    if not uuid_part:
+        raise ValueError("broker_uuid is required")
+    return f"{slug}:{uuid_part}"
+
+
+def get_or_create_broker_tenant(
+    user_id,
+    broker_slug,
+    broker_uuid,
+    account_name,
+    account_mask=None,
+    broker_label=None,
+    snaptrade_connection_id=None,
+):
+    """Idempotent upsert for ``broker_tenants``. Returns ``tenant_id``.
+
+    Natural key is ``(broker_slug, broker_uuid)`` — globally unique
+    across all users, all brokers, all time. The same physical broker
+    account always resolves to the same tenant_id, even after a
+    Postgres drop+recreate (because broker_uuid is broker-issued, not
+    ours).
+
+    ``account_name``/``account_mask``/``broker_label`` are captured on
+    first insert and refreshed only if a non-empty new value differs
+    from what's already stored — broker APIs occasionally ship empty
+    nicknames mid-session and we don't want them to overwrite the
+    real label.
+    """
+    if user_id is None:
+        raise ValueError("user_id is required")
+    tenant_id = build_tenant_id(broker_slug, broker_uuid)
+    slug = (broker_slug or "").strip().lower()
+    uuid_part = (broker_uuid or "").strip()
+    label = (account_name or "").strip()
+    if not label:
+        raise ValueError("account_name is required")
+    mask = (account_mask or "").strip() or None
+    broker_lbl = (broker_label or "").strip() or None
+    snap_conn = (snaptrade_connection_id or "").strip() or None
+
+    row = fetch_one(
+        "SELECT tenant_id, account_name, account_mask, broker_label, "
+        "snaptrade_connection_id FROM broker_tenants WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    if row:
+        updates = []
+        params = []
+        if label and label != (row.get("account_name") or ""):
+            updates.append("account_name = %s")
+            params.append(label)
+        if mask and mask != (row.get("account_mask") or ""):
+            updates.append("account_mask = %s")
+            params.append(mask)
+        if broker_lbl and broker_lbl != (row.get("broker_label") or ""):
+            updates.append("broker_label = %s")
+            params.append(broker_lbl)
+        if snap_conn and snap_conn != (row.get("snaptrade_connection_id") or ""):
+            updates.append("snaptrade_connection_id = %s")
+            params.append(snap_conn)
+        if updates:
+            updates.append("updated_at = NOW()")
+            params.append(tenant_id)
+            execute(
+                "UPDATE broker_tenants SET "
+                + ", ".join(updates)
+                + " WHERE tenant_id = %s",
+                tuple(params),
+            )
+        return tenant_id
+
+    execute(
+        "INSERT INTO broker_tenants "
+        "(tenant_id, user_id, broker_slug, broker_uuid, account_name, "
+        " account_mask, broker_label, snaptrade_connection_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW()",
+        (
+            tenant_id, int(user_id), slug, uuid_part, label,
+            mask, broker_lbl, snap_conn,
+        ),
+    )
+    return tenant_id
+
+
+def get_broker_tenant(tenant_id):
+    """Full row by tenant_id, or None."""
+    if not tenant_id:
+        return None
+    return fetch_one(
+        "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
+        "account_name, account_mask, broker_label, "
+        "snaptrade_connection_id, connection_status, "
+        "connection_broken_at, first_sync_completed, display_nickname, "
+        "created_at, updated_at FROM broker_tenants WHERE tenant_id = %s",
+        (str(tenant_id),),
+    )
+
+
+def get_tenant_ids_for_user(user_id):
+    """Active tenant_ids the user can see.
+
+    Excludes rows with ``connection_status != 'active'`` — disabled
+    connections still exist as rows so we can fire a "Reconnect"
+    banner, but their warehouse data is filtered out at the SQL
+    boundary until the user re-auths.
+
+    Returns ``[]`` for None / unknown user / no connections.
+    """
+    if user_id is None:
+        return []
+    rows = fetch_all(
+        "SELECT tenant_id FROM broker_tenants "
+        "WHERE user_id = %s AND connection_status = 'active' "
+        "ORDER BY created_at",
+        (int(user_id),),
+    )
+    return [r["tenant_id"] for r in rows]
+
+
+def get_broker_tenants_for_user(user_id, include_inactive=False):
+    """Full broker_tenants rows for this user (Settings → Account display).
+
+    ``include_inactive=True`` also returns rows whose connection has
+    been marked disabled, so the UI can show "Reconnect" CTAs for them.
+    """
+    if user_id is None:
+        return []
+    sql = (
+        "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
+        "account_name, account_mask, broker_label, "
+        "snaptrade_connection_id, connection_status, "
+        "connection_broken_at, first_sync_completed, display_nickname, "
+        "created_at, updated_at FROM broker_tenants "
+        "WHERE user_id = %s"
+    )
+    if not include_inactive:
+        sql += " AND connection_status = 'active'"
+    sql += " ORDER BY created_at"
+    return fetch_all(sql, (int(user_id),))
+
+
+def mark_tenant_connection_broken(tenant_id):
+    """Flag a broker tenant as needing re-auth.
+
+    Idempotent on ``connection_broken_at`` — preserves the FIRST
+    detection timestamp so the banner doesn't reset every cron run.
+    """
+    if not tenant_id:
+        return
+    try:
+        execute(
+            "UPDATE broker_tenants SET "
+            "connection_status = 'disabled', "
+            "connection_broken_at = COALESCE(connection_broken_at, NOW()), "
+            "updated_at = NOW() "
+            "WHERE tenant_id = %s",
+            (str(tenant_id),),
+        )
+    except Exception as exc:
+        _log.warning("mark_tenant_connection_broken failed: %s", exc)
+
+
+def clear_tenant_connection_broken(tenant_id):
+    """Clear the broken-connection flag after successful re-auth."""
+    if not tenant_id:
+        return
+    execute(
+        "UPDATE broker_tenants SET "
+        "connection_status = 'active', "
+        "connection_broken_at = NULL, "
+        "updated_at = NOW() "
+        "WHERE tenant_id = %s",
+        (str(tenant_id),),
+    )
+
+
+def mark_tenant_first_sync_completed(tenant_id):
+    """Set ``first_sync_completed = TRUE`` after the initial pull."""
+    if not tenant_id:
+        return
+    execute(
+        "UPDATE broker_tenants SET first_sync_completed = TRUE, "
+        "updated_at = NOW() WHERE tenant_id = %s AND first_sync_completed = FALSE",
+        (str(tenant_id),),
+    )
+
+
+def get_broken_broker_tenants(user_id):
+    """Return tenant rows needing re-auth (for the in-app banner).
+
+    Mirrors ``get_expired_schwab_connections`` shape so the v1 banner
+    template can render the same ``display_nickname or account_name``
+    label.
+    """
+    if user_id is None:
+        return []
+    try:
+        return fetch_all(
+            "SELECT tenant_id, account_name, display_nickname, broker_label, "
+            "connection_broken_at FROM broker_tenants "
+            "WHERE user_id = %s AND connection_status != 'active' "
+            "ORDER BY created_at",
+            (int(user_id),),
+        )
+    except Exception as exc:
+        _log.warning("get_broken_broker_tenants failed: %s", exc)
+        return []
+
+
+# ------------------------------------------------------------------
 # Uploads
 # ------------------------------------------------------------------
 
@@ -1014,250 +1300,12 @@ def get_mirror_score_history(user_id, limit=8):
 
 
 # ------------------------------------------------------------------
-# Schwab API connections
-# ------------------------------------------------------------------
-
-def save_schwab_connection(user_id, account_hash, account_number, account_name, token_json):
-    """Save or update a Schwab connection.
-
-    Clears ``refresh_token_invalid_at`` on every upsert so completing
-    OAuth (which always lands here with a fresh token) automatically
-    dismisses the "Reconnect Schwab" banner without each callsite
-    having to remember.
-    """
-    execute(
-        """INSERT INTO schwab_connections
-           (user_id, account_hash, account_number, account_name, token_json, updated_at)
-           VALUES (%s, %s, %s, %s, %s, NOW())
-           ON CONFLICT (user_id, account_number) DO UPDATE SET
-               account_hash             = EXCLUDED.account_hash,
-               account_name             = EXCLUDED.account_name,
-               token_json               = EXCLUDED.token_json,
-               refresh_token_invalid_at = NULL,
-               updated_at               = NOW()""",
-        (user_id, account_hash, account_number, account_name or account_number, token_json),
-    )
-
-
-def update_schwab_token(user_id, account_number, token_json):
-    """Update the stored token for a Schwab connection (e.g. after refresh)."""
-    execute(
-        "UPDATE schwab_connections SET token_json = %s, updated_at = NOW() "
-        "WHERE user_id = %s AND account_number = %s",
-        (token_json, user_id, account_number),
-    )
-
-
-def update_schwab_tokens_for_user(user_id, token_json):
-    """
-    Replace token_json on every Schwab connection a user owns.
-
-    A single Schwab OAuth grant authorizes all the accounts under one
-    customer login; the same access/refresh token works for each one.
-    When a refresh rotates the token (or the user re-authorizes), every
-    connection row needs the new token or the next sync of the un-updated
-    rows will 401 with a stale refresh_token.
-
-    Also clears ``refresh_token_invalid_at`` on every row: if we just
-    landed a fresh token covering the whole login, every sibling
-    connection is implicitly valid again. Without this, the
-    "Reconnect Schwab" banner stays up after re-auth because
-    ``save_schwab_connection`` only clears the flag on the single row
-    matching the first ``accountNumbers`` entry — the other 4 of a
-    5-account login keep ``refresh_token_invalid_at`` set and the
-    banner template's ``IS NOT NULL`` query keeps matching them.
-    """
-    execute(
-        "UPDATE schwab_connections "
-        "SET token_json = %s, "
-        "    refresh_token_invalid_at = NULL, "
-        "    updated_at = NOW() "
-        "WHERE user_id = %s",
-        (token_json, user_id),
-    )
-
-
-def update_schwab_account_hash(user_id, account_number, account_hash):
-    """Update account hash when Schwab rotates hashValue (avoids 401 on trader API)."""
-    execute(
-        "UPDATE schwab_connections SET account_hash = %s, updated_at = NOW() "
-        "WHERE user_id = %s AND account_number = %s",
-        (account_hash, user_id, account_number),
-    )
-
-
-def get_schwab_connections(user_id):
-    """Lightweight metadata for every Schwab connection the user owns.
-
-    Returns ``schwab_first_sync_completed`` so callers can tell which
-    rows still need a full ~5-year history pull (the bulk
-    "Sync all accounts" loop and the ``/schwab/accounts``
-    "Synced before" / "First sync pending" badges both depend on this).
-    """
-    return fetch_all(
-        "SELECT account_number, account_name, display_nickname, "
-        "schwab_first_sync_completed, created_at "
-        "FROM schwab_connections WHERE user_id = %s",
-        (user_id,),
-    )
-
-
-def get_account_nicknames(user_id):
-    """Return ``{account_name: display_label}`` for every Schwab connection
-    the user owns.
-
-    ``display_label`` is the user-set ``display_nickname`` when present,
-    otherwise the raw ``account_name``. The dict is keyed on
-    ``account_name`` (the BigQuery tenancy key) so callers can render a
-    nicer label without changing the underlying value used for filtering
-    or storage. Renaming ``account_name`` is unsafe — it detaches every
-    existing trade row from this user — which is why nicknames live on
-    a separate column.
-
-    Used by the request-scoped ``account_label`` Jinja filter so every
-    template (positions hero, account dropdowns, profile badges, upload
-    picker, etc.) reflects the nickname the user set in
-    ``/profile?tab=account``.
-    """
-    if user_id is None:
-        return {}
-    try:
-        rows = fetch_all(
-            "SELECT account_name, display_nickname "
-            "FROM schwab_connections WHERE user_id = %s",
-            (user_id,),
-        )
-    except Exception as exc:
-        _log.warning("get_account_nicknames failed: %s", exc)
-        return {}
-    out = {}
-    for r in rows:
-        name = (r.get("account_name") or "").strip()
-        if not name:
-            continue
-        nick = (r.get("display_nickname") or "").strip()
-        out[name] = nick or name
-    return out
-
-
-def get_schwab_connection(user_id, account_number=None):
-    """Return a user's Schwab connection (token_json + account_hash).
-    If account_number is None, returns the first connection."""
-    if account_number:
-        return fetch_one(
-            "SELECT account_hash, account_number, account_name, display_nickname, "
-            "token_json, schwab_first_sync_completed "
-            "FROM schwab_connections WHERE user_id = %s AND account_number = %s",
-            (user_id, account_number),
-        )
-    return fetch_one(
-        "SELECT account_hash, account_number, account_name, display_nickname, "
-        "token_json, schwab_first_sync_completed "
-        "FROM schwab_connections WHERE user_id = %s LIMIT 1",
-        (user_id,),
-    )
-
-
-_MAX_SCHWAB_NICKNAME_LEN = 80
-
-
-def update_schwab_connection_nickname(user_id, account_number, nickname):
-    """
-    Set or clear the *display-only* nickname for a Schwab connection.
-
-    `nickname` is trimmed; empty / whitespace clears the field (so the UI
-    falls back to account_name). `account_name` is intentionally NOT
-    touched — it is the warehouse tenancy key and renaming it would
-    detach every existing trade row from this user. Returns True if a
-    row was updated.
-    """
-    label = (nickname or "").strip()
-    if len(label) > _MAX_SCHWAB_NICKNAME_LEN:
-        label = label[:_MAX_SCHWAB_NICKNAME_LEN]
-    value = label or None
-    try:
-        execute(
-            "UPDATE schwab_connections SET display_nickname = %s, updated_at = NOW() "
-            "WHERE user_id = %s AND account_number = %s",
-            (value, user_id, account_number),
-        )
-        return True
-    except Exception as exc:
-        _log.warning("update_schwab_connection_nickname failed: %s", exc)
-        return False
-
-
-def mark_schwab_first_sync_completed(user_id, account_number=None):
-    """
-    After a successful manual sync, stop defaulting the account tab to
-    full-history. When ``account_number`` is given, mark just that
-    connection (so newly added accounts can still default to full
-    history on their own first sync); otherwise mark every row for the
-    user (legacy behavior).
-    """
-    if account_number:
-        execute(
-            "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
-            "WHERE user_id = %s AND account_number = %s",
-            (user_id, account_number),
-        )
-        return
-    execute(
-        "UPDATE schwab_connections SET schwab_first_sync_completed = TRUE "
-        "WHERE user_id = %s",
-        (user_id,),
-    )
-
-
-def remove_schwab_connection(user_id, account_number):
-    execute(
-        "DELETE FROM schwab_connections WHERE user_id = %s AND account_number = %s",
-        (user_id, account_number),
-    )
-
-
-def mark_schwab_refresh_token_invalid(user_id, account_number):
-    """Flag a connection as needing re-auth because Schwab rejected
-    the stored refresh token. Idempotent: keeps the *original*
-    detection timestamp so the banner doesn't reset every cron run.
-    """
-    try:
-        execute(
-            "UPDATE schwab_connections "
-            "SET refresh_token_invalid_at = COALESCE(refresh_token_invalid_at, NOW()) "
-            "WHERE user_id = %s AND account_number = %s",
-            (user_id, account_number),
-        )
-    except Exception as exc:
-        _log.warning("mark_schwab_refresh_token_invalid failed: %s", exc)
-
-
-def get_expired_schwab_connections(user_id):
-    """Return the user's Schwab connections that need re-auth (rows
-    with ``refresh_token_invalid_at`` set). Returned shape mirrors
-    ``get_schwab_connections`` so the banner template can render the
-    same ``display_nickname or account_name`` label users see in the
-    rest of the UI.
-    """
-    if user_id is None:
-        return []
-    try:
-        return fetch_all(
-            "SELECT account_number, account_name, display_nickname, "
-            "refresh_token_invalid_at "
-            "FROM schwab_connections "
-            "WHERE user_id = %s AND refresh_token_invalid_at IS NOT NULL "
-            "ORDER BY created_at",
-            (user_id,),
-        )
-    except Exception as exc:
-        _log.warning("get_expired_schwab_connections failed: %s", exc)
-        return []
-
-
-# ------------------------------------------------------------------
 # SnapTrade aggregator connections
 # ------------------------------------------------------------------
+#
+# Direct Schwab (`schwab_connections` + app/schwab.py) was removed in v2.
+# The legacy table DDL remains in init_db for existing deployments until
+# Phase 6 cutover drops it — see scripts/admin/v2_cutover_reset.py.
 #
 # SnapTrade is an OAuth-style brokerage aggregator that gives us a single
 # integration covering ~20 brokers (Schwab, Fidelity, Vanguard, Robinhood,

@@ -39,7 +39,7 @@ def main():
         SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
         snaptrade_enabled,
     )
-    from app.schwab import _bulk_sync_lookback_days
+    from app.snaptrade import _bulk_sync_lookback_days
 
     if not snaptrade_enabled():
         print("SnapTrade is not configured (missing env or SDK). Exiting.", file=sys.stderr)

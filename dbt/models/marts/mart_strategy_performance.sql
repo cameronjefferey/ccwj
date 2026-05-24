@@ -22,8 +22,9 @@ with base as (
     select
         account,
         user_id,
-        -- Stage 2 broker_account_id passthrough (positions_summary already carries it).
-        any_value(broker_account_id) as broker_account_id,
+        -- v2 tenant_id passthrough — positions_summary already carries it.
+        -- See docs/V2_TENANT_KEY_DESIGN.md.
+        any_value(tenant_id) as tenant_id,
         strategy,
         sum(total_pnl)              as total_pnl,
         sum(trade_only_pnl)         as trade_only_pnl,
@@ -55,7 +56,7 @@ with_win_rate as (
 select
     account,
     user_id,
-    broker_account_id,
+    tenant_id,
     strategy,
     round(total_pnl, 2)           as total_pnl,
     round(trade_only_pnl, 2)      as trade_only_pnl,

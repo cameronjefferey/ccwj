@@ -9,7 +9,12 @@ from flask import render_template, redirect, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.routes import _account_sql_filter, _account_sql_and, _user_account_list
+from app.routes import (
+    _tenants_for_scope,
+    _tenant_sql_filter,
+    _tenant_sql_and,
+    _user_account_list,
+)
 import pandas as pd
 
 
@@ -71,7 +76,7 @@ BUSIEST_MONTH_QUERY = """
         FORMAT_DATE('%%Y-%%m', open_date) AS month,
         COUNT(*) AS trades_opened
     FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE open_date IS NOT NULL {account_filter}
+    WHERE open_date IS NOT NULL {tenant_filter}
     GROUP BY 1
     ORDER BY trades_opened DESC
     LIMIT 1
@@ -203,7 +208,7 @@ def _build_profile(client, where, acct_and):
     # Busiest month
     try:
         bm_df = client.query(
-            BUSIEST_MONTH_QUERY.format(account_filter=acct_and)
+            BUSIEST_MONTH_QUERY.format(tenant_filter=tenant_and)
         ).to_dataframe()
         if not bm_df.empty:
             profile["busiest_month"] = str(bm_df.iloc[0]["month"])
@@ -336,9 +341,10 @@ def first_look():
 
     try:
         client = get_bigquery_client()
-        where = _account_sql_filter(user_accounts)
-        acct_and = _account_sql_and(user_accounts) if user_accounts else ""
-        profile = _build_profile(client, where, acct_and)
+        tenant_ids = _tenants_for_scope()
+        where = _tenant_sql_filter(tenant_ids)
+        tenant_and = _tenant_sql_and(tenant_ids)
+        profile = _build_profile(client, where, tenant_and)
 
         if not profile:
             return redirect(url_for("weekly_review"))

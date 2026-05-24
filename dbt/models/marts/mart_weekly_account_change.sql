@@ -79,8 +79,8 @@ dividends_other as (
 select
     wb.account,
     wb.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     wb.week_start,
     wb.account_value_start,
     wb.account_value_end,
@@ -99,7 +99,7 @@ left join dividends_other do
   on wb.account = do.account
  and (wb.user_id is not distinct from do.user_id)
  and wb.week_start = do.week_start
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
   on wb.account = dba.account_name
  and (wb.user_id is not distinct from dba.user_id)
 order by wb.account, wb.user_id, wb.week_start

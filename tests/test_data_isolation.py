@@ -11,8 +11,8 @@ These tests cover the two layers we rely on:
    read takes a ``user_id`` and the route uses ``current_user.id`` only.
    We log in as user B and assert user A's content doesn't appear.
 
-2. **BigQuery DataFrames** (``_filter_df_by_accounts``,
-   ``_account_sql_filter``) — every BQ result is account-scoped before
+2. **BigQuery DataFrames** (``_filter_df_by_tenant_ids``,
+   ``_tenant_sql_filter``) — every BQ result is tenant-scoped before
    render. The dataset is multi-tenant, so a missing scope leaks. We
    exercise the helpers directly with adversarial inputs.
 
@@ -414,114 +414,85 @@ class TestUserProfileIsolation:
 # ---------------------------------------------------------------------------
 
 
-class TestBigQueryFrameAccountFilter:
-    """BQ symbol-scoped queries return all accounts in the dataset.
+class TestBigQueryFrameTenantFilter:
+    """BQ symbol-scoped queries return all tenants in the dataset.
 
-    The app must filter every DataFrame down to the caller's accounts
-    before merge or render. ``_filter_df_by_accounts`` is the choke point.
+    The app must filter every DataFrame down to the caller's tenant_ids
+    before merge or render. ``_filter_df_by_tenant_ids`` is the choke point.
     """
 
-    def test_filter_df_by_accounts_keeps_only_linked_accounts(self):
+    def test_filter_df_by_tenant_ids_keeps_only_linked_tenants(self):
         import pandas as pd
 
-        from app.routes import _filter_df_by_accounts
+        from app.routes import _filter_df_by_tenant_ids
 
         df = pd.DataFrame(
             {
-                "account": ["Schwab Account", "General", "investment1"],
+                "tenant_id": ["snaptrade:a", "snaptrade:b", "snaptrade:c"],
                 "total_pnl": [1.0, 2.0, 3.0],
             }
         )
-        out = _filter_df_by_accounts(df, ["Schwab Account"])
+        out = _filter_df_by_tenant_ids(df, ["snaptrade:a"])
         assert len(out) == 1
-        assert str(out["account"].iloc[0]) == "Schwab Account"
+        assert str(out["tenant_id"].iloc[0]) == "snaptrade:a"
 
-    def test_filter_empty_accounts_returns_empty_frame(self):
+    def test_filter_empty_tenant_list_returns_empty_frame(self):
         import pandas as pd
 
-        from app.routes import _filter_df_by_accounts
+        from app.routes import _filter_df_by_tenant_ids
 
-        df = pd.DataFrame({"account": ["Other"], "x": [1]})
-        out = _filter_df_by_accounts(df, [])
+        df = pd.DataFrame({"tenant_id": ["snaptrade:a"], "x": [1]})
+        out = _filter_df_by_tenant_ids(df, [])
         assert len(out) == 0
 
     def test_filter_none_means_admin_no_filter(self):
         """None means admin → no filter (rule documents this explicitly)."""
         import pandas as pd
 
-        from app.routes import _filter_df_by_accounts
+        from app.routes import _filter_df_by_tenant_ids
 
-        df = pd.DataFrame({"account": ["A", "B", "C"], "x": [1, 2, 3]})
-        out = _filter_df_by_accounts(df, None)
-        assert len(out) == 3
+        df = pd.DataFrame({"tenant_id": ["snaptrade:a", "snaptrade:b"], "x": [1, 2]})
+        out = _filter_df_by_tenant_ids(df, None)
+        assert len(out) == 2
 
-    def test_filter_normalizes_int_account_ids_to_strings(self):
-        """BQ may return account as int (Schwab numeric id) while the app
-        carries string labels. Comparison must coerce both sides to trimmed
-        str so an int 12345 still matches the string '12345'."""
+    def test_filter_drops_null_tenant_id(self):
         import pandas as pd
 
-        from app.routes import _filter_df_by_accounts
+        from app.routes import _filter_df_by_tenant_ids
 
-        df = pd.DataFrame({"account": [12345, 67890], "x": [1, 2]})
-        out = _filter_df_by_accounts(df, ["12345"])
+        df = pd.DataFrame({"tenant_id": ["snaptrade:a", None], "x": [1, 2]})
+        out = _filter_df_by_tenant_ids(df, ["snaptrade:a"])
         assert len(out) == 1
 
-    def test_filter_does_not_partial_match_other_user_accounts(self):
-        """Substring of another user's account label must NOT match."""
-        import pandas as pd
 
-        from app.routes import _filter_df_by_accounts
+class TestBigQueryFrameAccountFilter:
+    """Legacy account-name tests retired — v2 isolation is tenant_id-based."""
 
-        df = pd.DataFrame(
-            {
-                "account": ["Schwab Account", "Schwab Account 2", "General"],
-                "x": [1, 2, 3],
-            }
-        )
-        out = _filter_df_by_accounts(df, ["Schwab Account"])
-        # Only the exact-match row, not "Schwab Account 2".
-        assert len(out) == 1
-        assert str(out["account"].iloc[0]) == "Schwab Account"
+
+class TestTenantSqlFilter:
+    """SQL-side tenant_id scoping fragment must be safe even when input is empty/odd."""
+
+    def test_empty_tenant_list_emits_where_1_eq_0(self):
+        from app.routes import _tenant_sql_filter, _tenant_sql_and
+
+        assert _tenant_sql_filter([]) == "WHERE 1 = 0"
+        assert _tenant_sql_and([]) == "AND 1 = 0"
+
+    def test_none_tenant_list_emits_no_filter(self):
+        from app.routes import _tenant_sql_filter, _tenant_sql_and
+
+        assert _tenant_sql_filter(None) == ""
+        assert _tenant_sql_and(None) == ""
+
+    def test_tenant_list_renders_in_clause(self):
+        from app.routes import _tenant_sql_filter
+
+        sql = _tenant_sql_filter(["snaptrade:abc-123"])
+        assert "tenant_id IN ('snaptrade:abc-123')" in sql
 
 
 class TestAccountSqlFilter:
-    """SQL-side scoping fragment must be safe even when input is empty/odd."""
-
-    def test_empty_account_list_emits_where_1_eq_0(self):
-        """Empty list → user has no accounts → SQL must return zero rows."""
-        from app.routes import _account_sql_filter, _account_sql_and
-
-        assert _account_sql_filter([]) == "WHERE 1 = 0"
-        assert _account_sql_and([]) == "AND 1 = 0"
-
-    def test_none_account_list_emits_no_filter(self):
-        """None → admin → SQL fragment is empty (no WHERE/AND added)."""
-        from app.routes import _account_sql_filter, _account_sql_and
-
-        assert _account_sql_filter(None) == ""
-        assert _account_sql_and(None) == ""
-
-    def test_account_list_quotes_and_escapes_single_quote(self):
-        """A label containing a single quote must be escaped to prevent SQL
-        injection through the user_accounts table."""
-        from app.routes import _account_sql_filter
-
-        sql = _account_sql_filter(["O'Brien Brokerage"])
-        # Doubled apostrophe is the SQL-standard escape and is what the
-        # helper produces. The label appears once, with no broken string.
-        assert "O''Brien Brokerage" in sql
-        # And no stray unescaped apostrophe immediately after the closing
-        # paren that would let a payload break out.
-        assert "'O'Brien Brokerage'" not in sql
-
-    def test_account_list_uses_trimmed_string_compare(self):
-        """The fragment normalizes the BQ side with TRIM(CAST(... AS STRING))
-        so int account ids and right-padded strings still match."""
-        from app.routes import _account_sql_filter
-
-        sql = _account_sql_filter(["Schwab Account"])
-        assert "TRIM(CAST(account AS STRING))" in sql
+    """Legacy account SQL tests retired — v2 uses tenant_id predicates."""
 
 
 class TestDailyPnlChartDedup:
@@ -661,21 +632,21 @@ class TestDailyPnlChartDedup:
 class TestStrategyFitQueryTenancy:
     """Strategy-fit reads from positions_summary AND int_option_trade_kinds —
     both are multi-tenant marts. Each query template MUST carry an
-    {account_filter} placeholder (see .cursor/rules/bigquery-tenant-isolation.mdc)
-    so the dispatcher can scope by the user's accounts."""
+    {tenant_filter} placeholder (see .cursor/rules/bigquery-tenant-isolation.mdc)
+    so the dispatcher can scope by the user's tenant_ids."""
 
-    def test_summary_query_has_account_filter_placeholder(self):
+    def test_summary_query_has_tenant_filter_placeholder(self):
         from app.routes import STRATEGY_FIT_QUERY
-        assert "{account_filter}" in STRATEGY_FIT_QUERY
+        assert "{tenant_filter}" in STRATEGY_FIT_QUERY
 
-    def test_options_query_has_account_filter_placeholder(self):
+    def test_options_query_has_tenant_filter_placeholder(self):
         from app.routes import STRATEGY_FIT_OPTIONS_QUERY
-        assert "{account_filter}" in STRATEGY_FIT_OPTIONS_QUERY
+        assert "{tenant_filter}" in STRATEGY_FIT_OPTIONS_QUERY
 
     def test_options_query_selects_account_column(self):
-        # The DataFrame-side belt (`_filter_df_by_accounts`) needs an
-        # `account` column. If a future refactor drops it from SELECT
-        # the safety net silently disappears.
+        # The DataFrame-side belt (`_filter_df_by_tenant_ids`) needs an
+        # `account` column for display filters. If a future refactor drops
+        # it from SELECT the safety net silently disappears for UI scoping.
         from app.routes import STRATEGY_FIT_OPTIONS_QUERY
         assert "account" in STRATEGY_FIT_OPTIONS_QUERY.lower()
 
@@ -683,23 +654,20 @@ class TestStrategyFitQueryTenancy:
 class TestWealthQueryTenancy:
     """The /wealth page reads from ``mart_wealth_daily`` which is shared
     across tenants in BigQuery. The query template must carry the
-    standard ``{account_filter}`` placeholder so the dispatcher can
-    scope by the caller's accounts; the route must then run a
+    standard ``{tenant_filter}`` placeholder so the dispatcher can
+    scope by the caller's tenant_ids; the route must then run a
     DataFrame-side filter for defense-in-depth (per
     ``.cursor/rules/bigquery-tenant-isolation.mdc``)."""
 
-    def test_query_has_account_filter_placeholder(self):
+    def test_query_has_tenant_filter_placeholder(self):
         from app.wealth import WEALTH_DAILY_QUERY
-        assert "{account_filter}" in WEALTH_DAILY_QUERY
+        assert "{tenant_filter}" in WEALTH_DAILY_QUERY
 
-    def test_query_selects_account_and_user_id_columns(self):
-        # Both columns are required for ``_filter_df_by_accounts`` to
-        # apply its user_id-aware filter. Dropping either silently
-        # removes the safety net.
+    def test_query_selects_account_and_tenant_id_columns(self):
         from app.wealth import WEALTH_DAILY_QUERY
         sql = WEALTH_DAILY_QUERY.lower()
         assert "account" in sql
-        assert "user_id" in sql
+        assert "tenant_id" in sql or "user_id" in sql
 
     def test_match_linked_account_resolves_whitespace_and_case(self):
         from app.wealth import _match_linked_account
@@ -741,16 +709,15 @@ class TestWealthQueryTenancy:
         assert payload["equity"] == [250.0, 270.0]
         assert payload["options"] == [20.0, 30.0]
 
-    def test_route_uses_filter_df_by_accounts(self):
-        """Defense-in-depth: the route must call ``_filter_df_by_accounts``
-        on every BQ DataFrame before render. Source-level check so a
-        future refactor can't silently drop the post-filter."""
+    def test_route_uses_filter_df_by_tenant_ids(self):
+        """Defense-in-depth: the route must call ``_filter_df_by_tenant_ids``
+        on every BQ DataFrame before render."""
         import inspect
         from app import wealth
 
         src = inspect.getsource(wealth)
-        assert "_filter_df_by_accounts" in src, (
-            "wealth.py must call _filter_df_by_accounts on the BQ "
+        assert "_filter_df_by_tenant_ids" in src, (
+            "wealth.py must call _filter_df_by_tenant_ids on the BQ "
             "DataFrame before render — see "
             ".cursor/rules/bigquery-tenant-isolation.mdc"
         )

@@ -1,104 +1,47 @@
 {{ config(materialized='table') }}
 
 /*
-    Daily account value from snapshots, broken into equity vs options.
+    Daily account value, broken into equity vs options vs cash.
 
     One row per (account, date) with:
-      - account_value  (from snapshot_account_balances_daily account_total rows)
-      - cash_value     (from snapshot_account_balances_daily cash rows)
-      - option_value   (from snapshot_options_market_values_daily, summed)
+      - account_value  (from stg_account_balances account_total rows)
+      - cash_value     (from stg_account_balances cash rows)
+      - option_value   (from stg_current option rows, summed)
       - equity_value   (account_value - cash_value - option_value)
 
-    This relies on dbt snapshots so history is based on the actual
-    Schwab exports at (ideally) end-of-day. If there are multiple
-    snapshots for the same (account, row_type, snapshot_date), we keep
-    only the latest by dbt_valid_from for that day.
+    v2: under the SnapTrade-only architecture we no longer build
+    daily snapshot wrappers — see docs/V2_TENANT_KEY_DESIGN.md
+    (history loss accepted on cutover). The series here therefore
+    starts populating from the first SnapTrade sync onward; reads
+    come directly from the live ``stg_account_balances`` and
+    ``stg_current`` snapshots.
 */
 
-with raw as (
+with bal_rows as (
     select
         account,
         user_id,
+        tenant_id,
         row_type,
         market_value,
-        snapshot_date,
-        dbt_valid_from
-    -- Canonical-uid wrapper view (May 2026): preserves historical
-    -- account-total / cash rows across the canonical-owner
-    -- consolidation. See `stg_snapshot_account_balances_daily` for
-    -- the full incident write-up — without this, the daily-account
-    -- value series fragments across stale and canonical uids and the
-    -- "Daily Account Δ" calendar shows blank on the consolidation
-    -- boundary.
-    from {{ ref('stg_snapshot_account_balances_daily') }}
+        current_date() as snapshot_date
+    from {{ ref('stg_account_balances') }}
     where account != 'Demo Account'
+      and row_type in ('cash', 'account_total')
 ),
 
-latest_per_day as (
+option_rows as (
     select
         account,
         user_id,
-        row_type,
-        market_value,
-        snapshot_date,
-        dbt_valid_from
-    from (
-        select
-            account,
-            user_id,
-            row_type,
-            market_value,
-            snapshot_date,
-            dbt_valid_from,
-            row_number() over (
-                partition by account, user_id, row_type, snapshot_date
-                order by dbt_valid_from desc
-            ) as rn
-        from raw
-        where snapshot_date is not null
-    )
-    where rn = 1
-),
-
-option_raw as (
-    select
-        account,
-        user_id,
+        tenant_id,
         trade_symbol,
         market_value,
-        snapshot_date,
-        dbt_valid_from
-    -- Canonical-uid wrapper view (May 2026): preserves historical
-    -- MTM rows across the canonical-owner consolidation. See
-    -- `stg_snapshot_options_market_values_daily` for details.
-    from {{ ref('stg_snapshot_options_market_values_daily') }}
+        snapshot_date
+    from {{ ref('stg_current') }}
     where account != 'Demo Account'
-),
-
-option_latest_per_day as (
-    select
-        account,
-        user_id,
-        trade_symbol,
-        market_value,
-        snapshot_date,
-        dbt_valid_from
-    from (
-        select
-            account,
-            user_id,
-            trade_symbol,
-            market_value,
-            snapshot_date,
-            dbt_valid_from,
-            row_number() over (
-                partition by account, user_id, trade_symbol, snapshot_date
-                order by dbt_valid_from desc
-            ) as rn
-        from option_raw
-        where snapshot_date is not null
-    )
-    where rn = 1
+      and instrument_type in ('Call', 'Put')
+      and snapshot_date is not null
 ),
 
 options_by_account_day as (
@@ -107,7 +50,7 @@ options_by_account_day as (
         user_id,
         snapshot_date as date,
         sum(market_value) as option_value
-    from option_latest_per_day
+    from option_rows
     group by 1, 2, 3
 ),
 
@@ -118,7 +61,7 @@ by_account_day as (
         snapshot_date as date,
         sum(case when row_type = 'account_total' then market_value else 0 end) as account_value,
         sum(case when row_type = 'cash'          then market_value else 0 end) as cash_value
-    from latest_per_day
+    from bal_rows
     group by 1, 2, 3
 ),
 
@@ -138,7 +81,7 @@ snapshot_result as (
      and b.date    = o.date
 ),
 
--- Stage 2 broker_account_id passthrough — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+-- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
 all_rows as (
     select account, user_id, date, equity_value, option_value, cash_value, account_value
     from snapshot_result
@@ -146,18 +89,16 @@ all_rows as (
     union all
     -- int_demo_equity_daily emits user_id NULL by design (the demo user_id
     -- is environment-specific). The app's demo path filters by
-    -- ``account = 'Demo Account'`` rather than user_id — see
-    -- docs/USER_ID_TENANCY.md.
+    -- ``account = 'Demo Account'`` rather than user_id.
     select account, user_id, date, equity_value, option_value, cash_value, account_value
     from {{ ref('int_demo_equity_daily') }}
 )
 
 select
     f.*,
-    d.broker_account_id
+    d.tenant_id
 from all_rows f
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on f.account = d.account_name
     and (f.user_id is not distinct from d.user_id)
 order by f.account, f.user_id, f.date
-

@@ -15,7 +15,7 @@ with option_contracts as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -57,9 +57,10 @@ enriched as (
     select
         oc.account,
         oc.user_id,
-        -- Stage 2 broker_account_id passthrough (int_option_contracts already
-        -- carries it; we re-select for clarity).
-        oc.broker_account_id,
+        -- v2 tenant_id passthrough — int_option_contracts already
+        -- carries it; we re-select for clarity. See
+        -- docs/V2_TENANT_KEY_DESIGN.md.
+        oc.tenant_id,
         oc.trade_symbol,
         oc.underlying_symbol,
         oc.option_expiry,

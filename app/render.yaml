@@ -3,119 +3,34 @@
 # SCOPE: This Blueprint manages **background jobs only** (cron services).
 # The web service `ccwj` (https://happytrader.me) is intentionally NOT
 # declared here — it was created manually in the Render dashboard and
-# stays manually managed for now. Migrating it would require a service
-# rename, custom-domain re-attachment, and full env-var re-entry, which
-# isn't worth the downtime just to consolidate config.
+# stays manually managed for now.
 #
-# Going forward, add new broker syncs (Fidelity, IBKR, Robinhood, etc.)
-# as additional `type: cron` entries below. After editing, push to
-# master and click "Sync" on the Blueprint in the Render dashboard for
-# Render to apply the changes.
+# Going forward, broker sync runs through SnapTrade only. Add additional
+# cron entries here only if a second scheduled job is needed (e.g. price
+# refresh); do not reintroduce direct broker OAuth crons.
 #
-# DST NOTE — Render cron schedules are UTC and DO NOT observe DST. The
-# schedules in this file are tuned for **PDT (UTC-7)** because that's
-# what's in effect today (May 2026). The user's preferred local times
-# are 1:01pm / 1:06pm / 1:31pm Pacific. When DST ends in November, you
-# must add +1 hour to every UTC schedule below to keep the same local
-# Pacific time (e.g. `1 20` → `1 21` for the `_close` cron). One annual
-# bump in March (subtract 1) and one in November (add 1).
-#
-# OUTSIDE THIS FILE (Blueprint can't see them):
-#   - `ccwj` web service (srv-d0qea7ripnbc73ea9v5g): the Flask app at
-#     happytrader.me. Manually managed for the rename/downtime reason
-#     stated above.
+# DST NOTE — Render cron schedules are UTC and DO NOT observe DST.
+# Preferred local time: ~1:06pm Pacific post-close. When DST ends in
+# November, add +1 hour to the UTC schedule below.
 #
 # Stagger choreography (post-close window in PDT):
-#   20:01 UTC → 1:01pm PDT → `happy-trader-schwab-sync-close` (Schwab primary)
-#   20:06 UTC → 1:06pm PDT → `happytrader-snaptrade-sync`     (SnapTrade)
-#   20:31 UTC → 1:31pm PDT → `happytrader-schwab-sync`        (Schwab backup)
+#   20:06 UTC → 1:06pm PDT → `happytrader-snaptrade-sync`
 #
 services:
 
   # ──────────────────────────────────────────────────────────────────
-  # Schwab primary post-close sync (1:01pm PDT / 20:01 UTC).
-  #
-  # The first of two daily Schwab pulls. Designed to land minutes after
-  # the 4pm ET market close so users get same-day activity on the
-  # dashboard before the next session opens. The second pull at 1:31pm
-  # PDT (`happytrader-schwab-sync` below) is a 30-minute backup in case
-  # this one hits a transient Schwab API error.
-  #
-  # Migration history: this cron lived in the Render dashboard from
-  # April 2026 → May 2026 as a manually-managed service (id
-  # crn-d7ptctebn58s73867bh0). It was migrated into the Blueprint on
-  # 2026-05-15 to consolidate config. The new Blueprint-managed cron
-  # has a different cron ID; the old crn-d7ptctebn58s73867bh0 was
-  # deleted from the dashboard as part of the migration.
-  # ──────────────────────────────────────────────────────────────────
-  - type: cron
-    name: happy-trader-schwab-sync-close
-    env: python
-    schedule: "1 20 * * 1-5"
-    # The 3x retry chain below absorbs Render's transient network
-    # blips on the PyPI download path. Without it, a single dropped
-    # mid-download wheel surfaces as "PACKAGES DO NOT MATCH THE
-    # HASHES FROM THE REQUIREMENTS FILE" with `unknown package` (pip
-    # interprets a truncated wheel as a hash failure — see pip issue
-    # pypa/pip#12424, closed wontfix). The OS shell runs left to right
-    # on `||`, succeeds on the first attempt that exits 0, and only
-    # exits non-zero (failing the build) if ALL THREE attempts fail
-    # — at which point the issue is no longer transient.
-    #
-    # `--no-cache-dir` is preserved so a corrupted on-disk wheel can't
-    # poison subsequent builds; combined with retry, this makes the
-    # cron build maximally robust to environment quirks.
-    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
-    startCommand: python -m app.schwab_sync_cli
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.8"
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: ccwj
-          envVarKey: DATABASE_URL
-      - key: SECRET_KEY
-        sync: false
-      - key: SCHWAB_SYNC_TRANSACTION_DAYS
-        value: "3"
-
-      # Set ONCE in the Render dashboard after Blueprint Sync creates
-      # this service. Use the same values configured on `ccwj` (web)
-      # and `happytrader-schwab-sync` (cron).
-      - key: SCHWAB_APP_KEY
-        sync: false
-      - key: SCHWAB_APP_SECRET
-        sync: false
-      - key: GITHUB_PAT
-        sync: false
-      - key: GITHUB_REPO
-        sync: false
-      - key: GITHUB_BRANCH
-        sync: false
-
-  # ──────────────────────────────────────────────────────────────────
   # SnapTrade sync (1:06pm PDT / 20:06 UTC).
   #
-  # Covers every NON-Schwab broker (Fidelity, Vanguard, Robinhood,
-  # IBKR, Tradier, etc.) connected through the SnapTrade aggregator.
-  # Iterates every row in `snaptrade_accounts`, normalizes activities
-  # + positions + balances + recent_orders, pushes seed CSVs to GitHub
-  # which triggers the dbt rebuild.
-  #
-  # The 5-minute gap from `_close` above is well clear of the 1-minute
-  # collision window the Actions workflow's `concurrency:
-  # cancel-in-progress: true` setting would otherwise drop, AND it
-  # gives the Schwab cron's GitHub push enough head start that the
-  # dbt build is past the seed-load step before the SnapTrade push
-  # arrives — keeps the two pushes from queueing on the same Actions
-  # run.
+  # Covers every broker connected through SnapTrade (Schwab, Fidelity,
+  # Vanguard, Robinhood, IBKR, Tradier, etc.). Iterates every row in
+  # `broker_tenants` / legacy `snaptrade_accounts`, normalizes activities
+  # + positions + balances, pushes seed CSVs to GitHub which triggers the
+  # dbt rebuild.
   # ──────────────────────────────────────────────────────────────────
   - type: cron
     name: happytrader-snaptrade-sync
     env: python
     schedule: "6 20 * * 1-5"
-    # See _close cron above for why --no-cache-dir + 3x retry.
     buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
     startCommand: python -m app.snaptrade_sync_cli
     envVars:
@@ -129,94 +44,14 @@ services:
       - key: SECRET_KEY
         sync: false
 
-      # Each daily run only needs a small overlapping window. The
-      # routine-vs-full-history decision happens per row inside the CLI
-      # (first sync gets full window; subsequent syncs get this).
-      - key: SCHWAB_SYNC_TRANSACTION_DAYS
+      - key: SNAPTRADE_SYNC_TRANSACTION_DAYS
         value: "3"
 
-      # SnapTrade SDK credentials — set ONCE in the Render dashboard.
-      # SNAPTRADE_REDIRECT_URI is only used by the OAuth callback flow
-      # and is not needed by the cron.
       - key: SNAPTRADE_CLIENT_ID
         sync: false
       - key: SNAPTRADE_CONSUMER_KEY
         sync: false
 
-      - key: GITHUB_PAT
-        sync: false
-      - key: GITHUB_REPO
-        sync: false
-      - key: GITHUB_BRANCH
-        sync: false
-
-  # ──────────────────────────────────────────────────────────────────
-  # Schwab backup post-close sync (1:31pm PDT / 20:31 UTC).
-  #
-  # Replaces the manual "Sync now" button click. Iterates every row in
-  # `schwab_connections` and runs the same _run_sync() the dashboard
-  # button calls. Each successful sync pushes updated seed CSVs to
-  # GitHub, which triggers .github/workflows/bigquery_update.yml on
-  # push and rebuilds the dbt marts. No BigQuery credentials needed
-  # here — the cron only touches Postgres, Schwab, and the GitHub API.
-  #
-  # This is the BACKUP run; the primary is `_close` above at 1:01pm
-  # PDT. The 30-minute gap covers transient Schwab API errors on the
-  # primary without overlapping the SnapTrade window.
-  # ──────────────────────────────────────────────────────────────────
-  - type: cron
-    name: happytrader-schwab-sync
-    env: python
-    schedule: "31 20 * * 1-5"
-    # See _close cron above for why --no-cache-dir + 3x retry.
-    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
-    startCommand: python -m app.schwab_sync_cli
-    envVars:
-      # Pin Python explicitly. Render now defaults new services to
-      # Python 3.14, which has no prebuilt wheels for several packages
-      # we pin (pydantic_core==2.27.2, etc.) and falls back to a Rust
-      # source build that fails in Render's read-only Cargo cache.
-      # 3.12.x has wheels for everything in requirements.txt.
-      - key: PYTHON_VERSION
-        value: "3.12.8"
-
-      # Pull DATABASE_URL from the existing manually-managed web service
-      # so we never have two divergent copies of the connection string.
-      # `name` here must match the service's exact name in the Render
-      # dashboard (currently `ccwj`). `key` is how this var is named
-      # locally on the cron service; `envVarKey` is the name on the
-      # source service.
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: ccwj
-          envVarKey: DATABASE_URL
-
-      # `python -m app.schwab_sync_cli` imports the `app` package, which
-      # runs `app/__init__.py`, which loads `config.Config` and raises
-      # if SECRET_KEY is unset. The cron has no sessions, cookies, or
-      # CSRF — SECRET_KEY here is purely a placeholder for Flask app
-      # init. Any non-empty string works. (Tried `generateValue: true`;
-      # Render's Blueprint sync didn't reliably apply it to an existing
-      # cron service, so we treat it like the other secrets below and
-      # set it once in the Render dashboard.)
-      - key: SECRET_KEY
-        sync: false
-
-      # Each daily run only needs a small overlapping window — the
-      # previous day's run already covered everything older. 3 days
-      # handles a single missed run (long weekend, Render outage)
-      # without re-pulling 60 days of trades on every cron tick.
-      - key: SCHWAB_SYNC_TRANSACTION_DAYS
-        value: "3"
-
-      # The values below must be set ONCE in the Render dashboard for
-      # this cron service (sync: false = Render won't auto-overwrite).
-      # Use the same values that are already configured on `ccwj`.
-      - key: SCHWAB_APP_KEY
-        sync: false
-      - key: SCHWAB_APP_SECRET
-        sync: false
       - key: GITHUB_PAT
         sync: false
       - key: GITHUB_REPO

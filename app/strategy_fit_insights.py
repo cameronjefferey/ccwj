@@ -34,7 +34,7 @@ from app.models import (
     is_admin,
     save_strategy_fit_insight,
 )
-from app.routes import _account_sql_and, _filter_df_by_accounts
+from app.routes import _tenants_for_scope, _tenant_sql_and, _filter_df_by_tenant_ids
 from app.utils import demo_block_writes
 
 
@@ -54,7 +54,7 @@ STRATEGY_FIT_QUERY = """
         subsector
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1
-    {account_filter}
+    {tenant_filter}
 """
 
 
@@ -68,20 +68,9 @@ MIN_WIN_RATE_FOR_SWEET = 0.45  # don't crown 30%-WR + R:R as "edge"
 
 
 def _user_accounts(selected_account: str = ""):
-    """Resolve which accounts to scope to.
-
-    Mirrors `_get_user_accounts` in app/insights.py — admins see all,
-    non-admins see their linked accounts, and a single-account selection
-    further narrows the view."""
-    if is_admin(current_user.username):
-        base = None
-    else:
-        base = get_accounts_for_user(current_user.id)
-    if selected_account:
-        if base is None:
-            return [selected_account]
-        return [a for a in base if a == selected_account] or base
-    return base
+    """Resolve tenant_ids for Strategy Fit reads."""
+    from app.routes import _tenants_for_scope
+    return _tenants_for_scope(selected_account)
 
 
 # --------------------------------------------------------------------
@@ -89,7 +78,7 @@ def _user_accounts(selected_account: str = ""):
 # --------------------------------------------------------------------
 
 
-def _build_strategy_fit_brief(client, user_accounts):
+def _build_strategy_fit_brief(client, tenant_ids):
     """Build a structured fact sheet for the Strategy x Sector matrix.
 
     Returns (brief_text, brief_dict) where brief_text is a plain-text
@@ -97,11 +86,11 @@ def _build_strategy_fit_brief(client, user_accounts):
     in a form that's easy to render deterministically.
     Returns (None, {...}) when there isn't enough data.
     """
-    acct_filter = _account_sql_and(user_accounts)
+    tenant_filter = _tenant_sql_and(tenant_ids)
     df = client.query(
-        STRATEGY_FIT_QUERY.format(account_filter=acct_filter)
+        STRATEGY_FIT_QUERY.format(tenant_filter=tenant_filter)
     ).to_dataframe()
-    df = _filter_df_by_accounts(df, user_accounts)
+    df = _filter_df_by_tenant_ids(df, tenant_ids)
     if df.empty:
         return None, {"has_data": False}
 
@@ -594,7 +583,7 @@ def generate_strategy_fit_insights():
         summary, full = result
         save_strategy_fit_insight(
             current_user.id,
-            account_filter=selected_account or "",
+            tenant_filter=selected_account or "",
             summary=summary,
             full_analysis=full,
             brief_text=brief_text,

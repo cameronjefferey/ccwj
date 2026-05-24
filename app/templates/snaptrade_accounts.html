@@ -82,24 +82,9 @@
     <div class="broker-mgr-hero">
         <div class="text-uppercase small fw-semibold opacity-75 mb-2" style="letter-spacing:.08em">Multi-broker</div>
         <h1>Connected brokerages</h1>
-        <p>Add Fidelity, Vanguard, Robinhood, IBKR, and other brokers
+        <p>Add Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers
             through SnapTrade. Each connection appears below — sync the
             ones you want to mirror, leave the rest alone.</p>
-        {% if schwab_enabled %}
-        {# Schwab is NOT in SnapTrade's roster. Make that visible up-front
-           so a Schwab user landing here doesn't try to find Schwab in the
-           SnapTrade connection portal and bounce. Native Schwab is also
-           faster and pulls deeper history. Link goes to the Account tab
-           (where the Schwab card lives) rather than schwab_accounts which
-           assumes you're already connected. #}
-        <p class="mb-0 mt-2 small" style="opacity:.85">
-            <strong>Schwab account?</strong> SnapTrade doesn't include
-            Schwab — connect it through our
-            <a href="{{ url_for('profile', tab='account') }}#schwab-sync"
-               style="color:inherit; text-decoration:underline">native Schwab
-            sync</a> instead.
-        </p>
-        {% endif %}
     </div>
 
     <div class="broker-card">
@@ -161,11 +146,11 @@
                 <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
                 {% endif %}
             </div>
-            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="schwab-sync-form">
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
                 <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
-                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your broker. This can take a minute — keep this tab open.</p>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your broker. This can take a minute — keep this tab open.</p>
             </form>
             {# "Refresh from broker" — asks SnapTrade to repoll the
                broker BEFORE we sync. Useful right after placing a
@@ -173,7 +158,7 @@
                limited to once per ~10 min server-side; the title
                attribute hints at that without making the user think
                it's broken when they hit the limit. #}
-            <form method="POST" action="{{ url_for('snaptrade_refresh_broker') }}" class="schwab-sync-form"
+            <form method="POST" action="{{ url_for('snaptrade_refresh_broker') }}" class="snaptrade-sync-form"
                   onsubmit="return confirm('Ask SnapTrade to fetch fresh data from your broker, then sync? Useful right after placing a trade. Limited to once per ~10 minutes per brokerage.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
@@ -210,7 +195,7 @@
                 later still works for display, but cleaner labels from
                 the start mean cleaner reports.
             </p>
-            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="schwab-sync-form mb-0">
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="sync_all" value="1">
                 <button type="submit" class="btn btn-primary">Sync all accounts</button>
@@ -227,7 +212,7 @@
                     SnapTrade only return 90 days; we ask for the longest window
                     they support.)
                 </p>
-                <p class="schwab-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
             </form>
         </div>
         {% endif %}
@@ -244,19 +229,7 @@
             broker, sign in there, and you'll be returned here with the new
             account ready to sync.
         </p>
-        {% if schwab_enabled %}
-        {# Belt-and-suspenders Schwab callout — also shown in the hero, but
-           a user might scroll straight to the connect button. SnapTrade's
-           portal lists ~20 brokers and Schwab isn't one of them; spelling
-           that out here saves the round-trip into the portal. #}
-        <p class="empty-hint mb-3" style="background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; padding:.6rem .8rem; border-radius:.4rem;">
-            <strong>Note:</strong> SnapTrade doesn't carry Schwab. To
-            connect a Schwab account, use the
-            <a href="{{ url_for('profile', tab='account') }}#schwab-sync"
-               style="color:inherit; text-decoration:underline;">native
-            Schwab sync</a> on the Account tab instead.
-        </p>
-        {% endif %}
+
         <form method="POST" action="{{ url_for('snaptrade_connect') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary">Connect a brokerage</button>

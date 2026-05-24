@@ -19,9 +19,11 @@ from app.models import (
 # predicate and Stage 0/1 NULL-leniency apply everywhere. See
 # docs/USER_ID_TENANCY.md.
 from app.routes import (
-    _account_sql_filter,
-    _account_sql_and,
-    _filter_df_by_accounts,
+    _tenants_for_scope,
+    _tenant_sql_filter,
+    _tenant_sql_and,
+    _filter_df_by_tenant_ids,
+    _user_account_list,
 )
 from app.utils import demo_block_writes
 
@@ -55,7 +57,7 @@ SELECT
 FROM `ccwj-dbt.analytics.int_option_exit_analysis`
 WHERE close_date >= @since_date
   AND data_reliable = true
-  {account_filter}
+  {tenant_filter}
 ORDER BY pnl_given_back DESC
 LIMIT 20
 """
@@ -94,7 +96,7 @@ SELECT
 FROM `ccwj-dbt.ml_models.account_trade_insights`
 WHERE observation_text IS NOT NULL
   AND open_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
-  {account_filter}
+  {tenant_filter}
 ORDER BY anomaly_score DESC, open_date DESC
 LIMIT 5
 """
@@ -126,7 +128,7 @@ LIMIT 1
 """
 
 # Portfolio-level “discovery” metrics (calendar, concentration, DTE, post-loss
-# sequence). One row; scoped with {account_clause} = _account_sql_and(...).
+# sequence). One row; scoped with {tenant_clause} = _tenant_sql_and(...).
 # Mirrors logic we would put in dbt except the tenancy filter is request-time.
 _DISCOVERY_SQL = """
 WITH rel AS (
@@ -141,7 +143,7 @@ WITH rel AS (
     e.user_id
   FROM `ccwj-dbt.analytics.int_option_exit_analysis` e
   WHERE e.data_reliable
-  {account_clause}
+  {tenant_clause}
 ),
 
 dow_agg AS (
@@ -427,14 +429,14 @@ def _strip_md_for_brief(s: str) -> str:
 # Coaching brief builder — the core differentiator
 # ------------------------------------------------------------------
 
-def _build_coaching_brief(client, user_accounts):
+def _build_coaching_brief(client, tenant_ids):
     """Build a structured coaching brief from pre-computed dbt signals.
 
     Returns (brief_text, coaching_data_dict) where coaching_data_dict
     contains the raw data for deterministic rendering in the template.
     """
-    where = _account_sql_filter(user_accounts)
-    acct_and = _account_sql_and(user_accounts)
+    where = _tenant_sql_filter(tenant_ids)
+    tenant_and = _tenant_sql_and(tenant_ids)
     sections = []
     coaching_data = {
         "signals": [],
@@ -544,7 +546,7 @@ def _build_coaching_brief(client, user_accounts):
             bq.ScalarQueryParameter("since_date", "DATE", since),
         ])
         exits_df = client.query(
-            RECENT_EXITS_QUERY.format(account_filter=acct_and),
+            RECENT_EXITS_QUERY.format(tenant_filter=tenant_and),
             job_config=cfg,
         ).to_dataframe()
         if not exits_df.empty:
@@ -580,11 +582,11 @@ def _build_coaching_brief(client, user_accounts):
         pass
 
     try:
-        e_and = _account_sql_and(user_accounts, col="e.account", user_col="e.user_id")
-        s_and = _account_sql_and(user_accounts, col="s.account", user_col="s.user_id")
+        e_and = _tenant_sql_and(tenant_ids, col="e.tenant_id")
+        s_and = _tenant_sql_and(tenant_ids, col="s.tenant_id")
         dq = client.query(
             _DISCOVERY_SQL.format(
-                account_clause=e_and if e_and else "",
+                tenant_clause=e_and if e_and else "",
                 sequence_clause=s_and if s_and else "",
             )
         ).to_dataframe()
@@ -606,10 +608,10 @@ def _build_coaching_brief(client, user_accounts):
     if app.config.get("BEHAVIOR_INSIGHTS_ENABLED", True):
         try:
             obs_df = client.query(
-                BEHAVIOR_OBSERVATIONS_QUERY.format(account_filter=acct_and)
+                BEHAVIOR_OBSERVATIONS_QUERY.format(tenant_filter=tenant_and)
             ).to_dataframe()
             # Belt-and-suspenders tenant scoping: also filter client-side.
-            obs_df = _filter_df_by_accounts(obs_df, user_accounts)
+            obs_df = _filter_df_by_tenant_ids(obs_df, tenant_ids)
             if not obs_df.empty:
                 obs_lines = []
                 for _, r in obs_df.iterrows():
@@ -969,17 +971,12 @@ def _md_to_html(md_text):
 
 
 def _get_user_accounts(selected_account=""):
-    """Resolve user accounts with optional single-account focus."""
-    if is_admin(current_user.username):
-        base_accounts = None
-    else:
-        base_accounts = get_accounts_for_user(current_user.id)
+    """Display account names for the account picker."""
+    return _user_account_list()
 
-    if selected_account:
-        if base_accounts is None:
-            return [selected_account]
-        return [a for a in base_accounts if a == selected_account] or base_accounts
-    return base_accounts
+
+def _get_tenant_scope(selected_account=""):
+    return _tenants_for_scope(selected_account)
 
 
 # ------------------------------------------------------------------
@@ -1008,11 +1005,12 @@ def insights():
         return bounce
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
+    tenant_ids = _get_tenant_scope(selected_account)
 
     if is_admin(current_user.username):
         accounts = []
     else:
-        accounts = get_accounts_for_user(current_user.id) or []
+        accounts = user_accounts or []
 
     cached = get_insight_for_user(current_user.id)
     gemini_available = bool(os.environ.get("GEMINI_API_KEY"))
@@ -1034,7 +1032,7 @@ def insights():
     }
     try:
         client = get_bigquery_client()
-        _, coaching_data = _build_coaching_brief(client, user_accounts)
+        _, coaching_data = _build_coaching_brief(client, tenant_ids)
     except Exception:
         pass
 
@@ -1065,17 +1063,18 @@ def generate_insights():
         return blocked
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
+    tenant_ids = _get_tenant_scope(selected_account)
     redir = url_for("insights", account=selected_account) if selected_account else url_for("insights")
 
     try:
         client = get_bigquery_client()
 
         # Try coaching brief first (the unique data)
-        coaching_text, _ = _build_coaching_brief(client, user_accounts)
+        coaching_text, _ = _build_coaching_brief(client, tenant_ids)
 
         # Fallback to portfolio summary if no coaching data
         if not coaching_text:
-            where = _account_sql_filter(user_accounts)
+            where = _tenant_sql_filter(tenant_ids)
             df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
             if df.empty:
                 flash("No portfolio data found. Upload your trading data first.", "warning")
@@ -1127,15 +1126,16 @@ def insights_ask():
 
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
+    tenant_ids = _get_tenant_scope(selected_account)
 
     try:
         client = get_bigquery_client()
 
         # Coaching signals (the unique data)
-        coaching_text, _ = _build_coaching_brief(client, user_accounts)
+        coaching_text, _ = _build_coaching_brief(client, tenant_ids)
 
         # Portfolio fallback
-        where = _account_sql_filter(user_accounts)
+        where = _tenant_sql_filter(tenant_ids)
         df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
         portfolio_text = _build_prompt_data(df) if not df.empty else None
 

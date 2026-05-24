@@ -1,4 +1,4 @@
-Account,user_id,broker_account_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
+Account,user_id,tenant_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 Demo Account,,,06/02/2025,Buy,AAPL,APPLE INC,50,$225.50,,-$11277.50
 Demo Account,,,06/10/2025,Buy,MSFT,MICROSOFT CORP,30,$425.00,,-$12750.00
 Demo Account,,,06/10/2025,Sell to Open,MSFT 07/18/2025 430.00 C,CALL MICROSOFT CORP $430 EXP 07/18/25,1,$2.85,$0.66,$284.34

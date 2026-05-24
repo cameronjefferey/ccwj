@@ -144,7 +144,7 @@
     <p class="text-muted mb-3">Upload your positions and trade history. Once your trades are classified by strategy, you'll see how each one performs over time.</p>
     {% endif %}
     <div class="d-flex flex-wrap justify-content-center gap-2">
-        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Run Schwab sync</a>
+        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Sync broker data</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload &amp; refresh</a>
     </div>
 </div>

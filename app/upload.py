@@ -12,7 +12,7 @@ from app.models import (
     get_accounts_for_user, add_account_for_user,
     remove_account_for_user, is_admin,
     record_upload, get_uploads_for_user, count_uploads_for_user,
-    get_or_create_broker_account, MANUAL_BROKER_SLUG,
+    get_or_create_broker_tenant, MANUAL_BROKER_SLUG,
 )
 from app.utils import demo_block_writes
 
@@ -77,20 +77,18 @@ CURRENT_COL_RENAMES = {
 # Flask BQ filter to require ``WHERE user_id = current_user.id``.
 # Tenancy columns are at the front of every seed so the first three
 # cells of any row identify the tenant unambiguously:
-#   1. Account            — user-facing display label (mutable)
-#   2. user_id            — Postgres users.id (legacy tenant key; see
-#                            docs/USER_ID_TENANCY.md)
-#   3. broker_account_id  — broker_accounts.id (new stable tenant key;
-#                            see docs/BROKER_ACCOUNT_ID_MIGRATION.md).
-#                            Stage 0: nullable in the seed, populated
-#                            by every Stage-0+ writer.
+#   1. Account     — user-facing display label (informational)
+#   2. user_id     — Postgres users.id (informational metadata)
+#   3. tenant_id   — v2 warehouse tenant key (``<broker_slug>:<broker_uuid>``;
+#                    see docs/V2_TENANT_KEY_DESIGN.md). Required on every
+#                    writer-emitted row.
 HISTORY_SEED_COLUMNS = [
-    "Account", "user_id", "broker_account_id",
+    "Account", "user_id", "tenant_id",
     "Date", "Action", "Symbol", "Description",
     "Quantity", "Price", "fees_and_comm", "Amount",
 ]
 CURRENT_SEED_COLUMNS = [
-    "Account", "user_id", "broker_account_id",
+    "Account", "user_id", "tenant_id",
     "Symbol", "Description", "Quantity", "Price",
     "price_change_dollar", "price_change_percent", "market_value",
     "day_change_dollar", "day_change_percent", "cost_bases",
@@ -116,7 +114,7 @@ BALANCE_SEED_PATH = "dbt/seeds/account_balances.csv"
 BALANCE_SEED_COLUMNS = [
     "account",
     "user_id",
-    "broker_account_id",
+    "tenant_id",
     "row_type",
     "market_value",
     "cost_basis",
@@ -373,6 +371,18 @@ def _normalize_uid(value) -> str:
         return s
 
 
+def _normalize_tid(value) -> str:
+    """Canonicalize a ``tenant_id`` cell for merge-scope comparisons."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    return s
+
+
 # Numeric fields in trade rows (Quantity, Price, fees_and_comm, Amount) round-
 # trip through Schwab's API → pandas → JSON → CSV with float-precision drift:
 # the same trade can land as ``26.99`` on one sync and ``26.990000000000002``
@@ -443,13 +453,12 @@ def _dedup_history_rows(df, seed_columns):
     """
     if df is None or df.empty:
         return df
-    # broker_account_id is tenant metadata, not part of the trade's
-    # identity — same treatment as user_id. A re-sync that fills in a
-    # previously-NULL broker_account_id on an existing row must collapse
-    # against the row it's updating, not double-count it.
+    # ``account`` and ``user_id`` are informational metadata, not part of
+    # the trade's identity. ``tenant_id`` IS part of the dedup key under
+    # v2 (see docs/V2_TENANT_KEY_DESIGN.md).
     key_cols = [
         c for c in seed_columns
-        if str(c).lower() not in ("account", "user_id", "broker_account_id")
+        if str(c).lower() not in ("account", "user_id")
     ]
     if not key_cols:
         return df
@@ -518,7 +527,7 @@ def _dedup_history_rows(df, seed_columns):
 
 def _merge_seed_with_existing(
     path, account_name, new_df, seed_columns,
-    *, user_id=None, broker_account_id=None,
+    *, tenant_id=None,
 ):
     """
     Merge new account data with existing seed data.
@@ -527,31 +536,19 @@ def _merge_seed_with_existing(
     - For history: append new rows for that account and de-duplicate
     - Returns CSV string ready to commit
 
-    ``user_id`` (the syncing user's tenant id) MUST be passed for any
-    history merge that lands user-facing data. The dedup window is
-    scoped to the syncing user's own rows plus legacy unowned rows
-    (``user_id=""`` from before tenancy was tracked). Rows owned by
-    OTHER users under the same ``account_name`` are kept verbatim in
+    ``tenant_id`` (the syncing broker tenant key) MUST be passed for any
+    merge that lands user-facing data. The dedup window is scoped to
+    rows whose ``tenant_id`` matches the syncing tenant plus legacy
+    unowned rows (``tenant_id=""`` under the same account label from
+    before v2). Rows owned by OTHER tenants are kept verbatim in
     ``other_df`` and never touched — required by the tenant-isolation
-    rule: account labels can collide across users (parent + child both
-    saying "Schwab Account"), and a sync must never silently overwrite
-    another user's rows even on a key collision. See
-    ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
-    ``docs/USER_ID_TENANCY.md``.
-
-    ``broker_account_id`` (Stage 0+) is accepted but not yet used by the
-    dedup window — the legacy ``(account, user_id)`` scope still
-    governs through Stages 0-3. In Stage 4 the scope tightens to
-    ``broker_account_id IN ("", str(broker_account_id))`` and the
-    ``(account, user_id)`` legacy leg goes away. Keep the parameter on
-    the signature now so every caller is paying attention to it.
-    See ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+    rule. See ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
+    ``docs/V2_TENANT_KEY_DESIGN.md``.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
     why a silent "treat as empty" path is unacceptable.
     """
-    _ = broker_account_id  # explicitly accepted; see docstring for Stage 4 plan
     existing_content = _get_file_content(path)
     if existing_content is None:
         # File truly does not exist yet (HTTP 404). Safe to use only new data.
@@ -624,18 +621,14 @@ def _merge_seed_with_existing(
             existing_df[col] = ""
     existing_df = existing_df[seed_columns]
 
-    # Tenancy scope: only the syncing user's own rows (and legacy unowned
-    # rows from before user_id was tracked) are eligible to be rewritten
-    # by this merge. Rows owned by OTHER users under the same
-    # account_name stay in ``other_df`` and are never touched. Without
-    # this scope, two users sharing an account label (parent + child
-    # both calling theirs "Schwab Account", or a re-tested test user)
-    # would dedup against each other on identical trade keys and
-    # silently steal each other's history. See tenancy rule.
-    if user_id is not None and "user_id" in existing_df.columns:
-        target_uid = _normalize_uid(user_id)
-        existing_uid_norm = existing_df["user_id"].map(_normalize_uid)
-        legacy_or_self = existing_uid_norm.isin(["", target_uid])
+    # Tenancy scope: only the syncing tenant's own rows (and legacy
+    # unowned rows from before tenant_id was tracked under this account
+    # label) are eligible to be rewritten by this merge. Rows owned by
+    # OTHER tenants stay in ``other_df`` and are never touched.
+    if tenant_id is not None and "tenant_id" in existing_df.columns:
+        target_tid = _normalize_tid(tenant_id)
+        existing_tid_norm = existing_df["tenant_id"].map(_normalize_tid)
+        legacy_or_self = existing_tid_norm.isin(["", target_tid])
         account_mask = acct_match & legacy_or_self
     else:
         account_mask = acct_match
@@ -674,28 +667,30 @@ def _merge_seed_with_existing(
         combined = pd.concat([existing_account_df, new_tagged], ignore_index=True)
 
         # Normalize key columns so duplicates match: NaN != NaN in pandas,
-        # so fill nulls with a sentinel before dedupe. ``user_id`` and
-        # ``broker_account_id`` are excluded from the dedupe key
-        # because they're tenant metadata, not part of the trade's
-        # identity — without this exclusion a legacy row
-        # (``user_id=""``, ``broker_account_id=""``) and the same-trade
-        # re-sync row (``user_id=5``, ``broker_account_id=12``) would
-        # both be kept, double-counting the trade. The combined frame
-        # is already scoped to the syncing user + legacy rows, so
-        # excluding both tenant columns is safe (other users' rows
-        # can't reach this dedup at all).
+        # so fill nulls with a sentinel before dedupe. ``account`` and
+        # ``user_id`` are informational metadata; ``tenant_id`` is part
+        # of the trade identity under v2. The combined frame is already
+        # scoped to the syncing tenant + legacy rows, so other tenants'
+        # rows can't reach this dedup at all.
         key_cols = [
             c for c in seed_columns
-            if str(c).lower() not in (
-                "account", "user_id", "broker_account_id",
-            )
+            if str(c).lower() not in ("account", "user_id")
         ]
+        canon = combined[key_cols].copy()
         for c in key_cols:
             if c in combined.columns:
-                combined[c] = combined[c].map(_canonicalize_seed_cell)
+                if str(c).lower() == "tenant_id" and tenant_id is not None:
+                    target_tid = _normalize_tid(tenant_id)
+                    canon[c] = combined[c].map(
+                        lambda v, _t=target_tid: _t
+                        if _normalize_tid(v) == "" else _normalize_tid(v)
+                    )
+                else:
+                    canon[c] = combined[c].map(_canonicalize_seed_cell)
 
         combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
-        combined = combined.drop_duplicates(subset=key_cols, keep="last")
+        keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
+        combined = combined.loc[keep_mask].reset_index(drop=True)
         merged_account = combined.drop(columns=["__src"])
     else:
         # Current positions (snapshot): replace that account entirely
@@ -852,35 +847,32 @@ def _upload_github_config_ok():
 
 def _prepare_seed_df(
     df, account_name, columns, account_col="Account",
-    user_id=None, broker_account_id=None,
+    user_id=None, tenant_id=None,
 ):
     """Align a DataFrame to the seed's column set and set the tenant columns.
 
     Tenant columns are forcibly set on every row so a writer can never
     accidentally ship rows under the wrong tenant:
 
-    1. ``Account`` / ``account``    — display label (caller-provided).
-    2. ``user_id``                  — Postgres ``users.id`` (legacy
-       tenant key; ``None`` emits empty cells for legacy callers).
-    3. ``broker_account_id``        — Postgres ``broker_accounts.id``
-       (new stable tenant key; ``None`` emits empty cells during
-       Stage 0/1 deploy gaps).
+    1. ``Account`` / ``account`` — display label (caller-provided).
+    2. ``user_id``               — Postgres ``users.id`` (informational).
+    3. ``tenant_id``             — v2 warehouse tenant key
+       (``<broker_slug>:<broker_uuid>``; required at the writer boundary).
 
-    See ``docs/USER_ID_TENANCY.md`` and
-    ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+    See ``docs/V2_TENANT_KEY_DESIGN.md``.
     """
     if df is None:
         return pd.DataFrame(columns=columns)
     out = df.copy()
-    for sentinel in ("account", "user_id", "broker_account_id"):
+    for sentinel in ("account", "user_id", "tenant_id"):
         for c in [col for col in out.columns if str(col).lower() == sentinel]:
             out.drop(columns=[c], inplace=True)
     out.insert(0, account_col, account_name)
     out.insert(1, "user_id", "" if user_id is None else int(user_id))
     out.insert(
         2,
-        "broker_account_id",
-        "" if broker_account_id is None else int(broker_account_id),
+        "tenant_id",
+        "" if tenant_id is None else str(tenant_id).strip(),
     )
     for col in columns:
         if col not in out.columns:
@@ -895,32 +887,28 @@ def merge_and_push_seeds(
     *,
     commit_message,
     user_id,
-    broker_account_id,
+    tenant_id,
     skip_history=False,
     balances_df=None,
 ):
     """
     Normalize DataFrames, merge into the GitHub seed files, and commit.
-    Both manual uploads and Schwab sync call this so trade_history.csv +
+    Both manual uploads and SnapTrade sync call this so trade_history.csv +
     current_positions.csv stay the single pair of seeds that feed dbt.
 
     Args:
         history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
         current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
         user_id: required Postgres ``users.id`` of the row owner. Stamped
-            into every emitted row's ``user_id`` column. Legacy tenant
-            key — see ``docs/USER_ID_TENANCY.md``.
-        broker_account_id: required Postgres ``broker_accounts.id`` for
-            the (user, broker, broker_external_id) tuple this push
-            belongs to. Stamped into every emitted row's
-            ``broker_account_id`` column. New stable tenant key — see
-            ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``. Every Stage-0+
-            writer (Schwab, SnapTrade, manual upload) derives this
-            from the connection / account row it's already reading,
-            then calls ``get_or_create_broker_account`` if needed.
+            into every emitted row's ``user_id`` column (informational).
+        tenant_id: required v2 warehouse tenant key
+            (``<broker_slug>:<broker_uuid>``). Stamped into every emitted
+            row's ``tenant_id`` column. Every writer (SnapTrade, manual
+            upload) derives this via ``get_or_create_broker_tenant`` or
+            accepts it from the caller. See ``docs/V2_TENANT_KEY_DESIGN.md``.
         balances_df: optional cash + account_total rows shaped for
             BALANCE_SEED_COLUMNS. Committed atomically with the others.
-            Any broker connector (Schwab, SnapTrade) writes here.
+            Any broker connector writes here.
         skip_history: when True, commit positions only (and balances if given).
 
     Returns:
@@ -931,17 +919,12 @@ def merge_and_push_seeds(
     if current_df is None:
         return False, "current_df is required.", 0, 0, None
     if user_id is None:
-        # Stage 0+ never wants an unowned write — the cross-tenant guard
-        # only works if every row carries the right user_id from day one.
         return False, "user_id is required.", 0, 0, None
-    if broker_account_id is None:
-        # Same shape: every writer can derive broker_account_id from
-        # Postgres before reaching this boundary. An unowned write at
-        # this layer is a bug — fail loud, don't ship NULL rows.
-        return False, "broker_account_id is required.", 0, 0, None
+    if tenant_id is None or not str(tenant_id).strip():
+        return False, "tenant_id is required.", 0, 0, None
 
     user_id_int = int(user_id)
-    broker_account_id_int = int(broker_account_id)
+    tenant_id_str = str(tenant_id).strip()
 
     if history_df is not None:
         history_df = history_df.copy()
@@ -950,13 +933,13 @@ def merge_and_push_seeds(
     for df in [history_df, current_df]:
         if df is None:
             continue
-        for sentinel in ("account", "user_id", "broker_account_id"):
+        for sentinel in ("account", "user_id", "tenant_id"):
             stale = [c for c in df.columns if c.lower() == sentinel]
             if stale:
                 df.drop(columns=stale, inplace=True)
         df.insert(0, "Account", account_name)
         df.insert(1, "user_id", user_id_int)
-        df.insert(2, "broker_account_id", broker_account_id_int)
+        df.insert(2, "tenant_id", tenant_id_str)
 
     if history_df is not None:
         history_standard = {
@@ -995,15 +978,13 @@ def merge_and_push_seeds(
     if not skip_history and history_df is not None:
         history_content = _merge_seed_with_existing(
             HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS,
-            user_id=user_id_int,
-            broker_account_id=broker_account_id_int,
+            tenant_id=tenant_id_str,
         )
         path_contents.append((HISTORY_PATH, history_content))
 
     current_content = _merge_seed_with_existing(
         CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS,
-        user_id=user_id_int,
-        broker_account_id=broker_account_id_int,
+        tenant_id=tenant_id_str,
     )
     path_contents.append((CURRENT_PATH, current_content))
 
@@ -1014,15 +995,14 @@ def merge_and_push_seeds(
             BALANCE_SEED_COLUMNS,
             account_col="account",
             user_id=user_id_int,
-            broker_account_id=broker_account_id_int,
+            tenant_id=tenant_id_str,
         )
         bal_content = _merge_seed_with_existing(
             BALANCE_SEED_PATH,
             account_name,
             balances_prepared,
             BALANCE_SEED_COLUMNS,
-            user_id=user_id_int,
-            broker_account_id=broker_account_id_int,
+            tenant_id=tenant_id_str,
         )
         path_contents.append((BALANCE_SEED_PATH, bal_content))
 
@@ -1249,16 +1229,15 @@ def upload():
     except Exception:
         is_first_upload = False
 
-    # Manual upload: derive the broker_account_id from a synthetic but
-    # stable (broker_slug='manual', broker_external_id='manual:<account>')
-    # pair. account_name is unique per user (user_accounts PK), so
-    # successive uploads to the same account label reuse the same
-    # broker_accounts.id and the seed rows stay tenant-stable.
-    # See docs/BROKER_ACCOUNT_ID_MIGRATION.md.
-    broker_account_id = get_or_create_broker_account(
+    # Manual upload: derive tenant_id from a synthetic but stable
+    # (broker_slug='manual', broker_uuid='manual:<account>') pair.
+    # account_name is unique per user (user_accounts PK), so successive
+    # uploads to the same account label reuse the same tenant_id.
+    # See docs/V2_TENANT_KEY_DESIGN.md.
+    tenant_id = get_or_create_broker_tenant(
         user_id=current_user.id,
         broker_slug=MANUAL_BROKER_SLUG,
-        broker_external_id=f"manual:{account_name}",
+        broker_uuid=f"manual:{account_name}",
         account_name=account_name,
     )
 
@@ -1268,7 +1247,7 @@ def upload():
         current_df,
         commit_message=commit_msg,
         user_id=current_user.id,
-        broker_account_id=broker_account_id,
+        tenant_id=tenant_id,
         skip_history=skip_history,
     )
     if not ok:

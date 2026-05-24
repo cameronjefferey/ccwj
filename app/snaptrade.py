@@ -1,12 +1,13 @@
 """SnapTrade brokerage aggregator — connect, sync, multi-account.
 
 SnapTrade unlocks ~20 brokers (Schwab, Fidelity, Vanguard, Robinhood,
-IBKR, Tradier, etc.) through one integration. We use SnapTrade's
-hosted Connection Portal (no broker OAuth implemented here) and pull
-activities + positions + balances via SnapTrade's REST API, then
-normalize to the same seed CSVs (``trade_history.csv`` /
-``current_positions.csv`` / ``account_balances.csv``) that native
-Schwab sync and manual upload write to. Convergence happens at
+IBKR, Tradier, etc.) through one integration. **All broker OAuth in v2
+goes through SnapTrade** — there is no parallel native Schwab module.
+
+We use SnapTrade's hosted Connection Portal and pull activities +
+positions + balances via SnapTrade's REST API, then normalize to the same
+seed CSVs (``trade_history.csv`` / ``current_positions.csv`` /
+``account_balances.csv``) as manual upload. Convergence happens at
 ``app.upload.merge_and_push_seeds`` so all the broker-sync-safety
 invariants apply automatically.
 
@@ -21,7 +22,7 @@ templates, and tests can pattern-match between the two:
 * ``snaptrade_nickname``     — POST /snaptrade/accounts/nickname
 * ``_sync_one_connection``   — orchestrates one account sync (parallel to Schwab)
 * ``_sync_all_for_user``     — bulk sync, mirrors ``_schwab_sync_all_for_user``
-* ``_bulk_sync_lookback_days`` — re-uses Schwab's helper of the same name
+* ``_bulk_sync_lookback_days`` — first-sync vs routine lookback picker
 """
 from __future__ import annotations
 
@@ -52,14 +53,8 @@ from app.models import (
     stamp_snaptrade_force_refresh_attempt,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
-    get_or_create_broker_account,
+    get_or_create_broker_tenant,
     SNAPTRADE_BROKER_SLUG,
-)
-from app.db import execute
-from app.schwab import (
-    SCHWAB_FULL_HISTORY_LOOKBACK_DAYS as _FULL_HISTORY_LOOKBACK_DAYS,
-    _bulk_sync_lookback_days,
-    _schwab_transaction_lookback_days as _routine_lookback_days,
 )
 from app.snaptrade_normalize import (
     activities_to_history_df,
@@ -72,53 +67,56 @@ from app.utils import demo_block_writes
 _log = logging.getLogger(__name__)
 
 
-def _ensure_snaptrade_broker_account_id(user_id, snaptrade_account_id, account_name):
-    """Resolve (and persist) the ``broker_accounts.id`` for a SnapTrade
-    account row.
+def _ensure_snaptrade_tenant_id(
+    user_id, snaptrade_account_id, account_name, *,
+    snaptrade_connection_id=None,
+):
+    """Resolve (and persist) the v2 ``tenant_id`` for a SnapTrade account.
 
-    Mirror of ``app.schwab._ensure_schwab_broker_account_id``.
     ``snaptrade_account_id`` is SnapTrade's per-account UUID — stable
     for the life of the broker connection and survives renames. The
-    pair ``(broker_slug='snaptrade', broker_external_id=<uuid>)`` is
-    globally unique per HappyTrader user.
+    resulting ``tenant_id`` is ``snaptrade:<uuid>``.
 
-    Idempotent: first call creates the ``broker_accounts`` row and
-    stamps its id onto ``snaptrade_accounts.broker_account_id``; later
-    calls return the cached id.
-
-    See ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``.
+    Idempotent: calls ``get_or_create_broker_tenant`` which upserts
+    ``broker_tenants``. See ``docs/V2_TENANT_KEY_DESIGN.md``.
     """
     ext_id = (snaptrade_account_id or "").strip()
     if not ext_id:
         raise ValueError("SnapTrade account row has no snaptrade_account_id")
     label = (account_name or "SnapTrade Account").strip() or "SnapTrade Account"
-    broker_account_id = get_or_create_broker_account(
+    return get_or_create_broker_tenant(
         user_id=user_id,
         broker_slug=SNAPTRADE_BROKER_SLUG,
-        broker_external_id=ext_id,
+        broker_uuid=ext_id,
         account_name=label,
+        snaptrade_connection_id=snaptrade_connection_id,
     )
-    try:
-        execute(
-            "UPDATE snaptrade_accounts "
-            "SET broker_account_id = %s, updated_at = NOW() "
-            "WHERE user_id = %s AND snaptrade_account_id = %s "
-            "  AND (broker_account_id IS NULL OR broker_account_id <> %s)",
-            (broker_account_id, int(user_id), ext_id, broker_account_id),
-        )
-    except Exception as exc:
-        app.logger.warning(
-            "Could not cache broker_account_id on snaptrade_accounts "
-            "(user_id=%s, snaptrade_account_id=%s): %s",
-            user_id, ext_id, exc,
-        )
-    return broker_account_id
 
-# Reuse the Schwab full-history cap for symmetric UX. SnapTrade's
-# per-broker history depth varies (Schwab via SnapTrade can go years;
-# Fidelity / Robinhood return less) — we ask for the full window and let
-# SnapTrade clamp.
-SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS = _FULL_HISTORY_LOOKBACK_DAYS
+# Full-history cap for first sync UX. Per-broker depth varies — we ask
+# for the full window and let SnapTrade clamp to what the broker carries.
+SYNC_FULL_HISTORY_LOOKBACK_DAYS = 1825
+SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS = SYNC_FULL_HISTORY_LOOKBACK_DAYS
+
+
+def _routine_lookback_days() -> int:
+    """Calendar days of transactions to request each routine sync."""
+    raw = (
+        os.environ.get("SNAPTRADE_SYNC_TRANSACTION_DAYS")
+        or os.environ.get("SCHWAB_SYNC_TRANSACTION_DAYS")
+        or "60"
+    ).strip() or "60"
+    try:
+        days = int(raw)
+    except ValueError:
+        days = 60
+    return max(1, min(days, SYNC_FULL_HISTORY_LOOKBACK_DAYS))
+
+
+def _bulk_sync_lookback_days(first_done, *, force_full_history, routine_days, full_days):
+    """Pick the per-row lookback for bulk sync loops."""
+    if force_full_history or not first_done:
+        return full_days
+    return routine_days
 
 
 # ---------------------------------------------------------------------------
@@ -413,19 +411,18 @@ def snaptrade_callback():
                 user_id, snaptrade_account_id, auth_id,
             )
         add_account_for_user(user_id, account_name)
-        # Stage 0+ tenancy: register the broker_accounts row so the
-        # first sync after callback has a real broker_account_id to
-        # stamp into seed rows. Idempotent on re-callback.
-        # See docs/BROKER_ACCOUNT_ID_MIGRATION.md.
+        # v2 tenancy: register broker_tenants row so the first sync
+        # after callback has a real tenant_id to stamp into seed rows.
         try:
-            _ensure_snaptrade_broker_account_id(
+            _ensure_snaptrade_tenant_id(
                 user_id=user_id,
                 snaptrade_account_id=snaptrade_account_id,
                 account_name=account_name,
+                snaptrade_connection_id=auth_id or None,
             )
         except Exception as exc:
             app.logger.warning(
-                "broker_accounts registration deferred for SnapTrade user_id=%s "
+                "broker_tenants registration deferred for SnapTrade user_id=%s "
                 "snaptrade_account_id=%s: %s",
                 user_id, snaptrade_account_id, exc,
             )
@@ -550,20 +547,11 @@ def snaptrade_accounts_page():
     rename, disconnect. Mirrors ``schwab_accounts.html``.
     """
     rows = get_snaptrade_accounts(current_user.id) or []
-    # ``schwab_enabled`` so the template can steer Schwab users away from
-    # SnapTrade (which doesn't carry Schwab) and toward our native Schwab
-    # connect. Same env-var heuristic used in app/routes.py and
-    # app/profile_community.py — kept inline rather than centralized
-    # because the import-vs-cycle risk isn't worth a helper for a one-liner.
-    schwab_enabled = bool(
-        os.environ.get("SCHWAB_APP_KEY") and os.environ.get("SCHWAB_APP_SECRET")
-    )
     return render_template(
         "snaptrade_accounts.html",
         title="Connected brokerages",
         accounts=rows,
         snaptrade_enabled=snaptrade_enabled(),
-        schwab_enabled=schwab_enabled,
     )
 
 
@@ -1218,14 +1206,13 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     snap_user_id = snap["snaptrade_user_id"]
     snap_secret = snap["snaptrade_secret"]
 
-    # Stage 0+ tenancy: resolve broker_account_id BEFORE any external
-    # API calls so a SnapTrade error doesn't leave us without a stable
-    # tenant key. Idempotent / lazily creates the row for legacy
-    # snaptrade_accounts entries that pre-date this code.
-    broker_account_id = _ensure_snaptrade_broker_account_id(
+    # v2 tenancy: resolve tenant_id BEFORE any external API calls so a
+    # SnapTrade error doesn't leave us without a stable tenant key.
+    tenant_id = _ensure_snaptrade_tenant_id(
         user_id=user_id,
         snaptrade_account_id=snaptrade_account_id,
         account_name=account_name,
+        snaptrade_connection_id=acc_row.get("brokerage_authorization_id"),
     )
 
     end_date = date.today()
@@ -1251,9 +1238,11 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     # orders 2 min after execution but absent from activities for hours.
     activities_df = activities_to_history_df(
         activities, account_name=account_name, user_id=user_id,
+        tenant_id=tenant_id,
     )
     orders_df = orders_to_history_df(
         orders, account_name=account_name, user_id=user_id,
+        tenant_id=tenant_id,
     )
     import pandas as pd
     # Concat only the non-empty frames — pandas deprecates concatenating
@@ -1293,6 +1282,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
         )
     current_df = positions_to_current_df(
         positions, account_name=account_name, user_id=user_id,
+        tenant_id=tenant_id,
     )
     balances_df = balances_to_balance_df(
         account_summary=account_summary,
@@ -1300,6 +1290,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
         positions=positions,
         account_name=account_name,
         user_id=user_id,
+        tenant_id=tenant_id,
     )
 
     skip_history = history_df is None or history_df.empty
@@ -1339,7 +1330,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             current_df,
             commit_message=commit_msg,
             user_id=user_id,
-            broker_account_id=broker_account_id,
+            tenant_id=tenant_id,
             skip_history=skip_history,
             balances_df=balances_df,
         )

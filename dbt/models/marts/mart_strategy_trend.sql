@@ -12,8 +12,9 @@ with closed_trades as (
     select
         account,
         user_id,
-        -- Stage 2 broker_account_id passthrough (upstream already carries it).
-        broker_account_id,
+        -- v2 tenant_id passthrough — upstream already carries it.
+        -- See docs/V2_TENANT_KEY_DESIGN.md.
+        tenant_id,
         strategy,
         date_trunc(close_date, month) as month_start,
         total_pnl,
@@ -31,7 +32,7 @@ monthly as (
     select
         account,
         user_id,
-        any_value(broker_account_id) as broker_account_id,
+        any_value(tenant_id) as tenant_id,
         strategy,
         month_start,
         count(*)                              as trades_closed,
@@ -82,7 +83,7 @@ with_rolling as (
 select
     account,
     user_id,
-    broker_account_id,
+    tenant_id,
     strategy,
     month_start,
     trades_closed,

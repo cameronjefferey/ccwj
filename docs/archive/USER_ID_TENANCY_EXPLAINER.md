@@ -1,5 +1,8 @@
 # How `user_id` / account matching works in HappyTrader
 
+> **SUPERSEDED (2026-05-24).** v2 uses broker-stable `tenant_id` (`snaptrade:<uuid>`).
+> See [`docs/V2_TENANT_KEY_DESIGN.md`](../V2_TENANT_KEY_DESIGN.md).
+
 A copy-pasteable, verbose explainer of the tenancy plumbing — what it is,
 where it lives, why it keeps breaking, and the known failure modes.
 Intended as context to share with another AI / reviewer who does not

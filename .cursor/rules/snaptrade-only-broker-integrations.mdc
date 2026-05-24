@@ -1,0 +1,50 @@
+---
+description: SnapTrade-only broker connectivity policy (v2 architecture)
+alwaysApply: true
+---
+
+# SnapTrade-only broker integrations
+
+HappyTrader v2 routes **all** broker connectivity through [SnapTrade](https://snaptrade.com).
+Direct broker OAuth (native Schwab, Fidelity API, etc.) is **not** permitted unless this rule
+is explicitly amended after a documented exception.
+
+## Policy
+
+1. **One integration path:** `app/snaptrade.py` + `app/snaptrade_normalize.py` +
+   `app/snaptrade_sync_cli.py`. No parallel `app/<broker>.py` modules.
+2. **Schwab included via SnapTrade.** Schwab users connect through the SnapTrade Connection
+   Portal like every other broker. Do not add "Connect Schwab" native OAuth UI or crons.
+3. **Exception gate:** A direct integration is allowed only when SnapTrade demonstrably does
+   **not** support the broker **and** the operator has signed off in
+   `docs/PHASE0_SNAPTRADE_VALIDATION.md` (or a successor validation doc). Document the
+   exception in `docs/V2_TENANT_KEY_DESIGN.md` and add a row to the validation checklist.
+4. **Tenant key:** Every seed row must carry `tenant_id = "<broker_slug>:<broker_uuid>"`.
+   SnapTrade accounts use `broker_slug=snaptrade` and SnapTrade's account UUID verbatim.
+   See `docs/V2_TENANT_KEY_DESIGN.md`.
+
+## Before editing broker sync code
+
+Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight checklist.
+
+## Forbidden patterns
+
+- New routes under `/schwab/*` or env vars `SCHWAB_APP_KEY` / `SCHWAB_APP_SECRET` in active code paths
+- Postgres helpers that read/write `schwab_connections` (table is legacy until Phase 6 drop)
+- Minting our own account identifiers (`broker_accounts.id` SERIAL, `(user_id, account_name)` joins)
+- UI copy steering Schwab users away from SnapTrade ("SnapTrade doesn't support Schwab")
+
+## Allowed
+
+- CSV manual upload (`app/upload.py`) — no OAuth, display-only `account` label
+- Comments / DDL for legacy tables until `scripts/admin/v2_cutover_reset.py` Phase 6 drop
+- Historical references in `docs/archive/` and regression tests for **data shape**, not live OAuth
+
+## Verification
+
+When adding a broker-facing surface:
+
+- [ ] Connect flow uses `url_for('snaptrade_connect')` only
+- [ ] Sync cron is `happytrader-snaptrade-sync` (see `app/render.yaml`)
+- [ ] Seed writes include `tenant_id` from `get_or_create_broker_tenant`
+- [ ] No new imports from deleted `app/schwab.py`

@@ -58,7 +58,7 @@ app.add_template_filter(_format_option_symbol, name="option_symbol")
 
 
 def _account_label_filter(account_name):
-    """Render an ``account_name`` with the user's Schwab ``display_nickname``
+    """Render an ``account_name`` with the user's SnapTrade ``display_nickname``
     when one is set, otherwise the raw account_name.
 
     Lives in the application factory rather than next to the data layer so
@@ -81,13 +81,8 @@ def _account_label_filter(account_name):
             return account_name
         nicknames = getattr(g, "_account_nicknames", None)
         if nicknames is None:
-            from app.models import get_account_nicknames, get_snaptrade_account_nicknames
-            schwab = get_account_nicknames(current_user.id) or {}
-            snap = get_snaptrade_account_nicknames(current_user.id) or {}
-            # Schwab wins on overlap (its rows are the older / canonical
-            # source for any account label that pre-dates the SnapTrade
-            # connector); SnapTrade fills in the rest.
-            nicknames = {**snap, **schwab}
+            from app.models import get_snaptrade_account_nicknames
+            nicknames = get_snaptrade_account_nicknames(current_user.id) or {}
             g._account_nicknames = nicknames
         return nicknames.get(account_name, account_name)
     except Exception:
@@ -121,27 +116,6 @@ def _inject_feature_flags():
     }
 
 
-@app.context_processor
-def _inject_schwab_reauth_needed():
-    """Surface Schwab connections whose refresh token Schwab has rejected.
-
-    When the cron (or in-app sync) hits ``refresh_token_authentication_error``
-    we set ``schwab_connections.refresh_token_invalid_at``. Reading the
-    flag here makes the "Reconnect Schwab" banner in ``base.html``
-    show up on the next page load — otherwise an expired connection
-    just produces silently-stale data with no signal to the trader.
-    """
-    try:
-        from flask_login import current_user
-        if not getattr(current_user, "is_authenticated", False):
-            return {"schwab_reauth_needed": []}
-        from app.models import get_expired_schwab_connections
-        rows = get_expired_schwab_connections(current_user.id) or []
-        return {"schwab_reauth_needed": rows}
-    except Exception:
-        return {"schwab_reauth_needed": []}
-
-
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -154,15 +128,7 @@ def not_found(e):
 
 @app.errorhandler(429)
 def too_many_requests(e):
-    """flask-limiter raises RateLimitExceeded → 429.
-
-    We pick the response shape from the request:
-    - JSON / API clients (XHR, /api/*, /insights/ask, Accept: json) get a
-      structured payload with a stable error code so the client UI can
-      render its own 'try again later' banner without a page reload.
-    - HTML clients see a friendly flash + redirect back where they came
-      from. Falls back to the homepage when Referer is unsafe or unset.
-    """
+    """flask-limiter raises RateLimitExceeded → 429."""
     from flask import jsonify, redirect
 
     description = getattr(e, "description", "Too many requests, slow down.")
@@ -310,9 +276,8 @@ limiter.init_app(app)
 
 # Initialize the database and seed users from env.
 #
-# HAPPYTRADER_SKIP_DB_INIT=1 lets unit-test runs that import `app.*` (e.g.
-# tests/test_safe_next.py, tests/test_schwab_parsers.py) skip the Postgres
-# bootstrap. Production never sets it; Render always has DATABASE_URL.
+# HAPPYTRADER_SKIP_DB_INIT=1 lets unit-test runs that import `app.*` skip the
+# Postgres bootstrap. Production never sets it; Render always has DATABASE_URL.
 from app.models import init_db, seed_users_from_env, ensure_demo_user
 if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") != "1":
     init_db()
@@ -327,7 +292,6 @@ from app import strategy_fit_insights  # noqa: F401  registers /strategy-fit/ins
 from app import weekly_review
 from app import wealth  # noqa: F401  registers /wealth route
 from app import admin  # noqa: F401  registers /admin/* routes
-from app import schwab
 from app import snaptrade  # noqa: F401  registers /snaptrade/* routes
 from app import first_look
 from app import strategies

@@ -162,7 +162,7 @@
 <div class="alert alert-danger">
     <strong>We couldn't load your wealth data.</strong>
     <p class="mb-0 mt-2 small">{{ error }} If it keeps failing, try
-        <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or
+        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync">syncing your broker</a> or
         <a href="{{ url_for('upload') }}">uploading your trade history</a>.</p>
 </div>
 {% elif wealth_no_match %}
@@ -200,9 +200,9 @@
 <div class="alert alert-info">
     <strong>No daily balance snapshots yet.</strong>
     <p class="mb-0 mt-2 small">Once your data has a few daily snapshots, this page will plot how your balance has moved.
-        Connect Schwab so the daily sync starts capturing them, or upload a CSV with the latest balance.</p>
+        Connect your broker so the daily sync starts capturing them, or upload a CSV with the latest balance.</p>
     <div class="mt-2 d-flex flex-wrap gap-2">
-        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Connect your broker</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
     </div>
 </div>

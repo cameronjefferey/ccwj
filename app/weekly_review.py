@@ -18,8 +18,8 @@ helper functions that produced them are kept in this module — tests pin
 them and we don't want to thrash CI — but they aren't called from the
 view. Future cleanup may delete them entirely once the daily shape settles.
 
-Tenancy: every BQ read passes through `_account_sql_and` (SQL-level) and
-every DataFrame is filtered via `_filter_df_by_accounts` BEFORE any
+Tenancy: every BQ read passes through `_tenant_sql_and` (SQL-level) and
+every DataFrame is filtered via `_filter_df_by_tenant_ids` BEFORE any
 merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
 from datetime import date, datetime, time, timedelta
@@ -29,7 +29,7 @@ from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.models import (
-    get_accounts_for_user, is_admin,
+    is_admin,
     get_mirror_score_for_user, get_mirror_score_history,
     get_insight_for_user,
     get_published_trade_fingerprints,
@@ -83,9 +83,17 @@ def _bq_parallel(client, queries):
 
 
 def _user_account_list():
-    if is_admin(current_user.username):
-        return None
-    return get_accounts_for_user(current_user.id)
+    from app.routes import _user_account_list as _routes_user_account_list
+    return _routes_user_account_list()
+
+
+# Tenant-scoped query helpers live in app.routes (v2 tenant_id cutover).
+from app.routes import (
+    _tenants_for_scope,
+    _tenant_sql_and,  # noqa: E402,F401
+    _tenant_sql_filter as _tenant_sql_where,  # noqa: E402,F401
+    _filter_df_by_tenant_ids,  # noqa: E402,F401
+)
 
 
 def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, strike):
@@ -125,16 +133,6 @@ def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, s
     if is_call:
         return sp >= k, round(sp - k, 2)
     return sp <= k, round(k - sp, 2)
-
-
-# Tenant-scoped query helpers live in app.routes so the same user_id
-# predicate and Stage 0/1 NULL-leniency apply everywhere. See
-# docs/USER_ID_TENANCY.md.
-from app.routes import (
-    _account_sql_and,  # noqa: E402,F401  -- re-exported for local SQL formatters
-    _account_sql_filter as _account_sql_where,  # noqa: E402,F401
-    _filter_df_by_accounts,  # noqa: E402,F401 -- DataFrame-level tenant filter
-)
 
 
 MARKET_PERF_QUERY = """
@@ -207,14 +205,14 @@ WEEKLY_SUMMARY_COMBINED_QUERY = """
 SELECT *
 FROM `ccwj-dbt.analytics.mart_weekly_summary`
 WHERE week_start IN UNNEST(@week_starts)
-  {account_filter}
+  {tenant_filter}
 """
 
 LATEST_ACTIVE_WEEK_QUERY = """
 SELECT MAX(week_start) AS latest_week
 FROM `ccwj-dbt.analytics.mart_weekly_summary`
 WHERE (trades_closed > 0 OR trades_opened > 0)
-  {account_filter}
+  {tenant_filter}
 """
 
 # Total account value (from current positions snapshot) for context and return % vs account
@@ -223,7 +221,7 @@ SELECT
   COALESCE(SUM(CASE WHEN row_type = 'account_total' THEN market_value ELSE 0 END), 0) AS account_value,
   COALESCE(SUM(CASE WHEN row_type = 'cash' THEN market_value ELSE 0 END), 0) AS cash_balance
 FROM `ccwj-dbt.analytics.stg_account_balances`
-WHERE 1=1 {account_filter}
+WHERE 1=1 {tenant_filter}
 """
 
 # Weekly account return from dbt mart (replaces inline WEEKLY_ACCOUNT_CHANGE_QUERY)
@@ -231,7 +229,7 @@ WEEKLY_RETURNS_QUERY = """
 SELECT account, start_value, end_value, weekly_return_pct
 FROM `ccwj-dbt.analytics.mart_account_weekly_returns`
 WHERE week_start = @week_start
-  {account_filter}
+  {tenant_filter}
 """
 
 # Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
@@ -241,7 +239,7 @@ SELECT account, date, account_value,
   base_1w_date, base_1w_value, delta_1w, delta_1w_pct,
   base_1m_date, base_1m_value, delta_1m, delta_1m_pct
 FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
-WHERE 1=1 {account_filter}
+WHERE 1=1 {tenant_filter}
 ORDER BY date DESC
 """
 
@@ -262,7 +260,7 @@ SELECT
   num_trades
 FROM `ccwj-dbt.analytics.mart_weekly_trades`
 WHERE week_start = @week_start
-  {account_filter}
+  {tenant_filter}
 ORDER BY close_date DESC NULLS LAST, open_date DESC
 """
 
@@ -282,7 +280,7 @@ SELECT
   baseline_weeks_8w
 FROM `ccwj-dbt.analytics.mart_weekly_behavior_enriched`
 WHERE week_start = @week_start
-  {account_filter}
+  {tenant_filter}
 """
 
 # Open positions exposure for Monday Risk Check
@@ -294,7 +292,7 @@ SELECT
     SUM(ABS(CAST(market_value AS FLOAT64))) AS exposure
 FROM `ccwj-dbt.analytics.int_enriched_current`
 WHERE quantity IS NOT NULL AND quantity != 0
-  {account_filter}
+  {tenant_filter}
 GROUP BY 1, 2, 3
 ORDER BY exposure DESC
 """
@@ -304,7 +302,7 @@ ORDER BY exposure DESC
 # Source: stg_earnings_calendar (per-symbol next_earnings_date from
 # yfinance, populated by scripts/refresh_earnings_calendar.py). Joined to
 # distinct underlyings currently held via int_enriched_current — TENANT
-# SCOPE applied inside the holdings CTE via {account_filter}, mirroring
+# SCOPE applied inside the holdings CTE via {tenant_filter}, mirroring
 # the same predicate used by OPEN_POSITIONS_QUERY below. The resulting
 # rows are symbol-grain (no account column); the symbol set is already
 # narrowed to the user's holdings, so no Python-side _filter_df_by_accounts
@@ -318,7 +316,7 @@ WITH holdings AS (
     SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
-      {account_filter}
+      {tenant_filter}
 )
 SELECT
     e.symbol,
@@ -356,13 +354,13 @@ ORDER BY e.next_earnings_date, e.symbol
 # Falls back to abs(net_pnl) when nothing else is available so the
 # annualized column doesn't go ±infinity on a free-money dividend lot.
 #
-# Tenancy: every CTE that hits a user-data table carries {account_filter}.
+# Tenancy: every CTE that hits a user-data table carries {tenant_filter}.
 POSITION_ATTRIBUTION_QUERY = """
 WITH classification AS (
     SELECT account, user_id, symbol, trade_group_type, total_pnl,
            status, open_date, close_date
     FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 ),
 per_sym_pnl AS (
     SELECT
@@ -383,7 +381,7 @@ per_sym_div AS (
            total_dividend_income AS dividend_income,
            dividend_count, last_dividend_date
     FROM `ccwj-dbt.analytics.int_dividends`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 ),
 per_sym_capital AS (
     -- stg_history exposes ``trade_symbol`` (raw broker fill symbol) and
@@ -397,7 +395,7 @@ per_sym_capital AS (
         SUM(CASE WHEN action='option_sell' THEN ABS(amount) ELSE 0 END) AS option_premium_collected
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE underlying_symbol IS NOT NULL
-      {account_filter}
+      {tenant_filter}
     GROUP BY 1, 2, 3
 ),
 per_sym_holdings AS (
@@ -416,7 +414,7 @@ per_sym_holdings AS (
         MAX(current_price) AS current_price
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
-      {account_filter}
+      {tenant_filter}
     GROUP BY 1, 2, 3
 ),
 sym_meta AS (
@@ -491,7 +489,7 @@ WITH holdings AS (
         SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(market_value, 0) ELSE 0 END) AS market_value
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
-      {account_filter}
+      {tenant_filter}
     GROUP BY 1
 ),
 recent_prices AS (
@@ -548,7 +546,7 @@ WITH holdings AS (
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
-      {account_filter}
+      {tenant_filter}
 ),
 ex_divs AS (
     SELECT
@@ -645,7 +643,7 @@ SELECT
 FROM `ccwj-dbt.analytics.int_enriched_current` e
 LEFT JOIN latest_prices lp ON e.underlying_symbol = lp.symbol
 WHERE e.quantity IS NOT NULL AND e.quantity != 0
-  {account_filter}
+  {tenant_filter}
 ORDER BY e.underlying_symbol, e.instrument_type
 """
 
@@ -659,7 +657,7 @@ WITH boundary AS (
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE date BETWEEN @start_date AND @end_date
       AND close_price IS NOT NULL AND close_price > 0
-      {account_filter}
+      {tenant_filter}
 )
 SELECT DISTINCT account, symbol, start_price, start_date, end_price, end_date
 FROM boundary
@@ -730,7 +728,7 @@ WITH daily AS (
     FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
     WHERE date >= @start_date
       AND date <= @end_date
-      {account_filter}
+      {tenant_filter}
     GROUP BY date
 )
 SELECT
@@ -752,7 +750,7 @@ FROM `ccwj-dbt.analytics.int_strategy_classification` c
 WHERE c.open_date >= @start_date
   AND c.open_date <= @end_date
   AND c.num_trades > 0
-  {account_filter}
+  {tenant_filter}
 """
 
 # This week's P&L and counts by strategy (for "What works for you" section)
@@ -767,7 +765,7 @@ FROM `ccwj-dbt.analytics.int_strategy_classification`
 WHERE status = 'Closed'
   AND close_date >= @start_date
   AND close_date <= @end_date
-  {account_filter}
+  {tenant_filter}
 GROUP BY strategy
 ORDER BY total_pnl DESC
 """
@@ -777,7 +775,7 @@ WITH streak AS (
     SELECT streak_type, streak_length, week_pnl
     FROM `ccwj-dbt.analytics.mart_weekly_streaks`
     WHERE week_start = @week_start
-      {account_filter}
+      {tenant_filter}
     ORDER BY streak_length DESC
     LIMIT 1
 ),
@@ -789,7 +787,7 @@ loss_cluster AS (
         COUNT(*) AS total_trades,
         COUNTIF(outcome = 'Winner') AS total_winners
     FROM `ccwj-dbt.analytics.int_trade_sequence`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
 ),
 loss_cluster_week AS (
     SELECT
@@ -798,7 +796,7 @@ loss_cluster_week AS (
     FROM `ccwj-dbt.analytics.int_trade_sequence`
     WHERE close_date >= @week_start
       AND close_date <= @week_end
-      {account_filter}
+      {tenant_filter}
 ),
 dte_sensitivity AS (
     SELECT
@@ -808,7 +806,7 @@ dte_sensitivity AS (
         SUM(CASE WHEN outcome = 'Loser' THEN num_trades ELSE 0 END) AS losers,
         SUM(total_pnl) AS total_pnl
     FROM `ccwj-dbt.analytics.mart_option_trades_by_kind`
-    WHERE 1=1 {account_filter}
+    WHERE 1=1 {tenant_filter}
     GROUP BY dte_bucket
 )
 SELECT 'streak' AS _section, streak_type, CAST(streak_length AS STRING) AS val1, CAST(week_pnl AS STRING) AS val2, NULL AS val3, NULL AS val4, NULL AS val5 FROM streak
@@ -831,7 +829,7 @@ FROM `ccwj-dbt.analytics.int_option_exit_analysis`
 WHERE close_date >= @week_start
   AND close_date <= @week_end
   AND data_reliable = true
-  {account_filter}
+  {tenant_filter}
 ORDER BY pnl_given_back DESC
 """
 
@@ -851,7 +849,7 @@ ORDER BY total_pnl_given_back DESC
 """
 
 
-def _detect_patterns(client, account_filter, week_start, week_end):
+def _detect_patterns(client, tenant_filter, week_start, week_end):
     """Detect behavioral patterns from pre-computed dbt models.
 
     Returns a list of pattern dicts:
@@ -867,7 +865,7 @@ def _detect_patterns(client, account_filter, week_start, week_end):
             bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
         ])
         combined_df = client.query(
-            PATTERNS_COMBINED_QUERY.format(account_filter=account_filter),
+            PATTERNS_COMBINED_QUERY.format(tenant_filter=tenant_filter),
             job_config=cfg,
         ).to_dataframe()
 
@@ -1014,7 +1012,7 @@ WHERE status = 'Closed'
   AND close_date >= @since_date
   AND close_date <= @today_date
   AND num_trades > 0
-  {account_filter}
+  {tenant_filter}
 ORDER BY close_date DESC, ABS(total_pnl) DESC
 LIMIT 5
 """
@@ -1026,7 +1024,7 @@ FROM `ccwj-dbt.analytics.int_strategy_classification`
 WHERE open_date >= @since_date
   AND open_date <= @today_date
   AND num_trades > 0
-  {account_filter}
+  {tenant_filter}
 ORDER BY open_date DESC
 LIMIT 10
 """
@@ -1054,7 +1052,7 @@ def _humanize_gap(gap):
     return "a while ago"
 
 
-def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip,
+def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                        expiring_options, user_tz, force_show=False):
     """
     Build the "Since you last looked" diff card.
@@ -1165,7 +1163,7 @@ def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip
                 bigquery.ScalarQueryParameter("today_date", "DATE", today),
             ])
             closed_df = client.query(
-                TRADES_CLOSED_SINCE_QUERY.format(account_filter=account_filter),
+                TRADES_CLOSED_SINCE_QUERY.format(tenant_filter=tenant_filter),
                 job_config=cfg,
             ).to_dataframe()
             for _, row in closed_df.iterrows():
@@ -1183,7 +1181,7 @@ def _since_last_looked(client, account_filter, prev_visit_dt, today, today_strip
                 })
 
             opened_df = client.query(
-                TRADES_OPENED_SINCE_QUERY.format(account_filter=account_filter),
+                TRADES_OPENED_SINCE_QUERY.format(tenant_filter=tenant_filter),
                 job_config=cfg,
             ).to_dataframe()
             for _, row in opened_df.iterrows():
@@ -2558,14 +2556,8 @@ def weekly_review():
     # Account focus (multi-account support). Regular users can only
     # restrict to accounts they own; admins can ad-hoc any label.
     selected_account = request.args.get("account", "")
-    effective_accounts = user_accounts
-    if selected_account:
-        if user_accounts is None:
-            effective_accounts = [selected_account]
-        else:
-            effective_accounts = [a for a in user_accounts if a == selected_account] or user_accounts
-
-    account_filter = _account_sql_and(effective_accounts)
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     prof = get_user_profile(current_user.id) or {}
     user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
@@ -2650,21 +2642,21 @@ def weekly_review():
         strategy_by_symbol_query = """
         SELECT account, user_id, symbol, strategy, SUM(total_pnl) AS total_pnl
         FROM `ccwj-dbt.analytics.int_strategy_classification`
-        WHERE 1=1 {account_filter}
+        WHERE 1=1 {tenant_filter}
         GROUP BY 1, 2, 3, 4
-        """.format(account_filter=account_filter)
+        """.format(tenant_filter=tenant_filter)
 
         try:
             batch = _bq_parallel(client, {
-                "account_value": ACCOUNT_VALUE_QUERY.format(account_filter=account_filter),
-                "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(account_filter=account_filter),
-                "positions": OPEN_POSITIONS_QUERY.format(account_filter=account_filter),
-                "calendar": (DAILY_CALENDAR_QUERY.format(account_filter=account_filter), cal_cfg),
-                "earnings": EARNINGS_UPCOMING_QUERY.format(account_filter=account_filter),
-                "attribution": POSITION_ATTRIBUTION_QUERY.format(account_filter=account_filter),
+                "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
+                "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
+                "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+                "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
+                "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
+                "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
                 "strategy_by_sym": strategy_by_symbol_query,
-                "today_moves": TODAY_MOVES_QUERY.format(account_filter=account_filter),
-                "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(account_filter=account_filter),
+                "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
+                "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
             })
         except Exception as e:
             if app.debug:
@@ -2678,7 +2670,7 @@ def weekly_review():
                  "attribution", "strategy_by_sym", "today_moves"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
-                batch[k] = _filter_df_by_accounts(df, effective_accounts)
+                batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -2767,8 +2759,8 @@ def weekly_review():
                     })
 
             # Fill placeholder rows for any account with no snapshot row yet.
-            if effective_accounts:
-                for acct in effective_accounts:
+            if tenant_ids:
+                for acct in tenant_ids:
                     if acct not in seen_accounts:
                         context["today_snapshots_by_account"].append({
                             "account": acct,
@@ -2781,7 +2773,7 @@ def weekly_review():
                             },
                             "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
                         })
-                acct_order = {a: i for i, a in enumerate(effective_accounts)}
+                acct_order = {a: i for i, a in enumerate(tenant_ids)}
                 context["today_snapshots_by_account"].sort(
                     key=lambda s: acct_order.get(s["account"], 999)
                 )
@@ -2955,7 +2947,7 @@ def weekly_review():
         try:
             context["since_last_looked"] = _since_last_looked(
                 client=client,
-                account_filter=account_filter,
+                tenant_filter=tenant_filter,
                 prev_visit_dt=since_anchor_dt,
                 today=today,
                 today_strip=context.get("today_strip", []),

@@ -23,7 +23,7 @@ with base as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         week_start,
         trades_closed,
         total_pnl,
@@ -37,7 +37,7 @@ with_baseline as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         week_start,
         trades_closed,
         total_pnl,
@@ -77,7 +77,7 @@ with_baseline as (
 select
     account,
     user_id,
-    broker_account_id,
+    tenant_id,
     week_start,
     trades_closed,
     total_pnl,

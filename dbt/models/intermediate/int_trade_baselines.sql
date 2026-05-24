@@ -205,8 +205,8 @@ prior_strategy_wr as (
 select
     t.account,
     t.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     t.trade_symbol,
     t.strategy,
     t.open_date,
@@ -244,6 +244,6 @@ left join prior_strategy_wr psw
     on t.account = psw.account
     and (t.user_id is not distinct from psw.user_id)
     and t.trade_symbol = psw.trade_symbol
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on t.account = dba.account_name
     and (t.user_id is not distinct from dba.user_id)

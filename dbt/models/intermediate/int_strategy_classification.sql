@@ -374,27 +374,19 @@ classified as (
 )
 
 ---------------------------------------------------------------------
--- 7. Stage 2 broker_account_id passthrough.
+-- 7. v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
 --
--- Rather than threading broker_account_id through every CTE above,
--- we resolve it once at the model's output by joining against
--- dim_broker_accounts on (account, user_id). This is safe because:
---   - dim_broker_accounts is built BEFORE this model in the DAG.
---   - (account, user_id) → broker_account_id is functional in the
---     warehouse (enforced by seed_broker_account_id_unique_per_account_user
---     dbt singular test).
---   - Orphan rows (NULL broker_account_id in seed, no dim entry)
---     get NULL here. The Stage 3 Flask filter drops them, which is
---     the security upgrade.
---
--- Stage 4 will refactor this once broker_account_id is the JOIN
--- key directly. For now, additive — does not change row count or
--- any existing column.
+-- The classified CTEs above explicitly enumerate columns and don't
+-- include tenant_id, so we resolve it at the output by joining
+-- ``dim_broker_tenants`` on (account, user_id). The dim is built from
+-- the same seeds and (account, user_id) → tenant_id is functional by
+-- construction. Rows the dim doesn't know about (no broker connection,
+-- demo data) get NULL — fail-closed at the Flask filter layer.
 ---------------------------------------------------------------------
 select
     c.*,
-    d.broker_account_id
+    d.tenant_id
 from classified c
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on c.account = d.account_name
     and (c.user_id is not distinct from d.user_id)

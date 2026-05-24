@@ -459,25 +459,21 @@ final as (
 )
 
 ---------------------------------------------------------------------
--- Stage 2 broker_account_id passthrough.
+-- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
 --
--- mart_daily_pnl has a deep CTE chain (~15 CTEs across staging,
--- intermediate joins, window-functioned cumulative builds) and the
--- existing groupby grain is (account, user_id, symbol, date).
--- broker_account_id is functional on (account, user_id), so we
--- attach it once at the model output by joining against
--- dim_broker_accounts. This is identical to the int_strategy_classification
--- pattern — see that model for the full rationale.
---
--- Orphan rows (NULL broker_account_id in seed, no dim entry) get
--- NULL here. The Stage 3 Flask filter drops them — that's the
--- security upgrade.
+-- mart_daily_pnl has a deep CTE chain (~15 CTEs) with explicit
+-- column lists that don't carry tenant_id through. We attach it
+-- once at the model output by joining against dim_broker_tenants
+-- on (account, user_id) — the dim is built from the same seeds and
+-- (account, user_id) → tenant_id is functional by construction.
+-- Rows the dim doesn't know about (no broker connection, demo data)
+-- get NULL — fail-closed at the Flask filter layer.
 ---------------------------------------------------------------------
 select
     f.*,
-    d.broker_account_id
+    d.tenant_id
 from final f
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on f.account = d.account_name
     and (f.user_id is not distinct from d.user_id)
 order by f.account, f.user_id, f.symbol, f.date

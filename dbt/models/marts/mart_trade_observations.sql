@@ -23,8 +23,9 @@ with joined as (
     select
         f.account,
         f.user_id,
-        -- Stage 2 broker_account_id passthrough (int_trade_features carries it).
-        f.broker_account_id,
+        -- v2 tenant_id passthrough — int_trade_features carries it.
+        -- See docs/V2_TENANT_KEY_DESIGN.md.
+        f.tenant_id,
         f.trade_symbol,
         f.underlying_symbol,
         f.strategy,

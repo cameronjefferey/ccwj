@@ -69,7 +69,6 @@
             <p class="mb-0 opacity-90">Manage your account and preferences.</p>
         </div>
 
-        {# ── Account Info ── #}
         <div class="card settings-card">
             <div class="card-header">Account Info</div>
             <div class="card-body">
@@ -81,8 +80,8 @@
                 <div class="settings-field">
                     <div class="field-label">Portfolio accounts</div>
                     <p class="field-hint mb-0">
-                        These are the brokerage account <em>names</em> used in your dashboard (for example “Roth IRA” or your Schwab account nickname).
-                        They show up here after you add data—either with Schwab below or by uploading CSVs on the
+                        These are the brokerage account <em>names</em> used in your dashboard (for example “Roth IRA” or your broker nickname).
+                        They show up here after you add data—either by connecting a broker or uploading CSVs on the
                         <a href="{{ url_for('upload') }}">Upload</a> page.
                     </p>
                     {% if accounts %}
@@ -94,43 +93,26 @@
                     {% else %}
                     <p class="text-muted small mb-0 mt-2">
                         <span class="fw-medium text-body-secondary">None yet.</span>
-                        Use Schwab sync or a manual upload to create your first account label.
+                        <a href="{{ url_for('snaptrade_connect') }}">Connect a broker</a> or use a manual upload to create your first account label.
                     </p>
                     {% endif %}
                 </div>
 
-                {% if schwab_enabled %}
                 <div class="settings-field">
-                    <div class="field-label">Schwab</div>
+                    <div class="field-label">Broker sync</div>
                     <p class="field-hint mb-2">
-                        Sign in to Schwab once to authorize HappyTrader. After that, <strong>Sync now</strong> pulls in your latest positions and trades automatically.
+                        Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers through SnapTrade.
+                        After connecting, <strong>Sync now</strong> pulls your latest positions and trades automatically.
                     </p>
-                    {% if schwab_connections %}
-                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                        <span class="badge text-bg-success">
-                            Connected{% for c in schwab_connections %}: {{ c.display_nickname or c.account_name or c.account_number }}{% if not loop.last %}, {% endif %}{% endfor %}
-                        </span>
-                    </div>
-                    <p class="small text-muted mb-2">Use <strong>Profile → Accounts &amp; login</strong> to choose how far back the first sync goes, or run a one-time full history import.</p>
-                    <form method="POST" action="{{ url_for('schwab_sync') }}" class="schwab-sync-form">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="sync_scope" value="rolling">
-                        <button type="submit" class="btn btn-sm btn-primary">Sync now (rolling window)</button>
-                        <p class="schwab-sync-status small text-muted mt-2 mb-0 d-none">Pulling from Schwab. This can take a minute — keep this tab open.</p>
-                    </form>
-                    {% else %}
                     <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
-                        <a href="{{ url_for('schwab_connect') }}" class="btn btn-sm btn-primary">Connect Schwab</a>
+                        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-sm btn-primary">Manage broker connections</a>
                         <span class="text-muted small">or</span>
                         <a href="{{ url_for('upload') }}" class="small">Upload CSVs manually</a>
                     </div>
-                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </div>
 
-        {# ── Change Password ── #}
         <div class="card settings-card">
             <div class="card-header">Change Password</div>
             <div class="card-body">
@@ -157,7 +139,6 @@
             </div>
         </div>
 
-        {# ── Upload History ── #}
         <div class="card settings-card">
             <div class="card-header">Upload History</div>
             <div class="card-body">
@@ -185,7 +166,7 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted mb-0 small">No upload or sync history for this login yet. Data from <a href="{{ url_for('upload') }}">Upload</a> or Schwab sync will appear here.</p>
+                <p class="text-muted mb-0 small">No upload or sync history for this login yet. Data from <a href="{{ url_for('upload') }}">Upload</a> or broker sync will appear here.</p>
                 {% endif %}
             </div>
         </div>

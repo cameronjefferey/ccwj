@@ -1,10 +1,9 @@
 # SnapTrade (multi-broker) Setup Guide
 
-Connect HappyTrader to ~20 brokerages (Fidelity, Vanguard, Robinhood,
+Connect HappyTrader to ~20 brokerages (Schwab, Fidelity, Vanguard, Robinhood,
 IBKR, Tradier, etc.) via the [SnapTrade](https://snaptrade.com) aggregator.
-SnapTrade is a sibling to the native Schwab connector — **Schwab users
-should keep using the native Schwab connector** (it returns deeper
-history). SnapTrade is the path for every NON-Schwab broker.
+**v2 architecture:** all broker OAuth flows go through SnapTrade — there is no
+native Schwab connector.
 
 ## Prerequisites
 

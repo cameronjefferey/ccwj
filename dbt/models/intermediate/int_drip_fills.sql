@@ -74,8 +74,8 @@ candidate_buys as (
 select
     cb.account,
     cb.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    any_value(dba.broker_account_id) as broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    any_value(dba.tenant_id) as tenant_id,
     cb.trade_date,
     cb.underlying_symbol,
     cb.quantity,
@@ -87,7 +87,7 @@ join ex_div_dates edd
     on  edd.symbol      = cb.underlying_symbol
     and edd.ex_div_date <= cb.trade_date
     and edd.ex_div_date >= date_sub(cb.trade_date, interval 30 day)
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on cb.account = dba.account_name
     and (cb.user_id is not distinct from dba.user_id)
 group by 1, 2, 4, 5, 6, 7

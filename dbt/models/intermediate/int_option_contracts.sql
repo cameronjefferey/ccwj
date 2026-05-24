@@ -310,8 +310,8 @@ otm_at_expiry as (
 select
     c.account,
     c.user_id,
-    -- Stage 2 broker_account_id passthrough (see docs/BROKER_ACCOUNT_ID_MIGRATION.md).
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     c.trade_symbol,
     c.underlying_symbol,
     c.option_expiry,
@@ -458,6 +458,6 @@ left join {{ ref('stg_current') }} cur
     and (c.user_id is not distinct from cur.user_id)
     and c.trade_symbol = cur.trade_symbol
     and cur.instrument_type in ('Call', 'Put')
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on c.account = dba.account_name
     and (c.user_id is not distinct from dba.user_id)

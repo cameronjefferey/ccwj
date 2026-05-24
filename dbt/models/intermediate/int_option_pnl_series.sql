@@ -12,48 +12,21 @@
 
     For sold options, positive unrealized_pnl means the option has decayed
     in your favor (you could buy it back cheaper than you sold it).
+
+    v2: under the SnapTrade-only architecture we no longer build daily
+    snapshot wrappers — see docs/V2_TENANT_KEY_DESIGN.md (history loss
+    accepted on cutover). Marks come from the live ``stg_current``
+    snapshot for today only. Downstream coaching surfaces (which depended
+    on multi-day history to compute peak / giveback metrics) degrade
+    gracefully — they use ``data_reliable`` and ``snapshot_density``
+    flags that fall through to "not enough data" naturally.
 */
 
 with opt_snapshot as (
     select
         account,
         user_id,
-        trade_symbol,
-        underlying_symbol,
-        option_expiry,
-        option_strike,
-        option_type,
-        quantity,
-        current_price,
-        market_value,
-        cost_basis,
-        unrealized_pnl,
-        snapshot_date,
-        dbt_valid_from
-    -- Canonical-uid wrapper view (May 2026): preserves historical
-    -- MTM rows across the canonical-owner consolidation. See
-    -- `stg_snapshot_options_market_values_daily` for details.
-    from {{ ref('stg_snapshot_options_market_values_daily') }}
-    where snapshot_date is not null
-),
-
--- Dedup to latest snapshot row per (account, user_id, trade_symbol, snapshot_date).
--- Including user_id keeps two users with the same account label and
--- same option contract from collapsing into one row.
-deduped as (
-    select
-        *,
-        row_number() over (
-            partition by account, user_id, trade_symbol, snapshot_date
-            order by dbt_valid_from desc
-        ) as rn
-    from opt_snapshot
-),
-
-daily as (
-    select
-        account,
-        user_id,
+        tenant_id,
         trade_symbol,
         underlying_symbol,
         option_expiry,
@@ -65,11 +38,30 @@ daily as (
         cost_basis,
         unrealized_pnl,
         snapshot_date
-    from deduped
-    where rn = 1
+    from {{ ref('stg_current') }}
+    where snapshot_date is not null
+      and instrument_type in ('Call', 'Put')
 ),
 
--- Join contract metadata for direction, strategy, premium, open_date
+daily as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        trade_symbol,
+        underlying_symbol,
+        option_expiry,
+        option_strike,
+        option_type,
+        quantity,
+        current_price,
+        market_value,
+        cost_basis,
+        unrealized_pnl,
+        snapshot_date
+    from opt_snapshot
+),
+
 contracts as (
     select
         account,
@@ -94,8 +86,8 @@ strat as (
 select
     d.account,
     d.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    d.tenant_id,
     d.trade_symbol,
     d.underlying_symbol,
     d.option_expiry,
@@ -143,6 +135,3 @@ left join strat s
     on d.account = s.account
     and (d.user_id is not distinct from s.user_id)
     and d.trade_symbol = s.trade_symbol
-left join {{ ref('dim_broker_accounts') }} dba
-    on d.account = dba.account_name
-    and (d.user_id is not distinct from dba.user_id)

@@ -1,10 +1,10 @@
 /*
     A single trade fill should appear EXACTLY ONCE per tenant
-    (user_id, account). Duplicates here cascade into every downstream
-    metric: doubled trade counts, doubled equity sessions, phantom
-    "Cost Written Off" closed legs, doubled cumulative P&L.
+    (tenant_id). Duplicates here cascade into every downstream metric:
+    doubled trade counts, doubled equity sessions, phantom "Cost Written
+    Off" closed legs, doubled cumulative P&L.
 
-    Production regression (May 2026): user_id=7, account='Schwab ••••5989'
+    Production regression (May 2026, v1): user_id=7, account='Schwab ••••5989'
     landed with 213 rows / 158 unique trades (55 dupes). Sample seed:
 
       Schwab ••••5989,7.0,11/14/2024,Sell to Open,CFLT  241220C00030000,
@@ -24,21 +24,17 @@
     helper, this test fails on the next dbt build instead of the user
     discovering it on the position page.
 
-    Tenant grain is (user_id, account, trade_date, action, trade_symbol,
+    Tenant grain is (tenant_id, trade_date, action, trade_symbol,
     quantity, price, amount). fees and description are excluded — fees
     can drift between sync runs (broker recomputes them) and description
     is just human-readable text that mirrors symbol.
 
-    user_id=NULL rows (legacy unowned, pre-tenancy seed) are excluded so
-    the test doesn't flag historical noise we already know about. Once
-    the tenancy backfill lands (Stage 4 in docs/USER_ID_TENANCY.md) this
-    `where user_id is not null` carve-out can drop and every row becomes
-    in-scope.
+    Under v2 every legitimate row carries a tenant_id; NULL is filtered
+    so demo/legacy rows don't trip the test.
 */
 
 select
-    user_id,
-    account,
+    tenant_id,
     trade_date,
     action,
     trade_symbol,
@@ -47,7 +43,7 @@ select
     amount,
     count(*) as n_dupes
 from {{ ref('stg_history') }}
-where user_id is not null
-group by user_id, account, trade_date, action, trade_symbol,
+where tenant_id is not null
+group by tenant_id, trade_date, action, trade_symbol,
          quantity, price, amount
 having count(*) > 1

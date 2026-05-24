@@ -217,8 +217,8 @@ drip_events as (
     where cdk.account is null
 ),
 
--- Stage 2 broker_account_id passthrough.
--- Consolidate the union and left-join dim_broker_accounts.
+-- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+-- Consolidate the union and left-join dim_broker_tenants.
 all_events as (
     select * from csv_events
     union all
@@ -229,8 +229,8 @@ all_events as (
 
 select
     f.*,
-    d.broker_account_id
+    d.tenant_id
 from all_events f
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on f.account = d.account_name
     and (f.user_id is not distinct from d.user_id)

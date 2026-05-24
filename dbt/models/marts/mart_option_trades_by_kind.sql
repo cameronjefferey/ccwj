@@ -17,8 +17,9 @@ agg as (
     select
         account,
         user_id,
-        -- Stage 2 broker_account_id passthrough (upstream already carries it).
-        any_value(broker_account_id) as broker_account_id,
+        -- v2 tenant_id passthrough — upstream already carries it.
+        -- See docs/V2_TENANT_KEY_DESIGN.md.
+        any_value(tenant_id) as tenant_id,
         strategy,
         dte_bucket,
         moneyness_at_open,
@@ -46,7 +47,7 @@ strategy_totals as (
 select
     a.account,
     a.user_id,
-    a.broker_account_id,
+    a.tenant_id,
     a.strategy,
     a.dte_bucket,
     a.moneyness_at_open,

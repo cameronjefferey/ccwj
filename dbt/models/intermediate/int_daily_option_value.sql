@@ -5,71 +5,38 @@
       - option_market_value   (sum of option market_value from snapshot that day)
       - option_cost_basis     (sum of option cost_basis from snapshot that day)
 
-    Built from snapshot_options_market_values_daily so that when the user
-    uploads daily, the option line on symbol/account charts can move every
-    day (like equity) instead of only on trade days. Before snapshots exist,
-    charts fall back to cumulative_options_pnl from trades.
+    v2: under the SnapTrade-only architecture we no longer build daily
+    snapshot wrappers (history loss accepted — see
+    docs/V2_TENANT_KEY_DESIGN.md). Marks come from the live
+    ``stg_current`` snapshot for today only. Charts that previously had
+    a multi-day option line on symbol/account views fall back to
+    cumulative_options_pnl from trades for historical days.
 */
 
 with opt_snapshot as (
     select
         account,
         user_id,
-        trade_symbol,
-        underlying_symbol,
-        market_value,
-        cost_basis,
-        snapshot_date,
-        dbt_valid_from
-    -- Canonical-uid wrapper view (May 2026): the raw snapshot
-    -- accumulates historical rows under stale user_id stamps that no
-    -- longer match the canonical owner in `int_option_contracts`.
-    -- See `stg_snapshot_options_market_values_daily` for the full
-    -- write-up.
-    from {{ ref('stg_snapshot_options_market_values_daily') }}
-    where snapshot_date is not null
-),
-
-latest_per_option_day as (
-    select
-        account,
-        user_id,
+        tenant_id,
         trade_symbol,
         underlying_symbol,
         market_value,
         cost_basis,
         snapshot_date
-    from (
-        select
-            *,
-            row_number() over (
-                partition by account, user_id, trade_symbol, snapshot_date
-                order by dbt_valid_from desc
-            ) as rn
-        from opt_snapshot
-    )
-    where rn = 1
-),
-
--- Stage 2 broker_account_id passthrough — wrap and left-join dim.
-_pre_broker as (
-    select
-        account,
-        user_id,
-        underlying_symbol as symbol,
-        snapshot_date     as date,
-        sum(market_value) as option_market_value,
-        sum(cost_basis)   as option_cost_basis
-    from latest_per_option_day
-    where underlying_symbol is not null and trim(underlying_symbol) != ''
-    group by 1, 2, 3, 4
+    from {{ ref('stg_current') }}
+    where snapshot_date is not null
+      and instrument_type in ('Call', 'Put')
 )
 
 select
-    f.*,
-    d.broker_account_id
-from _pre_broker f
-left join {{ ref('dim_broker_accounts') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
-order by f.account, f.user_id, f.symbol, f.date
+    account,
+    user_id,
+    tenant_id,
+    underlying_symbol as symbol,
+    snapshot_date     as date,
+    sum(market_value) as option_market_value,
+    sum(cost_basis)   as option_cost_basis
+from opt_snapshot
+where underlying_symbol is not null and trim(underlying_symbol) != ''
+group by 1, 2, 3, 4, 5
+order by account, user_id, symbol, date

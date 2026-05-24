@@ -28,6 +28,8 @@ from app.upload import (
     HISTORY_SEED_COLUMNS,
 )
 
+TENANT_SNAPTRADE = "snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661"
+
 
 # ---------------------------------------------------------------------------
 # Action vocabulary — every key must round-trip through the existing
@@ -191,8 +193,17 @@ def _sell_activity(symbol="JEPI", units=5, price=60, amount=300, trade_date="202
 def test_history_df_has_canonical_seed_columns():
     df = activities_to_history_df(
         [_buy_activity()], account_name="Sara Investment", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert list(df.columns) == HISTORY_SEED_COLUMNS
+
+
+def test_history_df_stamps_tenant_id_on_every_row():
+    df = activities_to_history_df(
+        [_buy_activity()], account_name="Sara Investment", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert (df["tenant_id"] == TENANT_SNAPTRADE).all()
 
 
 def test_history_df_stamps_account_and_user_id_on_every_row():
@@ -204,6 +215,7 @@ def test_history_df_stamps_account_and_user_id_on_every_row():
         [_buy_activity(), _sell_activity()],
         account_name="Sara Investment",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert (df["Account"] == "Sara Investment").all()
     assert (df["user_id"] == 9).all()
@@ -217,6 +229,7 @@ def test_history_df_signs_buy_negative_and_sell_positive():
         [_buy_activity(amount=-550), _sell_activity(amount=300)],
         account_name="Sara Investment",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     buy_amount = df.loc[df["Action"] == "Buy", "Amount"].iloc[0]
     sell_amount = df.loc[df["Action"] == "Sell", "Amount"].iloc[0]
@@ -229,7 +242,7 @@ def test_history_df_re_signs_buy_when_broker_reports_positive_amount():
     (some Vanguard quirks), our normalizer must re-sign it negative
     before the seed merge so the second sync doesn't duplicate the row."""
     a = _buy_activity(amount=550)  # WRONG sign from upstream
-    df = activities_to_history_df([a], account_name="X", user_id=9)
+    df = activities_to_history_df([a], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.loc[0, "Amount"] == -550
 
 
@@ -238,7 +251,7 @@ def test_history_df_drops_unknown_activity_types():
         _buy_activity(),
         {"type": "ALIEN_TRANSFER_FROM_MARS", "units": 1, "price": 1, "amount": 1},
     ]
-    df = activities_to_history_df(activities, account_name="X", user_id=9)
+    df = activities_to_history_df(activities, account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 1
     assert df.iloc[0]["Action"] == "Buy"
 
@@ -253,7 +266,7 @@ def test_history_df_drops_deposit_withdrawal_journal_silently():
         {"type": "WITHDRAWAL", "amount": -500, "trade_date": "2026-05-11"},
         {"type": "JOURNAL", "amount": 0, "trade_date": "2026-05-11"},
     ]
-    df = activities_to_history_df(activities, account_name="X", user_id=9)
+    df = activities_to_history_df(activities, account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 1
 
 
@@ -280,7 +293,7 @@ def test_history_df_emits_osi_for_options():
         "trade_date": "2026-05-11",
         "fee": 0,
     }
-    df = activities_to_history_df([act], account_name="X", user_id=9)
+    df = activities_to_history_df([act], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Symbol"] == "AAPL  260621C00150000"
     assert df.iloc[0]["Action"] == "Sell to Open"
 
@@ -307,7 +320,7 @@ def test_history_df_resolves_option_close_from_description():
         "trade_date": "2026-05-11",
         "fee": 0,
     }
-    df = activities_to_history_df([act], account_name="X", user_id=9)
+    df = activities_to_history_df([act], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Action"] == "Buy to Close"
 
 
@@ -334,12 +347,12 @@ def test_history_df_defaults_options_to_open_when_description_silent():
         "trade_date": "2026-05-11",
         "fee": 0,
     }
-    df = activities_to_history_df([act], account_name="X", user_id=9)
+    df = activities_to_history_df([act], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Action"] == "Buy to Open"
 
 
 def test_history_df_returns_canonical_columns_when_empty():
-    df = activities_to_history_df([], account_name="X", user_id=9)
+    df = activities_to_history_df([], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert list(df.columns) == HISTORY_SEED_COLUMNS
     assert len(df) == 0
 
@@ -353,6 +366,7 @@ def test_current_df_has_canonical_seed_columns():
     df = positions_to_current_df(
         [{"symbol": {"raw_symbol": "JEPI"}, "units": 100, "market_value": 5500, "cost_basis": 5300}],
         account_name="Sara Investment", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert list(df.columns) == CURRENT_SEED_COLUMNS
 
@@ -370,7 +384,7 @@ def test_current_df_equity_price_satisfies_qty_times_price_invariant():
         "cost_basis": 5300,
         "price": 9999.99,  # broker-reported nonsense — must NOT win
     }
-    df = positions_to_current_df([pos], account_name="X", user_id=9)
+    df = positions_to_current_df([pos], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     qty = float(df.iloc[0]["Quantity"])
     seed_price = float(df.iloc[0]["Price"])
     market_value = float(df.iloc[0]["market_value"])
@@ -396,7 +410,7 @@ def test_current_df_options_keep_per_share_price():
         "market_value": 350,
         "cost_basis": 250,
     }
-    df = positions_to_current_df([pos], account_name="X", user_id=9)
+    df = positions_to_current_df([pos], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Price"] == 3.50
     assert df.iloc[0]["security_type"] == "Option"
 
@@ -411,7 +425,7 @@ def test_current_df_falls_back_to_broker_price_when_market_value_missing():
         "cost_basis": 5300,
         "price": 53.00,
     }
-    df = positions_to_current_df([pos], account_name="X", user_id=9)
+    df = positions_to_current_df([pos], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert float(df.iloc[0]["Price"]) == 53.00
 
 
@@ -444,7 +458,7 @@ def test_current_df_alpaca_snaptrade_real_payload_shape():
         "average_purchase_price": 301.12,
         "cash_equivalent": False,
     }
-    df = positions_to_current_df([pos], account_name="Alpaca Paper Account", user_id=2)
+    df = positions_to_current_df([pos], account_name="Alpaca Paper Account", user_id=2, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 1
     row = df.iloc[0]
 
@@ -472,6 +486,7 @@ def test_current_df_skips_rows_with_no_symbol():
     df = positions_to_current_df(
         [{"symbol": {}, "units": 100, "market_value": 5500}],
         account_name="X", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert len(df) == 0
 
@@ -483,9 +498,10 @@ def test_current_df_stamps_account_and_user_id():
         "market_value": 5500,
         "cost_basis": 5300,
     }
-    df = positions_to_current_df([pos], account_name="Sara Investment", user_id=9)
+    df = positions_to_current_df([pos], account_name="Sara Investment", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Account"] == "Sara Investment"
     assert df.iloc[0]["user_id"] == 9
+    assert df.iloc[0]["tenant_id"] == TENANT_SNAPTRADE
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +521,7 @@ def test_balance_df_emits_two_rows_for_funded_account():
         ],
         account_name="Sara Investment",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert list(df.columns) == BALANCE_SEED_COLUMNS
     assert len(df) == 2
@@ -520,6 +537,7 @@ def test_balance_df_returns_empty_for_zero_balance_account():
         positions=[],
         account_name="X",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert len(df) == 0
 
@@ -535,6 +553,7 @@ def test_balance_df_derives_total_when_summary_missing_it():
         positions=[{"market_value": 4500, "cost_basis": 4000}],
         account_name="X",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     total_row = df[df["row_type"] == "account_total"].iloc[0]
     assert total_row["market_value"] == 5000
@@ -547,6 +566,7 @@ def test_balance_df_stamps_account_and_user_id_on_both_rows():
         positions=[{"market_value": 8500, "cost_basis": 8000}],
         account_name="Sara Investment",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert (df["account"] == "Sara Investment").all()
     assert (df["user_id"] == 9).all()
@@ -562,6 +582,7 @@ def test_balance_df_unrealized_pnl_matches_total_minus_cost_basis():
         positions=[{"market_value": 8500, "cost_basis": 8000}],
         account_name="X",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     total_row = df[df["row_type"] == "account_total"].iloc[0]
     assert float(total_row["unrealized_pnl"]) == 2000  # 10000 - 8000
@@ -610,6 +631,7 @@ _ALPACA_ORDER_NVDA_SELL = {
 def test_orders_df_has_canonical_history_columns():
     df = orders_to_history_df(
         [_ALPACA_ORDER_NVDA_BUY], account_name="X", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert list(df.columns) == HISTORY_SEED_COLUMNS
 
@@ -621,6 +643,7 @@ def test_orders_df_real_alpaca_payload_buy_yields_negative_amount():
     so the cross-source dedup with activities lines up."""
     df = orders_to_history_df(
         [_ALPACA_ORDER_NVDA_BUY], account_name="Alpaca Paper Account", user_id=6,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert len(df) == 1
     row = df.iloc[0]
@@ -640,7 +663,7 @@ def test_orders_df_real_alpaca_payload_buy_yields_negative_amount():
 def test_orders_df_sell_yields_positive_amount():
     """A SELL is cash IN; sign convention matches activities so the
     cross-source dedup keys agree."""
-    df = orders_to_history_df([_ALPACA_ORDER_NVDA_SELL], account_name="X", user_id=6)
+    df = orders_to_history_df([_ALPACA_ORDER_NVDA_SELL], account_name="X", user_id=6, tenant_id=TENANT_SNAPTRADE)
     row = df.iloc[0]
     assert row["Action"] == "Sell"
     assert float(row["Amount"]) > 0
@@ -655,7 +678,7 @@ def test_orders_df_drops_non_executed_statuses():
     for status in ("PENDING", "CANCELLED", "REJECTED", "EXPIRED", ""):
         d = dict(base, brokerage_order_id=f"x-{status}", status=status)
         rows_in.append(d)
-    df = orders_to_history_df(rows_in, account_name="X", user_id=9)
+    df = orders_to_history_df(rows_in, account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 0
 
 
@@ -672,12 +695,12 @@ def test_orders_df_skips_options_orders():
             "option_type": "CALL",
         },
     )
-    df = orders_to_history_df([options_order], account_name="X", user_id=9)
+    df = orders_to_history_df([options_order], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 0
 
 
 def test_orders_df_empty_input_returns_canonical_empty_df():
-    df = orders_to_history_df([], account_name="X", user_id=9)
+    df = orders_to_history_df([], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert list(df.columns) == HISTORY_SEED_COLUMNS
     assert len(df) == 0
 
@@ -687,7 +710,7 @@ def test_orders_df_skips_zero_quantity_or_zero_price_orders():
     Activities will eventually carry the truth."""
     dud_qty = dict(_ALPACA_ORDER_NVDA_BUY, filled_quantity="0", total_quantity="0")
     dud_price = dict(_ALPACA_ORDER_NVDA_BUY, execution_price="0")
-    df = orders_to_history_df([dud_qty, dud_price], account_name="X", user_id=9)
+    df = orders_to_history_df([dud_qty, dud_price], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 0
 
 
@@ -699,7 +722,7 @@ def test_orders_df_uses_filled_quantity_for_partial_fills():
         total_quantity="100",
         filled_quantity="60",
     )
-    df = orders_to_history_df([partial], account_name="X", user_id=9)
+    df = orders_to_history_df([partial], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert float(df.iloc[0]["Quantity"]) == 60.0
 
 
@@ -711,7 +734,7 @@ def test_orders_df_minimal_description_for_dedup_with_activities():
 
     This test pins the contract: Description must be just the symbol
     description, NOT a synthesized "Bought 98 NVDA at ..." string."""
-    df = orders_to_history_df([_ALPACA_ORDER_NVDA_BUY], account_name="X", user_id=9)
+    df = orders_to_history_df([_ALPACA_ORDER_NVDA_BUY], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     desc = df.iloc[0]["Description"]
     assert desc == "NVIDIA Corporation"
     # NOT a richer synthesized description
@@ -764,6 +787,7 @@ def test_positions_df_crypto_with_type_code_marks_security_type():
         [_coinbase_btc_position(with_type_code=True)],
         account_name="Coinbase Account",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert len(df) == 1
     assert df.iloc[0]["security_type"] == "Cryptocurrency"
@@ -779,6 +803,7 @@ def test_positions_df_crypto_without_type_code_falls_back_to_whitelist():
         [_coinbase_btc_position(with_type_code=False)],
         account_name="Coinbase Account",
         user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
     )
     assert df.iloc[0]["security_type"] == "Cryptocurrency"
 
@@ -799,7 +824,7 @@ def test_positions_df_unknown_non_option_still_equity():
         "average_purchase_price": 400.0,
         "open_pnl": 11055.0,
     }
-    df = positions_to_current_df([spy_position], account_name="X", user_id=6)
+    df = positions_to_current_df([spy_position], account_name="X", user_id=6, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["security_type"] == "Equity"
 
 

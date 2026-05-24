@@ -37,11 +37,8 @@
 
     .gs-path-row { display: grid; gap: 1rem; margin-top: .75rem; }
     .gs-path-row.dual   { grid-template-columns: 1fr 1fr; }
-    .gs-path-row.triple { grid-template-columns: 1fr 1fr 1fr; }
-    @media (max-width: 980px) { .gs-path-row.triple { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 720px) {
-        .gs-path-row.dual   { grid-template-columns: 1fr; }
-        .gs-path-row.triple { grid-template-columns: 1fr; }
+        .gs-path-row.dual { grid-template-columns: 1fr; }
     }
 
     .gs-path {
@@ -116,64 +113,52 @@
 
 {% block content %}
 
-{# Reusable Schwab CSV export instructions block #}
 {% macro export_instructions() %}
 <details class="gs-export">
-    <summary>How to export from Schwab.com</summary>
+    <summary>How to export CSVs from your broker</summary>
     <div class="step-block">
         <strong>Trade history</strong>
         <ol>
-            <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>History</strong> &rarr; <strong>Transactions</strong></li>
-            <li>Select your account</li>
-            <li>Set filter to <strong>All Transactions</strong></li>
-            <li>Choose a date range, click <strong>Search</strong></li>
-            <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+            <li>Log in to your broker &rarr; find <strong>Transactions</strong> or <strong>History</strong></li>
+            <li>Select your account and a date range</li>
+            <li>Export as CSV</li>
         </ol>
     </div>
     <div class="step-block">
         <strong>Current positions</strong>
         <ol>
-            <li>Log in at schwab.com &rarr; <strong>Accounts</strong> &rarr; <strong>Positions</strong></li>
-            <li>Select your account</li>
-            <li>Click <strong>Export</strong> &rarr; save the CSV</li>
+            <li>Log in to your broker &rarr; open <strong>Positions</strong></li>
+            <li>Export as CSV</li>
         </ol>
     </div>
 </details>
 {% endmacro %}
 
-{# Wider column when we have THREE link options (Schwab + SnapTrade + CSV)
-   so the cards don't get crushed. Falls back to the cosier col-lg-8 when
-   only one or two link options are showing. #}
-{% set _wide_layout = (schwab_enabled and snaptrade_enabled) and not has_uploaded %}
 <div class="row justify-content-center">
-    <div class="{% if _wide_layout %}col-lg-11 col-xl-10{% else %}col-lg-8{% endif %}">
+    <div class="{% if snaptrade_enabled and not has_uploaded %}col-lg-11 col-xl-10{% else %}col-lg-8{% endif %}">
 
         {% if has_uploaded and has_data %}
-        {# ── All set — collapse the steps entirely ── #}
         <div class="gs-done">
             <h4>You're all set, {{ current_user.username }}.</h4>
             <p>Your Trading Mirror is ready to read.</p>
             <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Open Daily Review</a>
         </div>
         <p class="text-center text-muted small">
-            Re-upload anytime from <a href="{{ url_for('upload') }}">Upload</a>{% if schwab_enabled or snaptrade_enabled %} or manage broker connections in <a href="{{ url_for('profile', tab='account') }}">Account settings</a>{% endif %}.
+            Re-upload anytime from <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or manage broker connections in <a href="{{ url_for('profile', tab='account') }}">Account settings</a>{% endif %}.
         </p>
         {% else %}
 
         <div class="gs-hero">
             <h1>Welcome, {{ current_user.username }}</h1>
             <p>
-                {% if schwab_enabled and snaptrade_enabled %}
-                Three ways to bring your trades in &mdash; pick the one that fits your broker. We'll do the rest.
-                {% elif schwab_enabled or snaptrade_enabled %}
-                Two ways to bring your trades in &mdash; pick one. We'll do the rest.
+                {% if snaptrade_enabled %}
+                Two ways to bring your trades in &mdash; connect your broker or upload CSVs. We'll do the rest.
                 {% else %}
-                Two CSVs from Schwab and we'll start mirroring your trading.
+                Upload two CSVs from your broker and we'll start mirroring your trading.
                 {% endif %}
             </p>
         </div>
 
-        {# ── Step 1: Link your data ── #}
         <div class="gs-step">
             <span class="gs-step-num {% if has_uploaded %}gs-step-done{% else %}gs-step-pending{% endif %}">{% if has_uploaded %}&#10003;{% else %}1{% endif %}</span>
             <div class="gs-step-body">
@@ -182,7 +167,7 @@
                 <h6>Data linked</h6>
                 <p class="lead-sub mb-2">Your trades are in. Re-upload anytime, or manage your broker connections in Account settings.</p>
                 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('upload') }}">Re-upload CSVs</a>
-                {% if schwab_enabled or snaptrade_enabled %}
+                {% if snaptrade_enabled %}
                 <a class="btn btn-outline-secondary btn-sm ms-1" href="{{ url_for('profile', tab='account') }}">Account settings</a>
                 {% endif %}
 
@@ -190,59 +175,19 @@
                 <h6>Link your portfolio</h6>
                 <p class="lead-sub">Pick <strong>one</strong> path. You can always switch later.</p>
 
-                {# Reusable card components so the row layout below can compose them
-                   based on which features are enabled, without duplicating markup. #}
-
-                {% macro card_schwab() %}
+                {% macro card_snaptrade() %}
                 <div class="gs-path featured">
                     <div class="gs-label featured">Recommended</div>
-                    <h6>Connect Schwab</h6>
-                    <p class="pitch">One-time OAuth, then automatic syncs in the background.</p>
+                    <h6>Connect your broker</h6>
+                    <p class="pitch">Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 others via SnapTrade.</p>
                     <ul class="checklist">
-                        <li>Up to <strong>{{ schwab_full_history_days|int }} days</strong> of history at first connection</li>
-                        <li>Then a <strong>{{ schwab_routine_days|int }}&ndash;day</strong> rolling sync &mdash; no daily upload chore</li>
+                        <li>Up to <strong>{{ snaptrade_full_history_days|int }} days</strong> of history at first connection</li>
+                        <li>Then a <strong>{{ snaptrade_routine_days|int }}&ndash;day</strong> rolling sync &mdash; no daily upload chore</li>
                         <li>Read-only access &mdash; removable anytime</li>
                     </ul>
                     <div class="cta-row">
-                        {% if schwab_connected %}
-                        <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#schwab-sync">Continue sync &rarr;</a>
-                        <span class="text-success small ms-2">Connection saved</span>
-                        {% else %}
-                        <a class="btn btn-primary" href="{{ url_for('profile', tab='account') }}#schwab-sync">Connect Schwab</a>
-                        {% endif %}
-                    </div>
-                    <p class="fine-print">
-                        <strong>Your sign-in stays with Schwab.</strong> You enter your password on Schwab's own page; they hand HappyTrader a short read-only pass &mdash; like a hall pass, not your password.
-                    </p>
-                </div>
-                {% endmacro %}
-
-                {% macro card_snaptrade() %}
-                <div class="gs-path">
-                    <div class="gs-label">Other brokers</div>
-                    <h6>Connect another broker</h6>
-                    <p class="pitch">Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Tradier, Webull, and more &mdash; through the SnapTrade aggregator.</p>
-                    {# Steer Schwab users to the dedicated card on the left.
-                       SnapTrade doesn't carry Schwab, and our native Schwab
-                       integration returns deeper history with no aggregator
-                       indexing lag. This macro only renders alongside the
-                       Schwab card (see the schwab_enabled+snaptrade_enabled
-                       branch below), so the "Schwab card on the left" wording
-                       is always accurate. #}
-                    {% if schwab_enabled %}
-                    <p class="fine-print" style="color:#1e3a8a;">
-                        <strong>Have Schwab?</strong> Use the Schwab card
-                        instead &mdash; SnapTrade doesn't support Schwab.
-                    </p>
-                    {% endif %}
-                    <ul class="checklist">
-                        <li>One-time OAuth via SnapTrade's secure portal</li>
-                        <li>Positions arrive within minutes; trade history within hours</li>
-                        <li>Read-only access &mdash; revoke anytime from your broker</li>
-                    </ul>
-                    <div class="cta-row">
                         {% if snaptrade_connected %}
-                        <a class="btn btn-success" href="{{ url_for('snaptrade_accounts_page') }}">Continue sync &rarr;</a>
+                        <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#snaptrade-sync">Continue sync &rarr;</a>
                         <span class="text-success small ms-2">Connection saved</span>
                         {% else %}
                         <a class="btn btn-primary" href="{{ url_for('snaptrade_connect') }}">Connect a broker</a>
@@ -258,9 +203,9 @@
                 <div class="gs-path">
                     <div class="gs-label">Manual</div>
                     <h6>Upload CSVs</h6>
-                    <p class="pitch">Export two files from schwab.com and drop them here.</p>
+                    <p class="pitch">Export trade history and positions from your broker and drop them here.</p>
                     <ul class="checklist">
-                        <li>Works without enabling any broker connection</li>
+                        <li>Works without enabling broker sync</li>
                         <li>Re-upload weekly (or daily) to stay current</li>
                         <li>Good for one-off historical imports</li>
                     </ul>
@@ -271,45 +216,23 @@
                 </div>
                 {% endmacro %}
 
-                {# ── Layout the available paths ── #}
-                {% if schwab_enabled and snaptrade_enabled %}
-                {# THREE options: native Schwab | SnapTrade aggregator | manual CSV #}
-                <div class="gs-path-row triple">
-                    {{ card_schwab() }}
-                    {{ card_snaptrade() }}
-                    {{ card_csv() }}
-                </div>
-
-                {% elif schwab_enabled %}
-                {# TWO options: native Schwab | manual CSV. SnapTrade not configured. #}
-                <div class="gs-path-row dual">
-                    {{ card_schwab() }}
-                    {{ card_csv() }}
-                </div>
-
-                {% elif snaptrade_enabled %}
-                {# TWO options: SnapTrade aggregator | manual CSV. Schwab native not configured. #}
+                {% if snaptrade_enabled %}
                 <div class="gs-path-row dual">
                     {{ card_snaptrade() }}
                     {{ card_csv() }}
                 </div>
-
                 {% else %}
-                {# Neither broker integration is enabled on this server — single
-                   full-width Manual card, with the export instructions tucked
-                   inside (no duplicate "export from Schwab" section). #}
                 <div class="gs-path-row">
                     {{ card_csv(featured=true) }}
                 </div>
                 <p class="gs-server-note">
-                    <strong>Want auto-sync?</strong> No broker connector is enabled on this server. Ask your host to add Schwab or SnapTrade credentials and the OAuth paths will appear here.
+                    <strong>Want auto-sync?</strong> Ask your host to add SnapTrade credentials (<code>SNAPTRADE_CLIENT_ID</code> / <code>SNAPTRADE_CONSUMER_KEY</code>) and the connect flow will appear here.
                 </p>
                 {% endif %}
                 {% endif %}
             </div>
         </div>
 
-        {# ── Step 2: Processing ── #}
         <div class="gs-step">
             <span class="gs-step-num {% if has_data %}gs-step-done{% elif has_uploaded %}gs-step-pending{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}2{% endif %}</span>
             <div class="gs-step-body">
@@ -327,7 +250,6 @@
             </div>
         </div>
 
-        {# ── Step 3: Open the Mirror ── #}
         <div class="gs-step">
             <span class="gs-step-num {% if has_data %}gs-step-done{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}3{% endif %}</span>
             <div class="gs-step-body">

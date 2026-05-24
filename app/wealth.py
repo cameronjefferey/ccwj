@@ -7,11 +7,11 @@ allocation today, the chart shows the time series of components, and a
 breakdown panel surfaces dividends, interest, and fees so the user can
 see how much of the change was income vs. mark-to-market.
 
-All BigQuery reads go through ``_account_sql_and`` (SQL-level user_id
+All BigQuery reads go through ``_tenant_sql_and`` (SQL-level tenant_id
 scoping) and every DataFrame is then passed through
-``_filter_df_by_accounts`` for defense-in-depth — see
+``_filter_df_by_tenant_ids`` for defense-in-depth — see
 ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
-``docs/USER_ID_TENANCY.md``.
+``docs/V2_TENANT_KEY_DESIGN.md``.
 """
 import json
 from datetime import date, timedelta
@@ -22,11 +22,14 @@ from flask_login import current_user, login_required
 
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.models import get_accounts_for_user, is_admin
+from app.models import is_admin
 from app.routes import (
-    _account_sql_and,
-    _filter_df_by_accounts,
+    _norm_account_label,
+    _tenants_for_scope,
+    _tenant_sql_and,
+    _filter_df_by_tenant_ids,
     _redirect_if_no_accounts,
+    _user_account_list,
 )
 
 
@@ -51,7 +54,7 @@ SELECT
     cumulative_interest_net,
     cumulative_fees
 FROM `ccwj-dbt.analytics.mart_wealth_daily`
-WHERE 1=1 {account_filter}
+WHERE 1=1 {tenant_filter}
   AND date >= @start_date
   AND date <= @end_date
 ORDER BY date, account
@@ -61,17 +64,6 @@ ORDER BY date, account
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _user_account_list():
-    if is_admin(current_user.username):
-        return None
-    return get_accounts_for_user(current_user.id)
-
-
-def _norm_account_label(val) -> str:
-    """Normalize free-form labels for resilient URL/session matching."""
-    return " ".join(str(val or "").strip().split())
-
 
 def _match_linked_account(user_accounts, requested: str):
     """If ``requested`` identifies one of the user's linked accounts (exact or
@@ -282,31 +274,25 @@ def wealth():
     selected_raw = (request.args.get("account") or "").strip()
     range_arg = request.args.get("range", "")
 
-    effective_accounts = user_accounts
     selected_account = selected_raw
+    if selected_raw and user_accounts is not None:
+        matched = _match_linked_account(user_accounts, selected_raw)
+        if matched is not None:
+            selected_account = matched
 
-    # ``?account=`` drills into one linked label — must canonicalize casing /
-    # whitespace against Postgres so `_account_sql_and` matches Schwab/sync
-    # rows. Previously `str ==` mis-matched (`Cameron+Investment` URL vs
-    # stored `"Cameron Investment"`), and `or user_accounts` silently ignored
-    # the choice and plotted all balances.
-    if selected_raw:
-        if user_accounts is None:
-            effective_accounts = [_norm_account_label(selected_raw)]
-            selected_account = effective_accounts[0]
-        else:
-            matched = _match_linked_account(user_accounts, selected_raw)
-            if matched is not None:
-                effective_accounts = [matched]
-                selected_account = matched
-            else:
-                effective_accounts = []
+    tenant_ids = _tenants_for_scope(selected_account or None)
+    if selected_raw and user_accounts is not None:
+        matched = _match_linked_account(user_accounts, selected_raw)
+        wealth_no_match = matched is None
+    elif selected_raw and user_accounts is None:
+        wealth_no_match = tenant_ids == []
+    else:
+        wealth_no_match = False
 
     start_date, end_date = _resolve_range(range_arg, default_days=180)
-    account_filter = _account_sql_and(effective_accounts)
+    tenant_filter = _tenant_sql_and(tenant_ids)
 
     picker_accounts = sorted(user_accounts) if user_accounts else []
-    wealth_no_match = bool(selected_raw) and effective_accounts == []
 
     context = {
         "title": "Wealth",
@@ -332,7 +318,7 @@ def wealth():
         if not wealth_no_match:
             from google.cloud import bigquery
             client = get_bigquery_client()
-            sql = WEALTH_DAILY_QUERY.format(account_filter=account_filter)
+            sql = WEALTH_DAILY_QUERY.format(tenant_filter=tenant_filter)
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
@@ -343,7 +329,7 @@ def wealth():
             # Defense-in-depth tenant filter on the DataFrame — even if a
             # SQL change ever drops the account_filter, this strips any
             # row whose ``user_id`` doesn't match the signed-in user.
-            df = _filter_df_by_accounts(df, effective_accounts)
+            df = _filter_df_by_tenant_ids(df, tenant_ids)
             df = _collapse_wealth_daily_duplicate_grain(df)
 
         if df is None:

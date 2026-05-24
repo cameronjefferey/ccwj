@@ -232,11 +232,11 @@ final as (
     from aggregated
 )
 
--- Stage 2 broker_account_id passthrough.
+-- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
 select
     f.*,
-    d.broker_account_id
+    d.tenant_id
 from final f
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on f.account = d.account_name
     and (f.user_id is not distinct from d.user_id)

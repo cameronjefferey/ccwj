@@ -49,7 +49,7 @@ with equity as (
     select
         account,
         user_id,
-        broker_account_id,
+        tenant_id,
         date,
         account_value,
         cash_value,
@@ -85,7 +85,7 @@ joined as (
     select
         e.account,
         e.user_id,
-        e.broker_account_id,
+        e.tenant_id,
         e.date,
         e.account_value,
         e.cash_value,
@@ -104,7 +104,7 @@ joined as (
 select
     account,
     user_id,
-    broker_account_id,
+    tenant_id,
     date,
     account_value,
     cash_value,

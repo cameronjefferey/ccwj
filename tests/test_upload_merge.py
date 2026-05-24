@@ -40,7 +40,7 @@ def _stub_existing(monkeypatch, csv_text):
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: csv_text)
 
 
-def _row(account, user_id, date, action, symbol, qty, price, amount, *, desc="", fees=""):
+def _row(account, user_id, date, action, symbol, qty, price, amount, *, tenant_id="", desc="", fees=""):
     """Build a dict shaped like a HISTORY_SEED_COLUMNS row.
 
     Numeric fields are coerced to ``float`` (or kept blank for non-trade
@@ -54,6 +54,7 @@ def _row(account, user_id, date, action, symbol, qty, price, amount, *, desc="",
     return {
         "Account": account,
         "user_id": user_id,
+        "tenant_id": tenant_id,
         "Date": date,
         "Action": action,
         "Symbol": symbol,
@@ -86,10 +87,18 @@ def _parse(csv_text):
 
 
 # ---------------------------------------------------------------------------
-# Bug 1: legacy user_id="" rows must NOT win the dedup over fresh user_id=N
-# rows. The new row carries the syncing user's tenant id; without this, the
-# user's BigQuery filter (WHERE user_id = N) excludes their own data.
+# Bug 1: legacy tenant_id="" rows must NOT win the dedup over fresh tenant_id
+# rows. The new row carries the syncing tenant's id; without this, the
+# user's BigQuery filter excludes their own data.
 # ---------------------------------------------------------------------------
+
+TENANT_SCHWAB_9437 = "snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661"
+TENANT_SARA_2 = "snaptrade:tenant-sara-2"
+TENANT_SARA_9 = "snaptrade:tenant-sara-9"
+TENANT_CAMERON = "manual:Cameron Investment"
+TENANT_SCHWAB_5989 = "snaptrade:tenant-schwab-5989"
+TENANT_SCHWAB_5167 = "snaptrade:tenant-schwab-5167"
+TENANT_ALPACA = "snaptrade:tenant-alpaca-paper"
 
 
 def test_merge_keeps_new_row_when_legacy_empty_user_id_collides(monkeypatch):
@@ -103,22 +112,22 @@ def test_merge_keeps_new_row_when_legacy_empty_user_id_collides(monkeypatch):
 
     new_df = pd.DataFrame([
         _row("Schwab ••••9437", 9, "06/11/2025", "Buy to Close",
-             "CRWV  250613C00170000", 1, 0.74, -74.0, desc="COREWEAVE 06/13/25 $170 Call"),
+             "CRWV  250613C00170000", 1, 0.74, -74.0,
+             tenant_id=TENANT_SCHWAB_9437,
+             desc="COREWEAVE 06/13/25 $170 Call"),
         _row("Schwab ••••9437", 9, "06/16/2025", "Bank Interest",
-             "", "", "", 0.77, desc="BANK INT 051625-061525"),
+             "", "", "", 0.77, tenant_id=TENANT_SCHWAB_9437,
+             desc="BANK INT 051625-061525"),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••9437", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SCHWAB_9437,
     )
     out = _parse(out_csv)
 
     assert len(out) == 2, "dedup should collapse two pairs to two unique trades"
-    # The single most important assertion: the legacy "" rows must be GONE,
-    # replaced by the freshly-tagged user_id=9 rows. This is the bug that
-    # made multi-account syncs look like they "didn't land" anywhere.
-    assert set(out["user_id"].tolist()) == {"9"}
+    assert set(out["tenant_id"].tolist()) == {TENANT_SCHWAB_9437}
     assert set(out["Account"].tolist()) == {"Schwab ••••9437"}
 
 
@@ -130,12 +139,13 @@ def test_merge_adds_brand_new_trades_when_no_collision(monkeypatch):
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        _row("Schwab ••••9437", 9, "01/02/2024", "Sell", "AAPL", 10, 110.0, 1100.0),
+        _row("Schwab ••••9437", 9, "01/02/2024", "Sell", "AAPL", 10, 110.0, 1100.0,
+             tenant_id=TENANT_SCHWAB_9437),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••9437", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SCHWAB_9437,
     )
     out = _parse(out_csv)
     assert len(out) == 2
@@ -157,50 +167,43 @@ def test_merge_does_not_touch_other_users_rows_under_same_account_name(monkeypat
     # User 9 also has a 'Sara Investment' (label collision is legal) and
     # is now syncing two of their own trades.
     existing = _csv_from_rows([
-        _row("Sara Investment", 2, "04/17/2026", "Buy", "ASML", 32, 1521.0, -48672.0),
-        _row("Sara Investment", 2, "04/17/2026", "Sell", "UFO", 2100, 50.0, 105000.0),
+        _row("Sara Investment", 2, "04/17/2026", "Buy", "ASML", 32, 1521.0, -48672.0,
+             tenant_id=TENANT_SARA_2),
+        _row("Sara Investment", 2, "04/17/2026", "Sell", "UFO", 2100, 50.0, 105000.0,
+             tenant_id=TENANT_SARA_2),
         _row("Sara Investment", "", "04/14/2026", "Buy", "CURRENCY_USD", 2.57, "", -2.57),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        # user_id=9 just happened to do the SAME ASML trade on the same
-        # day at the same price. Pre-fix this would have either been
-        # silently dropped (legacy/buggy sort) or, worse, would have
-        # rewritten user 2's row to carry user_id=9 (sort-only fix).
-        _row("Sara Investment", 9, "04/17/2026", "Buy", "ASML", 32, 1521.0, -48672.0),
-        _row("Sara Investment", 9, "05/01/2026", "Buy", "MSFT", 5, 400.0, -2000.0),
+        _row("Sara Investment", 9, "04/17/2026", "Buy", "ASML", 32, 1521.0, -48672.0,
+             tenant_id=TENANT_SARA_9),
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "MSFT", 5, 400.0, -2000.0,
+             tenant_id=TENANT_SARA_9),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SARA_9,
     )
     out = _parse(out_csv)
 
-    user2_rows = out[out["user_id"] == "2"]
-    user9_rows = out[out["user_id"] == "9"]
-    legacy_rows = out[out["user_id"] == ""]
+    tenant2_rows = out[out["tenant_id"] == TENANT_SARA_2]
+    tenant9_rows = out[out["tenant_id"] == TENANT_SARA_9]
+    legacy_rows = out[out["tenant_id"] == ""]
 
-    # User 2's rows must be PRESERVED verbatim — neither dropped nor
-    # rewritten — because they were never in the dedup window.
-    assert len(user2_rows) == 2
-    assert set(zip(user2_rows["Date"], user2_rows["Symbol"])) == {
+    assert len(tenant2_rows) == 2
+    assert set(zip(tenant2_rows["Date"], tenant2_rows["Symbol"])) == {
         ("04/17/2026", "ASML"),
         ("04/17/2026", "UFO"),
     }
 
-    # User 9 gets BOTH new rows: the ASML row that key-matches user 2's
-    # ASML row is allowed to land separately because the dedup window
-    # excludes user 2 entirely.
-    assert len(user9_rows) == 2
-    assert set(zip(user9_rows["Date"], user9_rows["Symbol"])) == {
+    assert len(tenant9_rows) == 2
+    assert set(zip(tenant9_rows["Date"], tenant9_rows["Symbol"])) == {
         ("04/17/2026", "ASML"),
         ("05/01/2026", "MSFT"),
     }
 
-    # Legacy unowned currency_usd row stays put — not user 2's, not key-
-    # matched by user 9's sync, so it lands in other_df untouched.
     assert len(legacy_rows) == 1
 
 
@@ -221,17 +224,18 @@ def test_merge_legacy_row_is_reclaimed_only_by_matching_user(monkeypatch):
     # DIFFERENT account label — account_mask excludes it from the dedup
     # window, so it survives untouched.
     new_df = pd.DataFrame([
-        _row("Schwab ••••5167", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0),
+        _row("Schwab ••••5167", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0,
+             tenant_id=TENANT_SCHWAB_5167),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••5167", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SCHWAB_5167,
     )
     out = _parse(out_csv)
     assert len(out) == 2
-    legacy = out[(out["user_id"] == "") & (out["Account"] == "Schwab ••••9437")]
-    fresh = out[(out["user_id"] == "9") & (out["Account"] == "Schwab ••••5167")]
+    legacy = out[(out["tenant_id"] == "") & (out["Account"] == "Schwab ••••9437")]
+    fresh = out[(out["tenant_id"] == TENANT_SCHWAB_5167) & (out["Account"] == "Schwab ••••5167")]
     assert len(legacy) == 1, "legacy row in a different account is not in scope"
     assert len(fresh) == 1
 
@@ -244,23 +248,27 @@ def test_merge_legacy_row_is_reclaimed_only_by_matching_user(monkeypatch):
 
 def test_merge_is_idempotent_for_repeated_sync(monkeypatch):
     existing = _csv_from_rows([
-        _row("Schwab ••••9437", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0),
-        _row("Schwab ••••9437", 9, "06/12/2025", "Sell", "CRWV", 1, 175.0, 175.0),
+        _row("Schwab ••••9437", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0,
+             tenant_id=TENANT_SCHWAB_9437),
+        _row("Schwab ••••9437", 9, "06/12/2025", "Sell", "CRWV", 1, 175.0, 175.0,
+             tenant_id=TENANT_SCHWAB_9437),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        _row("Schwab ••••9437", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0),
-        _row("Schwab ••••9437", 9, "06/12/2025", "Sell", "CRWV", 1, 175.0, 175.0),
+        _row("Schwab ••••9437", 9, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0,
+             tenant_id=TENANT_SCHWAB_9437),
+        _row("Schwab ••••9437", 9, "06/12/2025", "Sell", "CRWV", 1, 175.0, 175.0,
+             tenant_id=TENANT_SCHWAB_9437),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••9437", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SCHWAB_9437,
     )
     out = _parse(out_csv)
     assert len(out) == 2
-    assert set(out["user_id"].tolist()) == {"9"}
+    assert set(out["tenant_id"].tolist()) == {TENANT_SCHWAB_9437}
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +278,7 @@ def test_merge_is_idempotent_for_repeated_sync(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_merge_without_user_id_falls_back_to_account_only_scope(monkeypatch):
+def test_merge_without_tenant_id_falls_back_to_account_only_scope(monkeypatch):
     existing = _csv_from_rows([
         _row("Schwab ••••9437", 2, "06/11/2025", "Buy", "CRWV", 1, 170.0, -170.0),
     ])
@@ -284,7 +292,7 @@ def test_merge_without_user_id_falls_back_to_account_only_scope(monkeypatch):
         HISTORY_PATH, "Schwab ••••9437", new_df, HISTORY_SEED_COLUMNS,
     )
     out = _parse(out_csv)
-    # Without user_id scoping, both rows survive (no key collision); this
+    # Without tenant_id scoping, both rows survive (no key collision); this
     # asserts the fallback path doesn't crash and still de-dups correctly.
     assert len(out) == 2
 
@@ -306,12 +314,13 @@ def test_merge_raises_when_existing_fetch_blips_5xx(monkeypatch):
     monkeypatch.setattr(_upload, "_get_file_content", _boom)
 
     new_df = pd.DataFrame([
-        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0,
+             tenant_id=TENANT_SARA_9),
     ])
     with pytest.raises(_upload.SeedFetchError):
         _upload._merge_seed_with_existing(
             HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
-            user_id=9,
+            tenant_id=TENANT_SARA_9,
         )
 
 
@@ -320,16 +329,17 @@ def test_merge_treats_true_404_as_empty_seed(monkeypatch):
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
 
     new_df = pd.DataFrame([
-        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0,
+             tenant_id=TENANT_SARA_9),
     ])
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_SARA_9,
     )
     out = _parse(out_csv)
     assert len(out) == 1
     assert out["Account"].tolist() == ["Sara Investment"]
-    assert out["user_id"].tolist() == ["9"]
+    assert out["tenant_id"].tolist() == [TENANT_SARA_9]
 
 
 def test_merge_refuses_to_overwrite_when_existing_unparseable(monkeypatch):
@@ -339,25 +349,21 @@ def test_merge_refuses_to_overwrite_when_existing_unparseable(monkeypatch):
         lambda path: "this,is,not,a,valid\nheader\x00row\nwith,bad,bytes",
     )
     new_df = pd.DataFrame([
-        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0),
+        _row("Sara Investment", 9, "05/01/2026", "Buy", "AAPL", 1, 100.0, -100.0,
+             tenant_id=TENANT_SARA_9),
     ])
     # Either parse raises or the no-Account-column branch raises. Both
     # land in SeedFetchError; either way the merge refuses to overwrite.
     with pytest.raises(_upload.SeedFetchError):
         _upload._merge_seed_with_existing(
             HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
-            user_id=9,
+            tenant_id=TENANT_SARA_9,
         )
 
 
 # ---------------------------------------------------------------------------
-# Bug B (commit 05c5ae5): pandas reads any user_id column containing a NaN
-# as ``float64``, so a CSV value of ``9`` round-trips as the string ``"9.0"``.
-# The original ``account_mask`` compared that to ``str(int(user_id))="9"``
-# and never matched — so existing rows owned by the syncing user were
-# moved to ``other_df`` and the fresh sync was APPENDED on top, doubling
-# the row count on every re-sync (Cameron Investment went 2,703 → 4,059
-# user_9 rows after a fresh 1,356-tx sync that should have replaced them).
+# Bug B (commit 05c5ae5): re-sync must replace existing tenant rows even when
+# legacy rows in the same file force pandas float coercion on other columns.
 # ---------------------------------------------------------------------------
 
 
@@ -366,22 +372,24 @@ def test_merge_dedupes_against_existing_user_rows_with_float_string_uid(monkeypa
     stringified them as '9.0' due to NaN-induced float coercion in the CSV."""
     # Force pandas to read user_id as float by mixing a NaN row in.
     existing = _csv_from_rows([
-        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
-        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
-        # Legacy NaN row in the same file forces user_id to float-typed
-        # column on read; this is the production reality.
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0,
+             tenant_id=TENANT_CAMERON),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0,
+             tenant_id=TENANT_CAMERON),
         _row("Schwab Account", "", "01/01/2024", "Buy", "MSFT", 5, 300.0, -1500.0),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
-        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0,
+             tenant_id=TENANT_CAMERON),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0,
+             tenant_id=TENANT_CAMERON),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Cameron Investment", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9,
+        tenant_id=TENANT_CAMERON,
     )
     out = _parse(out_csv)
 
@@ -393,7 +401,7 @@ def test_merge_dedupes_against_existing_user_rows_with_float_string_uid(monkeypa
         f"expected 2 Cameron rows after re-sync (dedup), got {len(cam)}: "
         f"{cam.to_dict('records')}"
     )
-    assert set(cam["user_id"].tolist()) == {"9"}
+    assert set(cam["tenant_id"].tolist()) == {TENANT_CAMERON}
     # Other-account legacy row stays untouched.
     other = out[out["Account"] == "Schwab Account"]
     assert len(other) == 1
@@ -402,9 +410,12 @@ def test_merge_dedupes_against_existing_user_rows_with_float_string_uid(monkeypa
 def test_merge_full_resync_does_not_double_count_after_three_runs(monkeypatch):
     """Run the same sync three times; row count must stay constant."""
     sync_rows = [
-        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0),
-        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0),
-        _row("Cameron Investment", 9, "01/03/2025", "Buy", "MSFT", 5, 400.0, -2000.0),
+        _row("Cameron Investment", 9, "01/01/2025", "Buy", "AAPL", 10, 100.0, -1000.0,
+             tenant_id=TENANT_CAMERON),
+        _row("Cameron Investment", 9, "01/02/2025", "Sell", "AAPL", 10, 110.0, 1100.0,
+             tenant_id=TENANT_CAMERON),
+        _row("Cameron Investment", 9, "01/03/2025", "Buy", "MSFT", 5, 400.0, -2000.0,
+             tenant_id=TENANT_CAMERON),
     ]
     # Force float-typed user_id column.
     base_with_legacy = _csv_from_rows(sync_rows + [
@@ -417,7 +428,7 @@ def test_merge_full_resync_does_not_double_count_after_three_runs(monkeypatch):
         out_csv = _upload._merge_seed_with_existing(
             HISTORY_PATH, "Cameron Investment",
             pd.DataFrame(sync_rows), HISTORY_SEED_COLUMNS,
-            user_id=9,
+            tenant_id=TENANT_CAMERON,
         )
         state["csv"] = out_csv
 
@@ -469,19 +480,19 @@ def test_merge_dedupes_against_float_precision_drift_in_amount(monkeypatch):
     (``26.99`` → ``26.990000000000002``) must collapse to a single row."""
     existing = _csv_from_rows([
         _row("Schwab ••••5989", 7, "12/04/2024", "Buy", "CURRENCY_USD",
-             26.99, "", -26.99, desc="USD currency"),
+             26.99, "", -26.99, tenant_id=TENANT_SCHWAB_5989, desc="USD currency"),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        # Float precision drift: same value, different serialization.
         _row("Schwab ••••5989", 7, "12/04/2024", "Buy", "CURRENCY_USD",
-             26.990000000000002, "", -26.990000000000002, desc="USD currency"),
+             26.990000000000002, "", -26.990000000000002,
+             tenant_id=TENANT_SCHWAB_5989, desc="USD currency"),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
-        user_id=7,
+        tenant_id=TENANT_SCHWAB_5989,
     )
     out = _parse(out_csv)
     assert len(out) == 1, (
@@ -499,8 +510,8 @@ def test_merge_dedupes_against_int_vs_float_seed_cells(monkeypatch):
         # float coercion: mimic a hand-edited seed with bare int strings.
     ])
     int_seed_csv = (
-        "Account,user_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
-        "Schwab ••••5989,7,11/14/2024,Sell to Open,CFLT  241220C00030000,"
+        "Account,user_id,tenant_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
+        "Schwab ••••5989,7,,11/14/2024,Sell to Open,CFLT  241220C00030000,"
         "CONFLUENT INC 12/20/2024 $30 Call,40,1.15,,4600\n"
     )
     _stub_existing(monkeypatch, int_seed_csv)
@@ -508,12 +519,13 @@ def test_merge_dedupes_against_int_vs_float_seed_cells(monkeypatch):
     new_df = pd.DataFrame([
         _row("Schwab ••••5989", 7, "11/14/2024", "Sell to Open",
              "CFLT  241220C00030000", 40.0, 1.15, 4600.0,
+             tenant_id=TENANT_SCHWAB_5989,
              desc="CONFLUENT INC 12/20/2024 $30 Call"),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
-        user_id=7,
+        tenant_id=TENANT_SCHWAB_5989,
     )
     out = _parse(out_csv)
     assert len(out) == 1, (
@@ -530,8 +542,8 @@ def test_merge_collapses_byte_identical_quintuple_landing(monkeypatch):
     it starts from a *seed already poisoned by historical dupes* — exactly
     the recovery state we'll be in after Phase 2 cleans the file."""
     existing_csv = (
-        "Account,user_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
-        + ("Schwab ••••5989,7.0,11/14/2024,Sell to Open,CFLT  241220C00030000,"
+        "Account,user_id,tenant_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount\n"
+        + ("Schwab ••••5989,7.0,,11/14/2024,Sell to Open,CFLT  241220C00030000,"
            "CONFLUENT INC 12/20/2024 $30 Call,40.0,1.15,,4600.0\n" * 5)
     )
     _stub_existing(monkeypatch, existing_csv)
@@ -539,12 +551,13 @@ def test_merge_collapses_byte_identical_quintuple_landing(monkeypatch):
     new_df = pd.DataFrame([
         _row("Schwab ••••5989", 7, "11/14/2024", "Sell to Open",
              "CFLT  241220C00030000", 40.0, 1.15, 4600.0,
+             tenant_id=TENANT_SCHWAB_5989,
              desc="CONFLUENT INC 12/20/2024 $30 Call"),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Schwab ••••5989", new_df, HISTORY_SEED_COLUMNS,
-        user_id=7,
+        tenant_id=TENANT_SCHWAB_5989,
     )
     out = _parse(out_csv)
     assert len(out) == 1, (
@@ -582,15 +595,17 @@ def test_dedup_collapses_drift_within_new_df_even_when_existing_empty(monkeypatc
     into one canonical row. Last-write-wins picks the second form.
     """
     new_with_drift = pd.DataFrame([
-        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100.0, 76.6, -7660.0, desc="ASTS"),
-        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100, 76.6, -7660, desc="ASTS"),
+        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100.0, 76.6, -7660.0,
+             tenant_id=TENANT_SARA_9, desc="ASTS"),
+        _row("Sara Investment", 9, "05/11/2026", "Buy", "ASTS", 100, 76.6, -7660,
+             tenant_id=TENANT_SARA_9, desc="ASTS"),
     ])
 
     # Path 1: file does not exist (404).
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
     out = _parse(_upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
-        HISTORY_SEED_COLUMNS, user_id=9,
+        HISTORY_SEED_COLUMNS, tenant_id=TENANT_SARA_9,
     ))
     assert len(out) == 1, f"Path 1 (404) failed to dedup, got {len(out)} rows"
 
@@ -598,7 +613,7 @@ def test_dedup_collapses_drift_within_new_df_even_when_existing_empty(monkeypatc
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: "   ")
     out = _parse(_upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
-        HISTORY_SEED_COLUMNS, user_id=9,
+        HISTORY_SEED_COLUMNS, tenant_id=TENANT_SARA_9,
     ))
     assert len(out) == 1, f"Path 2 (empty file) failed to dedup, got {len(out)} rows"
 
@@ -606,18 +621,19 @@ def test_dedup_collapses_drift_within_new_df_even_when_existing_empty(monkeypatc
     _stub_existing(monkeypatch, ",".join(HISTORY_SEED_COLUMNS) + "\n")
     out = _parse(_upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
-        HISTORY_SEED_COLUMNS, user_id=9,
+        HISTORY_SEED_COLUMNS, tenant_id=TENANT_SARA_9,
     ))
     assert len(out) == 1, f"Path 3 (header-only) failed to dedup, got {len(out)} rows"
 
     # Path 4: existing has rows BUT none for the syncing tenant under this
-    # account label (all existing rows belong to a different user).
+    # account label (all existing rows belong to a different tenant).
     _stub_existing(monkeypatch, _csv_from_rows([
-        _row("Sara Investment", 2, "01/01/2025", "Buy", "SPY", 1, 500, -500, desc="SPY ETF"),
+        _row("Sara Investment", 2, "01/01/2025", "Buy", "SPY", 1, 500, -500,
+             tenant_id=TENANT_SARA_2, desc="SPY ETF"),
     ]))
     out = _parse(_upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_with_drift.copy(),
-        HISTORY_SEED_COLUMNS, user_id=9,
+        HISTORY_SEED_COLUMNS, tenant_id=TENANT_SARA_9,
     ))
     asts = out.loc[out["Symbol"] == "ASTS"]
     assert len(asts) == 1, (
@@ -831,50 +847,14 @@ def test_dedup_orders_then_activities_then_resync_yields_one_row():
 
 
 # ---------------------------------------------------------------------------
-# Stage 0: broker_account_id tenancy
-# (see docs/BROKER_ACCOUNT_ID_MIGRATION.md)
-#
-# These tests pin the additive contract:
-#   - broker_account_id is required at the writer boundary
-#     (merge_and_push_seeds refuses without it, same shape as user_id).
-#   - Every emitted row carries the stamp.
-#   - The dedup key still excludes broker_account_id, so a re-sync that
-#     fills in a previously-NULL value collapses against the row it's
-#     updating rather than double-counting.
-#   - Legacy rows with empty broker_account_id survive a sync that adds
-#     new rows for a different (account, user_id) under the same label.
+# v2: tenant_id tenancy (see docs/V2_TENANT_KEY_DESIGN.md)
 # ---------------------------------------------------------------------------
 
-
-def _row_with_brk(account, user_id, broker_account_id, date, action, symbol,
-                  qty, price, amount, *, desc="", fees=""):
-    """Like ``_row`` but also stamps ``broker_account_id``.
-
-    Stage 0+ seed rows always carry the new column. Test rows that
-    don't pass it leave the cell empty (legacy / pre-deploy data)."""
-    def _f(v):
-        return "" if v == "" else float(v)
-    return {
-        "Account": account,
-        "user_id": user_id,
-        "broker_account_id": broker_account_id,
-        "Date": date,
-        "Action": action,
-        "Symbol": symbol,
-        "Description": desc,
-        "Quantity": _f(qty),
-        "Price": _f(price),
-        "fees_and_comm": fees,
-        "Amount": _f(amount),
-    }
+TENANT_MYACCT = "manual:MyAcct"
 
 
-def test_merge_and_push_seeds_requires_broker_account_id():
-    """Writer-boundary contract: refuse the push when broker_account_id
-    is missing. Same shape as the user_id guard — every Stage-0+ writer
-    can derive broker_account_id from Postgres before this point, so
-    None at this layer is a bug.
-    """
+def test_merge_and_push_seeds_requires_tenant_id():
+    """Writer-boundary contract: refuse the push when tenant_id is missing."""
     current_df = pd.DataFrame([{
         "Symbol": "AAPL", "Description": "APPLE INC",
         "Quantity": 10.0, "Price": 200.0, "security_type": "Equity",
@@ -885,16 +865,15 @@ def test_merge_and_push_seeds_requires_broker_account_id():
         current_df=current_df,
         commit_message="test",
         user_id=9,
-        broker_account_id=None,
+        tenant_id=None,
     )
     assert ok is False
-    assert "broker_account_id" in (err or "").lower()
+    assert "tenant_id" in (err or "").lower()
     assert hr == 0 and cr == 0 and sha is None
 
 
-def test_merge_and_push_seeds_still_requires_user_id_alongside_broker_account_id():
-    """Sanity: broker_account_id alone doesn't bypass the user_id
-    guard. Both must be present at the writer boundary."""
+def test_merge_and_push_seeds_still_requires_user_id_alongside_tenant_id():
+    """Sanity: tenant_id alone doesn't bypass the user_id guard."""
     current_df = pd.DataFrame([{
         "Symbol": "AAPL", "Description": "APPLE INC",
         "Quantity": 10.0, "Price": 200.0, "security_type": "Equity",
@@ -905,193 +884,122 @@ def test_merge_and_push_seeds_still_requires_user_id_alongside_broker_account_id
         current_df=current_df,
         commit_message="test",
         user_id=None,
-        broker_account_id=42,
+        tenant_id=TENANT_MYACCT,
     )
     assert ok is False
     assert "user_id" in (err or "").lower()
 
 
-def test_prepare_seed_df_stamps_broker_account_id_on_every_row():
-    """The third tenancy cell (after Account, user_id) must be
-    broker_account_id on every emitted row. Verifies position 2 of the
-    output frame, since position is part of the contract — staging
-    models read the column by name but downstream eyeballed-CSV reviews
-    rely on tenancy being clustered at the front of the row."""
+def test_prepare_seed_df_stamps_tenant_id_on_every_row():
+    """The third tenancy cell (after Account, user_id) must be tenant_id."""
     df = pd.DataFrame([
         {"Symbol": "AAPL", "Quantity": 10.0, "Price": 200.0},
         {"Symbol": "MSFT", "Quantity": 5.0, "Price": 400.0},
     ])
     out = _upload._prepare_seed_df(
         df, "MyAcct", _upload.CURRENT_SEED_COLUMNS,
-        user_id=9, broker_account_id=42,
+        user_id=9, tenant_id=TENANT_MYACCT,
     )
-    assert list(out.columns[:3]) == ["Account", "user_id", "broker_account_id"]
-    assert out["broker_account_id"].astype(int).tolist() == [42, 42]
+    assert list(out.columns[:3]) == ["Account", "user_id", "tenant_id"]
+    assert out["tenant_id"].tolist() == [TENANT_MYACCT, TENANT_MYACCT]
     assert out["user_id"].astype(int).tolist() == [9, 9]
     assert out["Account"].tolist() == ["MyAcct", "MyAcct"]
 
 
-def test_prepare_seed_df_empty_broker_account_id_when_none():
-    """Defensive: passing None for broker_account_id emits an empty
-    cell (not the string "None") so legacy callers that haven't been
-    migrated yet still produce a valid CSV that dbt's safe_cast can
-    NULL out. Mirrors the user_id=None legacy-tolerance contract."""
+def test_prepare_seed_df_empty_tenant_id_when_none():
+    """Defensive: passing None for tenant_id emits an empty cell."""
     df = pd.DataFrame([{"Symbol": "AAPL", "Quantity": 1.0, "Price": 200.0}])
     out = _upload._prepare_seed_df(
         df, "MyAcct", _upload.CURRENT_SEED_COLUMNS,
-        user_id=9, broker_account_id=None,
+        user_id=9, tenant_id=None,
     )
-    assert out["broker_account_id"].tolist() == [""]
+    assert out["tenant_id"].tolist() == [""]
 
 
-def test_merge_seed_with_existing_stamps_broker_account_id_via_writer(monkeypatch):
+def test_merge_seed_with_existing_stamps_tenant_id_via_writer(monkeypatch):
     """End-to-end shape: a new sync against an empty existing seed
-    produces a CSV where every NEW row has broker_account_id populated.
-    Exercises the path through ``_merge_seed_with_existing`` plus the
-    writer-side ``_prepare_seed_df`` stamping."""
+    produces a CSV where every NEW row has tenant_id populated."""
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
     new_df = pd.DataFrame([
-        # NOTE: _row_with_brk lets the test simulate the dataframe the
-        # writer would build AFTER stamping. The merge function takes
-        # the frame as-is; the writer is responsible for the stamp.
-        _row_with_brk(
-            "MyAcct", 9, 42,
-            "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
+        _row(
+            "MyAcct", 9, "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
+            tenant_id=TENANT_MYACCT,
             desc="APPLE",
         ),
     ])
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "MyAcct", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9, broker_account_id=42,
+        tenant_id=TENANT_MYACCT,
     )
     out = _parse(out_csv)
     assert len(out) == 1
-    assert "broker_account_id" in out.columns
-    # The new column round-trips as float-string ("42.0") because pandas
-    # infers float for any column with at least one numeric cell; _parse
-    # already normalizes user_id the same way, do it for the new column.
-    brk = out["broker_account_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-    assert brk.tolist() == ["42"]
+    assert out["tenant_id"].tolist() == [TENANT_MYACCT]
 
 
-def test_dedup_collapses_legacy_null_broker_account_id_against_fresh_stamp(monkeypatch):
-    """Same trade re-synced after the broker_accounts row gets
-    created: existing seed has broker_account_id="" (pre-Stage-0 row),
-    new sync ships the same trade with broker_account_id=42. They must
-    collapse — broker_account_id is tenant metadata, not trade
-    identity. If the dedup key included broker_account_id, every Stage
-    0 deploy would silently double every legacy row's history on the
-    next sync."""
+def test_dedup_collapses_legacy_null_tenant_id_against_fresh_stamp(monkeypatch):
+    """Same trade re-synced after tenant registration: legacy tenant_id=""
+    row and fresh tenant_id-stamped row must collapse."""
     existing = _csv_from_rows([
-        # Legacy row, no broker_account_id yet.
         _row("MyAcct", 9, "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
              desc="APPLE INC"),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        # Fresh sync — same trade, now carries the stamp.
-        _row_with_brk(
-            "MyAcct", 9, 42,
-            "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
+        _row(
+            "MyAcct", 9, "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
+            tenant_id=TENANT_MYACCT,
             desc="APPLE INC",
         ),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "MyAcct", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9, broker_account_id=42,
+        tenant_id=TENANT_MYACCT,
     )
     out = _parse(out_csv)
     assert len(out) == 1, "legacy NULL vs fresh stamp must collapse to 1 row"
-    # Fresh row wins (keep="last" in the merge), so the canonical
-    # broker_account_id is now populated.
-    brk = out["broker_account_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-    assert brk.tolist() == ["42"], (
-        "fresh row must win on collision so the broker_account_id "
-        "stamp propagates to existing rows on the first re-sync"
-    )
+    assert out["tenant_id"].tolist() == [TENANT_MYACCT]
 
 
-def test_dedup_collapses_drift_with_different_broker_account_id_stamps(monkeypatch):
-    """Pathological case: two rows for the same trade with different
-    broker_account_id stamps. Should NOT happen in normal operation
-    (one user × one broker external_id always maps to the same
-    broker_accounts.id by virtue of the unique constraint), but if a
-    test fixture or operator-side cleanup re-creates the row, the
-    Postgres SERIAL produces a new id. The dedup must STILL collapse
-    them (broker_account_id is not part of the dedup key) and keep the
-    NEW stamp via keep='last'."""
+def test_other_tenants_rows_preserve_their_tenant_id_on_resync(monkeypatch):
+    """Tenant isolation: a sync by tenant B must NOT rewrite tenant A's rows."""
     existing = _csv_from_rows([
-        _row_with_brk(
-            "MyAcct", 9, 42,
-            "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
-            desc="APPLE INC",
-        ),
+        _row("Sara Investment", 2, "01/01/2025", "Buy", "AAPL", 5, 150.0, -750.0,
+             tenant_id=TENANT_SARA_2, desc="APPLE INC"),
+        _row("Sara Investment", 9, "02/01/2025", "Buy", "SPY", 10, 500.0, -5000.0,
+             tenant_id=TENANT_SARA_9, desc="SPY ETF"),
     ])
     _stub_existing(monkeypatch, existing)
 
     new_df = pd.DataFrame([
-        _row_with_brk(
-            "MyAcct", 9, 99,  # broker_accounts.id was re-created
-            "06/11/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
-            desc="APPLE INC",
-        ),
-    ])
-
-    out_csv = _upload._merge_seed_with_existing(
-        HISTORY_PATH, "MyAcct", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9, broker_account_id=99,
-    )
-    out = _parse(out_csv)
-    assert len(out) == 1, "different broker_account_id stamps for same trade must dedup"
-    brk = out["broker_account_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-    assert brk.tolist() == ["99"]
-
-
-def test_other_users_rows_preserve_their_broker_account_id_on_resync(monkeypatch):
-    """Tenant isolation extends to broker_account_id: a sync by user A
-    must NOT rewrite user B's rows under the same account label, and
-    user B's broker_account_id stamp must survive verbatim.
-
-    Mirrors the existing cross-user tenant-isolation test
-    (test_merge_does_not_steal_other_users_rows_on_account_collision)
-    but with broker_account_id present on both sides."""
-    existing = _csv_from_rows([
-        # User 2, brk=11, owns this row
-        _row_with_brk("Sara Investment", 2, 11,
-                     "01/01/2025", "Buy", "AAPL", 5, 150.0, -750.0,
-                     desc="APPLE INC"),
-        # User 9, brk=22, has a different position under the same label
-        _row_with_brk("Sara Investment", 9, 22,
-                     "02/01/2025", "Buy", "SPY", 10, 500.0, -5000.0,
-                     desc="SPY ETF"),
-    ])
-    _stub_existing(monkeypatch, existing)
-
-    # User 9 syncs again with brk=22; only user 9's row should ever be
-    # touched.
-    new_df = pd.DataFrame([
-        _row_with_brk("Sara Investment", 9, 22,
-                     "02/01/2025", "Buy", "SPY", 10, 500.0, -5000.0,
-                     desc="SPY ETF"),
-        _row_with_brk("Sara Investment", 9, 22,
-                     "03/01/2025", "Buy", "QQQ", 7, 400.0, -2800.0,
-                     desc="QQQ ETF"),
+        _row("Sara Investment", 9, "02/01/2025", "Buy", "SPY", 10, 500.0, -5000.0,
+             tenant_id=TENANT_SARA_9, desc="SPY ETF"),
+        _row("Sara Investment", 9, "03/01/2025", "Buy", "QQQ", 7, 400.0, -2800.0,
+             tenant_id=TENANT_SARA_9, desc="QQQ ETF"),
     ])
 
     out_csv = _upload._merge_seed_with_existing(
         HISTORY_PATH, "Sara Investment", new_df, HISTORY_SEED_COLUMNS,
-        user_id=9, broker_account_id=22,
+        tenant_id=TENANT_SARA_9,
     )
     out = _parse(out_csv)
 
-    user2 = out[out["user_id"] == "2"]
-    assert len(user2) == 1, "user 2's row must survive verbatim"
-    brk2 = user2["broker_account_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-    assert brk2.tolist() == ["11"], "user 2's broker_account_id must NOT be rewritten"
+    tenant2 = out[out["tenant_id"] == TENANT_SARA_2]
+    assert len(tenant2) == 1, "tenant 2's row must survive verbatim"
+    assert tenant2["tenant_id"].tolist() == [TENANT_SARA_2]
 
-    user9 = out[out["user_id"] == "9"]
-    assert len(user9) == 2, "user 9 keeps SPY (deduped) + adds QQQ"
-    brk9 = user9["broker_account_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-    assert set(brk9.tolist()) == {"22"}
+    tenant9 = out[out["tenant_id"] == TENANT_SARA_9]
+    assert len(tenant9) == 2, "tenant 9 keeps SPY (deduped) + adds QQQ"
+    assert set(tenant9["Symbol"].tolist()) == {"SPY", "QQQ"}
+
+
+def test_normalize_tid_collapses_known_empty_forms():
+    """Direct unit test for tenant_id merge-scope normalization."""
+    n = _upload._normalize_tid
+    assert n("snaptrade:abc-123") == "snaptrade:abc-123"
+    assert n("  manual:MyAcct  ") == "manual:MyAcct"
+    assert n("") == ""
+    assert n("nan") == ""
+    assert n(None) == ""
+    assert n(float("nan")) == ""

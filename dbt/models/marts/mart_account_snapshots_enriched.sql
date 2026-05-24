@@ -101,8 +101,8 @@ joined as (
 select
     j.account,
     j.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     j.date,
     j.account_value,
 
@@ -131,7 +131,7 @@ select
     end as delta_1m_pct
 
 from joined j
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on j.account = dba.account_name
     and (j.user_id is not distinct from dba.user_id)
 order by j.account, j.user_id, j.date

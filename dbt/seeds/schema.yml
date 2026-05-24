@@ -7,24 +7,31 @@ seeds:
   # seed → INT64, next load with "100.0"/"-2.0" values → load job fails).
   # stg_history / stg_current already cast to string on the way in, then
   # safe_cast to numeric, so this costs nothing downstream.
-  # ``user_id`` is the (legacy) tenant key (Postgres ``users.id``) — see
-  # ``docs/USER_ID_TENANCY.md``. Loaded as STRING so empty cells in
-  # legacy rows survive the seed load (BigQuery rejects "" as INT64).
-  # Staging models do ``safe_cast(user_id as int64)`` to recover NULL
-  # for empty values and a real int otherwise. Stage 4 will tighten to
-  # ``int64`` + NOT NULL once the backfill is verified zero-NULL.
   #
-  # ``broker_account_id`` (Stage 0) is the **new** stable tenant key —
-  # see ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``. References
-  # ``broker_accounts.id`` in Postgres. Nullable through Stages 0-3 so
-  # legacy rows survive the load; tightens to NOT NULL in Stage 4
-  # once the backfill verifies zero-NULL across every user-tied seed.
+  # ``tenant_id`` is the v2 warehouse tenant key — see
+  # ``docs/V2_TENANT_KEY_DESIGN.md``. Format:
+  #     ``"<broker_slug>:<broker_uuid>"``
+  # e.g. ``"snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661"``.
+  # Broker-stable (SnapTrade ships the UUID; we never mint), so it
+  # survives Postgres resets / dataset re-creates / user-id renumbers.
+  # This is the v2 replacement for the v1 ``broker_account_id`` SERIAL
+  # which collided after Postgres ID reuse (May 24 2026 regression).
+  #
+  # ``account`` is now a DISPLAY string only — not the join key. It
+  # stays so the Settings → Account UI and the templates that show
+  # "Schwab ••••6342" labels keep working. The tenancy join is on
+  # ``tenant_id`` only, as enforced by the
+  # ``every_seed_row_has_tenant_id`` dbt test (error severity).
+  #
+  # ``user_id`` is now INFORMATIONAL only. It still flows through the
+  # warehouse so admin / debug surfaces can show the owning user, but
+  # tenant isolation no longer depends on it.
   - name: trade_history
     config:
       column_types:
         Account: string
         user_id: string
-        broker_account_id: string
+        tenant_id: string
         Date: string
         Action: string
         Symbol: string
@@ -39,7 +46,7 @@ seeds:
       column_types:
         Account: string
         user_id: string
-        broker_account_id: string
+        tenant_id: string
         Symbol: string
         Description: string
         Quantity: string
@@ -72,16 +79,17 @@ seeds:
         margin_requirement: string
 
   # Cash + account-total rows used by stg_account_balances for
-  # equity snapshots. Any broker connector (Schwab, SnapTrade, manual
-  # upload) writes here. Manual upload and broker sync both write trades
-  # into trade_history.csv and open positions into current_positions.csv,
-  # so no broker-specific seed is needed for those.
+  # equity snapshots. The SnapTrade sync writes both balances and
+  # positions into the same trio of seeds (account_balances.csv,
+  # current_positions.csv, trade_history.csv) — no broker-specific
+  # seed exists under v2 (``schwab_account_balances.csv`` dropped
+  # during the SnapTrade-only consolidation, May 2026).
   - name: account_balances
     config:
       column_types:
         account: string
         user_id: string
-        broker_account_id: string
+        tenant_id: string
         row_type: string
         market_value: float64
         cost_basis: float64

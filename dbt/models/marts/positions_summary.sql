@@ -37,11 +37,12 @@ strategy_summary as (
         account,
         user_id,
 
-        -- Stage 2 broker_account_id passthrough. broker_account_id is
-        -- functional on (account, user_id), so any_value preserves it
-        -- across this groupby. Orphan rows (NULL in seed) carry NULL
-        -- through — the Stage 3 Flask filter drops them.
-        any_value(broker_account_id) as broker_account_id,
+        -- v2 tenant_id passthrough. tenant_id is functional on
+        -- (account, user_id), so any_value preserves it across the
+        -- groupby. NULL rows carry through — the Flask filter
+        -- (``_filter_df_by_tenant_ids``) drops them. See
+        -- docs/V2_TENANT_KEY_DESIGN.md.
+        any_value(tenant_id) as tenant_id,
 
         symbol,
         strategy,
@@ -90,7 +91,7 @@ strategy_summary as (
         max(coalesce(close_date, current_date())) as last_trade_date
 
     from classified
-    -- account, user_id, symbol, strategy. broker_account_id is in any_value(),
+    -- account, user_id, symbol, strategy. tenant_id is in any_value(),
     -- not the groupby — it's a passthrough, not a grouping key (functional
     -- on the existing keys; see CTE comment above).
     group by account, user_id, symbol, strategy
@@ -109,7 +110,7 @@ final as (
     select
         wad.account,
         wad.user_id,
-        wad.broker_account_id,  -- Stage 2 passthrough; see strategy_summary CTE
+        wad.tenant_id,  -- v2 passthrough; see strategy_summary CTE
         wad.symbol,
 
         -- Strategy reclassification: a "Buy and Hold" position whose dividend

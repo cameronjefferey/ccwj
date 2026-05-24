@@ -85,23 +85,17 @@ with contracts as (
 --   - short (qty<0):  mv - (-1)*cb = mv + cb   (premium kept minus cost to close)
 --   - long  (qty>0):  mv - (+1)*cb = mv - cb   (current value minus cost paid)
 --
--- This matches the override in ``stg_current.cleaned`` (lines 199-202)
--- which is the SOURCE OF TRUTH for unrealized P&L sign correction.
+-- This matches the override in ``stg_current.cleaned`` which is the
+-- SOURCE OF TRUTH for unrealized P&L sign correction.
 -- ``short_aware_unrealized_pnl`` in app/upload.py is the Python
--- mirror of the same rule. Pre-fix this model used ``mv + cb``
--- unconditionally — sign-correct for shorts, but for longs it was
--- ``mv + cb`` instead of ``mv - cb``, which inverts the loss-side P&L
--- and added 2*cost_basis to the chart (real example: PLTR
--- 270115C00120000 long LEAP showed +$18,025 instead of -$4,285).
+-- mirror of the same rule.
 --
--- DEDUP: the staging wrapper `stg_snapshot_options_market_values_daily`
--- already collapses multiple ``dbt_valid_from`` versions per
--- (account, user_id, trade_symbol, snapshot_date) — keeping the
--- latest. It also rewrites historical `user_id` stamps to the
--- canonical owner via `stg_canonical_account_owner`, so the JOIN to
--- `int_option_contracts` (which is also canonical-uid) doesn't drop
--- snapshot rows that were captured under a pre-consolidation stale
--- stamp. See the staging view for the May 2026 PLTR incident notes.
+-- v2: under the SnapTrade-only architecture there's no daily snapshot
+-- wrapper (history loss accepted on cutover — see
+-- docs/V2_TENANT_KEY_DESIGN.md). Marks come from the live
+-- ``stg_current`` snapshot for today only; historical days fall
+-- through to $0 contribution from the spine and the realized credit
+-- on close_date does the rest.
 snapshots as (
     select
         account,
@@ -116,8 +110,9 @@ snapshots as (
             then coalesce(market_value, 0) + coalesce(cost_basis, 0)
             else coalesce(market_value, 0) - coalesce(cost_basis, 0)
         end as mtm_unrealized_pnl
-    from {{ ref('stg_snapshot_options_market_values_daily') }}
+    from {{ ref('stg_current') }}
     where snapshot_date is not null
+      and instrument_type in ('Call', 'Put')
       and underlying_symbol is not null
       and trim(underlying_symbol) != ''
 ),
@@ -371,7 +366,7 @@ realized_close as (
       and c.status = 'Closed'
 ),
 
--- Stage 2 broker_account_id passthrough.
+-- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
 all_rows as (
     select * from open_mtm
     union all
@@ -380,8 +375,8 @@ all_rows as (
 
 select
     f.*,
-    d.broker_account_id
+    d.tenant_id
 from all_rows f
-left join {{ ref('dim_broker_accounts') }} d
+left join {{ ref('dim_broker_tenants') }} d
     on f.account = d.account_name
     and (f.user_id is not distinct from d.user_id)

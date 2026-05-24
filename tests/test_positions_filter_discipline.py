@@ -36,10 +36,15 @@ def _stub_user(user_id=42, username="acme"):
     return u
 
 
+TENANT_CAMERON = "snaptrade:cameron-fixture"
+TENANT_SARA = "snaptrade:sara-fixture"
+
+
 def _summary_row(
     *,
     account="Cameron Investment",
     user_id=42,
+    tenant_id=TENANT_CAMERON,
     symbol="PLTR",
     strategy="Long Call",
     status="Closed",
@@ -60,6 +65,7 @@ def _summary_row(
     return {
         "account": account,
         "user_id": user_id,
+        "tenant_id": tenant_id,
         "symbol": symbol,
         "strategy": strategy,
         "status": status,
@@ -120,18 +126,28 @@ def fixture_book():
                      num_individual_trades=2, num_winners=0, num_losers=0,
                      sector="Financial Services", subsector="ETF"),
         # Sara / NVDA / Covered Call (Closed)
-        _summary_row(account="Sara Investment", symbol="NVDA",
+        _summary_row(account="Sara Investment", tenant_id=TENANT_SARA, symbol="NVDA",
                      strategy="Covered Call", status="Closed",
                      total_pnl=1200, realized_pnl=1200, unrealized_pnl=0,
                      num_individual_trades=4, num_winners=2, num_losers=0,
                      sector="Technology", subsector="Semiconductors"),
         # Sara / NVDA / Covered Call (Open)
-        _summary_row(account="Sara Investment", symbol="NVDA",
+        _summary_row(account="Sara Investment", tenant_id=TENANT_SARA, symbol="NVDA",
                      strategy="Covered Call", status="Open",
                      total_pnl=300, realized_pnl=0, unrealized_pnl=300,
                      num_individual_trades=1, num_winners=0, num_losers=0,
                      sector="Technology", subsector="Semiconductors"),
     ])
+
+
+def _mock_tenants_for_scope(selected_account=None):
+    if selected_account == "Cameron Investment":
+        return [TENANT_CAMERON]
+    if selected_account == "Sara Investment":
+        return [TENANT_SARA]
+    if not selected_account:
+        return [TENANT_CAMERON, TENANT_SARA]
+    return []
 
 
 @pytest.fixture
@@ -158,10 +174,9 @@ def routed_app(fixture_book):
          patch("flask_login.utils._get_user", lambda: user), \
          patch.object(routes, "_redirect_if_no_accounts", lambda: None), \
          patch.object(routes, "_user_account_list", lambda: accounts), \
+         patch.object(routes, "_tenants_for_scope", _mock_tenants_for_scope), \
          patch.object(routes, "is_admin", lambda u: False), \
-         patch.object(routes, "get_bigquery_client", lambda: _StubClient()), \
-         patch.object(routes, "_filter_df_by_accounts",
-                      lambda df, _accts, **kw: df):
+         patch.object(routes, "get_bigquery_client", lambda: _StubClient()):
         with app.test_client() as c:
             yield c
 
@@ -299,10 +314,9 @@ def _render_with_book(book, accounts):
          patch("flask_login.utils._get_user", lambda: user), \
          patch.object(routes, "_redirect_if_no_accounts", lambda: None), \
          patch.object(routes, "_user_account_list", lambda: accounts), \
+         patch.object(routes, "_tenants_for_scope", _mock_tenants_for_scope), \
          patch.object(routes, "is_admin", lambda u: False), \
-         patch.object(routes, "get_bigquery_client", lambda: _StubClient()), \
-         patch.object(routes, "_filter_df_by_accounts",
-                      lambda df, _accts, **kw: df):
+         patch.object(routes, "get_bigquery_client", lambda: _StubClient()):
         with app.test_client() as c:
             r = c.get("/positions")
     assert r.status_code == 200, r.data[:300]
@@ -409,10 +423,10 @@ def test_date_filtered_at_full_window_matches_mart():
         ]
     )
     runtime = client.query(
-        DATE_FILTERED_QUERY.format(account_filter=""),
+        DATE_FILTERED_QUERY.format(tenant_filter=""),
         job_config=full_window,
     ).to_dataframe()
-    mart = client.query(DEFAULT_QUERY.format(account_filter="")).to_dataframe()
+    mart = client.query(DEFAULT_QUERY.format(tenant_filter="")).to_dataframe()
 
     # Both frames are aggregated to the same grain — compare totals across
     # the corner shape that matters most: per-strategy total_pnl. Sector /

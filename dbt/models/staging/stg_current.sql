@@ -4,16 +4,12 @@
     )
 }}
 
--- Schwab sync and manual upload both merge into current_positions.csv, so
--- there's a single positions seed to read from. Normalize everything to
--- STRING so the demo union works regardless of BigQuery CSV type inference.
+-- v2 staging — see docs/V2_TENANT_KEY_DESIGN.md.
 --
--- ``user_id`` is the new tenant key (see ``docs/USER_ID_TENANCY.md``).
--- Detected via ``adapter.get_columns_in_relation`` so this model keeps
--- building during the deploy gap when the BQ seed table hasn't been
--- rewritten with the new schema yet (e.g. dbt-bigquery's seed loader
--- silently dropping the all-empty user_id column on first deploy).
--- Once the seed reload picks up user_id, we read the real column.
+-- ``tenant_id`` is the v2 warehouse tenant key. Under v2 every row
+-- is stamped at sync time with a broker-stable, never-recycled
+-- tenant_id, so the v1 orphan-tenant / split-uid bug class is
+-- structurally impossible. See docs/V2_TENANT_KEY_DESIGN.md.
 {% if execute %}
     {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
@@ -23,9 +19,8 @@
 {% endif %}
 {% set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" %}
 {% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
-{# Stage 0 broker_account_id passthrough — see docs/BROKER_ACCOUNT_ID_MIGRATION.md. #}
-{% set _curr_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _curr_cols else "cast(null as string)" %}
-{% set _demo_brk_id_expr = "cast(broker_account_id as string)" if 'broker_account_id' in _demo_cols else "cast(null as string)" %}
+{% set _curr_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _curr_cols else "cast(null as string)" %}
+{% set _demo_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _demo_cols else "cast(null as string)" %}
 
 {%- set common_string_cols -%}
         cast(Account as string) as Account,
@@ -64,7 +59,7 @@
 with current_as_strings as (
     select
         {{ _curr_user_id_expr }} as user_id,
-        {{ _curr_brk_id_expr }} as broker_account_id,
+        {{ _curr_tenant_id_expr }} as tenant_id,
         {{ common_string_cols }}
     from {{ ref('current_positions') }}
 ),
@@ -72,7 +67,7 @@ with current_as_strings as (
 demo_as_strings as (
     select
         {{ _demo_user_id_expr }} as user_id,
-        {{ _demo_brk_id_expr }} as broker_account_id,
+        {{ _demo_tenant_id_expr }} as tenant_id,
         {{ common_string_cols }}
     from {{ ref('demo_current') }}
 ),
@@ -83,8 +78,6 @@ source as (
     select * from demo_as_strings
 ),
 
--- Schwab API / some feeds use CBOE OSI (e.g. "RDDT  261218C00135000"); manual export uses
--- "TICK 12/18/2026 135.00 C". Parse both so Call/Put and snapshot unions work.
 source_with_osi as (
     select
         s.*,
@@ -95,7 +88,6 @@ source_with_osi as (
       and lower(trim(coalesce(symbol, ''))) not in ('account total', 'positions total')
 ),
 
--- BigQuery regexp_extract allows only one capturing group; parse OSI in SQL.
 osi_parts as (
     select
         *,
@@ -116,23 +108,12 @@ cleaned_raw as (
     select
         trim(account) as account,
 
-        -- Tenant key — see docs/USER_ID_TENANCY.md. Stage 0: nullable.
-        -- Cast through FLOAT64: the seed stores user_id as the pandas
-        -- "9.0" decimal-string form, and safe_cast(STRING -> INT64)
-        -- rejects any decimal point. Going via FLOAT64 -> INT64 accepts
-        -- "9.0" while still safe-failing on garbage. See stg_history.sql
-        -- for the full incident write-up — the original direct cast
-        -- silently NULLed user_id for every Schwab-synced row.
         safe_cast(safe_cast(nullif(trim(user_id), '') as float64) as int64) as user_id,
 
-        -- New stable tenant key — see docs/BROKER_ACCOUNT_ID_MIGRATION.md.
-        -- Same FLOAT64-then-INT64 cast as user_id.
-        safe_cast(safe_cast(nullif(trim(broker_account_id), '') as float64) as int64) as broker_account_id,
+        nullif(trim(tenant_id), '') as tenant_id,
 
-        -- Full trade symbol
         trim(symbol) as trade_symbol,
 
-        -- Underlying ticker (first token; OSI and export both start with root)
         trim(split(sym_trim, ' ')[safe_offset(0)]) as underlying_symbol,
 
         coalesce(
@@ -166,17 +147,6 @@ cleaned_raw as (
                 nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
                 osi_cp
             ) = 'P' then 'Put'
-            -- Crypto rows (SnapTrade emits ``security_type='Cryptocurrency'``
-            -- on positions whose symbol type code is crypto — see
-            -- ``app/snaptrade_normalize.py``) are EQUITY-MECHANICS for the
-            -- mart pipeline: they go through int_equity_sessions /
-            -- int_closed_equity_legs / int_enriched_current the same way a
-            -- stock holding does (buy → hold → sell, no dividends, no
-            -- splits, no options). The Crypto label is applied LATER at
-            -- ``int_strategy_classification`` time via the
-            -- ``stg_crypto_symbols`` whitelist. Mapping to ``Equity`` here
-            -- means we don't have to fork every downstream
-            -- ``where instrument_type = 'Equity'`` to also include 'Crypto'.
             when lower(trim(coalesce(security_type, ''))) in (
                 'equity', 'etfs & closed end funds', 'cryptocurrency'
             ) then 'Equity'
@@ -186,10 +156,9 @@ cleaned_raw as (
         trim(description) as description,
         safe_cast(quantity as float64) as quantity,
         safe_cast(price as float64) as current_price,
-        -- Schwab CSV often has market_value/cost_bases as "$9,220.95"; strip $ and commas
         safe_cast(trim(replace(replace(replace(coalesce(cast(market_value as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as market_value,
         safe_cast(trim(replace(replace(replace(coalesce(cast(cost_bases as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as cost_basis,
-        safe_cast(trim(replace(replace(replace(coalesce(cast(gain_or_loss_dollat as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl,  -- typo in source
+        safe_cast(trim(replace(replace(replace(coalesce(cast(gain_or_loss_dollat as string), ''), '$', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl,
         safe_cast(trim(replace(replace(replace(coalesce(cast(gain_or_loss_percent as string), ''), '%', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl_pct,
         trim(security_type) as security_type_raw,
         trim(in_the_money) as in_the_money,
@@ -200,28 +169,9 @@ cleaned_raw as (
     from osi_split
 ),
 
--- Schwab's `gain_or_loss_dollat` for SHORT options (qty < 0) is the
--- inverted-sign trader bug we keep stumbling on:
---
---   sold-to-open 2 calls @ $5.97  → cost_basis = +$1,194.65 (premium received)
---   current price drops to $0.015 → market_value = -$3.00 (cost to close)
---   schwab gain = market_value - cost_basis  = -$3 - $1,194.65 = -$1,197.65   (wrong)
---   true P&L   = premium_in - close_cost     = $1,194.65 - $3 = +$1,191.65    (right)
---
--- Schwab's arithmetic is what `market_value - cost_basis` would give for a
--- LONG position — applied to a short it always shows the trader losing
--- ~2× the absolute premium. We override at the staging layer so EVERY
--- downstream consumer sees the correct sign:
---   - int_enriched_current.unrealized_pnl  (Position Detail "Open legs" rows)
---   - snapshot_options_market_values_daily (snapshot history + peak-pnl analysis)
---   - int_option_pnl_series                (per-day open-option P&L)
---   - int_option_contracts.snapshot_only_options (positions_summary fallback path)
---   - app/weekly_review.py today_strip + expiring_options aggregations
---
--- The unified formula  `market_value - sign(qty) * cost_basis`  works for
--- both directions. For shorts, sign(qty) = -1 collapses to
--- `market_value + cost_basis` which is exactly the cash-flow truth above.
--- Long calc is unchanged from Schwab's value.
+-- Schwab's `gain_or_loss_dollat` for SHORT options (qty < 0) flips sign;
+-- recompute correctly using sign-aware formula. See v1 stg_current
+-- comment for the full incident write-up.
 cleaned as (
     select
         * except (unrealized_pnl, unrealized_pnl_pct),
@@ -247,76 +197,17 @@ cleaned as (
     from cleaned_raw
 ),
 
--- Belt-and-suspenders dedup: if current_positions.csv ever ships duplicate
--- rows for the same (account, user_id, trade_symbol) — which has happened
--- when the Schwab "Pull full history" sync wrote the same payload three
--- times in quick succession before the merge logic was hardened — every
--- downstream model that joins to stg_current would otherwise multiply
--- (int_equity_sessions self-joins to stg_current and ballooned 9× for
--- those keys, breaking int_position_legs uniqueness). Keep the row with
--- the most-populated market_value as a deterministic tiebreak. Mirrors
--- the same defense in stg_account_balances.
--- Orphan-tenant backfill — see stg_history.sql for the full incident
--- write-up. TWO failure modes, both seen in production:
---
---   (A) NULL → populated.  Snapshot synced before user linked the
---       account; later snapshots under the real user_id. Existing
---       `account_owner` CTE handles this via the unambiguous-uid
---       guard (single-non-NULL uid per account).
---
---   (B) Stale-uid → canonical-uid.  Same account stamped under
---       MULTIPLE non-NULL uids (e.g. Cameron Investment / PLTR — May
---       2026 — uid=9 and uid=13 both have rows for every contract
---       after a historical re-link). The `count = 1` guard above
---       refuses to fire because both uids look "populated". Without
---       resolution, downstream consumers double-count every leg,
---       every closed trade, every breakdown row.
---
--- The canonical resolution lives in `stg_canonical_account_owner` —
--- a separate staging model that reads trade_history's `trade_date`
--- to pick the most-recently-active uid per account. We backfill in
--- precedence order:
---
---   1) canonical_user_id (from stg_canonical_account_owner) — wins
---      EVEN OVER a populated c.user_id, because we trust freshest
---      trade activity over a stale stamp.
---   2) raw c.user_id (already populated).
---   3) inferred_user_id from this model's account_owner (case A).
---
--- After the rewrite, rows that were stamped under a stale uid
--- become exact duplicates of rows already under the canonical uid
--- (same trade_symbol, same broker snapshot fields). The `deduped`
--- CTE collapses them.
-account_owner as (
-    select
-        account,
-        any_value(user_id) as inferred_user_id
-    from cleaned
-    where user_id is not null
-    group by 1
-    having count(distinct user_id) = 1
-),
-
-backfilled as (
-    select
-        c.* except(user_id),
-        coalesce(co.canonical_user_id, c.user_id, ao.inferred_user_id) as user_id
-    from cleaned c
-    left join account_owner ao using (account)
-    left join {{ ref('stg_canonical_account_owner') }} co using (account)
-),
-
+-- Belt-and-suspenders dedup on (tenant_id, trade_symbol). Under v2
+-- partition is on tenant_id (the structural tenant key) not on
+-- (account, user_id) — the same physical broker account is one
+-- tenant_id and dupes on it are real dupes.
 deduped as (
     select *
-    from backfilled
+    from cleaned
     qualify row_number() over (
-        partition by account, user_id, trade_symbol
+        partition by coalesce(tenant_id, account), trade_symbol
         order by case when market_value is not null then 0 else 1 end,
                  case when cost_basis  is not null then 0 else 1 end,
-                 -- Last resort: deterministic tie-break so rebuilds are
-                 -- byte-identical. Highest market_value wins among rows
-                 -- with the same population score (most-recent-sync
-                 -- proxy when no real timestamp is available).
                  market_value desc nulls last
     ) = 1
 )

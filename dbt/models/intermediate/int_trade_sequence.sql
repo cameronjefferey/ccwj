@@ -20,8 +20,8 @@ with closed as (
     select
         account,
         user_id,
-        -- Stage 2 broker_account_id passthrough (upstream already carries it).
-        broker_account_id,
+        -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+        tenant_id,
         symbol,
         trade_symbol,
         strategy,
@@ -59,7 +59,7 @@ sequenced as (
 select
     account,
     user_id,
-    broker_account_id,
+    tenant_id,
     symbol,
     trade_symbol,
     strategy,

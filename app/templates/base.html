@@ -411,38 +411,7 @@
     </div>
 
     <div class="container-fluid px-4">
-        {# Surfaces Schwab connections whose refresh token Schwab has
-           rejected. Set by `_inject_schwab_reauth_needed` in app/__init__.py
-           from the `refresh_token_invalid_at` column on schwab_connections.
-           Schwab refresh tokens have a 7-day life, so users who don't sync
-           for a week always end up here; without this banner they'd just
-           see stale data with no signal that a daily sync stopped working. #}
-        {% if schwab_reauth_needed and schwab_reauth_needed|length %}
-        <div class="alert alert-warning d-flex align-items-start gap-3 mt-3 mb-3" role="alert">
-            <div class="flex-grow-1">
-                <strong>Your Schwab connection expired.</strong>
-                <div class="small mt-1">
-                    {% if schwab_reauth_needed|length == 1 %}
-                        We couldn&rsquo;t sync
-                        <code>{{ schwab_reauth_needed[0].display_nickname or schwab_reauth_needed[0].account_name or schwab_reauth_needed[0].account_number }}</code>
-                        — Schwab refresh tokens last about 7 days and yours
-                        has expired.
-                    {% else %}
-                        We couldn&rsquo;t sync
-                        {% for c in schwab_reauth_needed %}
-                            <code>{{ c.display_nickname or c.account_name or c.account_number }}</code>{% if not loop.last %}, {% endif %}
-                        {% endfor %}
-                        — Schwab refresh tokens last about 7 days and yours
-                        have expired.
-                    {% endif %}
-                    Reconnect to resume daily syncs.
-                </div>
-                <a class="btn btn-sm btn-warning mt-2" href="{{ url_for('schwab_connect') }}">Reconnect Schwab</a>
-            </div>
-        </div>
-        {% endif %}
-
-        {# Same banner shape for SnapTrade-managed brokerages whose
+        {# SnapTrade-managed brokerages whose connection has been revoked.
            connection has been revoked at the broker. Set by
            `_inject_snaptrade_reauth_needed` in app/snaptrade.py from
            the `connection_broken_at` column on snaptrade_accounts. #}
@@ -612,8 +581,8 @@
             });
         })();
 
-        // Schwab "Sync now" — show loading state (sync can take a long time; no AJAX, so this is the only progress cue until redirect)
-        document.querySelectorAll('form.schwab-sync-form').forEach(function(form) {
+        // Broker "Sync now" — show loading state until redirect
+        document.querySelectorAll('form.snaptrade-sync-form').forEach(function(form) {
             form.addEventListener('submit', function() {
                 var btn = form.querySelector('button[type="submit"]');
                 if (!btn || btn.disabled) return;
@@ -622,7 +591,7 @@
                 btn.disabled = true;
                 btn.setAttribute('aria-busy', 'true');
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="ms-2">Syncing…</span>';
-                var st = form.querySelector('.schwab-sync-status');
+                var st = form.querySelector('.snaptrade-sync-status');
                 if (st) st.classList.remove('d-none');
             });
         });

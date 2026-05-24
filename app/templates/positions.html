@@ -107,7 +107,7 @@
             <div class="hero-sub">
                 {% if _auth_acct_count == 0 %}
                     No accounts linked yet &mdash;
-                    <a href="{{ url_for('profile') }}#schwab-sync" class="text-white text-decoration-underline">connect Schwab</a>
+                    <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-white text-decoration-underline">connect your broker</a>
                     or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
                 {% elif _auth_acct_count == 1 %}
                     {{ user_accounts[0] | account_label }}
@@ -180,7 +180,7 @@
 </div>
 
 {# Empty-state copy splits two ways:
-   * No data accounts AND no auth accounts → onboarding (connect Schwab).
+   * No data accounts AND no auth accounts → onboarding (connect your broker).
    * No data accounts but user IS connected → "we have your accounts but
      they didn't return anything." Most common cause is a brand-new
      Schwab connection that hasn't synced yet, or a too-narrow filter. #}
@@ -190,7 +190,7 @@
     <strong>No positions yet.</strong>
     Bring in your trades to see your live positions, P&amp;L, and performance:
     <div class="mt-2 d-flex flex-wrap gap-2">
-        <a href="{{ url_for('profile') }}#schwab-sync" class="btn btn-primary btn-sm">Connect Schwab</a>
+        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Connect your broker</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
         <a href="{{ url_for('get_started') }}" class="btn btn-link btn-sm text-decoration-none">Walk me through it</a>
     </div>
@@ -200,7 +200,7 @@
     <strong>No positions to show yet.</strong>
     Your account{{ '' if _auth_acct_count == 1 else 's' }} {{ user_accounts | map('account_label') | join(', ') }}
     {{ 'is' if _auth_acct_count == 1 else 'are' }} connected, but we don&rsquo;t have any trade data yet.
-    <a href="{{ url_for('profile') }}#schwab-sync" class="alert-link">Run a Schwab sync</a>
+    <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="alert-link">Sync your broker</a>
     or <a href="{{ url_for('upload') }}" class="alert-link">upload trade history</a> to populate this page.
 </div>
 {% endif %}
@@ -209,7 +209,7 @@
 {% if error is defined and error %}
 <div class="alert alert-danger">
     <strong>We couldn&rsquo;t load your positions right now.</strong>
-    <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile') }}#schwab-sync">running a Schwab sync</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again. If it keeps happening, <a href="{{ url_for('contact') }}">contact support</a>.</p>
+    <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync">syncing your broker</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again. If it keeps happening, <a href="{{ url_for('contact') }}">contact support</a>.</p>
 </div>
 {% else %}
 
@@ -657,7 +657,7 @@
         </nav>
         {% endif %}
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile') }}#schwab-sync" class="text-decoration-underline">connecting Schwab</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
         {% endif %}
     </div>
 </div>

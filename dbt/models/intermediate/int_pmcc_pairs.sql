@@ -99,8 +99,8 @@ paired as (
 select
     p.account,
     p.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     p.underlying_symbol,
     long_trade_symbol,
     short_trade_symbol,
@@ -142,6 +142,6 @@ select
         day
     ) + 1 as overlap_days
 from paired p
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on p.account = dba.account_name
     and (p.user_id is not distinct from dba.user_id)

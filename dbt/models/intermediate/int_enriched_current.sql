@@ -131,8 +131,8 @@ priced as (
 select
     p.account,
     p.user_id,
-    -- Stage 2 broker_account_id passthrough.
-    dba.broker_account_id,
+    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+    dba.tenant_id,
     p.trade_symbol,
     p.underlying_symbol,
     p.option_expiry,
@@ -247,7 +247,7 @@ left join option_contract_status oc
     on p.account = oc.account
     and (p.user_id is not distinct from oc.user_id)
     and p.trade_symbol = oc.trade_symbol
-left join {{ ref('dim_broker_accounts') }} dba
+left join {{ ref('dim_broker_tenants') }} dba
     on p.account = dba.account_name
     and (p.user_id is not distinct from dba.user_id)
 where not (
