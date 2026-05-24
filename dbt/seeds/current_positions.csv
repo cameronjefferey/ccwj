@@ -1,1 +1,5 @@
 Account,user_id,tenant_id,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,JPM,JPMorgan Chase & Co.,1.0,306.38,,,306.38,,,301.12,5.26,1.7468,,,,,,,,,,,,,,,,,Equity,
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,LINK,Chainlink,94.7625,9.4521,,,895.70462625,,,1006.4725125000001,-110.7679,-11.0056,,,,,,,,,,,,,,,,,Cryptocurrency,
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,RKLB,Rocket Lab Corporation,90.0,135.76,,,12218.4,,,11844.0,374.4,3.1611,,,,,,,,,,,,,,,,,Equity,
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,SPY,SPDR S&P 500 ETF Trust,10.0,745.64,,,7456.4,,,7470.700000000001,-14.3,-0.1914,,,,,,,,,,,,,,,,,Equity,
