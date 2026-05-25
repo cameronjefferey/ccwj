@@ -208,7 +208,7 @@
                 <tbody>
                     {% for row in strategy_rows %}
                     <tr>
-                        <td>{{ row.account }}</td>
+                        <td>{{ row.account | account_label }}</td>
                         <td>
                             <span class="badge badge-strategy"
                                   style="background:{{ colors.get(row.strategy, '#6c757d') }}">

@@ -408,7 +408,7 @@
         <tbody>
             {% for a in focus_accounts %}
             <tr>
-                <td class="fw-semibold">{{ a.account }}</td>
+                <td class="fw-semibold">{{ a.account | account_label }}</td>
                 <td class="text-end text-muted">{{ a.num_trades }}</td>
                 <td class="text-end">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
                 <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}">

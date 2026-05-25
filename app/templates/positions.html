@@ -458,7 +458,7 @@
                 <tbody>
                     {% for row in symbol_rows %}
                     <tr>
-                        <td>{{ row.account }}</td>
+                        <td>{{ row.account | account_label }}</td>
                         <td class="fw-semibold">
                             <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
                                 {{ row.symbol }}
@@ -576,7 +576,7 @@
 
                     {% for row in rows %}
                     <tr>
-                        <td>{{ row.account }}</td>
+                        <td>{{ row.account | account_label }}</td>
                         <td>
                             <a href="{{ url_for('strategies',
                                                 account=row.account,

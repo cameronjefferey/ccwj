@@ -497,7 +497,7 @@
             <tbody>
                 {% for r in strategy_rows %}
                 <tr>
-                    <td>{{ r.account }}</td>
+                    <td>{{ r.account | account_label }}</td>
                     <td>
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
                             {{ r.strategy }}
@@ -840,7 +840,7 @@
                         {% for t in trades %}
                         <tr>
                             <td class="text-nowrap">{{ t.trade_date }}</td>
-                            <td>{{ t.account }}</td>
+                            <td>{{ t.account | account_label }}</td>
                             <td>
                                 {% if t.is_dividend_reinvestment %}
                                 <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>

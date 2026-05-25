@@ -385,6 +385,20 @@ def init_db():
         ON broker_tenants (connection_status)
         WHERE connection_status != 'active'
         """,
+        # Onboarding survey — captured during the first SnapTrade sync wait
+        # on /sync/processing. One row per user (PK on user_id) so a
+        # re-prompt on retry doesn't duplicate. ``primary_reason`` is a
+        # short slug (e.g. 'lose_money_options'); ``other_text`` is
+        # optional free text we only render in admin views. Stored for
+        # now; not yet used to personalize copy.
+        """
+        CREATE TABLE IF NOT EXISTS onboarding_responses (
+            user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            primary_reason TEXT NOT NULL,
+            other_text     TEXT,
+            submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -398,6 +412,41 @@ def init_db():
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
     _migrate_broker_account_id_columns()
+    _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
+
+
+def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
+    """One-shot idempotent backfill: copy ``display_nickname`` from
+    ``snaptrade_accounts`` (legacy table, where the existing UI writes)
+    over to ``broker_tenants`` (v2 table, where Daily Review and other
+    pages now read from).
+
+    Only fills NULL targets — a nickname already on broker_tenants is
+    treated as the more authoritative value and never overwritten by
+    this backfill. Joins on
+    ``broker_tenants.broker_uuid = snaptrade_accounts.snaptrade_account_id``
+    since SnapTrade's account UUID is the natural key for both.
+
+    Safe to call on every startup: matches existing
+    ``_migrate_*`` helpers' idempotency contract. Once the
+    ``update_snaptrade_account_nickname`` dual-write path has been in
+    production for one full release cycle, this backfill can be
+    removed.
+    """
+    try:
+        execute(
+            "UPDATE broker_tenants bt "
+            "SET display_nickname = sa.display_nickname, updated_at = NOW() "
+            "FROM snaptrade_accounts sa "
+            "WHERE bt.broker_slug = 'snaptrade' "
+            "  AND bt.broker_uuid = sa.snaptrade_account_id "
+            "  AND bt.user_id = sa.user_id "
+            "  AND bt.display_nickname IS NULL "
+            "  AND sa.display_nickname IS NOT NULL "
+            "  AND length(trim(sa.display_nickname)) > 0"
+        )
+    except Exception as exc:
+        _log.warning("broker_tenants nickname backfill skipped: %s", exc)
 
 
 def _migrate_schwab_first_sync_column():
@@ -978,6 +1027,40 @@ def get_or_create_broker_tenant(
     return tenant_id
 
 
+def update_broker_tenant_display_nickname(user_id, tenant_id, nickname):
+    """Set or clear ``broker_tenants.display_nickname`` for one tenant.
+
+    UI-only label that shadows ``account_name`` everywhere we render
+    account labels to the user (Daily Review snap table, /positions,
+    /position/<symbol>, /strategies, /wealth, etc). Never writes
+    ``account_name`` — that stays as the warehouse tenancy display key
+    and matches what the mart's ``account`` column carries.
+
+    Bounded to ``_MAX_SNAPTRADE_NICKNAME_LEN`` to mirror the legacy
+    ``snaptrade_accounts.display_nickname`` cap. Pass empty/None to
+    clear; the column is nullable.
+
+    Scoped by ``user_id`` so one tenant cannot have their nickname
+    overwritten by an admin or another user calling this directly.
+    """
+    if user_id is None or not tenant_id:
+        return False
+    label = (nickname or "").strip()
+    if len(label) > _MAX_SNAPTRADE_NICKNAME_LEN:
+        label = label[:_MAX_SNAPTRADE_NICKNAME_LEN]
+    value = label or None
+    try:
+        execute(
+            "UPDATE broker_tenants SET display_nickname = %s, updated_at = NOW() "
+            "WHERE tenant_id = %s AND user_id = %s",
+            (value, str(tenant_id), int(user_id)),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("update_broker_tenant_display_nickname failed: %s", exc)
+        return False
+
+
 def get_broker_tenant(tenant_id):
     """Full row by tenant_id, or None."""
     if not tenant_id:
@@ -1489,7 +1572,14 @@ def mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id):
 
 
 def update_snaptrade_account_nickname(user_id, snaptrade_account_id, nickname):
-    """UI-only label, never writes to ``account_name`` (tenancy key)."""
+    """UI-only label, never writes to ``account_name`` (tenancy key).
+
+    Dual-writes to ``broker_tenants.display_nickname`` for the matching
+    tenant_id so v2 read paths (``_account_label_map``,
+    ``_tenant_display_label``) pick up the user-chosen label
+    immediately. ``snaptrade_accounts`` is the legacy table; once it's
+    fully retired the dual write can collapse to broker_tenants only.
+    """
     label = (nickname or "").strip()
     if len(label) > _MAX_SNAPTRADE_NICKNAME_LEN:
         label = label[:_MAX_SNAPTRADE_NICKNAME_LEN]
@@ -1500,10 +1590,19 @@ def update_snaptrade_account_nickname(user_id, snaptrade_account_id, nickname):
             "WHERE user_id = %s AND snaptrade_account_id = %s",
             (value, user_id, snaptrade_account_id),
         )
-        return True
     except Exception as exc:
         _log.warning("update_snaptrade_account_nickname failed: %s", exc)
         return False
+    # Dual write to broker_tenants — v2 read paths use this column.
+    try:
+        tenant_id = build_tenant_id(SNAPTRADE_BROKER_SLUG, snaptrade_account_id)
+        update_broker_tenant_display_nickname(user_id, tenant_id, label)
+    except Exception as exc:
+        _log.warning(
+            "update_snaptrade_account_nickname dual-write to broker_tenants failed: %s",
+            exc,
+        )
+    return True
 
 
 def record_snaptrade_sync_attempt(user_id, snaptrade_account_id, *, error=None):
@@ -2573,6 +2672,79 @@ def mark_feedback_resolved(feedback_id: int, resolved: bool = True) -> bool:
     except Exception as exc:
         _log.warning("mark_feedback_resolved failed: %s", exc)
         return False
+
+
+# ------------------------------------------------------------------
+# Onboarding survey ("why are you here?")
+# ------------------------------------------------------------------
+#
+# Captured during the first SnapTrade sync wait on /sync/processing.
+# Stored only for now; not yet used to personalize copy. Long-term these
+# answers anchor the mirror back at the trader's stated goal — see AGENTS.md
+# "Daily Review" / Mirror Score notes. One row per user; resubmitting
+# overwrites the prior answer (UPSERT) so a user who initially clicked
+# "just looking" can refine later from settings.
+
+# Allow-list of slugs the form can post. Anything outside this set is
+# rejected at the route layer so a malicious client can't pollute the
+# table with arbitrary values that would later break dashboards.
+ONBOARDING_PRIMARY_REASONS = (
+    "lose_money_options",
+    "understand_patterns",
+    "better_record",
+    "just_looking",
+    "other",
+)
+
+_MAX_ONBOARDING_OTHER_LEN = 1000
+
+
+def save_onboarding_response(
+    *,
+    user_id: int,
+    primary_reason: str,
+    other_text: str | None,
+) -> bool:
+    """Upsert one onboarding answer per user. Returns True on success."""
+    if not user_id:
+        return False
+    reason = (primary_reason or "").strip()
+    if reason not in ONBOARDING_PRIMARY_REASONS:
+        return False
+    clean_other = (other_text or "").strip() or None
+    if clean_other and len(clean_other) > _MAX_ONBOARDING_OTHER_LEN:
+        clean_other = clean_other[:_MAX_ONBOARDING_OTHER_LEN]
+    try:
+        execute(
+            """INSERT INTO onboarding_responses
+                   (user_id, primary_reason, other_text, submitted_at)
+               VALUES (%s, %s, %s, NOW())
+               ON CONFLICT (user_id) DO UPDATE SET
+                   primary_reason = EXCLUDED.primary_reason,
+                   other_text     = EXCLUDED.other_text,
+                   submitted_at   = NOW()""",
+            (user_id, reason, clean_other),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("save_onboarding_response failed: %s", exc)
+        return False
+
+
+def get_onboarding_response(user_id: int) -> dict | None:
+    """Return the saved onboarding row for ``user_id`` or None."""
+    if not user_id:
+        return None
+    try:
+        return fetch_one(
+            """SELECT user_id, primary_reason, other_text, submitted_at
+                 FROM onboarding_responses
+                WHERE user_id = %s""",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_onboarding_response failed: %s", exc)
+        return None
 
 
 # ------------------------------------------------------------------

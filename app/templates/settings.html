@@ -156,7 +156,7 @@
                         <tbody>
                             {% for u in recent_uploads %}
                             <tr>
-                                <td>{{ u.account_name }}</td>
+                                <td>{{ u.account_name | account_label }}</td>
                                 <td>{{ u.history_rows }}</td>
                                 <td>{{ u.current_rows }}</td>
                                 <td class="text-muted small">{{ u.uploaded_at }}</td>

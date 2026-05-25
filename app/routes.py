@@ -96,6 +96,74 @@ def _tenant_display_label(row) -> str:
     return (row.get("display_nickname") or row.get("account_name") or "").strip()
 
 
+def _account_label_map(user_id) -> dict:
+    """Return ``{broker_account_name: user_display_label}`` for one user.
+
+    Mart columns (``mart_account_snapshots_enriched.account``,
+    ``positions_summary.account``, etc.) carry the broker-derived
+    label (e.g. "Alpaca Paper Account" or "Schwab ••••6342") because
+    that's what the seed writes. Users set nicknames via
+    ``/snaptrade/accounts``; those land on
+    ``broker_tenants.display_nickname``. This map is the bridge —
+    every UI surface that renders the mart's ``account`` value must
+    pass it through this lookup so the nickname (when set) shadows
+    the broker label.
+
+    The map is identity-valued for any tenant without a nickname so
+    callers can do ``df["account"].map(lambda x: m.get(x, x))``
+    without losing rows. Admin / unauthenticated returns ``{}`` —
+    no translation, just pass the raw broker label through.
+
+    See ``docs/V2_TENANT_KEY_DESIGN.md`` for the broader v2 contract.
+    """
+    if user_id is None:
+        return {}
+    try:
+        from app.models import get_broker_tenants_for_user
+    except Exception:
+        return {}
+    out = {}
+    for row in get_broker_tenants_for_user(user_id) or []:
+        name = (row.get("account_name") or "").strip()
+        nick = (row.get("display_nickname") or "").strip()
+        if name and nick and nick != name:
+            out[name] = nick
+    return out
+
+
+def _apply_account_labels(target, user_id, col: str = "account"):
+    """Translate the broker ``account`` label → user nickname in-place.
+
+    Accepts either a pandas DataFrame (translates the ``col`` column)
+    or a list of dicts (translates ``d[col]`` per item) or a single
+    string (returns the translated string). Returns ``target``
+    (mutated when possible) so callers can write
+    ``df = _apply_account_labels(df, user_id)``.
+
+    No-op when no nickname is set or the column is missing — the
+    mart's broker label flows through unchanged, matching what every
+    pre-nickname surface used to render.
+    """
+    label_map = _account_label_map(user_id)
+    if not label_map:
+        return target
+    if target is None:
+        return target
+    if isinstance(target, str):
+        return label_map.get(target, target)
+    if isinstance(target, list):
+        for item in target:
+            if isinstance(item, dict) and col in item:
+                item[col] = label_map.get(item[col], item[col])
+        return target
+    try:
+        if hasattr(target, "columns") and col in target.columns and not target.empty:
+            target[col] = target[col].map(lambda x: label_map.get(x, x))
+    except Exception:
+        pass
+    return target
+
+
 def _user_tenant_list():
     """Return tenant_ids the current user may read, or None for admin bypass."""
     if is_admin(current_user.username):
@@ -1486,6 +1554,55 @@ def submit_feedback():
     if wants_json:
         return {"ok": True, "id": new_id}
     flash("Thanks — feedback received. We read every message.", "success")
+    return redirect(request.referrer or url_for("index"))
+
+
+# ------------------------------------------------------------------
+# Onboarding survey ("why are you here?")
+# ------------------------------------------------------------------
+#
+# Shown on /sync/processing during the first SnapTrade sync wait.
+# Posts JSON; the form-side JS swaps to a thank-you note on success.
+# We don't redirect — the sync poll on the same page handles that.
+
+
+@app.route("/onboarding/why-here", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute; 60 per hour")
+def submit_onboarding_why_here():
+    """Save one onboarding answer for the current user (upsert)."""
+    from app.models import save_onboarding_response, ONBOARDING_PRIMARY_REASONS
+
+    primary_reason = (request.form.get("primary_reason") or "").strip()
+    other_text = (request.form.get("other_text") or "").strip() or None
+
+    wants_json = (
+        request.accept_mimetypes.best == "application/json"
+        or request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
+    )
+
+    if primary_reason not in ONBOARDING_PRIMARY_REASONS:
+        msg = "Pick one of the options so we can save it."
+        if wants_json:
+            return {"ok": False, "error": msg}, 400
+        flash(msg, "warning")
+        return redirect(request.referrer or url_for("index"))
+
+    ok = save_onboarding_response(
+        user_id=current_user.id,
+        primary_reason=primary_reason,
+        other_text=other_text,
+    )
+    if not ok:
+        msg = "We couldn't save that just now. Try again in a minute."
+        if wants_json:
+            return {"ok": False, "error": msg}, 500
+        flash(msg, "danger")
+        return redirect(request.referrer or url_for("index"))
+
+    if wants_json:
+        return {"ok": True}
+    flash("Thanks — saved.", "success")
     return redirect(request.referrer or url_for("index"))
 
 

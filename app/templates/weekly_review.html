@@ -627,7 +627,7 @@
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
             <div>
-                <div class="acct-name">{{ snap.account }}</div>
+                <div class="acct-name">{{ snap.account | account_label }}</div>
                 {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>{% endif %}
             </div>
             <div>

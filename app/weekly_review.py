@@ -2708,6 +2708,16 @@ def weekly_review():
                 elif snap_df["date"].dtype == object:
                     snap_df["date"] = pd.to_datetime(snap_df["date"]).dt.date
 
+                # v2: translate broker label → user nickname BEFORE the
+                # groupby / seen_accounts collection, so a user-set
+                # nickname is the single source of truth across the
+                # mart-derived row AND the placeholder-fill loop below.
+                # Without this the two name spaces mismatch and we
+                # double-render every account (one real row labeled
+                # by broker name, one placeholder labeled by nickname).
+                from app.routes import _apply_account_labels
+                _apply_account_labels(snap_df, current_user.id, col="account")
+
                 def _round_opt(val):
                     if val is None or (hasattr(val, "__float__") and pd.isna(val)):
                         return None

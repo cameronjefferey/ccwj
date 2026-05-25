@@ -443,7 +443,7 @@
                             <thead class="table-light"><tr><th class="ps-3">Account</th><th>History</th><th>Positions</th><th class="pe-3">When</th></tr></thead>
                             <tbody>
                                 {% for u in recent_uploads %}
-                                <tr><td class="ps-3">{{ u.account_name }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at }}</td></tr>
+                                <tr><td class="ps-3">{{ u.account_name | account_label }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at }}</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
