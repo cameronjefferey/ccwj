@@ -2262,7 +2262,8 @@ POSITION_TRADES_QUERY = """
         (d.matched_ex_div_date IS NOT NULL) AS is_dividend_reinvestment
     FROM `ccwj-dbt.analytics.stg_history` h
     LEFT JOIN `ccwj-dbt.analytics.int_drip_fills` d
-        ON  d.account            = h.account
+        ON  (d.tenant_id IS NOT DISTINCT FROM h.tenant_id)
+        AND d.account            = h.account
         AND (d.user_id IS NOT DISTINCT FROM h.user_id)
         AND d.trade_date         = h.trade_date
         AND d.underlying_symbol  = h.underlying_symbol
@@ -2326,7 +2327,8 @@ POSITION_CLOSED_LEGS_QUERY = """
         oc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
     JOIN `ccwj-dbt.analytics.int_option_contracts` oc
-      ON sc.account = oc.account
+      ON (sc.tenant_id IS NOT DISTINCT FROM oc.tenant_id)
+     AND sc.account = oc.account
      AND sc.trade_symbol = oc.trade_symbol
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
     WHERE sc.status = 'Closed'
@@ -4485,7 +4487,8 @@ CLOSED_LEGS_QUERY = """
         oc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
     JOIN `ccwj-dbt.analytics.int_option_contracts` oc
-      ON sc.account = oc.account
+      ON (sc.tenant_id IS NOT DISTINCT FROM oc.tenant_id)
+     AND sc.account = oc.account
      AND sc.trade_symbol = oc.trade_symbol
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
     WHERE sc.status = 'Closed'

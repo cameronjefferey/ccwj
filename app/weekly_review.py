@@ -335,9 +335,17 @@ WHERE e.next_earnings_date BETWEEN CURRENT_DATE()
 ORDER BY e.next_earnings_date, e.symbol
 """
 
-# Position-level P&L attribution: one row per (account, user_id, symbol)
-# with equity P&L, option P&L, dividend income, capital deployed, status,
-# and sector context. Mirrors the per-position spreadsheet the user
+# Position-level P&L attribution: one row per (tenant_id, account, user_id,
+# symbol) with equity P&L, option P&L, dividend income, capital deployed,
+# status, and sector context. The grain leads with ``tenant_id`` (and every
+# join keys on it) because the ``account`` display label is NOT unique — a
+# user can hold the same symbol in several physical accounts that all surface
+# as "Schwab Account". Without the tenant_id join key, the per-tenant CTEs
+# (int_dividends, int_strategy_classification, …) fan out the LEFT JOINs and
+# multiply equity P&L / capital by the number of tenants (QTUM 5-tenant case:
+# rendered 4× the true $68k). The Python layer groups by ``symbol`` to produce
+# the combined breakdown, so emitting one clean row per tenant sums correctly.
+# Mirrors the per-position spreadsheet the user
 # tracks in Excel ("CC Trading Summary": G/L Stock | G/L Option | Dividend
 # | Net | Annualized). Powers the position / strategy / sector breakdown
 # tables on the Daily Review.
@@ -357,14 +365,14 @@ ORDER BY e.next_earnings_date, e.symbol
 # Tenancy: every CTE that hits a user-data table carries {tenant_filter}.
 POSITION_ATTRIBUTION_QUERY = """
 WITH classification AS (
-    SELECT account, user_id, symbol, trade_group_type, total_pnl,
+    SELECT tenant_id, account, user_id, symbol, trade_group_type, total_pnl,
            status, open_date, close_date
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE 1=1 {tenant_filter}
 ),
 per_sym_pnl AS (
     SELECT
-        account, user_id, symbol,
+        tenant_id, account, user_id, symbol,
         SUM(CASE WHEN trade_group_type='equity_session'  THEN total_pnl ELSE 0 END) AS equity_pnl,
         SUM(CASE WHEN trade_group_type='option_contract' THEN total_pnl ELSE 0 END) AS option_pnl,
         COUNTIF(trade_group_type='equity_session'  AND status='Open') AS num_equity_open,
@@ -374,10 +382,10 @@ per_sym_pnl AS (
         MIN(open_date) AS first_open_date,
         MAX(COALESCE(close_date, CURRENT_DATE())) AS last_activity_date
     FROM classification
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 per_sym_div AS (
-    SELECT account, user_id, symbol,
+    SELECT tenant_id, account, user_id, symbol,
            total_dividend_income AS dividend_income,
            dividend_count, last_dividend_date
     FROM `ccwj-dbt.analytics.int_dividends`
@@ -389,18 +397,18 @@ per_sym_capital AS (
     -- int_strategy_classification.symbol). We attribute capital to the
     -- underlying so option fills roll up with their equity siblings.
     SELECT
-        account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
+        tenant_id, account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
         SUM(CASE WHEN action='equity_buy' THEN ABS(amount) ELSE 0 END) AS equity_capital,
         SUM(CASE WHEN action='option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
         SUM(CASE WHEN action='option_sell' THEN ABS(amount) ELSE 0 END) AS option_premium_collected
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE underlying_symbol IS NOT NULL
       {tenant_filter}
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 per_sym_holdings AS (
     SELECT
-        account, user_id, underlying_symbol AS symbol,
+        tenant_id, account, user_id, underlying_symbol AS symbol,
         SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(cost_basis, 0) ELSE 0 END) AS current_equity_cost,
         SUM(CASE WHEN instrument_type='Equity' THEN COALESCE(market_value, 0) ELSE 0 END) AS current_equity_value,
         SUM(CASE WHEN instrument_type IN ('Call','Put')
@@ -415,7 +423,7 @@ per_sym_holdings AS (
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       {tenant_filter}
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 sym_meta AS (
     -- stg_symbol_metadata exposes symbol/sector/subsector/long_name/market_cap;
@@ -425,6 +433,7 @@ sym_meta AS (
     FROM `ccwj-dbt.analytics.stg_symbol_metadata`
 )
 SELECT
+    p.tenant_id,
     p.account,
     p.user_id,
     p.symbol,
@@ -463,15 +472,18 @@ SELECT
     COALESCE(d.dividend_count, 0)    AS dividend_count
 FROM per_sym_pnl p
 LEFT JOIN per_sym_div d
-    ON p.account = d.account
+    ON (p.tenant_id IS NOT DISTINCT FROM d.tenant_id)
+    AND p.account = d.account
     AND (p.user_id IS NOT DISTINCT FROM d.user_id)
     AND p.symbol = d.symbol
 LEFT JOIN per_sym_capital c
-    ON p.account = c.account
+    ON (p.tenant_id IS NOT DISTINCT FROM c.tenant_id)
+    AND p.account = c.account
     AND (p.user_id IS NOT DISTINCT FROM c.user_id)
     AND p.symbol = c.symbol
 LEFT JOIN per_sym_holdings h
-    ON p.account = h.account
+    ON (p.tenant_id IS NOT DISTINCT FROM h.tenant_id)
+    AND p.account = h.account
     AND (p.user_id IS NOT DISTINCT FROM h.user_id)
     AND p.symbol = h.symbol
 LEFT JOIN sym_meta m
