@@ -470,6 +470,7 @@ def init_db():
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
     _migrate_users_email_verified_column()
+    _migrate_users_preferred_llm_model_column()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -515,6 +516,16 @@ def _migrate_users_email_verified_column():
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ")
     except Exception as exc:
         _log.warning("users.email_verified_at migration skipped: %s", exc)
+
+
+def _migrate_users_preferred_llm_model_column():
+    """Idempotent: add ``preferred_llm_model`` to ``users`` so each user can
+    pick which AI model narrates their insights (see app/llm.py catalog).
+    NULL = no explicit choice → app falls back to llm.default_model_key()."""
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_llm_model TEXT")
+    except Exception as exc:
+        _log.warning("users.preferred_llm_model migration skipped: %s", exc)
 
 
 def _migrate_user_profiles_email_prefs():
@@ -1388,6 +1399,29 @@ def is_user_on_pro_waitlist(user_id):
 # ------------------------------------------------------------------
 # Insights (AI analysis cache)
 # ------------------------------------------------------------------
+
+def get_user_llm_model(user_id):
+    """Return the user's chosen LLM catalog key, or None if unset.
+
+    The value is validated against the live allowlist at use-time by
+    app.llm.resolve_model_key, so a stale/disabled key here degrades to the
+    default model rather than erroring."""
+    try:
+        row = fetch_one("SELECT preferred_llm_model FROM users WHERE id = %s", (user_id,))
+    except Exception:
+        return None
+    if not row:
+        return None
+    return row.get("preferred_llm_model")
+
+
+def set_user_llm_model(user_id, model_key):
+    """Persist the user's chosen LLM catalog key (or NULL to clear)."""
+    execute(
+        "UPDATE users SET preferred_llm_model = %s WHERE id = %s",
+        (model_key or None, user_id),
+    )
+
 
 def save_insight(user_id, summary, full_analysis):
     """Save (or replace) the cached AI insight for a user."""

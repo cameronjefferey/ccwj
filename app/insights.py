@@ -12,6 +12,7 @@ from app.extensions import limiter
 from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
+    get_user_llm_model, set_user_llm_model,
 )
 # Tenant-scoped query helpers live in app.routes so the same user_id
 # predicate and Stage 0/1 NULL-leniency apply everywhere. See
@@ -24,7 +25,10 @@ from app.routes import (
     _user_account_list,
 )
 from app.utils import demo_block_writes
-from app.llm import call_llm, llm_available
+from app.llm import (
+    call_llm, llm_available, selectable_models,
+    resolve_model_key, selectable_model_keys,
+)
 
 
 # ------------------------------------------------------------------
@@ -812,12 +816,12 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 - Do NOT recommend changing size or strategy."""
 
 
-def _call_coach(data_text):
+def _call_coach(data_text, model_key=None):
     """Narrate the coaching brief and return ((summary, full_analysis), None).
 
-    Vendor-agnostic: app.llm.call_llm dispatches to Gemini or Claude based
-    on LLM_PROVIDER. The summary section is parsed out of the markdown the
-    model returns.
+    Vendor-agnostic: app.llm.call_llm dispatches to the chosen model
+    (model_key) or the default. The summary section is parsed out of the
+    markdown the model returns.
     """
     full_text, error = call_llm(
         SYSTEM_PROMPT,
@@ -825,6 +829,7 @@ def _call_coach(data_text):
         kind="coach.generate",
         max_tokens=2000,
         temperature=0.7,
+        model_key=model_key,
     )
     if error:
         return None, error
@@ -843,7 +848,7 @@ def _call_coach(data_text):
     return (summary, full_text), None
 
 
-def _call_coach_question(coaching_text, portfolio_text, weekly_text, question):
+def _call_coach_question(coaching_text, portfolio_text, weekly_text, question, model_key=None):
     """Narrate a Q&A answer grounded in coaching + portfolio + weekly data."""
     parts = []
     if coaching_text:
@@ -865,6 +870,7 @@ def _call_coach_question(coaching_text, portfolio_text, weekly_text, question):
         kind="coach.ask",
         max_tokens=800,
         temperature=0.6,
+        model_key=model_key,
     )
 
 
@@ -948,6 +954,8 @@ def insights():
 
     cached = get_insight_for_user(current_user.id)
     gemini_available = llm_available()
+    llm_models = selectable_models()
+    selected_model = resolve_model_key(get_user_llm_model(current_user.id))
 
     if cached:
         cached["full_analysis_html"] = _md_to_html(cached["full_analysis"])
@@ -975,6 +983,8 @@ def insights():
         title="AI Insights",
         insight=cached,
         gemini_available=gemini_available,
+        llm_models=llm_models,
+        selected_model=selected_model,
         accounts=accounts,
         selected_account=selected_account,
         coaching=coaching_data,
@@ -1000,6 +1010,13 @@ def generate_insights():
     tenant_ids = _get_tenant_scope(selected_account)
     redir = url_for("insights", account=selected_account) if selected_account else url_for("insights")
 
+    # If the generate form carried a model choice, persist it (validated)
+    # so this and future generations / Q&A use it.
+    posted_model = (request.form.get("model") or "").strip()
+    if posted_model and posted_model in selectable_model_keys():
+        set_user_llm_model(current_user.id, posted_model)
+    model_key = resolve_model_key(get_user_llm_model(current_user.id))
+
     try:
         client = get_bigquery_client()
 
@@ -1019,7 +1036,7 @@ def generate_insights():
             flash("Not enough data to generate insights.", "warning")
             return redirect(redir)
 
-        result, error = _call_coach(coaching_text)
+        result, error = _call_coach(coaching_text, model_key=model_key)
         if error:
             flash(error, "danger")
             return redirect(redir)
@@ -1033,6 +1050,24 @@ def generate_insights():
         flash("Couldn't generate insights right now. Try again in a moment.", "danger")
 
     return redirect(redir)
+
+
+@app.route("/insights/model", methods=["POST"])
+@login_required
+@limiter.limit("30 per minute; 200 per hour")
+def set_insights_model():
+    """Persist the user's chosen AI model (dropdown auto-save).
+
+    Validates against the live allowlist so a disabled/paid model can't be
+    forced in by a hand-crafted POST. Returns JSON for the inline picker."""
+    blocked = demo_block_writes("changing the AI model")
+    if blocked:
+        return blocked
+    model_key = (request.form.get("model") or "").strip()
+    if model_key not in selectable_model_keys():
+        return jsonify({"ok": False, "error": "That model isn't available."}), 400
+    set_user_llm_model(current_user.id, model_key)
+    return jsonify({"ok": True, "model": model_key})
 
 
 @app.route("/insights/ask", methods=["POST"])
@@ -1104,7 +1139,8 @@ def insights_ask():
             return jsonify({"error": "No data available to answer questions."}), 400
 
         answer_md, error = _call_coach_question(
-            coaching_text, portfolio_text, weekly_text, question
+            coaching_text, portfolio_text, weekly_text, question,
+            model_key=resolve_model_key(get_user_llm_model(current_user.id)),
         )
         if error:
             return jsonify({"error": error}), 500

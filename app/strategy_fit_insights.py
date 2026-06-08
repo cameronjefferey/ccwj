@@ -25,12 +25,13 @@ from flask_login import current_user, login_required
 
 from app import app
 from app.bigquery_client import get_bigquery_client
-from app.llm import call_llm, llm_available
+from app.llm import call_llm, llm_available, resolve_model_key
 from app.extensions import limiter
 from app.models import (
     get_accounts_for_user,
     is_admin,
     save_strategy_fit_insight,
+    get_user_llm_model,
 )
 from app.routes import _tenants_for_scope, _tenant_sql_and, _filter_df_by_tenant_ids
 from app.utils import demo_block_writes
@@ -485,12 +486,13 @@ Format: markdown. Use "## Summary" once at the top, then "## Observations"
 followed by bulleted "- " items. Keep total length under ~280 words."""
 
 
-def _call_strategy_fit(brief_text):
+def _call_strategy_fit(brief_text, model_key=None):
     """Narrate the strategy-fit brief.
 
-    Vendor-agnostic (app.llm.call_llm). Temperature is lower than the
-    coaching insight — we want fewer flourishes here. Returns
-    ((summary, full_markdown), None) on success or (None, error_msg).
+    Vendor-agnostic (app.llm.call_llm); honors the user's chosen model.
+    Temperature is lower than the coaching insight — we want fewer
+    flourishes here. Returns ((summary, full_markdown), None) on success
+    or (None, error_msg).
     """
     full, error = call_llm(
         SYSTEM_PROMPT,
@@ -498,6 +500,7 @@ def _call_strategy_fit(brief_text):
         kind="strategy_fit.generate",
         max_tokens=1400,  # room for symbol parentheticals
         temperature=0.4,
+        model_key=model_key,
     )
     if error:
         return None, error
@@ -551,7 +554,9 @@ def generate_strategy_fit_insights():
             flash("Not enough data yet to summarize. Add a few more trades and try again.", "warning")
             return redirect(redir)
 
-        result, err = _call_strategy_fit(brief_text)
+        result, err = _call_strategy_fit(
+            brief_text, model_key=resolve_model_key(get_user_llm_model(current_user.id))
+        )
         if err:
             app.logger.error("Strategy-fit insight generation failed: %s", err)
             flash("Couldn't generate insights right now. Try again in a moment.", "danger")

@@ -320,6 +320,22 @@
            AI ANALYSIS
            ════════════════════════════════════ #}
 
+        {% if gemini_available and llm_models and not is_demo_user %}
+        <div class="coaching-section d-flex flex-wrap align-items-center gap-2"
+             style="padding:1rem 1.25rem;">
+            <label for="llmModelSelect" class="section-label mb-0" style="margin-bottom:0;">AI Model</label>
+            <select id="llmModelSelect" class="form-select form-select-sm" style="width:auto; min-width:220px;">
+                {% for m in llm_models %}
+                <option value="{{ m.key }}" {% if m.key == selected_model %}selected{% endif %}>
+                    {{ m.label }}{% if m.tier and m.tier != 'free' %} · {{ m.tier }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <span id="llmModelSaved" class="small text-success" style="display:none;">Saved</span>
+            <span class="small text-muted ms-auto">Used for generated insights &amp; Ask AI.</span>
+        </div>
+        {% endif %}
+
         {% if insight %}
         <div class="coaching-section" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0;">
             <div class="section-label">AI Analysis</div>
@@ -423,6 +439,30 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your behavior...';
         });
     });
+
+    const modelSelect = document.getElementById('llmModelSelect');
+    const modelSaved = document.getElementById('llmModelSaved');
+    if (modelSelect) {
+        const modelUrl = '{{ url_for("set_insights_model") }}';
+        modelSelect.addEventListener('change', async () => {
+            const csrf = document.querySelector('meta[name="csrf-token"]');
+            try {
+                const resp = await fetch(modelUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': csrf ? csrf.getAttribute('content') : ''
+                    },
+                    body: new URLSearchParams({ model: modelSelect.value })
+                });
+                if (resp.ok && modelSaved) {
+                    modelSaved.style.display = 'inline';
+                    setTimeout(() => { modelSaved.style.display = 'none'; }, 1800);
+                }
+            } catch (err) { /* non-fatal: choice still applies on next generate */ }
+        });
+    }
 
     const coachForm = document.getElementById('coachForm');
     const coachInput = document.getElementById('coachInput');

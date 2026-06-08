@@ -4,15 +4,28 @@ Every AI surface in the app (/insights, /strategy-fit) follows the same
 two-layer pattern: a DETERMINISTIC brief is built from tenant-scoped
 BigQuery data (no LLM, no hallucination risk), then a model NARRATES that
 brief into prose. This module owns the narration call so the vendor choice
-(Gemini vs Claude) lives in exactly one place.
+(Gemini vs Claude) and the specific model live in exactly one place.
 
 The model never touches BigQuery or tenant scoping — it only ever sees the
-pre-built text brief the caller hands it. Swapping providers therefore has
+pre-built text brief the caller hands it. Swapping providers/models has
 zero bearing on the multi-tenant isolation guarantees enforced upstream.
 
-Provider selection (env `LLM_PROVIDER`):
-    gemini  -> google-genai, model `GEMINI_MODEL`  (default gemini-2.0-flash)
-    claude  -> anthropic,    model `CLAUDE_MODEL`  (default claude-haiku-4-5)
+Model selection
+---------------
+Models are described in MODEL_CATALOG (key -> provider + API model id +
+display label + cost tier). Which of those are *offerable* in the product
+is gated two ways:
+
+1. Allowlist (env `SELECTABLE_LLM_MODELS`, comma-separated catalog keys).
+   Defaults to the low-cost set so paid models can't be picked until the
+   operator explicitly opts in. This is how "add a pricier model later"
+   works — append its key to the env var.
+2. Provider key present — a model is only really selectable when its
+   vendor key (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`) is configured.
+
+`call_llm(..., model_key=...)` takes the per-user choice; anything missing
+or not currently selectable falls back to `default_model_key()` (which
+honors the legacy `LLM_PROVIDER` env as a tie-breaker).
 
 Both vendor SDKs are imported lazily inside their branch so the unused one
 is never a hard dependency at import time.
@@ -27,8 +40,41 @@ from app.cost_tracking import log_cost_event
 
 _log = logging.getLogger("happytrader.llm")
 
-_DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
-_DEFAULT_CLAUDE_MODEL = "claude-haiku-4-5"
+# key -> metadata. `model` is the exact API model id; `provider` selects the
+# SDK branch; `tier` is informational (drives the "free"-only default
+# allowlist and the UI label). Add new models here, then expose them by
+# adding their key to SELECTABLE_LLM_MODELS.
+MODEL_CATALOG = {
+    "gemini-2.0-flash": {
+        "label": "Gemini 2.0 Flash",
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "tier": "free",
+    },
+    "claude-haiku-4-5": {
+        "label": "Claude Haiku 4.5",
+        "provider": "claude",
+        "model": "claude-haiku-4-5",
+        "tier": "low-cost",
+    },
+    # --- Paid tiers: present in the catalog but NOT in the default
+    # allowlist. Add the key to SELECTABLE_LLM_MODELS to offer them. ---
+    "claude-sonnet-4-6": {
+        "label": "Claude Sonnet 4.6",
+        "provider": "claude",
+        "model": "claude-sonnet-4-6",
+        "tier": "paid",
+    },
+    "claude-opus-4-8": {
+        "label": "Claude Opus 4.8",
+        "provider": "claude",
+        "model": "claude-opus-4-8",
+        "tier": "paid",
+    },
+}
+
+# Offered by default until the operator opts paid models in via env.
+_DEFAULT_ALLOWLIST = ["gemini-2.0-flash", "claude-haiku-4-5"]
 
 _UNAVAILABLE = "AI is temporarily unavailable. Try again in a few minutes."
 _FAILED = "Couldn't generate that right now. Try again in a moment."
@@ -36,51 +82,112 @@ _EMPTY = "The model returned an empty response. Try again in a moment."
 
 
 def active_provider() -> str:
-    """Return the configured provider slug ('gemini' or 'claude')."""
+    """Legacy env default provider ('gemini' or 'claude').
+
+    Used only as a tie-breaker for default_model_key(); per-request model
+    choice flows through call_llm(model_key=...).
+    """
     return (os.environ.get("LLM_PROVIDER", "gemini") or "gemini").strip().lower()
 
 
-def _gemini_model() -> str:
-    return (os.environ.get("GEMINI_MODEL", "") or "").strip() or _DEFAULT_GEMINI_MODEL
+def _allowlist_keys() -> list[str]:
+    raw = (os.environ.get("SELECTABLE_LLM_MODELS", "") or "").strip()
+    if not raw:
+        return list(_DEFAULT_ALLOWLIST)
+    keys = [k.strip() for k in raw.split(",") if k.strip()]
+    # Ignore unknown keys so a typo can't 500 the picker.
+    return [k for k in keys if k in MODEL_CATALOG]
 
 
-def _claude_model() -> str:
-    return (os.environ.get("CLAUDE_MODEL", "") or "").strip() or _DEFAULT_CLAUDE_MODEL
-
-
-def _provider_api_key(provider: str) -> str:
+def _provider_has_key(provider: str) -> bool:
     if provider == "claude":
-        return os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    return os.environ.get("GEMINI_API_KEY", "").strip()
+        return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    return bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
+
+def selectable_models() -> list[dict]:
+    """Models offerable right now: in the allowlist AND vendor key present.
+
+    Returns a list of {key, label, provider, tier} preserving allowlist
+    order. This is what the UI dropdown renders.
+    """
+    out = []
+    for key in _allowlist_keys():
+        spec = MODEL_CATALOG[key]
+        if _provider_has_key(spec["provider"]):
+            out.append({
+                "key": key,
+                "label": spec["label"],
+                "provider": spec["provider"],
+                "tier": spec["tier"],
+            })
+    return out
+
+
+def selectable_model_keys() -> set[str]:
+    return {m["key"] for m in selectable_models()}
+
+
+def default_model_key() -> str | None:
+    """The model to use when the user hasn't chosen (or chose one that's no
+    longer offerable). Prefers a model matching the legacy LLM_PROVIDER env
+    so existing deployments keep their current behavior; otherwise the first
+    selectable model. Returns None when nothing is selectable."""
+    models = selectable_models()
+    if not models:
+        return None
+    pref_provider = active_provider()
+    for m in models:
+        if m["provider"] == pref_provider:
+            return m["key"]
+    return models[0]["key"]
+
+
+def resolve_model_key(model_key: str | None) -> str | None:
+    """Validate a requested key against what's currently selectable, falling
+    back to the default. Never trusts an arbitrary string into the catalog."""
+    if model_key and model_key in selectable_model_keys():
+        return model_key
+    return default_model_key()
+
+
+def model_label(model_key: str | None) -> str:
+    spec = MODEL_CATALOG.get(model_key or "")
+    return spec["label"] if spec else ""
 
 
 def llm_available() -> bool:
-    """True when the active provider has an API key configured.
-
-    UI surfaces gate the "Generate" button on this instead of a hardcoded
-    GEMINI_API_KEY check so flipping LLM_PROVIDER=claude lights up the
-    button on the Anthropic key.
-    """
-    return bool(_provider_api_key(active_provider()))
+    """True when at least one model is selectable (allowlisted + keyed)."""
+    return bool(selectable_models())
 
 
-def call_llm(system: str, user: str, *, kind: str, max_tokens: int, temperature: float):
-    """Run one narration turn against the active provider.
+def call_llm(system: str, user: str, *, kind: str, max_tokens: int,
+             temperature: float, model_key: str | None = None):
+    """Run one narration turn against the resolved model.
 
     system      : instructions / role (Claude's top-level system field;
                   prepended to the prompt for Gemini which has no separate slot)
     user        : the deterministic data brief to narrate
     kind        : cost-event tag, e.g. 'coach.generate' / 'coach.ask'
-    max_tokens  : output cap
-    temperature : sampling temperature
+    model_key   : the user's chosen catalog key (validated; falls back to
+                  default_model_key() when missing or not selectable)
 
     Returns (text, None) on success or (None, user_facing_error). Cost is
     logged here (vendor + kind + model + duration_ms + token counts) so
     callers never repeat that bookkeeping.
     """
-    if active_provider() == "claude":
-        return _call_claude(system, user, kind=kind, max_tokens=max_tokens, temperature=temperature)
-    return _call_gemini(system, user, kind=kind, max_tokens=max_tokens, temperature=temperature)
+    key = resolve_model_key(model_key)
+    if not key:
+        _log.warning("LLM call (%s) requested but no model is selectable", kind)
+        return None, _UNAVAILABLE
+    spec = MODEL_CATALOG[key]
+    if spec["provider"] == "claude":
+        return _call_claude(
+            spec["model"], system, user, kind=kind, max_tokens=max_tokens, temperature=temperature
+        )
+    return _call_gemini(
+        spec["model"], system, user, kind=kind, max_tokens=max_tokens, temperature=temperature
+    )
 
 
 # --------------------------------------------------------------------
@@ -112,8 +219,8 @@ def _gemini_usage_fields(response) -> dict:
     return out
 
 
-def _call_gemini(system, user, *, kind, max_tokens, temperature):
-    api_key = _provider_api_key("gemini")
+def _call_gemini(model, system, user, *, kind, max_tokens, temperature):
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         _log.warning("LLM call (%s) requested but GEMINI_API_KEY is not configured", kind)
         return None, _UNAVAILABLE
@@ -121,7 +228,6 @@ def _call_gemini(system, user, *, kind, max_tokens, temperature):
         from google import genai
         from google.genai import types
 
-        model = _gemini_model()
         client = genai.Client(api_key=api_key)
         t0 = _time.monotonic()
         response = client.models.generate_content(
@@ -181,15 +287,14 @@ def _claude_usage_fields(response) -> dict:
     return out
 
 
-def _call_claude(system, user, *, kind, max_tokens, temperature):
-    api_key = _provider_api_key("claude")
+def _call_claude(model, system, user, *, kind, max_tokens, temperature):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         _log.warning("LLM call (%s) requested but ANTHROPIC_API_KEY is not configured", kind)
         return None, _UNAVAILABLE
     try:
         import anthropic
 
-        model = _claude_model()
         client = anthropic.Anthropic(api_key=api_key)
         t0 = _time.monotonic()
         response = client.messages.create(
