@@ -111,6 +111,41 @@
 
 
         {% if accounts %}
+        {% if accounts|length > 1 %}
+        {# Bulk sync sits at the TOP so it's visible without scrolling past
+           every per-account row. Default the "pull full history" toggle on
+           whenever any account is still pending its first sync — same UX rule
+           as the Schwab manager. Use a Jinja2 namespace() because plain
+           {% set %} inside {% for %} doesn't escape loop scope (silent no-op
+           pre-fix). #}
+        {% set _ns = namespace(any_first_pending=false) %}
+        {% for c in accounts %}
+            {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
+        {% endfor %}
+        {% set _any_first_pending = _ns.any_first_pending %}
+        <div class="mb-4 pb-3" style="border-bottom: 1px solid #e5e7eb;">
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sync_all" value="1">
+                <button type="submit" class="btn btn-primary">Sync all accounts</button>
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox"
+                           name="full_history_again" id="snaptrade_mgr_sync_all_full"
+                           value="1"{% if _any_first_pending %} checked{% endif %}>
+                    <label class="form-check-label small" for="snaptrade_mgr_sync_all_full">
+                        Pull full history on every account
+                    </label>
+                </div>
+                <p class="empty-hint mb-0 mt-1" style="font-size:.75rem">
+                    Leave unchecked for the routine refresh. (Some brokers via
+                    SnapTrade only return 90 days; we ask for the longest window
+                    they support.) <strong>Tip:</strong> add nicknames below and
+                    save them before syncing for cleaner labels everywhere.
+                </p>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
+            </form>
+        </div>
+        {% endif %}
         {% for c in accounts %}
         {% set heading = c.display_nickname or c.account_name %}
         {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
@@ -175,47 +210,6 @@
             </form>
         </div>
         {% endfor %}
-
-        {% if accounts|length > 1 %}
-        {# Bulk sync sits BELOW the per-account rows so users see and
-           save their nicknames first. Default the "pull full history"
-           toggle on whenever any account is still pending its first
-           sync — same UX rule as the Schwab manager. Use a Jinja2
-           namespace() because plain {% set %} inside {% for %} doesn't
-           escape loop scope (silent no-op pre-fix). #}
-        {% set _ns = namespace(any_first_pending=false) %}
-        {% for c in accounts %}
-            {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
-        {% endfor %}
-        {% set _any_first_pending = _ns.any_first_pending %}
-        <div class="mt-4 pt-3" style="border-top: 1px solid #e5e7eb;">
-            <p class="empty-hint mb-2" style="font-size:.85rem">
-                <strong>Save every nickname first.</strong> Once you sync,
-                the account label flows into your warehouse — renaming
-                later still works for display, but cleaner labels from
-                the start mean cleaner reports.
-            </p>
-            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="sync_all" value="1">
-                <button type="submit" class="btn btn-primary">Sync all accounts</button>
-                <div class="form-check mt-2 mb-0">
-                    <input class="form-check-input" type="checkbox"
-                           name="full_history_again" id="snaptrade_mgr_sync_all_full"
-                           value="1"{% if _any_first_pending %} checked{% endif %}>
-                    <label class="form-check-label small" for="snaptrade_mgr_sync_all_full">
-                        Pull full history on every account
-                    </label>
-                </div>
-                <p class="empty-hint mb-0 mt-1" style="font-size:.75rem">
-                    Leave unchecked for the routine refresh. (Some brokers via
-                    SnapTrade only return 90 days; we ask for the longest window
-                    they support.)
-                </p>
-                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
-            </form>
-        </div>
-        {% endif %}
         {% else %}
         <p class="empty-hint">No brokerages connected yet through SnapTrade.</p>
         {% endif %}
