@@ -45,10 +45,10 @@ _log = logging.getLogger("happytrader.llm")
 # allowlist and the UI label). Add new models here, then expose them by
 # adding their key to SELECTABLE_LLM_MODELS.
 MODEL_CATALOG = {
-    "gemini-2.0-flash": {
-        "label": "Gemini 2.0 Flash",
+    "gemini-2.5-flash": {
+        "label": "Gemini 2.5 Flash",
         "provider": "gemini",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-2.5-flash",
         "tier": "free",
     },
     "claude-haiku-4-5": {
@@ -74,7 +74,7 @@ MODEL_CATALOG = {
 }
 
 # Offered by default until the operator opts paid models in via env.
-_DEFAULT_ALLOWLIST = ["gemini-2.0-flash", "claude-haiku-4-5"]
+_DEFAULT_ALLOWLIST = ["gemini-2.5-flash", "claude-haiku-4-5"]
 
 _UNAVAILABLE = "AI is temporarily unavailable. Try again in a few minutes."
 _FAILED = "Couldn't generate that right now. Try again in a moment."
