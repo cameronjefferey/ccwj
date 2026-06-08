@@ -37,6 +37,17 @@ lifecycle) with only config changes.
 outside a request context (the digest crons and the sync CLI). See
 `.env.example` for the full var list.
 
+**Production uses `smtp`, not `resend` (June 2026).** Render's outbound traffic
+to the Cloudflare-fronted `api.resend.com` is refused with `HTTP 403 Forbidden`
+(the identical request — same key, domain, and User-Agent — succeeds from a
+laptop, so it's the egress path, not the credentials). The Resend SMTP endpoint
+(`smtp.resend.com:587`) uses the same API key as the password and is not behind
+that WAF, so the `smtp` backend is the working transactional path on Render. The
+prod `ccwj` web service is configured with `EMAIL_BACKEND=smtp` +
+`EMAIL_SMTP_HOST=smtp.resend.com` + `EMAIL_SMTP_USER=resend` +
+`EMAIL_SMTP_PASSWORD=<resend api key>`. Don't switch prod back to the `resend`
+HTTP backend without re-confirming Render egress is no longer 403'd.
+
 ## Email taxonomy
 
 ### Transactional (always sent, no opt-out)

@@ -497,7 +497,7 @@
             <tbody>
                 {% for r in strategy_rows %}
                 <tr>
-                    <td>{{ r.account | account_label }}</td>
+                    <td>{{ r.account_display or (r.account | account_label) }}</td>
                     <td>
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
                             {{ r.strategy }}
@@ -635,6 +635,7 @@
                     <th class="text-center" style="width:3rem;">Leg</th>
                     <th>Contract / Leg</th>
                     <th>Strategy</th>
+                    <th>Account</th>
                     <th class="text-end">Qty</th>
                     <th>Opened</th>
                     <th>Closed</th>
@@ -663,6 +664,7 @@
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
                     <td class="text-muted small">{{ p.instrument_type }}</td>
+                    <td class="text-muted small">{{ p.account_display or (p.account | account_label) }}</td>
                     <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
                     <td class="text-nowrap"></td>
                     <td class="text-nowrap"></td>
@@ -679,7 +681,7 @@
                 {% endfor %}
                 {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
                 <tr class="fw-semibold table-light" style="font-size:.8rem;">
-                    <td colspan="8">Open Total</td>
+                    <td colspan="9">Open Total</td>
                     <td class="text-end">${{ "{:,.2f}".format(ocost) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(omv) }}</td>
                     <td class="text-end {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
@@ -692,7 +694,7 @@
                 {# ── Separator ── #}
                 {% if current_positions and trade_outcomes %}
                 <tr>
-                    <td colspan="12" class="text-center text-muted py-1" style="font-size:.65rem; background:#f0f0f0; letter-spacing:.5px;">
+                    <td colspan="13" class="text-center text-muted py-1" style="font-size:.65rem; background:#f0f0f0; letter-spacing:.5px;">
                         CLOSED TRADES
                     </td>
                 </tr>
@@ -722,6 +724,7 @@
                         {% endif %}
                     </td>
                     <td class="text-muted small">{{ o.strategy }}</td>
+                    <td class="text-muted small">{{ o.account_display or (o.account | account_label) }}</td>
                     <td class="text-end">{{ o.quantity | int if o.quantity is defined and o.quantity else '' }}</td>
                     <td class="text-nowrap">{{ o.open_date }}</td>
                     <td class="text-nowrap">{{ o.close_date }}</td>
@@ -737,7 +740,7 @@
                 </tr>
                 {% if o.raw_trades %}
                 <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
-                    <td colspan="12" class="leg-detail-cell">
+                    <td colspan="13" class="leg-detail-cell">
                         <table class="table leg-detail-table mb-0">
                             <thead>
                                 <tr>
@@ -785,7 +788,7 @@
             {% if trade_outcomes %}
             <tfoot class="table-light">
                 <tr class="fw-semibold" style="font-size:.8rem;">
-                    <td colspan="8">Closed Total</td>
+                    <td colspan="9">Closed Total</td>
                     <td class="text-end">${{ "{:,.2f}".format(ccost) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(cproc) }}</td>
                     <td class="text-end {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
@@ -795,7 +798,7 @@
                 </tr>
                 {% if current_positions %}
                 <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
-                    <td colspan="8">Total Total</td>
+                    <td colspan="9">Total Total</td>
                     <td class="text-end">${{ "{:,.2f}".format(gcost) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(gval) }}</td>
                     <td class="text-end {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
@@ -840,7 +843,7 @@
                         {% for t in trades %}
                         <tr>
                             <td class="text-nowrap">{{ t.trade_date }}</td>
-                            <td>{{ t.account | account_label }}</td>
+                            <td>{{ t.account_display or (t.account | account_label) }}</td>
                             <td>
                                 {% if t.is_dividend_reinvestment %}
                                 <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>

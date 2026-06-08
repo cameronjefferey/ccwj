@@ -162,18 +162,39 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
 }
 
 
-def _resolve_option_action(canonical: str, description: str) -> str:
-    """Pick the open/close-aware option action from a canonical
-    SnapTrade type plus the broker-original description.
+# SnapTrade's activity-level ``option_type`` field carries the EXPLICIT
+# open/close action (far more reliable than parsing the broker description).
+SNAPTRADE_OPTION_TYPE_TO_ACTION: dict[str, str] = {
+    "BUY_TO_OPEN": "Buy to Open",
+    "BUY_TO_CLOSE": "Buy to Close",
+    "SELL_TO_OPEN": "Sell to Open",
+    "SELL_TO_CLOSE": "Sell to Close",
+}
 
-    SnapTrade collapses every option open/close into BUY/SELL on the
-    activities feed; the broker's verbatim description usually
-    contains "BUY TO OPEN" / "SELL TO CLOSE" / etc. When the
-    description doesn't disambiguate, default to OPEN — that's wrong
-    for the close half of a round-trip but stg_history's option lane
-    will at least surface it as an option event (vs. an equity event
-    which would mis-route through ``int_equity_sessions``).
+
+def _resolve_option_action(canonical: str, description: str, option_type: str = "") -> str:
+    """Pick the open/close-aware option action.
+
+    SnapTrade collapses every option open/close into BUY/SELL at the
+    activity ``type`` level, but ships the EXPLICIT action in the
+    activity-level ``option_type`` field (``BUY_TO_OPEN`` /
+    ``SELL_TO_CLOSE`` / ...). Prefer that — it's authoritative. Only fall
+    back to parsing the broker description when ``option_type`` is empty.
+
+    Why this matters: Schwab option descriptions via SnapTrade are just
+    ``"CALL ORACLE CORP $200 EXP 06/18/26"`` with NO open/close hint, so
+    description parsing defaulted every closing leg to OPEN. A
+    buy-to-open + sell-to-close round trip then never closed: the contract
+    stayed Open with phantom premium (ORCL 2026-06: STC 30/50 contracts
+    read as STO → a "Naked Call / Open / $126K unrealized" position that
+    was actually a fully-closed +$126K realized round trip). See
+    broker-sync-safety.
     """
+    explicit = SNAPTRADE_OPTION_TYPE_TO_ACTION.get(
+        str(option_type or "").strip().upper()
+    )
+    if explicit:
+        return explicit
     desc = (description or "").lower()
     if "to close" in desc or "to_close" in desc or "tc" in desc.split():
         return "Buy to Close" if canonical == "Buy" else "Sell to Close"
@@ -272,8 +293,20 @@ def snaptrade_symbol_to_osi(symbol_obj: Mapping) -> str:
     if not isinstance(option_symbol, Mapping):
         return raw
 
+    # SnapTrade ships ``underlying_symbol`` as a nested object
+    # (``{"symbol": "PLTR", "raw_symbol": "PLTR", ...}``), not a bare
+    # string. Pull the ticker out before falling back to the OSI ticker
+    # or the brokerage raw symbol; ``str(<dict>)`` here used to yield
+    # garbage like ``"{'SYMBOL': 'PLTR'..."`` and corrupt the OSI string.
+    underlying_raw = option_symbol.get("underlying_symbol")
+    if isinstance(underlying_raw, Mapping):
+        underlying_raw = (
+            underlying_raw.get("raw_symbol")
+            or underlying_raw.get("symbol")
+            or ""
+        )
     underlying = (
-        option_symbol.get("underlying_symbol")
+        underlying_raw
         or option_symbol.get("ticker")
         or raw
         or ""
@@ -327,11 +360,10 @@ def _underlying_from_symbol(symbol_obj: Mapping) -> str:
         return ""
     option_symbol = symbol_obj.get("option_symbol")
     if isinstance(option_symbol, Mapping):
-        u = (
-            option_symbol.get("underlying_symbol")
-            or option_symbol.get("ticker")
-            or ""
-        )
+        u = option_symbol.get("underlying_symbol")
+        if isinstance(u, Mapping):
+            u = u.get("raw_symbol") or u.get("symbol") or ""
+        u = u or option_symbol.get("ticker") or ""
         if u:
             return str(u).strip().upper()
     inner = symbol_obj.get("symbol") if isinstance(symbol_obj.get("symbol"), Mapping) else symbol_obj
@@ -394,6 +426,20 @@ def activities_to_history_df(
             continue
 
         symbol_obj = act.get("symbol") or {}
+        # SnapTrade (Schwab via SnapTrade) ships OPTION activities with
+        # ``symbol: null`` and the structured contract at the ACTIVITY top
+        # level (``act["option_symbol"]``), NOT nested under ``symbol``.
+        # Without folding it in, ``_is_option`` sees an empty dict, every
+        # option is misclassified as equity with an empty Symbol, and
+        # stg_history can't recognize it as an option — the entire option
+        # lane silently vanished from the warehouse (hundreds of contracts
+        # per account). See broker-sync-safety "Bugs we've shipped".
+        if not isinstance(symbol_obj, Mapping):
+            symbol_obj = {}
+        if not symbol_obj.get("option_symbol") and isinstance(
+            act.get("option_symbol"), Mapping
+        ):
+            symbol_obj = {**symbol_obj, "option_symbol": act["option_symbol"]}
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -409,7 +455,9 @@ def activities_to_history_df(
         # BUY/SELL (SnapTrade collapses both into the same canonical
         # type; see _resolve_option_action).
         if is_option and action_label in ("Buy", "Sell"):
-            action_label = _resolve_option_action(action_label, broker_description)
+            action_label = _resolve_option_action(
+                action_label, broker_description, act.get("option_type")
+            )
 
         trade_date = _format_date_mdy(
             act.get("trade_date")
@@ -648,6 +696,17 @@ def positions_to_current_df(
         if not isinstance(pos, Mapping):
             continue
         symbol_obj = pos.get("symbol") or {}
+        # Mirror the activities path: SnapTrade can ship an OPTION holding
+        # with ``symbol: null`` and the structured contract at the position
+        # top level (``pos["option_symbol"]``). Fold it in so open option
+        # legs aren't silently dropped (same root cause as the historical
+        # option-activity bug — see broker-sync-safety).
+        if not isinstance(symbol_obj, Mapping):
+            symbol_obj = {}
+        if not symbol_obj.get("option_symbol") and isinstance(
+            pos.get("option_symbol"), Mapping
+        ):
+            symbol_obj = {**symbol_obj, "option_symbol": pos["option_symbol"]}
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -658,6 +717,16 @@ def positions_to_current_df(
 
         units = _safe_float(pos.get("units"), 0.0)
         price = _safe_float(pos.get("price"), 0.0)
+
+        # Option contracts are quoted per-share but represent 100 shares
+        # of the underlying. SnapTrade's ``list_option_holdings`` ships a
+        # per-share ``price`` / ``average_purchase_price`` and NO
+        # market_value / cost_basis, so the derived fallbacks below must
+        # apply the 100x contract multiplier to land total dollars —
+        # which is the convention stg_current reads market_value /
+        # cost_basis in (e.g. PLTR 2x80C @ $42 → market_value $8,400).
+        # Without it an open option snapshots at 1/100th its real value.
+        contract_mult = 100.0 if is_option else 1.0
 
         # market_value: SnapTrade does NOT ship this at the position
         # level. The actual response keys (Alpaca via SnapTrade, May
@@ -672,17 +741,23 @@ def positions_to_current_df(
         # different broker through SnapTrade does ship it.
         market_value = _safe_float(
             pos.get("market_value"),
-            _safe_float(pos.get("equity"), units * price),
+            _safe_float(pos.get("equity"), units * price * contract_mult),
         )
 
         # cost_basis: prefer broker-supplied total, else derive from
         # average_purchase_price * units. Same shape comment — no
-        # `cost_basis` field on Alpaca via SnapTrade.
+        # `cost_basis` field on Alpaca via SnapTrade. Options derive a
+        # POSITIVE magnitude (abs units * 100) so the short-aware
+        # unrealized formula in stg_current (market_value + cost_basis)
+        # nets correctly for both long and short legs.
         cost_basis = _safe_float(pos.get("cost_basis"), 0.0)
         if not cost_basis:
             avg_purchase = _safe_float(pos.get("average_purchase_price"), 0.0)
             if avg_purchase and units:
-                cost_basis = avg_purchase * units
+                if is_option:
+                    cost_basis = avg_purchase * abs(units) * contract_mult
+                else:
+                    cost_basis = avg_purchase * units
 
         # Per-share price for the seed:
         # - Options: SnapTrade's per-share premium is the seed value.
@@ -710,8 +785,16 @@ def positions_to_current_df(
             if cost_basis:
                 gl_percent = round(100.0 * gl_dollar / abs(cost_basis), 4)
         elif cost_basis:
-            gl_dollar = round(market_value - cost_basis, 4)
-            gl_percent = round(100.0 * (market_value - cost_basis) / abs(cost_basis), 4)
+            # Short options carry a positive cost_basis (premium received)
+            # and a negative market_value (cost to buy back), so unrealized
+            # P&L is market_value + cost_basis. Longs (and equities) net
+            # market_value - cost_basis. Mirrors stg_current's short-aware
+            # recompute so the seed value agrees before dbt even runs.
+            if is_option and units < 0:
+                gl_dollar = round(market_value + cost_basis, 4)
+            else:
+                gl_dollar = round(market_value - cost_basis, 4)
+            gl_percent = round(100.0 * gl_dollar / abs(cost_basis), 4)
 
         if is_option:
             security_type = "Option"

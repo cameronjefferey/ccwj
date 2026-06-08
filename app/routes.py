@@ -607,6 +607,13 @@ def _dedupe_enriched_current_positions(df: pd.DataFrame) -> pd.DataFrame:
     """Drop duplicate open rows from ``int_enriched_current`` (same contract or
     equity line merged twice). Seed/snapshot regressions can emit byte-near
     duplicates; the UI should not show twin 200-share lines with identical cost.
+
+    The dedup key leads with ``tenant_id``: the same symbol held in multiple
+    physical accounts that share a display ``account`` label (e.g. 5 SnapTrade
+    "Schwab Account" tenants all holding QTUM) is NOT a duplicate — each is a
+    real, separately-held lot. Without ``tenant_id`` in the key all 5 collapse
+    to one row, which silently undercounts the Hero total, Breakdown-by-Type
+    equity, and the open-legs table to a single tenant's P&L.
     """
     if df is None or df.empty:
         return df
@@ -615,7 +622,7 @@ def _dedupe_enriched_current_positions(df: pd.DataFrame) -> pd.DataFrame:
         out["trade_symbol"] = (
             out["trade_symbol"].astype(str).str.strip().replace({"nan": ""})
         )
-    key = [c for c in ("account", "user_id", "instrument_type", "trade_symbol") if c in out.columns]
+    key = [c for c in ("tenant_id", "account", "user_id", "instrument_type", "trade_symbol") if c in out.columns]
     if len(key) < 2:
         return df
     return out.drop_duplicates(subset=key, keep="last").reset_index(drop=True)
@@ -1286,6 +1293,7 @@ WITH classified AS (
 -- range filter while picking up synthetic dividends.
 dividends AS (
     SELECT
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -1295,11 +1303,12 @@ dividends AS (
     WHERE trade_date >= @start_date
       AND trade_date <= @end_date
       {tenant_filter}
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 
 strategy_summary AS (
     SELECT
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -1355,14 +1364,14 @@ strategy_summary AS (
         MAX(COALESCE(close_date, CURRENT_DATE())) AS last_trade_date
 
     FROM classified
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
 ),
 
 with_dividend_rank AS (
     SELECT
         ss.*,
         ROW_NUMBER() OVER (
-            PARTITION BY ss.account, ss.user_id, ss.symbol
+            PARTITION BY ss.tenant_id, ss.account, ss.user_id, ss.symbol
             ORDER BY
                 CASE ss.strategy
                     WHEN 'Wheel'        THEN 1
@@ -1387,13 +1396,15 @@ with_attributed AS (
         END AS attributed_dividend_count
     FROM with_dividend_rank wdr
     LEFT JOIN dividends d
-        ON wdr.account = d.account
+        ON (wdr.tenant_id IS NOT DISTINCT FROM d.tenant_id)
+        AND wdr.account = d.account
         AND (wdr.user_id IS NOT DISTINCT FROM d.user_id)
         AND wdr.symbol = d.symbol
 ),
 
 final AS (
     SELECT
+        wa.tenant_id,
         wa.account,
         wa.user_id,
         wa.symbol,
@@ -1427,7 +1438,7 @@ final AS (
 )
 
 SELECT * FROM final
-ORDER BY account, user_id, symbol, strategy
+ORDER BY tenant_id, account, user_id, symbol, strategy
 """
 
 # ------------------------------------------------------------------
@@ -2137,8 +2148,18 @@ def positions():
             agg_kwargs["sector"] = ("sector", "first")
         if "subsector" in filtered.columns:
             agg_kwargs["subsector"] = ("subsector", "first")
+        # Grain on tenant_id (not the broker `account` string) so a symbol
+        # held in several physical accounts that share one display label
+        # (e.g. 5 "Schwab Account" tenants holding QTUM) shows one row per
+        # account instead of collapsing into a single misleading nickname.
+        # `account` rides along for display/fallback. Falls back to the
+        # account string only if the frame predates the tenant_id grain.
+        _sym_grain = (
+            (["tenant_id"] if "tenant_id" in filtered.columns else [])
+            + ["account", "symbol"]
+        )
         symbol_agg = (
-            filtered.groupby(["account", "symbol"])
+            filtered.groupby(_sym_grain)
             .agg(**agg_kwargs)
             .reset_index()
         )
@@ -2154,8 +2175,14 @@ def positions():
     # 8. Strategy detail rows (aggregated by account × strategy, paginated)
     # ------------------------------------------------------------------
     if not filtered.empty:
+        # Same tenant_id grain as the symbol rollup above so each physical
+        # account's strategy line is distinct (see _sym_grain comment).
+        _strat_grain = (
+            (["tenant_id"] if "tenant_id" in filtered.columns else [])
+            + ["account", "strategy"]
+        )
         strat_agg = (
-            filtered.groupby(["account", "strategy"])
+            filtered.groupby(_strat_grain)
             .agg(
                 status=("status", lambda xs: "Open" if (xs == "Open").any() else "Closed"),
                 total_pnl=("total_pnl", "sum"),
@@ -2186,6 +2213,25 @@ def positions():
     page = min(page, total_pages)
     start_idx = (page - 1) * per_page
     rows = all_rows[start_idx : start_idx + per_page]
+
+    # Resolve a per-row display label off the broker-stable tenant_id so the
+    # Account column shows each account's own nickname (Emmory / Sara 401k /
+    # ...) rather than the colliding broker `account` string. Falls back to
+    # the raw account label when a row carries no tenant_id (admin browsing
+    # or pre-grain frames).
+    _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
+
+    def _label_rows(_rows):
+        for _r in _rows:
+            _tid = _r.get("tenant_id")
+            _r["account_display"] = (
+                (_tenant_labels.get(_tid) if _tid else None)
+                or _norm_account_label(_r.get("account"))
+            )
+        return _rows
+
+    _label_rows(rows)
+    _label_rows(symbol_rows)
 
     return render_template(
         "positions.html",
@@ -2239,6 +2285,7 @@ POSITION_SUMMARY_QUERY = """
 POSITION_TRADES_QUERY = """
     SELECT
         h.account,
+        h.tenant_id,
         h.underlying_symbol AS symbol,
         h.trade_date,
         -- Surface DRIPs as their own action so the Raw Transaction Log
@@ -3861,6 +3908,23 @@ def position_detail(symbol):
         else []
     )
 
+    # Disambiguate the Strategy Breakdown's Account column by tenant_id.
+    # N physical accounts can share one broker `account` string (e.g. 5
+    # SnapTrade "Schwab Account" tenants), so labeling off the account
+    # string collapses them all to a single nickname (last-write-wins in
+    # `_account_label_map`) — the page then renders 5 identical-looking
+    # "Sara Investment" rows for what are really 5 distinct accounts
+    # (Emmory / Sara 401k / Sara Investment / Cameron Investment /
+    # Cameron 401k). Resolve the label off the broker-stable tenant_id so
+    # each row shows its own nickname; fall back to the raw account label
+    # when no per-tenant mapping exists (admin browsing, synthesized
+    # cross-tenant closed rows that carry no tenant_id).
+    _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
+    for _sr in strategy_rows:
+        _tid = _sr.get("tenant_id")
+        _lbl = _tenant_labels.get(_tid) if _tid else None
+        _sr["account_display"] = _lbl or _norm_account_label(_sr.get("account"))
+
     # ── Breakdown by type (equity / options / dividends) ──
     # Sums roll up across the selected legs (or the whole symbol when no
     # leg filter is active). Sources:
@@ -4036,9 +4100,24 @@ def position_detail(symbol):
     if "trade_date" in trades_for_table.columns:
         trades_for_table["trade_date"] = trades_for_table["trade_date"].astype(str)
     trades = trades_for_table.to_dict(orient="records") if not trades_for_table.empty else []
+    # Disambiguate each trade's Account cell by tenant_id (same reason as the
+    # Strategy Breakdown — all of a user's "Schwab Account" tenants share one
+    # broker label). `_tenant_labels` was built above for strategy_rows.
+    for _t in trades:
+        _tid = _t.get("tenant_id")
+        _t["account_display"] = (
+            (_tenant_labels.get(_tid) if _tid else None)
+            or _norm_account_label(_t.get("account"))
+        )
 
     # Current positions
     current_positions = current_df.to_dict(orient="records") if not current_df.empty else []
+    for _p in current_positions:
+        _tid = _p.get("tenant_id")
+        _p["account_display"] = (
+            (_tenant_labels.get(_tid) if _tid else None)
+            or _norm_account_label(_p.get("account"))
+        )
 
     # ── Closed option legs (with cost/proceeds) ──
     closed_legs_list = []
@@ -4089,6 +4168,8 @@ def position_detail(symbol):
             "return_pct": o_return,
             "is_winner": o_pnl > 0,
             "type": "option",
+            "tenant_id": leg.get("tenant_id"),
+            "account": str(leg.get("account") or "").strip(),
         })
     for leg in closed_equity_list:
         eq_proceeds = float(leg.get("sell_proceeds") or 0)
@@ -4117,9 +4198,16 @@ def position_detail(symbol):
             "is_winner": eq_pnl > 0,
             "type": "equity",
             "session_id": leg.get("session_id"),
+            "tenant_id": leg.get("tenant_id"),
             "account": str(leg.get("account") or "").strip(),
         })
     trade_outcomes.sort(key=lambda x: x.get("close_date") or "", reverse=True)
+    for _o in trade_outcomes:
+        _tid = _o.get("tenant_id")
+        _o["account_display"] = (
+            (_tenant_labels.get(_tid) if _tid else None)
+            or _norm_account_label(_o.get("account"))
+        )
 
     # Attach raw transactions to each outcome for drill-down
     # Build session date range lookup for scoping equity trades

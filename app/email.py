@@ -38,6 +38,7 @@ import logging
 import os
 import smtplib
 import ssl
+import urllib.error
 import urllib.request
 from email.message import EmailMessage
 from typing import Mapping, Optional
@@ -172,13 +173,28 @@ def _send_via_resend(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # api.resend.com sits behind Cloudflare, which 403s (error 1010)
+            # the default "Python-urllib/x" agent as a bot. Send a real UA.
+            "User-Agent": "HappyTrader/1.0 (+https://happytrader.me)",
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        status = getattr(resp, "status", 200)
-        if status >= 300:
-            raise RuntimeError(f"Resend API returned HTTP {status}")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status = getattr(resp, "status", 200)
+            if status >= 300:
+                raise RuntimeError(f"Resend API returned HTTP {status}")
+    except urllib.error.HTTPError as exc:
+        # urlopen raises on 4xx/5xx; Resend puts the actionable reason
+        # (e.g. "domain not verified", restricted/test key) in the JSON
+        # body, which is lost unless we read it off the error object.
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        raise RuntimeError(
+            f"Resend API returned HTTP {exc.code}: {detail or exc.reason}"
+        ) from exc
 
 
 def _is_suppressed(to: str, category: str) -> bool:

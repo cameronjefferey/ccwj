@@ -253,7 +253,21 @@ def snaptrade_connect():
             # Use a stable internal id so SnapTrade can correlate retries
             # to the same user record. SnapTrade userId is opaque to the
             # broker; PII would only land in our own DB.
-            snap_user_label = f"happytrader-{user_id}"
+            #
+            # SnapTrade userIds are GLOBAL to the clientId (the SnapTrade
+            # app), and dev/staging often share one clientId with prod. A
+            # bare ``happytrader-{user_id}`` therefore collides across
+            # environments (local user 7 and prod user 7 resolve to the
+            # same SnapTrade user) — re-registering one would rotate the
+            # secret out from under the other. ``SNAPTRADE_USER_NAMESPACE``
+            # (empty in prod, e.g. "local" in dev) keeps each environment's
+            # SnapTrade users disjoint so connecting/disconnecting locally
+            # can never disturb a real prod connection.
+            _snap_ns = os.environ.get("SNAPTRADE_USER_NAMESPACE", "").strip()
+            snap_user_label = (
+                f"happytrader-{_snap_ns}-{user_id}" if _snap_ns
+                else f"happytrader-{user_id}"
+            )
             try:
                 resp = client.authentication.register_snap_trade_user(
                     user_id=snap_user_label
@@ -1240,6 +1254,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     activities = _fetch_activities(client, snap_user_id, snap_secret, snaptrade_account_id, start_date, end_date)
     orders = _fetch_recent_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
+    option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
 
@@ -1299,8 +1314,14 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             "as fresh-trade fallback — activities will catch up later.",
             len(orders), account_name, snaptrade_account_id, int(lookback_days),
         )
+    # Equity/ETF positions + open option holdings share one normalizer
+    # (positions_to_current_df classifies each row via _is_option). Option
+    # holdings come from a SEPARATE SnapTrade endpoint — see
+    # _fetch_option_holdings — so an open option leg lands in the snapshot
+    # instead of only the trade-history feed.
     current_df = positions_to_current_df(
-        positions, account_name=account_name, user_id=user_id,
+        list(positions or []) + list(option_holdings or []),
+        account_name=account_name, user_id=user_id,
         tenant_id=tenant_id,
     )
     balances_df = balances_to_balance_df(
@@ -1441,6 +1462,37 @@ def _fetch_positions(client, snap_user_id, snap_secret, account_id):
         if _looks_like_auth_error(exc):
             raise _SnapTradeAuthError("get_user_account_positions", exc)
         raise
+    return _coerce_list(resp)
+
+
+def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
+    """Pull OPEN option holdings for one account.
+
+    SnapTrade serves equity/ETF positions and option holdings from TWO
+    different endpoints: ``get_user_account_positions`` returns only
+    stock/ETF/crypto, while ``options.list_option_holdings`` returns the
+    open option contracts. Without this second call an open option leg
+    (e.g. a long LEAP call) never lands in the current-positions snapshot
+    — it shows in trade history but not as a held position. Best-effort:
+    a 403 ("feature not enabled for this connection") or empty response
+    is normal for brokers/plans without option data and must not fail the
+    sync — the activities feed still carries the option lifecycle.
+    """
+    try:
+        resp = client.options.list_option_holdings(
+            user_id=snap_user_id,
+            user_secret=snap_secret,
+            account_id=account_id,
+        )
+    except Exception as exc:
+        if _looks_like_auth_error(exc):
+            raise _SnapTradeAuthError("list_option_holdings", exc)
+        app.logger.warning(
+            "SnapTrade list_option_holdings failed for account=%s: %s "
+            "— continuing without open-option snapshot (best-effort).",
+            account_id, exc,
+        )
+        return []
     return _coerce_list(resp)
 
 

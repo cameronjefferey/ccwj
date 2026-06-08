@@ -298,6 +298,67 @@ def test_history_df_emits_osi_for_options():
     assert df.iloc[0]["Action"] == "Sell to Open"
 
 
+def test_history_df_handles_top_level_option_symbol_with_null_symbol():
+    """Schwab via SnapTrade ships OPTION activities with ``symbol: null``
+    and the structured contract at the ACTIVITY top level
+    (``act["option_symbol"]``), with ``underlying_symbol`` itself a nested
+    object. Pre-fix this misclassified every option as empty-symbol equity
+    and the entire option lane vanished from the warehouse (hundreds of
+    contracts per account). Regression for the real payload shape."""
+    act = {
+        "id": "a9bfbecd",
+        "symbol": None,
+        "option_symbol": {
+            "ticker": "PLTR  260508C00147000",
+            "strike_price": 147.0,
+            "expiration_date": "2026-05-08",
+            "underlying_symbol": {"symbol": "PLTR", "raw_symbol": "PLTR"},
+            "option_type": "CALL",
+        },
+        "type": "OPTIONEXPIRATION",
+        "description": "CALL PALANTIR TECHNOLOGI$147 EXP 05/08/26",
+        "units": 2.0,
+        "price": 0.0,
+        "amount": 0.0,
+        "trade_date": "2026-05-11",
+        "fee": 0.0,
+    }
+    df = activities_to_history_df([act], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    assert len(df) == 1
+    assert df.iloc[0]["Symbol"] == "PLTR  260508C00147000"
+    assert df.iloc[0]["Action"] == "Expired"
+
+
+def test_history_df_prefers_explicit_option_type_over_description():
+    """SnapTrade's activity-level ``option_type`` field is authoritative
+    for open/close. Schwab descriptions carry NO open/close hint
+    (``"CALL ORACLE CORP $200 EXP 06/18/26"``), so a SELL_TO_CLOSE must be
+    tagged "Sell to Close" from the field, NOT defaulted to "Sell to Open"
+    by description parsing. Regression for the ORCL round-trip that showed
+    as a phantom open Naked Call worth $126K."""
+    act = {
+        "type": "SELL",
+        "option_type": "SELL_TO_CLOSE",
+        "description": "CALL ORACLE CORP $200 EXP 06/18/26",
+        "symbol": None,
+        "option_symbol": {
+            "ticker": "ORCL  260618C00200000",
+            "strike_price": 200.0,
+            "expiration_date": "2026-06-18",
+            "underlying_symbol": {"symbol": "ORCL"},
+            "option_type": "CALL",
+        },
+        "units": -30,
+        "price": 46.85,
+        "amount": 140527.14,
+        "trade_date": "2026-06-02",
+        "fee": 0,
+    }
+    df = activities_to_history_df([act], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    assert df.iloc[0]["Symbol"] == "ORCL  260618C00200000"
+    assert df.iloc[0]["Action"] == "Sell to Close"
+
+
 def test_history_df_resolves_option_close_from_description():
     """A SELL canonical type with a "Buy to Close" description must
     NOT be tagged as Sell to Open. (Confused trade direction shows
@@ -413,6 +474,65 @@ def test_current_df_options_keep_per_share_price():
     df = positions_to_current_df([pos], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert df.iloc[0]["Price"] == 3.50
     assert df.iloc[0]["security_type"] == "Option"
+
+
+def test_current_df_option_holding_applies_100x_contract_multiplier():
+    """Open option holdings from ``list_option_holdings`` ship a per-share
+    ``price`` / ``average_purchase_price`` and NO market_value/cost_basis.
+    The derived totals must apply the 100x contract multiplier so an open
+    leg snapshots at its real dollar value, not 1/100th. Regression for the
+    LITE LEAP that showed in trade history but never as a current position
+    (SnapTrade serves options from a separate endpoint)."""
+    holding = {
+        "symbol": {
+            "description": "",
+            "option_symbol": {
+                "ticker": "LITE  261120C01100000",
+                "strike_price": 1100.0,
+                "expiration_date": "2026-11-20",
+                "underlying_symbol": {"symbol": "LITE", "raw_symbol": "LITE"},
+                "option_type": "CALL",
+            },
+        },
+        "price": 180.85,
+        "units": 1.0,
+        "average_purchase_price": 237.8066,
+    }
+    df = positions_to_current_df([holding], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    row = df.iloc[0]
+    assert row["Symbol"] == "LITE  261120C01100000"
+    assert row["security_type"] == "Option"
+    assert float(row["Price"]) == 180.85
+    assert abs(float(row["market_value"]) - 18085.0) < 0.01
+    assert abs(float(row["cost_bases"]) - 23780.66) < 0.01
+    # Long option: unrealized = market_value - cost_basis.
+    assert abs(float(row["gain_or_loss_dollat"]) - (18085.0 - 23780.66)) < 0.01
+
+
+def test_current_df_short_option_holding_nets_premium_received():
+    """A short option holding (negative units) carries a positive
+    cost_basis (premium received) and negative market_value (cost to buy
+    back); unrealized P&L nets to market_value + cost_basis."""
+    holding = {
+        "symbol": {
+            "option_symbol": {
+                "ticker": "NVDA  260508C00210000",
+                "strike_price": 210.0,
+                "expiration_date": "2026-05-08",
+                "underlying_symbol": {"symbol": "NVDA"},
+                "option_type": "CALL",
+            },
+        },
+        "price": 0.55,
+        "units": -1.0,
+        "average_purchase_price": 1.4866,
+    }
+    df = positions_to_current_df([holding], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    row = df.iloc[0]
+    assert abs(float(row["market_value"]) - (-55.0)) < 0.01
+    assert abs(float(row["cost_bases"]) - 148.66) < 0.01
+    # Short: unrealized = market_value + cost_basis = -55 + 148.66.
+    assert abs(float(row["gain_or_loss_dollat"]) - 93.66) < 0.01
 
 
 def test_current_df_falls_back_to_broker_price_when_market_value_missing():
