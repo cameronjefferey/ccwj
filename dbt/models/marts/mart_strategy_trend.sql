@@ -32,7 +32,7 @@ monthly as (
     select
         account,
         user_id,
-        any_value(tenant_id) as tenant_id,
+        tenant_id,
         strategy,
         month_start,
         count(*)                              as trades_closed,
@@ -48,32 +48,32 @@ monthly as (
         sum(premium_received)                 as premium_collected,
         sum(abs(premium_paid))                as premium_paid
     from closed_trades
-    group by 1, 2, 4, 5
+    group by 1, 2, 3, 4, 5
 ),
 
 with_rolling as (
     select
         *,
         avg(win_rate) over (
-            partition by account, user_id, strategy
+            partition by tenant_id, account, user_id, strategy
             order by month_start
             rows between 3 preceding and 1 preceding
         ) as win_rate_3m,
 
         avg(avg_pnl_per_trade) over (
-            partition by account, user_id, strategy
+            partition by tenant_id, account, user_id, strategy
             order by month_start
             rows between 3 preceding and 1 preceding
         ) as avg_pnl_3m,
 
         avg(trades_closed) over (
-            partition by account, user_id, strategy
+            partition by tenant_id, account, user_id, strategy
             order by month_start
             rows between 3 preceding and 1 preceding
         ) as avg_trades_3m,
 
         count(*) over (
-            partition by account, user_id, strategy
+            partition by tenant_id, account, user_id, strategy
             order by month_start
             rows between 3 preceding and 1 preceding
         ) as baseline_months
@@ -106,4 +106,4 @@ select
         else 'stable'
     end as trend_signal
 from with_rolling
-order by account, user_id, strategy, month_start
+order by tenant_id, account, user_id, strategy, month_start

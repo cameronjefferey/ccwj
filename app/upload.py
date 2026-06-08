@@ -1400,6 +1400,8 @@ def upload_processing():
 @login_required
 def sync_processing():
     """After Schwab seed push, wait for GitHub Actions dbt to finish (optional poll by commit SHA)."""
+    from app.models import get_onboarding_response
+
     expected_minutes = 5
     head_sha = (request.args.get("sha") or "").strip() or None
     is_first = (request.args.get("first") or "").strip() == "1"
@@ -1409,12 +1411,22 @@ def sync_processing():
     else:
         done_url = url_for("weekly_review", from_sync=1)
 
+    # Only prompt the onboarding survey on the first sync, and only if
+    # the user hasn't already answered. Refreshing the page after submit
+    # therefore won't re-show the form. The poll script will pause its
+    # auto-redirect while the form is being interacted with so a slow
+    # typer doesn't lose their answer to the dbt build finishing.
+    show_onboarding = bool(
+        is_first and get_onboarding_response(current_user.id) is None
+    )
+
     return render_template(
         "sync_processing.html",
         title="Processing Schwab sync",
         expected_minutes=expected_minutes,
         head_sha=head_sha,
         done_url=done_url,
+        show_onboarding=show_onboarding,
     )
 
 

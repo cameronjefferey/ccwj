@@ -411,6 +411,20 @@
     </div>
 
     <div class="container-fluid px-4">
+        {# Confirm-your-email nudge. Set by `_inject_email_verification_needed`
+           in app/auth.py from users.email_verified_at. #}
+        {% if email_unverified %}
+        <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
+            <div>
+                <strong>Confirm your email.</strong>
+                <span class="small">Check your inbox for the link so we can send password resets and your recap.</span>
+            </div>
+            <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Resend email</button>
+            </form>
+        </div>
+        {% endif %}
         {# SnapTrade-managed brokerages whose connection has been revoked.
            connection has been revoked at the broker. Set by
            `_inject_snaptrade_reauth_needed` in app/snaptrade.py from

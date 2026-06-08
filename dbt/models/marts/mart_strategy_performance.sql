@@ -22,9 +22,9 @@ with base as (
     select
         account,
         user_id,
-        -- v2 tenant_id passthrough — positions_summary already carries it.
-        -- See docs/V2_TENANT_KEY_DESIGN.md.
-        any_value(tenant_id) as tenant_id,
+        -- v2 tenant_id is part of the grain so each physical account keeps
+        -- its own strategy performance. positions_summary carries it.
+        tenant_id,
         strategy,
         sum(total_pnl)              as total_pnl,
         sum(trade_only_pnl)         as trade_only_pnl,
@@ -43,7 +43,7 @@ with base as (
         avg(avg_days_in_trade)      as avg_days_in_trade
     from {{ ref('positions_summary') }}
     where strategy is not null and trim(strategy) != ''
-    group by 1, 2, 4
+    group by 1, 2, 3, 4
 ),
 
 with_win_rate as (
@@ -75,4 +75,4 @@ select
     last_trade_date,
     round(avg_days_in_trade, 1)  as avg_days_in_trade
 from with_win_rate
-order by account, total_return desc
+order by tenant_id, account, total_return desc

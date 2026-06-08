@@ -231,13 +231,18 @@
 {% set _is_alltime = (not selected_start_date) and (not selected_end_date) %}
 
 <form method="get" class="filter-bar">
-    {% if accounts and accounts|length > 1 %}
+    {# Picker lists the user's full (disambiguated) account set so several
+       physical accounts sharing a base label (e.g. multiple "Schwab
+       Account"s) are each independently selectable. ``user_accounts`` is
+       the auth list; admin (None) falls back to the data-derived list. #}
+    {% set _acct_options = user_accounts if user_accounts else accounts %}
+    {% if _acct_options and _acct_options|length > 1 %}
     <div>
         <label class="lblh">Account</label>
         <select name="account" class="form-select form-select-sm"
                 onchange="this.form.submit()">
             <option value="">All Accounts</option>
-            {% for a in accounts %}
+            {% for a in _acct_options %}
             <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
             {% endfor %}
         </select>

@@ -58,3 +58,98 @@ services:
         sync: false
       - key: GITHUB_BRANCH
         sync: false
+
+  # ──────────────────────────────────────────────────────────────────
+  # Lifecycle / product-marketing email digests.
+  #
+  # All three run `app.email_digests_cli <kind>` and need the email
+  # provider creds (EMAIL_BACKEND=resend|smtp + RESEND_API_KEY/EMAIL_SMTP_*),
+  # DATABASE_URL (opt-in flags + send log), and BigQuery creds (digest
+  # content). APP_BASE_URL builds the links since these run outside a
+  # request context. Each send is idempotent via the email_sends table, so
+  # a missed run self-heals on the next pass without double-sending.
+  #
+  # Schedules are UTC and do NOT observe DST (see DST note at top).
+  #   Sat 15:00 UTC (~8am PDT) → weekly summary (recap of the week just traded)
+  #   Sun 23:00 UTC (~4pm PDT) → weekly preview (the week ahead)
+  #   Daily 16:00 UTC (~9am PDT) → re-engagement (dormant-user nudge; windowed)
+  # ──────────────────────────────────────────────────────────────────
+
+  - type: cron
+    name: happytrader-email-weekly-summary
+    env: python
+    schedule: "0 15 * * 6"
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m app.email_digests_cli weekly_summary
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://happytrader.me"
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
+        sync: false
+
+  - type: cron
+    name: happytrader-email-weekly-preview
+    env: python
+    schedule: "0 23 * * 0"
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m app.email_digests_cli weekly_preview
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://happytrader.me"
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
+        sync: false
+
+  - type: cron
+    name: happytrader-email-reengagement
+    env: python
+    schedule: "0 16 * * *"
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m app.email_digests_cli reengagement
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://happytrader.me"
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false

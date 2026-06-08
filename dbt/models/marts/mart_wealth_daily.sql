@@ -70,6 +70,7 @@ history_by_day as (
     select
         account,
         user_id,
+        tenant_id,
         trade_date as date,
         sum(case when action = 'dividend'        then amount else 0 end) as dividend_today,
         sum(case when action = 'credit_interest' then amount else 0 end)
@@ -78,7 +79,7 @@ history_by_day as (
         sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today
     from {{ ref('stg_history') }}
     where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee')
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 joined as (
@@ -98,6 +99,7 @@ joined as (
     left join history_by_day h
       on h.account = e.account
      and (h.user_id is not distinct from e.user_id)
+     and (h.tenant_id is not distinct from e.tenant_id)
      and h.date    = e.date
 )
 
@@ -112,10 +114,10 @@ select
     option_value,
 
     -- Day-over-day account-value change. NULL on the first day per
-    -- (account, user_id) so charts can render a gap rather than
+    -- (tenant_id, account, user_id) so charts can render a gap rather than
     -- pretending the first observation was a delta from zero.
     account_value - lag(account_value) over (
-        partition by account, user_id
+        partition by tenant_id, account, user_id
         order by date
     ) as account_value_delta,
 
@@ -123,24 +125,25 @@ select
     interest_net_today,
     fees_today,
 
-    -- Running totals scoped to the (account, user_id) so two users
-    -- sharing an account label never have their tallies merged.
+    -- Running totals scoped to (tenant_id, account, user_id) so two
+    -- physical accounts sharing a display label never have their tallies
+    -- merged.
     sum(dividend_today) over (
-        partition by account, user_id
+        partition by tenant_id, account, user_id
         order by date
         rows between unbounded preceding and current row
     ) as cumulative_dividends,
 
     sum(interest_net_today) over (
-        partition by account, user_id
+        partition by tenant_id, account, user_id
         order by date
         rows between unbounded preceding and current row
     ) as cumulative_interest_net,
 
     sum(fees_today) over (
-        partition by account, user_id
+        partition by tenant_id, account, user_id
         order by date
         rows between unbounded preceding and current row
     ) as cumulative_fees
 from joined
-order by account, user_id, date
+order by tenant_id, account, user_id, date

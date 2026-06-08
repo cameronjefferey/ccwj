@@ -296,3 +296,4 @@ from app import snaptrade  # noqa: F401  registers /snaptrade/* routes
 from app import first_look
 from app import strategies
 from app import profile_community
+from app import webhooks  # noqa: F401  registers /webhooks/* routes

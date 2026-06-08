@@ -26,9 +26,13 @@ contracts as (
     select * from {{ ref('int_option_contracts') }}
 ),
 
--- (1) No duplicate rows for any (contract, date, is_realized_close).
+-- (1) No duplicate rows for any (tenant, contract, date, is_realized_close).
+-- tenant_id is in the grain so two physical accounts sharing a display
+-- label that both hold the SAME option contract (same OSI) aren't fused
+-- into a false double-emission.
 double_emission as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -37,13 +41,14 @@ double_emission as (
         count(*) as n,
         'double_emission' as failure_kind
     from daily
-    group by 1, 2, 3, 4, 5
+    group by 1, 2, 3, 4, 5, 6
     having count(*) > 1
 ),
 
 -- (2) Closed contract must not have an MTM row on close_date.
 mtm_on_close_day as (
     select
+        d.tenant_id,
         d.account,
         d.user_id,
         d.trade_symbol,
@@ -55,6 +60,7 @@ mtm_on_close_day as (
     join contracts c
         on d.account = c.account
         and (d.user_id is not distinct from c.user_id)
+        and (d.tenant_id is not distinct from c.tenant_id)
         and d.trade_symbol = c.trade_symbol
     where c.close_date is not null
       and d.date = c.close_date
@@ -64,6 +70,7 @@ mtm_on_close_day as (
 -- (3) Realized credit on close_date == net_cash_flow.
 realized_mismatch as (
     select
+        d.tenant_id,
         d.account,
         d.user_id,
         d.trade_symbol,
@@ -75,6 +82,7 @@ realized_mismatch as (
     join contracts c
         on d.account = c.account
         and (d.user_id is not distinct from c.user_id)
+        and (d.tenant_id is not distinct from c.tenant_id)
         and d.trade_symbol = c.trade_symbol
     where d.is_realized_close = true
       and abs(d.pnl_today - c.net_cash_flow) > 0.01

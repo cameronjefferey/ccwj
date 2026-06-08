@@ -5,44 +5,654 @@
     .processing-card {
         max-width: 720px;
         margin: 2rem auto;
-        padding: 2.5rem 2rem;
+        padding: 2rem 1.75rem;
         border-radius: 16px;
         background: #fff;
         box-shadow: 0 2px 18px rgba(0,0,0,.06);
         text-align: center;
     }
-    .processing-icon {
-        margin-bottom: 1rem;
-        color: #0d6efd;
-    }
-    .processing-sub {
-        color: #6c757d;
-        font-size: .95rem;
-    }
+    .processing-icon { margin-bottom: 1rem; color: #0d6efd; }
+    .processing-sub { color: #6c757d; font-size: .95rem; }
     #pipelineStateLabel { min-height: 1.4em; }
+
+    /* Onboarding wizard */
+    .ob-card {
+        max-width: 760px;
+        margin: 2rem auto 0;
+        padding: 2rem 2rem 1.5rem;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 2px 18px rgba(0,0,0,.06);
+    }
+    .ob-progress-row {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 1rem;
+    }
+    .ob-step-label { color: #6c757d; font-size: .85rem; font-weight: 600; }
+    .ob-progress-bar {
+        flex: 1; height: 4px; background: #e9ecef; border-radius: 4px;
+        margin: 0 .75rem; overflow: hidden;
+    }
+    .ob-progress-fill {
+        height: 100%; background: #0d6efd; border-radius: 4px;
+        width: 25%; transition: width .35s ease;
+    }
+    .ob-section-title { font-size: 1.35rem; font-weight: 700; margin-bottom: .25rem; }
+    .ob-section-sub { color: #6c757d; font-size: .95rem; margin-bottom: 1.25rem; }
+    .ob-question { margin-bottom: 1.5rem; }
+    .ob-question:last-child { margin-bottom: .5rem; }
+    .ob-q-label {
+        display: block; font-weight: 600; color: #212529;
+        margin-bottom: .5rem; font-size: 1rem;
+    }
+    .ob-q-help { color: #6c757d; font-size: .85rem; margin-top: -.25rem; margin-bottom: .5rem; }
+    .ob-card .form-check { margin-bottom: .35rem; }
+    .ob-card .form-check-label { cursor: pointer; }
+    .ob-other-text {
+        margin-top: .25rem; margin-left: 1.6rem;
+        max-width: 24rem;
+    }
+    .ob-scale {
+        display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .25rem;
+    }
+    .ob-scale label {
+        flex: 0 0 auto; min-width: 2.4rem;
+        padding: .35rem .55rem;
+        border: 1px solid #ced4da; border-radius: 8px;
+        background: #fff; cursor: pointer;
+        font-weight: 600; text-align: center; color: #495057;
+        transition: all .12s ease;
+    }
+    .ob-scale input { display: none; }
+    .ob-scale label:hover { border-color: #0d6efd; color: #0d6efd; }
+    .ob-scale input:checked + label,
+    .ob-scale label.is-checked {
+        background: #0d6efd; border-color: #0d6efd; color: #fff;
+    }
+    .ob-scale-ends {
+        display: flex; justify-content: space-between;
+        font-size: .8rem; color: #6c757d; margin-top: .35rem;
+    }
+    .ob-actions {
+        display: flex; gap: .5rem; justify-content: space-between; align-items: center;
+        margin-top: 1.5rem;
+        padding-top: 1rem; border-top: 1px solid #f1f3f5;
+    }
+    .ob-actions-right { display: flex; gap: .5rem; }
+    .ob-card .invalid-feedback { display: block; }
+    .ob-section { display: none; }
+    .ob-section.is-active { display: block; }
+    .ob-section-error {
+        color: #dc3545; font-size: .85rem; margin-top: .5rem;
+        min-height: 1.2em;
+    }
+    .ob-thanks {
+        text-align: center; padding: 1.5rem 1rem;
+    }
+    .ob-thanks .ob-thanks-emoji {
+        font-size: 2rem; line-height: 1;
+    }
+    .ob-thanks .ob-thanks-title {
+        font-weight: 700; font-size: 1.2rem; margin: .5rem 0 .25rem;
+    }
+    .ob-thanks .ob-thanks-sub {
+        color: #6c757d; font-size: .95rem;
+    }
+    /* Compact sync card while wizard is up — let the form be the hero. */
+    .processing-card.is-secondary {
+        padding: 1.25rem 1.25rem;
+        margin-top: 1.25rem;
+        text-align: left;
+        display: flex; align-items: center; gap: .9rem;
+    }
+    .processing-card.is-secondary h2 { font-size: .95rem; margin: 0; font-weight: 600; }
+    .processing-card.is-secondary .processing-icon { margin: 0; }
+    .processing-card.is-secondary .processing-sub { font-size: .8rem; margin: .15rem 0 0; }
+    .processing-card.is-secondary .secondary-link {
+        margin-left: auto; font-size: .85rem;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="processing-card mb-4">
-    <div class="processing-icon" id="syncSpinner">
-        <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+{% if show_onboarding %}
+<div class="ob-card" id="onboardingCard" aria-live="polite">
+    <div class="ob-progress-row">
+        <span class="ob-step-label" id="obStepLabel">Step 1 of 4</span>
+        <div class="ob-progress-bar"><div class="ob-progress-fill" id="obProgressFill"></div></div>
+        <button type="button" class="btn btn-link btn-sm text-muted p-0"
+                id="obDismissBtn" title="Skip survey">Skip</button>
     </div>
-    <h2 class="fw-bold mb-2">Updating your data</h2>
-    <p class="processing-sub mb-2">
-        Your latest info is uploaded and we’re creating fresh insights just for you.
-        This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
-    </p>
-    <p class="small text-muted mb-3" id="pipelineStateLabel" aria-live="polite">Just a sec…</p>
-    <a href="{{ url_for('weekly_review', from_sync=1) }}" class="btn btn-outline-primary">
-        Open Daily Review
-    </a>
-    <p class="processing-sub small mt-3 mb-0">
-        We’ll take you to Daily Review when it’s ready, or you can open it anytime.
-    </p>
+
+    <form id="onboardingForm" method="post"
+          action="{{ url_for('submit_onboarding_why_here') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {# ------------------- Section 1 / 4 — Why you're here ------------------- #}
+        <section class="ob-section is-active" data-step="1">
+            <h2 class="ob-section-title">Why are you here?</h2>
+            <p class="ob-section-sub">
+                Two quick things while we crunch your data. About 3 minutes total.
+            </p>
+
+            <div class="ob-question" data-required="why_here">
+                <span class="ob-q-label">What brought you to HappyTrader today?</span>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_lose" value="lose_money_options">
+                    <label class="form-check-label" for="why_lose">
+                        I keep losing on options and want to know why
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_patterns" value="understand_patterns">
+                    <label class="form-check-label" for="why_patterns">
+                        I want to understand my own trading patterns
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_record" value="better_record">
+                    <label class="form-check-label" for="why_record">
+                        I want a better record of my trades than my broker gives me
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_discipline" value="more_disciplined">
+                    <label class="form-check-label" for="why_discipline">
+                        I want to be more disciplined
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_looking" value="just_looking">
+                    <label class="form-check-label" for="why_looking">
+                        Just looking around for now
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="why_here"
+                           id="why_other" value="other"
+                           data-reveal="why_here_other_wrap">
+                    <label class="form-check-label" for="why_other">Something else</label>
+                </div>
+                <div class="ob-other-text d-none" id="why_here_other_wrap">
+                    <input type="text" class="form-control form-control-sm"
+                           name="why_here_other" maxlength="500"
+                           placeholder="Tell us in a sentence">
+                </div>
+            </div>
+
+            <div class="ob-question" data-required="worth_paying_for">
+                <span class="ob-q-label">What would make HappyTrader worth paying for?</span>
+                <p class="ob-q-help">If we could only do one thing well — what would it be?</p>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_winrate" value="win_rate_by_strategy">
+                    <label class="form-check-label" for="wpf_winrate">
+                        Show me my real win rate by strategy
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_loss_patterns" value="loss_patterns">
+                    <label class="form-check-label" for="wpf_loss_patterns">
+                        Surface my recurring loss patterns
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_plan" value="stick_to_plan">
+                    <label class="form-check-label" for="wpf_plan">
+                        Help me stick to my plan
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_track" value="track_discipline">
+                    <label class="form-check-label" for="wpf_track">
+                        Track my discipline over time
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_truth" value="honest_picture">
+                    <label class="form-check-label" for="wpf_truth">
+                        Give me an honest picture of how I'm actually doing
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="worth_paying_for"
+                           id="wpf_other" value="other"
+                           data-reveal="worth_paying_for_other_wrap">
+                    <label class="form-check-label" for="wpf_other">Something else</label>
+                </div>
+                <div class="ob-other-text d-none" id="worth_paying_for_other_wrap">
+                    <input type="text" class="form-control form-control-sm"
+                           name="worth_paying_for_other" maxlength="500"
+                           placeholder="Tell us">
+                </div>
+            </div>
+        </section>
+
+        {# ------------------- Section 2 / 4 — How you trade ------------------- #}
+        <section class="ob-section" data-step="2">
+            <h2 class="ob-section-title">How you trade</h2>
+            <p class="ob-section-sub">
+                Quick context so we can show the right cuts of your data first.
+            </p>
+
+            <div class="ob-question" data-required="trading_years">
+                <span class="ob-q-label">How long have you been actively trading?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_lt1" value="under_1y"><label class="form-check-label" for="ty_lt1">Less than 1 year</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_1_3" value="1_to_3y"><label class="form-check-label" for="ty_1_3">1–3 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_3_5" value="3_to_5y"><label class="form-check-label" for="ty_3_5">3–5 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_5_10" value="5_to_10y"><label class="form-check-label" for="ty_5_10">5–10 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_10p" value="over_10y"><label class="form-check-label" for="ty_10p">10+ years</label></div>
+            </div>
+
+            <div class="ob-question" data-required="primary_style">
+                <span class="ob-q-label">Which best describes your primary style?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_buyhold" value="buy_and_hold"><label class="form-check-label" for="ps_buyhold">Buy &amp; hold stock</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_cc" value="covered_calls"><label class="form-check-label" for="ps_cc">Covered calls</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_csp" value="cash_secured_puts"><label class="form-check-label" for="ps_csp">Cash-secured puts / wheel</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_spreads" value="vertical_spreads"><label class="form-check-label" for="ps_spreads">Vertical spreads</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_iron" value="iron_condors"><label class="form-check-label" for="ps_iron">Iron condors / strangles</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_swing" value="swing_trading"><label class="form-check-label" for="ps_swing">Swing trading</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_day" value="day_trading"><label class="form-check-label" for="ps_day">Day trading</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_mixed" value="mixed"><label class="form-check-label" for="ps_mixed">A bit of everything</label></div>
+            </div>
+
+            <div class="ob-question" data-required="trade_frequency">
+                <span class="ob-q-label">How often do you place trades?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_daily" value="daily"><label class="form-check-label" for="tf_daily">Daily</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_few" value="few_per_week"><label class="form-check-label" for="tf_few">A few times per week</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_weekly" value="weekly"><label class="form-check-label" for="tf_weekly">About once a week</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_monthly" value="monthly"><label class="form-check-label" for="tf_monthly">A few times a month</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_opp" value="opportunistic"><label class="form-check-label" for="tf_opp">Only when I see something I like</label></div>
+            </div>
+
+            <div class="ob-question" data-required="position_count">
+                <span class="ob-q-label">How many positions are you usually holding at once?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_1_5" value="1_to_5"><label class="form-check-label" for="pc_1_5">1–5</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_6_15" value="6_to_15"><label class="form-check-label" for="pc_6_15">6–15</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_16_30" value="16_to_30"><label class="form-check-label" for="pc_16_30">16–30</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_30p" value="over_30"><label class="form-check-label" for="pc_30p">More than 30</label></div>
+            </div>
+        </section>
+
+        {# ------------------- Section 3 / 4 — How you see yourself ------------------- #}
+        <section class="ob-section" data-step="3">
+            <h2 class="ob-section-title">How you see yourself</h2>
+            <p class="ob-section-sub">
+                The honest stuff. We'll compare these to what your trades actually show.
+            </p>
+
+            <div class="ob-question" data-required="best_at">
+                <span class="ob-q-label">What do you think you do best as a trader?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_entries" value="entries"><label class="form-check-label" for="ba_entries">Picking entries</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_sizing" value="sizing"><label class="form-check-label" for="ba_sizing">Sizing positions correctly</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_cutting" value="cutting_losers"><label class="form-check-label" for="ba_cutting">Cutting losers</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_riding" value="riding_winners"><label class="form-check-label" for="ba_riding">Riding winners</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_strategy" value="strategy_choice"><label class="form-check-label" for="ba_strategy">Picking the right strategy for the setup</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_discipline" value="discipline"><label class="form-check-label" for="ba_discipline">Sticking to my plan</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_unsure" value="unsure"><label class="form-check-label" for="ba_unsure">Honestly not sure</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_other" value="other" data-reveal="best_at_other_wrap"><label class="form-check-label" for="ba_other">Something else</label></div>
+                <div class="ob-other-text d-none" id="best_at_other_wrap">
+                    <input type="text" class="form-control form-control-sm"
+                           name="best_at_other" maxlength="500" placeholder="In your words">
+                </div>
+            </div>
+
+            <div class="ob-question" data-required="worst_at">
+                <span class="ob-q-label">What do you think you do worst?</span>
+                <p class="ob-q-help">No judgment — naming it is the first step.</p>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_cut_winner" value="cut_winners_early"><label class="form-check-label" for="wa_cut_winner">Cutting winners too early</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_let_run" value="let_losers_run"><label class="form-check-label" for="wa_let_run">Letting losers run</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_chase" value="chasing"><label class="form-check-label" for="wa_chase">Chasing trades</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_too_big" value="sizing_too_big"><label class="form-check-label" for="wa_too_big">Sizing too big</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_too_small" value="sizing_too_small"><label class="form-check-label" for="wa_too_small">Sizing too small to matter</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_overtrade" value="overtrading"><label class="form-check-label" for="wa_overtrade">Trading too often</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_undertrade" value="undertrading"><label class="form-check-label" for="wa_undertrade">Trading too rarely</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_strategy" value="bad_strategy_choice"><label class="form-check-label" for="wa_strategy">Picking the wrong strategy for the setup</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_unsure" value="unsure"><label class="form-check-label" for="wa_unsure">Honestly not sure</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_other" value="other" data-reveal="worst_at_other_wrap"><label class="form-check-label" for="wa_other">Something else</label></div>
+                <div class="ob-other-text d-none" id="worst_at_other_wrap">
+                    <input type="text" class="form-control form-control-sm"
+                           name="worst_at_other" maxlength="500" placeholder="In your words">
+                </div>
+            </div>
+
+            <div class="ob-question" data-required="discipline_self">
+                <span class="ob-q-label">On a scale of 1–10, how disciplined are you?</span>
+                <p class="ob-q-help">Gut answer. We'll compare it to what your trades show.</p>
+                <div class="ob-scale" role="radiogroup" aria-label="Discipline 1 to 10">
+                    {% for n in range(1, 11) %}
+                    <input type="radio" name="discipline_self" id="ds_{{ n }}" value="{{ n }}">
+                    <label for="ds_{{ n }}">{{ n }}</label>
+                    {% endfor %}
+                </div>
+                <div class="ob-scale-ends">
+                    <span>1 — wing it</span>
+                    <span>10 — by the book</span>
+                </div>
+            </div>
+
+            <div class="ob-question" data-required="trade_notes">
+                <span class="ob-q-label">Do you keep notes on your trades?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_notes" id="tn_always" value="always_detailed"><label class="form-check-label" for="tn_always">Always — detailed notes per trade</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_notes" id="tn_sometimes" value="sometimes"><label class="form-check-label" for="tn_sometimes">Sometimes</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_notes" id="tn_head" value="in_my_head"><label class="form-check-label" for="tn_head">Just in my head</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="trade_notes" id="tn_never" value="never"><label class="form-check-label" for="tn_never">Never</label></div>
+            </div>
+        </section>
+
+        {# ------------------- Section 4 / 4 — What you want from this ------------------- #}
+        <section class="ob-section" data-step="4">
+            <h2 class="ob-section-title">What would you love this to tell you?</h2>
+            <p class="ob-section-sub">
+                Last few. We'll lean on these to shape your first Daily Review.
+            </p>
+
+            <div class="ob-question" data-required="help_most" data-multi="1">
+                <span class="ob-q-label">Which of these would help you most? (pick any that apply)</span>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_pl" value="pnl_by_strategy"><label class="form-check-label" for="hm_pl">My real P&amp;L by strategy</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_loss" value="recurring_loss_patterns"><label class="form-check-label" for="hm_loss">My recurring loss patterns</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_disc" value="discipline_over_time"><label class="form-check-label" for="hm_disc">How my discipline is trending</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_bench" value="vs_spy_qqq"><label class="form-check-label" for="hm_bench">How I'm doing vs SPY / QQQ</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_options" value="option_position_clarity"><label class="form-check-label" for="hm_options">A clearer view of my open options</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_forgot" value="trades_i_forgot"><label class="form-check-label" for="hm_forgot">Trades I forgot I had on</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_dividends" value="dividend_income"><label class="form-check-label" for="hm_dividends">Real dividend income I'm earning</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="help_most[]" id="hm_other" value="other" data-reveal="help_most_other_wrap"><label class="form-check-label" for="hm_other">Something else</label></div>
+                <div class="ob-other-text d-none" id="help_most_other_wrap">
+                    <input type="text" class="form-control form-control-sm"
+                           name="help_most_other" maxlength="500" placeholder="What else?">
+                </div>
+            </div>
+
+            <div class="ob-question" data-required="one_thing" data-min-len="10">
+                <span class="ob-q-label">If we could tell you ONE thing about your trading right now, what would you want it to be?</span>
+                <p class="ob-q-help">Plain words, one or two sentences.</p>
+                <textarea class="form-control" name="one_thing" rows="3" maxlength="1000"
+                          placeholder="The one thing you've been wondering about your trading…"></textarea>
+            </div>
+
+            <div class="ob-question" data-required="comfort">
+                <span class="ob-q-label">How honest do you want us to be?</span>
+                <div class="form-check"><input class="form-check-input" type="radio" name="comfort" id="co_all" value="show_everything"><label class="form-check-label" for="co_all">Show me everything, even the ugly stuff</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="comfort" id="co_kind" value="honest_but_kind"><label class="form-check-label" for="co_kind">Honest but kind</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="comfort" id="co_good" value="lead_with_good"><label class="form-check-label" for="co_good">Lead with what's working</label></div>
+            </div>
+        </section>
+
+        <div class="ob-section-error" id="obSectionError" role="alert"></div>
+
+        <div class="ob-actions">
+            <button type="button" class="btn btn-outline-secondary" id="obPrevBtn"
+                    style="visibility: hidden;">← Back</button>
+            <div class="ob-actions-right">
+                <button type="button" class="btn btn-primary" id="obNextBtn">Next →</button>
+                <button type="submit" class="btn btn-primary d-none" id="obSubmitBtn">
+                    Save my answers
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="processing-card{% if show_onboarding %} is-secondary{% endif %} mb-4" id="syncCard">
+    <div class="processing-icon" id="syncSpinner">
+        <span class="spinner-border{% if not show_onboarding %} text-primary{% else %} spinner-border-sm text-primary{% endif %}"
+              role="status" aria-hidden="true"></span>
+    </div>
+    <div>
+        <h2 class="fw-bold mb-2">{% if show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
+        <p class="processing-sub mb-2">
+            {% if show_onboarding %}
+                Usually about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}. Take your time with the survey.
+            {% else %}
+                Your latest info is uploaded and we’re creating fresh insights just for you.
+                This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
+            {% endif %}
+        </p>
+        <p class="small text-muted mb-{% if show_onboarding %}0{% else %}3{% endif %}" id="pipelineStateLabel" aria-live="polite">Just a sec…</p>
+        {% if not show_onboarding %}
+        <a href="{{ url_for('weekly_review', from_sync=1) }}" class="btn btn-outline-primary">
+            Open Daily Review
+        </a>
+        <p class="processing-sub small mt-3 mb-0">
+            We’ll take you to Daily Review when it’s ready, or you can open it anytime.
+        </p>
+        {% endif %}
+    </div>
+    {% if show_onboarding %}
+    <a class="secondary-link text-decoration-none"
+       href="{{ url_for('weekly_review', from_sync=1) }}">Open Daily Review →</a>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
+{% if show_onboarding %}
+<script>
+(function () {
+    var form = document.getElementById("onboardingForm");
+    var card = document.getElementById("onboardingCard");
+    if (!form || !card) return;
+
+    var sections = form.querySelectorAll(".ob-section");
+    var totalSteps = sections.length;
+    var stepLabel = document.getElementById("obStepLabel");
+    var progressFill = document.getElementById("obProgressFill");
+    var prevBtn = document.getElementById("obPrevBtn");
+    var nextBtn = document.getElementById("obNextBtn");
+    var submitBtn = document.getElementById("obSubmitBtn");
+    var sectionError = document.getElementById("obSectionError");
+    var dismissBtn = document.getElementById("obDismissBtn");
+
+    var current = 1;
+
+    // Pause the sync poll's auto-redirect as soon as the user starts
+    // engaging with the form, so we don't yank them out mid-question.
+    // Cleared on submit / skip.
+    window.__onboardingHoldRedirect = false;
+    var hold = function () { window.__onboardingHoldRedirect = true; };
+    form.addEventListener("focusin", hold, { once: true });
+    form.addEventListener("change", hold, { once: true });
+
+    // Reveal-on-select for "Something else" rows. Hide all reveals
+    // initially, then toggle when their controlling input is the
+    // selected radio / a checked checkbox.
+    function syncReveals() {
+        form.querySelectorAll("[data-reveal]").forEach(function (input) {
+            var wrap = document.getElementById(input.getAttribute("data-reveal"));
+            if (!wrap) return;
+            var show;
+            if (input.type === "radio") {
+                show = input.checked;
+                // For radios, also hide any other reveal in the same group.
+                if (show) {
+                    var siblings = form.querySelectorAll(
+                        "input[type=radio][name='" + input.name + "'][data-reveal]"
+                    );
+                    siblings.forEach(function (sib) {
+                        if (sib !== input) {
+                            var otherWrap = document.getElementById(sib.getAttribute("data-reveal"));
+                            if (otherWrap) otherWrap.classList.add("d-none");
+                        }
+                    });
+                }
+            } else {
+                show = input.checked;
+            }
+            wrap.classList.toggle("d-none", !show);
+        });
+    }
+    form.addEventListener("change", syncReveals);
+    syncReveals();
+
+    function showStep(n) {
+        current = Math.max(1, Math.min(totalSteps, n));
+        sections.forEach(function (s) {
+            s.classList.toggle("is-active",
+                parseInt(s.getAttribute("data-step"), 10) === current);
+        });
+        stepLabel.textContent = "Step " + current + " of " + totalSteps;
+        progressFill.style.width = ((current / totalSteps) * 100) + "%";
+        prevBtn.style.visibility = current === 1 ? "hidden" : "visible";
+        if (current === totalSteps) {
+            nextBtn.classList.add("d-none");
+            submitBtn.classList.remove("d-none");
+        } else {
+            nextBtn.classList.remove("d-none");
+            submitBtn.classList.add("d-none");
+        }
+        sectionError.textContent = "";
+        // Scroll to top of card so the user always starts at the headline.
+        if (card.scrollIntoView) {
+            card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+
+    function activeSection() {
+        return form.querySelector(".ob-section.is-active");
+    }
+
+    // Returns null on success, or an error message string. Highlights
+    // the first missing question by adding .border-danger to its wrapper.
+    function validateActive() {
+        var section = activeSection();
+        if (!section) return null;
+        section.querySelectorAll(".ob-question.is-missing").forEach(function (q) {
+            q.classList.remove("is-missing");
+        });
+        var qs = section.querySelectorAll(".ob-question[data-required]");
+        for (var i = 0; i < qs.length; i++) {
+            var q = qs[i];
+            var key = q.getAttribute("data-required");
+            var multi = q.getAttribute("data-multi") === "1";
+            var minLen = parseInt(q.getAttribute("data-min-len") || "0", 10);
+            var ok = false;
+            if (multi) {
+                ok = !!q.querySelector("input[type=checkbox][name='" + key + "[]']:checked");
+            } else if (q.querySelector("input[type=radio]")) {
+                ok = !!q.querySelector("input[type=radio][name='" + key + "']:checked");
+            } else if (q.querySelector("textarea, input[type=text]")) {
+                var el = q.querySelector("textarea, input[type=text][name='" + key + "']");
+                var v = (el && el.value || "").trim();
+                ok = v.length >= (minLen || 1);
+                if (!ok && minLen) {
+                    q.classList.add("is-missing");
+                    return "That last one needs at least " + minLen + " characters.";
+                }
+            }
+            if (!ok) {
+                q.classList.add("is-missing");
+                return "Please answer the highlighted question.";
+            }
+        }
+        return null;
+    }
+
+    nextBtn.addEventListener("click", function () {
+        var err = validateActive();
+        if (err) {
+            sectionError.textContent = err;
+            return;
+        }
+        showStep(current + 1);
+    });
+
+    prevBtn.addEventListener("click", function () {
+        sectionError.textContent = "";
+        showStep(current - 1);
+    });
+
+    dismissBtn.addEventListener("click", function () {
+        if (!confirm("Skip the survey? You can fill it out later from your profile.")) return;
+        window.__onboardingHoldRedirect = false;
+        card.parentNode.removeChild(card);
+        // Restore the sync card to its original "hero" layout.
+        var sync = document.getElementById("syncCard");
+        if (sync) sync.classList.remove("is-secondary");
+    });
+
+    form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var err = validateActive();
+        if (err) {
+            sectionError.textContent = err;
+            return;
+        }
+        sectionError.textContent = "";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+
+        var fd = new FormData(form);
+        fetch(form.action, {
+            method: "POST",
+            body: fd,
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        })
+            .then(function (r) {
+                return r.json().then(function (j) { return { status: r.status, body: j }; });
+            })
+            .then(function (res) {
+                if (res.body && res.body.ok) {
+                    window.__onboardingHoldRedirect = false;
+                    card.innerHTML =
+                        '<div class="ob-thanks">' +
+                        '<div class="ob-thanks-emoji" aria-hidden="true">✨</div>' +
+                        '<div class="ob-thanks-title">Thanks — got it.</div>' +
+                        '<div class="ob-thanks-sub">' +
+                        'We\'ll use this to shape your first Daily Review. ' +
+                        'Hang tight, we\'re almost done crunching your data.' +
+                        '</div></div>';
+                    var sync = document.getElementById("syncCard");
+                    if (sync) sync.classList.remove("is-secondary");
+                } else {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Save my answers";
+                    var msg = (res.body && res.body.error) ||
+                        "Couldn't save that just now. Try again in a moment.";
+                    sectionError.textContent = msg;
+                    // If server reported missing keys, jump to the first
+                    // section that contains a missing question.
+                    var missing = res.body && res.body.missing;
+                    if (Array.isArray(missing) && missing.length) {
+                        for (var i = 0; i < sections.length; i++) {
+                            var s = sections[i];
+                            for (var j = 0; j < missing.length; j++) {
+                                if (s.querySelector(".ob-question[data-required='" + missing[j] + "']")) {
+                                    showStep(parseInt(s.getAttribute("data-step"), 10));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+            .catch(function () {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Save my answers";
+                sectionError.textContent = "Network hiccup. Try again in a moment.";
+            });
+    });
+
+    showStep(1);
+})();
+</script>
+<style>
+    .ob-question.is-missing {
+        border-left: 3px solid #dc3545;
+        padding-left: .75rem;
+        margin-left: -.75rem;
+    }
+</style>
+{% endif %}
 {% include "includes/_github_actions_poll.html" %}
 {% endblock %}

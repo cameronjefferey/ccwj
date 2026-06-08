@@ -30,6 +30,7 @@ with exit_stats as (
     select
         account,
         user_id,
+        tenant_id,
         strategy,
         count(*)                                                as total_closed,
         countif(data_reliable)                                  as reliable_contracts,
@@ -59,7 +60,7 @@ with exit_stats as (
             nullif(count(*), 0)
         ) * 100, 0)                                             as pct_contracts_reliable
     from {{ ref('int_option_exit_analysis') }}
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 /*
@@ -73,6 +74,7 @@ roll_stats as (
     select
         r.account,
         r.user_id,
+        r.tenant_id,
         sc.strategy,
         count(*)                                    as num_rolls,
         round(avg(r.dte_at_roll), 1)                as avg_dte_at_roll,
@@ -118,9 +120,10 @@ roll_stats as (
     inner join {{ ref('int_strategy_classification') }} sc
         on r.account = sc.account
         and (r.user_id is not distinct from sc.user_id)
+        and (r.tenant_id is not distinct from sc.tenant_id)
         and r.old_trade_symbol = sc.trade_symbol
         and sc.trade_group_type = 'option_contract'
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 dte_performance as (
@@ -132,6 +135,7 @@ dte_performance as (
     select
         account,
         user_id,
+        tenant_id,
         strategy,
         dte_bucket,
         sum(num_trades) as bucket_trades,
@@ -141,7 +145,7 @@ dte_performance as (
         ) * 100, 1) as bucket_win_rate,
         sum(total_pnl) as bucket_pnl
     from {{ ref('mart_option_trades_by_kind') }}
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
     having sum(num_trades) >= 3
 ),
 
@@ -151,7 +155,7 @@ best_dte as (
             -- After bucket_win_rate, prefer buckets with more trades so ties
             -- break toward statistically meaningful buckets (not a 1-trade fluke).
             row_number() over (
-                partition by account, user_id, strategy
+                partition by tenant_id, account, user_id, strategy
                 order by bucket_win_rate desc, bucket_trades desc
             ) as rn
         from dte_performance
@@ -164,7 +168,7 @@ worst_dte as (
             -- Lowest bucket_win_rate first; if two buckets tie on rate, prefer
             -- the one with more trades so the worst bucket is not a 1-trade fluke.
             row_number() over (
-                partition by account, user_id, strategy
+                partition by tenant_id, account, user_id, strategy
                 order by bucket_win_rate asc, bucket_trades desc
             ) as rn
         from dte_performance
@@ -172,23 +176,25 @@ worst_dte as (
 ),
 
 base as (
-    select distinct account, user_id, strategy
+    select distinct account, user_id, tenant_id, strategy
     from (
-        select account, user_id, strategy
+        select account, user_id, tenant_id, strategy
         from {{ ref('int_option_exit_analysis') }}
         union distinct
         select
             r.account,
             r.user_id,
+            r.tenant_id,
             sc.strategy
         from {{ ref('int_option_rolls') }} r
         inner join {{ ref('int_strategy_classification') }} sc
             on r.account = sc.account
             and (r.user_id is not distinct from sc.user_id)
+            and (r.tenant_id is not distinct from sc.tenant_id)
             and r.old_trade_symbol = sc.trade_symbol
             and sc.trade_group_type = 'option_contract'
         union distinct
-        select account, user_id, strategy
+        select account, user_id, tenant_id, strategy
         from {{ ref('mart_option_trades_by_kind') }}
     )
 )
@@ -196,8 +202,8 @@ base as (
 select
     b.account,
     b.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively (part of the grain).
+    b.tenant_id,
     b.strategy,
 
     coalesce(e.total_closed, 0)                 as total_closed,
@@ -240,19 +246,20 @@ from base b
 left join exit_stats e
     on b.account = e.account
    and (b.user_id is not distinct from e.user_id)
+   and (b.tenant_id is not distinct from e.tenant_id)
    and b.strategy = e.strategy
 left join roll_stats r
     on b.account = r.account
    and (b.user_id is not distinct from r.user_id)
+   and (b.tenant_id is not distinct from r.tenant_id)
    and b.strategy = r.strategy
 left join best_dte bd
     on b.account = bd.account
    and (b.user_id is not distinct from bd.user_id)
+   and (b.tenant_id is not distinct from bd.tenant_id)
    and b.strategy = bd.strategy
 left join worst_dte wd
     on b.account = wd.account
    and (b.user_id is not distinct from wd.user_id)
+   and (b.tenant_id is not distinct from wd.tenant_id)
    and b.strategy = wd.strategy
-left join {{ ref('dim_broker_tenants') }} dba
-    on b.account = dba.account_name
-    and (b.user_id is not distinct from dba.user_id)

@@ -16,24 +16,17 @@ with daily_equity as (
     select
         account,
         user_id,
+        tenant_id,
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
-),
-
-with_weeks as (
-    select
-        account,
-        user_id,
-        date_trunc(date, isoweek) as week_start,
-        account_value
-    from daily_equity
 ),
 
 week_bounds as (
     select
         account,
         user_id,
+        tenant_id,
         week_start,
         min_by(account_value, date) as account_value_start,
         max_by(account_value, date) as account_value_end
@@ -41,26 +34,20 @@ week_bounds as (
         select
             account,
             user_id,
-            week_start,
+            tenant_id,
             date,
+            date_trunc(date, isoweek) as week_start,
             account_value
-        from (
-            select
-                account,
-                user_id,
-                date,
-                date_trunc(date, isoweek) as week_start,
-                account_value
-            from daily_equity
-        )
+        from daily_equity
     )
-    group by 1, 2, 3
+    group by tenant_id, account, user_id, week_start
 ),
 
 closed_trades as (
     select
         account,
         user_id,
+        tenant_id,
         week_start,
         total_pnl as pnl_closed_trades
     from {{ ref('mart_weekly_summary') }}
@@ -70,17 +57,18 @@ dividends_other as (
     select
         account,
         user_id,
+        tenant_id,
         date_trunc(date, isoweek) as week_start,
         sum(dividends_amount + other_amount) as pnl_dividends_other
     from {{ ref('mart_daily_pnl') }}
-    group by 1, 2, 3
+    group by tenant_id, account, user_id, week_start
 )
 
 select
     wb.account,
     wb.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from mart_account_equity_daily.
+    wb.tenant_id,
     wb.week_start,
     wb.account_value_start,
     wb.account_value_end,
@@ -94,13 +82,12 @@ from week_bounds wb
 left join closed_trades ct
   on wb.account = ct.account
  and (wb.user_id is not distinct from ct.user_id)
+ and (wb.tenant_id is not distinct from ct.tenant_id)
  and wb.week_start = ct.week_start
 left join dividends_other do
   on wb.account = do.account
  and (wb.user_id is not distinct from do.user_id)
+ and (wb.tenant_id is not distinct from do.tenant_id)
  and wb.week_start = do.week_start
-left join {{ ref('dim_broker_tenants') }} dba
-  on wb.account = dba.account_name
- and (wb.user_id is not distinct from dba.user_id)
-order by wb.account, wb.user_id, wb.week_start
+order by wb.tenant_id, wb.account, wb.user_id, wb.week_start
 

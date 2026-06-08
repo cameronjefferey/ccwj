@@ -8,6 +8,7 @@
 -- writeup of the bug. If this test fails, someone reverted that
 -- override or added a new code path that bypasses it.
 select
+    tenant_id,
     account,
     user_id,
     trade_symbol,

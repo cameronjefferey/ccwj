@@ -61,6 +61,7 @@
 -- have received).
 with equity_events as (
     select
+        h.tenant_id,
         h.account,
         h.user_id,
         h.underlying_symbol as symbol,
@@ -89,6 +90,7 @@ ex_divs as (
 
 holdings_keys as (
     select distinct
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol
@@ -98,6 +100,7 @@ holdings_keys as (
 
 holdings_meta as (
     select
+        h.tenant_id,
         h.account,
         h.user_id,
         h.symbol,
@@ -107,17 +110,20 @@ holdings_meta as (
     left join equity_events e
         on  e.account = h.account
         and (e.user_id is not distinct from h.user_id)
+        and (e.tenant_id is not distinct from h.tenant_id)
         and e.symbol  = h.symbol
     left join {{ ref('stg_current') }} c
         on  c.account            = h.account
         and (c.user_id is not distinct from h.user_id)
+        and (c.tenant_id is not distinct from h.tenant_id)
         and c.underlying_symbol  = h.symbol
         and c.instrument_type    = 'Equity'
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 csv_dividend_keys as (
     select distinct
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol
@@ -127,6 +133,7 @@ csv_dividend_keys as (
 
 drip_keys as (
     select distinct
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol
@@ -135,6 +142,7 @@ drip_keys as (
 
 shares_on_exdiv as (
     select
+        hm.tenant_id,
         hm.account,
         hm.user_id,
         hm.symbol,
@@ -157,12 +165,14 @@ shares_on_exdiv as (
     left join equity_events ee
         on  ee.account = hm.account
         and (ee.user_id is not distinct from hm.user_id)
+        and (ee.tenant_id is not distinct from hm.tenant_id)
         and ee.symbol  = hm.symbol
-    group by 1, 2, 3, 4, 5, 7, 8
+    group by 1, 2, 3, 4, 5, 6, 8, 9
 ),
 
 synthetic_events as (
     select
+        s.tenant_id,
         s.account,
         s.user_id,
         s.symbol,
@@ -173,10 +183,12 @@ synthetic_events as (
     left join csv_dividend_keys cdk
         on  cdk.account = s.account
         and (cdk.user_id is not distinct from s.user_id)
+        and (cdk.tenant_id is not distinct from s.tenant_id)
         and cdk.symbol  = s.symbol
     left join drip_keys dk
         on  dk.account = s.account
         and (dk.user_id is not distinct from s.user_id)
+        and (dk.tenant_id is not distinct from s.tenant_id)
         and dk.symbol  = s.symbol
     where s.shares_held > 0
       and cdk.account is null
@@ -189,6 +201,7 @@ synthetic_events as (
 
 csv_events as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -200,9 +213,10 @@ csv_events as (
 ),
 
 drip_events as (
-    -- Per (account, user_id, symbol): keep DRIPs only when there's no
-    -- CSV dividend stream for the same tuple (CSV always wins).
+    -- Per (tenant_id, account, user_id, symbol): keep DRIPs only when
+    -- there's no CSV dividend stream for the same tuple (CSV always wins).
     select
+        d.tenant_id,
         d.account,
         d.user_id,
         d.underlying_symbol as symbol,
@@ -213,12 +227,12 @@ drip_events as (
     left join csv_dividend_keys cdk
         on  cdk.account = d.account
         and (cdk.user_id is not distinct from d.user_id)
+        and (cdk.tenant_id is not distinct from d.tenant_id)
         and cdk.symbol  = d.underlying_symbol
     where cdk.account is null
 ),
 
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
--- Consolidate the union and left-join dim_broker_tenants.
+-- v2 tenant_id is carried natively from staging; no dim join needed.
 all_events as (
     select * from csv_events
     union all
@@ -227,10 +241,4 @@ all_events as (
     select * from synthetic_events
 )
 
-select
-    f.*,
-    d.tenant_id
-from all_events f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
+select * from all_events

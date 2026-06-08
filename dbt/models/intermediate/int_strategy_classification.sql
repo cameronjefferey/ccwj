@@ -42,6 +42,7 @@ crypto_symbols as (
 ---------------------------------------------------------------------
 equity_options_summary as (
     select
+        e.tenant_id,
         e.account,
         e.user_id,
         e.symbol,
@@ -62,8 +63,9 @@ equity_options_summary as (
     left join option_contracts oc
         on e.account = oc.account
         and (e.user_id is not distinct from oc.user_id)
+        and (e.tenant_id is not distinct from oc.tenant_id)
         and e.symbol = oc.underlying_symbol
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 ---------------------------------------------------------------------
@@ -71,6 +73,7 @@ equity_options_summary as (
 ---------------------------------------------------------------------
 put_assignments as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol,
@@ -83,6 +86,7 @@ put_assignments as (
 
 equity_from_assignment as (
     select distinct
+        e.tenant_id,
         e.account,
         e.user_id,
         e.symbol,
@@ -91,6 +95,7 @@ equity_from_assignment as (
     join put_assignments pa
         on e.account = pa.account
         and (e.user_id is not distinct from pa.user_id)
+        and (e.tenant_id is not distinct from pa.tenant_id)
         and e.symbol = pa.underlying_symbol
         and abs(date_diff(e.open_date, pa.assignment_date, day)) <= 5
 ),
@@ -103,11 +108,12 @@ spread_legs as (
     -- Self-join keyed on (account, user_id) so two users with the same
     -- account label and similar option positions don't get classified
     -- as spreading against each other.
-    select distinct a.account, a.user_id, a.trade_symbol
+    select distinct a.tenant_id, a.account, a.user_id, a.trade_symbol
     from option_contracts a
     join option_contracts b
         on a.account           = b.account
         and (a.user_id is not distinct from b.user_id)
+        and (a.tenant_id is not distinct from b.tenant_id)
         and a.underlying_symbol = b.underlying_symbol
         and a.option_expiry     = b.option_expiry
         and a.option_type       = b.option_type
@@ -117,11 +123,12 @@ spread_legs as (
 
     union distinct
 
-    select distinct b.account, b.user_id, b.trade_symbol
+    select distinct b.tenant_id, b.account, b.user_id, b.trade_symbol
     from option_contracts a
     join option_contracts b
         on a.account           = b.account
         and (a.user_id is not distinct from b.user_id)
+        and (a.tenant_id is not distinct from b.tenant_id)
         and a.underlying_symbol = b.underlying_symbol
         and a.option_expiry     = b.option_expiry
         and a.option_type       = b.option_type
@@ -137,6 +144,7 @@ spread_legs as (
 ---------------------------------------------------------------------
 pmcc_short_calls as (
     select distinct
+        tenant_id,
         account,
         user_id,
         short_trade_symbol as trade_symbol
@@ -148,6 +156,7 @@ pmcc_short_calls as (
 ---------------------------------------------------------------------
 options_classified as (
     select
+        oc.tenant_id,
         oc.account,
         oc.user_id,
         oc.underlying_symbol                 as symbol,
@@ -219,11 +228,13 @@ options_classified as (
     left join spread_legs sl
         on oc.account = sl.account
         and (oc.user_id is not distinct from sl.user_id)
+        and (oc.tenant_id is not distinct from sl.tenant_id)
         and oc.trade_symbol = sl.trade_symbol
     -- Check for PMCC (short call covered by long call on same underlying)
     left join pmcc_short_calls pmcc
         on oc.account = pmcc.account
         and (oc.user_id is not distinct from pmcc.user_id)
+        and (oc.tenant_id is not distinct from pmcc.tenant_id)
         and oc.trade_symbol = pmcc.trade_symbol
     -- Check for overlapping equity session (Covered Call / Protective Put detection).
     --
@@ -242,6 +253,7 @@ options_classified as (
     -- mart's classification row count stays exactly one per option contract.
     left join (
         select
+            oc2.tenant_id,
             oc2.account,
             oc2.user_id,
             oc2.trade_symbol,
@@ -252,6 +264,7 @@ options_classified as (
         join equity_sessions e
             on oc2.account = e.account
             and (oc2.user_id is not distinct from e.user_id)
+            and (oc2.tenant_id is not distinct from e.tenant_id)
             and oc2.underlying_symbol = e.symbol
             and oc2.open_date >= e.open_date
             and oc2.open_date <= case
@@ -259,7 +272,7 @@ options_classified as (
                 else e.last_trade_date
             end
         qualify row_number() over (
-            partition by oc2.account, oc2.user_id, oc2.trade_symbol
+            partition by oc2.tenant_id, oc2.account, oc2.user_id, oc2.trade_symbol
             order by case when e.status = 'Open' then 0 else 1 end,
                      e.max_quantity_held desc nulls last,
                      e.open_date desc,
@@ -268,6 +281,7 @@ options_classified as (
     ) e
         on oc.account = e.account
         and (oc.user_id is not distinct from e.user_id)
+        and (oc.tenant_id is not distinct from e.tenant_id)
         and oc.trade_symbol = e.trade_symbol
 ),
 
@@ -280,17 +294,19 @@ options_classified as (
 -- unrealized = total_pnl − realized).
 session_realized as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
         session_id,
         sum(realized_pnl) as realized_pnl
     from {{ ref('int_closed_equity_legs') }}
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 equity_classified as (
     select
+        e.tenant_id,
         e.account,
         e.user_id,
         e.symbol,
@@ -348,16 +364,19 @@ equity_classified as (
     left join equity_options_summary eos
         on e.account = eos.account
         and (e.user_id is not distinct from eos.user_id)
+        and (e.tenant_id is not distinct from eos.tenant_id)
         and e.symbol = eos.symbol
         and e.session_id = eos.session_id
     left join equity_from_assignment efa
         on e.account = efa.account
         and (e.user_id is not distinct from efa.user_id)
+        and (e.tenant_id is not distinct from efa.tenant_id)
         and e.symbol = efa.symbol
         and e.session_id = efa.session_id
     left join session_realized sr
         on e.account = sr.account
         and (e.user_id is not distinct from sr.user_id)
+        and (e.tenant_id is not distinct from sr.tenant_id)
         and e.symbol = sr.symbol
         and e.session_id = sr.session_id
     left join crypto_symbols cs
@@ -374,19 +393,11 @@ classified as (
 )
 
 ---------------------------------------------------------------------
--- 7. v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
---
--- The classified CTEs above explicitly enumerate columns and don't
--- include tenant_id, so we resolve it at the output by joining
--- ``dim_broker_tenants`` on (account, user_id). The dim is built from
--- the same seeds and (account, user_id) → tenant_id is functional by
--- construction. Rows the dim doesn't know about (no broker connection,
--- demo data) get NULL — fail-closed at the Flask filter layer.
+-- 7. v2 tenant_id is carried natively from staging through both the
+-- equity-session and option-contract grains (each classified CTE
+-- selects tenant_id as its first column), so no dim_broker_tenants
+-- join is needed. The prior left join on (account_name, user_id)
+-- fanned out when one (account_name, user_id) mapped to multiple
+-- tenant_ids (e.g. several Schwab accounts sharing a display label).
 ---------------------------------------------------------------------
-select
-    c.*,
-    d.tenant_id
-from classified c
-left join {{ ref('dim_broker_tenants') }} d
-    on c.account = d.account_name
-    and (c.user_id is not distinct from d.user_id)
+select * from classified

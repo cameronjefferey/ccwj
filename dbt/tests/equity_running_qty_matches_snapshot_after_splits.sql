@@ -63,6 +63,7 @@ with split_symbols as (
 
 snapshot_open as (
     select
+        tenant_id,
         trim(account)             as account,
         user_id,
         trim(underlying_symbol)   as symbol,
@@ -71,23 +72,25 @@ snapshot_open as (
     where instrument_type = 'Equity'
       and coalesce(quantity, 0) > 0
       and trim(coalesce(underlying_symbol, '')) != ''
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 trade_derived_open as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
         sum(case when status = 'Open' then max_quantity_held else 0 end)
             as trade_open_qty
     from {{ ref('int_equity_sessions') }}
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 joined as (
     select
         ss.symbol,
+        s.tenant_id,
         s.account,
         s.user_id,
         s.snap_qty,
@@ -100,6 +103,7 @@ joined as (
     left join trade_derived_open t
         on  s.account = t.account
         and (s.user_id is not distinct from t.user_id)
+        and (s.tenant_id is not distinct from t.tenant_id)
         and s.symbol  = t.symbol
 )
 

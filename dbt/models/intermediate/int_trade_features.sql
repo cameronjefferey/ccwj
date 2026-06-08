@@ -21,6 +21,7 @@
 
 with strat as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -30,6 +31,7 @@ with strat as (
 
 option_kinds as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -83,10 +85,12 @@ options as (
     left join strat s
         on oc.account = s.account
         and (oc.user_id is not distinct from s.user_id)
+        and (oc.tenant_id is not distinct from s.tenant_id)
         and oc.trade_symbol = s.trade_symbol
     left join option_kinds ok
         on oc.account = ok.account
         and (oc.user_id is not distinct from ok.user_id)
+        and (oc.tenant_id is not distinct from ok.tenant_id)
         and oc.trade_symbol = ok.trade_symbol
     where oc.status = 'Closed'
       and oc.close_date is not null
@@ -125,6 +129,7 @@ equity as (
     left join strat s
         on es.account = s.account
         and (es.user_id is not distinct from s.user_id)
+        and (es.tenant_id is not distinct from s.tenant_id)
         and concat(es.symbol, '_session_', cast(es.session_id as string)) = s.trade_symbol
     where es.status = 'Closed'
       and es.last_trade_date is not null

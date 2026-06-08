@@ -30,6 +30,7 @@
 -- See int_split_factors.sql for the cumulative factor definition.
 with equity_trades as (
     select
+        h.tenant_id,
         h.account,
         h.user_id,
         h.underlying_symbol as symbol,
@@ -51,14 +52,16 @@ with equity_trades as (
     where h.instrument_type = 'Equity'
 ),
 
--- Window keyed by (account, user_id, symbol) so cross-tenant rows with
--- the same account label can never share a running quantity series. See
--- docs/USER_ID_TENANCY.md.
+-- Window keyed by (tenant_id, account, user_id, symbol) so two physical
+-- accounts that share a display label (e.g. multiple Schwab accounts both
+-- labeled "Schwab Account") can never share a running quantity series.
+-- tenant_id is the canonical per-account key; account + user_id stay in
+-- the grain so legacy NULL-tenant rows keep their v1 protection.
 running as (
     select
         *,
         sum(signed_quantity) over (
-            partition by account, user_id, symbol
+            partition by tenant_id, account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as running_qty
@@ -70,7 +73,7 @@ with_prev as (
         *,
         coalesce(
             lag(running_qty) over (
-                partition by account, user_id, symbol
+                partition by tenant_id, account, user_id, symbol
                 order by trade_date, action
             ),
             0
@@ -93,7 +96,7 @@ sessions as (
                 else 0
             end
         ) over (
-            partition by account, user_id, symbol
+            partition by tenant_id, account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as session_id
@@ -102,6 +105,7 @@ sessions as (
 
 session_avg_cost as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -113,7 +117,7 @@ session_avg_cost as (
                  then quantity else 0 end)                                as total_sell_qty
     from sessions
     where session_id > 0
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Avg cost per share. Use the LARGER of total_buy_qty and total_sell_qty as
@@ -123,6 +127,7 @@ session_avg_cost as (
 -- holdings that aren't represented as buy rows).
 sell_events as (
     select
+        s.tenant_id,
         s.account,
         s.user_id,
         s.symbol,
@@ -155,6 +160,7 @@ sell_events as (
     join session_avg_cost sac
         on  s.account    = sac.account
         and (s.user_id is not distinct from sac.user_id)
+        and (s.tenant_id is not distinct from sac.tenant_id)
         and s.symbol     = sac.symbol
         and s.session_id = sac.session_id
     where s.action in ('equity_sell', 'equity_sell_short')
@@ -179,7 +185,7 @@ sell_events as (
 -- platform, etc.). Sum-of-realized-per-leg then still reconciles to the
 -- session's actual realized P&L on the sold shares only.
 session_status as (
-    select account, user_id, symbol, session_id, status, last_trade_date
+    select tenant_id, account, user_id, symbol, session_id, status, last_trade_date
     from {{ ref('int_equity_sessions') }}
 ),
 
@@ -204,8 +210,13 @@ user_other_holdings as (
 -- ``user_other_holdings`` alone misses intra-account holdings and we emit a
 -- phantom "Cost Written Off" for shares that are still on the books (IYW
 -- Dec 2025: buy-and-hold replot as -100% loss + chart vs hero split).
+-- Keyed on tenant_id (the physical account) so two Schwab accounts that
+-- share the "Schwab Account" display label don't borrow each other's
+-- holdings to suppress a legitimate writeoff; account is retained for the
+-- legacy NULL-tenant fallback.
 account_symbol_holdings as (
     select
+        tenant_id,
         account,
         trim(coalesce(underlying_symbol, '')) as symbol,
         sum(abs(coalesce(quantity, 0))) as shares_held_on_account
@@ -213,11 +224,12 @@ account_symbol_holdings as (
     where instrument_type = 'Equity'
       and coalesce(quantity, 0) != 0
       and trim(coalesce(underlying_symbol, '')) != ''
-    group by 1, 2
+    group by 1, 2, 3
 ),
 
 writeoffs as (
     select
+        sac.tenant_id,
         sac.account,
         sac.user_id,
         sac.symbol,
@@ -246,6 +258,7 @@ writeoffs as (
     join session_status ss
         on sac.account    = ss.account
         and (sac.user_id is not distinct from ss.user_id)
+        and (sac.tenant_id is not distinct from ss.tenant_id)
         and sac.symbol     = ss.symbol
         and sac.session_id = ss.session_id
     left join user_other_holdings uoh
@@ -253,6 +266,7 @@ writeoffs as (
         and sac.symbol = uoh.symbol
     left join account_symbol_holdings ash
         on sac.account = ash.account
+        and (sac.tenant_id is not distinct from ash.tenant_id)
         and sac.symbol = ash.symbol
     where ss.status = 'Closed'
       and sac.total_buy_qty > sac.total_sell_qty
@@ -284,26 +298,22 @@ writeoffs as (
 
 all_legs as (
     select
-        account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
+        tenant_id, account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
         sell_qty as quantity, sale_price_per_share, sell_proceeds,
         cost_basis, realized_pnl,
         'Closed' as status, 'Equity Sold' as description
     from sell_events
     union all
     select
-        account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
+        tenant_id, account, user_id, symbol, trade_symbol, session_id, open_date, close_date,
         sell_qty as quantity, sale_price_per_share, sell_proceeds,
         cost_basis, realized_pnl,
         'Closed' as status, 'Cost Written Off' as description
     from writeoffs
 )
 
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-select
-    f.*,
-    d.tenant_id
-from all_legs f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
-order by f.account, f.symbol, f.close_date
+-- v2 tenant_id is carried natively from staging through the session grain,
+-- so no dim_broker_tenants join is needed (the prior left join on
+-- (account_name, user_id) fanned out for shared display labels).
+select * from all_legs f
+order by f.tenant_id, f.account, f.symbol, f.close_date

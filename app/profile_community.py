@@ -205,6 +205,8 @@ def profile():
             if default_route == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
                 default_route = "weekly_review"
             digest_email = request.form.get("digest_email") == "on"
+            weekly_preview_email = request.form.get("weekly_preview_email") == "on"
+            product_update_email = request.form.get("product_update_email") == "on"
             compact_tables = request.form.get("compact_tables") == "on"
             if not update_user_profile(
                 current_user.id,
@@ -216,6 +218,8 @@ def profile():
                 week_starts_monday=week_starts_monday,
                 default_route=default_route,
                 digest_email=digest_email,
+                weekly_preview_email=weekly_preview_email,
+                product_update_email=product_update_email,
                 compact_tables=compact_tables,
             ):
                 flash("Could not save profile (database migration may be pending). Check server logs.", "danger")

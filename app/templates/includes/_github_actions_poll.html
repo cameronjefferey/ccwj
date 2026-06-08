@@ -1,4 +1,27 @@
 {% set _done = done_url|default(url_for("weekly_review")) %}
+<script>
+// Shared helper: defer a redirect while the user is mid-onboarding-form
+// on /sync/processing. ``window.__onboardingHoldRedirect`` is set true
+// by sync_processing.html when the user focuses the form; cleared on
+// submit / skip. On every other page the var is undefined → falsy →
+// no behavior change. The "ready when you are" label fires once the
+// first deferral happens so the user knows they're the gate.
+function __ghaSafeRedirect(url, label) {
+    if (!window.__onboardingHoldRedirect) {
+        window.location.href = url;
+        return;
+    }
+    if (label) {
+        label.textContent = "Ready when you are — finish your answer or open Daily Review.";
+    }
+    var iv = setInterval(function () {
+        if (!window.__onboardingHoldRedirect) {
+            clearInterval(iv);
+            window.location.href = url;
+        }
+    }, 1000);
+}
+</script>
 {% if head_sha %}
 <script>
 (function () {
@@ -18,7 +41,7 @@
                 }
                 if (d.state === "error" && d.error) {
                     if (label) label.textContent = "We’ll take you to Daily Review in a few minutes, or you can go there now with the button above.";
-                    if (n === 0) { setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000); }
+                    if (n === 0) { setTimeout(function () { __ghaSafeRedirect(doneUrl, label); }, 3 * 60 * 1000); }
                     return;
                 }
                 if (!d.ok) {
@@ -27,7 +50,7 @@
                 }
                 if (d.state === "success") {
                     if (label) label.textContent = "All set—bringing you to Daily Review…";
-                    window.location.href = doneUrl;
+                    __ghaSafeRedirect(doneUrl, label);
                     return;
                 }
                 if (d.state === "failure") {
@@ -63,7 +86,7 @@
     var doneUrl = {{ _done|tojson }};
     var label = document.getElementById("pipelineStateLabel");
     if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Daily Review in a few minutes, or you can go there now."; }
-    setTimeout(function () { window.location.href = doneUrl; }, 3 * 60 * 1000);
+    setTimeout(function () { __ghaSafeRedirect(doneUrl, label); }, 3 * 60 * 1000);
 })();
 </script>
 {% endif %}

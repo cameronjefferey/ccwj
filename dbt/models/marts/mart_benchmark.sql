@@ -6,6 +6,7 @@
 
 with positions as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -19,6 +20,7 @@ with positions as (
 
 equity_cost as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -27,7 +29,7 @@ equity_cost as (
     where instrument_type = 'Equity'
       and action = 'equity_buy'
       and cast(amount as float64) < 0
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 -- Entry/exit prices come from stg_daily_prices (market data, no user_id).
@@ -35,12 +37,12 @@ equity_cost as (
 -- regardless of which tenant owned the symbol — so we keep the join keys
 -- as-is here and don't add user_id to the price side.
 entry_prices as (
-    select account, user_id, symbol, close_price as entry_price
+    select tenant_id, account, user_id, symbol, close_price as entry_price
     from (
         select
-            p.account, p.user_id, p.symbol, dp.close_price,
+            p.tenant_id, p.account, p.user_id, p.symbol, dp.close_price,
             row_number() over (
-                partition by p.account, p.user_id, p.symbol
+                partition by p.tenant_id, p.account, p.user_id, p.symbol
                 order by dp.date asc
             ) as rn
         from positions p
@@ -54,12 +56,12 @@ entry_prices as (
 ),
 
 exit_prices as (
-    select account, user_id, symbol, close_price as exit_price
+    select tenant_id, account, user_id, symbol, close_price as exit_price
     from (
         select
-            p.account, p.user_id, p.symbol, dp.close_price,
+            p.tenant_id, p.account, p.user_id, p.symbol, dp.close_price,
             row_number() over (
-                partition by p.account, p.user_id, p.symbol
+                partition by p.tenant_id, p.account, p.user_id, p.symbol
                 order by dp.date desc
             ) as rn
         from positions p
@@ -75,8 +77,8 @@ exit_prices as (
 select
     p.account,
     p.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from positions_summary.
+    p.tenant_id,
     p.symbol,
     p.strategy,
     p.status,
@@ -97,15 +99,15 @@ from positions p
 left join equity_cost ec
     on p.account = ec.account
     and (p.user_id is not distinct from ec.user_id)
+    and (p.tenant_id is not distinct from ec.tenant_id)
     and p.symbol = ec.symbol
 left join entry_prices ep
     on p.account = ep.account
     and (p.user_id is not distinct from ep.user_id)
+    and (p.tenant_id is not distinct from ep.tenant_id)
     and p.symbol = ep.symbol
 left join exit_prices xp
     on p.account = xp.account
     and (p.user_id is not distinct from xp.user_id)
+    and (p.tenant_id is not distinct from xp.tenant_id)
     and p.symbol = xp.symbol
-left join {{ ref('dim_broker_tenants') }} dba
-    on p.account = dba.account_name
-    and (p.user_id is not distinct from dba.user_id)

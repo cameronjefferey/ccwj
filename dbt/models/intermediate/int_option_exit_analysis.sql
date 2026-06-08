@@ -21,6 +21,7 @@
 
 with contracts as (
     select
+        oc.tenant_id,
         oc.account,
         oc.user_id,
         oc.trade_symbol,
@@ -43,11 +44,13 @@ with contracts as (
     left join {{ ref('int_strategy_classification') }} s
         on oc.account = s.account
         and (oc.user_id is not distinct from s.user_id)
+        and (oc.tenant_id is not distinct from s.tenant_id)
         and oc.trade_symbol = s.trade_symbol
         and s.trade_group_type = 'option_contract'
     left join {{ ref('int_option_trade_kinds') }} tk
         on oc.account = tk.account
         and (oc.user_id is not distinct from tk.user_id)
+        and (oc.tenant_id is not distinct from tk.tenant_id)
         and oc.trade_symbol = tk.trade_symbol
     where oc.status = 'Closed'
       and oc.close_date is not null
@@ -55,6 +58,7 @@ with contracts as (
 
 peak_stats as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -64,11 +68,12 @@ peak_stats as (
         min(snapshot_date)   as first_snapshot,
         max(snapshot_date)   as last_snapshot
     from {{ ref('int_option_pnl_series') }}
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 peak_dates as (
     select
+        ps.tenant_id,
         ps.account,
         ps.user_id,
         ps.trade_symbol,
@@ -77,16 +82,17 @@ peak_dates as (
     join {{ ref('int_option_pnl_series') }} pnl
         on ps.account = pnl.account
         and (ps.user_id is not distinct from pnl.user_id)
+        and (ps.tenant_id is not distinct from pnl.tenant_id)
         and ps.trade_symbol = pnl.trade_symbol
         and pnl.unrealized_pnl = ps.peak_unrealized_pnl
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 )
 
 select
     c.account,
     c.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from staging through the contract grain.
+    c.tenant_id,
     c.trade_symbol,
     c.underlying_symbol,
     c.strategy,
@@ -162,11 +168,10 @@ from contracts c
 left join peak_stats ps
     on c.account = ps.account
     and (c.user_id is not distinct from ps.user_id)
+    and (c.tenant_id is not distinct from ps.tenant_id)
     and c.trade_symbol = ps.trade_symbol
 left join peak_dates pd
     on c.account = pd.account
     and (c.user_id is not distinct from pd.user_id)
+    and (c.tenant_id is not distinct from pd.tenant_id)
     and c.trade_symbol = pd.trade_symbol
-left join {{ ref('dim_broker_tenants') }} dba
-    on c.account = dba.account_name
-    and (c.user_id is not distinct from dba.user_id)

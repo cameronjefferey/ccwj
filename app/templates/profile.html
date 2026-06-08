@@ -303,11 +303,21 @@
                                 </select>
                             </div>
                             <div class="col-12">
+                                <p class="atlas-label mb-1">Email</p>
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
-                                    <label class="form-check-label" for="de">Weekly digest email <span class="text-muted">(when shipped)</span></label>
+                                    <label class="form-check-label" for="de">Weekly summary <span class="text-muted">— a recap of how your week traded</span></label>
                                 </div>
                                 <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="weekly_preview_email" id="wpe" {% if profile_row.weekly_preview_email %}checked{% endif %}>
+                                    <label class="form-check-label" for="wpe">Weekly preview <span class="text-muted">— upcoming earnings, expirations &amp; ex-dividends</span></label>
+                                </div>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="product_update_email" id="pue" {% if profile_row.product_update_email %}checked{% endif %}>
+                                    <label class="form-check-label" for="pue">Product updates &amp; reminders <span class="text-muted">— new features and a nudge if you've been away</span></label>
+                                </div>
+                                <p class="atlas-hint mt-1 mb-0">Account emails (password resets, broker reconnect notices) are always sent.</p>
+                                <div class="form-check form-switch mt-3">
                                     <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
                                     <label class="form-check-label" for="ct">Prefer tighter tables</label>
                                 </div>

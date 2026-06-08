@@ -6,17 +6,16 @@
 */
 
 select
+    -- v2 tenant_id is part of the grain (int_dividend_events carries it
+    -- natively from staging) so two physical accounts that share a
+    -- display label don't fuse their dividend totals.
+    tenant_id,
     account,
     user_id,
-    -- v2 tenant_id passthrough — upstream int_dividend_events already
-    -- joins to dim_broker_tenants; any_value is safe because the
-    -- mapping is functional on (account, user_id). See
-    -- docs/V2_TENANT_KEY_DESIGN.md.
-    any_value(tenant_id) as tenant_id,
     symbol,
     round(sum(amount), 2) as total_dividend_income,
     count(*)              as dividend_count,
     min(trade_date)       as first_dividend_date,
     max(trade_date)       as last_dividend_date
 from {{ ref('int_dividend_events') }}
-group by 1, 2, 4
+group by 1, 2, 3, 4

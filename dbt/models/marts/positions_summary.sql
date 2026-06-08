@@ -34,15 +34,12 @@ symbol_meta as (
 ---------------------------------------------------------------------
 strategy_summary as (
     select
+        -- v2 tenant_id is part of the grain (int_strategy_classification
+        -- carries it natively from staging) so two physical accounts that
+        -- share a display label don't fuse their per-symbol/strategy rows.
+        tenant_id,
         account,
         user_id,
-
-        -- v2 tenant_id passthrough. tenant_id is functional on
-        -- (account, user_id), so any_value preserves it across the
-        -- groupby. NULL rows carry through — the Flask filter
-        -- (``_filter_df_by_tenant_ids``) drops them. See
-        -- docs/V2_TENANT_KEY_DESIGN.md.
-        any_value(tenant_id) as tenant_id,
 
         symbol,
         strategy,
@@ -91,10 +88,7 @@ strategy_summary as (
         max(coalesce(close_date, current_date())) as last_trade_date
 
     from classified
-    -- account, user_id, symbol, strategy. tenant_id is in any_value(),
-    -- not the groupby — it's a passthrough, not a grouping key (functional
-    -- on the existing keys; see CTE comment above).
-    group by account, user_id, symbol, strategy
+    group by tenant_id, account, user_id, symbol, strategy
 ),
 
 ---------------------------------------------------------------------

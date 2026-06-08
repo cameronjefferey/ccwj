@@ -73,6 +73,7 @@
 -- already report the true +$1,822.50.
 with trade_daily as (
     select
+        h.tenant_id,
         h.account,
         h.user_id,
         h.underlying_symbol as symbol,
@@ -108,7 +109,7 @@ with trade_daily as (
         and sf.trade_date = h.trade_date
     where h.trade_date is not null
       and h.underlying_symbol is not null
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Dividends source: int_dividend_events. UNIONs CSV-reported dividends with
@@ -120,13 +121,14 @@ with trade_daily as (
 -- thousands of shares for years.
 dividend_daily as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
         trade_date as date,
         sum(amount) as dividends_amount
     from {{ ref('int_dividend_events') }}
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Daily close prices per (account, symbol, date). stg_daily_prices carries
@@ -217,6 +219,7 @@ prices as (
 -- only; stale brokers leave the row null and yfinance carries.
 broker_today_prices as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -241,6 +244,7 @@ broker_today_prices as (
 --                             (point-in-time, NOT accumulated)
 options_pnl_per_day as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -250,7 +254,7 @@ options_pnl_per_day as (
         sum(case when not is_realized_close then pnl_today else 0 end)
             as open_unrealized_today
     from {{ ref('int_option_contract_daily_pnl') }}
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Build the per-tenant date spine from rows that have user_id
@@ -259,24 +263,26 @@ options_pnl_per_day as (
 -- (account, user_id) pairs; without that the price-only rows would
 -- produce NULL user_id rows that the app filter would drop.
 known_tenants as (
-    select distinct account, user_id, symbol from trade_daily
+    select distinct tenant_id, account, user_id, symbol from trade_daily
     union distinct
-    select distinct account, user_id, symbol from {{ ref('int_daily_option_value') }}
+    select distinct tenant_id, account, user_id, symbol from {{ ref('int_daily_option_value') }}
     union distinct
-    select distinct account, user_id, symbol from options_pnl_per_day
+    select distinct tenant_id, account, user_id, symbol from options_pnl_per_day
 ),
 
 all_dates as (
-    select distinct account, user_id, symbol, date from (
-        select account, user_id, symbol, date from trade_daily
+    select distinct tenant_id, account, user_id, symbol, date from (
+        select tenant_id, account, user_id, symbol, date from trade_daily
         union distinct
-        select account, user_id, symbol, date from dividend_daily
+        select tenant_id, account, user_id, symbol, date from dividend_daily
         union distinct
-        select account, user_id, symbol, date from {{ ref('int_daily_option_value') }}
+        select tenant_id, account, user_id, symbol, date from {{ ref('int_daily_option_value') }}
         union distinct
-        select account, user_id, symbol, date from options_pnl_per_day
+        select tenant_id, account, user_id, symbol, date from options_pnl_per_day
         union distinct
-        select kt.account, kt.user_id, kt.symbol, p.date
+        -- prices have no tenant_id (global per account label); fan the
+        -- per-tenant spine across price dates via known_tenants.
+        select kt.tenant_id, kt.account, kt.user_id, kt.symbol, p.date
         from known_tenants kt
         join prices p
             on kt.account = p.account
@@ -285,12 +291,13 @@ all_dates as (
 ),
 
 daily_option as (
-    select account, user_id, symbol, date, option_market_value, option_cost_basis
+    select tenant_id, account, user_id, symbol, date, option_market_value, option_cost_basis
     from {{ ref('int_daily_option_value') }}
 ),
 
 joined as (
     select
+        ad.tenant_id,
         ad.account,
         ad.user_id,
         ad.symbol,
@@ -351,43 +358,54 @@ joined as (
     left join trade_daily td
         on ad.account = td.account
         and (ad.user_id is not distinct from td.user_id)
+        and (ad.tenant_id is not distinct from td.tenant_id)
         and ad.symbol = td.symbol
         and ad.date = td.date
     left join dividend_daily dd
         on ad.account = dd.account
         and (ad.user_id is not distinct from dd.user_id)
+        and (ad.tenant_id is not distinct from dd.tenant_id)
         and ad.symbol = dd.symbol
         and ad.date = dd.date
+    -- prices have no tenant_id (global per account label); join on
+    -- (account, symbol, date) only. The prices CTE is deduped to one row
+    -- per (account, symbol, date) so this never fans out.
     left join prices p
         on ad.account = p.account
         and ad.symbol = p.symbol
         and ad.date = p.date
-    -- Broker today price: keyed by (account, user_id, symbol, date).
-    -- Only contributes when ad.date = current_date() AND broker snapshot
-    -- is fresh (= today). For all other dates this join produces null and
-    -- the case expression above falls through to yfinance.
+    -- Broker today price: keyed by (tenant_id, account, user_id, symbol,
+    -- date). MUST include tenant_id — stg_current has one row PER TENANT
+    -- (distinct positions) for accounts that share a display label, so
+    -- without it this fans every today-row 5x. Only contributes when
+    -- ad.date = current_date() AND broker snapshot is fresh (= today).
     left join broker_today_prices bt
         on ad.account = bt.account
         and (ad.user_id is not distinct from bt.user_id)
+        and (ad.tenant_id is not distinct from bt.tenant_id)
         and ad.symbol = bt.symbol
         and ad.date = bt.date
     left join daily_option o
         on ad.account = o.account
         and (ad.user_id is not distinct from o.user_id)
+        and (ad.tenant_id is not distinct from o.tenant_id)
         and ad.symbol = o.symbol
         and ad.date = o.date
     left join options_pnl_per_day opd
         on ad.account = opd.account
         and (ad.user_id is not distinct from opd.user_id)
+        and (ad.tenant_id is not distinct from opd.tenant_id)
         and ad.symbol = opd.symbol
         and ad.date = opd.date
 ),
 
 -- Carry forward latest snapshot option values so every date (on or
 -- after first snapshot) has option P&L from snapshots. Window keyed
--- by (account, user_id, symbol) so two tenants can't share a fill.
+-- by (tenant_id, account, user_id, symbol) so two physical accounts
+-- sharing a display label can't share a fill.
 filled as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -400,16 +418,16 @@ filled as (
         equity_sell_qty,
         other_amount,
         last_value(close_price ignore nulls) over (
-            partition by account, user_id, symbol order by date
+            partition by tenant_id, account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as close_price,
         has_trade,
         last_value(option_market_value ignore nulls) over (
-            partition by account, user_id, symbol order by date
+            partition by tenant_id, account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as option_market_value,
         last_value(option_cost_basis ignore nulls) over (
-            partition by account, user_id, symbol order by date
+            partition by tenant_id, account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as option_cost_basis,
         -- ``cumulative_options_pnl`` is now realize-on-close cumulative.
@@ -431,11 +449,12 @@ filled as (
         sum(dividends_amount) over w  as cumulative_dividends_pnl,
         sum(other_amount) over w      as cumulative_other_pnl
     from joined
-    window w as (partition by account, user_id, symbol order by date)
+    window w as (partition by tenant_id, account, user_id, symbol order by date)
 ),
 
 final as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -459,21 +478,12 @@ final as (
 )
 
 ---------------------------------------------------------------------
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
---
--- mart_daily_pnl has a deep CTE chain (~15 CTEs) with explicit
--- column lists that don't carry tenant_id through. We attach it
--- once at the model output by joining against dim_broker_tenants
--- on (account, user_id) — the dim is built from the same seeds and
--- (account, user_id) → tenant_id is functional by construction.
--- Rows the dim doesn't know about (no broker connection, demo data)
--- get NULL — fail-closed at the Flask filter layer.
+-- v2 tenant_id is carried natively from staging through every
+-- tenant-bearing CTE and is part of the (tenant_id, account, user_id,
+-- symbol, date) grain, so no dim_broker_tenants join is needed. The
+-- prior left join on (account_name, user_id) fanned out when one
+-- (account_name, user_id) mapped to multiple tenant_ids (e.g. several
+-- Schwab accounts sharing the "Schwab Account" display label).
 ---------------------------------------------------------------------
-select
-    f.*,
-    d.tenant_id
-from final f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
-order by f.account, f.user_id, f.symbol, f.date
+select * from final f
+order by f.tenant_id, f.account, f.user_id, f.symbol, f.date

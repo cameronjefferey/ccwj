@@ -29,6 +29,7 @@ from app.routes import (  # noqa: E402
 STRATEGY_PERFORMANCE_QUERY = """
 SELECT
   account,
+  tenant_id,
   strategy,
   total_pnl,
   realized_pnl,
@@ -76,6 +77,7 @@ ORDER BY strategy, month_start
 STRATEGY_POSITIONS_QUERY = """
 SELECT
   account,
+  tenant_id,
   symbol,
   status,
   total_pnl,
@@ -370,8 +372,26 @@ def strategies():
         if df.empty:
             return render_template("strategies.html", **context)
 
+        # Disambiguating label map so several physical accounts sharing a
+        # base label (e.g. multiple "Schwab Account"s) read distinctly.
+        from app.routes import _tenant_label_map_for_user
+        try:
+            _tlabel = _tenant_label_map_for_user(current_user.id)
+        except Exception:
+            _tlabel = {}
+
+        def _acct_label(row):
+            tid = row.get("tenant_id") if hasattr(row, "get") else None
+            return (_tlabel.get(tid) if tid else None) or row.get("account")
+
         if "account" in df.columns:
-            context["accounts"] = sorted(df["account"].dropna().unique().tolist())
+            # Picker uses the user's full disambiguated account set when
+            # available so each physical account is independently selectable.
+            context["accounts"] = (
+                sorted(user_accounts)
+                if user_accounts
+                else sorted(df["account"].dropna().unique().tolist())
+            )
 
         for col in [
             "total_pnl", "realized_pnl", "unrealized_pnl", "premium_received", "premium_paid",
@@ -655,7 +675,7 @@ def strategies():
                     for _, r in acct_df.iterrows():
                         raw_wr = r.get("win_rate")
                         acct_rows.append({
-                            "account": r["account"],
+                            "account": _acct_label(r),
                             "total_return": float(r.get("total_return") or 0),
                             "realized_pnl": float(r.get("realized_pnl") or 0),
                             "num_trades": int(r.get("num_trades") or 0),
@@ -677,7 +697,7 @@ def strategies():
                         sym_rows = []
                         for _, r in pos_df.iterrows():
                             sym_rows.append({
-                                "account": r.get("account"),
+                                "account": _acct_label(r),
                                 "symbol": r.get("symbol"),
                                 "status": r.get("status"),
                                 "total_return": float(r.get("total_return") or 0),

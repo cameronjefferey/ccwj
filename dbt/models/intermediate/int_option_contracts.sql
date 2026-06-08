@@ -11,6 +11,7 @@
 
 with option_trades as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -28,11 +29,12 @@ with option_trades as (
 ),
 
 -- Predominant direction per contract (for signing expired / assigned quantities).
--- Keyed on (account, user_id, trade_symbol) so two users with the same
--- account label and the same option contract symbol don't get their
--- direction collapsed together.
+-- Keyed on (tenant_id, account, user_id, trade_symbol) so two physical
+-- accounts sharing a display label (e.g. multiple "Schwab Account"s) and
+-- the same option contract symbol don't get their direction collapsed.
 direction_lookup as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -45,11 +47,12 @@ direction_lookup as (
             else 'Bought'
         end as direction
     from option_trades
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 contract_summary as (
     select
+        o.tenant_id,
         o.account,
         o.user_id,
         o.trade_symbol,
@@ -154,14 +157,16 @@ contract_summary as (
     join direction_lookup d
         on o.account = d.account
         and (o.user_id is not distinct from d.user_id)
+        and (o.tenant_id is not distinct from d.tenant_id)
         and o.trade_symbol = d.trade_symbol
-    group by o.account, o.user_id, o.trade_symbol, o.underlying_symbol, d.direction
+    group by o.tenant_id, o.account, o.user_id, o.trade_symbol, o.underlying_symbol, d.direction
 ),
 
 -- Open options that appear in stg_current (e.g. Schwab snapshot) but have no
 -- matching rows in trade history yet — otherwise positions_summary stays empty.
 snapshot_only_options as (
     select
+        c.tenant_id,
         c.account,
         c.user_id,
         c.trade_symbol,
@@ -217,6 +222,7 @@ snapshot_only_options as (
           from contract_summary x
           where x.account = c.account
             and (x.user_id is not distinct from c.user_id)
+            and (x.tenant_id is not distinct from c.tenant_id)
             and x.trade_symbol = c.trade_symbol
       )
 ),
@@ -265,20 +271,25 @@ all_contracts as (
 --   net_cash_flow = premium received (or paid). That's exactly
 --   what the broker's ``option_expired`` event with amount=$0 will
 --   crystallize too. No double-counting, no risk of disagreement.
+-- The expiry-day close is universal market data (same for every tenant),
+-- and stg_daily_prices carries no tenant_id. Dedup to one row per
+-- (underlying_symbol, expiry_date) and join on symbol+date only — joining
+-- on the (account, user_id) label would fan out across physical accounts
+-- that share a display label and duplicate every option contract.
 expiry_close_lookup as (
     select
-        account,
-        user_id,
         symbol     as underlying_symbol,
         date       as expiry_date,
-        close_price
+        any_value(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
     where date        is not null
       and close_price is not null
+    group by 1, 2
 ),
 
 otm_at_expiry as (
     select
+        c.tenant_id,
         c.account,
         c.user_id,
         c.trade_symbol,
@@ -301,17 +312,15 @@ otm_at_expiry as (
         end as inferred_otm_today
     from all_contracts c
     left join expiry_close_lookup e
-        on c.account            = e.account
-        and (c.user_id is not distinct from e.user_id)
-        and c.underlying_symbol = e.underlying_symbol
+        on c.underlying_symbol = e.underlying_symbol
         and c.option_expiry     = e.expiry_date
 )
 
 select
     c.account,
     c.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from staging through the contract grain.
+    c.tenant_id,
     c.trade_symbol,
     c.underlying_symbol,
     c.option_expiry,
@@ -452,12 +461,11 @@ from all_contracts c
 left join otm_at_expiry iotm
     on c.account = iotm.account
     and (c.user_id is not distinct from iotm.user_id)
+    and (c.tenant_id is not distinct from iotm.tenant_id)
     and c.trade_symbol = iotm.trade_symbol
 left join {{ ref('stg_current') }} cur
     on c.account = cur.account
     and (c.user_id is not distinct from cur.user_id)
+    and (c.tenant_id is not distinct from cur.tenant_id)
     and c.trade_symbol = cur.trade_symbol
     and cur.instrument_type in ('Call', 'Put')
-left join {{ ref('dim_broker_tenants') }} dba
-    on c.account = dba.account_name
-    and (c.user_id is not distinct from dba.user_id)

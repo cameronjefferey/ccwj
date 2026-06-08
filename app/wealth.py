@@ -39,6 +39,7 @@ from app.routes import (
 
 WEALTH_DAILY_QUERY = """
 SELECT
+    tenant_id,
     account,
     user_id,
     date,
@@ -81,12 +82,18 @@ def _match_linked_account(user_accounts, requested: str):
 
 
 def _collapse_wealth_daily_duplicate_grain(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep one Wealth mart row per ``(account, date)`` before chart/summary sums.
+    """Keep one Wealth mart row per ``(tenant_id, account, date)`` before
+    chart/summary sums.
 
     ``_filter_df_by_accounts`` Stage 0/1 leniency can leave **both** legacy
     ``user_id IS NULL`` and populated-ID rows for the same account/day.
     ``groupby(\"date\").sum()`` would then double cash/equity (visible as a
     ~2× spike mid-range while hero matches the deduped last day).
+
+    The grain key leads with ``tenant_id`` so multiple physical accounts that
+    share the same display ``account`` label (e.g. 5 SnapTrade/Schwab accounts
+    all labeled "Schwab Account") are NOT collapsed into a single row — doing
+    so would silently drop 4 accounts' wealth from every chart/summary.
     """
     if df is None or df.empty:
         return df
@@ -96,13 +103,14 @@ def _collapse_wealth_daily_duplicate_grain(df: pd.DataFrame) -> pd.DataFrame:
     out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
     stab = "__r_i__"
     out[stab] = range(len(out))
-    ks = ["account", "date"]
+    has_tenant = "tenant_id" in out.columns and out["tenant_id"].notna().any()
+    ks = (["tenant_id"] if has_tenant else []) + ["account", "date"]
     if "user_id" in out.columns:
         uid_col = pd.to_numeric(out["user_id"], errors="coerce")
         out["__prefer_uid__"] = uid_col.notna().astype(int)
         out = out.sort_values(
             by=ks + ["__prefer_uid__", "user_id", stab],
-            ascending=[True, True, False, True, True],
+            ascending=([True] * len(ks)) + [False, True, True],
             na_position="last",
         ).drop_duplicates(subset=ks, keep="first").drop(columns=["__prefer_uid__"])
     else:
@@ -220,10 +228,13 @@ def _build_income_panel(df):
     if df is None or df.empty:
         return None
 
-    # Each (account, user_id) carries its own cumulative streak; sum
-    # the latest row per (account, user_id) and subtract the first row
-    # per same to get range totals.
-    if "user_id" in df.columns:
+    # Each (tenant_id, account, user_id) carries its own cumulative streak;
+    # sum the latest row per key and subtract the first row per same to get
+    # range totals. ``tenant_id`` leads so colliding "Schwab Account" labels
+    # don't fuse 5 physical accounts' cumulative dividend/interest streaks.
+    if "tenant_id" in df.columns and df["tenant_id"].notna().any():
+        keys = ["tenant_id", "account", "user_id"] if "user_id" in df.columns else ["tenant_id", "account"]
+    elif "user_id" in df.columns:
         keys = ["account", "user_id"]
     else:
         keys = ["account"]

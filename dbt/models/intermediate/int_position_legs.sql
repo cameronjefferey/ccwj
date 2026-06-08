@@ -29,22 +29,27 @@
       - Closed otherwise.
 
     Invariant (enforced by dbt test): at most one Open leg per
-    (user_id, account, symbol). The merge algorithm guarantees this by
-    construction — every still-open interval extends to today, and any
-    other interval that touches today gets merged in.
+    (tenant_id, account, user_id, symbol). The merge algorithm guarantees
+    this by construction — every still-open interval extends to today, and
+    any other interval that touches today gets merged in.
 
-    leg_id: sequential 1..N per (user_id, account, symbol) ordered by
-    open_date. Bookmarked URLs from the previous mart shape (where
-    orphan-options legs used negative ids) won't necessarily resolve
-    to the same activity but ?leg=<n> still works.
+    leg_id: sequential 1..N per (tenant_id, user_id, account, symbol)
+    ordered by open_date. Bookmarked URLs from the previous mart shape
+    (where orphan-options legs used negative ids) won't necessarily
+    resolve to the same activity but ?leg=<n> still works.
 
-    Tenancy: every CTE keys on (user_id, account, symbol). Cross-CTE
-    joins use IS NOT DISTINCT FROM on user_id so legacy NULL rows
-    still match each other but never leak across populated tenants.
+    Tenancy: every CTE keys on (tenant_id, account, user_id, symbol).
+    tenant_id is the canonical per-physical-account key (carried natively
+    from staging) so two accounts that share a display label (e.g. multiple
+    Schwab accounts both labeled "Schwab Account") never fuse their legs.
+    account + user_id stay in the grain so legacy NULL-tenant / demo rows
+    keep their v1 protection; cross-CTE joins use IS NOT DISTINCT FROM so
+    NULLs match each other but never leak across populated tenants.
 */
 
 with equity_intervals as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -64,6 +69,7 @@ with equity_intervals as (
 
 option_intervals as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -107,6 +113,7 @@ all_intervals_raw as (
 -- See ~/.cursor/skills/broker-sync-safety/SKILL.md (2026-05-11).
 all_intervals as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -123,7 +130,7 @@ all_intervals as (
         num_trades
     from all_intervals_raw
     qualify row_number() over (
-        partition by account, user_id, symbol, source, open_date, close_date
+        partition by tenant_id, account, user_id, symbol, source, open_date, close_date
         order by is_open desc,                  -- prefer the still-open copy
                  option_unrealized_pnl desc,    -- then the richer P&L copy
                  num_trades desc
@@ -139,7 +146,7 @@ ordered as (
     select
         *,
         row_number() over (
-            partition by user_id, account, symbol
+            partition by tenant_id, user_id, account, symbol
             order by open_date, close_date, source
         ) as rn
     from all_intervals
@@ -149,7 +156,7 @@ with_running_max as (
     select
         *,
         max(close_date) over (
-            partition by user_id, account, symbol
+            partition by tenant_id, user_id, account, symbol
             order by open_date, close_date, source
             rows between unbounded preceding and 1 preceding
         ) as prev_max_close
@@ -173,7 +180,7 @@ with_leg_seq as (
     select
         *,
         sum(is_new_leg) over (
-            partition by user_id, account, symbol
+            partition by tenant_id, user_id, account, symbol
             order by open_date, close_date, source
             rows between unbounded preceding and current row
         ) as leg_seq
@@ -182,6 +189,7 @@ with_leg_seq as (
 
 aggregated as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -198,11 +206,12 @@ aggregated as (
         sum(case when source = 'equity' then 1 else 0 end) as equity_session_count,
         max(case when is_open then 1 else 0 end)  as has_open_interval
     from with_leg_seq
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 final as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -225,18 +234,15 @@ final as (
         num_trades,
         equity_session_count = 0 as options_only,
         row_number() over (
-            partition by user_id, account, symbol
+            partition by tenant_id, user_id, account, symbol
             order by open_date, leg_id
         ) as display_leg_num,
         date_diff(last_activity_date, open_date, day) as days_held
     from aggregated
 )
 
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-select
-    f.*,
-    d.tenant_id
-from final f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
+-- v2 tenant_id is carried natively from staging through the session and
+-- contract grains, so no dim_broker_tenants join is needed. The prior
+-- left join on (account_name, user_id) fanned out for shared display
+-- labels (e.g. multiple Schwab accounts both labeled "Schwab Account").
+select * from final

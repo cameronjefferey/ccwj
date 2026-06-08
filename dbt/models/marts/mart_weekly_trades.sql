@@ -75,5 +75,5 @@ calc as (
 
 select *
 from calc
-order by account, user_id, week_start, symbol, trade_symbol
+order by tenant_id, account, user_id, week_start, symbol, trade_symbol
 

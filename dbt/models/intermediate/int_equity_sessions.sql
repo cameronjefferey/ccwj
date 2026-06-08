@@ -34,6 +34,7 @@
 -- See dbt/models/intermediate/int_split_factors.sql for the factor.
 with equity_trades as (
     select
+        h.tenant_id,
         h.account,
         h.user_id,
         h.underlying_symbol as symbol,
@@ -55,13 +56,17 @@ with equity_trades as (
 ),
 
 -- Running share count.
--- Window partitioned by (account, user_id, symbol) so two users with the
--- same account_name + symbol never share a running quantity series.
+-- Window partitioned by (tenant_id, account, user_id, symbol) so two
+-- physical accounts that share a display label (e.g. multiple Schwab
+-- accounts both labeled "Schwab Account") never fuse their running
+-- quantity series. tenant_id is the canonical per-account key; account
+-- + user_id remain in the grain so legacy NULL-tenant / demo rows keep
+-- their v1 (account, user_id) protection.
 running as (
     select
         *,
         sum(signed_quantity) over (
-            partition by account, user_id, symbol
+            partition by tenant_id, account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as running_qty
@@ -74,7 +79,7 @@ with_prev as (
         *,
         coalesce(
             lag(running_qty) over (
-                partition by account, user_id, symbol
+                partition by tenant_id, account, user_id, symbol
                 order by trade_date, action
             ),
             0
@@ -108,7 +113,7 @@ sessions as (
                 else 0
             end
         ) over (
-            partition by account, user_id, symbol
+            partition by tenant_id, account, user_id, symbol
             order by trade_date, action
             rows between unbounded preceding and current row
         ) as session_id
@@ -122,6 +127,7 @@ sessions as (
 -- treating the missing shares as a $0-proceeds loss.
 trade_session_summary as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -140,16 +146,18 @@ trade_session_summary as (
         count(*)         as num_trades
     from sessions
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
--- Per (account, user_id, symbol), how many trade sessions exist and what's
--- the highest session_id used. Snapshot-only sessions need a session_id
--- that doesn't collide with any existing trade session (e.g. trade_session
--- with id=1 followed by a fresh transferred-in lot must become id=2, not
--- a duplicate id=1 row that breaks every join keyed on session_id).
+-- Per (tenant_id, account, user_id, symbol), how many trade sessions exist
+-- and what's the highest session_id used. Snapshot-only sessions need a
+-- session_id that doesn't collide with any existing trade session (e.g.
+-- trade_session with id=1 followed by a fresh transferred-in lot must
+-- become id=2, not a duplicate id=1 row that breaks every join keyed on
+-- session_id).
 trade_sessions_by_symbol as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -160,7 +168,7 @@ trade_sessions_by_symbol as (
                 else 0
             end)                                       as cost_from_open_trade_sessions
     from trade_session_summary
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 -- Equity rows in the current snapshot whose share count is NOT explained
@@ -181,6 +189,7 @@ trade_sessions_by_symbol as (
 --      /position/IREN?account=Cameron+Investment for testingcameron.
 snapshot_equity_sessions as (
     select
+        c.tenant_id,
         c.account,
         c.user_id,
         c.underlying_symbol as symbol,
@@ -214,8 +223,10 @@ snapshot_equity_sessions as (
         on tsbs.account = c.account
         -- NULL-safe so legacy rows with user_id IS NULL still match the
         -- snapshot's NULL user_id (Stage 0 leniency); non-NULL on both
-        -- sides compares strictly.
+        -- sides compares strictly. tenant_id alignment keeps two physical
+        -- accounts that share a display label from cross-matching.
         and (tsbs.user_id is not distinct from c.user_id)
+        and (tsbs.tenant_id is not distinct from c.tenant_id)
         and tsbs.symbol = c.underlying_symbol
     where c.instrument_type = 'Equity'
       and coalesce(c.quantity, 0) != 0
@@ -263,19 +274,21 @@ user_total_holdings as (
     group by 1, 2
 ),
 
--- Identify the latest session per account/symbol (candidate for "Open")
+-- Identify the latest session per tenant/account/symbol (candidate for "Open")
 latest_session as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
         max(session_id) as latest_session_id
     from session_summary
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 final as (
     select
+        s.tenant_id,
         s.account,
         s.user_id,
         s.symbol,
@@ -421,12 +434,14 @@ final as (
 
     from session_summary s
     join latest_session ls
-        on s.account = ls.account
+        on (s.tenant_id is not distinct from ls.tenant_id)
+        and s.account = ls.account
         and (s.user_id is not distinct from ls.user_id)
         and s.symbol = ls.symbol
     left join {{ ref('stg_current') }} c
         on s.account = c.account
         and (s.user_id is not distinct from c.user_id)
+        and (s.tenant_id is not distinct from c.tenant_id)
         and s.symbol = c.underlying_symbol
         and c.instrument_type = 'Equity'
     left join user_total_holdings uth
@@ -434,15 +449,9 @@ final as (
         and s.symbol = uth.symbol
 )
 
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
--- Wrap final and left-join dim_broker_tenants on (account, user_id).
--- (account, user_id) → tenant_id is functional by construction; rows
--- the dim doesn't know about (no broker connection, demo data) get
--- NULL — fail-closed at the Flask filter layer.
-select
-    f.*,
-    d.tenant_id
-from final f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
+-- v2 tenant_id is carried natively from staging through every CTE (it is
+-- part of the session grain), so no dim_broker_tenants join is needed.
+-- The prior left join on (account_name, user_id) fanned out when one
+-- (account_name, user_id) mapped to multiple tenant_ids (e.g. several
+-- Schwab accounts sharing the "Schwab Account" display label).
+select * from final

@@ -92,8 +92,81 @@ def _norm_account_label(val) -> str:
 
 
 def _tenant_display_label(row) -> str:
-    """Display label for a broker_tenants row (nickname wins over account_name)."""
+    """Base display label for a broker_tenants row (nickname wins over account_name).
+
+    This is the *base* label only. When a user holds several physical
+    accounts that share the same base label (e.g. multiple Schwab
+    accounts all labeled "Schwab Account" because SnapTrade returned no
+    distinct mask), use ``_disambiguated_tenant_labels`` to get
+    per-tenant unique labels for the picker / scoping.
+    """
     return (row.get("display_nickname") or row.get("account_name") or "").strip()
+
+
+def _tenant_label_suffix(row) -> str:
+    """Stable, human-ish suffix to tell two same-base-label tenants apart.
+
+    Prefers the broker ``account_mask`` (shows the last 4, like
+    "••6342"); falls back to a short tail of the broker-stable
+    ``broker_uuid`` / ``tenant_id`` so the suffix never changes across
+    Postgres resets or re-syncs.
+    """
+    mask = (row.get("account_mask") or "").strip()
+    if mask:
+        tail = mask[-4:] if len(mask) >= 4 else mask
+        return f"\u2022\u2022{tail}"
+    uuid = (row.get("broker_uuid") or "").strip()
+    if uuid:
+        return "\u00b7" + uuid.replace("-", "")[-6:]
+    tid = (row.get("tenant_id") or "").strip()
+    return ("\u00b7" + tid[-6:]) if tid else ""
+
+
+def _disambiguated_tenant_labels(rows) -> dict:
+    """Map ``tenant_id -> unique display label`` for a user's tenants.
+
+    When two physical accounts share a base label, append a stable
+    per-tenant suffix (from ``account_mask`` / ``broker_uuid``) so the
+    account picker can address each one individually. Non-colliding
+    labels pass through unchanged. This is the display/URL-layer fix for
+    the SnapTrade "all 5 Schwab accounts labeled 'Schwab Account'"
+    collision — the warehouse already keys on ``tenant_id``.
+    """
+    from collections import Counter
+
+    base_counts = Counter()
+    for row in rows or []:
+        base = _tenant_display_label(row)
+        if base:
+            base_counts[base] += 1
+
+    out = {}
+    for row in rows or []:
+        tid = row.get("tenant_id")
+        base = _tenant_display_label(row)
+        if not tid or not base:
+            continue
+        if base_counts[base] > 1:
+            suffix = _tenant_label_suffix(row)
+            out[tid] = f"{base} ({suffix})" if suffix else base
+        else:
+            out[tid] = base
+    return out
+
+
+def _tenant_label_map_for_user(user_id) -> dict:
+    """``tenant_id -> disambiguated display label`` for one user, or ``{}``.
+
+    Convenience wrapper used by per-tenant groupby surfaces so the mart's
+    ``tenant_id`` can be rendered with a unique, human-readable label.
+    """
+    if user_id is None:
+        return {}
+    try:
+        rows = get_broker_tenants_for_user(user_id) or []
+    except Exception:
+        return {}
+    return _disambiguated_tenant_labels(rows)
 
 
 def _account_label_map(user_id) -> dict:
@@ -174,16 +247,40 @@ def _user_tenant_list():
 def _tenants_for_scope(selected_account=None):
     """Resolve tenant_ids for the current request scope.
 
-    Admin without ``?account=`` → ``None`` (no SQL filter).
-    Admin with ``?account=`` → tenant_ids whose display label matches.
-    Regular user → active tenant_ids, optionally narrowed via ``?account=``.
-    Unknown ``?account=`` values fall back to all of the user's tenants
-    (same safe default as the v2 design doc).
+    Resolution order:
+      1. ``?tenant=<tenant_id>`` — direct, broker-stable addressing. A
+         single physical account, even when its display label collides
+         with siblings. Validated against the user's owned tenants
+         (never let a URL widen tenancy); admin may address any tenant.
+      2. ``?account=<label>`` (legacy alias) — matches a base label OR a
+         disambiguated label (e.g. "Schwab Account (\u2022\u20226342)").
+         A bare colliding base label still selects all matching tenants
+         for backward compatibility.
+      3. No selection → admin: ``None`` (no SQL filter); user: all owned.
+
+    Unknown selections fall back to all of the user's tenants (same safe
+    default as the v2 design doc).
     """
     from app.db import fetch_all
 
     admin = is_admin(current_user.username)
     selected = (selected_account or "").strip()
+
+    # 1. Direct tenant addressing (?tenant=) wins over label matching.
+    try:
+        requested_tenant = (request.args.get("tenant") or "").strip()
+    except Exception:
+        requested_tenant = ""
+    if requested_tenant:
+        if admin:
+            return [requested_tenant]
+        owned = [
+            row["tenant_id"]
+            for row in (get_broker_tenants_for_user(current_user.id) or [])
+        ]
+        if requested_tenant in owned:
+            return [requested_tenant]
+        # Not owned → ignore the param and fall through to safe defaults.
 
     if admin and not selected:
         return None
@@ -197,8 +294,11 @@ def _tenants_for_scope(selected_account=None):
     if admin:
         want = _norm_account_label(selected).lower()
         rows = fetch_all(
-            "SELECT tenant_id, account_name, display_nickname FROM broker_tenants"
+            "SELECT tenant_id, account_name, account_mask, broker_uuid, "
+            "display_nickname FROM broker_tenants"
         )
+        # Admin matches raw labels across all users (existing behavior);
+        # to target one colliding account admin should use ?tenant=.
         matched = [
             row["tenant_id"]
             for row in rows
@@ -212,11 +312,16 @@ def _tenants_for_scope(selected_account=None):
         return all_ids
 
     want = _norm_account_label(selected).lower()
-    matched = [
-        row["tenant_id"]
-        for row in tenants
-        if _match_label(row, want)
-    ]
+    label_map = _disambiguated_tenant_labels(tenants)
+    matched = []
+    for row in tenants:
+        tid = row.get("tenant_id")
+        if _match_label(row, want):
+            matched.append(tid)
+            continue
+        dis = label_map.get(tid)
+        if dis and _norm_account_label(dis).lower() == want:
+            matched.append(tid)
     return matched if matched else all_ids
 
 
@@ -229,14 +334,12 @@ def _user_account_list():
     """
     if is_admin(current_user.username):
         return None
-    names = []
-    seen = set()
-    for row in get_broker_tenants_for_user(current_user.id) or []:
-        label = _tenant_display_label(row)
-        if label and label not in seen:
-            names.append(label)
-            seen.add(label)
-    return sorted(names)
+    rows = get_broker_tenants_for_user(current_user.id) or []
+    # Disambiguate colliding base labels (e.g. several "Schwab Account"s)
+    # so each physical account is independently selectable in the picker.
+    label_map = _disambiguated_tenant_labels(rows)
+    names = sorted(set(label_map.values()))
+    return names
 
 
 def _resolve_filter_user_id():
@@ -555,7 +658,7 @@ def _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
 
 
 def _filter_current_for_chart_partition(
-    current_df: pd.DataFrame, account, user_id_key
+    current_df: pd.DataFrame, account, user_id_key, tenant_id_key=None
 ) -> pd.DataFrame:
     """Slice ``int_enriched_current`` rows for one chart partition
     (``account`` × optional ``user_id``). Required when ``mart_daily_pnl``
@@ -572,6 +675,13 @@ def _filter_current_for_chart_partition(
     ``_filter_df_by_accounts``)."""
     if current_df is None or current_df.empty or "account" not in current_df.columns:
         return pd.DataFrame()
+    # When the mart partition is keyed by the broker-stable tenant_id (the
+    # v2 grain), prefer matching the snapshot on tenant_id so two physical
+    # accounts sharing an ``account`` label (e.g. several "Schwab Account"s)
+    # don't pool their live snapshot rows into one chart partition.
+    if tenant_id_key is not None and "tenant_id" in current_df.columns:
+        m = current_df["tenant_id"].astype(str) == str(tenant_id_key).strip()
+        return current_df.loc[m].copy()
     m = current_df["account"].astype(str) == str(account).strip()
     if "user_id" in current_df.columns:
         uid_series = pd.to_numeric(current_df["user_id"], errors="coerce")
@@ -1558,41 +1668,99 @@ def submit_feedback():
 
 
 # ------------------------------------------------------------------
-# Onboarding survey ("why are you here?")
+# Onboarding survey (multi-section wizard during first sync wait)
 # ------------------------------------------------------------------
 #
-# Shown on /sync/processing during the first SnapTrade sync wait.
-# Posts JSON; the form-side JS swaps to a thank-you note on success.
-# We don't redirect — the sync poll on the same page handles that.
+# Posted by the wizard on /sync/processing. Validates that every
+# required question has an answer, packages the form into a single
+# JSONB blob via save_onboarding_response, and returns JSON. The
+# form-side JS swaps to a thank-you note on success and clears the
+# "hold redirect" flag so the sync poll on the same page can take
+# the user to Daily Review.
+
+# Required radio/textarea keys the wizard MUST answer before submit.
+# Free-text "_other" siblings are optional and only saved when the
+# matching radio's value is "other". The list lives next to the route
+# (not in models.py) on purpose: the form's contract is a
+# request-layer concern, while the storage shape is a single JSONB
+# blob — see AGENTS.md note on JSONB-flexibility for this table.
+_ONBOARDING_REQUIRED_KEYS: tuple[str, ...] = (
+    "why_here",
+    "worth_paying_for",
+    "trading_years",
+    "primary_style",
+    "trade_frequency",
+    "position_count",
+    "best_at",
+    "worst_at",
+    "discipline_self",
+    "trade_notes",
+    "help_most",          # multi-select; at least one option required
+    "one_thing",          # textarea, min 10 non-whitespace chars
+    "comfort",
+)
+
+# Optional adjunct keys — saved only when present and non-empty.
+_ONBOARDING_OPTIONAL_KEYS: tuple[str, ...] = (
+    "why_here_other",
+    "worth_paying_for_other",
+    "best_at_other",
+    "worst_at_other",
+    "help_most_other",
+)
+
+_ONBOARDING_MAX_FIELD_LEN = 1000
+_ONBOARDING_MIN_ONE_THING_LEN = 10
 
 
 @app.route("/onboarding/why-here", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute; 60 per hour")
 def submit_onboarding_why_here():
-    """Save one onboarding answer for the current user (upsert)."""
-    from app.models import save_onboarding_response, ONBOARDING_PRIMARY_REASONS
-
-    primary_reason = (request.form.get("primary_reason") or "").strip()
-    other_text = (request.form.get("other_text") or "").strip() or None
+    """Save the wizard's full answer set for the current user (upsert)."""
+    from app.models import save_onboarding_response
 
     wants_json = (
         request.accept_mimetypes.best == "application/json"
         or request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
     )
 
-    if primary_reason not in ONBOARDING_PRIMARY_REASONS:
-        msg = "Pick one of the options so we can save it."
+    answers: dict[str, object] = {}
+
+    # Required scalar fields (radios / textareas). ``help_most`` is
+    # the one multi-select; pull both bracketed and bare names so the
+    # form can use either ``name="help_most"`` or ``help_most[]``.
+    for key in _ONBOARDING_REQUIRED_KEYS:
+        if key == "help_most":
+            vals = request.form.getlist("help_most[]") or request.form.getlist("help_most")
+            cleaned = [v.strip()[:_ONBOARDING_MAX_FIELD_LEN] for v in vals if v and v.strip()]
+            if cleaned:
+                answers[key] = cleaned
+        else:
+            v = (request.form.get(key) or "").strip()
+            if v:
+                answers[key] = v[:_ONBOARDING_MAX_FIELD_LEN]
+
+    # Optional free-text adjuncts (the "Something else: ___" boxes).
+    for key in _ONBOARDING_OPTIONAL_KEYS:
+        v = (request.form.get(key) or "").strip()
+        if v:
+            answers[key] = v[:_ONBOARDING_MAX_FIELD_LEN]
+
+    missing = [k for k in _ONBOARDING_REQUIRED_KEYS if not answers.get(k)]
+    one_thing = answers.get("one_thing")
+    if isinstance(one_thing, str) and len(one_thing.strip()) < _ONBOARDING_MIN_ONE_THING_LEN:
+        missing.append("one_thing")
+
+    if missing:
+        msg = "A couple of answers are still missing — finish those and resend."
+        payload = {"ok": False, "error": msg, "missing": missing}
         if wants_json:
-            return {"ok": False, "error": msg}, 400
+            return payload, 400
         flash(msg, "warning")
         return redirect(request.referrer or url_for("index"))
 
-    ok = save_onboarding_response(
-        user_id=current_user.id,
-        primary_reason=primary_reason,
-        other_text=other_text,
-    )
+    ok = save_onboarding_response(user_id=current_user.id, answers=answers)
     if not ok:
         msg = "We couldn't save that just now. Try again in a minute."
         if wants_json:
@@ -1869,8 +2037,14 @@ def positions():
     )
 
     filtered = df.copy()
-    if selected_account:
-        filtered = filtered[filtered["account"] == selected_account]
+    # NOTE: no secondary ``account == selected_account`` narrowing here.
+    # ``_tenants_for_scope(selected_account)`` already resolved the
+    # selected display label (incl. disambiguated colliding labels like
+    # "Schwab Account (\u2022\u20226342)") to specific tenant_ids, and the
+    # SQL ``tenant_filter`` + ``_filter_df_by_tenant_ids`` already scoped
+    # the frame to them. A label-equality filter here would wrongly empty
+    # the frame for disambiguated labels (the mart's raw ``account`` is
+    # still "Schwab Account").
     if selected_strategy:
         filtered = filtered[filtered["strategy"] == selected_strategy]
     if selected_statuses:
@@ -2105,6 +2279,7 @@ POSITION_CURRENT_QUERY = """
     SELECT
         account,
         user_id,
+        tenant_id,
         underlying_symbol AS symbol,
         instrument_type,
         trade_symbol,
@@ -3238,10 +3413,9 @@ def position_detail(symbol):
     start_date = _parse_date(selected_start_date)
     end_date = _parse_date(selected_end_date)
 
-    if selected_account:
-        summary_df = summary_df[summary_df["account"] == selected_account]
-        trades_df = trades_df[trades_df["account"] == selected_account]
-        current_df = current_df[current_df["account"] == selected_account]
+    # No secondary ``account == selected_account`` narrowing: tenant scope
+    # (resolved from the selected display label, incl. disambiguated
+    # colliding labels) already filtered these frames by tenant_id.
     if not current_df.empty:
         current_df = _dedupe_enriched_current_positions(current_df)
     if selected_strategy:
@@ -3264,8 +3438,7 @@ def position_detail(symbol):
     # helpers consume, preserving the leg_id ↔ session_id contract that keeps
     # bookmarked ?leg=<n> URLs working.
     legs_df = _filter_df_by_tenant_ids(legs_df, tenant_scope)
-    if selected_account and not legs_df.empty:
-        legs_df = legs_df[legs_df["account"] == selected_account]
+    # Tenant scope already narrowed legs to the selected account's tenant.
 
     sessions_list = _legs_df_to_sessions_list(legs_df)
 
@@ -3341,11 +3514,7 @@ def position_detail(symbol):
                         current_df.at[idx, "unrealized_pnl_pct"] = 100.0 * (market_value - cost_basis) / cost_basis
 
     # ── Filter closed legs early so KPIs can use them ──
-    if selected_account:
-        if not closed_legs_df.empty:
-            closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
-        if not closed_equity_df.empty:
-            closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
+    # (tenant scope already narrowed to the selected account's tenant)
     if selected_strategy and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
         closed_legs_df = closed_legs_df[closed_legs_df["strategy"] == selected_strategy]
     # Defense in depth: drop ``int_closed_equity_legs`` "Cost Written Off"
@@ -4038,8 +4207,7 @@ def position_detail(symbol):
         p["leg_num"] = open_sessions[-1]["display_leg"] if open_sessions else (sessions_list[-1]["display_leg"] if sessions_list else None)
 
     # ── Option matrices (DTE × Strike Distance heatmap) ──
-    if selected_account:
-        matrix_df = matrix_df[matrix_df["account"] == selected_account] if not matrix_df.empty else matrix_df
+    # (tenant scope already narrowed matrix_df to the selected account's tenant)
     # Filter matrix by selected legs (date range overlap via trade_symbol matching closed legs)
     if leg_param and _leg_ranges and not matrix_df.empty:
         filtered_trade_syms = set(r.get("trade_symbol") for r in closed_legs_list)
@@ -4061,8 +4229,13 @@ def position_detail(symbol):
                 seen.add(m["strategy"])
                 option_matrices.append(m)
 
-    # Available accounts for filter (summary may be empty for open-only Schwab lots)
-    if not summary_df.empty and "account" in summary_df.columns:
+    # Available accounts for filter. Non-admin: the full disambiguated
+    # account set so each physical account (incl. colliding "Schwab
+    # Account"s) is selectable even after tenant scope narrowed the data
+    # to one. Admin: data-derived (summary may be empty for open-only lots).
+    if user_accounts:
+        all_accounts = sorted(user_accounts)
+    elif not summary_df.empty and "account" in summary_df.columns:
         all_accounts = sorted(summary_df["account"].dropna().unique())
     elif not current_df.empty and "account" in current_df.columns:
         all_accounts = sorted(current_df["account"].dropna().unique())
@@ -4908,14 +5081,19 @@ def _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg):
 def _collapse_mart_daily_pnl_duplicate_grain(daily_df: pd.DataFrame) -> pd.DataFrame:
     """Collapse duplicate ``mart_daily_pnl`` rows before stateful equity P&L.
 
-    Natural grain is ``(account, user_id, symbol, date)``. Sync/backfill bugs
-    can emit identical twins — ``_build_chart_from_daily_pnl`` processes each
-    row and sums ``equity_*`` deltas, doubling buys/sells and inflating terminal
-    P&L (May 2026 BE chart ~2× hero).
+    Natural grain is ``(tenant_id, account, user_id, symbol, date)``.
+    Sync/backfill bugs can emit identical twins —
+    ``_build_chart_from_daily_pnl`` processes each row and sums
+    ``equity_*`` deltas, doubling buys/sells and inflating terminal P&L
+    (May 2026 BE chart ~2× hero).
 
-    Prefers populated ``user_id`` over ``NULL`` when deduping
-    ``(account, symbol, date)``, then merges strict four-key collisions with
-    ``keep=\"last\"`` (later ingestion wins).
+    CRITICAL: ``tenant_id`` leads the dedup key when present. Several
+    physical accounts can share an ``account`` display label (e.g. multiple
+    "Schwab Account"s); deduping on ``(account, symbol, date)`` alone would
+    collapse those distinct tenants' same-symbol/day rows into one and drop
+    the rest. Prefers populated ``user_id`` over ``NULL`` when deduping,
+    then merges strict full-key collisions with ``keep=\"last\"`` (later
+    ingestion wins).
     """
     if daily_df is None or daily_df.empty:
         return daily_df
@@ -4925,14 +5103,17 @@ def _collapse_mart_daily_pnl_duplicate_grain(daily_df: pd.DataFrame) -> pd.DataF
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
     stab = "__r_i__"
     df[stab] = range(len(df))
-    ks3 = ["account", "symbol", "date"]
+    _tenant_key = ["tenant_id"] if "tenant_id" in df.columns else []
+    ks3 = _tenant_key + ["account", "symbol", "date"]
 
     if "user_id" in df.columns:
         uid_col = pd.to_numeric(df["user_id"], errors="coerce")
         df["__prefer_uid__"] = uid_col.notna().astype(int)
         df = df.sort_values(
             by=ks3 + ["__prefer_uid__", "user_id", stab],
-            ascending=[True, True, True, False, True, True],
+            # ks3 cols ascending, then prefer populated uid (desc), then
+            # user_id asc, then stable index asc.
+            ascending=([True] * len(ks3)) + [False, True, True],
             na_position="last",
         )
         df = df.drop_duplicates(subset=ks3, keep="first").drop(
@@ -4967,7 +5148,14 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     work = _collapse_mart_daily_pnl_duplicate_grain(daily_df.copy())
     if work.empty:
         return empty
-    part_cols = ["account"]
+    # Partition leads with the broker-stable tenant_id (v2 grain) when
+    # present so several physical accounts sharing a display label each run
+    # their OWN equity cost-basis state machine. ``account``/``user_id``
+    # remain in the key for legacy / NULL-tenant rows.
+    part_cols = []
+    if "tenant_id" in work.columns:
+        part_cols.append("tenant_id")
+    part_cols.append("account")
     if "user_id" in work.columns:
         part_cols.append("user_id")
     gb = work.groupby(part_cols, dropna=False)
@@ -4975,13 +5163,12 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
         return _build_chart_from_daily_pnl_partition(work.sort_values("date"), current_df)
     parts = []
     for key, sub in gb:
-        if isinstance(key, tuple):
-            acct = key[0]
-            uid_k = key[1] if len(key) > 1 else None
-        else:
-            acct = key
-            uid_k = None
-        cdf = _filter_current_for_chart_partition(current_df, acct, uid_k)
+        key = key if isinstance(key, tuple) else (key,)
+        keyed = dict(zip(part_cols, key))
+        tenant_k = keyed.get("tenant_id")
+        acct = keyed.get("account")
+        uid_k = keyed.get("user_id")
+        cdf = _filter_current_for_chart_partition(current_df, acct, uid_k, tenant_k)
         parts.append(
             _build_chart_from_daily_pnl_partition(sub.sort_values("date"), cdf)
         )
@@ -5412,7 +5599,9 @@ def symbols_detail():
         return sorted(s)
 
     accounts = _unique_accounts(trades_df, pnl_df, current_df, strat_df)
-    if not accounts and user_accounts:
+    # Picker lists the full disambiguated account set (non-admin) so every
+    # physical account stays selectable after tenant scope narrows the data.
+    if user_accounts:
         accounts = sorted(
             {str(a).strip() for a in user_accounts if a and str(a).strip()}
         )
@@ -5438,17 +5627,9 @@ def symbols_detail():
     if positions_only and not open_only:
         open_only = True
 
-    if selected_account:
-        trades_df = trades_df[trades_df["account"] == selected_account]
-        current_df = current_df[current_df["account"] == selected_account]
-        strat_df = strat_df[strat_df["account"] == selected_account]
-        pnl_df = pnl_df[pnl_df["account"] == selected_account]
-        if not open_start_df.empty:
-            open_start_df = open_start_df[open_start_df["account"] == selected_account]
-        if not closed_legs_df.empty:
-            closed_legs_df = closed_legs_df[closed_legs_df["account"] == selected_account]
-        if not closed_equity_df.empty:
-            closed_equity_df = closed_equity_df[closed_equity_df["account"] == selected_account]
+    # No secondary ``account == selected_account`` narrowing: tenant scope
+    # already filtered every frame to the selected account's tenant_id
+    # (handles disambiguated colliding labels too).
 
     # Restrict to symbols that have a current open position (match current_positions / int_enriched_current)
     if open_only:
@@ -5463,8 +5644,7 @@ def symbols_detail():
             CHART_DATA_ALL_QUERY.format(tenant_filter=tenant_filter)
         ).to_dataframe()
         all_chart_df = _filter_df_by_tenant_ids(all_chart_df, tenant_ids)
-        if selected_account and not all_chart_df.empty:
-            all_chart_df = all_chart_df[all_chart_df["account"] == selected_account]
+        # tenant scope already narrowed to the selected account's tenant
     except Exception:
         all_chart_df = pd.DataFrame()
 
@@ -5879,6 +6059,17 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     daily_df = daily_df.sort_values("date")
     all_dates = sorted(daily_df["date"].dropna().unique())
 
+    # Equity cost-basis state and per-symbol realized options are keyed by
+    # the broker-stable tenant_id (v2 grain) when present, so several
+    # physical accounts sharing a display label (e.g. multiple "Schwab
+    # Account"s) don't fuse one symbol's running average-cost state.
+    _has_tenant = "tenant_id" in daily_df.columns
+
+    def _eq_key(r):
+        if _has_tenant and pd.notna(r.get("tenant_id")):
+            return (r.get("tenant_id"), r["symbol"])
+        return (r["account"], r["symbol"])
+
     eq_state = {}
     cum_div = cum_oth = 0.0
     dates_out, equity_s, options_s, dividends_s, total_s = [], [], [], [], []
@@ -5903,7 +6094,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         # Update per-symbol realized cumulative from the mart (carried
         # forward across days when no new realization happened).
         for _, r in day.iterrows():
-            key = (r["account"], r["symbol"])
+            key = _eq_key(r)
             options_per_symbol_realized[key] = float(
                 r.get("cumulative_options_pnl") or 0
             )
@@ -5923,7 +6114,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         cum_oth += float(day["other_amount"].sum())
 
         for _, row in day.iterrows():
-            key = (row["account"], row["symbol"])
+            key = _eq_key(row)
             if key not in eq_state:
                 eq_state[key] = {"shares": 0.0, "cost": 0.0, "realized": 0.0}
             s = eq_state[key]
@@ -5946,7 +6137,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
 
         eq_total = sum(s["realized"] for s in eq_state.values())
         for _, row in day.iterrows():
-            key = (row["account"], row["symbol"])
+            key = _eq_key(row)
             s = eq_state[key]
             close = float(row.get("close_price") or 0)
             if close > 0 and s["shares"] > 0:
@@ -6130,9 +6321,7 @@ def sectors():
 
     df = _df_normalize_account_column(df)
     df = _filter_df_by_tenant_ids(df, tenant_ids)
-
-    if selected_account:
-        df = df[df["account"] == selected_account]
+    # tenant scope already narrowed to the selected account's tenant_id
 
     for col in (
         "total_pnl", "realized_pnl", "unrealized_pnl",
@@ -6146,7 +6335,11 @@ def sectors():
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
 
-    accounts_for_filter = sorted(df["account"].dropna().unique().tolist()) if not df.empty else []
+    accounts_for_filter = (
+        sorted(user_accounts)
+        if user_accounts
+        else (sorted(df["account"].dropna().unique().tolist()) if not df.empty else [])
+    )
 
     if df.empty:
         return render_template(
@@ -6769,8 +6962,7 @@ def strategy_fit():
 
     summary_df = _df_normalize_account_column(dfs["summary"])
     summary_df = _filter_df_by_tenant_ids(summary_df, tenant_ids)
-    if selected_account and not summary_df.empty:
-        summary_df = summary_df[summary_df["account"] == selected_account].copy()
+    # tenant scope already narrowed to the selected account's tenant_id
 
     for col in ("total_pnl", "realized_pnl", "unrealized_pnl", "total_return",
                 "num_individual_trades", "num_winners", "num_losers"):
@@ -6783,8 +6975,10 @@ def strategy_fit():
             )
 
     accounts_for_filter = (
-        sorted(summary_df["account"].dropna().unique().tolist())
-        if not summary_df.empty else []
+        sorted(user_accounts)
+        if user_accounts
+        else (sorted(summary_df["account"].dropna().unique().tolist())
+              if not summary_df.empty else [])
     )
 
     if summary_df.empty:
@@ -6806,8 +7000,7 @@ def strategy_fit():
         # the user's accounts BEFORE any grouping so a SQL regression
         # can't leak another tenant's contracts into the matrix.
         options_df = _filter_df_by_tenant_ids(options_df, tenant_ids)
-        if selected_account and not options_df.empty:
-            options_df = options_df[options_df["account"] == selected_account].copy()
+        # tenant scope already narrowed to the selected account's tenant_id
 
         for col in ("total_pnl", "realized_pnl", "unrealized_pnl",
                     "num_individual_trades", "num_winners", "num_losers"):
@@ -6938,15 +7131,17 @@ def accounts():
     strat_class_df = _filter_df_by_tenant_ids(strat_class_df, tenant_ids)
     strat_summary_df = _filter_df_by_tenant_ids(strat_summary_df, tenant_ids)
 
-    all_accounts = sorted(trades_df["account"].dropna().unique())
+    # Picker lists the full disambiguated account set (non-admin) so every
+    # physical account is selectable after tenant scope narrows the data.
+    all_accounts = (
+        sorted(user_accounts)
+        if user_accounts
+        else sorted(trades_df["account"].dropna().unique())
+    )
     selected_account = request.args.get("account", "")
-
-    if selected_account:
-        balances_df = balances_df[balances_df["account"] == selected_account]
-        trades_df = trades_df[trades_df["account"] == selected_account]
-        current_df = current_df[current_df["account"] == selected_account]
-        strat_class_df = strat_class_df[strat_class_df["account"] == selected_account]
-        strat_summary_df = strat_summary_df[strat_summary_df["account"] == selected_account]
+    # tenant scope (resolved from selected_account → tenant_ids above) already
+    # narrowed every frame; no secondary label-equality narrowing needed
+    # (which would break for disambiguated colliding labels).
 
     # ------------------------------------------------------------------
     # KPIs from balances
@@ -6995,8 +7190,7 @@ def accounts():
             CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter)
         ).to_dataframe()
         chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
-        if selected_account and not chart_df.empty:
-            chart_df = chart_df[chart_df["account"] == selected_account]
+        # tenant scope already narrowed chart_df to the selected account's tenant
         summary_chart = _build_account_chart_from_daily_pnl(chart_df, current_df)
     except Exception:
         summary_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}

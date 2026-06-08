@@ -60,6 +60,7 @@
 
 with contracts as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -98,6 +99,7 @@ with contracts as (
 -- on close_date does the rest.
 snapshots as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
@@ -131,12 +133,13 @@ snapshots as (
 -- tenant's chart kept showing -$4,235 indefinitely).
 last_snapshot_per_contract as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
         max(date) as last_snapshot_date
     from snapshots
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 -- Contracts currently in the broker's live snapshot (today). Used to
@@ -168,6 +171,7 @@ last_snapshot_per_contract as (
 -- (which reads cur.unrealized_pnl) said -$4,235.
 currently_owned as (
     select distinct
+        tenant_id,
         account,
         user_id,
         trade_symbol
@@ -185,6 +189,7 @@ currently_owned as (
 -- 1 day from close_date to get the half-open interval.
 contract_lifetime as (
     select
+        c.tenant_id,
         c.account,
         c.user_id,
         c.symbol,
@@ -196,10 +201,12 @@ contract_lifetime as (
     left join last_snapshot_per_contract ls
         on c.account = ls.account
         and (c.user_id is not distinct from ls.user_id)
+        and (c.tenant_id is not distinct from ls.tenant_id)
         and c.trade_symbol = ls.trade_symbol
     left join currently_owned co
         on c.account = co.account
         and (c.user_id is not distinct from co.user_id)
+        and (c.tenant_id is not distinct from co.tenant_id)
         and c.trade_symbol = co.trade_symbol
     cross join unnest(
         generate_date_array(
@@ -271,6 +278,7 @@ contract_lifetime as (
 -- contribution for that day.
 spine_with_snapshots as (
     select
+        cl.tenant_id,
         cl.account,
         cl.user_id,
         cl.symbol,
@@ -281,6 +289,7 @@ spine_with_snapshots as (
     from contract_lifetime cl
     union all
     select
+        s.tenant_id,
         s.account,
         s.user_id,
         s.symbol,
@@ -292,6 +301,7 @@ spine_with_snapshots as (
 ),
 spine_filled as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -299,7 +309,7 @@ spine_filled as (
         date,
         in_lifetime,
         last_value(snap_mtm ignore nulls) over (
-            partition by account, user_id, trade_symbol
+            partition by tenant_id, account, user_id, trade_symbol
             order by date, in_lifetime  -- snapshot row first when same date
             rows between unbounded preceding and current row
         ) as mtm_unrealized_pnl
@@ -310,6 +320,7 @@ spine_filled as (
 -- on the same date; pick exactly one via row_number.
 contract_daily_mtm as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -319,7 +330,7 @@ contract_daily_mtm as (
     from (
         select *,
                row_number() over (
-                   partition by account, user_id, trade_symbol, date
+                   partition by tenant_id, account, user_id, trade_symbol, date
                    order by in_lifetime desc  -- prefer the lifetime row
                ) as rn
         from spine_filled
@@ -330,6 +341,7 @@ contract_daily_mtm as (
 
 open_mtm as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -354,6 +366,7 @@ open_mtm as (
 -- realized credit lands on close_date.
 realized_close as (
     select
+        c.tenant_id,
         c.account,
         c.user_id,
         c.symbol,
@@ -366,17 +379,11 @@ realized_close as (
       and c.status = 'Closed'
 ),
 
--- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
+-- v2 tenant_id is carried natively from staging through the contract grain.
 all_rows as (
     select * from open_mtm
     union all
     select * from realized_close
 )
 
-select
-    f.*,
-    d.tenant_id
-from all_rows f
-left join {{ ref('dim_broker_tenants') }} d
-    on f.account = d.account_name
-    and (f.user_id is not distinct from d.user_id)
+select * from all_rows

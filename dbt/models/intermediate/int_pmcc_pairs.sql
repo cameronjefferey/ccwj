@@ -21,6 +21,7 @@ with option_contracts as (
 
 calls as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -56,6 +57,7 @@ short_calls as (
 
 paired as (
     select
+        short.tenant_id,
         short.account,
         short.user_id,
         short.underlying_symbol,
@@ -87,6 +89,7 @@ paired as (
     inner join long_calls long
         on short.account = long.account
         and (short.user_id is not distinct from long.user_id)
+        and (short.tenant_id is not distinct from long.tenant_id)
         and short.underlying_symbol = long.underlying_symbol
         and short.trade_symbol != long.trade_symbol
         and short.option_strike > long.option_strike
@@ -99,8 +102,8 @@ paired as (
 select
     p.account,
     p.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from staging through the contract grain.
+    p.tenant_id,
     p.underlying_symbol,
     long_trade_symbol,
     short_trade_symbol,
@@ -142,6 +145,3 @@ select
         day
     ) + 1 as overlap_days
 from paired p
-left join {{ ref('dim_broker_tenants') }} dba
-    on p.account = dba.account_name
-    and (p.user_id is not distinct from dba.user_id)

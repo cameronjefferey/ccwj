@@ -22,6 +22,55 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("FLASK_APP", "app:app")
 
 
+def _notify_connection_dropped(user_id, snaptrade_account_id, row):
+    """Send a one-time "reconnect your broker" email when a connection just
+    broke. Idempotent via the email_sends log keyed on the account + the
+    broken-at timestamp, so re-breaks after a reconnect notify again but a
+    daily cron over a still-broken connection does not re-spam.
+
+    Best-effort: never raises into the sync loop.
+    """
+    try:
+        from app.email import send_connection_dropped_email, app_base_url
+        from app.models import User, get_snaptrade_account, record_email_send
+
+        user = User.get_by_id(user_id)
+        if user is None or not (user.email or "").strip():
+            return  # No address on file (legacy/CLI user) — nothing to send.
+
+        acct = get_snaptrade_account(user_id, snaptrade_account_id) or {}
+        broken_at = acct.get("connection_broken_at")
+        broken_key = broken_at.isoformat() if hasattr(broken_at, "isoformat") else str(broken_at or "")
+        dedupe_key = f"{snaptrade_account_id}:{broken_key}"
+
+        if not record_email_send(
+            "connection_dropped", dedupe_key, user_id=user_id, to_email=user.email
+        ):
+            return  # Already notified for this break.
+
+        broker_slug = (row.get("broker_slug") or acct.get("broker_slug") or "").strip()
+        broker_label = broker_slug.title() if broker_slug else "your broker"
+        account_label = (
+            (row.get("display_nickname") or acct.get("display_nickname") or "")
+            or (row.get("account_name") or acct.get("account_name") or "")
+        ).strip()
+        reconnect_url = f"{app_base_url()}/profile?tab=account#snaptrade-sync"
+
+        send_connection_dropped_email(
+            to=user.email,
+            username=user.username,
+            broker_label=broker_label,
+            account_label=account_label,
+            reconnect_url=reconnect_url,
+        )
+        print(f"User {user_id} ({snaptrade_account_id}): sent reconnect email to {user.email}")
+    except Exception as exc:  # pragma: no cover (defensive — email never blocks sync)
+        print(
+            f"User {user_id} ({snaptrade_account_id}): reconnect email failed: {exc}",
+            file=sys.stderr,
+        )
+
+
 def main():
     from app.models import init_db, list_all_snaptrade_accounts
 
@@ -115,6 +164,7 @@ def main():
                     "broker connection needs reconnect (flagged in app)",
                     file=sys.stderr,
                 )
+                _notify_connection_dropped(user_id, snaptrade_account_id, row)
             else:
                 errors += 1
                 print(

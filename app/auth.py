@@ -5,18 +5,22 @@ import click
 from flask import render_template, redirect, url_for, request, flash, abort
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
-from app.email import send_password_reset_email
-from app.extensions import limiter
+from app.email import send_password_reset_email, send_welcome_verify_email
+from app.extensions import csrf, limiter
 from app.models import (
     PASSWORD_RESET_TOKEN_TTL,
     User,
+    consume_email_verification_token,
     consume_password_reset_token,
+    email_needs_verification,
     get_accounts_for_user,
     get_user_profile,
     login_lockout_remaining_seconds,
+    mint_email_verification_token,
     mint_password_reset_token,
     peek_password_reset_token,
     record_login_attempt,
+    unsubscribe_user_by_token,
 )
 from app.utils import demo_block_writes, safe_internal_next
 
@@ -220,7 +224,8 @@ def signup():
         User.create(username, password, email=email)
         user = User.get_by_username(username)
         login_user(user, remember=False)
-        flash("Welcome! You're signed in.", "success")
+        _send_welcome_verification(user)
+        flash("Welcome! You're signed in. Check your inbox to confirm your email.", "success")
         accounts = get_accounts_for_user(user.id)
         if not accounts:
             next_page = url_for("get_started")
@@ -288,6 +293,67 @@ def settings():
         User.update_password(current_user.id, new_pw)
         flash("Password updated successfully.", "success")
         return redirect(url_for("profile", tab="account"))
+
+
+# ------------------------------------------------------------------
+# Email verification
+# ------------------------------------------------------------------
+
+
+def _send_welcome_verification(user):
+    """Mint a verification token and send the welcome+verify email.
+    Best-effort: a send failure must never block signup."""
+    if user is None or not (user.email or "").strip():
+        return
+    try:
+        token = mint_email_verification_token(user.id)
+        verify_url = url_for("verify_email", token=token, _external=True)
+        send_welcome_verify_email(to=user.email, username=user.username, verify_url=verify_url)
+    except Exception as exc:
+        app.logger.exception("welcome/verify email failed for user_id=%s: %s", user.id, exc)
+
+
+@app.route("/verify-email/<token>")
+@limiter.limit("20 per minute; 60 per hour")
+def verify_email(token):
+    """Consume an email-verification token and mark the address confirmed."""
+    user_id = consume_email_verification_token(token)
+    if user_id is None:
+        flash(
+            "That verification link is invalid or expired. Sign in and we'll "
+            "send a fresh one.",
+            "warning",
+        )
+        return redirect(url_for("login"))
+    flash("Email confirmed — thanks!", "success")
+    if current_user.is_authenticated:
+        return redirect(url_for("weekly_review"))
+    return redirect(url_for("login"))
+
+
+@app.route("/resend-verification", methods=["POST"])
+@login_required
+@limiter.limit("3 per minute; 10 per hour")
+def resend_verification():
+    """Re-send the verification email to the signed-in user."""
+    if not email_needs_verification(current_user.id):
+        flash("Your email is already confirmed.", "info")
+        return redirect(request.referrer or url_for("weekly_review"))
+    _send_welcome_verification(current_user)
+    flash("Verification email sent. Check your inbox (and spam).", "info")
+    return redirect(request.referrer or url_for("weekly_review"))
+
+
+@app.context_processor
+def _inject_email_verification_needed():
+    """Expose ``email_unverified`` so base.html can show a confirm-your-email
+    banner. Anonymous requests get False."""
+    try:
+        if current_user.is_authenticated:
+            return {"email_unverified": email_needs_verification(current_user.id)}
+    except Exception:
+        pass
+    return {"email_unverified": False}
 
 
 # ------------------------------------------------------------------
@@ -409,6 +475,36 @@ def reset_password(token):
         return redirect(url_for("login"))
 
     return render_template("reset_password.html", title="Set a new password", token=token)
+
+
+# ------------------------------------------------------------------
+# Email unsubscribe (one-click, no login)
+# ------------------------------------------------------------------
+
+
+@app.route("/email/unsubscribe/<token>", methods=["GET", "POST"])
+@csrf.exempt
+@limiter.limit("30 per minute; 200 per hour")
+def email_unsubscribe(token):
+    """One-click unsubscribe from all lifecycle email.
+
+    CSRF-exempt because RFC 8058 one-click unsubscribe (the
+    ``List-Unsubscribe-Post: List-Unsubscribe=One-Click`` header on our
+    lifecycle mail) makes mail providers POST here with no cookies or
+    token. The token itself is the unguessable capability — a successful
+    POST only flips the recipient's own opt-out flags to FALSE, which is
+    idempotent and non-destructive, so no CSRF token is required.
+    """
+    username = unsubscribe_user_by_token(token)
+    # POST is the provider's one-click call: a bare 200 is all it wants.
+    if request.method == "POST":
+        return ("", 200)
+    return render_template(
+        "unsubscribed.html",
+        title="Unsubscribed",
+        ok=username is not None,
+        username=username,
+    )
 
 
 # ------------------------------------------------------------------

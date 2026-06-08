@@ -38,22 +38,14 @@ week_bounds as (
     select
         account,
         user_id,
-        -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-        any_value(tenant_id) as tenant_id,
+        -- v2 tenant_id is part of the grain so each physical account keeps
+        -- its own weekly-return series.
+        tenant_id,
         week_start,
         min_by(account_value, date) as start_value,
         max_by(account_value, date) as end_value
-    from (
-        select
-            account,
-            user_id,
-            tenant_id,
-            week_start,
-            date,
-            account_value
-        from with_weeks
-    )
-    group by account, user_id, week_start
+    from with_weeks
+    group by tenant_id, account, user_id, week_start
 )
 
 select
@@ -65,5 +57,5 @@ select
     end_value,
     safe_divide(end_value - start_value, nullif(start_value, 0)) * 100 as weekly_return_pct
 from week_bounds
-order by account, user_id, week_start
+order by tenant_id, account, user_id, week_start
 

@@ -35,6 +35,7 @@ prices as (
 )
 
 select
+    c.tenant_id,
     c.account,
     c.user_id,
     c.trade_symbol,

@@ -19,6 +19,7 @@
 
 with base as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -39,13 +40,14 @@ with base as (
 ------------------------------------------------------------------
 closed_stream as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
         close_date,
         is_winner,
         row_number() over (
-            partition by account, user_id
+            partition by tenant_id, account, user_id
             order by close_date, trade_symbol
         ) as stream_id
     from base
@@ -55,6 +57,7 @@ closed_stream as (
 -- Consecutive losses within the same group form a streak.
 with_group as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -62,7 +65,7 @@ with_group as (
         is_winner,
         stream_id,
         sum(case when is_winner then 1 else 0 end) over (
-            partition by account, user_id
+            partition by tenant_id, account, user_id
             order by stream_id
             rows between unbounded preceding and current row
         ) as win_group_id
@@ -73,6 +76,7 @@ with_group as (
 -- open "since last winner" group, 0 if this trade was a winner.
 loss_streak_at_close as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -81,7 +85,7 @@ loss_streak_at_close as (
         case
             when is_winner then 0
             else sum(case when is_winner then 0 else 1 end) over (
-                partition by account, user_id, win_group_id
+                partition by tenant_id, account, user_id, win_group_id
                 order by stream_id
                 rows between unbounded preceding and current row
             )
@@ -102,6 +106,7 @@ loss_streak_at_close as (
 ------------------------------------------------------------------
 prior_close_streak as (
     select
+        b.tenant_id,
         b.account,
         b.user_id,
         b.trade_symbol,
@@ -111,12 +116,14 @@ prior_close_streak as (
     left join loss_streak_at_close ls
         on ls.account = b.account
         and (ls.user_id is not distinct from b.user_id)
+        and (ls.tenant_id is not distinct from b.tenant_id)
         and ls.close_date < b.open_date
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 prior_last_loss as (
     select
+        b.tenant_id,
         b.account,
         b.user_id,
         b.trade_symbol,
@@ -126,13 +133,15 @@ prior_last_loss as (
     left join loss_streak_at_close ls
         on ls.account = b.account
         and (ls.user_id is not distinct from b.user_id)
+        and (ls.tenant_id is not distinct from b.tenant_id)
         and ls.close_date < b.open_date
         and ls.is_winner = false
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 trade_with_prior_close as (
     select
+        b.tenant_id,
         b.account,
         b.user_id,
         b.trade_symbol,
@@ -149,10 +158,12 @@ trade_with_prior_close as (
     left join prior_close_streak pcs
         on b.account = pcs.account
         and (b.user_id is not distinct from pcs.user_id)
+        and (b.tenant_id is not distinct from pcs.tenant_id)
         and b.trade_symbol = pcs.trade_symbol
     left join prior_last_loss pll
         on b.account = pll.account
         and (b.user_id is not distinct from pll.user_id)
+        and (b.tenant_id is not distinct from pll.tenant_id)
         and b.trade_symbol = pll.trade_symbol
 ),
 
@@ -162,6 +173,7 @@ trade_with_prior_close as (
 ------------------------------------------------------------------
 prior_notional as (
     select
+        b.tenant_id,
         b.account,
         b.user_id,
         b.trade_symbol,
@@ -178,13 +190,15 @@ prior_notional as (
     left join base h
         on h.account = b.account
         and (h.user_id is not distinct from b.user_id)
+        and (h.tenant_id is not distinct from b.tenant_id)
         and h.close_date < b.open_date
         and h.close_date >= date_sub(b.open_date, interval 90 day)
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 ),
 
 prior_strategy_wr as (
     select
+        b.tenant_id,
         b.account,
         b.user_id,
         b.trade_symbol,
@@ -196,17 +210,18 @@ prior_strategy_wr as (
     left join base h
         on h.account = b.account
         and (h.user_id is not distinct from b.user_id)
+        and (h.tenant_id is not distinct from b.tenant_id)
         and h.strategy = b.strategy
         and h.close_date < b.open_date
         and h.close_date >= date_sub(b.open_date, interval 180 day)
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 )
 
 select
     t.account,
     t.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from int_trade_features.
+    t.tenant_id,
     t.trade_symbol,
     t.strategy,
     t.open_date,
@@ -239,11 +254,10 @@ from trade_with_prior_close t
 left join prior_notional pn
     on t.account = pn.account
     and (t.user_id is not distinct from pn.user_id)
+    and (t.tenant_id is not distinct from pn.tenant_id)
     and t.trade_symbol = pn.trade_symbol
 left join prior_strategy_wr psw
     on t.account = psw.account
     and (t.user_id is not distinct from psw.user_id)
+    and (t.tenant_id is not distinct from psw.tenant_id)
     and t.trade_symbol = psw.trade_symbol
-left join {{ ref('dim_broker_tenants') }} dba
-    on t.account = dba.account_name
-    and (t.user_id is not distinct from dba.user_id)

@@ -18,6 +18,7 @@
 -- yfinance to 0.01; we round to 4dp at write time). Anything wider is a
 -- structural bug.
 select
+    tenant_id,
     account,
     user_id,
     trade_symbol,

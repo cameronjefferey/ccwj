@@ -30,17 +30,19 @@ opened_trades as (
     select
         account,
         user_id,
+        tenant_id,
         date_trunc(open_date, isoweek) as week_start,
         count(*)                        as trades_opened
     from {{ ref('int_strategy_classification') }}
     where open_date is not null
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 weekly_agg as (
     select
         account,
         user_id,
+        tenant_id,
         week_start,
         count(*)                                          as trades_closed,
         sum(total_pnl)                                    as total_pnl,
@@ -50,21 +52,21 @@ weekly_agg as (
         sum(abs(premium_paid))                            as premium_paid,
         sum(num_trades)                                   as num_individual_trades
     from closed_trades
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
--- Best/worst windows partitioned per-tenant so two users with the same
--- account label never share a "best of week" ranking.
+-- Best/worst windows partitioned per-tenant so two physical accounts that
+-- share a display label never share a "best of week" ranking.
 ranked_best as (
     select *, row_number() over (
-        partition by account, user_id, week_start order by total_pnl desc
+        partition by tenant_id, account, user_id, week_start order by total_pnl desc
     ) as rn
     from closed_trades
 ),
 
 ranked_worst as (
     select *, row_number() over (
-        partition by account, user_id, week_start order by total_pnl asc
+        partition by tenant_id, account, user_id, week_start order by total_pnl asc
     ) as rn
     from closed_trades
 ),
@@ -73,6 +75,7 @@ strategy_stats as (
     select
         account,
         user_id,
+        tenant_id,
         week_start,
         strategy,
         count(*)                                          as strat_trades,
@@ -80,13 +83,13 @@ strategy_stats as (
         safe_divide(countif(is_winner), count(*))         as strat_win_rate,
         sum(total_pnl)                                    as strat_pnl
     from closed_trades
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
     having count(*) >= 2
 ),
 
 ranked_strategy as (
     select *, row_number() over (
-        partition by account, user_id, week_start order by strat_win_rate desc, strat_pnl desc
+        partition by tenant_id, account, user_id, week_start order by strat_win_rate desc, strat_pnl desc
     ) as rn
     from strategy_stats
 ),
@@ -98,25 +101,26 @@ weekly_dividends as (
     select
         account,
         user_id,
+        tenant_id,
         date_trunc(date, isoweek) as week_start,
         sum(dividends_amount)     as dividends_amount
     from {{ ref('mart_daily_pnl') }}
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 all_weeks as (
-    select distinct account, user_id, week_start from weekly_agg
+    select distinct tenant_id, account, user_id, week_start from weekly_agg
     union distinct
-    select distinct account, user_id, week_start from opened_trades
+    select distinct tenant_id, account, user_id, week_start from opened_trades
     union distinct
-    select distinct account, user_id, week_start from weekly_dividends
+    select distinct tenant_id, account, user_id, week_start from weekly_dividends
 )
 
 select
     aw.account,
     aw.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively (part of the grain).
+    aw.tenant_id,
     aw.week_start,
     date_add(aw.week_start, interval 6 day) as week_end,
 
@@ -156,29 +160,32 @@ from all_weeks aw
 left join weekly_agg wa
     on aw.account = wa.account
     and (aw.user_id is not distinct from wa.user_id)
+    and (aw.tenant_id is not distinct from wa.tenant_id)
     and aw.week_start = wa.week_start
 left join weekly_dividends wd
     on aw.account = wd.account
     and (aw.user_id is not distinct from wd.user_id)
+    and (aw.tenant_id is not distinct from wd.tenant_id)
     and aw.week_start = wd.week_start
 left join opened_trades ot
     on aw.account = ot.account
     and (aw.user_id is not distinct from ot.user_id)
+    and (aw.tenant_id is not distinct from ot.tenant_id)
     and aw.week_start = ot.week_start
 left join ranked_best rb
     on aw.account = rb.account
     and (aw.user_id is not distinct from rb.user_id)
+    and (aw.tenant_id is not distinct from rb.tenant_id)
     and aw.week_start = rb.week_start and rb.rn = 1
 left join ranked_worst rw
     on aw.account = rw.account
     and (aw.user_id is not distinct from rw.user_id)
+    and (aw.tenant_id is not distinct from rw.tenant_id)
     and aw.week_start = rw.week_start and rw.rn = 1
 left join ranked_strategy rs
     on aw.account = rs.account
     and (aw.user_id is not distinct from rs.user_id)
+    and (aw.tenant_id is not distinct from rs.tenant_id)
     and aw.week_start = rs.week_start and rs.rn = 1
-left join {{ ref('dim_broker_tenants') }} dba
-    on aw.account = dba.account_name
-    and (aw.user_id is not distinct from dba.user_id)
 
-order by aw.account, aw.user_id, aw.week_start
+order by aw.tenant_id, aw.account, aw.user_id, aw.week_start

@@ -6,8 +6,10 @@ Schema is created on app startup via ``init_db()``. All queries go through
 shared connection pool.
 """
 import hashlib
+import json
 import logging
 import os
+import secrets
 
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -65,6 +67,23 @@ def init_db():
         """
         CREATE INDEX IF NOT EXISTS idx_password_reset_user_active
         ON password_reset_tokens (user_id) WHERE used_at IS NULL
+        """,
+        # Email-verification tokens (same single-use shape as password
+        # reset). Confirms a signup address is real before we rely on it
+        # for deliverability / recovery.
+        """
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash  TEXT NOT NULL UNIQUE,
+            expires_at  TIMESTAMPTZ NOT NULL,
+            used_at     TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_email_verify_user_active
+        ON email_verification_tokens (user_id) WHERE used_at IS NULL
         """,
         """
         CREATE TABLE IF NOT EXISTS user_accounts (
@@ -154,6 +173,9 @@ def init_db():
             week_starts_monday              BOOLEAN NOT NULL DEFAULT TRUE,
             default_route                   TEXT NOT NULL DEFAULT 'weekly_review',
             digest_email                    BOOLEAN NOT NULL DEFAULT FALSE,
+            weekly_preview_email            BOOLEAN NOT NULL DEFAULT FALSE,
+            product_update_email            BOOLEAN NOT NULL DEFAULT TRUE,
+            email_unsubscribe_token         TEXT,
             compact_tables                  BOOLEAN NOT NULL DEFAULT FALSE,
             show_account_names_on_published BOOLEAN NOT NULL DEFAULT FALSE,
             profile_visibility              TEXT NOT NULL DEFAULT 'private',
@@ -216,6 +238,39 @@ def init_db():
             user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
             last_visit_at  TIMESTAMPTZ NOT NULL,
             prev_visit_at  TIMESTAMPTZ
+        )
+        """,
+        # Idempotency log for outbound email. Every send the app initiates
+        # (connection-dropped notice, weekly digest, re-engagement) records a
+        # row keyed by (kind, dedupe_key). The UNIQUE constraint + INSERT ...
+        # ON CONFLICT DO NOTHING is the "send exactly once" guard so a cron
+        # that runs daily doesn't re-notify on every pass.
+        """
+        CREATE TABLE IF NOT EXISTS email_sends (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            kind        TEXT NOT NULL,
+            dedupe_key  TEXT NOT NULL,
+            to_email    TEXT,
+            sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (kind, dedupe_key)
+        )
+        """,
+        # Deliverability suppression list. A row here means "do not email
+        # this address" — populated by the Resend webhook (hard bounces,
+        # spam complaints) and optionally by hand. ``reason`` drives how
+        # strictly we suppress: hard_bounce/invalid/manual block ALL mail
+        # (the address is undeliverable or a person asked to stop);
+        # complaint blocks only lifecycle/marketing mail (we may still send
+        # critical transactional like a password reset). Email is stored
+        # normalized (lower/trim) and is the primary key.
+        """
+        CREATE TABLE IF NOT EXISTS email_suppressions (
+            email       TEXT PRIMARY KEY,
+            reason      TEXT NOT NULL,
+            detail      TEXT,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
         # Login attempt log — feeds the per-username lockout. We keep a
@@ -386,17 +441,17 @@ def init_db():
         WHERE connection_status != 'active'
         """,
         # Onboarding survey — captured during the first SnapTrade sync wait
-        # on /sync/processing. One row per user (PK on user_id) so a
-        # re-prompt on retry doesn't duplicate. ``primary_reason`` is a
-        # short slug (e.g. 'lose_money_options'); ``other_text`` is
-        # optional free text we only render in admin views. Stored for
-        # now; not yet used to personalize copy.
+        # on /sync/processing as a multi-section wizard. One row per user
+        # (PK on user_id); resubmitting overwrites. ``answers`` is a JSONB
+        # blob so the form can grow/shrink/rename questions without a
+        # schema migration — the only contract is "user_id → JSON object
+        # of answers". Routes validate required keys; admin views render
+        # the blob. Stored for now, not yet used to personalize copy.
         """
         CREATE TABLE IF NOT EXISTS onboarding_responses (
-            user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            primary_reason TEXT NOT NULL,
-            other_text     TEXT,
-            submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            answers      JSONB NOT NULL,
+            submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
     ]
@@ -412,6 +467,9 @@ def init_db():
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
     _migrate_broker_account_id_columns()
+    _migrate_onboarding_responses_v2()
+    _migrate_user_profiles_email_prefs()
+    _migrate_users_email_verified_column()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -447,6 +505,41 @@ def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
         )
     except Exception as exc:
         _log.warning("broker_tenants nickname backfill skipped: %s", exc)
+
+
+def _migrate_users_email_verified_column():
+    """Idempotent: add ``email_verified_at`` to ``users`` so we can track
+    which signup emails have been confirmed. NULL = unverified (legacy rows
+    and brand-new signups until they click the link)."""
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ")
+    except Exception as exc:
+        _log.warning("users.email_verified_at migration skipped: %s", exc)
+
+
+def _migrate_user_profiles_email_prefs():
+    """Idempotent: add the granular email-preference columns + unsubscribe
+    token to ``user_profiles`` on databases created before the email
+    strategy shipped. ``CREATE TABLE IF NOT EXISTS`` does not add columns
+    to a pre-existing table, so legacy rows need the explicit ALTER.
+
+    - ``digest_email``           — weekly *summary* opt-in (existing column).
+    - ``weekly_preview_email``   — weekly *preview* (look-ahead) opt-in.
+    - ``product_update_email``   — product updates + re-engagement nudges.
+    - ``email_unsubscribe_token``— one-click unsubscribe token (List-Unsubscribe).
+    """
+    for ddl in (
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+        "weekly_preview_email BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+        "product_update_email BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+        "email_unsubscribe_token TEXT",
+    ):
+        try:
+            execute(ddl)
+        except Exception as exc:
+            _log.warning("user_profiles email-prefs migration skipped: %s", exc)
 
 
 def _migrate_schwab_first_sync_column():
@@ -499,6 +592,38 @@ def _migrate_broker_account_id_columns():
             _log.warning(
                 "%s.broker_account_id migration skipped: %s", table, exc,
             )
+
+
+def _migrate_onboarding_responses_v2():
+    """Idempotent: upgrade ``onboarding_responses`` from the v1 two-column
+    shape (``primary_reason TEXT NOT NULL, other_text TEXT``) to the v2
+    shape (``answers JSONB NOT NULL``). Safe to run repeatedly:
+
+    - On a fresh DB the v2 ``CREATE TABLE`` already shipped the new
+      shape; ``DROP NOT NULL`` is a no-op (the columns don't exist) and
+      ``ADD COLUMN IF NOT EXISTS`` short-circuits.
+    - On a dev DB that ran v1: relax the NOT NULL on ``primary_reason``
+      so the new wizard form can write rows with only ``answers``
+      populated, and add the ``answers`` JSONB column.
+
+    The v1 columns are intentionally left in place — there are unlikely
+    to be any prod rows under v1 (this code shipped in the same change),
+    and dropping a column on a live table is a separate decision.
+    """
+    try:
+        execute(
+            "ALTER TABLE onboarding_responses "
+            "ALTER COLUMN primary_reason DROP NOT NULL"
+        )
+    except Exception as e:
+        _log.debug("onboarding_responses.primary_reason DROP NOT NULL skipped: %s", e)
+    try:
+        execute(
+            "ALTER TABLE onboarding_responses "
+            "ADD COLUMN IF NOT EXISTS answers JSONB"
+        )
+    except Exception as e:
+        _log.warning("onboarding_responses.answers migration skipped: %s", e)
 
 
 def _migrate_snaptrade_force_refresh_columns():
@@ -1621,8 +1746,20 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
     """Flag a SnapTrade account as needing reconnection (broker grant
     revoked, broker side error, etc). Idempotent on the timestamp so
     the banner does not reset on every cron run.
+
+    Returns ``True`` when this call is the NULL -> set *transition* (the
+    connection was previously healthy and just broke) so callers can fire
+    a one-time "reconnect" email; ``False`` when it was already flagged or
+    on error. The email_sends log is the durable "send once" guard; this
+    boolean is a cheap early-out for the common already-broken case.
     """
     try:
+        prior = fetch_one(
+            "SELECT connection_broken_at FROM snaptrade_accounts "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (user_id, snaptrade_account_id),
+        )
+        was_broken = bool(prior and prior.get("connection_broken_at"))
         execute(
             "UPDATE snaptrade_accounts "
             "SET connection_broken_at = COALESCE(connection_broken_at, NOW()), "
@@ -1630,8 +1767,10 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
             "WHERE user_id = %s AND snaptrade_account_id = %s",
             (user_id, snaptrade_account_id),
         )
+        return not was_broken
     except Exception as exc:
         _log.warning("mark_snaptrade_connection_broken failed: %s", exc)
+        return False
 
 
 def clear_snaptrade_connection_broken(user_id, snaptrade_account_id):
@@ -1722,7 +1861,8 @@ def get_snaptrade_account_nicknames(user_id):
 
 _PROFILE_COLUMNS = (
     "user_id, display_name, headline, bio, accent, timezone, week_starts_monday, "
-    "default_route, digest_email, compact_tables, show_account_names_on_published, "
+    "default_route, digest_email, weekly_preview_email, product_update_email, "
+    "email_unsubscribe_token, compact_tables, show_account_names_on_published, "
     "profile_visibility, created_at, updated_at"
 )
 
@@ -1739,6 +1879,9 @@ def _default_profile_row(user_id):
         "week_starts_monday": True,
         "default_route": "weekly_review",
         "digest_email": False,
+        "weekly_preview_email": False,
+        "product_update_email": True,
+        "email_unsubscribe_token": None,
         "compact_tables": False,
         "show_account_names_on_published": False,
         "profile_visibility": "private",
@@ -1795,6 +1938,8 @@ def update_user_profile(user_id, **fields):
         "week_starts_monday",
         "default_route",
         "digest_email",
+        "weekly_preview_email",
+        "product_update_email",
         "compact_tables",
         "show_account_names_on_published",
         "profile_visibility",
@@ -1817,6 +1962,219 @@ def update_user_profile(user_id, **fields):
     except Exception as exc:
         _log.warning("update_user_profile failed: %s", exc)
         return False
+
+
+# ------------------------------------------------------------------
+# Email: idempotency log, opt-in recipients, unsubscribe tokens
+#
+# Email kinds (the ``kind`` column on email_sends and the opt-in column
+# that gates each lifecycle send):
+#   connection_dropped  → transactional (no opt-out)
+#   weekly_summary      → user_profiles.digest_email
+#   weekly_preview      → user_profiles.weekly_preview_email
+#   reengagement        → user_profiles.product_update_email
+# ------------------------------------------------------------------
+
+# Maps a lifecycle email kind to the user_profiles boolean that gates it.
+_EMAIL_OPT_IN_COLUMN = {
+    "weekly_summary": "digest_email",
+    "weekly_preview": "weekly_preview_email",
+    "reengagement": "product_update_email",
+}
+
+
+def record_email_send(kind, dedupe_key, *, user_id=None, to_email=None):
+    """Append-once log row. Returns ``True`` if THIS call inserted the row
+    (caller should send the email) and ``False`` if a row for
+    ``(kind, dedupe_key)`` already existed (skip — already sent) or on a
+    DB error (skip — never risk spamming on a broken log).
+
+    The dedupe_key should encode whatever makes the send unique: e.g.
+    ``"<snaptrade_account_id>:<broken_at_iso>"`` for a reconnect notice or
+    ``"<account>:<week_start>"`` for a weekly digest.
+    """
+    try:
+        row = execute_returning(
+            "INSERT INTO email_sends (user_id, kind, dedupe_key, to_email) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (kind, dedupe_key) DO NOTHING "
+            "RETURNING id",
+            (user_id, kind, dedupe_key, to_email),
+        )
+        return row is not None
+    except Exception as exc:
+        _log.warning("record_email_send(%s) failed: %s", kind, exc)
+        return False
+
+
+# Higher number = stronger block. A later weaker event must not downgrade a
+# stronger one (a complaint after a hard bounce keeps the hard bounce).
+_SUPPRESSION_SEVERITY = {"complaint": 1, "manual": 2, "invalid": 3, "hard_bounce": 3}
+
+
+def _normalize_email(email):
+    return (email or "").strip().lower()
+
+
+def add_email_suppression(email, reason, *, detail=None):
+    """Add/refresh a suppression row. ``reason`` is one of complaint,
+    manual, invalid, hard_bounce. Never downgrades a stronger existing
+    block. Returns True on success."""
+    em = _normalize_email(email)
+    if not em:
+        return False
+    reason = (reason or "manual").strip().lower()
+    try:
+        existing = fetch_one("SELECT reason FROM email_suppressions WHERE email = %s", (em,))
+        if existing:
+            old = (existing.get("reason") or "").lower()
+            if _SUPPRESSION_SEVERITY.get(reason, 0) < _SUPPRESSION_SEVERITY.get(old, 0):
+                execute("UPDATE email_suppressions SET updated_at = NOW() WHERE email = %s", (em,))
+                return True
+        execute(
+            "INSERT INTO email_suppressions (email, reason, detail) VALUES (%s, %s, %s) "
+            "ON CONFLICT (email) DO UPDATE SET reason = EXCLUDED.reason, "
+            "detail = EXCLUDED.detail, updated_at = NOW()",
+            (em, reason, detail),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("add_email_suppression failed: %s", exc)
+        return False
+
+
+def get_email_suppression(email):
+    """Return the suppression reason for an address, or None if not
+    suppressed. Cheap enough to call before every send."""
+    em = _normalize_email(email)
+    if not em:
+        return None
+    try:
+        row = fetch_one("SELECT reason FROM email_suppressions WHERE email = %s", (em,))
+        return (row or {}).get("reason")
+    except Exception as exc:
+        _log.warning("get_email_suppression failed: %s", exc)
+        return None
+
+
+def remove_email_suppression(email):
+    """Remove a suppression (e.g. operator re-enabling a fixed address)."""
+    em = _normalize_email(email)
+    if not em:
+        return False
+    try:
+        execute("DELETE FROM email_suppressions WHERE email = %s", (em,))
+        return True
+    except Exception as exc:
+        _log.warning("remove_email_suppression failed: %s", exc)
+        return False
+
+
+def get_or_create_email_unsubscribe_token(user_id):
+    """Return the user's stable one-click unsubscribe token, minting one
+    on first use. Used to build the List-Unsubscribe link for lifecycle
+    email. Returns None on error (caller can still send without a footer
+    link, but should prefer to skip)."""
+    if user_id is None:
+        return None
+    try:
+        ensure_user_profile(user_id)
+        row = fetch_one(
+            "SELECT email_unsubscribe_token FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        )
+        existing = (row or {}).get("email_unsubscribe_token")
+        if existing:
+            return existing
+        token = secrets.token_urlsafe(32)
+        execute(
+            "UPDATE user_profiles SET email_unsubscribe_token = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND email_unsubscribe_token IS NULL",
+            (token, user_id),
+        )
+        # Re-read in case a concurrent request won the race.
+        row = fetch_one(
+            "SELECT email_unsubscribe_token FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        )
+        return (row or {}).get("email_unsubscribe_token") or token
+    except Exception as exc:
+        _log.warning("get_or_create_email_unsubscribe_token failed: %s", exc)
+        return None
+
+
+def unsubscribe_user_by_token(token):
+    """One-click unsubscribe from ALL lifecycle email. Idempotent. Returns
+    the username on success (for a friendly confirmation page) or None if
+    the token doesn't match anyone."""
+    if not token:
+        return None
+    try:
+        row = execute_returning(
+            "UPDATE user_profiles SET digest_email = FALSE, "
+            "weekly_preview_email = FALSE, product_update_email = FALSE, "
+            "updated_at = NOW() WHERE email_unsubscribe_token = %s "
+            "RETURNING user_id",
+            (token,),
+        )
+        if not row:
+            return None
+        uid = row.get("user_id")
+        urow = fetch_one("SELECT username FROM users WHERE id = %s", (uid,))
+        return (urow or {}).get("username") or "your account"
+    except Exception as exc:
+        _log.warning("unsubscribe_user_by_token failed: %s", exc)
+        return None
+
+
+def list_email_recipients_for_kind(kind):
+    """Users opted into a lifecycle email ``kind`` who have a deliverable
+    address. Returns dicts with: user_id, username, email,
+    email_unsubscribe_token, timezone.
+
+    Excludes the shared demo account. Raises on an unknown kind so a typo
+    in a cron never silently blasts everyone.
+    """
+    col = _EMAIL_OPT_IN_COLUMN.get(kind)
+    if col is None:
+        raise ValueError(f"Unknown lifecycle email kind: {kind!r}")
+    rows = fetch_all(
+        f"SELECT u.id AS user_id, u.username, u.email, "
+        f"p.email_unsubscribe_token, p.timezone "
+        f"FROM users u JOIN user_profiles p ON p.user_id = u.id "
+        f"WHERE p.{col} = TRUE "
+        f"AND u.email IS NOT NULL AND length(trim(u.email)) > 0 "
+        f"AND lower(u.username) <> 'demo' "
+        f"ORDER BY u.id",
+    )
+    return rows or []
+
+
+def list_dormant_email_recipients(min_days_away, max_days_away):
+    """Users who last opened the app between ``min_days_away`` and
+    ``max_days_away`` days ago (a window, so a daily cron doesn't re-nudge
+    the same person every day) and are opted into product-update email.
+
+    Uses ``user_review_visits.last_visit_at`` (set by ``bump_review_visit``
+    on every Daily Review load) as the activity signal. Returns the same
+    shape as ``list_email_recipients_for_kind`` plus ``days_away``.
+    """
+    rows = fetch_all(
+        "SELECT u.id AS user_id, u.username, u.email, "
+        "p.email_unsubscribe_token, p.timezone, v.last_visit_at, "
+        "EXTRACT(DAY FROM (NOW() - v.last_visit_at))::int AS days_away "
+        "FROM users u "
+        "JOIN user_profiles p ON p.user_id = u.id "
+        "JOIN user_review_visits v ON v.user_id = u.id "
+        "WHERE p.product_update_email = TRUE "
+        "AND u.email IS NOT NULL AND length(trim(u.email)) > 0 "
+        "AND lower(u.username) <> 'demo' "
+        "AND v.last_visit_at <= NOW() - (%s || ' days')::interval "
+        "AND v.last_visit_at >  NOW() - (%s || ' days')::interval "
+        "ORDER BY u.id",
+        (int(min_days_away), int(max_days_away)),
+    )
+    return rows or []
 
 
 # ------------------------------------------------------------------
@@ -2592,6 +2950,104 @@ def consume_password_reset_token(raw_token: str) -> int | None:
 
 
 # ------------------------------------------------------------------
+# Email verification (single-use token; mirrors password reset)
+# ------------------------------------------------------------------
+
+EMAIL_VERIFICATION_TOKEN_TTL = _td(days=7)
+
+
+def mint_email_verification_token(user_id: int) -> str:
+    """Create a single-use email-verification token, returning the raw
+    value to email. Invalidates older unused tokens for the user."""
+    raw = _secrets.token_urlsafe(32)
+    token_hash = _hash_reset_token(raw)
+    expires_at = _dt.now(_tz.utc) + EMAIL_VERIFICATION_TOKEN_TTL
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE email_verification_tokens SET used_at = NOW() "
+                "WHERE user_id = %s AND used_at IS NULL",
+                (user_id,),
+            )
+            cur.execute(
+                """INSERT INTO email_verification_tokens
+                   (user_id, token_hash, expires_at)
+                   VALUES (%s, %s, %s)""",
+                (user_id, token_hash, expires_at),
+            )
+    return raw
+
+
+def consume_email_verification_token(raw_token: str) -> int | None:
+    """Validate + consume a verification token and stamp the user's
+    ``email_verified_at``. Returns the user_id on success, else None.
+    Single transaction so concurrent clicks can't double-process."""
+    if not raw_token:
+        return None
+    token_hash = _hash_reset_token(raw_token)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, user_id, expires_at, used_at
+                   FROM email_verification_tokens
+                   WHERE token_hash = %s
+                   FOR UPDATE""",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            if not row or row["used_at"] is not None:
+                return None
+            expires_at = row["expires_at"]
+            now = _dt.now(_tz.utc)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=_tz.utc)
+            if now > expires_at:
+                return None
+            cur.execute(
+                "UPDATE email_verification_tokens SET used_at = NOW() WHERE id = %s",
+                (row["id"],),
+            )
+            cur.execute(
+                "UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) "
+                "WHERE id = %s",
+                (row["user_id"],),
+            )
+            return int(row["user_id"])
+
+
+def mark_email_verified(user_id: int) -> None:
+    """Force-mark a user's email verified (admin / CLI use)."""
+    try:
+        execute(
+            "UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) "
+            "WHERE id = %s",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("mark_email_verified failed: %s", exc)
+
+
+def email_needs_verification(user_id: int) -> bool:
+    """True when the user has an email on file that hasn't been confirmed.
+    Drives the 'please verify your email' banner + the resend route. Never
+    raises (returns False) so a stale DB can't break page render."""
+    if user_id is None:
+        return False
+    try:
+        row = fetch_one(
+            "SELECT email, email_verified_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("email_needs_verification failed: %s", exc)
+        return False
+    if not row:
+        return False
+    has_email = bool((row.get("email") or "").strip())
+    return has_email and row.get("email_verified_at") is None
+
+
+# ------------------------------------------------------------------
 # Feedback inbox (footer Send-Feedback button)
 # ------------------------------------------------------------------
 
@@ -2675,55 +3131,51 @@ def mark_feedback_resolved(feedback_id: int, resolved: bool = True) -> bool:
 
 
 # ------------------------------------------------------------------
-# Onboarding survey ("why are you here?")
+# Onboarding survey (multi-section wizard during first sync wait)
 # ------------------------------------------------------------------
 #
-# Captured during the first SnapTrade sync wait on /sync/processing.
+# Captured during the first SnapTrade sync on /sync/processing as a
+# multi-section wizard (~13 questions, 3-5 min to complete — matches the
+# dbt build window). Storage is a single JSONB blob per user so the form
+# can grow / shrink / rename questions without a schema migration. The
+# only contract is "user_id → JSON object". Required-key validation
+# lives in the route layer (``app/routes.py:submit_onboarding_why_here``).
+#
 # Stored only for now; not yet used to personalize copy. Long-term these
-# answers anchor the mirror back at the trader's stated goal — see AGENTS.md
-# "Daily Review" / Mirror Score notes. One row per user; resubmitting
-# overwrites the prior answer (UPSERT) so a user who initially clicked
-# "just looking" can refine later from settings.
+# answers anchor the mirror back at the trader's stated goal — see
+# AGENTS.md "Daily Review" / Mirror Score notes.
 
-# Allow-list of slugs the form can post. Anything outside this set is
-# rejected at the route layer so a malicious client can't pollute the
-# table with arbitrary values that would later break dashboards.
-ONBOARDING_PRIMARY_REASONS = (
-    "lose_money_options",
-    "understand_patterns",
-    "better_record",
-    "just_looking",
-    "other",
-)
-
-_MAX_ONBOARDING_OTHER_LEN = 1000
+# Defense-in-depth size cap on the serialized blob. The route layer
+# already truncates individual free-text fields; this is the backstop
+# against a malicious client that bypasses field-level limits.
+_MAX_ONBOARDING_BLOB_BYTES = 16384  # 16 KB
 
 
-def save_onboarding_response(
-    *,
-    user_id: int,
-    primary_reason: str,
-    other_text: str | None,
-) -> bool:
-    """Upsert one onboarding answer per user. Returns True on success."""
-    if not user_id:
+def save_onboarding_response(*, user_id: int, answers: dict) -> bool:
+    """Upsert one onboarding response per user.
+
+    ``answers`` is the full per-user blob (dict). Caller (route layer)
+    is responsible for validating required keys and trimming free-text
+    inputs. Returns True on success.
+    """
+    if not user_id or not isinstance(answers, dict) or not answers:
         return False
-    reason = (primary_reason or "").strip()
-    if reason not in ONBOARDING_PRIMARY_REASONS:
+    try:
+        blob = json.dumps(answers, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        _log.warning("save_onboarding_response: non-serializable answers: %s", exc)
         return False
-    clean_other = (other_text or "").strip() or None
-    if clean_other and len(clean_other) > _MAX_ONBOARDING_OTHER_LEN:
-        clean_other = clean_other[:_MAX_ONBOARDING_OTHER_LEN]
+    if len(blob.encode("utf-8")) > _MAX_ONBOARDING_BLOB_BYTES:
+        _log.warning("save_onboarding_response: blob exceeds %s bytes", _MAX_ONBOARDING_BLOB_BYTES)
+        return False
     try:
         execute(
-            """INSERT INTO onboarding_responses
-                   (user_id, primary_reason, other_text, submitted_at)
-               VALUES (%s, %s, %s, NOW())
+            """INSERT INTO onboarding_responses (user_id, answers, submitted_at)
+               VALUES (%s, %s::jsonb, NOW())
                ON CONFLICT (user_id) DO UPDATE SET
-                   primary_reason = EXCLUDED.primary_reason,
-                   other_text     = EXCLUDED.other_text,
-                   submitted_at   = NOW()""",
-            (user_id, reason, clean_other),
+                   answers      = EXCLUDED.answers,
+                   submitted_at = NOW()""",
+            (user_id, blob),
         )
         return True
     except Exception as exc:
@@ -2732,12 +3184,16 @@ def save_onboarding_response(
 
 
 def get_onboarding_response(user_id: int) -> dict | None:
-    """Return the saved onboarding row for ``user_id`` or None."""
+    """Return the saved onboarding row for ``user_id`` or None.
+
+    The returned dict has keys: ``user_id``, ``answers`` (already
+    decoded by psycopg's JSONB adapter), ``submitted_at``.
+    """
     if not user_id:
         return None
     try:
         return fetch_one(
-            """SELECT user_id, primary_reason, other_text, submitted_at
+            """SELECT user_id, answers, submitted_at
                  FROM onboarding_responses
                 WHERE user_id = %s""",
             (user_id,),

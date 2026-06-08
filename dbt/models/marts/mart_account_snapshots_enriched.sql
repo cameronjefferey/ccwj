@@ -19,6 +19,7 @@
 
 with daily as (
     select
+        tenant_id,
         account,
         user_id,
         date,
@@ -28,17 +29,19 @@ with daily as (
 
 ordered as (
     select
+        tenant_id,
         account,
         user_id,
         date,
         account_value,
-        lag(account_value) over (partition by account, user_id order by date) as prev_value,
-        lag(date)          over (partition by account, user_id order by date) as prev_date
+        lag(account_value) over (partition by tenant_id, account, user_id order by date) as prev_value,
+        lag(date)          over (partition by tenant_id, account, user_id order by date) as prev_date
     from daily
 ),
 
 one_week_base as (
     select
+        tenant_id,
         account,
         user_id,
         d.date,
@@ -47,6 +50,7 @@ one_week_base as (
             from daily d2
             where d2.account = d.account
               and (d2.user_id is not distinct from d.user_id)
+              and (d2.tenant_id is not distinct from d.tenant_id)
               and d2.date <= date_sub(d.date, interval 7 day)
         ) as base_1w_date
     from daily d
@@ -54,6 +58,7 @@ one_week_base as (
 
 one_month_base as (
     select
+        tenant_id,
         account,
         user_id,
         d.date,
@@ -62,6 +67,7 @@ one_month_base as (
             from daily d2
             where d2.account = d.account
               and (d2.user_id is not distinct from d.user_id)
+              and (d2.tenant_id is not distinct from d.tenant_id)
               and d2.date <= date_sub(d.date, interval 30 day)
         ) as base_1m_date
     from daily d
@@ -69,6 +75,7 @@ one_month_base as (
 
 joined as (
     select
+        o.tenant_id,
         o.account,
         o.user_id,
         o.date,
@@ -83,26 +90,30 @@ joined as (
     left join one_week_base w
       on o.account = w.account
      and (o.user_id is not distinct from w.user_id)
+     and (o.tenant_id is not distinct from w.tenant_id)
      and o.date = w.date
     left join daily mw
       on w.account = mw.account
      and (w.user_id is not distinct from mw.user_id)
+     and (w.tenant_id is not distinct from mw.tenant_id)
      and w.base_1w_date = mw.date
     left join one_month_base m
       on o.account = m.account
      and (o.user_id is not distinct from m.user_id)
+     and (o.tenant_id is not distinct from m.tenant_id)
      and o.date = m.date
     left join daily mm
       on m.account = mm.account
      and (m.user_id is not distinct from mm.user_id)
+     and (m.tenant_id is not distinct from mm.tenant_id)
      and m.base_1m_date = mm.date
 )
 
 select
     j.account,
     j.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from mart_account_equity_daily.
+    j.tenant_id,
     j.date,
     j.account_value,
 
@@ -131,7 +142,4 @@ select
     end as delta_1m_pct
 
 from joined j
-left join {{ ref('dim_broker_tenants') }} dba
-    on j.account = dba.account_name
-    and (j.user_id is not distinct from dba.user_id)
-order by j.account, j.user_id, j.date
+order by j.tenant_id, j.account, j.user_id, j.date

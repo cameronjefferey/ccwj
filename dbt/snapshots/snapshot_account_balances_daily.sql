@@ -3,14 +3,16 @@
   Source: stg_account_balances (export seeds + account_balances seed).
   Run after each upload so we never lose history; full-refresh does not wipe this table.
 
-  ``unique_key`` includes ``user_id`` because the cross-tenant guard
-  has been removed: two users may legitimately register the same
-  ``account_name`` (parent monitoring child's "Schwab Account", a test
-  user re-using a real label, etc.) and the snapshot grain must keep
-  their balances apart. With the old ``(account, row_type)`` key, a
-  fresh sync that produced two rows for the same account label under
-  different ``user_id``s blew up the MERGE with
+  ``unique_key`` leads with ``tenant_id`` (the broker-stable v2 grain)
+  because the ``account`` display label is NOT unique: a single user can
+  link several physical accounts that all surface as "Schwab Account"
+  (SnapTrade returned no distinct masked number, so every one collapses
+  to the same label + ``user_id``). With the old
+  ``(account, user_id, row_type)`` key those collide on one target row and
+  the MERGE blows up with
   ``UPDATE/MERGE must match at most one source row for each target row``.
+  ``account``/``user_id`` stay in the key as a fallback for legacy/demo
+  rows that pre-date ``tenant_id`` (NULL tenant_id collapses on the label).
 
   ``coalesce(user_id, -1)`` keeps legacy rows that pre-date the
   ``user_id`` column from breaking the MERGE (NULL is never equal to
@@ -27,7 +29,7 @@
     config(
         target_schema='analytics',
         target_database=target.database,
-        unique_key=['account', 'user_id', 'row_type'],
+        unique_key=['tenant_grain', 'user_id', 'row_type'],
         strategy='check',
         check_cols=['market_value', 'cost_basis', 'unrealized_pnl', 'percent_of_account'],
         invalidate_hard_deletes=True,
@@ -42,6 +44,12 @@
 -- treat it as "unowned legacy" the same way they always have.
 select
     account,
+    tenant_id,
+    -- Broker-stable grain for the unique_key. ``tenant_id`` is the v2
+    -- isolation key; fall back to ``account`` for legacy/demo rows that
+    -- pre-date it so the MERGE predicate never sees a NULL key column
+    -- (NULL = NULL is false in a MERGE and would re-insert every run).
+    coalesce(nullif(trim(tenant_id), ''), account) as tenant_grain,
     coalesce(user_id, -1) as user_id,
     row_type,
     market_value,

@@ -37,21 +37,23 @@ with closed as (
       and close_date is not null
 ),
 
--- Window partitioned by (account, user_id) so two users with the same
--- account label can never share a trade-sequence numbering.
+-- Window partitioned by (tenant_id, account, user_id) so two physical
+-- accounts that share a display label (e.g. multiple "Schwab Account"s)
+-- never share a trade-sequence numbering — each is its own selectable
+-- account in the UI.
 sequenced as (
     select
         *,
         row_number() over (
-            partition by account, user_id order by close_date, trade_symbol
+            partition by tenant_id, account, user_id order by close_date, trade_symbol
         ) as trade_sequence_num,
 
         lag(case when is_winner then 'Winner' else 'Loser' end) over (
-            partition by account, user_id order by close_date, trade_symbol
+            partition by tenant_id, account, user_id order by close_date, trade_symbol
         ) as prev_trade_outcome,
 
         lag(total_pnl) over (
-            partition by account, user_id order by close_date, trade_symbol
+            partition by tenant_id, account, user_id order by close_date, trade_symbol
         ) as prev_trade_pnl
     from closed
 )

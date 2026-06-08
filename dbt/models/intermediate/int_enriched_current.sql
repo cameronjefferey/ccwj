@@ -73,6 +73,7 @@ with current_positions as (
 -- live"; see int_option_contracts header.
 option_contract_status as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -131,8 +132,8 @@ priced as (
 select
     p.account,
     p.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from stg_current.
+    p.tenant_id,
     p.trade_symbol,
     p.underlying_symbol,
     p.option_expiry,
@@ -246,10 +247,8 @@ left join symbol_meta sm
 left join option_contract_status oc
     on p.account = oc.account
     and (p.user_id is not distinct from oc.user_id)
+    and (p.tenant_id is not distinct from oc.tenant_id)
     and p.trade_symbol = oc.trade_symbol
-left join {{ ref('dim_broker_tenants') }} dba
-    on p.account = dba.account_name
-    and (p.user_id is not distinct from dba.user_id)
 where not (
     -- Drop options the contracts model has already realized.
     -- Equity rows (and option rows with no matching contract) pass

@@ -133,7 +133,18 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
    the login page. By default `EMAIL_BACKEND=log` prints the reset email to the
    app log so the operator can paste it into Slack/SMS for the tester. To enable
    real email delivery, set `EMAIL_BACKEND=smtp` plus the `EMAIL_SMTP_*` env
-   vars (see `.env.example`).
+   vars, or `EMAIL_BACKEND=resend` + `RESEND_API_KEY` (see `.env.example`).
+
+#### Email (transactional + lifecycle)
+
+HappyTrader sends transactional mail (password reset, broker-reconnect notice)
+and opt-in lifecycle mail (weekly summary, weekly preview, re-engagement). The
+provider is **Resend** — see [`docs/EMAIL_STRATEGY.md`](docs/EMAIL_STRATEGY.md)
+for the provider rationale, the email taxonomy, opt-out/unsubscribe policy, DNS
+(SPF/DKIM/DMARC) setup, and the digest cron schedule. Lifecycle digests run as
+Render crons (`app.email_digests_cli {weekly_summary|weekly_preview|reengagement}`,
+declared in `app/render.yaml`); every send is idempotent via the `email_sends`
+table.
 
 #### Manual CSV upload (Schwab → GitHub → BigQuery)
 

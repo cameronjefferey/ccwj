@@ -6,6 +6,7 @@
 
 with closed_trades as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -39,6 +40,7 @@ with closed_trades as (
 */
 wash_sale_matches as (
     select distinct
+        l.tenant_id,
         l.account,
         l.user_id,
         l.symbol,
@@ -50,6 +52,7 @@ wash_sale_matches as (
     join {{ ref('int_strategy_classification') }} r
         on  l.account  = r.account
         and (l.user_id is not distinct from r.user_id)
+        and (l.tenant_id is not distinct from r.tenant_id)
         and l.symbol    = r.symbol
         and l.trade_symbol != r.trade_symbol
         and abs(date_diff(r.open_date, l.close_date, day)) <= 30
@@ -58,6 +61,7 @@ wash_sale_matches as (
 
 wash_flags as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -66,14 +70,14 @@ wash_flags as (
         min(repurchase_strategy)   as repurchase_strategy,
         min(days_between)          as days_between
     from wash_sale_matches
-    group by 1, 2, 3, 4
+    group by 1, 2, 3, 4, 5
 )
 
 select
     ct.account,
     ct.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from staging through the classification grain.
+    ct.tenant_id,
     ct.symbol,
     ct.trade_symbol,
     ct.strategy,
@@ -97,8 +101,6 @@ from closed_trades ct
 left join wash_flags wf
     on  ct.account    = wf.account
     and (ct.user_id is not distinct from wf.user_id)
+    and (ct.tenant_id is not distinct from wf.tenant_id)
     and ct.symbol     = wf.symbol
     and ct.close_date = wf.loss_close_date
-left join {{ ref('dim_broker_tenants') }} dba
-    on ct.account = dba.account_name
-    and (ct.user_id is not distinct from dba.user_id)

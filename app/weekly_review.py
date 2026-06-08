@@ -234,7 +234,7 @@ WHERE week_start = @week_start
 
 # Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
 TODAY_SNAPSHOT_ENRICHED_QUERY = """
-SELECT account, date, account_value,
+SELECT account, tenant_id, date, account_value,
   base_1d_date, base_1d_value, delta_1d, delta_1d_pct,
   base_1w_date, base_1w_value, delta_1w, delta_1w_pct,
   base_1m_date, base_1m_value, delta_1m, delta_1m_pct
@@ -2702,21 +2702,20 @@ def weekly_review():
         try:
             snap_df = batch.get("snapshots", pd.DataFrame())
             seen_accounts = set()
-            if not snap_df.empty and "date" in snap_df.columns and "account" in snap_df.columns:
+            if not snap_df.empty and "date" in snap_df.columns and "tenant_id" in snap_df.columns:
                 if hasattr(snap_df["date"].iloc[0], "date"):
                     snap_df["date"] = snap_df["date"].dt.date
                 elif snap_df["date"].dtype == object:
                     snap_df["date"] = pd.to_datetime(snap_df["date"]).dt.date
 
-                # v2: translate broker label → user nickname BEFORE the
-                # groupby / seen_accounts collection, so a user-set
-                # nickname is the single source of truth across the
-                # mart-derived row AND the placeholder-fill loop below.
-                # Without this the two name spaces mismatch and we
-                # double-render every account (one real row labeled
-                # by broker name, one placeholder labeled by nickname).
-                from app.routes import _apply_account_labels
-                _apply_account_labels(snap_df, current_user.id, col="account")
+                # v2: group by the broker-stable ``tenant_id`` (not the
+                # display ``account`` label) so several physical accounts
+                # that share a label — e.g. multiple "Schwab Account"s —
+                # render as distinct rows. The display label is resolved
+                # per tenant via the disambiguating label map (nickname >
+                # broker label, with a stable suffix when labels collide).
+                from app.routes import _tenant_label_map_for_user
+                tenant_label_map = _tenant_label_map_for_user(current_user.id)
 
                 def _round_opt(val):
                     if val is None or (hasattr(val, "__float__") and pd.isna(val)):
@@ -2728,10 +2727,11 @@ def weekly_review():
 
                 latest_per_account = (
                     snap_df.sort_values("date", ascending=False)
-                    .groupby("account").first().reset_index()
+                    .groupby("tenant_id").first().reset_index()
                 )
                 for _, row in latest_per_account.iterrows():
-                    acct = row["account"]
+                    tid = row["tenant_id"]
+                    acct = tenant_label_map.get(tid) or row.get("account") or tid
                     seen_accounts.add(acct)
                     today_date = row["date"]
                     today_value = float(row.get("account_value") or 0)

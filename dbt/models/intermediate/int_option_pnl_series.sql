@@ -64,6 +64,7 @@ daily as (
 
 contracts as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -78,7 +79,7 @@ contracts as (
 ),
 
 strat as (
-    select account, user_id, trade_symbol, strategy
+    select tenant_id, account, user_id, trade_symbol, strategy
     from {{ ref('int_strategy_classification') }}
     where trade_group_type = 'option_contract'
 )
@@ -112,9 +113,10 @@ select
     date_diff(d.snapshot_date, c.open_date, day) as day_in_trade,
 
     -- Running peak P&L: the best unrealized P&L seen up to this snapshot.
-    -- Window keyed by (account, user_id, trade_symbol) to keep tenants apart.
+    -- Window keyed by (tenant_id, account, user_id, trade_symbol) to keep
+    -- physical accounts sharing a display label apart.
     max(d.unrealized_pnl) over (
-        partition by d.account, d.user_id, d.trade_symbol
+        partition by d.tenant_id, d.account, d.user_id, d.trade_symbol
         order by d.snapshot_date
         rows between unbounded preceding and current row
     ) as peak_pnl_to_date,
@@ -130,8 +132,10 @@ from daily d
 join contracts c
     on d.account = c.account
     and (d.user_id is not distinct from c.user_id)
+    and (d.tenant_id is not distinct from c.tenant_id)
     and d.trade_symbol = c.trade_symbol
 left join strat s
     on d.account = s.account
     and (d.user_id is not distinct from s.user_id)
+    and (d.tenant_id is not distinct from s.tenant_id)
     and d.trade_symbol = s.trade_symbol

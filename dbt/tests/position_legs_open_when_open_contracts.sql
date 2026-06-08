@@ -14,24 +14,26 @@
 
 with open_contracts as (
     select
+        tenant_id,
         account,
         user_id,
         underlying_symbol as symbol,
         count(*) as open_contract_count
     from {{ ref('int_option_contracts') }}
     where status = 'Open'
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 ),
 
 open_legs as (
     select
+        tenant_id,
         account,
         user_id,
         symbol,
         count(*) as open_leg_count
     from {{ ref('int_position_legs') }}
     where status = 'Open'
-    group by 1, 2, 3
+    group by 1, 2, 3, 4
 )
 
 select
@@ -44,5 +46,6 @@ from open_contracts oc
 left join open_legs ol
     on  ol.account = oc.account
     and ol.user_id is not distinct from oc.user_id
+    and ol.tenant_id is not distinct from oc.tenant_id
     and ol.symbol = oc.symbol
 where coalesce(ol.open_leg_count, 0) = 0

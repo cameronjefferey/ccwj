@@ -25,6 +25,7 @@
 
 with closers as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol          as old_trade_symbol,
@@ -48,6 +49,7 @@ with closers as (
 
 openers as (
     select
+        oc.tenant_id,
         oc.account,
         oc.user_id,
         oc.trade_symbol       as new_trade_symbol,
@@ -65,6 +67,7 @@ openers as (
     left join {{ ref('int_option_trade_kinds') }} tk
         on oc.account = tk.account
         and (oc.user_id is not distinct from tk.user_id)
+        and (oc.tenant_id is not distinct from tk.tenant_id)
         and oc.trade_symbol = tk.trade_symbol
 ),
 
@@ -82,7 +85,7 @@ candidates as (
         o.new_outcome,
         date_diff(o.new_open_date, c.old_close_date, day) as days_between,
         row_number() over (
-            partition by c.account, c.user_id, c.old_trade_symbol
+            partition by c.tenant_id, c.account, c.user_id, c.old_trade_symbol
             order by abs(date_diff(o.new_open_date, c.old_close_date, day)),
                      o.new_open_date
         ) as match_rank
@@ -90,6 +93,7 @@ candidates as (
     join openers o
         on c.account = o.account
         and (c.user_id is not distinct from o.user_id)
+        and (c.tenant_id is not distinct from o.tenant_id)
         and c.underlying_symbol = o.underlying_symbol
         and c.option_type = o.option_type
         -- Same direction: both sold or both bought
@@ -105,8 +109,8 @@ candidates as (
 select
     c.account,
     c.user_id,
-    -- v2 tenant_id passthrough (see docs/V2_TENANT_KEY_DESIGN.md).
-    dba.tenant_id,
+    -- v2 tenant_id carried natively from staging through the contract grain.
+    c.tenant_id,
     c.underlying_symbol,
     c.option_type,
 
@@ -155,7 +159,4 @@ left join {{ ref('stg_daily_prices') }} dp
     and (c.user_id is not distinct from dp.user_id)
     and c.underlying_symbol = dp.symbol
     and c.old_close_date = dp.date
-left join {{ ref('dim_broker_tenants') }} dba
-    on c.account = dba.account_name
-    and (c.user_id is not distinct from dba.user_id)
 where c.match_rank = 1

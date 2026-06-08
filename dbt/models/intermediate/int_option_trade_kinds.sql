@@ -37,6 +37,7 @@ with option_contracts as (
 
 strat as (
     select
+        tenant_id,
         account,
         user_id,
         trade_symbol,
@@ -99,6 +100,7 @@ enriched as (
     left join strat s
         on oc.account = s.account
         and (oc.user_id is not distinct from s.user_id)
+        and (oc.tenant_id is not distinct from s.tenant_id)
         and oc.trade_symbol = s.trade_symbol
     left join prices p
         on oc.account = p.account

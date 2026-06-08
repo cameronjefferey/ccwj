@@ -1042,6 +1042,25 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days):
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
             "github_skip_reason": result.get("github_skip_reason"),
         })
+        # First-activation nudge: once data has actually landed for this user,
+        # email "your data is ready" exactly once (dedupe per user via
+        # email_sends). Best-effort — never let email break a sync.
+        try:
+            if out["history_rows"] or out["current_rows"]:
+                from app.models import record_email_send
+                from app.email import send_data_ready_email, app_base_url
+                u = User.get_by_id(user_id)
+                if u and (u.email or "").strip() and record_email_send(
+                    "data_ready", str(user_id), user_id=user_id, to_email=u.email
+                ):
+                    send_data_ready_email(
+                        to=u.email,
+                        username=u.username,
+                        dashboard_url=f"{app_base_url()}/daily-review",
+                    )
+        except Exception as _exc:
+            from app import app as _app
+            _app.logger.warning("data_ready email skipped for user_id=%s: %s", user_id, _exc)
     except _SnapTradeAuthError as auth_exc:
         # Log the SDK exception we classified as auth-revoked BEFORE
         # flagging the row, so admin debugging of "why is this brand-new
