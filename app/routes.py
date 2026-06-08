@@ -1780,6 +1780,20 @@ def submit_onboarding_why_here():
         flash(msg, "danger")
         return redirect(request.referrer or url_for("index"))
 
+    # Weekly summary email opt-out toggle from the onboarding wizard.
+    # The checkbox ships checked (opt-out): present => opted in, absent =>
+    # the user turned it off before finishing. Mirrors the Weekly summary
+    # control on the profile notifications tab (digest_email).
+    try:
+        from app.models import update_user_profile
+
+        update_user_profile(
+            current_user.id,
+            digest_email=(request.form.get("digest_email") == "on"),
+        )
+    except Exception as exc:  # pragma: no cover - best-effort, non-blocking
+        app.logger.warning("onboarding digest_email opt-in save failed: %s", exc)
+
     if wants_json:
         return {"ok": True}
     flash("Thanks — saved.", "success")
