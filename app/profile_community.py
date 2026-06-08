@@ -115,7 +115,7 @@ def profile():
     from app.auth import _validate_password
 
     tab = request.args.get("tab", "overview")
-    if tab not in ("overview", "preferences", "account", "community", "published"):
+    if tab not in ("overview", "preferences", "account", "security", "notifications", "community", "published"):
         tab = "overview"
     if tab in ("community", "published") and not app.config.get("COMMUNITY_ENABLED", False):
         return redirect(url_for("profile", tab="overview"))
@@ -132,7 +132,7 @@ def profile():
             email, err = _validate_email(email_raw)
             if err:
                 flash(err, "danger")
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             # Allow clearing the email by submitting blank, but warn since
             # losing email means losing self-serve recovery.
             if email is None:
@@ -142,17 +142,17 @@ def profile():
                     "without contacting support.",
                     "warning",
                 )
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             existing = User.get_by_email(email)
             if existing is not None and int(existing.id) != int(current_user.id):
                 flash(
                     "That email is already in use on another account.",
                     "danger",
                 )
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             User.update_email(current_user.id, email)
             flash("Email updated.", "success")
-            return redirect(url_for("profile", tab="account"))
+            return redirect(url_for("profile", tab="security"))
 
         if action == "change_password":
             current_pw = request.form.get("current_password", "")
@@ -160,17 +160,17 @@ def profile():
             confirm_pw = request.form.get("confirm_password", "")
             if not current_user.check_password(current_pw):
                 flash("Current password is incorrect.", "danger")
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             valid, err = _validate_password(new_pw)
             if not valid:
                 flash(err, "danger")
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             if new_pw != confirm_pw:
                 flash("New passwords do not match.", "danger")
-                return redirect(url_for("profile", tab="account"))
+                return redirect(url_for("profile", tab="security"))
             User.update_password(current_user.id, new_pw)
             flash("Password updated successfully.", "success")
-            return redirect(url_for("profile", tab="account"))
+            return redirect(url_for("profile", tab="security"))
 
         if action == "save_profile":
             settings_tab = (request.form.get("settings_tab") or "").strip().lower()
@@ -191,12 +191,24 @@ def profile():
                 flash("Visibility updated.", "success")
                 return redirect(url_for("profile", tab="community"))
 
+            if settings_tab == "notifications":
+                # Email opt-ins only — partial update so we don't touch
+                # display_name / timezone / etc. set on the Preferences tab.
+                digest_email = request.form.get("digest_email") == "on"
+                weekly_preview_email = request.form.get("weekly_preview_email") == "on"
+                product_update_email = request.form.get("product_update_email") == "on"
+                if not update_user_profile(
+                    current_user.id,
+                    digest_email=digest_email,
+                    weekly_preview_email=weekly_preview_email,
+                    product_update_email=product_update_email,
+                ):
+                    flash("Could not save notification settings. Check server logs.", "danger")
+                    return redirect(url_for("profile", tab="notifications"))
+                flash("Notification settings saved.", "success")
+                return redirect(url_for("profile", tab="notifications"))
+
             display_name = (request.form.get("display_name") or "").strip() or None
-            headline = (request.form.get("headline") or "").strip() or None
-            bio = (request.form.get("bio") or "").strip() or None
-            accent = (request.form.get("accent") or "violet").strip().lower()
-            if accent not in _ALLOWED_ACCENTS:
-                accent = "violet"
             timezone = (request.form.get("timezone") or "America/New_York").strip() or "America/New_York"
             week_starts_monday = request.form.get("week_starts_monday") == "on"
             default_route = (request.form.get("default_route") or "weekly_review").strip()
@@ -204,22 +216,13 @@ def profile():
                 default_route = "weekly_review"
             if default_route == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
                 default_route = "weekly_review"
-            digest_email = request.form.get("digest_email") == "on"
-            weekly_preview_email = request.form.get("weekly_preview_email") == "on"
-            product_update_email = request.form.get("product_update_email") == "on"
             compact_tables = request.form.get("compact_tables") == "on"
             if not update_user_profile(
                 current_user.id,
                 display_name=display_name,
-                headline=headline,
-                bio=bio,
-                accent=accent,
                 timezone=timezone,
                 week_starts_monday=week_starts_monday,
                 default_route=default_route,
-                digest_email=digest_email,
-                weekly_preview_email=weekly_preview_email,
-                product_update_email=product_update_email,
                 compact_tables=compact_tables,
             ):
                 flash("Could not save profile (database migration may be pending). Check server logs.", "danger")

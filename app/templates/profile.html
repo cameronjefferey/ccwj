@@ -102,6 +102,50 @@
         text-decoration: none !important; background: #fff;
     }
     .btn-sync-ghost:hover { background: #f1f5f9; color: #0f172a !important; }
+
+    /* Identity card */
+    .id-card { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+    .id-avatar {
+        width: 60px; height: 60px; border-radius: 50%;
+        background: linear-gradient(135deg, #1e3a8a, #6d5dfc);
+        color: #fff; font-weight: 700; font-size: 1.5rem;
+        display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    }
+    .id-name { font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+    .id-handle { font-size: .85rem; color: #64748b; }
+    .id-email-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
+    .id-email { font-size: .9rem; color: #334155; }
+    .pill {
+        display: inline-flex; align-items: center; gap: .35rem;
+        font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+        padding: .2rem .55rem; border-radius: 999px;
+    }
+    .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
+    .pill-ok { background: #dcfce7; color: #14532d; }
+    .pill-warn { background: #fef3c7; color: #78350f; }
+    .pill-muted { background: #f1f5f9; color: #475569; }
+    .pill-danger { background: #fee2e2; color: #991b1b; }
+
+    /* At-a-glance stat tiles */
+    .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .75rem; }
+    .stat-tile {
+        display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: .9rem 1rem; text-decoration: none; transition: border-color .12s, box-shadow .12s;
+    }
+    a.stat-tile:hover { border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
+    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1; }
+    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; margin-top: .35rem; }
+
+    /* Connection health rows */
+    .conn-row {
+        display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
+        padding: .7rem 0; border-top: 1px solid #f1f5f9;
+    }
+    .conn-row:first-child { border-top: none; }
+    .conn-meta { font-size: .78rem; color: #94a3b8; }
+
+    /* Quick action grid */
+    .qa-grid { display: flex; flex-wrap: wrap; gap: .6rem; }
 </style>
 {% endblock %}
 
@@ -135,6 +179,8 @@
         <nav class="atlas-nav nav flex-lg-column">
             <a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="{{ url_for('profile', tab='overview') }}">Overview</a>
             <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>
+            <a class="nav-link {% if tab == 'security' %}active{% endif %}" href="{{ url_for('profile', tab='security') }}">Login &amp; security</a>
+            <a class="nav-link {% if tab == 'notifications' %}active{% endif %}" href="{{ url_for('profile', tab='notifications') }}">Notifications</a>
             <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
             {% if community_enabled %}
             <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">Community</a>
@@ -144,102 +190,143 @@
 
         <div>
             {% if tab == 'overview' %}
-            <div class="sync-card" id="snaptrade-sync">
-                <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
-                    <div>
-                        <div class="sync-title">Broker sync</div>
-                        <p class="sync-sub mb-0">
-                            Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 other
-                            brokers through SnapTrade. We mirror trade history and positions
-                            into the same pipeline as manual CSV upload.
-                        </p>
+            {# Identity card — who you are + how to recover the account #}
+            <div class="atlas-card">
+                <div class="atlas-card-b pt-4">
+                    <div class="id-card">
+                        <div class="id-avatar">{{ (profile_row.display_name or current_user.username)[:1]|upper }}</div>
+                        <div class="flex-grow-1">
+                            <div class="id-name">{{ profile_row.display_name or current_user.username }}</div>
+                            <div class="id-handle">@{{ current_user.username }}</div>
+                            <div class="id-email-row">
+                                {% if current_user.email %}
+                                <span class="id-email">{{ current_user.email }}</span>
+                                {% if email_unverified %}
+                                <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
+                                <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0 d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-link btn-sm p-0 align-baseline">Resend link</button>
+                                </form>
+                                {% else %}
+                                <span class="pill pill-ok"><span class="dot"></span> Verified</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="pill pill-danger"><span class="dot"></span> No email</span>
+                                <a href="{{ url_for('profile', tab='security') }}" class="small fw-semibold">Add one for password recovery</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <a href="{{ url_for('profile', tab='security') }}" class="btn btn-outline-secondary btn-sm align-self-start">Login &amp; security</a>
                     </div>
-                    {% if snaptrade_connected %}
-                    <span class="sync-status connected"><span class="dot"></span> Connected</span>
-                    {% else %}
-                    <span class="sync-status disconnected"><span class="dot"></span> Not connected</span>
-                    {% endif %}
                 </div>
-                {% if _snaptrade_accounts %}
-                {% set _ns_st_o = namespace(any_first_pending=false) %}
-                {% for a in _snaptrade_accounts %}
-                    {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
-                {% endfor %}
-                <p class="small text-body-secondary mt-2 mb-2">
-                    You have <strong>{{ _snaptrade_accounts|length }}</strong>
-                    brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }} linked.
-                </p>
-                <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="sync_all" value="1">
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox"
-                               name="full_history_again" id="snaptrade_sync_all_full_o"
-                               value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
-                        <label class="form-check-label small" for="snaptrade_sync_all_full_o">
-                            Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every account
-                        </label>
-                    </div>
-                    <div class="sync-actions">
-                        <button type="submit" class="btn-sync-primary">Sync all accounts</button>
-                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage accounts</a>
-                        <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add another broker</a>
-                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                    </div>
-                    <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                        Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
-                    </p>
-                </form>
-                {% elif snaptrade_enabled %}
-                <div class="sync-actions mt-2">
-                    <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
-                    <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                </div>
-                {% else %}
-                <p class="small text-body-secondary mb-0">Broker sync is not configured on this server. You can still upload CSV exports.</p>
-                <div class="sync-actions mt-2">
-                    <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
-                </div>
+            </div>
+
+            {# At-a-glance counts — each links to where you manage it #}
+            <div class="stat-tiles mb-3">
+                <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
+                    <div class="n">{{ accounts|length }}</div><div class="l">Accounts</div>
+                </a>
+                {% if snaptrade_enabled %}
+                <a class="stat-tile" href="{{ url_for('snaptrade_accounts_page') }}">
+                    <div class="n">{{ _snaptrade_accounts|length }}</div><div class="l">Brokers</div>
+                </a>
+                {% endif %}
+                <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
+                    <div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div>
+                </a>
+                {% if community_enabled %}
+                <a class="stat-tile" href="{{ url_for('community') }}">
+                    <div class="n">{{ follower_count }}</div><div class="l">Followers</div>
+                </a>
+                <a class="stat-tile" href="{{ url_for('community') }}">
+                    <div class="n">{{ following_count }}</div><div class="l">Following</div>
+                </a>
+                <a class="stat-tile" href="{{ url_for('profile', tab='published') }}">
+                    <div class="n">{{ published_count }}</div><div class="l">Shared</div>
+                </a>
                 {% endif %}
             </div>
 
-            {# Profile summary — condensed, edit via Preferences #}
+            {# Connection health — status of every linked broker at a glance #}
             <div class="atlas-card">
-                <div class="atlas-card-h">Profile</div>
+                <div class="atlas-card-h d-flex justify-content-between align-items-center">
+                    <span>Connection health</span>
+                    {% if snaptrade_connected %}
+                    <span class="pill pill-ok"><span class="dot"></span> Connected</span>
+                    {% else %}
+                    <span class="pill pill-muted"><span class="dot"></span> Not connected</span>
+                    {% endif %}
+                </div>
                 <div class="atlas-card-b">
-                    <div class="row g-4">
-                        <div class="col-md-6">
-                            <div class="atlas-label">Display name</div>
-                            <div class="fs-5 fw-bold" style="color:#0f172a">{{ profile_row.display_name or current_user.username }}</div>
-                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
+                    {% if _snaptrade_accounts %}
+                    {% set _ns_st_o = namespace(any_first_pending=false) %}
+                    {% for a in _snaptrade_accounts %}
+                        {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
+                    <div class="conn-row">
+                        <div>
+                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
+                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
+                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at }}</div>{% endif %}
                         </div>
-                        <div class="col-md-6">
-                            <div class="atlas-label">Headline</div>
-                            <div class="text-body-secondary">{{ profile_row.headline or "—" }}</div>
-                        </div>
-                        {% if profile_row.bio %}
-                        <div class="col-12">
-                            <div class="atlas-label">Bio</div>
-                            <p class="mb-0" style="line-height:1.6;color:#44403c;font-size:.95rem">{{ profile_row.bio }}</p>
-                        </div>
+                        {% if a.connection_broken_at %}
+                        <span class="pill pill-danger"><span class="dot"></span> Reconnect needed</span>
+                        {% elif not a.first_sync_completed %}
+                        <span class="pill pill-warn"><span class="dot"></span> First sync pending</span>
+                        {% else %}
+                        <span class="pill pill-ok"><span class="dot"></span> Connected</span>
                         {% endif %}
                     </div>
-                    <div class="mt-3 d-flex flex-wrap gap-2">
-                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-primary px-4 fw-semibold">Edit profile</a>
+                    {% endfor %}
+                    <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mt-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="sync_all" value="1">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox"
+                                   name="full_history_again" id="snaptrade_sync_all_full_o"
+                                   value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
+                            <label class="form-check-label small" for="snaptrade_sync_all_full_o">
+                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every account
+                            </label>
+                        </div>
+                        <div class="sync-actions">
+                            <button type="submit" class="btn-sync-primary">Sync all accounts</button>
+                            <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage accounts</a>
+                        </div>
+                        <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                            Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
+                        </p>
+                    </form>
+                    {% elif snaptrade_enabled %}
+                    <p class="atlas-hint mb-3">
+                        Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 other brokers
+                        through SnapTrade. We mirror trade history and positions into the same
+                        pipeline as manual CSV upload.
+                    </p>
+                    <div class="qa-grid">
+                        <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
+                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
                     </div>
+                    {% else %}
+                    <p class="atlas-hint mb-3">Broker sync is not configured on this server. You can still upload CSV exports.</p>
+                    <div class="qa-grid">
+                        <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
-            {# Accounts snapshot #}
-            {% if accounts %}
+            {# Quick actions — the common next steps in one place #}
             <div class="atlas-card">
-                <div class="atlas-card-h">Accounts you’ve linked</div>
+                <div class="atlas-card-h">Quick actions</div>
                 <div class="atlas-card-b">
-                    <div>{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
-                    <p class="atlas-hint mb-0 mt-2">These labels tie uploads and broker sync to the rows you see across the app. Manage them under <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.</p>
+                    <div class="qa-grid">
+                        {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker</a>{% endif %}
+                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV</a>
+                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn-sync-ghost">Edit profile</a>
+                        <a href="{{ url_for('profile', tab='security') }}" class="btn-sync-ghost">Change password</a>
+                    </div>
                 </div>
             </div>
-            {% endif %}
             {% endif %}
 
             {% if tab == 'preferences' %}
@@ -251,29 +338,11 @@
                 <div class="atlas-card">
                     <div class="atlas-card-h">Profile</div>
                     <div class="atlas-card-b">
-                        <div class="row g-3">
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">Display name</label>
-                                <input type="text" class="form-control form-control-lg" name="display_name" maxlength="80"
-                                       value="{{ profile_row.display_name or '' }}" placeholder="{{ current_user.username }}">
-                            </div>
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">Accent (for future UI)</label>
-                                <select class="form-select form-select-lg" name="accent">
-                                    {% for a in accent_presets %}
-                                    <option value="{{ a }}" {% if profile_row.accent == a %}selected{% endif %}>{{ a|capitalize }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-12 atlas-field">
-                                <label class="atlas-label">Headline (one line)</label>
-                                <input type="text" class="form-control" name="headline" maxlength="120"
-                                       value="{{ profile_row.headline or '' }}" placeholder="e.g. Credit spreads on blue chips">
-                            </div>
-                            <div class="col-12 atlas-field">
-                                <label class="atlas-label">Bio</label>
-                                <textarea class="form-control" name="bio" rows="5" maxlength="2000" placeholder="A few sentences about what you trade and why.">{{ profile_row.bio or '' }}</textarea>
-                            </div>
+                        <div class="atlas-field mb-0">
+                            <label class="atlas-label">Display name</label>
+                            <input type="text" class="form-control form-control-lg" name="display_name" maxlength="80"
+                                   value="{{ profile_row.display_name or '' }}" placeholder="{{ current_user.username }}">
+                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
                         </div>
                     </div>
                 </div>
@@ -302,27 +371,44 @@
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-12">
-                                <p class="atlas-label mb-1">Email</p>
-                                <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
-                                    <label class="form-check-label" for="de">Weekly summary <span class="text-muted">— a recap of how your week traded</span></label>
-                                </div>
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input" type="checkbox" name="weekly_preview_email" id="wpe" {% if profile_row.weekly_preview_email %}checked{% endif %}>
-                                    <label class="form-check-label" for="wpe">Weekly preview <span class="text-muted">— upcoming earnings, expirations &amp; ex-dividends</span></label>
-                                </div>
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input" type="checkbox" name="product_update_email" id="pue" {% if profile_row.product_update_email %}checked{% endif %}>
-                                    <label class="form-check-label" for="pue">Product updates &amp; reminders <span class="text-muted">— new features and a nudge if you've been away</span></label>
-                                </div>
-                                <p class="atlas-hint mt-1 mb-0">Account emails (password resets, broker reconnect notices) are always sent.</p>
-                                <div class="form-check form-switch mt-3">
+                            <div class="col-md-6 atlas-field">
+                                <label class="atlas-label">Tables</label>
+                                <div class="form-check form-switch mt-2 pt-1">
                                     <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
                                     <label class="form-check-label" for="ct">Prefer tighter tables</label>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">Save</button>
+            </form>
+            {% endif %}
+
+            {% if tab == 'notifications' %}
+            <form method="POST" action="{{ url_for('profile', tab='notifications') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="save_profile">
+                <input type="hidden" name="settings_tab" value="notifications">
+
+                <div class="atlas-card">
+                    <div class="atlas-card-h">Email notifications</div>
+                    <div class="atlas-card-b">
+                        <p class="atlas-hint mb-3">Choose which optional emails we send. You can change these anytime.</p>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
+                            <label class="form-check-label" for="de">Weekly summary <span class="text-muted">— a recap of how your week traded</span></label>
+                        </div>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="weekly_preview_email" id="wpe" {% if profile_row.weekly_preview_email %}checked{% endif %}>
+                            <label class="form-check-label" for="wpe">Weekly preview <span class="text-muted">— upcoming earnings, expirations &amp; ex-dividends</span></label>
+                        </div>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="product_update_email" id="pue" {% if profile_row.product_update_email %}checked{% endif %}>
+                            <label class="form-check-label" for="pue">Product updates &amp; reminders <span class="text-muted">— new features and a nudge if you've been away</span></label>
+                        </div>
+                        <p class="atlas-hint mt-3 mb-0">Account emails (password resets, broker reconnect notices) are always sent.</p>
                     </div>
                 </div>
 
@@ -462,19 +548,41 @@
                 </div>
             </div>
 
+            {% endif %}
+
+            {% if tab == 'security' %}
             <div class="atlas-card">
-                <div class="atlas-card-h">Email</div>
+                <div class="atlas-card-h d-flex justify-content-between align-items-center">
+                    <span>Email</span>
+                    {% if current_user.email %}
+                        {% if email_unverified %}
+                        <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
+                        {% else %}
+                        <span class="pill pill-ok"><span class="dot"></span> Verified</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="pill pill-danger"><span class="dot"></span> None on file</span>
+                    {% endif %}
+                </div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint mb-3">
-                        Used only for password recovery. We never email marketing,
-                        share it, or sell it.
+                        Used for password recovery and (if you opt in) your weekly recap. We never
+                        share it or sell it.
                     </p>
                     {% if not current_user.email %}
                     <p class="text-warning small mb-3">
                         <strong>Heads up:</strong> no email on file means you can't reset your password if you lose it. Add one below.
                     </p>
+                    {% elif email_unverified %}
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email }}</strong> — check your inbox (and spam).</span>
+                        <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-primary btn-sm">Resend verification email</button>
+                        </form>
+                    </div>
                     {% endif %}
-                    <form method="POST" action="{{ url_for('profile', tab='account') }}">
+                    <form method="POST" action="{{ url_for('profile', tab='security') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="set_email">
                         <div class="mb-3">
@@ -494,13 +602,14 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Password</div>
                 <div class="atlas-card-b">
-                    <form method="POST" action="{{ url_for('profile', tab='account') }}">
+                    <form method="POST" action="{{ url_for('profile', tab='security') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="change_password">
                         <div class="mb-3"><label class="form-label">Current</label><input type="password" class="form-control" name="current_password" required autocomplete="current-password"></div>
                         <div class="mb-3"><label class="form-label">New</label><input type="password" class="form-control" name="new_password" required minlength="8" autocomplete="new-password"></div>
                         <div class="mb-3"><label class="form-label">Confirm</label><input type="password" class="form-control" name="confirm_password" required minlength="8" autocomplete="new-password"></div>
-                        <button type="submit" class="btn btn-primary px-4 fw-semibold">Update password</button>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>Update password</button>
                     </form>
                 </div>
             </div>
