@@ -16,3 +16,8 @@ Alpaca Paper Account,8,snaptrade:1d141871-6f2b-408a-a0f0-4ff4f9379161,RKLB,Rocke
 Alpaca Paper Account,8,snaptrade:1d141871-6f2b-408a-a0f0-4ff4f9379161,SPY,SPDR S&P 500 ETF Trust,10.0,754.7,,,7547.0,,,7470.700000000001,76.3,1.0213,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,QTUM,Defiance Quantum ETF,196.0,158.24,,,31015.04,,,21960.82,9054.22,41.229,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,RGTI,Rigetti Computing Inc,1.0,22.3,,,22.3,,,16.3,6.0,36.8098,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,UFO,Procure Space ETF,300.0,54.7296,,,16418.88,,,19968.0,-3549.12,-17.774,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,QTUM,Defiance Quantum ETF,221.0,158.24,,,34971.04,,,34895.809999959994,75.23,0.2156,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,IHI,iShares U.S. Medical Devices ETF,343.2795,49.935,,,17141.6618325,,,14722.950001495454,2418.71,16.4282,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,VOO,Vanguard S&P 500 ETF,91.4006,681.32,,,62273.056792,,,49531.600000316765,12741.46,25.7239,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,IYW,iShares U.S. Technology ETF,180.361,246.5,,,44458.9865,,,9138.79000030359,35320.2,386.4866,,,,,,,,,,,,,,,,,Equity,
