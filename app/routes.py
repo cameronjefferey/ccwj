@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
+from app.llm import llm_available as _llm_available
 from app.models import (
     get_broker_tenants_for_user,
     get_strategy_fit_insight_for_user,
@@ -6921,7 +6922,7 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
         "ai_full_html": None,
         "ai_generated_at": None,
         "ai_enabled": app.config.get("INSIGHTS_ENABLED", True),
-        "ai_available": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+        "ai_available": _llm_available(),
     }
     if not ctx["ai_enabled"]:
         return ctx

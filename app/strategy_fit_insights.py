@@ -8,9 +8,10 @@ Two-layer architecture (mirrors `app/insights.py`):
    each cell, and coverage caveats. No LLM, no hallucination risk —
    just stats.
 
-2. _call_gemini_strategy_fit_brief() — LLM. Hands the brief to Gemini
-   with a tight system prompt: 3-5 short bullets, observational voice,
-   specific numbers, no trade advice. Cached per (user, account scope).
+2. _call_strategy_fit() — LLM narration via app.llm.call_llm (Gemini or
+   Claude, per LLM_PROVIDER). Hands the brief to the model with a tight
+   system prompt: 3-5 short bullets, observational voice, specific
+   numbers, no trade advice. Cached per (user, account scope).
 
 The split means we can fall back to deterministic bullets if the API
 key is missing, and we can audit/test the facts independently of the
@@ -18,16 +19,13 @@ narration."""
 
 from __future__ import annotations
 
-import os
-
 import pandas as pd
 from flask import flash, redirect, request, url_for
 from flask_login import current_user, login_required
-from google import genai
-from google.genai import types
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.llm import call_llm, llm_available
 from app.extensions import limiter
 from app.models import (
     get_accounts_for_user,
@@ -487,54 +485,33 @@ Format: markdown. Use "## Summary" once at the top, then "## Observations"
 followed by bulleted "- " items. Keep total length under ~280 words."""
 
 
-def _call_gemini_strategy_fit(brief_text):
-    """Call Gemini with the strategy-fit brief.
+def _call_strategy_fit(brief_text):
+    """Narrate the strategy-fit brief.
 
-    Returns ((summary, full_markdown), None) on success or (None, error_msg).
+    Vendor-agnostic (app.llm.call_llm). Temperature is lower than the
+    coaching insight — we want fewer flourishes here. Returns
+    ((summary, full_markdown), None) on success or (None, error_msg).
     """
-    import time as _time
-    from app.cost_tracking import log_cost_event
-    from app.insights import _gemini_usage_fields
+    full, error = call_llm(
+        SYSTEM_PROMPT,
+        "BRIEF:\n\n" + brief_text,
+        kind="strategy_fit.generate",
+        max_tokens=1400,  # room for symbol parentheticals
+        temperature=0.4,
+    )
+    if error:
+        return None, error
 
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        return None, "GEMINI_API_KEY not set."
+    # Pull the summary section if present, otherwise first paragraph.
+    summary = ""
+    if "## Summary" in full:
+        after = full.split("## Summary", 1)[1]
+        nxt = after.find("\n## ")
+        summary = (after[:nxt] if nxt != -1 else after).strip()
+    else:
+        summary = full.split("\n\n", 1)[0].strip()
 
-    try:
-        client = genai.Client(api_key=api_key)
-        t0 = _time.monotonic()
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=SYSTEM_PROMPT + "\n\nBRIEF:\n\n" + brief_text,
-            config=types.GenerateContentConfig(
-                temperature=0.4,  # lower than insights.py — we want fewer flourishes
-                max_output_tokens=1400,  # slight bump to fit symbol parentheticals
-            ),
-        )
-        duration_ms = int((_time.monotonic() - t0) * 1000)
-        log_cost_event(
-            "gemini",
-            "strategy_fit.generate",
-            model="gemini-2.0-flash",
-            duration_ms=duration_ms,
-            **_gemini_usage_fields(response),
-        )
-        full = (response.text or "").strip()
-        if not full:
-            return None, "Empty response from Gemini."
-
-        # Pull the summary section if present, otherwise first paragraph.
-        summary = ""
-        if "## Summary" in full:
-            after = full.split("## Summary", 1)[1]
-            nxt = after.find("\n## ")
-            summary = (after[:nxt] if nxt != -1 else after).strip()
-        else:
-            summary = full.split("\n\n", 1)[0].strip()
-
-        return (summary, full), None
-    except Exception as exc:
-        return None, f"Gemini API error: {exc}"
+    return (summary, full), None
 
 
 # --------------------------------------------------------------------
@@ -562,7 +539,7 @@ def generate_strategy_fit_insights():
     if not app.config.get("INSIGHTS_ENABLED", True):
         flash("AI Insights is currently disabled.", "warning")
         return redirect(redir)
-    if not os.environ.get("GEMINI_API_KEY", "").strip():
+    if not llm_available():
         flash("AI Insights is warming up — try again in a few minutes.", "info")
         return redirect(redir)
 
@@ -574,7 +551,7 @@ def generate_strategy_fit_insights():
             flash("Not enough data yet to summarize. Add a few more trades and try again.", "warning")
             return redirect(redir)
 
-        result, err = _call_gemini_strategy_fit(brief_text)
+        result, err = _call_strategy_fit(brief_text)
         if err:
             app.logger.error("Strategy-fit insight generation failed: %s", err)
             flash("Couldn't generate insights right now. Try again in a moment.", "danger")

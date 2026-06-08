@@ -1,7 +1,5 @@
 import os
 import re
-from google import genai
-from google.genai import types
 import pandas as pd
 import markupsafe
 from flask import render_template, request, redirect, url_for, flash, jsonify, abort
@@ -26,6 +24,7 @@ from app.routes import (
     _user_account_list,
 )
 from app.utils import demo_block_writes
+from app.llm import call_llm, llm_available
 
 
 # ------------------------------------------------------------------
@@ -813,125 +812,60 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 - Do NOT recommend changing size or strategy."""
 
 
-def _gemini_usage_fields(response) -> dict:
-    """Extract token-count fields from a Gemini response, when available.
+def _call_coach(data_text):
+    """Narrate the coaching brief and return ((summary, full_analysis), None).
 
-    The SDK shape varies a little across versions; we read defensively so
-    a missing attribute never breaks cost logging.
+    Vendor-agnostic: app.llm.call_llm dispatches to Gemini or Claude based
+    on LLM_PROVIDER. The summary section is parsed out of the markdown the
+    model returns.
     """
-    out = {}
-    try:
-        meta = getattr(response, "usage_metadata", None)
-        if meta is None:
-            return out
-        for src, dst in (
-            ("prompt_token_count", "prompt_tokens"),
-            ("candidates_token_count", "output_tokens"),
-            ("total_token_count", "total_tokens"),
-        ):
-            v = getattr(meta, src, None)
-            if v is not None:
-                out[dst] = int(v)
-    except Exception:
-        pass
-    return out
+    full_text, error = call_llm(
+        SYSTEM_PROMPT,
+        "Here is the trader's behavioral data:\n\n" + data_text,
+        kind="coach.generate",
+        max_tokens=2000,
+        temperature=0.7,
+    )
+    if error:
+        return None, error
 
-
-def _call_gemini(data_text):
-    """Call Gemini with coaching brief and return (summary, full_analysis)."""
-    import time as _time
-    from app.cost_tracking import log_cost_event
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        app.logger.warning("AI Insights generate requested but GEMINI_API_KEY is not configured")
-        return None, "AI Insights is temporarily unavailable. Try again in a few minutes."
-
-    try:
-        client = genai.Client(api_key=api_key)
-        t0 = _time.monotonic()
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=SYSTEM_PROMPT + "\n\nHere is the trader's behavioral data:\n\n" + data_text,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=2000,
-            ),
-        )
-        duration_ms = int((_time.monotonic() - t0) * 1000)
-        log_cost_event(
-            "gemini",
-            "coach.generate",
-            model="gemini-2.0-flash",
-            duration_ms=duration_ms,
-            **_gemini_usage_fields(response),
-        )
-        full_text = response.text.strip()
-
-        summary = ""
-        if "## Summary" in full_text:
-            after_summary = full_text.split("## Summary", 1)[1]
-            next_heading = after_summary.find("\n## ")
-            if next_heading != -1:
-                summary = after_summary[:next_heading].strip()
-            else:
-                summary = after_summary.strip()
+    summary = ""
+    if "## Summary" in full_text:
+        after_summary = full_text.split("## Summary", 1)[1]
+        next_heading = after_summary.find("\n## ")
+        if next_heading != -1:
+            summary = after_summary[:next_heading].strip()
         else:
-            summary = full_text[:200].strip()
+            summary = after_summary.strip()
+    else:
+        summary = full_text[:200].strip()
 
-        return (summary, full_text), None
-    except Exception as exc:
-        app.logger.exception("Gemini coaching call failed: %s", exc)
-        return None, "Couldn't generate insights right now. Try again in a moment."
+    return (summary, full_text), None
 
 
-def _call_gemini_question(coaching_text, portfolio_text, weekly_text, question):
-    """Call Gemini for Q&A, grounded in coaching + portfolio + weekly data."""
-    import time as _time
-    from app.cost_tracking import log_cost_event
+def _call_coach_question(coaching_text, portfolio_text, weekly_text, question):
+    """Narrate a Q&A answer grounded in coaching + portfolio + weekly data."""
+    parts = []
+    if coaching_text:
+        parts.append("BEHAVIORAL SIGNALS:\n" + coaching_text)
+    if weekly_text:
+        parts.append("LAST WEEK DATA:\n" + weekly_text)
+    if portfolio_text:
+        parts.append("PORTFOLIO OVERVIEW:\n" + portfolio_text)
+    parts.append(
+        "\nAnswer the user's question below. Be concise and specific, "
+        "grounded strictly in the data above.\n"
+        f"User question: {question}\n"
+    )
+    user_prompt = "\n\n".join(parts)
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        app.logger.warning("AI Insights Q&A requested but GEMINI_API_KEY is not configured")
-        return None, "AI Insights is temporarily unavailable. Try again in a few minutes."
-
-    try:
-        client = genai.Client(api_key=api_key)
-        parts = [QA_SYSTEM_PROMPT]
-        if coaching_text:
-            parts.append("BEHAVIORAL SIGNALS:\n" + coaching_text)
-        if weekly_text:
-            parts.append("LAST WEEK DATA:\n" + weekly_text)
-        if portfolio_text:
-            parts.append("PORTFOLIO OVERVIEW:\n" + portfolio_text)
-        parts.append(
-            "\nAnswer the user's question below. Be concise and specific, "
-            "grounded strictly in the data above.\n"
-            f"User question: {question}\n"
-        )
-        prompt = "\n\n".join(parts)
-
-        t0 = _time.monotonic()
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.6,
-                max_output_tokens=800,
-            ),
-        )
-        duration_ms = int((_time.monotonic() - t0) * 1000)
-        log_cost_event(
-            "gemini",
-            "coach.ask",
-            model="gemini-2.0-flash",
-            duration_ms=duration_ms,
-            **_gemini_usage_fields(response),
-        )
-        return response.text.strip(), None
-    except Exception as exc:
-        app.logger.exception("Gemini Q&A call failed: %s", exc)
-        return None, "Couldn't answer that right now. Try again in a moment."
+    return call_llm(
+        QA_SYSTEM_PROMPT,
+        user_prompt,
+        kind="coach.ask",
+        max_tokens=800,
+        temperature=0.6,
+    )
 
 
 def _md_to_html(md_text):
@@ -1013,7 +947,7 @@ def insights():
         accounts = user_accounts or []
 
     cached = get_insight_for_user(current_user.id)
-    gemini_available = bool(os.environ.get("GEMINI_API_KEY"))
+    gemini_available = llm_available()
 
     if cached:
         cached["full_analysis_html"] = _md_to_html(cached["full_analysis"])
@@ -1085,7 +1019,7 @@ def generate_insights():
             flash("Not enough data to generate insights.", "warning")
             return redirect(redir)
 
-        result, error = _call_gemini(coaching_text)
+        result, error = _call_coach(coaching_text)
         if error:
             flash(error, "danger")
             return redirect(redir)
@@ -1169,7 +1103,7 @@ def insights_ask():
         if not coaching_text and not portfolio_text:
             return jsonify({"error": "No data available to answer questions."}), 400
 
-        answer_md, error = _call_gemini_question(
+        answer_md, error = _call_coach_question(
             coaching_text, portfolio_text, weekly_text, question
         )
         if error:
