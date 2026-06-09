@@ -5305,6 +5305,14 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     short_cost_basis = 0.0
     position_is_closed = current_df.empty
     last_trade_date = None
+    # mart_daily_pnl's dense spine starts at the account's earliest trade
+    # date ACROSS ALL SYMBOLS, so a per-symbol slice can carry a long
+    # flat-$0 prefix before this symbol's first fill (e.g. BE's chart
+    # opening on 1/29 when the first BE trade was in April). Each position
+    # chart should begin when the position actually opened. Skip leading
+    # rows until the first activity; the closed-position branch below
+    # already trims these for closed positions, this covers OPEN ones.
+    position_started = False
 
     dates, equity_s, options_s, dividends_s, total_s, price_s = (
         [], [], [], [], [], [],
@@ -5350,6 +5358,21 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             continue
         prev_options_realized_for_skip = cur_realized_for_skip
         prev_options_open_mtm_for_skip = cur_open_mtm_for_skip
+
+        # Trim the leading pre-open prefix. Until the position's first
+        # activity, every series value is 0 and there are no holdings —
+        # rendering those days makes the chart start before the position
+        # existed. Mark "started" on the first fill (equity or option) or
+        # the first non-zero cumulative series, then render every day after.
+        if not position_started:
+            _div_now = float(row.get("cumulative_dividends_pnl") or 0)
+            _oth_now = float(row.get("cumulative_other_pnl") or 0)
+            if (has_trade or buy_qty > 0 or sell_qty > 0
+                    or cur_realized_for_skip != 0 or cur_open_mtm_for_skip != 0
+                    or _div_now != 0 or _oth_now != 0):
+                position_started = True
+            else:
+                continue
 
         # Process sells first (may create short position)
         if sell_qty > 0:
