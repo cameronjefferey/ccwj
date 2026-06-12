@@ -1822,567 +1822,6 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,11/18/2024,Credi
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,11/14/2024,Sell to Open,CFLT  241220C00030000,CALL CONFLUENT INC $30 EXP 12/20/24,200.0,1.15,133.4,22866.6
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,11/14/2024,Buy to Close,CFLT  241115C00028000,CALL CONFLUENT INC $28 EXP 11/15/24,200.0,0.98,132.2,-19732.2
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,11/01/2024,Sell to Open,CFLT  241115C00028000,CALL CONFLUENT INC $28 EXP 11/15/24,200.0,0.4,132.98,7867.02
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3456.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,624.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,11.1792,55.87,,-624.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,61.087,56.58,,-3456.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/25/2026,Cash Dividend,XLU,STATE STREET UTILITIES SELECT SECTOR SPDR ETF,,,,1053.8
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/23/2026,Expired,AES   260320C00016500,CALL AES CORP $16.5 EXP 03/20/26,30.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/23/2026,Expired,BEN   260320C00028000,CALL FRANKLIN RES INC $28 EXP 03/20/26,5.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,106.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/20/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.5749,186.0162,,-106.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/18/2026,Sell to Open,JPM   260417C00305000,CALL JPMORGAN CHASE & CO$305 EXP 04/17/26,3.0,3.4,1.25,1018.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/18/2026,Sell to Open,RDDT  260417C00155000,CALL REDDIT INC $155 EXP 04/17/26,2.0,6.2,0.83,1239.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Credit Interest,SCHFDX0,BANK INT 021626-031526 SCHWAB BANK,,,,0.07
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Buy,ED,CONSOLIDATED EDISON INC,2.3781,114.8583,,-273.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,580.31
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,273.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,9.8193,57.45,,-564.12
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,48.8047,58.82,,-2870.69
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2870.69
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,564.12
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Cash Dividend,BKH,BLACK HILLS CORP,,,,362.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Buy,BKH,BLACK HILLS CORP,4.9172,73.812,,-362.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.43
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Buy,ETR,ENTERGY CORP NEW,0.6015,107.123,,-64.43
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell,AES,AES CORP,3300.0,15.0,0.64,49499.36
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell to Open,BEN   260320C00028000,CALL FRANKLIN RES INC $28 EXP 03/20/26,5.0,0.4,2.07,197.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell to Open,AES   260320C00016500,CALL AES CORP $16.5 EXP 03/20/26,30.0,0.58,12.43,1727.57
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Exchange or Exercise,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,33.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Exchange or Exercise,BEN   260220C00027000,CALL FRANKLIN RES INC $27 EXP 02/20/26,4.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell,BEN,FRANKLIN RES INC,400.0,27.0,0.08,10799.92
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Buy,BEN,FRANKLIN RES INC,500.0,27.15,,-13575.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Buy,AES,AES CORP,3000.0,16.38,,-49140.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/17/2026,Credit Interest,SCHFDX0,BANK INT 011626-021526 SCHWAB BANK,,,,0.06
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/13/2026,Buy,AES,AES CORP,35.7067,16.4664,,-587.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/13/2026,Cash Dividend,AES,AES CORP,,,,587.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,47.7681,58.57,,-2797.78
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.8178,58.07,,-512.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2797.78
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,512.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,453.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Buy,JPM,JPMORGAN CHASE & CO,1.4705,308.5782,,-453.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Expired,JPM   260130C00325000,CALL JPMORGAN CHASE & CO$325 EXP 01/30/26,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/28/2026,Sell to Open,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,5.0,0.6,2.07,297.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/26/2026,Expired,AES   260123C00014500,CALL AES CORP $14.5 EXP 01/23/26,5.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/20/2026,Expired,RDDT  260116C00245000,CALL REDDIT INC $245 EXP 01/16/26,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,BEN   260116C00025000,CALL FRANKLIN RES INC $25 EXP 01/16/26,4.0,1.05,1.64,-421.64
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,JPM   260116C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/16/26,3.0,0.01,0.03,-3.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,AES   260123C00014500,CALL AES CORP $14.5 EXP 01/23/26,5.0,0.14,2.07,67.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Credit Interest,SCHFDX0,BANK INT 121625-011526 SCHWAB BANK,,,,0.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,JPM   260130C00325000,CALL JPMORGAN CHASE & CO$325 EXP 01/30/26,3.0,1.41,1.24,421.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,AES   260116C00014500,CALL AES CORP $14.5 EXP 01/16/26,5.0,0.05,0.05,-25.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,BEN   260220C00027000,CALL FRANKLIN RES INC $27 EXP 02/20/26,4.0,0.42,1.65,166.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/15/2026,Sell to Open,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,28.0,0.4,11.6,1108.4
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Sell to Open,RDDT  260116C00245000,CALL REDDIT INC $245 EXP 01/16/26,2.0,8.4,0.83,1679.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy to Close,RDDT  260109C00237500,CALL REDDIT INC $237.5 EXP 01/09/26,2.0,9.25,0.82,-1850.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy to Close,JPM   260109C00327500,CALL JPMORGAN CHASE & CO$327.5 EXP 01/09/26,3.0,3.51,1.23,-1054.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Sell to Open,JPM   260116C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/16/26,3.0,7.0,1.24,2098.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy,BEN,FRANKLIN RES INC,9.1843,25.6406,,-235.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Cash Dividend,BEN,FRANKLIN RES INC,,,,235.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.7129,58.5499,,-627.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,60.0345,57.36,,-3443.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3443.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,627.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Sell to Open,JPM   260109C00327500,CALL JPMORGAN CHASE & CO$327.5 EXP 01/09/26,3.0,1.3,1.24,388.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Buy to Close,JPM   260102C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/02/26,3.0,0.02,0.03,-6.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Sell to Open,RDDT  260109C00237500,CALL REDDIT INC $237.5 EXP 01/09/26,2.0,5.4,0.83,1079.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/29/2025,Expired,RDDT  251226C00247500,CALL REDDIT INC $247.5 EXP 12/26/25,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/29/2025,Sell to Open,AES   260116C00014500,CALL AES CORP $14.5 EXP 01/16/26,5.0,0.2,2.06,97.94
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Buy to Close,JPM   251226C00325000,CALL JPMORGAN CHASE & CO$325 EXP 12/26/25,3.0,4.04,1.23,-1213.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Sell to Open,JPM   260102C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/02/26,3.0,2.62,1.24,784.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Cash Dividend,XLU,STATE STRT UTLTES SLET SCTR SPDR ETF,,,,1078.51
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/22/2025,Expired,ETR   251219C00095000,CALL ENTERGY CORP NEW $95 EXP 12/19/25,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/22/2025,Expired,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,33.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Sell to Open,BEN   260116C00025000,CALL FRANKLIN RES INC $25 EXP 01/16/26,4.0,0.15,1.65,58.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Buy to Close,BEN   251219C00024000,CALL FRANKLIN RES INC $24 EXP 12/19/25,4.0,0.18,1.64,-73.64
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,84.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.4267,198.8977,,-84.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/18/2025,Sell to Open,RDDT  251226C00247500,CALL REDDIT INC $247.5 EXP 12/26/25,2.0,6.8,0.83,1359.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/18/2025,Buy to Close,RDDT  251219C00240000,CALL REDDIT INC $240 EXP 12/19/25,2.0,6.35,0.82,-1270.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2025,Credit Interest,SCHFDX0,BANK INT 111625-121525 SCHWAB BANK,,,,0.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Sell to Open,JPM   251226C00325000,CALL JPMORGAN CHASE & CO$325 EXP 12/26/25,3.0,2.53,1.24,757.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Sell,JPM,JPMORGAN CHASE & CO,300.0,315.0,0.05,94499.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Buy,ED,CONSOLIDATED EDISON INC,2.6362,98.3851,,-259.36
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,259.36
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Buy,JPM,JPMORGAN CHASE & CO,300.0,320.08,,-96024.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,606.62
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Exchange or Exercise,JPM   251212C00315000,CALL JPMORGAN CHASE & CO$315 EXP 12/12/25,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2025,Buy to Close,RDDT  251212C00230000,CALL REDDIT INC $230 EXP 12/12/25,2.0,11.11,0.82,-2222.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2025,Sell to Open,RDDT  251219C00240000,CALL REDDIT INC $240 EXP 12/19/25,2.0,9.86,0.83,1971.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/08/2025,Expired,XLU   251205C00045500,CALL SPDR UTILITIES $45.5 EXP 12/05/25,34.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,27.0,0.12,11.18,312.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,AES   251205C00014000,CALL AES CORP $14 EXP 12/05/25,27.0,0.12,11.1,-335.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,6.0,0.15,2.49,87.51
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,JPM   251212C00315000,CALL JPMORGAN CHASE & CO$315 EXP 12/12/25,3.0,4.76,1.24,1426.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,RDDT  251212C00225000,CALL REDDIT INC $225 EXP 12/12/25,2.0,16.52,0.82,-3304.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,JPM   251205C00310000,CALL JPMORGAN CHASE & CO$310 EXP 12/05/25,3.0,6.56,1.23,-1969.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,RDDT  251212C00230000,CALL REDDIT INC $230 EXP 12/12/25,2.0,13.27,0.83,2653.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2968.9
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,596.68
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.2294,58.3297,,-596.68
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,51.8314,57.28,,-2968.9
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy to Close,RDDT  251205C00220000,CALL REDDIT INC $220 EXP 12/05/25,2.0,6.4,0.82,-1280.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Sell to Open,RDDT  251212C00225000,CALL REDDIT INC $225 EXP 12/12/25,2.0,8.5,0.83,1699.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,345.8
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Buy,ETR,ENTERGY CORP NEW,0.6693,95.6291,,-64.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Buy,BKH,BLACK HILLS CORP,4.7429,72.9092,,-345.8
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,RDDT  251205C00220000,CALL REDDIT INC $220 EXP 12/05/25,2.0,6.3,0.83,1259.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,AES   251128C00013500,CALL AES CORP $13.5 EXP 11/28/25,27.0,0.48,11.1,-1307.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,XLU   251128C00090000,CALL SPDR UTILITIES $90 EXP 11/28/25,17.0,0.63,6.99,-1077.99
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,XLU   251205C00091000,CALL SPDR UTILITIES $91 EXP 12/05/25,17.0,0.43,7.04,723.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,JPM   251205C00310000,CALL JPMORGAN CHASE & CO$310 EXP 12/05/25,3.0,5.88,1.24,1762.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,AES   251205C00014000,CALL AES CORP $14 EXP 12/05/25,27.0,0.18,11.18,474.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,JPM   251128C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/28/25,3.0,8.48,1.23,-2545.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/24/2025,Expired,RDDT  251121C00195000,CALL REDDIT INC $195 EXP 11/21/25,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,JPM   251121C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/21/25,3.0,0.01,0.03,-3.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,XLU   251121C00090000,CALL SPDR UTILITIES $90 EXP 11/21/25,17.0,0.14,6.99,-244.99
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,XLU   251128C00090000,CALL SPDR UTILITIES $90 EXP 11/28/25,17.0,0.42,7.04,706.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,AES   251128C00013500,CALL AES CORP $13.5 EXP 11/28/25,27.0,0.32,11.18,852.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,AES   251121C00014500,CALL AES CORP $14.5 EXP 11/21/25,27.0,0.02,0.3,-54.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,JPM   251128C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/28/25,3.0,1.31,1.24,391.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,ETR   251121C00095000,CALL ENTERGY CORP NEW $95 EXP 11/21/25,1.0,0.14,0.41,-14.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,ETR   251219C00095000,CALL ENTERGY CORP NEW $95 EXP 12/19/25,1.0,1.89,0.41,188.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/19/2025,Sell to Open,RDDT  251121C00195000,CALL REDDIT INC $195 EXP 11/21/25,2.0,2.3,0.83,459.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/19/2025,Sell to Open,JPM   251121C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/21/25,3.0,1.85,1.24,553.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Credit Interest,SCHFDX0,BANK INT 101625-111525 SCHWAB BANK,,,,0.63
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Expired,AES   251114C00014000,CALL AES CORP $14 EXP 11/14/25,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Expired,JPM   251114C00317500,CALL JPMORGAN CHASE & CO$317.5 EXP 11/14/25,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Buy to Close,AES   251114C00014500,CALL AES CORP $14.5 EXP 11/14/25,27.0,0.03,0.3,-81.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Buy,AES,AES CORP,41.6039,13.9564,,-580.64
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Sell to Open,AES   251121C00014500,CALL AES CORP $14.5 EXP 11/21/25,27.0,0.17,11.18,447.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Cash Dividend,AES,AES CORP,,,,580.64
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Sell to Open,XLU   251121C00090000,CALL SPDR UTILITIES $90 EXP 11/21/25,17.0,0.49,7.04,825.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/12/2025,Sell to Open,BEN   251219C00024000,CALL FRANKLIN RES INC $24 EXP 12/19/25,4.0,0.31,1.65,122.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/12/2025,Buy,BEN,FRANKLIN RES INC,400.0,22.99,,-9196.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Buy,JPM,JPMORGAN CHASE & CO,300.0,317.69,,-95307.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Exchange or Exercise,JPM   251107C00310000,CALL JPMORGAN CHASE & CO$310 EXP 11/07/25,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,AES   251107C00014500,CALL AES CORP $14.5 EXP 11/07/25,4.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Sell to Open,JPM   251114C00317500,CALL JPMORGAN CHASE & CO$317.5 EXP 11/14/25,3.0,3.22,1.24,964.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,RDDT  251107C00220000,CALL REDDIT INC $220 EXP 11/07/25,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Sell,JPM,JPMORGAN CHASE & CO,300.0,310.0,0.05,92999.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,XLU   251107C00090000,CALL SPDR UTILITIES $90 EXP 11/07/25,17.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Sell to Open,AES   251114C00014000,CALL AES CORP $14 EXP 11/14/25,2.0,0.48,0.83,95.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Buy to Close,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,27.0,0.04,0.3,-108.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Buy to Close,AES   251107C00015500,CALL AES CORP $15.5 EXP 11/07/25,2.0,0.05,0.02,-10.02
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Sell to Open,AES   251114C00014500,CALL AES CORP $14.5 EXP 11/14/25,27.0,0.3,11.18,798.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,48.8881,56.41,,-2757.78
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2757.78
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.6994,58.48,,-508.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,508.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Sell to Open,RDDT  251107C00220000,CALL REDDIT INC $220 EXP 11/07/25,2.0,11.97,0.83,2393.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Buy,JPM,JPMORGAN CHASE & CO,1.4474,312.0035,,-451.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,451.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Buy to Close,RDDT  251031C00210000,CALL REDDIT INC $210 EXP 10/31/25,2.0,14.4,0.82,-2880.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell,IHI,ISHARES US MEDICAL DEVICES ETF,2600.0,60.99,0.43,158573.57
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell to Open,JPM   251107C00310000,CALL JPMORGAN CHASE & CO$310 EXP 11/07/25,3.0,3.1,1.24,928.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Buy,XLU,SELECT SECTOR UTI SELECTSPDR ETF,1700.0,90.33,,-153561.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell to Open,XLU   251107C00090000,CALL SPDR UTILITIES $90 EXP 11/07/25,17.0,1.29,7.04,2185.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Sell to Open,RDDT  251031C00210000,CALL REDDIT INC $210 EXP 10/31/25,2.0,15.86,0.83,3171.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Buy,AES,AES CORP,700.0,14.6,,-10220.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,7.0,0.34,2.9,235.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Buy to Close,RDDT  251024C00200000,CALL REDDIT INC $200 EXP 10/24/25,2.0,9.31,0.82,-1862.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/17/2025,Buy to Close,ETR   251017C00095000,CALL ENTERGY CORP NEW $95 EXP 10/17/25,1.0,0.7,0.41,-70.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/17/2025,Sell to Open,ETR   251121C00095000,CALL ENTERGY CORP NEW $95 EXP 11/21/25,1.0,3.7,0.41,369.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/16/2025,Credit Interest,SCHFDX0,BANK INT 091625-101525 SCHWAB BANK,,,,0.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Cash Dividend,OBDC,BLUE OWL CAP CORP,,,,740.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Close,JPM   251017C00315000,CALL JPMORGAN CHASE & CO$315 EXP 10/17/25,3.0,0.44,1.24,130.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy,RDDT,REDDIT INC CLASS A,200.0,199.7,,-39940.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,10.0,0.67,4.14,665.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,AES   251107C00015500,CALL AES CORP $15.5 EXP 11/07/25,2.0,0.55,0.83,109.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy to Open,JPM   251017C00315000,CALL JPMORGAN CHASE & CO$315 EXP 10/17/25,3.0,1.6,1.23,-481.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell,AMCR,AMCOR PLC F,3089.6838,8.0526,0.51,24879.48
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy,AES,AES CORP,1000.0,14.68,,-14680.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,RDDT  251024C00200000,CALL REDDIT INC $200 EXP 10/24/25,2.0,8.9,0.83,1779.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell,NLCP,NEWLAKE CAP PARTNERS INC,900.0,12.86,7.1,11566.9
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/13/2025,Expired,AES   251010C00014500,CALL AES CORP $14.5 EXP 10/10/25,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Sell,OBDC,BLUE OWL CAP CORP,2000.0,12.2318,0.33,24463.27
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Buy,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,500.0,25.95,,-12975.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,99.02
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Buy,BEN,FRANKLIN RES INC,4.1694,23.7493,,-99.02
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,10.0,0.81,4.14,805.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Sell,COST,COSTCO WHSL CORP NEW,30.0,912.5,,27375.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Buy,AES,AES CORP,1000.0,14.77,,-14770.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell to Open,AES   251107C00014500,CALL AES CORP $14.5 EXP 11/07/25,4.0,0.74,1.65,294.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell,LYB,LYONDELLBASELL INDUSTR FCLASS A,109.627,48.4256,0.02,5308.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Buy,AES,AES CORP,200.0,14.53,,-2906.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Buy,AES,AES CORP,400.0,14.508,,-5803.2
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell to Open,AES   251010C00014500,CALL AES CORP $14.5 EXP 10/10/25,2.0,0.44,0.83,87.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Sell,LYB,LYONDELLBASELL INDUSTR FCLASS A,100.0,48.76,0.02,4875.98
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Buy,ETR,ENTERGY CORP NEW,100.0,95.87,,-9587.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Sell to Open,ETR   251017C00095000,CALL ENTERGY CORP NEW $95 EXP 10/17/25,1.0,2.12,0.41,211.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2856.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,473.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,50.13,56.98,,-2856.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.2627,57.3167,,-473.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/26/2025,Buy,AMCR,AMCOR PLC F,48.1974,8.0459,,-387.79
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/25/2025,Cash Dividend,AMCR,AMCOR PLC F,,,,387.79
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,91.19
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.4722,193.1199,,-91.19
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,158.28
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2025,Credit Interest,SCHFDX0,BANK INT 081625-091525 SCHWAB BANK,,,,0.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,315.89
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Buy,ED,CONSOLIDATED EDISON INC,2.6455,97.1864,,-257.11
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,OBDC,BLUE OWL CAP CORP,,,,40.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,257.11
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,299.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2894.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Sell,XOM,EXXON MOBIL CORP,2.7698,112.4594,,311.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,465.44
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.4136,55.32,,-465.44
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,51.1818,56.56,,-2894.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2025,Buy,LYB,LYONDELLBASELL INDUSTR FCLASS A,5.0856,55.1005,,-280.22
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,280.22
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Buy,BKH,BLACK HILLS CORP,5.7225,59.752,,-341.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,341.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Sell,XOM,EXXON MOBIL CORP,300.0,108.0,0.05,32399.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Exchange or Exercise,XOM   250822C00108000,CALL EXXON MOBIL CORP $108 EXP 08/22/25,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Buy,OBDC,BLUE OWL CAP CORP,2000.0,14.26,,-28520.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/18/2025,Credit Interest,SCHFDX0,BANK INT 071625-081525 SCHWAB BANK,,,,0.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/15/2025,Sell to Open,XOM   250822C00108000,CALL EXXON MOBIL CORP $108 EXP 08/22/25,3.0,0.95,1.24,283.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/15/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,39.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,49.9043,55.99,,-2794.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2794.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.4985,54.5495,,-463.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,463.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,140.81
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2025,Buy,JPM,JPMORGAN CHASE & CO,0.4724,298.102,,-140.81
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/23/2025,Sell,ATEC,ALPHATEC HLDGS INC,4500.0,10.8048,0.75,48620.85
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/23/2025,Buy,JPM,JPMORGAN CHASE & CO,200.0,295.615,,-59123.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2025,Credit Interest,SCHFDX0,BANK INT 061625-071525 SCHWAB BANK,,,,0.53
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/11/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,97.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/11/2025,Buy,BEN,FRANKLIN RES INC,3.9515,24.7398,,-97.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,9.4506,54.13,,-511.56
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,54.5012,56.86,,-3098.94
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,511.56
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3098.94
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,143.91
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,131.33
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.7941,165.3899,,-131.33
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Buy,ED,CONSOLIDATED EDISON INC,2.4816,102.7555,,-255.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,255.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,315.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Credit Interest,SCHFDX0,BANK INT 051625-061525 SCHWAB BANK,,,,0.53
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/11/2025,Buy,AMCR,AMCOR PLC F,41.4864,9.2199,,-382.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Buy,LYB,LYONDELLBASELL INDUSTR FCLASS A,4.5414,60.334,,-274.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Buy,XOM,EXXON MOBIL CORP,2.7698,107.2263,,-297.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Cash Dividend,AMCR,AMCOR PLC F,,,,382.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/09/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,274.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,12.1106,52.44,,-635.08
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,4148.47
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,635.08
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,74.2389,55.88,,-4148.47
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,338.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2025,Buy,BKH,BLACK HILLS CORP,5.8156,58.1199,,-338.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/16/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,39.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/16/2025,Credit Interest,SCHFDX0,BANK INT 041625-051525 SCHWAB BANK,,,,0.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/06/2025,Buy,AMCR,AMCOR PLC F,3000.0,9.17,,-27510.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3715.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,66.7696,55.65,,-3715.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,604.65
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,11.7499,51.46,,-604.65
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Sell,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,500.0,69.33,1.04,34663.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,140.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2025,Buy,JPM,JPMORGAN CHASE & CO,0.5805,241.1642,,-140.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2025,Credit Interest,SCHFDX0,BANK INT 031625-041525 SCHWAB BANK,,,,0.53
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/11/2025,Buy,BEN,FRANKLIN RES INC,5.4904,17.4849,,-96.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/11/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,96.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/08/2025,ADR Mgmt Fee,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-7.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/08/2025,Cash Dividend,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,571.28
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,540.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,55.4482,55.62,,-3084.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.8496,49.86,,-540.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3084.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/26/2025,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/24/2025,Buy,COST,COSTCO WHSL CORP NEW,30.0,922.9,,-27687.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/21/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,85.77
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,115.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,268.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Credit Interest,SCHFDX0,BANK INT 021625-031525 SCHWAB BANK,,,,0.52
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,310.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/14/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,255.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Sell,HAL,HALLIBURTON CO,1000.0,23.695,0.83,23694.17
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2477.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,482.62
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/03/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,338.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/18/2025,Credit Interest,SCHFDX0,BANK INT 011625-021525 SCHWAB BANK,,,,0.08
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2463.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,450.42
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,125.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2025,Credit Interest,SCHFDX0,BANK INT 121624-011525 SCHWAB BANK,,,,0.2
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2025,Buy,NLCP,NEWLAKE CAP PARTNERS INC,400.0,16.34,6.95,-6542.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,215.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/10/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,96.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2984.54
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,456.07
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/26/2024,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/23/2024,Expired,ED    241220C00100000,CALL CONSOLIDATED EDISON$100 EXP 12/20/24,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/20/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,279.07
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,101.08
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2024,Credit Interest,SCHFDX0,BANK INT 111624-121524 SCHWAB BANK,,,,0.99
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,332.4
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/12/2024,Cash Dividend,WBA,WALGREENS BOOTS ALLIANCE,,,,77.12
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/09/2024,Buy,NLCP,NEWLAKE CAP PARTNERS INC,500.0,19.25,6.95,-9631.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/09/2024,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,268.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/04/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3037.38
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/04/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,508.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Buy,ED,CONSOLIDATED EDISON INC,300.0,100.72,,-30216.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Sell to Open,ED    241220C00100000,CALL CONSOLIDATED EDISON$100 EXP 12/20/24,3.0,1.91,1.26,571.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Cash Dividend,BKH,BLACK HILLS CORP,,,,325.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/26/2024,Sell,WBA,WALGREENS BOOTS ALLIANCE,308.46,8.795,0.13,2712.78
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/26/2024,Sell,HUM,HUMANA INC,100.0,296.941,0.85,29693.25
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/22/2024,Sell,VZ,VERIZON COMMUNICATIONS I,10.1357,43.3053,0.01,438.92
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/18/2024,Credit Interest,SCHFDX0,BANK INT 101624-111524 SCHWAB BANK,,,,0.38
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2836.66
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,493.87
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/01/2024,Cash Dividend,VZ,VERIZON COMMUNICATIONS I,,,,6.87
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2024,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,125.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/25/2024,Cash Dividend,HUM,HUMANA INC,,,,88.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/18/2024,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,60.0,59.925,,-3595.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/16/2024,Credit Interest,SCHFDX0,BANK INT 091624-101524 SCHWAB BANK,,,,10.39
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/11/2024,Cash Dividend,BEN,FRANKLIN RES INC,,,,93.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2941.28
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,550.9
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,200.0,58.8817,,-11776.34
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,191.18
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,163.92
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/25/2024,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/24/2024,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,6500.0,59.26,,-385190.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,LYB   240920C00100000,CALL LYONDELLBASELL INDU$100 EXP 09/20/24,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,HD,HOME DEPOT INC,200.0,355.0,2.0,70998.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,NVO   240920C00130000,CALL NOVO-NORDISK A S $130 EXP 09/20/24,5.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,WBA   240920C00012500,CALL WALGREENS BOOTS ALL$12.5 EXP 09/20/24,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,JPM   240920C00215000,CALL JPMORGAN CHASE & CO$215 EXP 09/20/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,HAL   240920C00032000,CALL HALLIBURTON CO $32 EXP 09/20/24,10.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,LLY   240920C00900000,CALL ELI LILLY AND CO $900 EXP 09/20/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,LLY,ELI LILLY AND CO,100.0,900.0,2.52,89997.48
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,HD    240920C00355000,CALL HOME DEPOT INC $355 EXP 09/20/24,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,XOM   240920C00120000,CALL EXXON MOBIL CORP $120 EXP 09/20/24,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,VZ,VERIZON COMMUNICATIONS I,500.0,41.0,0.65,20499.35
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,LOW,LOWES COS INC,200.0,240.0,1.36,47998.64
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,BEN   240920C00022500,CALL FRANKLIN RES INC $22.5 EXP 09/20/24,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,HUM   240920C00380000,CALL HUMANA INC $380 EXP 09/20/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,SWK,STANLEY BLACK & DECKER I,600.0,105.0,1.85,62998.15
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,VZ    240920C00041000,CALL VERIZON COMMUNICATI$41 EXP 09/20/24,5.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,TGT   240920C00140000,CALL TARGET CORP $140 EXP 09/20/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,TGT,TARGET CORP,100.0,140.0,0.41,13999.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,SWK   240920C00105000,CALL STANLEY BLACK & DEC$105 EXP 09/20/24,6.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,LOW   240920C00240000,CALL LOWES COS INC $240 EXP 09/20/24,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/17/2024,Cash Dividend,SWK,STANLEY BLACK & DECKER I,,,,492.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,348.92
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2024,Credit Interest,SCHFDX0,BANK INT 081624-091524 SCHWAB BANK,,,,16.87
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Cash Dividend,WBA,WALGREENS BOOTS ALLIANCE,,,,75.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Buy,WBA,WALGREENS BOOTS ALLIANCE,8.46,8.8652,,-75.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Cash Dividend,HD,HOME DEPOT INC,,,,450.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,TGT,TARGET CORP,,,,112.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,285.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,130.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,399.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,557.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Exchange or Exercise,URI   240830C00730000,CALL UNITED RENTALS INC $730 EXP 08/30/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Cash Dividend,BKH,BLACK HILLS CORP,,,,325.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Cash Dividend,LYB,LYONDELLBASELL INDS FCLASS A,,,,268.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Sell,URI,UNITED RENTALS INC,100.0,730.0,2.05,72997.95
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/28/2024,Cash Dividend,URI,UNITED RENTALS INC,,,,163.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/26/2024,Cash Dividend,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,258.45
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/26/2024,ADR Mgmt Fee,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-7.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Sell,JNJ,JOHNSON & JOHNSON,100.0,155.0,0.45,15499.55
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Exchange or Exercise,JNJ   240816C00155000,CALL JOHNSON & JOHNSON $155 EXP 08/16/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Expired,ATEC  240816C00012500,CALL ALPHATEC HOLDINGS $12.5 EXP 08/16/24,45.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/07/2024,Cash Dividend,LOW,LOWES COMPANIES INC,,,,230.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,426.97
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,289.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HUM   240920C00380000,CALL HUMANA INC $380 EXP 09/20/24,1.0,8.9,0.43,889.57
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HAL   240920C00032000,CALL HALLIBURTON CO HLDG$32 EXP 09/20/24,10.0,1.4,4.18,1395.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,HD    240816C00365000,CALL HOME DEPOT INC $365 EXP 08/16/24,2.0,6.48,0.82,-1296.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,XOM   240920C00120000,CALL EXXON MOBIL CORP $120 EXP 09/20/24,3.0,2.67,1.26,799.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,BEN   240920C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 09/20/24,3.0,0.6533,1.25,194.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,WBA   240920C00012500,CALL WALGREENS BOOTS ALL$12.5 EXP 09/20/24,3.0,0.41,1.24,121.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,BEN   240816C00025000,CALL FRANKLIN RESOURCES $25 EXP 08/16/24,3.0,0.0367,0.03,-11.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,TGT   240816C00155000,CALL TARGET CORP $155 EXP 08/16/24,1.0,0.26,0.41,-26.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,TGT   240920C00140000,CALL TARGET CORP $140 EXP 09/20/24,1.0,8.26,0.43,825.57
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,XOM   240816C00120000,CALL EXXON MOBIL CORP $120 EXP 08/16/24,3.0,1.08,1.23,-325.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,LLY   240920C00900000,CALL ELI LILLY AND CO $900 EXP 09/20/24,1.0,15.89,0.45,1588.55
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,LOW   240920C00240000,CALL LOWES COMPANIES INC$240 EXP 09/20/24,2.0,11.23,0.89,2245.11
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,HAL   240816C00036000,CALL HALLIBURTON CO HLDG$36 EXP 08/16/24,10.0,0.06,4.11,-64.11
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,VZ    240920C00041000,CALL VERIZON COMMUNICATN$41 EXP 09/20/24,5.0,1.3,2.08,647.92
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,NVO   240816C00135000,CALL NOVO-NORDISK AS VOR$135 EXP 08/16/24,5.0,2.3,2.05,-1152.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HD    240920C00355000,CALL HOME DEPOT INC $355 EXP 09/20/24,2.0,14.98,0.91,2995.09
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,LLY   240816C00960000,CALL ELI LILLY AND CO $960 EXP 08/16/24,1.0,1.79,0.41,-179.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,LOW   240816C00240000,CALL LOWES COMPANIES INC$240 EXP 08/16/24,2.0,6.03,0.82,-1206.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,NVO   240920C00130000,CALL NOVO-NORDISK AS VOR$130 EXP 09/20/24,5.0,6.4,2.15,3197.85
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/01/2024,Cash Dividend,VZ,VERIZON COMMUNICATN,,,,339.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2024,Cash Dividend,JPM,J P MORGAN CHASE & CO,,,,115.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,SWK   240816C00090000,CALL STANLEY BLACK & DEC$90 EXP 08/16/24,6.0,15.63,2.47,-9380.47
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,HD    240816C00360000,CALL HOME DEPOT INC $360 EXP 08/16/24,2.0,11.92,0.82,-2384.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,HD    240816C00365000,CALL HOME DEPOT INC $365 EXP 08/16/24,2.0,9.32,0.88,1863.12
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,LYB   240920C00100000,CALL LYONDELLBASELL INDS$100 EXP 09/20/24,2.0,2.17,0.84,433.16
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,JPM   240816C00210000,CALL J P MORGAN CHASE & $210 EXP 08/16/24,1.0,6.3,0.41,-630.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,JPM   240920C00215000,CALL J P MORGAN CHASE & $215 EXP 09/20/24,1.0,6.55,0.43,654.57
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,SWK   240920C00105000,CALL STANLEY BLACK & DEC$105 EXP 09/20/24,6.0,5.08,2.57,3045.43
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/26/2024,Cash Dividend,HUM,HUMANA INC,,,,88.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/22/2024,Expired,HUM   240719C00390000,CALL HUMANA INC $390 EXP 07/19/24,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/22/2024,Expired,IYW   240719C00159000,CALL ISHR US TECH $159 EXP 07/19/24,15.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,JNJ   240816C00155000,CALL JOHNSON & JOHNSON $155 EXP 08/16/24,1.0,2.68,0.42,267.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,XOM   240816C00120000,CALL EXXON MOBIL CORP $120 EXP 08/16/24,3.0,1.25,1.25,373.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,NVO   240816C00135000,CALL NOVO-NORDISK AS VOR$135 EXP 08/16/24,5.0,4.06,2.12,2027.88
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,BEN   240719C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 07/19/24,3.0,1.02,1.23,-307.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,XOM   240719C00115000,CALL EXXON MOBIL CORP $115 EXP 07/19/24,3.0,1.05,1.23,-316.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Close,LYB   240719C00095000,CALL LYONDELLBASELL INDS$95 EXP 07/19/24,2.0,1.6,0.84,319.16
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,NVO   240719C00145000,CALL NOVO-NORDISK AS VOR$145 EXP 07/19/24,5.0,0.03,0.05,-15.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,BEN   240816C00025000,CALL FRANKLIN RESOURCES $25 EXP 08/16/24,3.0,0.25,1.24,73.76
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,JNJ   240719C00150000,CALL JOHNSON & JOHNSON $150 EXP 07/19/24,1.0,4.45,0.41,-445.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Sell to Open,JPM   240816C00210000,CALL J P MORGAN CHASE & $210 EXP 08/16/24,1.0,5.35,0.42,534.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Credit Interest,SCHFDX0,BANK INT 061624-071524 SCHWAB BANK,,,,2.8
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Sell to Open,URI   240830C00730000,CALL UNITED RENTALS INC $730 EXP 08/30/24,1.0,38.72,0.52,3871.48
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Buy to Close,URI   240823C00690000,CALL UNITED RENTALS INC $690 EXP 08/23/24,1.0,59.22,0.41,-5922.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Buy to Close,JPM   240816C00205000,CALL J P MORGAN CHASE & $205 EXP 08/16/24,1.0,8.7,0.41,-870.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,ATEC  240816C00012500,CALL ALPHATEC HOLDINGS $12.5 EXP 08/16/24,45.0,0.3533,18.7,1571.3
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,HAL   240816C00036000,CALL HALLIBURTON CO HLDG$36 EXP 08/16/24,10.0,0.58,4.16,575.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,LLY   240816C00960000,CALL ELI LILLY AND CO $960 EXP 08/16/24,1.0,38.01,0.52,3800.48
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Buy to Close,LLY   240816C00950000,CALL ELI LILLY AND CO $950 EXP 08/16/24,1.0,43.24,0.41,-4324.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Buy to Close,ATEC  240719C00010000,CALL ALPHATEC HOLDINGS $10 EXP 07/19/24,45.0,1.4533,18.5,-6558.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,LOW   240816C00240000,CALL LOWES COMPANIES INC$240 EXP 08/16/24,2.0,4.15,0.85,829.15
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,SWK   240816C00090000,CALL STANLEY BLACK & DEC$90 EXP 08/16/24,6.0,2.8,2.54,1677.46
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,HD    240816C00360000,CALL HOME DEPOT INC $360 EXP 08/16/24,2.0,12.25,0.9,2449.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,TGT   240816C00155000,CALL TARGET CORP $155 EXP 08/16/24,1.0,3.78,0.42,377.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,TGT   240719C00150000,CALL TARGET CORP $150 EXP 07/19/24,1.0,3.8,0.41,-380.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,HD    240712C00340000,CALL HOME DEPOT INC $340 EXP 07/12/24,2.0,20.75,0.82,-4150.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,SWK   240719C00082500,CALL STANLEY BLACK & DEC$82.5 EXP 07/19/24,6.0,6.0,2.47,-3602.47
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,2.0,10.82,0.82,-2164.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,LLY   240816C00950000,CALL ELI LILLY AND CO $950 EXP 08/16/24,1.0,37.45,0.51,3744.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,LLY   240719C00920000,CALL ELI LILLY AND CO $920 EXP 07/19/24,1.0,30.95,0.41,-3095.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,JPM   240719C00202500,CALL J P MORGAN CHASE & $202.5 EXP 07/19/24,1.0,3.88,0.41,-388.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,URI   240719C00650000,CALL UNITED RENTALS INC $650 EXP 07/19/24,1.0,40.98,0.41,-4098.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,JPM   240816C00205000,CALL J P MORGAN CHASE & $205 EXP 08/16/24,1.0,4.94,0.42,493.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,URI   240823C00690000,CALL UNITED RENTALS INC $690 EXP 08/23/24,1.0,32.98,0.5,3297.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Cash Dividend,BEN,FRANKLIN RESOURCES,,,,93.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,SWK   240719C00082500,CALL STANLEY BLACK & DEC$82.5 EXP 07/19/24,6.0,1.05,2.51,627.49
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,HD    240712C00340000,CALL HOME DEPOT INC $340 EXP 07/12/24,2.0,3.5,0.85,699.15
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,NVO   240719C00145000,CALL NOVO-NORDISK AS VOR$145 EXP 07/19/24,5.0,2.12,2.09,1057.91
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Buy to Open,IYW   240719C00159000,CALL ISHR US TECH $159 EXP 07/19/24,15.0,1.05,6.16,-1581.16
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Buy to Open,LYB   240719C00095000,CALL LYONDELLBASELL INDS$95 EXP 07/19/24,2.0,1.0,0.82,-200.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Sell to Open,ATEC  240719C00010000,CALL ALPHATEC HOLDINGS $10 EXP 07/19/24,45.0,0.4,18.66,1781.34
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,421.36
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,330.12
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Buy,WBA,WALGREENS BOOTS ALLI,300.0,11.18,,-3354.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,HUM   240719C00390000,CALL HUMANA INC $390 EXP 07/19/24,1.0,4.7,0.42,469.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Buy to Close,XOM   240719C00110000,CALL EXXON MOBIL CORP $110 EXP 07/19/24,3.0,6.38,1.23,-1915.23
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Buy to Close,JPM   240719C00200000,CALL J P MORGAN CHASE & $200 EXP 07/19/24,1.0,5.1,0.41,-510.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,JPM   240719C00202500,CALL J P MORGAN CHASE & $202.5 EXP 07/19/24,1.0,3.85,0.42,384.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,1.0,2.25,0.42,224.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,XOM   240719C00115000,CALL EXXON MOBIL CORP $115 EXP 07/19/24,3.0,2.58,1.26,772.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,1.0,2.3,0.42,229.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Cash Dividend,UNIT,UNITI GROUP INC,,,,2250.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/26/2024,Cash Dividend,HAL,HALLIBURTON CO HLDG,,,,170.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/25/2024,Sell to Open,LLY   240719C00920000,CALL ELI LILLY AND CO $920 EXP 07/19/24,1.0,16.46,0.46,1645.54
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/25/2024,Buy to Close,LLY   240719C00900000,CALL ELI LILLY AND CO $900 EXP 07/19/24,1.0,25.82,0.41,-2582.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Buy,JPM,J P MORGAN CHASE & CO,100.0,198.46,,-19846.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,JNJ   240719C00150000,CALL JOHNSON & JOHNSON $150 EXP 07/19/24,1.0,2.25,0.42,224.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Buy,JNJ,JOHNSON & JOHNSON,100.0,147.88,,-14788.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,URI   240719C00650000,CALL UNITED RENTALS INC $650 EXP 07/19/24,1.0,20.65,0.47,2064.53
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,JPM   240719C00200000,CALL J P MORGAN CHASE & $200 EXP 07/19/24,1.0,4.28,0.42,427.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,TGT   240719C00150000,CALL TARGET CORP $150 EXP 07/19/24,1.0,1.33,0.41,132.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Sell to Open,LLY   240719C00900000,CALL ELI LILLY AND CO $900 EXP 07/19/24,1.0,21.59,0.47,2158.53
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Cash Dividend,SWK,STANLEY BLACK & DECK,,,,486.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Buy to Close,LLY   240621C00800000,CALL ELI LILLY AND CO $800 EXP 06/21/24,1.0,89.67,0.41,-8967.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Buy to Close,XOM   240621C00120000,CALL EXXON MOBIL CORP $120 EXP 06/21/24,3.0,0.02,0.03,-6.03
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Sell to Open,XOM   240719C00110000,CALL EXXON MOBIL CORP $110 EXP 07/19/24,3.0,2.42,1.26,724.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,127.06
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Credit Interest,SCHFDX0,BANK INT 051624-061524 SCHWAB BANK,,,,2.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,121.91
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,348.46
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Buy,BEN,FRANKLIN RESOURCES,300.0,21.78,,-6534.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell,UNIT,UNITI GROUP INC,8735.0,2.7709,2.15,24201.79
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell,UNIT,UNITI GROUP INC,6265.0,2.7601,1.52,17290.51
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell to Open,BEN   240719C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 07/19/24,3.0,0.26,1.23,76.77
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/13/2024,Cash Dividend,HD,HOME DEPOT INC,,,,450.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,TGT,TARGET CORP,,,,110.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,130.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,285.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,LYB,LYONDELLBASELL INDS FCLASS A,,,,268.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Buy to Close,NEE   260605C00091000,CALL NEXTERA ENERGY INC $91 EXP 06/05/26,4.0,0.045,0.05,-18.05
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Buy to Close,JPM   260605C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/05/26,3.0,0.03,0.04,-9.04
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Sell to Open,NEE   260618C00088000,CALL NEXTERA ENERGY INC $88 EXP 06/18/26,4.0,0.795,1.67,316.33
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Cash Dividend,CEG,CONSTELLATION ENERGY COR,,,,42.65
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Sell to Open,JPM   260612C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/12/26,3.0,3.59,1.27,1075.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Sell,CEG,CONSTELLATION ENERGY COR,95.0,265.83,0.54,25253.31
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Buy to Close,CEG   260605C00305000,CALL CONSTELLATION ENERG$305 EXP 06/05/26,1.0,0.05,0.01,-5.01
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Sell,CEG,CONSTELLATION ENERGY COR,5.0,265.85,0.03,1329.22
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,2798.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,46.0185,60.8199,,-2798.84
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,37.4766,55.4399,,-2077.7
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2077.7
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2026,Buy,BKH,BLACK HILLS CORP,95.0,71.58,,-6800.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Cash Dividend,BKH,BLACK HILLS CORP,,,,366.4
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.81
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Buy,ETR,ENTERGY CORP NEW,0.6063,106.8925,,-64.81
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Buy,BKH,BLACK HILLS CORP,5.144,71.2287,,-366.4
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell to Open,MSFT  260618C00440000,CALL MICROSOFT CORP $440 EXP 06/18/26,1.0,14.02,0.44,1401.56
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,CEG   260529C00305000,CALL CONSTELLATION ENERG$305 EXP 05/29/26,1.0,0.01,0.01,-1.01
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell to Open,CEG   260605C00305000,CALL CONSTELLATION ENERG$305 EXP 06/05/26,1.0,1.86,0.41,185.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,MSFT  260605C00430000,CALL MICROSOFT CORP $430 EXP 06/05/26,1.0,15.92,0.41,-1592.41
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/26/2026,Sell to Open,NEE   260605C00091000,CALL NEXTERA ENERGY INC $91 EXP 06/05/26,4.0,0.83,1.67,330.33
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,RDDT,REDDIT INC CLASS A,200.0,144.52,0.64,28903.36
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,ETR,ENTERGY CORP NEW,100.0,112.23,0.25,11222.75
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,275.0,25.5301,0.19,7020.59
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell to Open,MSFT  260605C00430000,CALL MICROSOFT CORP $430 EXP 06/05/26,1.0,4.68,0.42,467.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy,MSFT,MICROSOFT CORP,100.0,419.08,,-41908.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell to Open,CEG   260529C00305000,CALL CONSTELLATION ENERG$305 EXP 05/29/26,1.0,2.54,0.42,253.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy to Close,RDDT  260529C00162500,CALL REDDIT INC $162.5 EXP 05/29/26,2.0,0.54,0.82,-108.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,683.0,25.553,0.49,17452.21
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,42.0,25.515,0.03,1071.6
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy,ETR,ENTERGY CORP NEW,200.0,112.23,,-22446.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/21/2026,Sell to Open,RDDT  260529C00162500,CALL REDDIT INC $162.5 EXP 05/29/26,2.0,2.0,0.84,399.16
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/21/2026,Sell to Open,JPM   260605C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/05/26,3.0,1.65,1.26,493.74
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/18/2026,Expired,NEE   260515C00099000,CALL NEXTERA ENERGY INC $99 EXP 05/15/26,4.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/18/2026,Credit Interest,SCHFDX0,BANK INT 041626-051526 SCHWAB BANK,,,,0.06
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,JPM   260508C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/08/26,3.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,CEG   260508C00330000,CALL CONSTELLATION ENERG$330 EXP 05/08/26,1.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,RDDT  260508C00180000,CALL REDDIT INC $180 EXP 05/08/26,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3258.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,29.3105,59.0597,,-1731.07
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,57.6585,56.52,,-3258.86
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,1731.07
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/04/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,1000.0,56.871,1.37,56869.63
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/04/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.9191,,-58919.1
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,RDDT  260508C00180000,CALL REDDIT INC $180 EXP 05/08/26,2.0,4.18,0.85,835.15
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,JPM   260508C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/08/26,3.0,3.2,1.27,958.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,CEG   260508C00330000,CALL CONSTELLATION ENERG$330 EXP 05/08/26,1.0,3.0,0.42,299.58
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,1000.0,56.915,1.37,56913.63
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy to Close,JPM   260501C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/01/26,3.0,0.15,1.24,-46.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy to Close,RDDT  260501C00165000,CALL REDDIT INC $165 EXP 05/01/26,2.0,7.55,0.82,-1510.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.835,,-58835.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2026,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,455.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2026,Buy,JPM,JPMORGAN CHASE & CO,1.4584,312.6501,,-455.96
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,42.0,57.05,0.06,2396.04
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,958.0,57.03,1.32,54633.42
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell to Open,RDDT  260501C00165000,CALL REDDIT INC $165 EXP 05/01/26,2.0,4.4,0.85,879.15
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell to Open,NEE   260515C00099000,CALL NEXTERA ENERGY INC $99 EXP 05/15/26,4.0,1.1,1.67,438.33
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.85,,-58850.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,CEG,CONSTELLATION ENERGY COR,100.0,309.6,,-30960.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,NEE,NEXTERA ENERGY INC,400.0,96.67,,-38668.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Sell,XLU,STATE STREET UTILITIES SELECT SECTOR SPDR ETF,1500.0,46.38,1.72,69568.28
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Sell,AES,AES CORP,3077.3106,14.4909,1.52,44591.48
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,700.0,58.9599,,-41271.93
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Expired,RDDT  260424C00160000,CALL REDDIT INC $160 EXP 04/24/26,2.0,,,0.0
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/24/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,100.0,58.965,,-5896.5
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/20/2026,Buy to Close,JPM   260424C00310000,CALL JPMORGAN CHASE & CO$310 EXP 04/24/26,3.0,6.88,1.24,-2065.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/20/2026,Sell to Open,JPM   260501C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/01/26,3.0,5.43,1.28,1627.72
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Buy to Close,JPM   260417C00305000,CALL JPMORGAN CHASE & CO$305 EXP 04/17/26,3.0,4.28,1.24,-1285.24
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.09
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Sell to Open,JPM   260424C00310000,CALL JPMORGAN CHASE & CO$310 EXP 04/24/26,3.0,3.88,1.27,1162.73
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Sell to Open,RDDT  260424C00160000,CALL REDDIT INC $160 EXP 04/24/26,2.0,7.4,0.86,1479.14
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Buy to Close,RDDT  260417C00155000,CALL REDDIT INC $155 EXP 04/17/26,2.0,6.95,0.82,-1390.82
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/10/2026,Buy,BEN,FRANKLIN RES INC,10.7638,25.2252,,-271.52
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/10/2026,Cash Dividend,BEN,FRANKLIN RES INC,,,,271.52
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,841.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Sell to Open,BE    260410C00145000,CALL BLOOM ENERGY CORP $145 EXP 04/10/26,10.0,3.35,4.15,3345.85
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Buy to Close,BE    260402C00140000,CALL BLOOM ENERGY CORP $140 EXP 04/02/26,10.0,0.04,0.12,-40.12
@@ -5034,3 +4473,564 @@ Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,05/01/2026,Sell
 Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,04/13/2026,Sell,RDDT,REDDIT INC CLASS A,4.0,148.05,0.01,592.19
 Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,04/13/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,18.078,57.711,0.02,1043.28
 Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,04/13/2026,Buy,AMZN,AMAZON.COM INC,7.0,238.29,,-1668.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3456.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,624.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,11.1792,55.87,,-624.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,61.087,56.58,,-3456.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/25/2026,Cash Dividend,XLU,STATE STREET UTILITIES SELECT SECTOR SPDR ETF,,,,1053.8
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/23/2026,Expired,AES   260320C00016500,CALL AES CORP $16.5 EXP 03/20/26,30.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/23/2026,Expired,BEN   260320C00028000,CALL FRANKLIN RES INC $28 EXP 03/20/26,5.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,106.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/20/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.5749,186.0162,,-106.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/18/2026,Sell to Open,JPM   260417C00305000,CALL JPMORGAN CHASE & CO$305 EXP 04/17/26,3.0,3.4,1.25,1018.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/18/2026,Sell to Open,RDDT  260417C00155000,CALL REDDIT INC $155 EXP 04/17/26,2.0,6.2,0.83,1239.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Credit Interest,SCHFDX0,BANK INT 021626-031526 SCHWAB BANK,,,,0.07
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Buy,ED,CONSOLIDATED EDISON INC,2.3781,114.8583,,-273.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,580.31
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/16/2026,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,273.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,9.8193,57.45,,-564.12
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,48.8047,58.82,,-2870.69
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2870.69
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/04/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,564.12
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Cash Dividend,BKH,BLACK HILLS CORP,,,,362.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Buy,BKH,BLACK HILLS CORP,4.9172,73.812,,-362.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.43
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/02/2026,Buy,ETR,ENTERGY CORP NEW,0.6015,107.123,,-64.43
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell,AES,AES CORP,3300.0,15.0,0.64,49499.36
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell to Open,BEN   260320C00028000,CALL FRANKLIN RES INC $28 EXP 03/20/26,5.0,0.4,2.07,197.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell to Open,AES   260320C00016500,CALL AES CORP $16.5 EXP 03/20/26,30.0,0.58,12.43,1727.57
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Exchange or Exercise,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,33.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Exchange or Exercise,BEN   260220C00027000,CALL FRANKLIN RES INC $27 EXP 02/20/26,4.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Sell,BEN,FRANKLIN RES INC,400.0,27.0,0.08,10799.92
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Buy,BEN,FRANKLIN RES INC,500.0,27.15,,-13575.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/23/2026,Buy,AES,AES CORP,3000.0,16.38,,-49140.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/17/2026,Credit Interest,SCHFDX0,BANK INT 011626-021526 SCHWAB BANK,,,,0.06
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/13/2026,Buy,AES,AES CORP,35.7067,16.4664,,-587.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/13/2026,Cash Dividend,AES,AES CORP,,,,587.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,47.7681,58.57,,-2797.78
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.8178,58.07,,-512.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2797.78
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/04/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,512.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,453.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Buy,JPM,JPMORGAN CHASE & CO,1.4705,308.5782,,-453.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/02/2026,Expired,JPM   260130C00325000,CALL JPMORGAN CHASE & CO$325 EXP 01/30/26,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/28/2026,Sell to Open,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,5.0,0.6,2.07,297.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/26/2026,Expired,AES   260123C00014500,CALL AES CORP $14.5 EXP 01/23/26,5.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/20/2026,Expired,RDDT  260116C00245000,CALL REDDIT INC $245 EXP 01/16/26,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,BEN   260116C00025000,CALL FRANKLIN RES INC $25 EXP 01/16/26,4.0,1.05,1.64,-421.64
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,JPM   260116C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/16/26,3.0,0.01,0.03,-3.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,AES   260123C00014500,CALL AES CORP $14.5 EXP 01/23/26,5.0,0.14,2.07,67.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Credit Interest,SCHFDX0,BANK INT 121625-011526 SCHWAB BANK,,,,0.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,JPM   260130C00325000,CALL JPMORGAN CHASE & CO$325 EXP 01/30/26,3.0,1.41,1.24,421.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Buy to Close,AES   260116C00014500,CALL AES CORP $14.5 EXP 01/16/26,5.0,0.05,0.05,-25.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2026,Sell to Open,BEN   260220C00027000,CALL FRANKLIN RES INC $27 EXP 02/20/26,4.0,0.42,1.65,166.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/15/2026,Sell to Open,AES   260220C00015000,CALL AES CORP $15 EXP 02/20/26,28.0,0.4,11.6,1108.4
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Sell to Open,RDDT  260116C00245000,CALL REDDIT INC $245 EXP 01/16/26,2.0,8.4,0.83,1679.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy to Close,RDDT  260109C00237500,CALL REDDIT INC $237.5 EXP 01/09/26,2.0,9.25,0.82,-1850.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy to Close,JPM   260109C00327500,CALL JPMORGAN CHASE & CO$327.5 EXP 01/09/26,3.0,3.51,1.23,-1054.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Sell to Open,JPM   260116C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/16/26,3.0,7.0,1.24,2098.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Buy,BEN,FRANKLIN RES INC,9.1843,25.6406,,-235.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/09/2026,Cash Dividend,BEN,FRANKLIN RES INC,,,,235.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.7129,58.5499,,-627.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,60.0345,57.36,,-3443.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3443.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/05/2026,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,627.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Sell to Open,JPM   260109C00327500,CALL JPMORGAN CHASE & CO$327.5 EXP 01/09/26,3.0,1.3,1.24,388.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Buy to Close,JPM   260102C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/02/26,3.0,0.02,0.03,-6.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/02/2026,Sell to Open,RDDT  260109C00237500,CALL REDDIT INC $237.5 EXP 01/09/26,2.0,5.4,0.83,1079.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/29/2025,Expired,RDDT  251226C00247500,CALL REDDIT INC $247.5 EXP 12/26/25,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/29/2025,Sell to Open,AES   260116C00014500,CALL AES CORP $14.5 EXP 01/16/26,5.0,0.2,2.06,97.94
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Buy to Close,JPM   251226C00325000,CALL JPMORGAN CHASE & CO$325 EXP 12/26/25,3.0,4.04,1.23,-1213.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Sell to Open,JPM   260102C00330000,CALL JPMORGAN CHASE & CO$330 EXP 01/02/26,3.0,2.62,1.24,784.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/24/2025,Cash Dividend,XLU,STATE STRT UTLTES SLET SCTR SPDR ETF,,,,1078.51
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/22/2025,Expired,ETR   251219C00095000,CALL ENTERGY CORP NEW $95 EXP 12/19/25,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/22/2025,Expired,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,33.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Sell to Open,BEN   260116C00025000,CALL FRANKLIN RES INC $25 EXP 01/16/26,4.0,0.15,1.65,58.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Buy to Close,BEN   251219C00024000,CALL FRANKLIN RES INC $24 EXP 12/19/25,4.0,0.18,1.64,-73.64
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,84.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.4267,198.8977,,-84.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/18/2025,Sell to Open,RDDT  251226C00247500,CALL REDDIT INC $247.5 EXP 12/26/25,2.0,6.8,0.83,1359.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/18/2025,Buy to Close,RDDT  251219C00240000,CALL REDDIT INC $240 EXP 12/19/25,2.0,6.35,0.82,-1270.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2025,Credit Interest,SCHFDX0,BANK INT 111625-121525 SCHWAB BANK,,,,0.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Sell to Open,JPM   251226C00325000,CALL JPMORGAN CHASE & CO$325 EXP 12/26/25,3.0,2.53,1.24,757.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Sell,JPM,JPMORGAN CHASE & CO,300.0,315.0,0.05,94499.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Buy,ED,CONSOLIDATED EDISON INC,2.6362,98.3851,,-259.36
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,259.36
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Buy,JPM,JPMORGAN CHASE & CO,300.0,320.08,,-96024.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,606.62
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/15/2025,Exchange or Exercise,JPM   251212C00315000,CALL JPMORGAN CHASE & CO$315 EXP 12/12/25,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2025,Buy to Close,RDDT  251212C00230000,CALL REDDIT INC $230 EXP 12/12/25,2.0,11.11,0.82,-2222.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2025,Sell to Open,RDDT  251219C00240000,CALL REDDIT INC $240 EXP 12/19/25,2.0,9.86,0.83,1971.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/08/2025,Expired,XLU   251205C00045500,CALL SPDR UTILITIES $45.5 EXP 12/05/25,34.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,27.0,0.12,11.18,312.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,AES   251205C00014000,CALL AES CORP $14 EXP 12/05/25,27.0,0.12,11.1,-335.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,AES   251219C00014500,CALL AES CORP $14.5 EXP 12/19/25,6.0,0.15,2.49,87.51
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,JPM   251212C00315000,CALL JPMORGAN CHASE & CO$315 EXP 12/12/25,3.0,4.76,1.24,1426.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,RDDT  251212C00225000,CALL REDDIT INC $225 EXP 12/12/25,2.0,16.52,0.82,-3304.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Buy to Close,JPM   251205C00310000,CALL JPMORGAN CHASE & CO$310 EXP 12/05/25,3.0,6.56,1.23,-1969.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/05/2025,Sell to Open,RDDT  251212C00230000,CALL REDDIT INC $230 EXP 12/12/25,2.0,13.27,0.83,2653.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2968.9
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,596.68
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.2294,58.3297,,-596.68
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,51.8314,57.28,,-2968.9
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Buy to Close,RDDT  251205C00220000,CALL REDDIT INC $220 EXP 12/05/25,2.0,6.4,0.82,-1280.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/03/2025,Sell to Open,RDDT  251212C00225000,CALL REDDIT INC $225 EXP 12/12/25,2.0,8.5,0.83,1699.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,345.8
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Buy,ETR,ENTERGY CORP NEW,0.6693,95.6291,,-64.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Buy,BKH,BLACK HILLS CORP,4.7429,72.9092,,-345.8
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/01/2025,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,RDDT  251205C00220000,CALL REDDIT INC $220 EXP 12/05/25,2.0,6.3,0.83,1259.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,AES   251128C00013500,CALL AES CORP $13.5 EXP 11/28/25,27.0,0.48,11.1,-1307.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,XLU   251128C00090000,CALL SPDR UTILITIES $90 EXP 11/28/25,17.0,0.63,6.99,-1077.99
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,XLU   251205C00091000,CALL SPDR UTILITIES $91 EXP 12/05/25,17.0,0.43,7.04,723.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,JPM   251205C00310000,CALL JPMORGAN CHASE & CO$310 EXP 12/05/25,3.0,5.88,1.24,1762.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Sell to Open,AES   251205C00014000,CALL AES CORP $14 EXP 12/05/25,27.0,0.18,11.18,474.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/28/2025,Buy to Close,JPM   251128C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/28/25,3.0,8.48,1.23,-2545.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/24/2025,Expired,RDDT  251121C00195000,CALL REDDIT INC $195 EXP 11/21/25,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,JPM   251121C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/21/25,3.0,0.01,0.03,-3.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,XLU   251121C00090000,CALL SPDR UTILITIES $90 EXP 11/21/25,17.0,0.14,6.99,-244.99
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,XLU   251128C00090000,CALL SPDR UTILITIES $90 EXP 11/28/25,17.0,0.42,7.04,706.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,AES   251128C00013500,CALL AES CORP $13.5 EXP 11/28/25,27.0,0.32,11.18,852.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,AES   251121C00014500,CALL AES CORP $14.5 EXP 11/21/25,27.0,0.02,0.3,-54.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,JPM   251128C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/28/25,3.0,1.31,1.24,391.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Buy to Close,ETR   251121C00095000,CALL ENTERGY CORP NEW $95 EXP 11/21/25,1.0,0.14,0.41,-14.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/21/2025,Sell to Open,ETR   251219C00095000,CALL ENTERGY CORP NEW $95 EXP 12/19/25,1.0,1.89,0.41,188.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/19/2025,Sell to Open,RDDT  251121C00195000,CALL REDDIT INC $195 EXP 11/21/25,2.0,2.3,0.83,459.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/19/2025,Sell to Open,JPM   251121C00305000,CALL JPMORGAN CHASE & CO$305 EXP 11/21/25,3.0,1.85,1.24,553.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Credit Interest,SCHFDX0,BANK INT 101625-111525 SCHWAB BANK,,,,0.63
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Expired,AES   251114C00014000,CALL AES CORP $14 EXP 11/14/25,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/17/2025,Expired,JPM   251114C00317500,CALL JPMORGAN CHASE & CO$317.5 EXP 11/14/25,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Buy to Close,AES   251114C00014500,CALL AES CORP $14.5 EXP 11/14/25,27.0,0.03,0.3,-81.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Buy,AES,AES CORP,41.6039,13.9564,,-580.64
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Sell to Open,AES   251121C00014500,CALL AES CORP $14.5 EXP 11/21/25,27.0,0.17,11.18,447.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Cash Dividend,AES,AES CORP,,,,580.64
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/14/2025,Sell to Open,XLU   251121C00090000,CALL SPDR UTILITIES $90 EXP 11/21/25,17.0,0.49,7.04,825.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/12/2025,Sell to Open,BEN   251219C00024000,CALL FRANKLIN RES INC $24 EXP 12/19/25,4.0,0.31,1.65,122.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/12/2025,Buy,BEN,FRANKLIN RES INC,400.0,22.99,,-9196.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Buy,JPM,JPMORGAN CHASE & CO,300.0,317.69,,-95307.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Exchange or Exercise,JPM   251107C00310000,CALL JPMORGAN CHASE & CO$310 EXP 11/07/25,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,AES   251107C00014500,CALL AES CORP $14.5 EXP 11/07/25,4.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Sell to Open,JPM   251114C00317500,CALL JPMORGAN CHASE & CO$317.5 EXP 11/14/25,3.0,3.22,1.24,964.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,RDDT  251107C00220000,CALL REDDIT INC $220 EXP 11/07/25,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Sell,JPM,JPMORGAN CHASE & CO,300.0,310.0,0.05,92999.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/10/2025,Expired,XLU   251107C00090000,CALL SPDR UTILITIES $90 EXP 11/07/25,17.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Sell to Open,AES   251114C00014000,CALL AES CORP $14 EXP 11/14/25,2.0,0.48,0.83,95.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Buy to Close,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,27.0,0.04,0.3,-108.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Buy to Close,AES   251107C00015500,CALL AES CORP $15.5 EXP 11/07/25,2.0,0.05,0.02,-10.02
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/06/2025,Sell to Open,AES   251114C00014500,CALL AES CORP $14.5 EXP 11/14/25,27.0,0.3,11.18,798.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,48.8881,56.41,,-2757.78
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2757.78
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.6994,58.48,,-508.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,508.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Sell to Open,RDDT  251107C00220000,CALL REDDIT INC $220 EXP 11/07/25,2.0,11.97,0.83,2393.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Buy,JPM,JPMORGAN CHASE & CO,1.4474,312.0035,,-451.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,451.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2025,Buy to Close,RDDT  251031C00210000,CALL REDDIT INC $210 EXP 10/31/25,2.0,14.4,0.82,-2880.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell,IHI,ISHARES US MEDICAL DEVICES ETF,2600.0,60.99,0.43,158573.57
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell to Open,JPM   251107C00310000,CALL JPMORGAN CHASE & CO$310 EXP 11/07/25,3.0,3.1,1.24,928.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Buy,XLU,SELECT SECTOR UTI SELECTSPDR ETF,1700.0,90.33,,-153561.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/29/2025,Sell to Open,XLU   251107C00090000,CALL SPDR UTILITIES $90 EXP 11/07/25,17.0,1.29,7.04,2185.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Sell to Open,RDDT  251031C00210000,CALL REDDIT INC $210 EXP 10/31/25,2.0,15.86,0.83,3171.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Buy,AES,AES CORP,700.0,14.6,,-10220.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,7.0,0.34,2.9,235.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/24/2025,Buy to Close,RDDT  251024C00200000,CALL REDDIT INC $200 EXP 10/24/25,2.0,9.31,0.82,-1862.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/17/2025,Buy to Close,ETR   251017C00095000,CALL ENTERGY CORP NEW $95 EXP 10/17/25,1.0,0.7,0.41,-70.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/17/2025,Sell to Open,ETR   251121C00095000,CALL ENTERGY CORP NEW $95 EXP 11/21/25,1.0,3.7,0.41,369.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/16/2025,Credit Interest,SCHFDX0,BANK INT 091625-101525 SCHWAB BANK,,,,0.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Cash Dividend,OBDC,BLUE OWL CAP CORP,,,,740.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Close,JPM   251017C00315000,CALL JPMORGAN CHASE & CO$315 EXP 10/17/25,3.0,0.44,1.24,130.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy,RDDT,REDDIT INC CLASS A,200.0,199.7,,-39940.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,10.0,0.67,4.14,665.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,AES   251107C00015500,CALL AES CORP $15.5 EXP 11/07/25,2.0,0.55,0.83,109.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy to Open,JPM   251017C00315000,CALL JPMORGAN CHASE & CO$315 EXP 10/17/25,3.0,1.6,1.23,-481.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell,AMCR,AMCOR PLC F,3089.6838,8.0526,0.51,24879.48
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Buy,AES,AES CORP,1000.0,14.68,,-14680.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell to Open,RDDT  251024C00200000,CALL REDDIT INC $200 EXP 10/24/25,2.0,8.9,0.83,1779.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/15/2025,Sell,NLCP,NEWLAKE CAP PARTNERS INC,900.0,12.86,7.1,11566.9
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/13/2025,Expired,AES   251010C00014500,CALL AES CORP $14.5 EXP 10/10/25,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Sell,OBDC,BLUE OWL CAP CORP,2000.0,12.2318,0.33,24463.27
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Buy,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,500.0,25.95,,-12975.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,99.02
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/10/2025,Buy,BEN,FRANKLIN RES INC,4.1694,23.7493,,-99.02
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Sell to Open,AES   251107C00015000,CALL AES CORP $15 EXP 11/07/25,10.0,0.81,4.14,805.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Sell,COST,COSTCO WHSL CORP NEW,30.0,912.5,,27375.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/08/2025,Buy,AES,AES CORP,1000.0,14.77,,-14770.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell to Open,AES   251107C00014500,CALL AES CORP $14.5 EXP 11/07/25,4.0,0.74,1.65,294.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell,LYB,LYONDELLBASELL INDUSTR FCLASS A,109.627,48.4256,0.02,5308.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Buy,AES,AES CORP,200.0,14.53,,-2906.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Buy,AES,AES CORP,400.0,14.508,,-5803.2
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/07/2025,Sell to Open,AES   251010C00014500,CALL AES CORP $14.5 EXP 10/10/25,2.0,0.44,0.83,87.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Sell,LYB,LYONDELLBASELL INDUSTR FCLASS A,100.0,48.76,0.02,4875.98
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Buy,ETR,ENTERGY CORP NEW,100.0,95.87,,-9587.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/06/2025,Sell to Open,ETR   251017C00095000,CALL ENTERGY CORP NEW $95 EXP 10/17/25,1.0,2.12,0.41,211.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2856.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,473.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,50.13,56.98,,-2856.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.2627,57.3167,,-473.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/26/2025,Buy,AMCR,AMCOR PLC F,48.1974,8.0459,,-387.79
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/25/2025,Cash Dividend,AMCR,AMCOR PLC F,,,,387.79
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,91.19
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.4722,193.1199,,-91.19
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,158.28
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2025,Credit Interest,SCHFDX0,BANK INT 081625-091525 SCHWAB BANK,,,,0.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,315.89
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Buy,ED,CONSOLIDATED EDISON INC,2.6455,97.1864,,-257.11
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,OBDC,BLUE OWL CAP CORP,,,,40.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/15/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,257.11
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,299.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2894.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Sell,XOM,EXXON MOBIL CORP,2.7698,112.4594,,311.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,465.44
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.4136,55.32,,-465.44
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/04/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,51.1818,56.56,,-2894.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2025,Buy,LYB,LYONDELLBASELL INDUSTR FCLASS A,5.0856,55.1005,,-280.22
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,280.22
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Buy,BKH,BLACK HILLS CORP,5.7225,59.752,,-341.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/02/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,341.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Sell,XOM,EXXON MOBIL CORP,300.0,108.0,0.05,32399.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Exchange or Exercise,XOM   250822C00108000,CALL EXXON MOBIL CORP $108 EXP 08/22/25,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/25/2025,Buy,OBDC,BLUE OWL CAP CORP,2000.0,14.26,,-28520.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/18/2025,Credit Interest,SCHFDX0,BANK INT 071625-081525 SCHWAB BANK,,,,0.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/15/2025,Sell to Open,XOM   250822C00108000,CALL EXXON MOBIL CORP $108 EXP 08/22/25,3.0,0.95,1.24,283.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/15/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,39.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,49.9043,55.99,,-2794.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2794.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,8.4985,54.5495,,-463.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,463.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,140.81
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2025,Buy,JPM,JPMORGAN CHASE & CO,0.4724,298.102,,-140.81
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/23/2025,Sell,ATEC,ALPHATEC HLDGS INC,4500.0,10.8048,0.75,48620.85
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/23/2025,Buy,JPM,JPMORGAN CHASE & CO,200.0,295.615,,-59123.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2025,Credit Interest,SCHFDX0,BANK INT 061625-071525 SCHWAB BANK,,,,0.53
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/11/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,97.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/11/2025,Buy,BEN,FRANKLIN RES INC,3.9515,24.7398,,-97.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,9.4506,54.13,,-511.56
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,54.5012,56.86,,-3098.94
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,511.56
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3098.94
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,143.91
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,131.33
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.7941,165.3899,,-131.33
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Buy,ED,CONSOLIDATED EDISON INC,2.4816,102.7555,,-255.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,255.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,315.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/16/2025,Credit Interest,SCHFDX0,BANK INT 051625-061525 SCHWAB BANK,,,,0.53
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/11/2025,Buy,AMCR,AMCOR PLC F,41.4864,9.2199,,-382.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Buy,LYB,LYONDELLBASELL INDUSTR FCLASS A,4.5414,60.334,,-274.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Buy,XOM,EXXON MOBIL CORP,2.7698,107.2263,,-297.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Cash Dividend,AMCR,AMCOR PLC F,,,,382.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/09/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,274.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,12.1106,52.44,,-635.08
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,4148.47
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,635.08
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,74.2389,55.88,,-4148.47
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,338.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2025,Buy,BKH,BLACK HILLS CORP,5.8156,58.1199,,-338.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/16/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,39.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/16/2025,Credit Interest,SCHFDX0,BANK INT 041625-051525 SCHWAB BANK,,,,0.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/06/2025,Buy,AMCR,AMCOR PLC F,3000.0,9.17,,-27510.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3715.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,66.7696,55.65,,-3715.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,604.65
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,11.7499,51.46,,-604.65
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2025,Sell,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,500.0,69.33,1.04,34663.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,140.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2025,Buy,JPM,JPMORGAN CHASE & CO,0.5805,241.1642,,-140.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2025,Credit Interest,SCHFDX0,BANK INT 031625-041525 SCHWAB BANK,,,,0.53
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,387.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/11/2025,Buy,BEN,FRANKLIN RES INC,5.4904,17.4849,,-96.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/11/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,96.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/08/2025,ADR Mgmt Fee,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-7.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/08/2025,Cash Dividend,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,571.28
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,540.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,55.4482,55.62,,-3084.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Buy,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,10.8496,49.86,,-540.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3084.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/26/2025,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/24/2025,Buy,COST,COSTCO WHSL CORP NEW,30.0,922.9,,-27687.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/21/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,85.77
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,115.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,268.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Credit Interest,SCHFDX0,BANK INT 021625-031525 SCHWAB BANK,,,,0.52
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/17/2025,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,310.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/14/2025,Cash Dividend,ED,CONSOLIDATED EDISON INC,,,,255.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/10/2025,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Sell,HAL,HALLIBURTON CO,1000.0,23.695,0.83,23694.17
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2477.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,482.62
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,03/03/2025,Cash Dividend,BKH,BLACK HILLS CORP,,,,338.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/18/2025,Credit Interest,SCHFDX0,BANK INT 011625-021525 SCHWAB BANK,,,,0.08
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/05/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2463.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,02/05/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,450.42
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/31/2025,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,125.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2025,Credit Interest,SCHFDX0,BANK INT 121624-011525 SCHWAB BANK,,,,0.2
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/16/2025,Buy,NLCP,NEWLAKE CAP PARTNERS INC,400.0,16.34,6.95,-6542.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/15/2025,Cash Dividend,NLCP,NEWLAKE CAP PARTNERS INC,,,,215.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/10/2025,Cash Dividend,BEN,FRANKLIN RES INC,,,,96.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/03/2025,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2984.54
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,01/03/2025,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,456.07
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/26/2024,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/23/2024,Expired,ED    241220C00100000,CALL CONSOLIDATED EDISON$100 EXP 12/20/24,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/20/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,279.07
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,101.08
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2024,Credit Interest,SCHFDX0,BANK INT 111624-121524 SCHWAB BANK,,,,0.99
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/16/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,332.4
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/12/2024,Cash Dividend,WBA,WALGREENS BOOTS ALLIANCE,,,,77.12
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,297.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/09/2024,Buy,NLCP,NEWLAKE CAP PARTNERS INC,500.0,19.25,6.95,-9631.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/09/2024,Cash Dividend,LYB,LYONDELLBASELL INDUSTR FCLASS A,,,,268.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/04/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3037.38
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/04/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,508.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Buy,ED,CONSOLIDATED EDISON INC,300.0,100.72,,-30216.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Sell to Open,ED    241220C00100000,CALL CONSOLIDATED EDISON$100 EXP 12/20/24,3.0,1.91,1.26,571.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,12/02/2024,Cash Dividend,BKH,BLACK HILLS CORP,,,,325.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/26/2024,Sell,WBA,WALGREENS BOOTS ALLIANCE,308.46,8.795,0.13,2712.78
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/26/2024,Sell,HUM,HUMANA INC,100.0,296.941,0.85,29693.25
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/22/2024,Sell,VZ,VERIZON COMMUNICATIONS I,10.1357,43.3053,0.01,438.92
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/18/2024,Credit Interest,SCHFDX0,BANK INT 101624-111524 SCHWAB BANK,,,,0.38
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2836.66
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,493.87
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,11/01/2024,Cash Dividend,VZ,VERIZON COMMUNICATIONS I,,,,6.87
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/31/2024,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,125.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/25/2024,Cash Dividend,HUM,HUMANA INC,,,,88.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/18/2024,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,60.0,59.925,,-3595.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/16/2024,Credit Interest,SCHFDX0,BANK INT 091624-101524 SCHWAB BANK,,,,10.39
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/11/2024,Cash Dividend,BEN,FRANKLIN RES INC,,,,93.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2941.28
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,10/03/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,550.9
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,200.0,58.8817,,-11776.34
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,191.18
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,163.92
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/25/2024,Cash Dividend,HAL,HALLIBURTON CO,,,,170.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/24/2024,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,6500.0,59.26,,-385190.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,LYB   240920C00100000,CALL LYONDELLBASELL INDU$100 EXP 09/20/24,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,HD,HOME DEPOT INC,200.0,355.0,2.0,70998.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,NVO   240920C00130000,CALL NOVO-NORDISK A S $130 EXP 09/20/24,5.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,WBA   240920C00012500,CALL WALGREENS BOOTS ALL$12.5 EXP 09/20/24,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,JPM   240920C00215000,CALL JPMORGAN CHASE & CO$215 EXP 09/20/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,HAL   240920C00032000,CALL HALLIBURTON CO $32 EXP 09/20/24,10.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,LLY   240920C00900000,CALL ELI LILLY AND CO $900 EXP 09/20/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,LLY,ELI LILLY AND CO,100.0,900.0,2.52,89997.48
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,HD    240920C00355000,CALL HOME DEPOT INC $355 EXP 09/20/24,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,XOM   240920C00120000,CALL EXXON MOBIL CORP $120 EXP 09/20/24,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,VZ,VERIZON COMMUNICATIONS I,500.0,41.0,0.65,20499.35
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,LOW,LOWES COS INC,200.0,240.0,1.36,47998.64
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,BEN   240920C00022500,CALL FRANKLIN RES INC $22.5 EXP 09/20/24,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Expired,HUM   240920C00380000,CALL HUMANA INC $380 EXP 09/20/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,SWK,STANLEY BLACK & DECKER I,600.0,105.0,1.85,62998.15
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,VZ    240920C00041000,CALL VERIZON COMMUNICATI$41 EXP 09/20/24,5.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,TGT   240920C00140000,CALL TARGET CORP $140 EXP 09/20/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Sell,TGT,TARGET CORP,100.0,140.0,0.41,13999.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,SWK   240920C00105000,CALL STANLEY BLACK & DEC$105 EXP 09/20/24,6.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/23/2024,Exchange or Exercise,LOW   240920C00240000,CALL LOWES COS INC $240 EXP 09/20/24,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/17/2024,Cash Dividend,SWK,STANLEY BLACK & DECKER I,,,,492.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,348.92
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/16/2024,Credit Interest,SCHFDX0,BANK INT 081624-091524 SCHWAB BANK,,,,16.87
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Cash Dividend,WBA,WALGREENS BOOTS ALLIANCE,,,,75.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Buy,WBA,WALGREENS BOOTS ALLIANCE,8.46,8.8652,,-75.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/12/2024,Cash Dividend,HD,HOME DEPOT INC,,,,450.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,TGT,TARGET CORP,,,,112.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,285.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,130.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,399.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,557.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Exchange or Exercise,URI   240830C00730000,CALL UNITED RENTALS INC $730 EXP 08/30/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Cash Dividend,BKH,BLACK HILLS CORP,,,,325.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Cash Dividend,LYB,LYONDELLBASELL INDS FCLASS A,,,,268.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,09/03/2024,Sell,URI,UNITED RENTALS INC,100.0,730.0,2.05,72997.95
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/28/2024,Cash Dividend,URI,UNITED RENTALS INC,,,,163.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/26/2024,Cash Dividend,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,258.45
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/26/2024,ADR Mgmt Fee,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-7.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Sell,JNJ,JOHNSON & JOHNSON,100.0,155.0,0.45,15499.55
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Exchange or Exercise,JNJ   240816C00155000,CALL JOHNSON & JOHNSON $155 EXP 08/16/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/19/2024,Expired,ATEC  240816C00012500,CALL ALPHATEC HOLDINGS $12.5 EXP 08/16/24,45.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/07/2024,Cash Dividend,LOW,LOWES COMPANIES INC,,,,230.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,426.97
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/05/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,289.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HUM   240920C00380000,CALL HUMANA INC $380 EXP 09/20/24,1.0,8.9,0.43,889.57
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HAL   240920C00032000,CALL HALLIBURTON CO HLDG$32 EXP 09/20/24,10.0,1.4,4.18,1395.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,HD    240816C00365000,CALL HOME DEPOT INC $365 EXP 08/16/24,2.0,6.48,0.82,-1296.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,XOM   240920C00120000,CALL EXXON MOBIL CORP $120 EXP 09/20/24,3.0,2.67,1.26,799.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,BEN   240920C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 09/20/24,3.0,0.6533,1.25,194.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,WBA   240920C00012500,CALL WALGREENS BOOTS ALL$12.5 EXP 09/20/24,3.0,0.41,1.24,121.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,BEN   240816C00025000,CALL FRANKLIN RESOURCES $25 EXP 08/16/24,3.0,0.0367,0.03,-11.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,TGT   240816C00155000,CALL TARGET CORP $155 EXP 08/16/24,1.0,0.26,0.41,-26.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,TGT   240920C00140000,CALL TARGET CORP $140 EXP 09/20/24,1.0,8.26,0.43,825.57
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,XOM   240816C00120000,CALL EXXON MOBIL CORP $120 EXP 08/16/24,3.0,1.08,1.23,-325.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,LLY   240920C00900000,CALL ELI LILLY AND CO $900 EXP 09/20/24,1.0,15.89,0.45,1588.55
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,LOW   240920C00240000,CALL LOWES COMPANIES INC$240 EXP 09/20/24,2.0,11.23,0.89,2245.11
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,HAL   240816C00036000,CALL HALLIBURTON CO HLDG$36 EXP 08/16/24,10.0,0.06,4.11,-64.11
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,VZ    240920C00041000,CALL VERIZON COMMUNICATN$41 EXP 09/20/24,5.0,1.3,2.08,647.92
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,NVO   240816C00135000,CALL NOVO-NORDISK AS VOR$135 EXP 08/16/24,5.0,2.3,2.05,-1152.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,HD    240920C00355000,CALL HOME DEPOT INC $355 EXP 09/20/24,2.0,14.98,0.91,2995.09
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,LLY   240816C00960000,CALL ELI LILLY AND CO $960 EXP 08/16/24,1.0,1.79,0.41,-179.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Buy to Close,LOW   240816C00240000,CALL LOWES COMPANIES INC$240 EXP 08/16/24,2.0,6.03,0.82,-1206.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/02/2024,Sell to Open,NVO   240920C00130000,CALL NOVO-NORDISK AS VOR$130 EXP 09/20/24,5.0,6.4,2.15,3197.85
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/01/2024,Cash Dividend,VZ,VERIZON COMMUNICATN,,,,339.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/31/2024,Cash Dividend,JPM,J P MORGAN CHASE & CO,,,,115.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,SWK   240816C00090000,CALL STANLEY BLACK & DEC$90 EXP 08/16/24,6.0,15.63,2.47,-9380.47
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,HD    240816C00360000,CALL HOME DEPOT INC $360 EXP 08/16/24,2.0,11.92,0.82,-2384.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,HD    240816C00365000,CALL HOME DEPOT INC $365 EXP 08/16/24,2.0,9.32,0.88,1863.12
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,LYB   240920C00100000,CALL LYONDELLBASELL INDS$100 EXP 09/20/24,2.0,2.17,0.84,433.16
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Buy to Close,JPM   240816C00210000,CALL J P MORGAN CHASE & $210 EXP 08/16/24,1.0,6.3,0.41,-630.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,JPM   240920C00215000,CALL J P MORGAN CHASE & $215 EXP 09/20/24,1.0,6.55,0.43,654.57
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/30/2024,Sell to Open,SWK   240920C00105000,CALL STANLEY BLACK & DEC$105 EXP 09/20/24,6.0,5.08,2.57,3045.43
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/26/2024,Cash Dividend,HUM,HUMANA INC,,,,88.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/22/2024,Expired,HUM   240719C00390000,CALL HUMANA INC $390 EXP 07/19/24,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/22/2024,Expired,IYW   240719C00159000,CALL ISHR US TECH $159 EXP 07/19/24,15.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,JNJ   240816C00155000,CALL JOHNSON & JOHNSON $155 EXP 08/16/24,1.0,2.68,0.42,267.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,XOM   240816C00120000,CALL EXXON MOBIL CORP $120 EXP 08/16/24,3.0,1.25,1.25,373.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,NVO   240816C00135000,CALL NOVO-NORDISK AS VOR$135 EXP 08/16/24,5.0,4.06,2.12,2027.88
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,BEN   240719C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 07/19/24,3.0,1.02,1.23,-307.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,XOM   240719C00115000,CALL EXXON MOBIL CORP $115 EXP 07/19/24,3.0,1.05,1.23,-316.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Close,LYB   240719C00095000,CALL LYONDELLBASELL INDS$95 EXP 07/19/24,2.0,1.6,0.84,319.16
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,NVO   240719C00145000,CALL NOVO-NORDISK AS VOR$145 EXP 07/19/24,5.0,0.03,0.05,-15.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Sell to Open,BEN   240816C00025000,CALL FRANKLIN RESOURCES $25 EXP 08/16/24,3.0,0.25,1.24,73.76
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/19/2024,Buy to Close,JNJ   240719C00150000,CALL JOHNSON & JOHNSON $150 EXP 07/19/24,1.0,4.45,0.41,-445.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Sell to Open,JPM   240816C00210000,CALL J P MORGAN CHASE & $210 EXP 08/16/24,1.0,5.35,0.42,534.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Credit Interest,SCHFDX0,BANK INT 061624-071524 SCHWAB BANK,,,,2.8
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Sell to Open,URI   240830C00730000,CALL UNITED RENTALS INC $730 EXP 08/30/24,1.0,38.72,0.52,3871.48
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Buy to Close,URI   240823C00690000,CALL UNITED RENTALS INC $690 EXP 08/23/24,1.0,59.22,0.41,-5922.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/16/2024,Buy to Close,JPM   240816C00205000,CALL J P MORGAN CHASE & $205 EXP 08/16/24,1.0,8.7,0.41,-870.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,ATEC  240816C00012500,CALL ALPHATEC HOLDINGS $12.5 EXP 08/16/24,45.0,0.3533,18.7,1571.3
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,HAL   240816C00036000,CALL HALLIBURTON CO HLDG$36 EXP 08/16/24,10.0,0.58,4.16,575.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Sell to Open,LLY   240816C00960000,CALL ELI LILLY AND CO $960 EXP 08/16/24,1.0,38.01,0.52,3800.48
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Buy to Close,LLY   240816C00950000,CALL ELI LILLY AND CO $950 EXP 08/16/24,1.0,43.24,0.41,-4324.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/15/2024,Buy to Close,ATEC  240719C00010000,CALL ALPHATEC HOLDINGS $10 EXP 07/19/24,45.0,1.4533,18.5,-6558.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,LOW   240816C00240000,CALL LOWES COMPANIES INC$240 EXP 08/16/24,2.0,4.15,0.85,829.15
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,SWK   240816C00090000,CALL STANLEY BLACK & DEC$90 EXP 08/16/24,6.0,2.8,2.54,1677.46
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,HD    240816C00360000,CALL HOME DEPOT INC $360 EXP 08/16/24,2.0,12.25,0.9,2449.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,TGT   240816C00155000,CALL TARGET CORP $155 EXP 08/16/24,1.0,3.78,0.42,377.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,TGT   240719C00150000,CALL TARGET CORP $150 EXP 07/19/24,1.0,3.8,0.41,-380.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,HD    240712C00340000,CALL HOME DEPOT INC $340 EXP 07/12/24,2.0,20.75,0.82,-4150.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,SWK   240719C00082500,CALL STANLEY BLACK & DEC$82.5 EXP 07/19/24,6.0,6.0,2.47,-3602.47
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,2.0,10.82,0.82,-2164.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,LLY   240816C00950000,CALL ELI LILLY AND CO $950 EXP 08/16/24,1.0,37.45,0.51,3744.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,LLY   240719C00920000,CALL ELI LILLY AND CO $920 EXP 07/19/24,1.0,30.95,0.41,-3095.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,JPM   240719C00202500,CALL J P MORGAN CHASE & $202.5 EXP 07/19/24,1.0,3.88,0.41,-388.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Buy to Close,URI   240719C00650000,CALL UNITED RENTALS INC $650 EXP 07/19/24,1.0,40.98,0.41,-4098.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,JPM   240816C00205000,CALL J P MORGAN CHASE & $205 EXP 08/16/24,1.0,4.94,0.42,493.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Sell to Open,URI   240823C00690000,CALL UNITED RENTALS INC $690 EXP 08/23/24,1.0,32.98,0.5,3297.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/12/2024,Cash Dividend,BEN,FRANKLIN RESOURCES,,,,93.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,SWK   240719C00082500,CALL STANLEY BLACK & DEC$82.5 EXP 07/19/24,6.0,1.05,2.51,627.49
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,HD    240712C00340000,CALL HOME DEPOT INC $340 EXP 07/12/24,2.0,3.5,0.85,699.15
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Sell to Open,NVO   240719C00145000,CALL NOVO-NORDISK AS VOR$145 EXP 07/19/24,5.0,2.12,2.09,1057.91
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Buy to Open,IYW   240719C00159000,CALL ISHR US TECH $159 EXP 07/19/24,15.0,1.05,6.16,-1581.16
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/08/2024,Buy to Open,LYB   240719C00095000,CALL LYONDELLBASELL INDS$95 EXP 07/19/24,2.0,1.0,0.82,-200.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Sell to Open,ATEC  240719C00010000,CALL ALPHATEC HOLDINGS $10 EXP 07/19/24,45.0,0.4,18.66,1781.34
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Cash Dividend,JEPQ,J P MORGAN NASDAQ EQT PRM INC ETF,,,,421.36
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,330.12
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/03/2024,Buy,WBA,WALGREENS BOOTS ALLI,300.0,11.18,,-3354.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,HUM   240719C00390000,CALL HUMANA INC $390 EXP 07/19/24,1.0,4.7,0.42,469.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Buy to Close,XOM   240719C00110000,CALL EXXON MOBIL CORP $110 EXP 07/19/24,3.0,6.38,1.23,-1915.23
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Buy to Close,JPM   240719C00200000,CALL J P MORGAN CHASE & $200 EXP 07/19/24,1.0,5.1,0.41,-510.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,JPM   240719C00202500,CALL J P MORGAN CHASE & $202.5 EXP 07/19/24,1.0,3.85,0.42,384.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,1.0,2.25,0.42,224.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,XOM   240719C00115000,CALL EXXON MOBIL CORP $115 EXP 07/19/24,3.0,2.58,1.26,772.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Sell to Open,LOW   240719C00225000,CALL LOWES COMPANIES INC$225 EXP 07/19/24,1.0,2.3,0.42,229.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/28/2024,Cash Dividend,UNIT,UNITI GROUP INC,,,,2250.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/26/2024,Cash Dividend,HAL,HALLIBURTON CO HLDG,,,,170.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/25/2024,Sell to Open,LLY   240719C00920000,CALL ELI LILLY AND CO $920 EXP 07/19/24,1.0,16.46,0.46,1645.54
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/25/2024,Buy to Close,LLY   240719C00900000,CALL ELI LILLY AND CO $900 EXP 07/19/24,1.0,25.82,0.41,-2582.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Buy,JPM,J P MORGAN CHASE & CO,100.0,198.46,,-19846.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,JNJ   240719C00150000,CALL JOHNSON & JOHNSON $150 EXP 07/19/24,1.0,2.25,0.42,224.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Buy,JNJ,JOHNSON & JOHNSON,100.0,147.88,,-14788.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,URI   240719C00650000,CALL UNITED RENTALS INC $650 EXP 07/19/24,1.0,20.65,0.47,2064.53
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,JPM   240719C00200000,CALL J P MORGAN CHASE & $200 EXP 07/19/24,1.0,4.28,0.42,427.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/20/2024,Sell to Open,TGT   240719C00150000,CALL TARGET CORP $150 EXP 07/19/24,1.0,1.33,0.41,132.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Sell to Open,LLY   240719C00900000,CALL ELI LILLY AND CO $900 EXP 07/19/24,1.0,21.59,0.47,2158.53
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Cash Dividend,SWK,STANLEY BLACK & DECK,,,,486.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Buy to Close,LLY   240621C00800000,CALL ELI LILLY AND CO $800 EXP 06/21/24,1.0,89.67,0.41,-8967.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Buy to Close,XOM   240621C00120000,CALL EXXON MOBIL CORP $120 EXP 06/21/24,3.0,0.02,0.03,-6.03
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/18/2024,Sell to Open,XOM   240719C00110000,CALL EXXON MOBIL CORP $110 EXP 07/19/24,3.0,2.42,1.26,724.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,127.06
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Credit Interest,SCHFDX0,BANK INT 051624-061524 SCHWAB BANK,,,,2.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,121.91
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/17/2024,Cash Dividend,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,,,,348.46
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Buy,BEN,FRANKLIN RESOURCES,300.0,21.78,,-6534.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell,UNIT,UNITI GROUP INC,8735.0,2.7709,2.15,24201.79
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell,UNIT,UNITI GROUP INC,6265.0,2.7601,1.52,17290.51
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/14/2024,Sell to Open,BEN   240719C00022500,CALL FRANKLIN RESOURCES $22.5 EXP 07/19/24,3.0,0.26,1.23,76.77
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/13/2024,Cash Dividend,HD,HOME DEPOT INC,,,,450.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,TGT,TARGET CORP,,,,110.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,130.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,XOM,EXXON MOBIL CORP,,,,285.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/10/2024,Cash Dividend,LYB,LYONDELLBASELL INDS FCLASS A,,,,268.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/10/2026,Buy,BEN,FRANKLIN RES INC,10.7638,25.2252,,-271.52
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/10/2026,Cash Dividend,BEN,FRANKLIN RES INC,,,,271.52
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Buy to Close,NEE   260605C00091000,CALL NEXTERA ENERGY INC $91 EXP 06/05/26,4.0,0.045,0.05,-18.05
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Buy to Close,JPM   260605C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/05/26,3.0,0.03,0.04,-9.04
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Sell to Open,NEE   260618C00088000,CALL NEXTERA ENERGY INC $88 EXP 06/18/26,4.0,0.795,1.67,316.33
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Cash Dividend,CEG,CONSTELLATION ENERGY COR,,,,42.65
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/05/2026,Sell to Open,JPM   260612C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/12/26,3.0,3.59,1.27,1075.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Sell,CEG,CONSTELLATION ENERGY COR,95.0,265.83,0.54,25253.31
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Buy to Close,CEG   260605C00305000,CALL CONSTELLATION ENERG$305 EXP 06/05/26,1.0,0.05,0.01,-5.01
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/04/2026,Sell,CEG,CONSTELLATION ENERGY COR,5.0,265.85,0.03,1329.22
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,2798.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,46.0185,60.8199,,-2798.84
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,37.4766,55.4399,,-2077.7
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/03/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,2077.7
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/02/2026,Buy,BKH,BLACK HILLS CORP,95.0,71.58,,-6800.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Cash Dividend,BKH,BLACK HILLS CORP,,,,366.4
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Cash Dividend,ETR,ENTERGY CORP NEW,,,,64.81
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Buy,ETR,ENTERGY CORP NEW,0.6063,106.8925,,-64.81
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,06/01/2026,Buy,BKH,BLACK HILLS CORP,5.144,71.2287,,-366.4
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell to Open,MSFT  260618C00440000,CALL MICROSOFT CORP $440 EXP 06/18/26,1.0,14.02,0.44,1401.56
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,CEG   260529C00305000,CALL CONSTELLATION ENERG$305 EXP 05/29/26,1.0,0.01,0.01,-1.01
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell to Open,CEG   260605C00305000,CALL CONSTELLATION ENERG$305 EXP 06/05/26,1.0,1.86,0.41,185.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,MSFT  260605C00430000,CALL MICROSOFT CORP $430 EXP 06/05/26,1.0,15.92,0.41,-1592.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/26/2026,Sell to Open,NEE   260605C00091000,CALL NEXTERA ENERGY INC $91 EXP 06/05/26,4.0,0.83,1.67,330.33
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,RDDT,REDDIT INC CLASS A,200.0,144.52,0.64,28903.36
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,ETR,ENTERGY CORP NEW,100.0,112.23,0.25,11222.75
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,275.0,25.5301,0.19,7020.59
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell to Open,MSFT  260605C00430000,CALL MICROSOFT CORP $430 EXP 06/05/26,1.0,4.68,0.42,467.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy,MSFT,MICROSOFT CORP,100.0,419.08,,-41908.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell to Open,CEG   260529C00305000,CALL CONSTELLATION ENERG$305 EXP 05/29/26,1.0,2.54,0.42,253.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy to Close,RDDT  260529C00162500,CALL REDDIT INC $162.5 EXP 05/29/26,2.0,0.54,0.82,-108.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,683.0,25.553,0.49,17452.21
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Sell,GLOP+C,GASLOG PARTNER 8.5% PFDPFD SER C,42.0,25.515,0.03,1071.6
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/22/2026,Buy,ETR,ENTERGY CORP NEW,200.0,112.23,,-22446.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/21/2026,Sell to Open,RDDT  260529C00162500,CALL REDDIT INC $162.5 EXP 05/29/26,2.0,2.0,0.84,399.16
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/21/2026,Sell to Open,JPM   260605C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/05/26,3.0,1.65,1.26,493.74
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/18/2026,Expired,NEE   260515C00099000,CALL NEXTERA ENERGY INC $99 EXP 05/15/26,4.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/18/2026,Credit Interest,SCHFDX0,BANK INT 041626-051526 SCHWAB BANK,,,,0.06
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,JPM   260508C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/08/26,3.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,CEG   260508C00330000,CALL CONSTELLATION ENERG$330 EXP 05/08/26,1.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,RDDT  260508C00180000,CALL REDDIT INC $180 EXP 05/08/26,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3258.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,29.3105,59.0597,,-1731.07
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Buy,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,57.6585,56.52,,-3258.86
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/05/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,1731.07
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/04/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,1000.0,56.871,1.37,56869.63
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/04/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.9191,,-58919.1
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,RDDT  260508C00180000,CALL REDDIT INC $180 EXP 05/08/26,2.0,4.18,0.85,835.15
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,JPM   260508C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/08/26,3.0,3.2,1.27,958.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell to Open,CEG   260508C00330000,CALL CONSTELLATION ENERG$330 EXP 05/08/26,1.0,3.0,0.42,299.58
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,1000.0,56.915,1.37,56913.63
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy to Close,JPM   260501C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/01/26,3.0,0.15,1.24,-46.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy to Close,RDDT  260501C00165000,CALL REDDIT INC $165 EXP 05/01/26,2.0,7.55,0.82,-1510.82
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/01/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.835,,-58835.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2026,Cash Dividend,JPM,JPMORGAN CHASE & CO,,,,455.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/30/2026,Buy,JPM,JPMORGAN CHASE & CO,1.4584,312.6501,,-455.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,42.0,57.05,0.06,2396.04
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,958.0,57.03,1.32,54633.42
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell to Open,RDDT  260501C00165000,CALL REDDIT INC $165 EXP 05/01/26,2.0,4.4,0.85,879.15
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Sell to Open,NEE   260515C00099000,CALL NEXTERA ENERGY INC $99 EXP 05/15/26,4.0,1.1,1.67,438.33
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/28/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,1000.0,58.85,,-58850.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,CEG,CONSTELLATION ENERGY COR,100.0,309.6,,-30960.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,NEE,NEXTERA ENERGY INC,400.0,96.67,,-38668.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Sell,XLU,STATE STREET UTILITIES SELECT SECTOR SPDR ETF,1500.0,46.38,1.72,69568.28
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Sell,AES,AES CORP,3077.3106,14.4909,1.52,44591.48
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,700.0,58.9599,,-41271.93
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/27/2026,Expired,RDDT  260424C00160000,CALL REDDIT INC $160 EXP 04/24/26,2.0,,,0.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/24/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,100.0,58.965,,-5896.5
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/20/2026,Buy to Close,JPM   260424C00310000,CALL JPMORGAN CHASE & CO$310 EXP 04/24/26,3.0,6.88,1.24,-2065.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/20/2026,Sell to Open,JPM   260501C00315000,CALL JPMORGAN CHASE & CO$315 EXP 05/01/26,3.0,5.43,1.28,1627.72
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Buy to Close,JPM   260417C00305000,CALL JPMORGAN CHASE & CO$305 EXP 04/17/26,3.0,4.28,1.24,-1285.24
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.09
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Sell to Open,JPM   260424C00310000,CALL JPMORGAN CHASE & CO$310 EXP 04/24/26,3.0,3.88,1.27,1162.73
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Sell to Open,RDDT  260424C00160000,CALL REDDIT INC $160 EXP 04/24/26,2.0,7.4,0.86,1479.14
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/16/2026,Buy to Close,RDDT  260417C00155000,CALL REDDIT INC $155 EXP 04/17/26,2.0,6.95,0.82,-1390.82
