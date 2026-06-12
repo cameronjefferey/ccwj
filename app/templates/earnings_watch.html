@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .ew-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        padding: 1.5rem 1.6rem;
+        border-radius: 14px;
+        margin-bottom: 1.25rem;
+        display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; justify-content: space-between;
+    }
+    .ew-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+    .ew-hero .lede { color: rgba(255,255,255,.8); font-size: .9rem; margin: .4rem 0 0; max-width: 56ch; }
+    .ew-hero .ef-cta {
+        background: rgba(255,255,255,.14); color: #fff; text-decoration: none;
+        border: 1px solid rgba(255,255,255,.25); border-radius: 999px;
+        padding: .5rem .95rem; font-size: .82rem; font-weight: 600; white-space: nowrap;
+    }
+    .ew-hero .ef-cta:hover { background: rgba(255,255,255,.24); }
+
+    .ew-section { margin-bottom: 1.6rem; }
+    .ew-section-label {
+        font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+        color: #64748b; font-weight: 700; margin-bottom: .6rem;
+    }
+    .ew-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
+
+    .ew-card {
+        background: #fff; border: 1px solid #e7e5e4; border-radius: 12px;
+        padding: .85rem 1rem; display: flex; flex-direction: column; gap: .5rem;
+    }
+    .ew-card .top { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
+    .ew-card .sym a { font-size: 1.05rem; font-weight: 800; color: #0f172a; text-decoration: none; }
+    .ew-card .sym a:hover { text-decoration: underline; }
+    .ew-card .company { font-size: .72rem; color: #64748b; margin-top: .1rem; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ew-card .when { text-align: right; font-variant-numeric: tabular-nums; }
+    .ew-card .when .big { font-size: 1.05rem; font-weight: 800; line-height: 1; }
+    .ew-card .when .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+    .ew-card .when.soon .big { color: #b45309; }
+    .ew-card .when.imminent .big { color: #b91c1c; }
+    .ew-card .move { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .ew-card .move.pos { color: #059669; }
+    .ew-card .move.neg { color: #b91c1c; }
+    .ew-badge {
+        display: inline-block; font-size: .62rem; font-weight: 600; color: #475569;
+        background: #f1f5f9; border-radius: 999px; padding: .1rem .5rem; margin-left: .3rem;
+    }
+    .ew-card .ef-link {
+        font-size: .72rem; font-weight: 600; color: #1e3a8a; text-decoration: none;
+        border-top: 1px solid #f1f5f9; padding-top: .5rem;
+    }
+    .ew-card .ef-link:hover { text-decoration: underline; }
+
+    .ew-empty {
+        color: #78716c; font-size: .85rem; padding: 1.5rem; text-align: center;
+        background: #fff; border-radius: 12px; border: 1px dashed #e7e5e4;
+    }
+    .ew-empty-slim { padding: .8rem 1rem; text-align: left; font-style: italic; }
+
+    /* Grouped-by-holdings blocks */
+    .ew-group { margin-bottom: 1.4rem; }
+    .ew-group-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: .8rem; flex-wrap: wrap; margin-bottom: .6rem;
+        padding: .55rem .8rem; background: #f1f5f9; border-radius: 10px;
+    }
+    .ew-group-held { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+    .ew-group-held .lbl {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+        color: #64748b; font-weight: 700; margin-right: .15rem;
+    }
+    .ew-held-pill {
+        display: inline-block; padding: .2rem .6rem; border-radius: 999px;
+        background: #0f172a; color: #fff; font-size: .74rem; font-weight: 700;
+        text-decoration: none;
+    }
+    .ew-held-pill:hover { background: #1e3a8a; color: #fff; }
+    .ew-group-sector { font-size: .72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+    .ew-group-sub { font-size: .76rem; color: #64748b; margin-top: .35rem; }
+    .ew-card .move-lbl {
+        font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
+        color: #94a3b8; text-align: right; margin-top: .1rem;
+    }
+    .ew-note {
+        background: #fff; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .78rem; color: #64748b; border: 1px dashed #e7e5e4; margin-top: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="ew-hero">
+    <div>
+        <h1>Earnings Watch</h1>
+        <p class="lede">Which of your positions report next, and big recent movers in the sectors you hold &mdash; context that can move your prices before you do.</p>
+    </div>
+    {% if earnings_follower_enabled %}
+    <a class="ef-cta" href="{{ earnings_follower_url(tab='this-week') }}" target="_blank" rel="noopener">Open full calendar on EarningsFollower &#8599;</a>
+    {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }} Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>
+{% endif %}
+
+{% if accounts and accounts|length > 1 %}
+<form method="get" class="filter-bar mb-3">
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a | account_label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</form>
+{% endif %}
+
+{# ── Your positions reporting soon ───────────────────────────────── #}
+<div class="ew-section">
+    <div class="ew-section-label">Your positions reporting soon (next ~21 days)</div>
+    {% if upcoming_earnings %}
+    <div class="ew-grid">
+        {% for e in upcoming_earnings %}
+        <div class="ew-card">
+            <div class="top">
+                <div>
+                    <div class="sym"><a href="{{ url_for('position_detail', symbol=e.symbol) }}">{{ e.symbol }}</a>{% if e.subsector %}<span class="ew-badge">{{ e.subsector }}</span>{% endif %}</div>
+                    {% if e.company %}<div class="company">{{ e.company }}</div>{% endif %}
+                </div>
+                <div class="when {% if e.days_until is not none and e.days_until <= 1 %}imminent{% elif e.days_until is not none and e.days_until <= 7 %}soon{% endif %}">
+                    <div class="big">{{ e.days_until if e.days_until is not none else '?' }}</div>
+                    <div class="lbl">{{ 'day' if e.days_until == 1 else 'days' }}</div>
+                </div>
+            </div>
+            <div class="text-muted small">Reports {{ e.earnings_date_display }}</div>
+            {% if earnings_follower_enabled %}
+            <a class="ef-link" href="{{ e.ef_url }}" target="_blank" rel="noopener">View on EarningsFollower &#8599;</a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="ew-empty">
+        <strong>No earnings in the next ~21 days for your holdings.</strong>
+        <p class="mb-0 mt-2">When a position you hold has an upcoming report, it'll show up here.</p>
+    </div>
+    {% endif %}
+</div>
+
+{# ── Movers around your holdings ─────────────────────────────────── #}
+<div class="ew-section">
+    <div class="ew-section-label">What could move your positions</div>
+
+    {% if mover_groups %}
+    {% for g in mover_groups %}
+    <div class="ew-group">
+        <div class="ew-group-head">
+            <div>
+                <div class="ew-group-held">
+                    <span class="lbl">You hold</span>
+                    {% for h in g.held %}
+                    <a class="ew-held-pill" href="{{ url_for('position_detail', symbol=h) }}">{{ h }}</a>
+                    {% endfor %}
+                    <span class="ew-group-sector">&middot; {{ g.sector }}</span>
+                </div>
+                <div class="ew-group-sub">Other {{ g.sector }} names with big moves this past week &mdash; pressure here often spills into {{ g.held|join(' / ') }}.</div>
+            </div>
+        </div>
+
+        {% if g.movers %}
+        <div class="ew-grid">
+            {% for m in g.movers %}
+            <div class="ew-card">
+                <div class="top">
+                    <div>
+                        <div class="sym">
+                            {% if earnings_follower_enabled %}
+                            <a href="{{ m.ef_url }}" target="_blank" rel="noopener">{{ m.symbol }}</a>
+                            {% else %}
+                            <span style="font-size:1.05rem; font-weight:800; color:#0f172a;">{{ m.symbol }}</span>
+                            {% endif %}
+                            {% if m.subsector %}<span class="ew-badge">{{ m.subsector }}</span>{% endif %}
+                        </div>
+                        {% if m.company %}<div class="company">{{ m.company }}</div>{% endif %}
+                    </div>
+                    {% if m.pct_change is not none %}
+                    <div class="when">
+                        <div class="move {% if m.pct_change >= 0 %}pos{% else %}neg{% endif %}">
+                            {{ '+' if m.pct_change >= 0 else '' }}{{ "{:.1%}".format(m.pct_change) }}
+                        </div>
+                        <div class="move-lbl">past week</div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if earnings_follower_enabled %}
+                <a class="ef-link" href="{{ m.ef_url }}" target="_blank" rel="noopener">View on EarningsFollower &#8599;</a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="ew-empty ew-empty-slim">Nothing in {{ g.sector }} moved 5%+ this week &mdash; quiet around {{ g.held|join(', ') }}.</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="ew-empty">
+        <strong>No sector context yet.</strong>
+        <p class="mb-0 mt-2">Once your holdings carry sector tags, we'll show big movers around each of them here.</p>
+    </div>
+    {% endif %}
+    <div class="ew-note">
+        Peers come from symbols traded across HappyTrader in your sectors &mdash; not a whole-market scan.
+        For the full market calendar, <a href="{{ earnings_follower_url() }}" target="_blank" rel="noopener">open EarningsFollower</a>.
+    </div>
+</div>
+
+{% endblock %}

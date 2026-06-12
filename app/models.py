@@ -1879,13 +1879,28 @@ def get_snaptrade_account_nicknames(user_id):
     except Exception as exc:
         _log.warning("get_snaptrade_account_nicknames failed: %s", exc)
         return {}
+    # COLLISION GUARD: account_name is NOT unique — SnapTrade returns the
+    # generic "{Broker} Account" for several physical accounts (one user had
+    # 5 "Schwab Account" rows with 5 different nicknames). A plain
+    # {name: nick} dict would keep an arbitrary winner and every surface
+    # rendering the raw warehouse label would show the WRONG nickname for
+    # 4 of the 5 accounts. When a name maps to more than one distinct
+    # nickname, the mapping is ambiguous — drop it and let the raw label
+    # pass through. Tenant-addressed surfaces use _tenant_label_map_for_user
+    # (keyed by tenant_id) and are unaffected.
     out = {}
+    ambiguous = set()
     for r in rows:
         name = (r.get("account_name") or "").strip()
         if not name:
             continue
-        nick = (r.get("display_nickname") or "").strip()
-        out[name] = nick or name
+        nick = (r.get("display_nickname") or "").strip() or name
+        if name in out and out[name] != nick:
+            ambiguous.add(name)
+        else:
+            out[name] = nick
+    for name in ambiguous:
+        out.pop(name, None)
     return out
 
 

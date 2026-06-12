@@ -92,6 +92,11 @@ def _account_label_filter(account_name):
 app.add_template_filter(_account_label_filter, name="account_label")
 
 
+from app.utils import earnings_follower_url as _earnings_follower_url
+
+app.add_template_global(_earnings_follower_url, name="earnings_follower_url")
+
+
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app
@@ -109,6 +114,8 @@ def _inject_feature_flags():
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
         "community_enabled": current_app.config.get("COMMUNITY_ENABLED", False),
+        "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
+        "earnings_follower_base_url": current_app.config.get("EARNINGS_FOLLOWER_URL", ""),
         "is_admin_user": is_admin_user,
         "is_demo_user": is_demo_user(),
         "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),

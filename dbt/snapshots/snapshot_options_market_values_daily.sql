@@ -16,10 +16,15 @@
   MERGE predicate). The sentinel only appears in BQ, never in app
   reads — Flask filters by the real ``users.id``.
 #}
+{#
+  target_schema follows the build target (CI/prod -> analytics, local
+  dev -> analytics_dev) so dev builds never MERGE into the prod
+  snapshot table. See snapshot_account_balances_daily.sql.
+#}
 {% snapshot snapshot_options_market_values_daily %}
 {{
     config(
-        target_schema='analytics',
+        target_schema=target.schema,
         target_database=target.database,
         unique_key=['account', 'user_id', 'trade_symbol'],
         strategy='check',

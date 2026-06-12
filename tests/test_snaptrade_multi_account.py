@@ -356,6 +356,59 @@ def test_get_snaptrade_account_nicknames_falls_back_to_account_name(monkeypatch)
     }
 
 
+def test_get_snaptrade_account_nicknames_drops_ambiguous_colliding_names(monkeypatch):
+    """Five physical accounts can all be named "Schwab Account" (SnapTrade
+    generic label) with five DIFFERENT nicknames. A {name: nick} map would
+    keep an arbitrary winner and relabel every surface rendering the raw
+    warehouse label with the WRONG nickname. Ambiguous names must be
+    dropped so the raw label passes through instead of lying."""
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql, params: [
+            {"account_name": "Schwab Account", "display_nickname": "Emmory"},
+            {"account_name": "Schwab Account", "display_nickname": "Sara 401k"},
+            {"account_name": "Schwab Account", "display_nickname": "Cameron Investment"},
+            {"account_name": "Alpaca Paper Account", "display_nickname": "Testing"},
+        ],
+    )
+    out = _models.get_snaptrade_account_nicknames(7)
+    assert "Schwab Account" not in out
+    assert out == {"Alpaca Paper Account": "Testing"}
+
+
+def test_get_snaptrade_account_nicknames_keeps_consistent_duplicates(monkeypatch):
+    """Two rows with the same name AND the same nickname are not ambiguous."""
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql, params: [
+            {"account_name": "Schwab Account", "display_nickname": "Family"},
+            {"account_name": "Schwab Account", "display_nickname": "Family"},
+        ],
+    )
+    assert _models.get_snaptrade_account_nicknames(7) == {"Schwab Account": "Family"}
+
+
+def test_account_label_map_drops_ambiguous_colliding_names(monkeypatch):
+    """routes._account_label_map mirrors the collision guard: colliding
+    account_name with divergent nicknames must not map (the df.map()
+    consumer would stamp one arbitrary nickname onto all 5 accounts)."""
+    import app.routes as _routes
+
+    # _account_label_map does `from app.models import get_broker_tenants_for_user`
+    # at call time — patch the source module.
+    monkeypatch.setattr(
+        _models, "get_broker_tenants_for_user",
+        lambda uid: [
+            {"account_name": "Schwab Account", "display_nickname": "Emmory"},
+            {"account_name": "Schwab Account", "display_nickname": "Sara 401k"},
+            {"account_name": "IBKR ••••7930", "display_nickname": "Margin"},
+        ],
+    )
+    out = _routes._account_label_map(7)
+    assert "Schwab Account" not in out
+    assert out == {"IBKR ••••7930": "Margin"}
+
+
 def test_record_sync_attempt_updates_last_at_and_error(monkeypatch):
     """Tests the SQL contract ``record_snaptrade_sync_attempt`` writes:
     must SET both ``last_sync_at`` (always) and ``last_sync_error``

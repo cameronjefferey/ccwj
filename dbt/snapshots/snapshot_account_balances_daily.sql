@@ -24,10 +24,16 @@
   ``docs/USER_ID_TENANCY.md``). This change just makes the warehouse
   side honest about the grain.
 #}
+{#
+  target_schema follows the build target's dataset (CI/prod target ->
+  analytics, local dev target -> analytics_dev). Hardcoding 'analytics'
+  here made DEV builds MERGE snapshot state into the PROD snapshot
+  table — the one env-separation leak after the BQ_DATASET split.
+#}
 {% snapshot snapshot_account_balances_daily %}
 {{
     config(
-        target_schema='analytics',
+        target_schema=target.schema,
         target_database=target.database,
         unique_key=['tenant_grain', 'user_id', 'row_type'],
         strategy='check',

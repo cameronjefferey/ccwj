@@ -10,6 +10,29 @@ from google.oauth2 import service_account
 _log = logging.getLogger(__name__)
 
 
+_CANONICAL_DATASET_PREFIX = "ccwj-dbt.analytics."
+
+
+def _apply_dataset_override(sql: str) -> str:
+    """Rewrite hardcoded ``ccwj-dbt.analytics.`` table refs to the dataset
+    named by the ``BQ_DATASET`` env var (when set and different).
+
+    This is the environment-separation chokepoint: app SQL embeds the
+    production dataset literally in ~100 query constants across 11
+    modules. Local dev sets ``BQ_DATASET=analytics_dev`` so every read
+    targets the dev dataset without touching any of those constants —
+    and so local/dev tenants never mix with production data again
+    (see broker-sync-safety SKILL: cross-env user_id collision purge,
+    2026-06-08 ``a22cb2c``). Unset / ``analytics`` → no-op.
+    """
+    override = (os.environ.get("BQ_DATASET") or "").strip()
+    if not override or override == "analytics" or not sql:
+        return sql
+    return sql.replace(
+        _CANONICAL_DATASET_PREFIX, f"ccwj-dbt.{override}."
+    )
+
+
 class _CostTrackingBigQueryClient(bigquery.Client):
     """Thin subclass that emits a COST_EVENT log line per query.
 
@@ -18,12 +41,16 @@ class _CostTrackingBigQueryClient(bigquery.Client):
     capture every read with one edit. The behaviour is otherwise
     transparent: same return type (QueryJob), same kwargs.
 
+    Also applies the ``BQ_DATASET`` dataset override (env separation) —
+    see ``_apply_dataset_override``.
+
     The log line is emitted after the job completes so we can include
     actual bytes processed/billed; an early failure still logs the
     duration and an error tag so the operator can spot stuck queries.
     """
 
     def query(self, query, job_config=None, **kwargs):
+        query = _apply_dataset_override(query)
         t0 = time.monotonic()
         try:
             job = super().query(query, job_config=job_config, **kwargs)

@@ -246,13 +246,18 @@
             <div class="collapse navbar-collapse" id="navContent">
             {% if current_user.is_authenticated %}
             {% set ep = request.endpoint or '' %}
-            {% set selected_account = request.args.get('account', '') %}
+            {# Carry BOTH scope dimensions across nav: ?account=<display label>
+               and ?tenant=<tenant_id> (deep-links from per-tenant tables emit
+               tenant=; _tenants_for_scope gives it precedence). url_for skips
+               None-valued params, so unscoped pages get clean URLs. #}
+            {% set selected_account = request.args.get('account') or None %}
+            {% set selected_tenant = request.args.get('tenant') or None %}
             {% set in_portfolio = ep in ('positions', 'symbols_detail', 'accounts', 'wealth') %}
             {% set in_breakdowns = ep in ('strategies', 'sectors', 'strategy_fit') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
-                       href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Daily Review</a>
+                       href="{{ url_for('weekly_review', account=selected_account, tenant=selected_tenant) }}">Daily Review</a>
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
@@ -260,19 +265,19 @@
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navPortfolio">
                         <li>
                             <a class="dropdown-item {% if ep == 'positions' %}active{% endif %}"
-                               href="{{ url_for('positions', account=selected_account) if selected_account else url_for('positions') }}">Positions</a>
+                               href="{{ url_for('positions', account=selected_account, tenant=selected_tenant) }}">Positions</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'symbols_detail' %}active{% endif %}"
-                               href="{{ url_for('symbols_detail', account=selected_account) if selected_account else url_for('symbols_detail') }}">Daily P&amp;L</a>
+                               href="{{ url_for('symbols_detail', account=selected_account, tenant=selected_tenant) }}">Daily P&amp;L</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
-                               href="{{ url_for('accounts', account=selected_account) if selected_account else url_for('accounts') }}">Accounts</a>
+                               href="{{ url_for('accounts', account=selected_account, tenant=selected_tenant) }}">Accounts</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'wealth' %}active{% endif %}"
-                               href="{{ url_for('wealth', account=selected_account) if selected_account else url_for('wealth') }}">Wealth</a>
+                               href="{{ url_for('wealth', account=selected_account, tenant=selected_tenant) }}">Wealth</a>
                         </li>
                     </ul>
                 </li>
@@ -282,19 +287,25 @@
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navBreakdowns">
                         <li>
                             <a class="dropdown-item {% if ep == 'strategies' %}active{% endif %}"
-                               href="{{ url_for('strategies', account=selected_account) if selected_account else url_for('strategies') }}">Strategies</a>
+                               href="{{ url_for('strategies', account=selected_account, tenant=selected_tenant) }}">Strategies</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'sectors' %}active{% endif %}"
-                               href="{{ url_for('sectors', account=selected_account) if selected_account else url_for('sectors') }}">Sectors</a>
+                               href="{{ url_for('sectors', account=selected_account, tenant=selected_tenant) }}">Sectors</a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item {% if ep == 'strategy_fit' %}active{% endif %}"
-                               href="{{ url_for('strategy_fit', account=selected_account) if selected_account else url_for('strategy_fit') }}">Strategy fit</a>
+                               href="{{ url_for('strategy_fit', account=selected_account, tenant=selected_tenant) }}">Strategy fit</a>
                         </li>
                     </ul>
                 </li>
+                {% if earnings_follower_enabled %}
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'earnings_watch' %}active{% endif %}"
+                       href="{{ url_for('earnings_watch', account=selected_account, tenant=selected_tenant) }}">Earnings</a>
+                </li>
+                {% endif %}
                 {% if community_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'community' %}active{% endif %}"
@@ -304,7 +315,7 @@
                 {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
-                       href="{{ url_for('insights', account=selected_account) if selected_account else url_for('insights') }}">AI Insights</a>
+                       href="{{ url_for('insights', account=selected_account, tenant=selected_tenant) }}">AI Insights</a>
                 </li>
                 {% endif %}
                 {% if is_admin_user %}

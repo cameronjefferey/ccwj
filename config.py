@@ -79,6 +79,21 @@ class Config:
     # column + publish modal are not rendered. Tests force-enable in conftest.
     COMMUNITY_ENABLED = _env_bool("COMMUNITY_ENABLED", "false")
 
+    # EarningsFollower — tandem product (separate deploy) surfaced via deep-links.
+    # The /earnings ("Earnings Watch") page and the EarningsFollower cross-links
+    # in the Daily Review are gated on this flag (default ON). Set
+    # EARNINGS_FOLLOWER_ENABLED=0 to hide the page + nav + cross-links.
+    EARNINGS_FOLLOWER_ENABLED = _env_bool("EARNINGS_FOLLOWER_ENABLED", "true")
+
+    # Base URL of the deployed EarningsFollower web app. Deep-links are built
+    # against this (see app.utils.earnings_follower_url). Override per-env if the
+    # product moves off its current Render hostname. rstrip so we never emit
+    # a double slash when appending query strings.
+    EARNINGS_FOLLOWER_URL = (
+        os.environ.get("EARNINGS_FOLLOWER_URL", "https://earningsfollower-web.onrender.com")
+        or ""
+    ).rstrip("/")
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024

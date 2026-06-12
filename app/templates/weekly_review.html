@@ -257,6 +257,15 @@
     .watch-badge.itm { background: rgba(220,53,69,.1); color: #b91c1c; }
     .watch-badge.atm { background: rgba(234,179,8,.12); color: #854d0e; }
     .watch-badge.otm { background: rgba(25,135,84,.08); color: #15803d; }
+    /* EarningsFollower deep-link pill (earnings rows). Sits in the aux cell
+       under the report date; a real, visible affordance — not fine print. */
+    .watch-ef {
+        display: inline-block; margin-top: .3rem;
+        padding: .18rem .55rem; border-radius: 999px;
+        font-size: .66rem; font-weight: 700; white-space: nowrap;
+        background: #1e3a8a; color: #fff !important; text-decoration: none;
+    }
+    .watch-ef:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
 
     /* ── Today strip (open positions cards) ── */
     .today-strip {
@@ -741,20 +750,35 @@
             </div>
             {% if _all_earnings %}
             {% for e in _all_earnings[:10] %}
-            <a href="{{ url_for('position_detail', symbol=e.symbol) }}" class="watch-item">
-                <div>
-                    <div class="watch-days {% if e.days_until is not none and e.days_until <= 1 %}text-negative{% elif e.days_until is not none and e.days_until <= 7 %}text-warning{% else %}text-muted{% endif %}">{{ e.days_until if e.days_until is not none else '?' }}</div>
-                    <div class="watch-days-label">{{ 'day' if e.days_until == 1 else 'days' }}</div>
+            <div class="watch-item">
+                {# display:contents lets the anchor's two cells participate in
+                   the watch-item grid while the EF pill stays its own link #}
+                <a href="{{ url_for('position_detail', symbol=e.symbol) }}"
+                   style="display:contents; color:inherit; text-decoration:none;">
+                    <div>
+                        <div class="watch-days {% if e.days_until is not none and e.days_until <= 1 %}text-negative{% elif e.days_until is not none and e.days_until <= 7 %}text-warning{% else %}text-muted{% endif %}">{{ e.days_until if e.days_until is not none else '?' }}</div>
+                        <div class="watch-days-label">{{ 'day' if e.days_until == 1 else 'days' }}</div>
+                    </div>
+                    <div>
+                        <div class="watch-sym">{{ e.symbol }}{% if e.subsector %}<span class="watch-badge">{{ e.subsector }}</span>{% endif %}</div>
+                        {% if e.company %}<div class="watch-meta">{{ e.company }}</div>{% endif %}
+                    </div>
+                </a>
+                <div class="watch-aux">
+                    <div>{{ e.earnings_date_display }}</div>
+                    {% if earnings_follower_enabled %}
+                    <a class="watch-ef" target="_blank" rel="noopener"
+                       href="{{ earnings_follower_url(symbol=e.symbol, sector=e.sector, subsector=e.subsector) }}">EarningsFollower &#8599;</a>
+                    {% endif %}
                 </div>
-                <div>
-                    <div class="watch-sym">{{ e.symbol }}{% if e.subsector %}<span class="watch-badge">{{ e.subsector }}</span>{% endif %}</div>
-                    {% if e.company %}<div class="watch-meta">{{ e.company }}</div>{% endif %}
-                </div>
-                <div class="watch-aux">{{ e.earnings_date_display }}</div>
-            </a>
+            </div>
             {% endfor %}
             {% else %}
             <div class="wb-empty">Nothing in the next 14 days.</div>
+            {% endif %}
+            {% if earnings_follower_enabled %}
+            <a href="{{ url_for('earnings_watch', account=selected_account) if selected_account else url_for('earnings_watch') }}"
+               class="small" style="display:block; text-align:right; text-decoration:none; margin-top:.5rem;">Earnings Watch &rarr;</a>
             {% endif %}
         </div>
 
