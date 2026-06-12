@@ -1,6 +1,4 @@
 account,user_id,tenant_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,cash,2333.2473,,,,2.216713
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,account_total,105257.07540338,,,,
 Schwab Account,10,snaptrade:63395d74-1669-4d3f-a108-d1bc0cf24854,cash,993.92,,,,0.579518
 Schwab Account,10,snaptrade:63395d74-1669-4d3f-a108-d1bc0cf24854,account_total,171508.13,,,,
 Schwab Account,10,snaptrade:29168a13-a60f-4061-a238-1650769bc635,cash,28.13,,,,0.178009
@@ -35,3 +33,5 @@ Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,cash
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,account_total,410896.36,,,,
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,cash,79397.93,,,,81.7086
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,account_total,97172.06,,,,
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,cash,2350.3473,,,,2.247322
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,account_total,104584.36899777,,,,
