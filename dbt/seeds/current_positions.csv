@@ -1,6 +1,4 @@
 Account,user_id,tenant_id,Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
-Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,QTUM,Defiance Quantum ETF,196.0,151.76,,,29744.96,,,21960.82,7784.14,35.4456,,,,,,,,,,,,,,,,,Equity,
-Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,RGTI,Rigetti Computing Inc,1.0,19.92,,,19.92,,,16.3,3.62,22.2086,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,GOOG,Alphabet Inc.,100.0,354.42,,,35442.0,,,37151.5,-1709.5,-4.6014,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,UFO,Procure Space ETF,1247.0,52.855,,,65910.185,,,55778.31,10131.88,18.1646,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,QTUM,Defiance Quantum ETF,1275.0,151.76,,,193494.0,,,149889.0,43605.0,29.0915,,,,,,,,,,,,,,,,,Equity,
@@ -34,3 +32,6 @@ Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,MU,"Micron Tech
 Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,INTC,Intel Corporation,10.0,124.57,,,1245.6999999999998,,,1178.55,67.15,5.6977,,,,,,,,,,,,,,,,,Equity,
 Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,PLTR  270115C00120000,PLTR  270115C00120000,2.0,27.2832,,,5456.64,,,11155.32,-5698.68,-51.0849,,,,,,,,,,,,,,,,,Option,
 Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,RDDT  261218C00135000,RDDT  261218C00135000,1.0,49.2427,,,4924.2699999999995,,,3858.66,1065.61,27.6161,,,,,,,,,,,,,,,,,Option,
+Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,QTUM,Defiance Quantum ETF,196.0,161.3,,,31614.800000000003,,,21960.82,9653.98,43.96,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,RGTI,Rigetti Computing Inc,1.0,20.98,,,20.98,,,16.3,4.68,28.7117,,,,,,,,,,,,,,,,,Equity,
+Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,KLAC,KLA Corporation,100.0,254.54,,,25454.0,,,24956.0,498.0,1.9955,,,,,,,,,,,,,,,,,Equity,
