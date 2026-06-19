@@ -1327,6 +1327,28 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
         snaptrade_connection_id=acc_row.get("brokerage_authorization_id"),
     )
 
+    # AUTHORITATIVE disabled-connection gate — run FIRST, every sync.
+    # A disabled SnapTrade connection keeps serving the LAST-CACHED
+    # everything: not just positions/balances but also the historical
+    # activities/orders inside the lookback window. So row counts can NEVER
+    # distinguish "live" from "serving stale cache" (real case June 2026:
+    # user_id=9 frozen on a June 12 balance while re-returning 45 cached
+    # transactions every sync — the same physical accounts under other
+    # logins advanced to June 18). The only reliable signal is the brokerage
+    # authorization's own ``disabled`` flag. Checking it up front (one cheap
+    # metadata read — NOT the billed refresh endpoint) also skips the wasted
+    # fetch/normalize/push of stale rows. We deliberately do NOT infer this
+    # from the orders-endpoint 402/403 (broker-specific; see
+    # broker-sync-safety SKILL.md first-Fidelity misclassification).
+    if _brokerage_authorization_disabled(client, snap, acc_row, user_id=user_id) is True:
+        raise _SnapTradeAuthError(
+            "connections.list_brokerage_authorizations[disabled=true]",
+            RuntimeError(
+                "SnapTrade reports this brokerage authorization is disabled; "
+                "it is serving stale cached holdings until the user reconnects."
+            ),
+        )
+
     end_date = date.today()
     start_date = end_date - timedelta(days=int(lookback_days))
 
@@ -1386,27 +1408,6 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             "trade history yet — sync again in 30-60 min.",
             len(positions), account_name, snaptrade_account_id,
         )
-        # The line above is ALSO the exact symptom of a DISABLED
-        # connection: SnapTrade keeps returning the last-cached positions
-        # (so every fetch above succeeded) while activities/orders dry up.
-        # Row counts alone can't separate "brand-new/quiet account" from
-        # "disabled connection serving stale cache" — so consult the
-        # authoritative brokerage-authorization ``disabled`` flag and, if
-        # SnapTrade says it's disabled, escalate to the reconnect path so
-        # the user sees a banner instead of silently-frozen numbers. Gated
-        # to this no-fresh-trades branch so we don't add a metadata call to
-        # every healthy, actively-trading sync.
-        if _brokerage_authorization_disabled(
-            client, snap, acc_row, user_id=user_id
-        ) is True:
-            raise _SnapTradeAuthError(
-                "connections.list_brokerage_authorizations[disabled=true]",
-                RuntimeError(
-                    "SnapTrade reports this brokerage authorization is "
-                    "disabled; it is serving stale cached holdings until "
-                    "the user reconnects."
-                ),
-            )
     elif not activities and orders:
         app.logger.info(
             "SnapTrade sync: activities=0 but orders=%d for account=%s "
