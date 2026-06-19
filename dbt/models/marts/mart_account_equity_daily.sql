@@ -11,17 +11,30 @@
 
     HISTORY SOURCE (June 2026 fix): the per-day ``account_value`` /
     ``cash_value`` series reads from the accumulating
-    ``snapshot_account_balances_daily`` SCD2 snapshot — one value-version
-    per (tenant, day the balance changed). Before this, the mart read the
-    LIVE ``stg_account_balances`` stamped with ``current_date()``, which
-    only ever produced ONE row per account (today). That silently starved
-    every day-over-day surface: the Daily Review "vs yesterday / 1w / 1m"
-    comparisons and the Daily Account Δ calendar
+    ``snapshot_account_balances_daily`` SCD2 snapshot. Before this, the mart
+    read the LIVE ``stg_account_balances`` stamped with ``current_date()``,
+    which only ever produced ONE row per account (today). That silently
+    starved every day-over-day surface: the Daily Review "vs yesterday / 1w
+    / 1m" comparisons and the Daily Account Δ calendar
     (mart_account_snapshots_enriched) and the /wealth page
     (mart_wealth_daily) all had no prior day to diff against, so they
-    rendered "—" / blank. The snapshot wrapper had been accumulating
-    history the whole time but was never ``ref()``'d back in after the v2
-    cutover ("history loss accepted") — this rewires it.
+    rendered "—" / blank.
+
+    DAILY SPINE (June 2026 fix #2): the snapshot uses the SCD2 ``check``
+    strategy — it records a new version ONLY when the balance CHANGES. So a
+    FLAT account (value unchanged) has exactly ONE version, stamped the day
+    the value first appeared. Reading that version's ``snapshot_date`` as the
+    series date froze the Daily Review on that first-seen date with $0/—
+    deltas, even though the connection syncs fine daily and the value is
+    current (real case June 2026: testingcameron / user_id=9 — all five
+    Schwab tenants flat at their June 12 values, page stuck on June 12 while
+    "Sync now" returned success every time). The fix expands each version's
+    ``[dbt_valid_from, dbt_valid_to)`` interval across a daily date spine
+    through ``current_date()``, forward-filling the last-known balance — so
+    every calendar day has a row, "today" is always today, and a flat balance
+    reads as today vs yesterday = $0 (a real comparison) instead of a frozen
+    stale date. An account that genuinely stopped syncing is surfaced by the
+    connection-broken banner, NOT by silently freezing the date here.
 
     EQUITY / OPTION SPLIT: ``option_value`` comes from the LIVE
     ``stg_current`` snapshot, which carries ``tenant_id`` so the per-tenant
@@ -37,7 +50,7 @@
     depend on — are fully historical and tenant-correct regardless.
 */
 
-with bal_rows as (
+with bal_versions as (
     select
         account,
         -- snapshot stores legacy NULL user_id as the sentinel -1 to keep
@@ -45,20 +58,45 @@ with bal_rows as (
         -- ``is not distinct from`` joins behave as they did pre-fix.
         nullif(user_id, -1) as user_id,
         tenant_id,
+        tenant_grain,
         row_type,
         market_value,
-        snapshot_date
+        date(dbt_valid_from) as valid_from,
+        date(dbt_valid_to)   as valid_to   -- NULL for the current (open) version
     from {{ ref('snapshot_account_balances_daily') }}
     where account != 'Demo Account'
       and row_type in ('cash', 'account_total')
-    -- SCD2 ``check`` strategy can record two versions on the SAME
-    -- ``snapshot_date`` if a balance changed twice in one day (two
-    -- syncs / uploads). Keep only the final version per
-    -- (tenant, account, user, row_type, day) so the by-day SUM below
-    -- doesn't double-count that day's balance.
+),
+
+-- One calendar day per row from the earliest snapshot through today.
+spine as (
+    select day
+    from unnest(generate_date_array(
+        (select min(valid_from) from bal_versions),
+        current_date()
+    )) as day
+),
+
+-- Expand each SCD2 version across the spine, forward-filling the last-known
+-- balance. ``[valid_from, valid_to)`` is half-open so adjacent versions never
+-- both claim the boundary day; the open (current) version runs through today
+-- via the +1 cap. The qualify is a safety net for a same-day double change.
+bal_rows as (
+    select
+        v.account,
+        v.user_id,
+        v.tenant_id,
+        v.tenant_grain,
+        v.row_type,
+        v.market_value,
+        s.day as snapshot_date
+    from bal_versions v
+    join spine s
+      on s.day >= v.valid_from
+     and s.day <  coalesce(v.valid_to, date_add(current_date(), interval 1 day))
     qualify row_number() over (
-        partition by tenant_grain, coalesce(user_id, -1), row_type, snapshot_date
-        order by dbt_valid_from desc
+        partition by v.tenant_grain, coalesce(v.user_id, -1), v.row_type, s.day
+        order by v.valid_from desc
     ) = 1
 ),
 
