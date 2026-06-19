@@ -731,24 +731,56 @@ def _commit_file(path, content, message):
         return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}", None
 
 
+def _seed_contents_unchanged(path_contents):
+    """True iff every ``(path, content)`` already equals the file currently on
+    the branch.
+
+    Used to skip no-op commits: one commit = one push = one dbt build, and
+    rebuilding the entire warehouse for zero data change is wasted CI +
+    BigQuery cost ("I don't need to run dbt if no new data is going in"). A
+    missing file (HTTP 404 → ``None``) counts as a change so first-ever
+    creation still commits. Byte-exact comparison — if a future pandas version
+    reformats output, this errs toward committing (safe), never toward
+    silently dropping a real change.
+    """
+    for path, content in path_contents:
+        current = _get_file_content(path)
+        if current is None or current != content:
+            return False
+    return True
+
+
 def _commit_git_paths(path_contents, message):
     """
     Create a single commit updating one or more files (Git Data API).
     path_contents: list of (repo_path, utf-8 content).
     One commit = one push event = one workflow run.
-    Returns (success, error_message, head_commit_sha or None).
+    Returns (success, error_message, head_commit_sha or None, no_changes).
+    ``no_changes=True`` means every file already matched the branch, so NO
+    commit was created (and therefore no dbt build will run).
     """
     if not path_contents:
-        return True, None, None
+        return True, None, None, False
+
+    # No-op guard — skip the commit (and the dbt build it would trigger) when
+    # nothing actually changed. Never let this optimization block a real push:
+    # any error in the check falls through to the normal commit path.
+    try:
+        if _seed_contents_unchanged(path_contents):
+            return True, None, None, True
+    except Exception:
+        pass
+
     if len(path_contents) == 1:
         p, c = path_contents[0]
-        return _commit_file(p, c, message)
+        ok, err, sha = _commit_file(p, c, message)
+        return ok, err, sha, False
 
     repo_full = _github_repo()
     branch = _github_branch()
     parts = repo_full.split("/", 1)
     if len(parts) != 2:
-        return False, "Invalid GITHUB_REPO (expected owner/repo)", None
+        return False, "Invalid GITHUB_REPO (expected owner/repo)", None, False
     owner, repo = parts
     base = f"https://api.github.com/repos/{owner}/{repo}/git"
 
@@ -758,12 +790,12 @@ def _commit_git_paths(path_contents, message):
         f"{base}/refs/heads/{branch}", headers=headers, timeout=15
     )
     if ref_resp.status_code != 200:
-        return False, f"Failed to get ref (HTTP {ref_resp.status_code})", None
+        return False, f"Failed to get ref (HTTP {ref_resp.status_code})", None, False
     commit_sha = ref_resp.json()["object"]["sha"]
 
     commit_resp = requests.get(f"{base}/commits/{commit_sha}", headers=headers, timeout=15)
     if commit_resp.status_code != 200:
-        return False, f"Failed to get commit (HTTP {commit_resp.status_code})", None
+        return False, f"Failed to get commit (HTTP {commit_resp.status_code})", None, False
     tree_sha = commit_resp.json()["tree"]["sha"]
 
     def create_blob(content):
@@ -783,7 +815,7 @@ def _commit_git_paths(path_contents, message):
             sha = create_blob(content)
             tree_entries.append({"path": path, "mode": "100644", "type": "blob", "sha": sha})
     except RuntimeError as e:
-        return False, str(e), None
+        return False, str(e), None, False
 
     tree_payload = {"base_tree": tree_sha, "tree": tree_entries}
     tree_resp = requests.post(f"{base}/trees", headers=headers, json=tree_payload, timeout=30)
@@ -792,6 +824,7 @@ def _commit_git_paths(path_contents, message):
             False,
             f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}",
             None,
+            False,
         )
     new_tree_sha = tree_resp.json()["sha"]
 
@@ -802,6 +835,7 @@ def _commit_git_paths(path_contents, message):
             False,
             f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}",
             None,
+            False,
         )
     new_commit_sha = commit_resp.json()["sha"]
 
@@ -812,8 +846,8 @@ def _commit_git_paths(path_contents, message):
         timeout=15,
     )
     if patch_resp.status_code != 200:
-        return False, f"Failed to update ref (HTTP {patch_resp.status_code})", None
-    return True, None, new_commit_sha
+        return False, f"Failed to update ref (HTTP {patch_resp.status_code})", None, False
+    return True, None, new_commit_sha, False
 
 
 EXISTING_ACCOUNTS_QUERY = """
@@ -912,16 +946,18 @@ def merge_and_push_seeds(
         skip_history: when True, commit positions only (and balances if given).
 
     Returns:
-        (ok, err_message, history_rows, current_rows, head_commit_sha or None).
+        (ok, err_message, history_rows, current_rows, head_commit_sha or None,
+         no_changes). ``no_changes=True`` means the merged seed was identical
+        to what's already on the branch, so NO commit/push/dbt-build happened.
 
     Caller must verify _upload_github_config_ok() first.
     """
     if current_df is None:
-        return False, "current_df is required.", 0, 0, None
+        return False, "current_df is required.", 0, 0, None, False
     if user_id is None:
-        return False, "user_id is required.", 0, 0, None
+        return False, "user_id is required.", 0, 0, None, False
     if tenant_id is None or not str(tenant_id).strip():
-        return False, "tenant_id is required.", 0, 0, None
+        return False, "tenant_id is required.", 0, 0, None, False
 
     user_id_int = int(user_id)
     tenant_id_str = str(tenant_id).strip()
@@ -1010,16 +1046,16 @@ def merge_and_push_seeds(
     current_rows = len(current_df)
 
     try:
-        ok, err, head_sha = _commit_git_paths(path_contents, commit_message)
+        ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
         if not ok:
-            return False, err or "GitHub commit failed.", history_rows, current_rows, None
+            return False, err or "GitHub commit failed.", history_rows, current_rows, None, False
     except Exception as exc:
-        return False, str(exc), history_rows, current_rows, None
+        return False, str(exc), history_rows, current_rows, None, False
 
     add_account_for_user(user_id_int, account_name)
     record_upload(user_id_int, account_name, history_rows, current_rows)
 
-    return True, None, history_rows, current_rows, head_sha
+    return True, None, history_rows, current_rows, head_sha, no_changes
 
 
 def purge_user_id_from_seeds(user_id, *, commit_message):
@@ -1111,7 +1147,7 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
         return True, None, rows_removed, None
 
     try:
-        ok, err, head_sha = _commit_git_paths(path_contents, commit_message)
+        ok, err, head_sha, _no_changes = _commit_git_paths(path_contents, commit_message)
     except Exception as exc:
         return False, str(exc), rows_removed, None
     if not ok:
@@ -1241,7 +1277,7 @@ def upload():
         account_name=account_name,
     )
 
-    ok, err, history_rows, current_rows, head_sha = merge_and_push_seeds(
+    ok, err, history_rows, current_rows, head_sha, no_changes = merge_and_push_seeds(
         account_name,
         history_df,
         current_df,
@@ -1254,6 +1290,17 @@ def upload():
         from app import app as _app
         _app.logger.error("Upload seeds update failed: %s", err)
         flash("Couldn't save that upload right now. Try again in a moment, or contact support if it keeps happening.", "danger")
+        return redirect(url_for("upload"))
+
+    if no_changes:
+        # Identical upload — nothing changed on the branch, so no rebuild ran.
+        # Don't send the user to the processing page to watch a build that
+        # will never start.
+        flash(
+            f"That upload for {account_name} matches what's already on file — "
+            "nothing changed, so there's nothing new to process.",
+            "info",
+        )
         return redirect(url_for("upload"))
 
     if skip_history:

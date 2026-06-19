@@ -73,9 +73,18 @@ Portal accepts non-HTTPS localhost URIs for development.
 4. Click through the SnapTrade Connection Portal in sandbox mode and
    pick the SnapTrade demo broker.
 5. After the redirect, `/snaptrade/accounts` should list the demo
-   account. Click **Sync now** — the result is committed to GitHub
-   (just like a Schwab sync), which triggers the dbt rebuild and
-   feeds Position Detail / Weekly Review like any other tenant.
+   account. Click **Sync now** — this asks SnapTrade to repoll the
+   broker for fresh data first (a sync that only re-reads SnapTrade's
+   cache is pointless), then commits the result to GitHub (just like a
+   Schwab sync), which triggers the dbt rebuild and feeds Position
+   Detail / Daily Review like any other tenant. If nothing changed
+   since the last sync, the commit (and the dbt build) is skipped — the
+   broker repoll is rate-limited to ~once per 10 min per brokerage so
+   rapid clicks don't incur extra SnapTrade billing. The standalone
+   "Refresh from broker" button was retired because Sync now now does
+   it by default; the daily cron still reads SnapTrade's cache (it
+   auto-refreshes nightly) and relies on the holdings-freshness
+   backstop to flag stalled connections.
 
 ## Architecture notes
 

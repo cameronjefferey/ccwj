@@ -859,7 +859,7 @@ def test_merge_and_push_seeds_requires_tenant_id():
         "Symbol": "AAPL", "Description": "APPLE INC",
         "Quantity": 10.0, "Price": 200.0, "security_type": "Equity",
     }])
-    ok, err, hr, cr, sha = _upload.merge_and_push_seeds(
+    ok, err, hr, cr, sha, no_changes = _upload.merge_and_push_seeds(
         "Acct",
         history_df=None,
         current_df=current_df,
@@ -870,6 +870,7 @@ def test_merge_and_push_seeds_requires_tenant_id():
     assert ok is False
     assert "tenant_id" in (err or "").lower()
     assert hr == 0 and cr == 0 and sha is None
+    assert no_changes is False
 
 
 def test_merge_and_push_seeds_still_requires_user_id_alongside_tenant_id():
@@ -878,7 +879,7 @@ def test_merge_and_push_seeds_still_requires_user_id_alongside_tenant_id():
         "Symbol": "AAPL", "Description": "APPLE INC",
         "Quantity": 10.0, "Price": 200.0, "security_type": "Equity",
     }])
-    ok, err, _hr, _cr, _sha = _upload.merge_and_push_seeds(
+    ok, err, _hr, _cr, _sha, _no_changes = _upload.merge_and_push_seeds(
         "Acct",
         history_df=None,
         current_df=current_df,
@@ -1003,3 +1004,63 @@ def test_normalize_tid_collapses_known_empty_forms():
     assert n("nan") == ""
     assert n(None) == ""
     assert n(float("nan")) == ""
+
+
+# ---------------------------------------------------------------------------
+# No-op commit skip — don't trigger a dbt build when nothing changed.
+# "I don't need to run the dbt models if no new data is going in."
+# ---------------------------------------------------------------------------
+
+
+def test_seed_contents_unchanged_true_when_all_match(monkeypatch):
+    files = {"a.csv": "x\n1\n", "b.csv": "y\n2\n"}
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: files.get(path))
+    assert _upload._seed_contents_unchanged(
+        [("a.csv", "x\n1\n"), ("b.csv", "y\n2\n")]
+    ) is True
+
+
+def test_seed_contents_unchanged_false_when_one_differs(monkeypatch):
+    files = {"a.csv": "x\n1\n", "b.csv": "y\n2\n"}
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: files.get(path))
+    assert _upload._seed_contents_unchanged(
+        [("a.csv", "x\n1\n"), ("b.csv", "y\n9\n")]
+    ) is False
+
+
+def test_seed_contents_unchanged_false_when_file_missing(monkeypatch):
+    """A 404 (None) counts as a change so first-ever creation still commits."""
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: None)
+    assert _upload._seed_contents_unchanged([("new.csv", "x\n1\n")]) is False
+
+
+def test_commit_git_paths_skips_commit_when_unchanged(monkeypatch):
+    """Identical content → no_changes=True, head_sha=None, and NO GitHub
+    write call is made (single-file path)."""
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: "same\n")
+
+    def _boom(*a, **k):  # would be the actual GitHub write
+        raise AssertionError("must not commit when nothing changed")
+
+    monkeypatch.setattr(_upload, "_commit_file", _boom)
+    ok, err, sha, no_changes = _upload._commit_git_paths(
+        [("dbt/seeds/x.csv", "same\n")], "msg",
+    )
+    assert ok is True and err is None and sha is None and no_changes is True
+
+
+def test_commit_git_paths_commits_when_changed(monkeypatch):
+    """Different content → falls through to the real commit and no_changes=False."""
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: "old\n")
+    calls = {}
+
+    def _fake_commit_file(path, content, message):
+        calls["path"] = path
+        return True, None, "abc123"
+
+    monkeypatch.setattr(_upload, "_commit_file", _fake_commit_file)
+    ok, err, sha, no_changes = _upload._commit_git_paths(
+        [("dbt/seeds/x.csv", "new\n")], "msg",
+    )
+    assert ok is True and sha == "abc123" and no_changes is False
+    assert calls["path"] == "dbt/seeds/x.csv"

@@ -643,6 +643,17 @@ def snaptrade_disconnect():
 # press inside the throttle adds no real-time information.
 SNAPTRADE_FORCE_REFRESH_THROTTLE_SECONDS = 600
 
+# How long an interactive "Sync now" waits after asking SnapTrade to repoll the
+# broker before reading holdings. The refresh is async; SnapTrade typically
+# pushes the fresh snapshot within ~30-60s, but tying up a Flask worker that
+# long is bad UX, so we give the broker a short head start and accept that a
+# just-placed trade may need one more sync to appear (the next routine sync
+# catches it). Env-overridable. Mirrors the value the old standalone
+# "Refresh from broker" route used.
+SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS = int(
+    os.environ.get("SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS", "5") or "5"
+)
+
 
 def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=None):
     """Trigger a SnapTrade ``refresh_brokerage_authorization`` for one
@@ -807,23 +818,92 @@ def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=
     )
 
 
+def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
+    """Shared post-sync UX for the single-account sync routes.
+
+    Centralizes the three terminal outcomes so "Sync now" and "Refresh from
+    broker" behave identically:
+
+    * sync failed            → danger flash, back to accounts page.
+    * pushed a seed change    → success flash + redirect to the processing
+                                page (a dbt build is now running).
+    * NO seed change          → info flash, NO redirect to processing. The
+                                whole point of the user's request: if nothing
+                                changed there's nothing to rebuild, so we don't
+                                send them to a "we're processing…" page that
+                                waits on a build that will never run.
+    """
+    if not res["ok"]:
+        flash(
+            "SnapTrade sync didn't finish. Try again in a minute, or reconnect "
+            "the broker if it keeps happening.",
+            "danger",
+        )
+        return redirect(url_for("snaptrade_accounts_page"))
+
+    hr, cr = res["history_rows"], res["current_rows"]
+    trade_word = "trade" if hr == 1 else "trades"
+    pos_word = "position" if cr == 1 else "positions"
+    verb = "Refresh + sync" if refreshed else "Sync"
+    summary = (
+        f"{verb} complete for {res['label']}. Pulled {hr:,} {trade_word} "
+        f"and {cr} open {pos_word}."
+    )
+
+    if res["github_pushed"]:
+        tail = (
+            " We're processing now — refresh in a minute."
+            if not refreshed else
+            " We're processing now — refresh in a minute. If a just-placed "
+            "trade still doesn't appear, that broker takes a few minutes to "
+            "push to SnapTrade — try one more sync shortly."
+        )
+        flash(summary + tail, "success")
+        qp = {}
+        h = (res["github_head_sha"] or "").strip()
+        if h:
+            qp["sha"] = h
+        if not first_done:
+            qp["first"] = 1
+        return redirect(url_for("sync_processing", **qp))
+
+    if res.get("github_no_changes"):
+        # Nothing changed since the last sync — broker returned the same
+        # holdings/trades, so the seed is byte-identical and we deliberately
+        # skipped the commit (no dbt build needed). Tell the user honestly
+        # instead of pretending a rebuild is in flight.
+        flash(
+            f"{summary} Nothing has changed since your last sync, so there's "
+            f"nothing new to process.",
+            "info",
+        )
+        return redirect(url_for("snaptrade_accounts_page"))
+
+    if res["github_error"]:
+        flash(f"{summary} Couldn't push to the cloud: {res['github_error']}", "warning")
+    elif res["github_seed_push_skipped"]:
+        flash(
+            f"{summary} Live dashboard updates are not turned on for this "
+            f"environment.",
+            "info",
+        )
+    return redirect(url_for("snaptrade_accounts_page"))
+
+
 @app.route("/snaptrade/refresh-broker", methods=["POST"])
 @login_required
 def snaptrade_refresh_broker():
-    """User-initiated "Refresh from broker" — call SnapTrade's
-    ``refresh_brokerage_authorization``, then chain into the regular
-    sync so any data that landed during the refresh window flows
-    through to the seed.
+    """User-initiated "Refresh from broker".
 
-    Why this is its own route (not folded into ``snaptrade_sync``):
-    refresh is BILLED PER CALL by SnapTrade. Folding it in would
-    multiply our cost by every cron run. Surfacing it as an explicit
-    user action keeps the spend bounded to "user pressed a button"
-    instead of "every scheduled job".
+    Kept as a backward-compatible alias now that **every** "Sync now" forces
+    a broker repoll (see ``_sync_one_connection(force_refresh=True)``). Both
+    buttons run the identical path; the per-authorization throttle inside
+    ``_force_refresh_brokerage`` means pressing both within the window won't
+    double-charge.
 
     Form fields:
         snaptrade_account_id (required): which brokerage to refresh.
-        full_history_again ("1"): forwarded to the chained sync.
+        full_history_again ("1"): forwarded to the sync.
     """
     blocked = demo_block_writes("refreshing brokerage data")
     if blocked:
@@ -842,27 +922,6 @@ def snaptrade_refresh_broker():
         flash("Couldn't find that brokerage connection on your account.", "warning")
         return redirect(url_for("snaptrade_accounts_page"))
 
-    ok, message, _throttle = _force_refresh_brokerage(
-        current_user.id, snaptrade_account_id,
-    )
-    if not ok:
-        # Throttle / rate-limit / config / auth — already user-friendly.
-        flash(message, "warning")
-        return redirect(url_for("snaptrade_accounts_page"))
-
-    # Give the broker a head start. SnapTrade webhooks deliver the
-    # holding update within ~30s typically; sleeping the request thread
-    # for the full window would be a bad UX (ties up a Flask worker).
-    # 5 seconds is a happy middle: short enough that the user doesn't
-    # bounce, long enough that the broker has often already pushed the
-    # first batch. The chained sync then picks up whatever is there;
-    # if more lands later, the next routine sync will catch it.
-    import time
-    time.sleep(5)
-
-    # Chain into the regular per-account sync so the user gets the same
-    # post-sync summary (trade count, position count, push status) they
-    # see from the regular Sync now button.
     force_full = request.form.get("full_history_again") == "1"
     first_done = bool(acc_row.get("first_sync_completed"))
     lookback_days = _bulk_sync_lookback_days(
@@ -871,43 +930,10 @@ def snaptrade_refresh_broker():
         routine_days=_routine_lookback_days(),
         full_days=SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
     )
-    res = _sync_one_connection(current_user.id, acc_row, lookback_days=lookback_days)
-
-    if not res["ok"]:
-        flash(
-            f"Refreshed broker, but the sync didn't finish: "
-            f"{res.get('error') or 'unknown error'}. Try the regular Sync now "
-            f"in a minute.",
-            "danger",
-        )
-        return redirect(url_for("snaptrade_accounts_page"))
-
-    hr, cr = res["history_rows"], res["current_rows"]
-    trade_word = "trade" if hr == 1 else "trades"
-    pos_word = "position" if cr == 1 else "positions"
-    summary = (
-        f"Refresh + sync complete for {res['label']}. Pulled {hr:,} "
-        f"{trade_word} and {cr} open {pos_word}."
+    res = _sync_one_connection(
+        current_user.id, acc_row, lookback_days=lookback_days, force_refresh=True,
     )
-    if res["github_pushed"]:
-        flash(
-            f"{summary} We're processing now — refresh in a minute. "
-            f"If a just-placed trade still doesn't appear, that broker takes "
-            f"a few minutes to push to SnapTrade — try one more sync shortly.",
-            "success",
-        )
-        qp = {}
-        h = (res["github_head_sha"] or "").strip()
-        if h:
-            qp["sha"] = h
-        if not first_done:
-            qp["first"] = 1
-        return redirect(url_for("sync_processing", **qp))
-    if res["github_error"]:
-        flash(f"{summary} Couldn't push to the cloud: {res['github_error']}", "warning")
-    elif res["github_seed_push_skipped"]:
-        flash(f"{summary} Live dashboard updates are not turned on for this environment.", "info")
-    return redirect(url_for("snaptrade_accounts_page"))
+    return _flash_and_redirect_after_sync(res, first_done=first_done, refreshed=True)
 
 
 # ---------------------------------------------------------------------------
@@ -955,53 +981,42 @@ def snaptrade_sync():
         routine_days=_routine_lookback_days(),
         full_days=SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
     )
-    res = _sync_one_connection(current_user.id, acc_row, lookback_days=lookback_days)
-
-    if not res["ok"]:
-        flash(
-            "SnapTrade sync didn't finish. Try again in a minute, or reconnect "
-            "the broker if it keeps happening.",
-            "danger",
-        )
-        return redirect(url_for("snaptrade_accounts_page"))
-
-    hr, cr = res["history_rows"], res["current_rows"]
-    trade_word = "trade" if hr == 1 else "trades"
-    pos_word = "position" if cr == 1 else "positions"
-    summary = (
-        f"Sync complete for {res['label']}. Pulled {hr:,} {trade_word} "
-        f"and {cr} open {pos_word}."
+    # "Sync now" forces a broker repoll — a sync that only re-reads SnapTrade's
+    # cache is pointless when the cache is stale (the whole point of syncing is
+    # to get fresh data). Throttled + non-fatal inside _sync_one_connection.
+    res = _sync_one_connection(
+        current_user.id, acc_row, lookback_days=lookback_days, force_refresh=True,
     )
-    if res["github_pushed"]:
-        flash(
-            f"{summary} We're processing your data now — refresh in a minute.",
-            "success",
-        )
-        qp = {}
-        h = (res["github_head_sha"] or "").strip()
-        if h:
-            qp["sha"] = h
-        if not first_done:
-            qp["first"] = 1
-        return redirect(url_for("sync_processing", **qp))
-    if res["github_error"]:
-        flash(f"{summary} Couldn't push to the cloud: {res['github_error']}", "warning")
-    elif res["github_seed_push_skipped"]:
-        flash(f"{summary} Live dashboard updates are not turned on for this environment.", "info")
-    return redirect(url_for("snaptrade_accounts_page"))
+    return _flash_and_redirect_after_sync(res, first_done=first_done, refreshed=True)
 
 
 # ---------------------------------------------------------------------------
 # Sync orchestration
 # ---------------------------------------------------------------------------
 
-def _sync_one_connection(user_id, acc_row, *, lookback_days):
+def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False):
     """Sync ONE SnapTrade-managed broker account end-to-end.
 
     Returns a structured dict like ``_sync_one_connection`` in
     app.schwab. Never raises — failures land as
     ``{"ok": False, "error": "...", ...}`` so multi-account loops
     survive one bad row.
+
+    ``force_refresh`` — when True, ask SnapTrade to repoll the broker
+    (``refresh_brokerage_authorization``) and wait a short settle window
+    BEFORE reading holdings. This is what an interactive "Sync now" wants:
+    a sync that only re-reads SnapTrade's cache is pointless if the cache
+    is stale (June 2026: user_id=9 frozen on a 7-day-old cache while every
+    sync "succeeded"). The refresh is BILLED PER CALL and THROTTLED per
+    authorization (see ``SNAPTRADE_FORCE_REFRESH_THROTTLE_SECONDS``), so a
+    rapid double-click won't double-charge, and a throttled/failed refresh
+    is NON-FATAL — we fall through to the normal read (same outcome as
+    before this feature). The daily cron leaves this False on purpose:
+    SnapTrade already auto-refreshes connections on its own cadence, and
+    forcing a (billed, async) refresh per connection per night would
+    multiply cost for data that lands too late for that same run anyway —
+    stalled connections are caught instead by the holdings-freshness
+    backstop in ``_run_sync``.
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     label = (
@@ -1022,6 +1037,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days):
         "github_error": None,
         "github_seed_push_skipped": False,
         "github_skip_reason": None,
+        "github_no_changes": False,
         "error": None,
     }
 
@@ -1033,6 +1049,29 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days):
             user_id, snaptrade_account_id, error="session_expired",
         )
         return out
+
+    # Interactive "Sync now" / "Refresh from broker": ask SnapTrade to repoll
+    # the broker first, then give it a short head start before reading. A sync
+    # that only re-reads SnapTrade's cache is worthless when the cache is
+    # stale. Non-fatal: a throttled/failed refresh falls through to the normal
+    # read (same outcome as before this feature). The per-authorization
+    # throttle inside _force_refresh_brokerage protects us from double-billing
+    # on rapid clicks.
+    if force_refresh:
+        try:
+            ok_r, msg_r, _rem = _force_refresh_brokerage(user_id, snaptrade_account_id)
+            app.logger.info(
+                "SnapTrade force-refresh before sync user_id=%s account=%s: ok=%s (%s)",
+                user_id, snaptrade_account_id, ok_r, msg_r,
+            )
+            if ok_r:
+                import time
+                time.sleep(SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS)
+        except Exception as _exc:
+            app.logger.warning(
+                "SnapTrade force-refresh raised (non-fatal) user_id=%s account=%s: %s",
+                user_id, snaptrade_account_id, _exc,
+            )
 
     try:
         result = _run_sync(
@@ -1055,6 +1094,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days):
             "github_error": result.get("github_error"),
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
             "github_skip_reason": result.get("github_skip_reason"),
+            "github_no_changes": bool(result.get("github_no_changes")),
         })
         # First-activation nudge: once data has actually landed for this user,
         # email "your data is ready" exactly once (dedupe per user via
@@ -1133,6 +1173,29 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
     last_pushed_sha = None
     any_first_run = False
 
+    # "Sync All" forces a broker repoll like single-account Sync now. Fire all
+    # refreshes UP FRONT and sleep ONCE afterward so the bulk request adds a
+    # single settle window, not one per account (a 5-account user would
+    # otherwise tie up a worker for 5 × the settle window). Each refresh is
+    # throttled + non-fatal; the per-account syncs below then read the freshly
+    # repolled snapshot with force_refresh=False (no further per-account wait).
+    refreshed_any = False
+    for acc_row in rows:
+        try:
+            ok_r, _msg_r, _rem = _force_refresh_brokerage(
+                user_id, acc_row["snaptrade_account_id"],
+            )
+            refreshed_any = refreshed_any or bool(ok_r)
+        except Exception as _exc:
+            app.logger.warning(
+                "SnapTrade bulk force-refresh raised (non-fatal) user_id=%s "
+                "account=%s: %s",
+                user_id, acc_row.get("snaptrade_account_id"), _exc,
+            )
+    if refreshed_any:
+        import time
+        time.sleep(SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS)
+
     for acc_row in rows:
         first_done = bool(acc_row.get("first_sync_completed"))
         if not first_done:
@@ -1172,6 +1235,16 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
             if int(s.get("history_rows") or 0) == 0
             and int(s.get("current_rows") or 0) > 0
         ]
+        # If every successful account was a no-op (broker returned identical
+        # data), say so — no commit, no dbt build. Avoids implying a rebuild
+        # is in flight when nothing changed.
+        if not last_pushed_sha and all(
+            s.get("github_no_changes") for s in successes
+        ):
+            parts.append(
+                "Nothing has changed since your last sync, so there's nothing "
+                "new to process."
+            )
     if failures:
         per_failure = ", ".join(f"{f['label']} ({f['reason']})" for f in failures)
         parts.append(f"Failed: {per_failure}.")
@@ -1359,6 +1432,34 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
 
+    # BACKSTOP for the "enabled-but-stalled" failure mode the disabled flag
+    # misses. SnapTrade can keep returning HTTP 200 from its last-cached
+    # holdings while its OWN ``sync_status.holdings.last_successful_sync``
+    # stops advancing (broker auth degraded but not yet flagged disabled).
+    # Every fetch above then "succeeds" with byte-identical stale rows, so row
+    # counts can't tell live from frozen and the seed merge re-pushes a no-op
+    # forever. The authoritative freshness signal is SnapTrade's per-account
+    # last_successful_sync timestamp; if it's older than the threshold,
+    # escalate to the SAME reconnect path as a disabled connection (real case
+    # June 2026: user_id=9 Schwab holdings frozen on a June-12 cache for 7
+    # days, no banner). Threshold <= 0 disables the backstop. None-is-safe:
+    # a missing/odd timestamp never flags. Runs only AFTER the disabled gate
+    # (which raises first when disabled is True), so this catches the
+    # complementary case the disabled flag silently passes.
+    if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0:
+        stale_days = _holdings_stale_days(account_summary, today=end_date)
+        if stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
+            raise _SnapTradeAuthError(
+                "sync_status.holdings.last_successful_sync[stale]",
+                RuntimeError(
+                    f"SnapTrade has not refreshed holdings from the broker in "
+                    f"{stale_days} days (threshold "
+                    f"{SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS}); it is serving a "
+                    f"stale cached snapshot until the user reconnects or "
+                    f"forces a Refresh from broker."
+                ),
+            )
+
     # SnapTrade has TWO sources for trade history:
     # - ``activities``: authoritative; includes dividends/fees/splits
     #   in addition to fills. Lags hours-to-days behind the broker.
@@ -1440,6 +1541,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     github_error = None
     github_head_sha = None
     github_skip_reason = None
+    github_no_changes = False
 
     from app.upload import _upload_github_config_ok, merge_and_push_seeds
 
@@ -1465,7 +1567,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
                 f"SnapTrade sync ({uname}): {len(history_df)} tx, "
                 f"{len(current_df)} open lines ({account_name})"
             )
-        ok, err, _hr, _cr, github_head_sha = merge_and_push_seeds(
+        ok, err, _hr, _cr, github_head_sha, github_no_changes = merge_and_push_seeds(
             account_name,
             history_df,
             current_df,
@@ -1475,8 +1577,14 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             skip_history=skip_history,
             balances_df=balances_df,
         )
-        github_pushed = ok
+        # "Pushed" means a commit (and therefore a dbt build) actually
+        # happened. A no-op merge (identical seed) reports ok=True but pushes
+        # nothing — callers must NOT send the user to a processing page for a
+        # build that will never run.
+        github_pushed = ok and not github_no_changes
         github_error = err if not ok else None
+        if github_no_changes:
+            github_skip_reason = "no_changes"
 
     return {
         "history_rows": 0 if skip_history else len(history_df),
@@ -1487,6 +1595,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
         "github_head_sha": github_head_sha,
         "github_seed_push_skipped": not ok_cfg,
         "github_skip_reason": github_skip_reason,
+        "github_no_changes": bool(github_no_changes),
     }
 
 
@@ -1759,6 +1868,25 @@ SNAPTRADE_CONNECTION_WARN_WINDOW_DAYS = 7
 # "expires in 3 days!" alarm that never comes true and burns user trust.
 SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS: dict[str, int] = {}
 
+# How many days SnapTrade can go WITHOUT a successful holdings refresh from the
+# broker before we treat the connection as stalled — even though SnapTrade
+# still returns HTTP 200 from its last-cached snapshot and reports the
+# authorization ``disabled=False``. This is the BACKSTOP for the
+# "enabled-but-not-syncing" failure mode the ``disabled`` flag misses (real
+# case June 2026: user_id=9 Schwab holdings frozen on a June-12 cache for 7
+# days; every sync 200-OK; balances + every position price byte-identical
+# across syncs; no reconnect banner because the authorization was never marked
+# disabled). The authoritative freshness signal is SnapTrade's per-account
+# ``sync_status.holdings.last_successful_sync`` from the ``/accounts/{id}``
+# payload we already fetch as ``account_summary``.
+#
+# Conservative default (4 days) tolerates a long weekend plus a market holiday
+# of SnapTrade-side refresh skew without false-flagging a healthy connection.
+# Env-overridable for ops tuning; set <= 0 to disable the backstop entirely.
+SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS = int(
+    os.environ.get("SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", "4") or "4"
+)
+
 
 def _as_date(value):
     """Coerce a date/datetime (or None) to a ``date``; None on failure.
@@ -1779,6 +1907,66 @@ def _as_date(value):
         except Exception:
             return None
     return None
+
+
+def _parse_iso_datetime(value):
+    """Parse a SnapTrade ISO-8601 timestamp (possibly ``Z``-suffixed) into a
+    naive ``datetime``; ``None`` on failure. Tolerates already-parsed
+    ``datetime``/``date`` values and a bare ``YYYY-MM-DD`` prefix."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
+def _holdings_last_successful_sync(account_summary):
+    """Extract SnapTrade's ``sync_status.holdings.last_successful_sync`` from
+    the ``/accounts/{id}`` payload as a ``date``; ``None`` if absent or
+    unparseable.
+
+    This is the authoritative "when did SnapTrade last pull fresh holdings
+    from the broker" timestamp. A value many days old means the connection has
+    stalled even when the brokerage authorization is not ``disabled`` — the
+    failure mode the disabled flag alone misses.
+    """
+    if not isinstance(account_summary, dict):
+        return None
+    sync_status = account_summary.get("sync_status")
+    if not isinstance(sync_status, dict):
+        return None
+    holdings = sync_status.get("holdings")
+    if not isinstance(holdings, dict):
+        return None
+    dt = _parse_iso_datetime(holdings.get("last_successful_sync"))
+    return dt.date() if dt is not None else None
+
+
+def _holdings_stale_days(account_summary, *, today=None):
+    """Days since SnapTrade last refreshed holdings from the broker.
+
+    Returns ``None`` when the freshness signal is unavailable or in the future
+    — ``None`` means "change nothing", so a missing/odd timestamp never
+    false-flags a healthy connection (mirrors the ``disabled`` helper's
+    None-is-safe philosophy)."""
+    last = _holdings_last_successful_sync(account_summary)
+    if last is None:
+        return None
+    today = today or date.today()
+    days = (today - last).days
+    return days if days >= 0 else None
 
 
 def _connection_attention(acc_row, *, today=None):

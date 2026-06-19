@@ -196,6 +196,100 @@ def test_sync_one_unknown_error_records_string_truncated(monkeypatch, _patched_m
 
 
 # ---------------------------------------------------------------------------
+# force_refresh — "Sync now" must repoll the broker, not just re-read cache.
+# ---------------------------------------------------------------------------
+
+
+def _ok_run_sync(extra=None):
+    base = {
+        "history_rows": 3, "current_rows": 2, "lookback_days": 60,
+        "github_pushed": True, "github_error": None, "github_head_sha": "sha1",
+        "github_seed_push_skipped": False, "github_skip_reason": None,
+        "github_no_changes": False,
+    }
+    if extra:
+        base.update(extra)
+    return base
+
+
+def test_sync_one_force_refresh_calls_broker_repoll(monkeypatch, _patched_models):
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(_snap, "_run_sync", lambda *a, **k: _ok_run_sync())
+    monkeypatch.setattr(_snap, "SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS", 0)
+
+    calls = []
+    monkeypatch.setattr(
+        _snap, "_force_refresh_brokerage",
+        lambda u, a, **k: calls.append((u, a)) or (True, "ok", None),
+    )
+
+    res = _snap._sync_one_connection(
+        9, {"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60, force_refresh=True,
+    )
+    assert res["ok"] is True
+    assert calls == [(9, "abc")], "force_refresh must trigger a broker repoll"
+
+
+def test_sync_one_default_does_not_force_refresh(monkeypatch, _patched_models):
+    """The daily cron path (force_refresh defaults False) must NOT incur the
+    billed refresh call."""
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(_snap, "_run_sync", lambda *a, **k: _ok_run_sync())
+
+    calls = []
+    monkeypatch.setattr(
+        _snap, "_force_refresh_brokerage",
+        lambda u, a, **k: calls.append((u, a)) or (True, "ok", None),
+    )
+
+    _snap._sync_one_connection(
+        9, {"snaptrade_account_id": "abc", "account_name": "X"}, lookback_days=60,
+    )
+    assert calls == [], "routine sync must not force (billed) refresh"
+
+
+def test_sync_one_force_refresh_failure_is_non_fatal(monkeypatch, _patched_models):
+    """A throttled/failed refresh must not abort the sync — we fall through to
+    the normal read."""
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(_snap, "_run_sync", lambda *a, **k: _ok_run_sync())
+    monkeypatch.setattr(_snap, "SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(
+        _snap, "_force_refresh_brokerage",
+        lambda u, a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    res = _snap._sync_one_connection(
+        9, {"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60, force_refresh=True,
+    )
+    assert res["ok"] is True, "refresh blowup must not fail the sync"
+
+
+def test_sync_one_propagates_no_changes(monkeypatch, _patched_models):
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(
+        _snap, "_run_sync",
+        lambda *a, **k: _ok_run_sync({"github_pushed": False, "github_head_sha": None,
+                                      "github_no_changes": True}),
+    )
+    res = _snap._sync_one_connection(
+        9, {"snaptrade_account_id": "abc", "account_name": "X"}, lookback_days=60,
+    )
+    assert res["ok"] is True
+    assert res["github_no_changes"] is True
+    assert res["github_pushed"] is False
+
+
+# ---------------------------------------------------------------------------
 # _brokerage_authorization_disabled — authoritative "serving stale cache"
 # detection. A disabled SnapTrade connection keeps returning the last
 # cached positions/balances (so the fetch helpers succeed) while the row
@@ -275,10 +369,111 @@ def test_authorization_disabled_none_when_no_matching_auth():
 
 
 # ---------------------------------------------------------------------------
-# _connection_attention — proactive "X days" alert classification
+# Holdings-freshness backstop — the "enabled-but-stalled" case the disabled
+# flag misses. SnapTrade keeps returning 200 from a cached snapshot while its
+# own sync_status.holdings.last_successful_sync stops advancing (June 2026:
+# user_id=9 holdings frozen on a June-12 cache for 7 days, no banner). The
+# authoritative freshness signal is that per-account timestamp.
 # ---------------------------------------------------------------------------
 
 from datetime import date, datetime, timedelta, timezone
+
+
+def test_parse_iso_datetime_handles_z_suffix_and_date_prefix():
+    assert _snap._parse_iso_datetime("2026-06-12T20:06:11.123Z") == datetime(2026, 6, 12, 20, 6, 11, 123000)
+    assert _snap._parse_iso_datetime("2026-06-12") == datetime(2026, 6, 12)
+    # Already-parsed datetime is normalized to naive.
+    assert _snap._parse_iso_datetime(datetime(2026, 6, 12, tzinfo=timezone.utc)) == datetime(2026, 6, 12)
+    assert _snap._parse_iso_datetime(None) is None
+    assert _snap._parse_iso_datetime("") is None
+    assert _snap._parse_iso_datetime("not-a-date") is None
+
+
+def test_holdings_last_successful_sync_extracts_nested_timestamp():
+    summary = {"sync_status": {"holdings": {"last_successful_sync": "2026-06-12T20:06:11Z"}}}
+    assert _snap._holdings_last_successful_sync(summary) == date(2026, 6, 12)
+
+
+def test_holdings_last_successful_sync_none_when_signal_absent():
+    # None-is-safe: any missing layer must yield None so a healthy connection
+    # without the field is never false-flagged.
+    assert _snap._holdings_last_successful_sync({}) is None
+    assert _snap._holdings_last_successful_sync({"sync_status": {}}) is None
+    assert _snap._holdings_last_successful_sync({"sync_status": {"holdings": {}}}) is None
+    assert _snap._holdings_last_successful_sync(None) is None
+    assert _snap._holdings_last_successful_sync({"sync_status": {"holdings": {"last_successful_sync": None}}}) is None
+
+
+def test_holdings_stale_days_counts_days_since_last_sync():
+    summary = {"sync_status": {"holdings": {"last_successful_sync": "2026-06-12T20:06:11Z"}}}
+    assert _snap._holdings_stale_days(summary, today=date(2026, 6, 19)) == 7
+    assert _snap._holdings_stale_days(summary, today=date(2026, 6, 12)) == 0
+
+
+def test_holdings_stale_days_none_when_signal_missing_or_future():
+    assert _snap._holdings_stale_days({}, today=date(2026, 6, 19)) is None
+    future = {"sync_status": {"holdings": {"last_successful_sync": "2026-06-25T00:00:00Z"}}}
+    assert _snap._holdings_stale_days(future, today=date(2026, 6, 19)) is None
+
+
+def _patch_run_sync_fetches(monkeypatch, *, account_summary):
+    """Stub every external fetch in ``_run_sync`` so the only behavior under
+    test is the holdings-freshness backstop. Disabled gate returns False so it
+    doesn't pre-empt the staleness check."""
+    monkeypatch.setattr(_snap, "_ensure_snaptrade_tenant_id", lambda **k: "snaptrade:t")
+    monkeypatch.setattr(_snap, "_brokerage_authorization_disabled", lambda *a, **k: False)
+    monkeypatch.setattr(_snap, "_fetch_activities", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_recent_orders", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_positions", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_option_holdings", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_balances", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_account_summary", lambda *a, **k: account_summary)
+
+
+def test_run_sync_raises_on_stale_holdings(monkeypatch):
+    """End-to-end wiring: a stale ``sync_status.holdings.last_successful_sync``
+    escalates to the same _SnapTradeAuthError reconnect path as a disabled
+    connection — even though every fetch 'succeeded'."""
+    stale = (date.today() - timedelta(days=10)).strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={"sync_status": {"holdings": {"last_successful_sync": stale}}},
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
+    with pytest.raises(_snap._SnapTradeAuthError) as ei:
+        _snap._run_sync(9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
+    assert "stale" in ei.value.endpoint
+
+
+def test_run_sync_does_not_flag_fresh_holdings(monkeypatch):
+    """A connection SnapTrade refreshed today must NOT trip the backstop — it
+    proceeds past the staleness gate into normalize/push (which we stub out by
+    failing on the next external call to keep the test scoped)."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={"sync_status": {"holdings": {"last_successful_sync": fresh}}},
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    # Force normalize to raise a SENTINEL so we can prove control flow got PAST
+    # the staleness gate without building a full seed-push harness.
+    sentinel = RuntimeError("reached normalize")
+    monkeypatch.setattr(
+        _snap, "activities_to_history_df",
+        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+    )
+    acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
+    with pytest.raises(RuntimeError) as ei:
+        _snap._run_sync(9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
+    assert ei.value is sentinel  # NOT a _SnapTradeAuthError[stale]
+
+
+# ---------------------------------------------------------------------------
+# _connection_attention — proactive "X days" alert classification
+# ---------------------------------------------------------------------------
 
 
 def test_connection_attention_healthy_returns_none():

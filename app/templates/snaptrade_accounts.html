@@ -181,26 +181,20 @@
                 <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
                 {% endif %}
             </div>
+            {# "Sync now" now ALWAYS asks SnapTrade to repoll the broker for
+               fresh data before reading (a sync that only re-reads SnapTrade's
+               cache is pointless when the cache is stale). The broker repoll
+               is rate-limited to ~once per 10 min server-side, so rapid
+               re-clicks won't double-charge. The old separate "Refresh from
+               broker" button was removed — its behavior is now the default. #}
             <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                <button type="submit" class="btn btn-sm btn-primary">Sync now</button>
-                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your broker. This can take a minute — keep this tab open.</p>
-            </form>
-            {# "Refresh from broker" — asks SnapTrade to repoll the
-               broker BEFORE we sync. Useful right after placing a
-               trade. SnapTrade bills per refresh, so this is rate-
-               limited to once per ~10 min server-side; the title
-               attribute hints at that without making the user think
-               it's broken when they hit the limit. #}
-            <form method="POST" action="{{ url_for('snaptrade_refresh_broker') }}" class="snaptrade-sync-form"
-                  onsubmit="return confirm('Ask SnapTrade to fetch fresh data from your broker, then sync? Useful right after placing a trade. Limited to once per ~10 minutes per brokerage.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                <button type="submit" class="btn btn-sm btn-outline-warning"
-                        title="Triggers a fresh poll of your broker before syncing — costs a billing call to SnapTrade, so use only when you've just placed a trade.">
-                    Refresh from broker
+                <button type="submit" class="btn btn-sm btn-primary"
+                        title="Asks your broker for fresh data, then syncs. If nothing has changed since last time, no rebuild runs.">
+                    Sync now
                 </button>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Asking your broker for fresh data, then syncing. This can take a minute — keep this tab open.</p>
             </form>
             <form method="POST" action="{{ url_for('snaptrade_disconnect') }}"
                   onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
