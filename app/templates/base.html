@@ -436,27 +436,46 @@
             </form>
         </div>
         {% endif %}
-        {# SnapTrade-managed brokerages whose connection has been revoked.
-           connection has been revoked at the broker. Set by
-           `_inject_snaptrade_reauth_needed` in app/snaptrade.py from
-           the `connection_broken_at` column on snaptrade_accounts. #}
+        {# SnapTrade-managed brokerages needing a reconnect. Set by
+           `_inject_snaptrade_reauth_needed` in app/snaptrade.py — each row is
+           enriched by `_connection_attention` with `kind`
+           ("stale"/"expiring"), `stale_days`, and `expires_in_days` so the
+           banner can show a real day count. #}
         {% if snaptrade_reauth_needed and snaptrade_reauth_needed|length %}
         <div class="alert alert-warning d-flex align-items-start gap-3 mt-3 mb-3" role="alert">
             <div class="flex-grow-1">
-                <strong>One of your brokerage connections expired.</strong>
-                <div class="small mt-1">
-                    {% if snaptrade_reauth_needed|length == 1 %}
-                        We couldn&rsquo;t sync
-                        <code>{{ snaptrade_reauth_needed[0].display_nickname or snaptrade_reauth_needed[0].account_name }}</code>
-                        ({{ snaptrade_reauth_needed[0].broker_slug | title }}).
+                {% if snaptrade_reauth_needed|length == 1 %}
+                    {% set c = snaptrade_reauth_needed[0] %}
+                    {% if c.kind == 'expiring' %}
+                        <strong>Your {{ c.broker_slug | title }} connection
+                        {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}is expiring now{% endif %}.</strong>
+                        <div class="small mt-1">
+                            Reconnect <code>{{ c.display_nickname or c.account_name }}</code> before it lapses so your daily sync keeps running.
+                        </div>
                     {% else %}
-                        We couldn&rsquo;t sync
-                        {% for c in snaptrade_reauth_needed %}
-                            <code>{{ c.display_nickname or c.account_name }}</code>{% if not loop.last %}, {% endif %}
-                        {% endfor %}.
+                        <strong>Reconnect your {{ c.broker_slug | title }} connection.</strong>
+                        <div class="small mt-1">
+                            We haven&rsquo;t been able to sync
+                            <code>{{ c.display_nickname or c.account_name }}</code>
+                            {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %} &mdash;
+                            your data is frozen until you reconnect.
+                        </div>
                     {% endif %}
-                    Reconnect from the brokerages page to resume daily syncs.
-                </div>
+                {% else %}
+                    <strong>{{ snaptrade_reauth_needed|length }} brokerage connections need reconnecting.</strong>
+                    <ul class="small mt-1 mb-0 ps-3">
+                        {% for c in snaptrade_reauth_needed %}
+                        <li>
+                            <code>{{ c.display_nickname or c.account_name }}</code> ({{ c.broker_slug | title }}) &mdash;
+                            {% if c.kind == 'expiring' %}
+                                {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}expiring now{% endif %}
+                            {% else %}
+                                {% if c.stale_days and c.stale_days > 0 %}stale for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}just stopped syncing{% endif %}
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
                 <a class="btn btn-sm btn-warning mt-2" href="{{ url_for('snaptrade_accounts_page') }}">Manage brokerages</a>
             </div>
         </div>

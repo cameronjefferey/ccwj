@@ -394,6 +394,56 @@ def send_connection_dropped_email(
     send_email(to=to, subject=subject, body=body, html_body=html_body)
 
 
+def send_connection_reminder_email(
+    *,
+    to: str,
+    username: str,
+    broker_label: str,
+    account_label: str,
+    stale_days: int,
+    reconnect_url: str,
+) -> None:
+    """Recurring "you're still disconnected" nudge with a day count.
+
+    The one-time ``send_connection_dropped_email`` fires the moment a sync
+    flips ``connection_broken_at`` (week 0). This is the WEEKLY follow-up for
+    users who haven't reconnected yet — same reconnect ask, but it leads with
+    how long the data has been frozen so the cost of inaction is concrete.
+    Transactional (account-health) — always sent; no opt-out.
+    """
+    broker = broker_label or "your broker"
+    acct = f" ({account_label})" if account_label else ""
+    days = max(1, int(stale_days or 0))
+    day_phrase = f"{days} day" + ("s" if days != 1 else "")
+    subject = f"Still disconnected: reconnect {broker} ({day_phrase} of frozen data)"
+    body = (
+        f"Hi {username},\n\n"
+        f"Your {broker}{acct} connection has been disconnected for {day_phrase}, "
+        "so HappyTrader hasn't been able to pull new trades, positions, or "
+        "balances that whole time — your dashboard is showing stale numbers.\n\n"
+        "Reconnect in a minute here:\n"
+        f"{reconnect_url}\n\n"
+        "Your historical data is safe — reconnecting just resumes the daily sync.\n\n"
+        "— HappyTrader\n"
+    )
+    html_body = _wrap_html(
+        title="Still disconnected — reconnect to unfreeze your data",
+        inner_html=(
+            f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
+            f'<p style="color:#3c4043;font-size:15px;">Your <strong>{broker}</strong>{acct} '
+            f"connection has been disconnected for <strong>{day_phrase}</strong>, so we "
+            "haven't pulled new trades, positions, or balances that whole time — your "
+            "dashboard is showing stale numbers.</p>"
+            f'<p style="margin:24px 0;"><a href="{reconnect_url}" '
+            f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
+            'border-radius:8px;font-weight:600;display:inline-block;">Reconnect now</a></p>'
+            '<p style="color:#9aa0a6;font-size:13px;">Your historical data is safe — '
+            "reconnecting just resumes the daily sync.</p>"
+        ),
+    )
+    send_email(to=to, subject=subject, body=body, html_body=html_body)
+
+
 def send_welcome_verify_email(
     *,
     to: str,

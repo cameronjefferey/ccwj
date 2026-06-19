@@ -4,6 +4,7 @@ CLI for lifecycle / product-marketing email digests. Run via cron:
   python -m app.email_digests_cli weekly_summary
   python -m app.email_digests_cli weekly_preview
   python -m app.email_digests_cli reengagement
+  python -m app.email_digests_cli connection_reminder
 
 Each kind:
   - weekly_summary : recap of the user's most recent trading week
@@ -14,6 +15,10 @@ Each kind:
                      Gated by user_profiles.weekly_preview_email.
   - reengagement   : a nudge for users who haven't opened the app in a
                      while. Gated by user_profiles.product_update_email.
+  - connection_reminder : recurring "still disconnected — reconnect" nudge
+                     for users with a broken broker connection (Postgres
+                     only, no BigQuery). Transactional account-health mail —
+                     no opt-out. Daily cron, weekly per episode via dedupe.
 
 Tenancy: every BigQuery read is scoped to ONE recipient at a time by
 ``CAST(user_id AS STRING) = @user_id`` AND
@@ -351,10 +356,75 @@ def run_reengagement(client, bigquery):
     print(f"reengagement: {sent} sent, {skipped} already-sent")
 
 
+# ---------------------------------------------------------------------------
+# connection_reminder — recurring "still disconnected" nudge
+# ---------------------------------------------------------------------------
+
+
+def run_connection_reminder(client, bigquery):
+    """Weekly follow-up email for users whose broker connection is still
+    broken. Pure Postgres (no BigQuery).
+
+    Cadence = once-then-weekly: the one-time ``connection_dropped`` email
+    (fired by ``app/snaptrade_sync_cli.py`` the moment the break is detected)
+    covers week 0; this cron covers weeks 1, 2, 3, ... until the user
+    reconnects. ``week_index = stale_days // 7`` and the ``email_sends`` dedupe
+    key embeds it, so a DAILY cron sends at most one reminder per 7-day band
+    per break episode (``connection_broken_at`` is preserved across syncs, so
+    the episode anchor is stable; a reconnect+re-break starts a fresh anchor).
+    Transactional account-health mail — no opt-out.
+    """
+    from datetime import date as _date
+    from app.email import send_connection_reminder_email, app_base_url
+    from app.models import list_broken_snaptrade_connections, record_email_send
+
+    reconnect_url = f"{app_base_url()}/profile?tab=account#snaptrade-sync"
+    today = _date.today()
+    sent = skipped = early = 0
+    for rec in list_broken_snaptrade_connections():
+        broken_at = rec.get("connection_broken_at")
+        broken_on = broken_at.date() if hasattr(broken_at, "date") else None
+        if broken_on is None:
+            continue
+        stale_days = max(0, (today - broken_on).days)
+        week_index = stale_days // 7
+        # Week 0 is owned by the one-time connection_dropped email.
+        if week_index < 1:
+            early += 1
+            continue
+
+        broken_key = broken_at.isoformat() if hasattr(broken_at, "isoformat") else str(broken_at)
+        dedupe_key = f"{rec['snaptrade_account_id']}:{broken_key}:w{week_index}"
+        if not record_email_send(
+            "connection_reminder", dedupe_key,
+            user_id=rec["user_id"], to_email=rec["email"],
+        ):
+            skipped += 1
+            continue
+
+        try:
+            send_connection_reminder_email(
+                to=rec["email"],
+                username=rec["username"],
+                broker_label=(rec.get("broker_slug") or "").title(),
+                account_label=rec.get("display_nickname") or rec.get("account_name") or "",
+                stale_days=stale_days,
+                reconnect_url=reconnect_url,
+            )
+            sent += 1
+            print(f"User {rec['user_id']} ({rec['snaptrade_account_id']}): "
+                  f"connection_reminder sent (day {stale_days}) to {rec['email']}")
+        except Exception as exc:
+            print(f"User {rec['user_id']} ({rec['snaptrade_account_id']}): "
+                  f"connection_reminder failed: {exc}", file=sys.stderr)
+    print(f"connection_reminder: {sent} sent, {skipped} already-sent, {early} within-week-0")
+
+
 _RUNNERS = {
     "weekly_summary": run_weekly_summary,
     "weekly_preview": run_weekly_preview,
     "reengagement": run_reengagement,
+    "connection_reminder": run_connection_reminder,
 }
 
 
@@ -363,7 +433,7 @@ def main(argv=None):
     if len(argv) != 1 or argv[0] not in _RUNNERS:
         print(
             "Usage: python -m app.email_digests_cli "
-            "{weekly_summary|weekly_preview|reengagement}",
+            "{weekly_summary|weekly_preview|reengagement|connection_reminder}",
             file=sys.stderr,
         )
         return 2
@@ -372,11 +442,13 @@ def main(argv=None):
     from app.models import init_db
     init_db()
 
-    # re-engagement is pure Postgres (no digest content from BigQuery), so
-    # skip building the BQ client — that cron need not carry BQ creds.
+    # re-engagement and connection_reminder are pure Postgres (no digest
+    # content from BigQuery), so skip building the BQ client — those crons
+    # need not carry BQ creds.
+    _NO_BQ = {"reengagement", "connection_reminder"}
     client = None
     bigquery = None
-    if kind != "reengagement":
+    if kind not in _NO_BQ:
         from google.cloud import bigquery
         from app.bigquery_client import get_bigquery_client
         client = get_bigquery_client()

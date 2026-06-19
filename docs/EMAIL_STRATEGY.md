@@ -58,10 +58,17 @@ HTTP backend without re-confirming Render egress is no longer 403'd.
 | Welcome + verify email | Signup | `send_welcome_verify_email` (`_send_welcome_verification` in `app/auth.py`) |
 | Email verification (resend) | `/resend-verification` or the base.html banner | `send_welcome_verify_email` |
 | Your data is ready | First successful broker sync (rows landed) | `send_data_ready_email` (fired from `_sync_one_connection` in `app/snaptrade.py`, dedupe `data_ready:<user_id>`) |
-| Broker connection dropped | A sync flips `connection_broken_at` NULL→set | `send_connection_dropped_email` (fired from `app/snaptrade_sync_cli.py`) |
+| Broker connection dropped | A sync flips `connection_broken_at` NULL→set (week 0) | `send_connection_dropped_email` (fired from `app/snaptrade_sync_cli.py`, dedupe `connection_dropped:<account>:<broken_at_iso>`) |
+| Still disconnected (recurring) | Connection still broken ≥7 days, then weekly | `send_connection_reminder_email` (fired from `run_connection_reminder` in `app/email_digests_cli.py`, dedupe `connection_reminder:<account>:<broken_at_iso>:w<week_index>`) |
 
 The connection-dropped email is the practical version of "your token is about
-to expire, please renew." See the note below on why it's reactive.
+to expire, please renew" — fired once the moment a sync detects the break.
+The **still-disconnected reminder** is the recurring follow-up: a daily cron
+(`connection_reminder`) re-nudges anyone who hasn't reconnected, at most once
+per 7-day band (week 0 is owned by the one-time dropped email). Both carry a
+day count so the cost of inaction is concrete, and both are mirrored by the
+in-app banner (`_inject_snaptrade_reauth_needed` → `_connection_attention`,
+which surfaces "stopped syncing X days ago" / "expires in X days").
 
 **Email verification.** Signup mints a single-use token
 (`mint_email_verification_token`, `email_verification_tokens` table, 7-day TTL)
@@ -106,6 +113,9 @@ never double-sends. Dedupe keys:
 
 - `connection_dropped`: `"<snaptrade_account_id>:<broken_at_iso>"` (re-breaks
   after a reconnect notify again).
+- `connection_reminder`: `"<snaptrade_account_id>:<broken_at_iso>:w<week_index>"`
+  where `week_index = stale_days // 7` — one reminder per 7-day band per break
+  episode; a daily cron self-heals without double-sending.
 - `weekly_summary` / `weekly_preview`: `"<user_id>:<week_start>"`.
 - `reengagement`: `"<user_id>:<last_visit_date>"` (one nudge per dormancy
   episode).
@@ -143,16 +153,32 @@ Set `EMAIL_FROM` to an address on the verified domain (e.g.
 `HappyTrader <noreply@mail.happytrader.me>`). Until DNS verifies, deliverability
 will be poor and some providers will reject the mail outright.
 
-## Why broker expiry is reactive, not a countdown
+## Why the "X days" countdown is staleness-based, not a true expiry
 
-SnapTrade connections don't expose a uniform "expires in N days" we can store —
-a connection is detected as broken **at sync time** when the broker returns a
-401/403 (`mark_snaptrade_connection_broken` sets `connection_broken_at`). So we
-notify reactively ("your connection dropped, reconnect") rather than on a
-pre-expiry countdown.
+SnapTrade exposes **no** uniform "expires in N days" field — the brokerage
+authorization object carries only `created_date` / `updated_date` /
+`disabled` / `disabled_date` (verified against `snaptrade_client` 11.x), and
+`meta` is broker-specific + deprecated. So a literal forward countdown is only
+honest for a broker whose re-auth cadence we've **operator-verified**.
 
-**Stretch (not yet built):** investigate SnapTrade's `brokerage_authorization`
-status/expiry fields for a true proactive pre-expiry warning. This would let us
-email "your <broker> authorization renews in N days" before the sync fails.
-It likely only works for the subset of brokers that expose an expiry, so it
-would supplement — not replace — the reactive notice.
+Two layers, both showing a real day count:
+
+1. **Staleness (default, always on).** A connection is detected as broken **at
+   sync time** — either an auth-shaped error or the authoritative
+   `brokerage_authorization.disabled` flag (see
+   `broker-sync-safety` SKILL.md 2026-06-19) — which sets
+   `connection_broken_at`. The banner then shows "stopped syncing X days ago"
+   and the `connection_reminder` cron emails weekly. `X` = days since the
+   break, which is accurate and never a false alarm.
+
+2. **Heuristic forward countdown (opt-in per broker).**
+   `SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS` in `app/snaptrade.py` maps a
+   `broker_slug` → token lifetime (days). When populated, a not-yet-broken
+   connection within `SNAPTRADE_CONNECTION_WARN_WINDOW_DAYS` of
+   `created_at + lifetime` shows "expires in X days." **The map is empty by
+   default** — never guess a lifetime, because a wrong "expires in 3 days!"
+   that never comes true burns trust. Fill it in only with verified numbers.
+
+`_connection_attention` in `app/snaptrade.py` is the single classifier behind
+both the in-app banner and the reminder email; broken ("stale") always wins
+over a heuristic countdown.

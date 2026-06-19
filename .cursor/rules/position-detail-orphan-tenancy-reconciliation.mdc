@@ -76,5 +76,6 @@ Never “looks good on BE / one symbol.” Minimum bar:
 
 - **Cross‑tenant leakage** — different bug class; see **`bigquery-tenant-isolation.mdc`** (unscoped symbol queries).
 - **Source has no dividends** — run source counts first; see **`data-pipeline-fixes.mdc`**.
+- **The same brokerage account shared across DIFFERENT users** — this is an **intended product feature, not this bug.** A parent can link their own + a family member's accounts (sees all) while that family member is a separate user who sees only their own. Each user connects via their own SnapTrade registration, so the same physical account legitimately appears under a **distinct `tenant_id` per user**, synced independently (balances may drift). **Never merge/dedupe/reconcile across user_ids or purge one user's tenant.** THIS rule (A/B/C) is only about the **same user's** position split across `user_id = NULL` / stale-uid / canonical partitions. See AGENTS.md "The SAME brokerage account legitimately belongs to MULTIPLE users."
 
 This rule exists so we **never** revisit the conversation: “JEPI shows nothing / banner shows errors — why didn’t you check?”

@@ -196,6 +196,172 @@ def test_sync_one_unknown_error_records_string_truncated(monkeypatch, _patched_m
 
 
 # ---------------------------------------------------------------------------
+# _brokerage_authorization_disabled — authoritative "serving stale cache"
+# detection. A disabled SnapTrade connection keeps returning the last
+# cached positions/balances (so the fetch helpers succeed) while the row
+# silently freezes. The only reliable signal is the brokerage
+# authorization's own ``disabled`` flag (June 2026: user_id=9 Schwab
+# accounts frozen on a June 8 snapshot, connection_status still 'active').
+# ---------------------------------------------------------------------------
+
+
+class _FakeAuthsClient:
+    """Minimal SnapTrade SDK stub exposing just the connection-metadata
+    surface ``_brokerage_authorization_disabled`` touches."""
+
+    def __init__(self, authorizations, *, raise_on_list=False):
+        self._authorizations = authorizations
+        self._raise_on_list = raise_on_list
+
+        class _Connections:
+            def list_brokerage_authorizations(_self, *, user_id, user_secret):
+                if raise_on_list:
+                    raise RuntimeError("boom")
+                return {"authorizations": authorizations}
+
+        self.connections = _Connections()
+
+
+_SNAP = {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"}
+
+
+def test_authorization_disabled_true_when_flag_set():
+    client = _FakeAuthsClient([
+        {"id": "auth-1", "disabled": True},
+        {"id": "auth-2", "disabled": False},
+    ])
+    acc_row = {"snaptrade_account_id": "abc", "brokerage_authorization_id": "auth-1"}
+    assert _snap._brokerage_authorization_disabled(
+        client, _SNAP, acc_row, user_id=9,
+    ) is True
+
+
+def test_authorization_disabled_false_when_enabled():
+    client = _FakeAuthsClient([{"id": "auth-1", "disabled": False}])
+    acc_row = {"snaptrade_account_id": "abc", "brokerage_authorization_id": "auth-1"}
+    assert _snap._brokerage_authorization_disabled(
+        client, _SNAP, acc_row, user_id=9,
+    ) is False
+
+
+def test_authorization_disabled_none_on_api_error():
+    """A transient metadata error must return None ("change nothing") so a
+    blip never false-flags a healthy connection as broken."""
+    client = _FakeAuthsClient([], raise_on_list=True)
+    acc_row = {"snaptrade_account_id": "abc", "brokerage_authorization_id": "auth-1"}
+    assert _snap._brokerage_authorization_disabled(
+        client, _SNAP, acc_row, user_id=9,
+    ) is None
+
+
+def test_authorization_disabled_none_when_auth_id_unresolvable():
+    """No cached auth id AND no way to resolve one → None, never a flag."""
+    client = _FakeAuthsClient([{"id": "auth-1", "disabled": True}])
+    acc_row = {"snaptrade_account_id": "abc"}  # no brokerage_authorization_id
+    # account_information missing on the stub → get_user_account_details
+    # raises AttributeError, swallowed → None.
+    assert _snap._brokerage_authorization_disabled(
+        client, _SNAP, acc_row, user_id=9,
+    ) is None
+
+
+def test_authorization_disabled_none_when_no_matching_auth():
+    """Auth id present but SnapTrade returns a different set → None."""
+    client = _FakeAuthsClient([{"id": "other-auth", "disabled": True}])
+    acc_row = {"snaptrade_account_id": "abc", "brokerage_authorization_id": "auth-1"}
+    assert _snap._brokerage_authorization_disabled(
+        client, _SNAP, acc_row, user_id=9,
+    ) is None
+
+
+# ---------------------------------------------------------------------------
+# _connection_attention — proactive "X days" alert classification
+# ---------------------------------------------------------------------------
+
+from datetime import date, datetime, timedelta, timezone
+
+
+def test_connection_attention_healthy_returns_none():
+    row = {
+        "snaptrade_account_id": "abc", "account_name": "X", "broker_slug": "schwab",
+        "connection_broken_at": None,
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    assert _snap._connection_attention(row, today=date(2026, 6, 19)) is None
+
+
+def test_connection_attention_broken_reports_stale_days():
+    row = {
+        "snaptrade_account_id": "abc", "account_name": "Sara Investment",
+        "display_nickname": None, "broker_slug": "schwab",
+        "connection_broken_at": datetime(2026, 6, 8, 12, 0, tzinfo=timezone.utc),
+    }
+    att = _snap._connection_attention(row, today=date(2026, 6, 19))
+    assert att is not None
+    assert att["kind"] == "stale"
+    assert att["stale_days"] == 11
+    assert att["expires_in_days"] is None
+    assert att["account_name"] == "Sara Investment"
+
+
+def test_connection_attention_broken_today_is_zero_days_not_negative():
+    row = {
+        "snaptrade_account_id": "abc", "account_name": "X", "broker_slug": "schwab",
+        "connection_broken_at": datetime(2026, 6, 19, 23, 0, tzinfo=timezone.utc),
+    }
+    att = _snap._connection_attention(row, today=date(2026, 6, 19))
+    assert att["kind"] == "stale" and att["stale_days"] == 0
+
+
+def test_connection_attention_expiring_uses_heuristic_lifetime(monkeypatch):
+    """When a broker has an operator-verified token lifetime, count down to
+    expiry within the warn window."""
+    monkeypatch.setitem(
+        _snap.SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS, "demobroker", 90,
+    )
+    # created 2026-03-25 + 90d = 2026-06-23; today 2026-06-19 -> 4 days out.
+    row = {
+        "snaptrade_account_id": "abc", "account_name": "X", "broker_slug": "demobroker",
+        "connection_broken_at": None,
+        "created_at": datetime(2026, 3, 25, tzinfo=timezone.utc),
+    }
+    att = _snap._connection_attention(row, today=date(2026, 6, 19))
+    assert att is not None
+    assert att["kind"] == "expiring"
+    assert att["expires_in_days"] == 4
+    assert att["stale_days"] is None
+
+
+def test_connection_attention_expiring_silent_outside_warn_window(monkeypatch):
+    monkeypatch.setitem(
+        _snap.SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS, "demobroker", 90,
+    )
+    # created today + 90d expiry is far away -> no alert.
+    row = {
+        "snaptrade_account_id": "abc", "account_name": "X", "broker_slug": "demobroker",
+        "connection_broken_at": None,
+        "created_at": datetime(2026, 6, 19, tzinfo=timezone.utc),
+    }
+    assert _snap._connection_attention(row, today=date(2026, 6, 19)) is None
+
+
+def test_connection_attention_default_lifetime_map_is_empty():
+    """Guard the trust rule: no broker ships a guessed forward countdown by
+    default — the map must stay empty until a lifetime is operator-verified."""
+    assert _snap.SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS == {}
+
+
+def test_connection_reminder_week_index_is_weekly_after_week_zero():
+    """The cron dedupe key uses ``stale_days // 7``; week 0 is owned by the
+    one-time connection_dropped email, so reminders start at week 1 (day 7)
+    and advance one band per 7 days."""
+    assert 6 // 7 == 0    # day 6 -> still week 0 (no reminder)
+    assert 7 // 7 == 1    # day 7 -> first weekly reminder
+    assert 13 // 7 == 1   # day 13 -> same band, deduped
+    assert 14 // 7 == 2   # day 14 -> next reminder
+
+
+# ---------------------------------------------------------------------------
 # _looks_like_auth_error — string-shape heuristic
 # ---------------------------------------------------------------------------
 

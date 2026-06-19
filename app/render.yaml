@@ -153,3 +153,43 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
+
+  # Recurring "still disconnected — reconnect" reminder. Pure Postgres (no
+  # BigQuery). Runs DAILY; the email_sends dedupe (key embeds stale-week
+  # index) makes it effectively WEEKLY per broken-connection episode. Week 0
+  # is owned by the one-time connection_dropped email in snaptrade_sync_cli.
+  # Daily 17:00 UTC (~10am PDT). Transactional account-health mail — needs the
+  # provider creds; prod uses the smtp backend (Resend HTTP is 403'd on Render
+  # egress — see docs/EMAIL_STRATEGY.md).
+  - type: cron
+    name: happytrader-email-connection-reminder
+    env: python
+    schedule: "0 17 * * *"
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m app.email_digests_cli connection_reminder
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      - key: SECRET_KEY
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://happytrader.me"
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_SMTP_HOST
+        sync: false
+      - key: EMAIL_SMTP_PORT
+        sync: false
+      - key: EMAIL_SMTP_USER
+        sync: false
+      - key: EMAIL_SMTP_PASSWORD
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false

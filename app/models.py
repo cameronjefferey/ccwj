@@ -1864,6 +1864,33 @@ def list_all_snaptrade_accounts():
     )
 
 
+def list_broken_snaptrade_connections():
+    """Every SnapTrade account whose ``connection_broken_at`` is set, joined
+    to its owner's email/username/unsubscribe token. Drives the recurring
+    "still disconnected" reminder cron (``connection_reminder`` in
+    ``app/email_digests_cli.py``). Postgres-only — no BigQuery needed.
+
+    Excludes the demo user and rows with no deliverable email. Transactional
+    (account-health), so NOT gated by a lifecycle opt-out column."""
+    try:
+        return fetch_all(
+            "SELECT u.id AS user_id, u.username, u.email, "
+            "p.email_unsubscribe_token, "
+            "a.snaptrade_account_id, a.broker_slug, a.account_name, "
+            "a.display_nickname, a.connection_broken_at "
+            "FROM snaptrade_accounts a "
+            "JOIN users u ON u.id = a.user_id "
+            "LEFT JOIN user_profiles p ON p.user_id = u.id "
+            "WHERE a.connection_broken_at IS NOT NULL "
+            "AND u.email IS NOT NULL AND length(trim(u.email)) > 0 "
+            "AND lower(u.username) <> 'demo' "
+            "ORDER BY u.id, a.created_at",
+        )
+    except Exception as exc:
+        _log.warning("list_broken_snaptrade_connections failed: %s", exc)
+        return []
+
+
 def get_snaptrade_account_nicknames(user_id):
     """``{account_name: display_label}`` for SnapTrade accounts. Mirrors
     ``get_account_nicknames`` (Schwab) so the request-scoped label

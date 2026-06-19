@@ -1227,6 +1227,85 @@ class _SnapTradeAuthError(RuntimeError):
         super().__init__(f"{endpoint}: {exc}")
 
 
+def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
+    """Authoritative health check: has SnapTrade DISABLED this brokerage
+    authorization (broker requires reconnection)?
+
+    Returns:
+      ``True``  — SnapTrade explicitly reports the authorization disabled.
+      ``False`` — SnapTrade reports it enabled.
+      ``None``  — couldn't determine (no auth id, API error, unexpected
+                  shape). ``None`` means "change nothing", so a transient
+                  metadata blip never false-flags a healthy connection.
+
+    Why this exists: a disabled SnapTrade connection keeps serving the
+    LAST-CACHED positions/balances, so the authoritative fetch helpers in
+    ``_run_sync`` succeed with stale data and the row silently freezes
+    (real case June 2026: ``user_id=9`` Schwab accounts stuck on a June 8
+    snapshot while ``connection_status`` still read 'active' and no
+    reconnect banner ever fired). The brokerage authorization's own
+    ``disabled`` boolean is the ONLY reliable signal that separates "live"
+    from "serving stale cache". We deliberately do NOT infer this from the
+    recent-orders 402/403 — that endpoint's permissions are broker-specific
+    and a prior fix removed it from auth classification (see
+    broker-sync-safety SKILL.md, first-Fidelity misclassification).
+    """
+    snap_user_id = snap.get("snaptrade_user_id") if snap else None
+    snap_secret = snap.get("snaptrade_secret") if snap else None
+    snaptrade_account_id = acc_row.get("snaptrade_account_id")
+    if not (snap_user_id and snap_secret):
+        return None
+
+    auth_id = (acc_row.get("brokerage_authorization_id") or "").strip()
+    # Resolve + cache the auth id on first use (mirrors
+    # _force_refresh_brokerage) so later runs skip this round-trip.
+    if not auth_id and snaptrade_account_id:
+        try:
+            detail = client.account_information.get_user_account_details(
+                user_id=snap_user_id,
+                user_secret=snap_secret,
+                account_id=snaptrade_account_id,
+            )
+            body = _unwrap_body(detail)
+            if isinstance(body, dict):
+                auth_id = (body.get("brokerage_authorization") or "").strip()
+                if auth_id:
+                    try:
+                        set_snaptrade_brokerage_authorization_id(
+                            user_id, snaptrade_account_id, auth_id,
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            return None
+    if not auth_id:
+        return None
+
+    try:
+        auth_resp = client.connections.list_brokerage_authorizations(
+            user_id=snap_user_id,
+            user_secret=snap_secret,
+        )
+    except Exception:
+        return None
+    auth_body = _unwrap_body(auth_resp)
+    if isinstance(auth_body, dict):
+        auths = auth_body.get("authorizations", []) or []
+    elif isinstance(auth_body, list):
+        auths = auth_body
+    else:
+        return None
+    for auth in auths:
+        if not isinstance(auth, dict):
+            try:
+                auth = auth.to_dict() if hasattr(auth, "to_dict") else {}
+            except Exception:
+                continue
+        if (auth.get("id") or "").strip() == auth_id:
+            return bool(auth.get("disabled"))
+    return None
+
+
 def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     """Pull activities + positions + balances from SnapTrade,
     normalize, push to GitHub seeds.
@@ -1307,6 +1386,27 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
             "trade history yet — sync again in 30-60 min.",
             len(positions), account_name, snaptrade_account_id,
         )
+        # The line above is ALSO the exact symptom of a DISABLED
+        # connection: SnapTrade keeps returning the last-cached positions
+        # (so every fetch above succeeded) while activities/orders dry up.
+        # Row counts alone can't separate "brand-new/quiet account" from
+        # "disabled connection serving stale cache" — so consult the
+        # authoritative brokerage-authorization ``disabled`` flag and, if
+        # SnapTrade says it's disabled, escalate to the reconnect path so
+        # the user sees a banner instead of silently-frozen numbers. Gated
+        # to this no-fresh-trades branch so we don't add a metadata call to
+        # every healthy, actively-trading sync.
+        if _brokerage_authorization_disabled(
+            client, snap, acc_row, user_id=user_id
+        ) is True:
+            raise _SnapTradeAuthError(
+                "connections.list_brokerage_authorizations[disabled=true]",
+                RuntimeError(
+                    "SnapTrade reports this brokerage authorization is "
+                    "disabled; it is serving stale cached holdings until "
+                    "the user reconnects."
+                ),
+            )
     elif not activities and orders:
         app.logger.info(
             "SnapTrade sync: activities=0 but orders=%d for account=%s "
@@ -1640,16 +1740,114 @@ def _looks_like_auth_error(exc) -> bool:
 # Banner: rows that need reconnection (parallel to Schwab banner)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Proactive connection-health alert ("expires in X days" / "X days stale")
+# ---------------------------------------------------------------------------
+
+# How many days before a heuristic-known token lifetime to start warning.
+SNAPTRADE_CONNECTION_WARN_WINDOW_DAYS = 7
+
+# Per-broker connection token lifetimes (calendar days from link/reconnect),
+# for the FORWARD "expires in X days" countdown. SnapTrade exposes NO uniform
+# expiry field on the brokerage authorization (only created/updated/disabled
+# dates — verified against snaptrade_client 11.x), and ``meta`` is broker-
+# specific + deprecated, so a true countdown is only honest for brokers whose
+# re-auth cadence we have OPERATOR-VERIFIED. This map is intentionally empty
+# by default: every connection falls back to the staleness path below until a
+# real lifetime is filled in here. DO NOT guess — a wrong number ships a
+# "expires in 3 days!" alarm that never comes true and burns user trust.
+SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS: dict[str, int] = {}
+
+
+def _as_date(value):
+    """Coerce a date/datetime (or None) to a ``date``; None on failure.
+
+    Order matters: ``datetime`` is a subclass of ``date``, so the datetime
+    branch must come first or a timestamp would slip through unconverted and
+    break date arithmetic against a plain ``date``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date"):
+        try:
+            return value.date()
+        except Exception:
+            return None
+    return None
+
+
+def _connection_attention(acc_row, *, today=None):
+    """Classify ONE SnapTrade account row's connection health for the
+    proactive alert + reminder email.
+
+    Returns ``None`` when the connection is healthy, otherwise a dict:
+
+      ``kind``            — "stale" (already stopped syncing) or
+                            "expiring" (heuristic countdown, not yet broken).
+      ``stale_days``      — days since ``connection_broken_at`` ("stale"), else None.
+      ``expires_in_days`` — days until the heuristic lifetime expiry
+                            ("expiring", may be 0/negative if overdue), else None.
+      plus the label fields the banner/email need (``snaptrade_account_id``,
+      ``account_name``, ``display_nickname``, ``broker_slug``).
+
+    Precedence: a BROKEN connection ("stale") always wins over a heuristic
+    countdown — there's no point counting down to an expiry that already
+    happened.
+    """
+    today = today or date.today()
+    broker_slug = (acc_row.get("broker_slug") or "").strip()
+    base = {
+        "snaptrade_account_id": acc_row.get("snaptrade_account_id"),
+        "account_name": acc_row.get("account_name"),
+        "display_nickname": acc_row.get("display_nickname"),
+        "broker_slug": broker_slug,
+    }
+
+    broken_on = _as_date(acc_row.get("connection_broken_at"))
+    if broken_on is not None:
+        stale_days = max(0, (today - broken_on).days)
+        return {**base, "kind": "stale", "stale_days": stale_days, "expires_in_days": None}
+
+    lifetime = SNAPTRADE_BROKER_CONNECTION_LIFETIME_DAYS.get(broker_slug)
+    created_on = _as_date(acc_row.get("created_at"))
+    if lifetime is not None and created_on is not None:
+        expires_in_days = (created_on + timedelta(days=int(lifetime)) - today).days
+        if expires_in_days <= SNAPTRADE_CONNECTION_WARN_WINDOW_DAYS:
+            return {
+                **base, "kind": "expiring",
+                "stale_days": None, "expires_in_days": expires_in_days,
+            }
+    return None
+
+
+def snaptrade_accounts_needing_attention(user_id, *, today=None):
+    """All of ``user_id``'s SnapTrade accounts that warrant a reconnect
+    alert, each enriched by :func:`_connection_attention`. Healthy
+    connections are dropped. One Postgres read; safe to call per request."""
+    from app.models import get_snaptrade_accounts
+    out = []
+    for row in get_snaptrade_accounts(user_id) or []:
+        att = _connection_attention(row, today=today)
+        if att is not None:
+            out.append(att)
+    return out
+
+
 @app.context_processor
 def _inject_snaptrade_reauth_needed():
-    """Surface SnapTrade rows whose ``connection_broken_at`` is set.
-    Templates render the same banner shape as ``schwab_reauth_needed``.
+    """Surface SnapTrade rows that need reconnecting — both already-stale
+    (``connection_broken_at`` set) and heuristic "expiring soon" — each
+    carrying a day count so the banner can say "stopped syncing X days ago"
+    / "expires in X days". Templates render the same banner shape.
     """
     try:
         if not getattr(current_user, "is_authenticated", False):
             return {"snaptrade_reauth_needed": []}
-        from app.models import get_expired_snaptrade_accounts
-        rows = get_expired_snaptrade_accounts(current_user.id) or []
+        rows = snaptrade_accounts_needing_attention(current_user.id)
         return {"snaptrade_reauth_needed": rows}
     except Exception:
         return {"snaptrade_reauth_needed": []}
