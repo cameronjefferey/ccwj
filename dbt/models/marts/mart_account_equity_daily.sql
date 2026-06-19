@@ -3,31 +3,63 @@
 /*
     Daily account value, broken into equity vs options vs cash.
 
-    One row per (account, date) with:
-      - account_value  (from stg_account_balances account_total rows)
-      - cash_value     (from stg_account_balances cash rows)
-      - option_value   (from stg_current option rows, summed)
+    One row per (tenant_id, account, user_id, date) with:
+      - account_value  (account_total rows of the daily balances snapshot)
+      - cash_value     (cash rows of the daily balances snapshot)
+      - option_value   (today's live option rows from stg_current, summed)
       - equity_value   (account_value - cash_value - option_value)
 
-    v2: under the SnapTrade-only architecture we no longer build
-    daily snapshot wrappers — see docs/V2_TENANT_KEY_DESIGN.md
-    (history loss accepted on cutover). The series here therefore
-    starts populating from the first SnapTrade sync onward; reads
-    come directly from the live ``stg_account_balances`` and
-    ``stg_current`` snapshots.
+    HISTORY SOURCE (June 2026 fix): the per-day ``account_value`` /
+    ``cash_value`` series reads from the accumulating
+    ``snapshot_account_balances_daily`` SCD2 snapshot — one value-version
+    per (tenant, day the balance changed). Before this, the mart read the
+    LIVE ``stg_account_balances`` stamped with ``current_date()``, which
+    only ever produced ONE row per account (today). That silently starved
+    every day-over-day surface: the Daily Review "vs yesterday / 1w / 1m"
+    comparisons and the Daily Account Δ calendar
+    (mart_account_snapshots_enriched) and the /wealth page
+    (mart_wealth_daily) all had no prior day to diff against, so they
+    rendered "—" / blank. The snapshot wrapper had been accumulating
+    history the whole time but was never ``ref()``'d back in after the v2
+    cutover ("history loss accepted") — this rewires it.
+
+    EQUITY / OPTION SPLIT: ``option_value`` comes from the LIVE
+    ``stg_current`` snapshot, which carries ``tenant_id`` so the per-tenant
+    split is correct for the most recent day. The options snapshot wrapper
+    (``snapshot_options_market_values_daily``) predates ``tenant_id`` and
+    keys on (account, user_id) — which collides for users with several
+    "Schwab Account" tenants — so it is intentionally NOT used here (a
+    join on (account, user_id) would fan the combined option MV onto every
+    colliding tenant row, per AGENTS.md re-grain rule). On historical days
+    there is therefore no option row to match and options fold into
+    ``equity_value`` (``option_value = 0``). ``account_value`` /
+    ``cash_value`` — the numbers the comparisons / calendar / wealth deltas
+    depend on — are fully historical and tenant-correct regardless.
 */
 
 with bal_rows as (
     select
         account,
-        user_id,
+        -- snapshot stores legacy NULL user_id as the sentinel -1 to keep
+        -- its MERGE well-defined; map it back to NULL so downstream
+        -- ``is not distinct from`` joins behave as they did pre-fix.
+        nullif(user_id, -1) as user_id,
         tenant_id,
         row_type,
         market_value,
-        current_date() as snapshot_date
-    from {{ ref('stg_account_balances') }}
+        snapshot_date
+    from {{ ref('snapshot_account_balances_daily') }}
     where account != 'Demo Account'
       and row_type in ('cash', 'account_total')
+    -- SCD2 ``check`` strategy can record two versions on the SAME
+    -- ``snapshot_date`` if a balance changed twice in one day (two
+    -- syncs / uploads). Keep only the final version per
+    -- (tenant, account, user, row_type, day) so the by-day SUM below
+    -- doesn't double-count that day's balance.
+    qualify row_number() over (
+        partition by tenant_grain, coalesce(user_id, -1), row_type, snapshot_date
+        order by dbt_valid_from desc
+    ) = 1
 ),
 
 option_rows as (
