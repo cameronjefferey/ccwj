@@ -120,7 +120,8 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
    - `SENTRY_DSN` (optional — no default in code; add only if you want error reporting)
    - `GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64` (BigQuery service account, base64-encoded)
    - `SIGNUP_ENABLED=false` (optional — invite-only; `/signup` returns 404)
-   - `PERMANENT_SESSION_DAYS=7` (optional — shorter session cookie lifetime; default 14)
+   - `PERMANENT_SESSION_DAYS` (optional — logged-in session cookie lifetime in days; default 7)
+   - `SESSION_IDLE_TIMEOUT_MINUTES` (optional — log out after this many idle minutes; default 10080 = 1 week, `0` disables)
    Render sets `RENDER=true`; the app uses that to enable secure session cookies over HTTPS.
 3. Build command: `pip install -r requirements.txt`
 4. Start command: `gunicorn wsgi:app -b 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30`  

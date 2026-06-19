@@ -257,6 +257,10 @@ def _check_session_idle():
 
 def _touch_session_last_activity():
     if current_user.is_authenticated and not request.path.startswith("/static/"):
+        # Mark the session permanent so PERMANENT_SESSION_LIFETIME applies and
+        # the cookie survives browser restarts (otherwise it's a browser-session
+        # cookie that dies on close, regardless of the configured lifetime).
+        session.permanent = True
         session[_SESSION_LAST_KEY] = time.time()
         session.modified = True
 

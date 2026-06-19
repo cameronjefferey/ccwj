@@ -47,16 +47,18 @@ class Config:
     REMEMBER_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_SECURE = _env_bool("REMEMBER_COOKIE_SECURE", "true") if _is_prod else False
 
-    # Set PERMANENT_SESSION_DAYS=7 in env to expire logged-in sessions sooner.
-    _session_days = int(os.environ.get("PERMANENT_SESSION_DAYS", "14"))
+    # Logged-in session cookie lasts a week by default. Sessions are marked
+    # permanent on login (see _touch_session_last_activity) so this lifetime
+    # actually takes effect instead of dying when the browser closes.
+    # Set PERMANENT_SESSION_DAYS in env to lengthen/shorten.
+    _session_days = int(os.environ.get("PERMANENT_SESSION_DAYS", "7"))
     PERMANENT_SESSION_LIFETIME = timedelta(days=max(1, _session_days))
 
     # Log out after this many minutes without any request (0 = disabled, e.g. tests).
-    # 8 hours by default so a tab left open during a full trading day (or a tab
-    # parked overnight on a desktop) doesn't force a surprise re-login mid-flow.
-    # Shorten via SESSION_IDLE_TIMEOUT_MINUTES=60 in env if you want shorter idle
-    # for a shared/kiosk machine; 0 disables idle expiry entirely.
-    _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "480"))
+    # A week by default so checking the app once a day (or skipping a few days)
+    # never forces a surprise re-login. Shorten via SESSION_IDLE_TIMEOUT_MINUTES
+    # (e.g. 60) in env for a shared/kiosk machine; 0 disables idle expiry entirely.
+    _idle_min = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "10080"))
     SESSION_IDLE_TIMEOUT_MINUTES = max(0, _idle_min)
 
     # /insights (Coach) UI: on by default; set INSIGHTS_ENABLED=0 in .env to hide nav + /insights*.
