@@ -21,7 +21,9 @@ from app.weekly_review import (
     _build_breakdown_totals,
     _build_position_breakdown,
     _build_today_movers,
+    _build_trades_this_week,
     _build_upcoming_dividends,
+    _format_trade_contract,
     _today_headline,
 )
 
@@ -395,3 +397,95 @@ class TestTodayHeadline:
         snap = {"account_value": 100000.0}
         s = _today_headline(pulse, None, snap)
         assert "-$2,100" in s
+
+
+class TestFormatTradeContract:
+    def test_parses_osi_call(self):
+        # Real shape from stg_history: "ASTS  260605C00102000".
+        assert _format_trade_contract("ASTS  260605C00102000", "ASTS") == "ASTS Jun 5 $102 Call"
+
+    def test_parses_osi_put(self):
+        assert _format_trade_contract("BE    260605P00285000", "BE") == "BE Jun 5 $285 Put"
+
+    def test_fractional_strike(self):
+        assert _format_trade_contract("GOOG  260529C00382500", "GOOG") == "GOOG May 29 $382.5 Call"
+
+    def test_equity_session_falls_back_to_symbol(self):
+        assert _format_trade_contract("COHR_session_1", "COHR") == "COHR"
+
+    def test_unparseable_returns_compacted_raw(self):
+        assert _format_trade_contract("WEIRD VALUE", "X") == "WEIRD VALUE"
+
+    def test_empty_returns_symbol(self):
+        assert _format_trade_contract("", "AAPL") == "AAPL"
+        assert _format_trade_contract(None, "AAPL") == "AAPL"
+
+
+class TestBuildTradesThisWeek:
+    WEEK_START = date(2026, 6, 8)
+    WEEK_END = date(2026, 6, 14)
+
+    def _row(self, **kw):
+        base = {
+            "tenant_id": "snaptrade:abc", "account": "Schwab Account",
+            "symbol": "ASTS", "trade_symbol": "ASTS  260605C00102000",
+            "strategy": "Covered Call", "status": "Closed",
+            "open_date": date(2026, 6, 5), "close_date": date(2026, 6, 8),
+            "total_pnl": 226.0, "trade_cost": 226.0, "num_trades": 2,
+        }
+        base.update(kw)
+        return base
+
+    def test_empty(self):
+        out = _build_trades_this_week(None, self.WEEK_START, self.WEEK_END)
+        assert out["has_any"] is False
+        assert out["trades"] == []
+        assert out["count"] == 0
+
+    def test_closed_expiry_in_week(self):
+        df = pd.DataFrame([self._row()])
+        out = _build_trades_this_week(
+            df, self.WEEK_START, self.WEEK_END, label_map={"snaptrade:abc": "Sara Investment"}
+        )
+        assert out["count"] == 1
+        assert out["closed_count"] == 1
+        assert out["opened_count"] == 0  # opened last week (Jun 5), not this week
+        assert out["realized_pnl"] == 226.0
+        r = out["trades"][0]
+        assert r["is_closed"] is True
+        assert r["account_display"] == "Sara Investment"
+        assert r["contract"] == "ASTS Jun 5 $102 Call"
+
+    def test_opened_this_week_hides_synthetic_zero_trade_rows(self):
+        df = pd.DataFrame([
+            self._row(symbol="NEW", trade_symbol="NEW_session_1", status="Open",
+                      open_date=date(2026, 6, 9), close_date=None, num_trades=1),
+            self._row(symbol="SYN", trade_symbol="SYN_session_1", status="Open",
+                      open_date=date(2026, 6, 9), close_date=None, num_trades=0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        opened_syms = {r["symbol"] for r in out["trades"] if r["opened_this_week"]}
+        assert "NEW" in opened_syms
+        assert "SYN" not in opened_syms  # num_trades==0 synthetic snapshot open
+
+    def test_open_and_close_same_week_is_single_row(self):
+        # A same-week round trip is ONE trade group → ONE row (tagged closed
+        # so the table shows its realized P&L). It still counts toward both
+        # the opened and closed summary counters.
+        df = pd.DataFrame([
+            self._row(open_date=date(2026, 6, 9), close_date=date(2026, 6, 11)),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["count"] == 1
+        assert out["closed_count"] == 1
+        assert out["opened_count"] == 1
+        r = out["trades"][0]
+        assert r["is_closed"] is True
+        assert r["opened_this_week"] is True
+
+    def test_closed_outside_week_excluded(self):
+        df = pd.DataFrame([
+            self._row(close_date=date(2026, 6, 1), open_date=date(2026, 5, 28)),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["has_any"] is False

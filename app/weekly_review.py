@@ -93,6 +93,7 @@ from app.routes import (
     _tenant_sql_and,  # noqa: E402,F401
     _tenant_sql_filter as _tenant_sql_where,  # noqa: E402,F401
     _filter_df_by_tenant_ids,  # noqa: E402,F401
+    _tenant_label_map_for_user,  # noqa: E402,F401
 )
 
 
@@ -247,6 +248,7 @@ ORDER BY date DESC
 WEEKLY_TRADES_MART_QUERY = """
 SELECT
   account,
+  tenant_id,
   symbol,
   strategy,
   trade_symbol,
@@ -2527,6 +2529,146 @@ def _build_upcoming_dividends(div_df):
     return out
 
 
+_OSI_RE = __import__("re").compile(r"^(?P<root>[A-Z]+)\s+(?P<y>\d{2})(?P<m>\d{2})(?P<d>\d{2})(?P<cp>[CP])(?P<strike>\d{8})$")
+
+
+def _format_trade_contract(trade_symbol, symbol):
+    """Human label for a trade group's ``trade_symbol``.
+
+    Option contracts arrive as OSI-ish strings ("ASTS  260605C00102000")
+    → "ASTS Jun 5 $102 Call". Equity sessions arrive as "<SYM>_session_N"
+    → just the underlying symbol. Anything we can't parse falls back to
+    the raw trade_symbol so we never render an empty cell.
+    """
+    ts = (str(trade_symbol or "")).strip()
+    if not ts:
+        return str(symbol or "")
+    compact = " ".join(ts.split())
+    m = _OSI_RE.match(compact)
+    if m:
+        import datetime as _dt
+        try:
+            exp = _dt.date(2000 + int(m.group("y")), int(m.group("m")), int(m.group("d")))
+            exp_s = exp.strftime("%b %-d")
+        except ValueError:
+            exp_s = ""
+        strike = int(m.group("strike")) / 1000.0
+        strike_s = f"${strike:,.2f}".rstrip("0").rstrip(".")
+        kind = "Call" if m.group("cp") == "C" else "Put"
+        parts = [m.group("root")]
+        if exp_s:
+            parts.append(exp_s)
+        parts.append(strike_s)
+        parts.append(kind)
+        return " ".join(parts)
+    if ts.endswith(tuple(f"_session_{i}" for i in range(0, 10))) or "_session_" in ts:
+        return str(symbol or ts.split("_session_")[0])
+    return compact
+
+
+def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
+    """Build ONE unified list of trade groups touched this week for the
+    Daily Review "Trades this week" section.
+
+    Source: ``mart_weekly_trades`` already filtered to ``week_start`` and
+    tenant-scoped. Each df row is one trade group (one row per group in
+    ``int_strategy_classification``); the mart keys ``week_start`` on
+    ``coalesce(close_date, open_date)``. A group is shown when:
+
+      - it CLOSED this week  (status Closed AND close_date in the ISO week), OR
+      - it OPENED this week   (open_date in the ISO week AND num_trades > 0;
+        num_trades == 0 is a snapshot-only synthetic open the mart says to hide)
+
+    A group that opened AND closed in the same week is a SINGLE row (it's
+    one trade group), tagged ``is_closed`` so the table shows its realized
+    P&L. This replaces the old Opened/Closed two-table split, which
+    rendered the same same-week round trip in both tables. Account display
+    uses the disambiguated tenant label map so several "Schwab Account"s
+    read as their nicknames.
+
+    Returns a dict with a unified ``trades`` list plus summary counters
+    (``closed_count`` / ``opened_count`` / ``realized_pnl``) for the header.
+    """
+    empty = {"trades": [], "count": 0, "opened_count": 0, "closed_count": 0,
+             "realized_pnl": 0.0, "has_any": False}
+    if trades_df is None or trades_df.empty:
+        return empty
+    label_map = label_map or {}
+
+    def _as_date(v):
+        if v is None or v == "" or (isinstance(v, float) and pd.isna(v)):
+            return None
+        if hasattr(v, "isoformat") and not isinstance(v, str):
+            try:
+                return v.date() if hasattr(v, "date") else v
+            except Exception:
+                return None
+        try:
+            return pd.to_datetime(v).date()
+        except Exception:
+            return None
+
+    trades = []
+    realized_pnl = 0.0
+    opened_count = 0
+    closed_count = 0
+    for _, r in trades_df.iterrows():
+        tid = str(r.get("tenant_id") or "")
+        status = str(r.get("status") or "")
+        od = _as_date(r.get("open_date"))
+        cd = _as_date(r.get("close_date"))
+        num_trades = int(float(r.get("num_trades") or 0))
+
+        closed_this_week = (
+            status == "Closed" and cd is not None and week_start <= cd <= week_end
+        )
+        opened_this_week = (
+            od is not None and week_start <= od <= week_end and num_trades > 0
+        )
+        if not (closed_this_week or opened_this_week):
+            continue
+
+        row = {
+            "symbol": str(r.get("symbol") or ""),
+            "contract": _format_trade_contract(r.get("trade_symbol"), r.get("symbol")),
+            "trade_symbol": str(r.get("trade_symbol") or ""),
+            "strategy": str(r.get("strategy") or "") or "Uncategorized",
+            "account_display": label_map.get(tid) or str(r.get("account") or ""),
+            "status": status,
+            "open_date": od,
+            "close_date": cd,
+            "total_pnl": float(r.get("total_pnl") or 0),
+            "trade_cost": float(r.get("trade_cost") or 0),
+            "num_trades": num_trades,
+            "is_closed": bool(closed_this_week),
+            "opened_this_week": bool(opened_this_week),
+        }
+        trades.append(row)
+        if closed_this_week:
+            closed_count += 1
+            realized_pnl += row["total_pnl"]
+        if opened_this_week:
+            opened_count += 1
+
+    # Closed (realized result) first, then still-open opens; each group most
+    # recent first by its defining date (close for closed, open for open).
+    trades.sort(
+        key=lambda x: (
+            x["is_closed"],
+            (x["close_date"] if x["is_closed"] else x["open_date"]) or week_start,
+        ),
+        reverse=True,
+    )
+    return {
+        "trades": trades,
+        "count": len(trades),
+        "opened_count": opened_count,
+        "closed_count": closed_count,
+        "realized_pnl": round(realized_pnl, 2),
+        "has_any": bool(trades),
+    }
+
+
 def _today_headline(today_pulse, today_movers, equity_snapshot):
     """One-liner that anchors the page: '"Today: -$2,134 (-0.11%)"`.
 
@@ -2626,12 +2768,8 @@ def weekly_review():
         "calendar_default_weeks": DAILY_CALENDAR_DEFAULT_WEEKS,
         "calendar_extra_weeks": max(0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS),
         "daily_calendar_no_query_rows": True,
-        "position_breakdown": [],
-        "position_breakdown_totals": None,
-        "strategy_breakdown": [],
-        "strategy_breakdown_totals": None,
-        "sector_breakdown": [],
-        "subsector_breakdown": [],
+        "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
+                             "closed_count": 0, "realized_pnl": 0.0, "has_any": False},
         "community_profile_visibility": "private",
         "community_publish_ready": False,
     }
@@ -2649,14 +2787,9 @@ def weekly_review():
             bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
         ])
 
-        # Strategy-by-symbol lookup so the per-symbol breakdown can
-        # carry a strategy label (largest abs-PnL slot wins per symbol).
-        strategy_by_symbol_query = """
-        SELECT account, user_id, symbol, strategy, SUM(total_pnl) AS total_pnl
-        FROM `ccwj-dbt.analytics.int_strategy_classification`
-        WHERE 1=1 {tenant_filter}
-        GROUP BY 1, 2, 3, 4
-        """.format(tenant_filter=tenant_filter)
+        week_cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
+        ])
 
         try:
             batch = _bq_parallel(client, {
@@ -2665,10 +2798,9 @@ def weekly_review():
                 "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
                 "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
                 "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
-                "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
-                "strategy_by_sym": strategy_by_symbol_query,
                 "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
                 "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
+                "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
             })
         except Exception as e:
             if app.debug:
@@ -2679,7 +2811,7 @@ def weekly_review():
         # filter before we touch it. The SQL also carries the predicate,
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
-                 "attribution", "strategy_by_sym", "today_moves"):
+                 "today_moves", "weekly_trades"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -2944,34 +3076,16 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Upcoming ex-div processing failed: %s", e)
 
-        # ── Per-symbol P&L attribution (and strategy / sector rollups) ─
+        # ── Trades opened / closed this week ──────────────────────────
         try:
-            attr_df = batch.get("attribution", pd.DataFrame())
-            sb_df = batch.get("strategy_by_sym", pd.DataFrame())
-            strategy_by_symbol = {}
-            if sb_df is not None and not sb_df.empty:
-                grouped = sb_df.groupby("symbol")
-                for sym, sub in grouped:
-                    top = sub.iloc[sub["total_pnl"].abs().argmax()]
-                    strategy_by_symbol[sym] = str(top.get("strategy") or "")
-            position_rows = _build_position_breakdown(
-                attr_df, strategy_by_symbol, week_start=this_week,
-            )
-            context["position_breakdown"] = position_rows
-            context["position_breakdown_totals"] = _build_breakdown_totals(position_rows)
-            context["strategy_breakdown"] = _aggregate_breakdown_by(
-                position_rows, "strategy", label_name="strategy"
-            )
-            context["strategy_breakdown_totals"] = _build_breakdown_totals(context["strategy_breakdown"])
-            context["sector_breakdown"] = _aggregate_breakdown_by(
-                position_rows, "sector", label_name="sector"
-            )
-            context["subsector_breakdown"] = _aggregate_breakdown_by(
-                position_rows, "subsector", label_name="subsector"
+            wt_df = batch.get("weekly_trades", pd.DataFrame())
+            label_map = _tenant_label_map_for_user(current_user.id)
+            context["trades_this_week"] = _build_trades_this_week(
+                wt_df, this_week, week_end, label_map=label_map,
             )
         except Exception as e:
             if app.debug:
-                app.logger.warning("Attribution processing failed: %s", e)
+                app.logger.warning("Trades-this-week processing failed: %s", e)
 
         # ── Since you last looked (daily-pull diff) ───────────────────
         try:

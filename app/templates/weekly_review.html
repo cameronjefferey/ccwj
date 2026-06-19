@@ -4,7 +4,8 @@
    Daily Review — end-of-day pulse for an active options trader.
 
    The page used to fork into Friday / Monday / Mid-Week modes; that's
-   collapsed to a single daily flow. Sections, top to bottom:
+   collapsed to a single daily flow focused on what changed today / this
+   week. Sections, top to bottom:
 
      1. Today hero        — account total today + day delta + market
      2. Since you last looked — diff vs prior visit (kept from master)
@@ -12,14 +13,13 @@
      4. Today's movers     — biggest $ impact from stock moves on holdings
      5. Watch list         — earnings, expiring options, projected ex-div
      6. Daily account Δ    — rolling 12-week heatmap
-     7. Current positions  — at-a-glance cards
-     8. Positions breakdown — per-symbol G/L Stock | G/L Option | Div | Net
-     9. Strategy breakdown — same shape rolled up by strategy
-    10. Sector breakdown   — same shape rolled up by sector
-    11. Subsector breakdown — same shape rolled up by subsector
+     7. Trades this week   — one row per group opened or closed this week
 
+   Lifetime per-symbol / strategy / sector / industry breakdowns and the
+   "your positions right now" card grid were removed (June 2026): they're
+   not a daily/weekly signal and duplicated /positions and /strategies.
    The "Numbers" disclosure / mode-pills / behavioral-baseline / coaching-
-   take / Mon-Fri diary sections were removed — they were mode-specific
+   take / Mon-Fri diary sections were removed earlier — mode-specific
    pieces of a temporal hub that no longer exists. The dbt models that fed
    them (mart_weekly_summary, mart_weekly_behavior_enriched, etc.) are
    still in the warehouse for other surfaces (Mirror Score, Insights).
@@ -377,6 +377,19 @@
     }
     .pill-status.open { background: rgba(25,135,84,.08); color: #15803d; }
     .pill-status.closed { background: rgba(100,116,139,.12); color: #475569; }
+
+    /* Trades this week — discrete open/close events */
+    .trades-block { margin-top: 1rem; }
+    .trades-block + .trades-block { margin-top: 1.5rem; }
+    .trades-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: .75rem; margin-bottom: .4rem;
+    }
+    .trades-title {
+        font-size: .8rem; font-weight: 700; color: #334155;
+        text-transform: uppercase; letter-spacing: .4px;
+    }
+    .trades-pnl { font-size: .85rem; font-weight: 700; }
 
     /* Profitability scorecard (Excel-style footer card) */
     .scorecard {
@@ -932,35 +945,9 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   CURRENT POSITIONS — at-a-glance cards
-   ════════════════════════════════════ #}
-{% if today_strip %}
-<div class="review-section">
-    <div class="section-label">Your Positions Right Now</div>
-    <div class="today-strip">
-        {% for pos in today_strip %}
-        <a href="{{ url_for('position_detail', symbol=pos.symbol) }}" class="strip-card">
-            <div class="strip-sym">{{ pos.symbol }}</div>
-            {% if pos.price %}<div class="strip-price">${{ "{:,.2f}".format(pos.price) }}</div>{% endif %}
-            <div class="strip-pnl {% if pos.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if pos.unrealized_pnl >= 0 else "" }}${{ "{:,.0f}".format(pos.unrealized_pnl) }}
-            </div>
-            {% if pos.unrealized_pnl_pct is not none %}
-            <div class="strip-pct {% if pos.unrealized_pnl_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if pos.unrealized_pnl_pct >= 0 else "" }}{{ pos.unrealized_pnl_pct }}%
-            </div>
-            {% endif %}
-            {% if pos.num_legs > 1 %}<div class="strip-legs">{{ pos.num_legs }} legs</div>{% endif %}
-        </a>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   POSITIONS BREAKDOWN — per-symbol G/L attribution
-   (mirrors the trader's spreadsheet:
-    Stock | G/L Stock | G/L Option | Dividend | Net | Annualized)
+   TRADES THIS WEEK — every trade group opened or closed in the ISO week,
+   one row per group. Lifetime per-symbol / strategy / sector breakdowns
+   live on /positions and /strategies — they're not a daily/weekly signal.
    ════════════════════════════════════ #}
 {% macro net_cell(val) %}
 <td class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
@@ -968,243 +955,59 @@
     {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
 </td>
 {% endmacro %}
-{% macro pct_cell(val) %}
-<td class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
-    {% if val is none %}<span class="text-muted">—</span>
-    {% else %}{{ "+" if val > 0 else "" }}{{ "%.1f"|format(val) }}%{% endif %}
-</td>
-{% endmacro %}
-
-{% if position_breakdown %}
+{% if trades_this_week and trades_this_week.has_any %}
+{% set tw = trades_this_week %}
 <div class="review-section">
-    <div class="section-label">Position Breakdown — Open + Closed This Week</div>
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>Trades This Week</span>
+        {% if tw.closed_count %}
+        <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}"
+              style="text-transform:none; letter-spacing:0;">
+            {% if tw.realized_pnl == 0 %}$0{% else %}{{ "+" if tw.realized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.realized_pnl|abs) }}{% endif %} realized
+        </span>
+        {% endif %}
+    </div>
     <p class="section-sub">
-        Scoped to currently-open positions plus anything closed since
-        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}.
-        Numbers themselves are lifetime per symbol: equity P&amp;L vs option P&amp;L vs dividends,
-        net total, % return on capital deployed, and a holding-period annualized estimate.
-        Annualized assumes a 30-day minimum window and a $200 capital floor so freshly-opened or
-        tiny positions don't extrapolate to absurd numbers.
+        Everything you opened or closed since
+        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
+        &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} opened.
+        Closed rows show realized P&amp;L (an option that expired worthless shows its full
+        kept premium); still-open rows show capital deployed.
     </p>
     <div class="breakdown-wrap">
         <table class="breakdown-table">
             <thead>
                 <tr>
-                    <th class="left">Symbol</th>
-                    <th>G/L Stock</th>
-                    <th>G/L Option</th>
-                    <th>Dividend</th>
-                    <th>Net</th>
-                    <th>Capital</th>
-                    <th>Days</th>
-                    <th>%&nbsp;Return</th>
-                    <th>Annualized</th>
+                    <th class="left">Trade</th>
+                    <th class="left">Strategy</th>
+                    <th class="left">Account</th>
+                    <th>Opened</th>
                     <th class="left">Status</th>
+                    <th>Result</th>
                 </tr>
             </thead>
             <tbody>
-                {% for r in position_breakdown %}
+                {% for r in tw.trades %}
                 <tr>
                     <td class="left">
                         <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
-                        {% if r.company_name %}<div class="row-company">{{ r.company_name }}</div>{% endif %}
-                        {% if r.strategy %}<div class="row-meta">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
+                        {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
-                    {{ net_cell(r.equity_pnl) }}
-                    {{ net_cell(r.option_pnl) }}
-                    {{ net_cell(r.dividend_income) }}
-                    {{ net_cell(r.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
-                    <td>{{ r.days_held }}</td>
-                    {{ pct_cell(r.pct_return) }}
-                    {{ pct_cell(r.annualized_pct) }}
-                    <td class="left"><span class="pill-status {{ r.status|lower }}">{{ r.status }}</span></td>
-                </tr>
-                {% endfor %}
-                {% if position_breakdown_totals %}
-                {% set t = position_breakdown_totals %}
-                <tr class="totals-row">
-                    <td class="left">Total &middot; {{ t.num_symbols }} symbol{{ 's' if t.num_symbols != 1 }}</td>
-                    {{ net_cell(t.equity_pnl) }}
-                    {{ net_cell(t.option_pnl) }}
-                    {{ net_cell(t.dividend_income) }}
-                    {{ net_cell(t.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
-                    <td></td>
-                    {{ pct_cell(t.pct_return) }}
-                    <td></td>
-                    <td></td>
-                </tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if position_breakdown_totals %}
-    {% set t = position_breakdown_totals %}
-    <div class="scorecard">
-        <div class="sc-cell">
-            <div class="sc-label">Stock — Profitable</div>
-            <div class="sc-line">{{ t.equity_profitable }} of {{ t.equity_with_exposure }} positions</div>
-            {% if t.equity_win_pct is not none %}<div class="sc-pct text-positive">{{ "%.1f"|format(t.equity_win_pct) }}%</div>{% endif %}
-        </div>
-        <div class="sc-cell">
-            <div class="sc-label">Options — Profitable</div>
-            <div class="sc-line">{{ t.option_profitable }} of {{ t.option_with_exposure }} positions</div>
-            {% if t.option_win_pct is not none %}<div class="sc-pct {% if t.option_win_pct >= 50 %}text-positive{% else %}text-negative{% endif %}">{{ "%.1f"|format(t.option_win_pct) }}%</div>{% endif %}
-        </div>
-        <div class="sc-cell">
-            <div class="sc-label">Net — Profitable</div>
-            <div class="sc-line">{{ t.net_profitable }} of {{ t.num_symbols }} positions</div>
-            {% if t.net_win_pct is not none %}<div class="sc-pct {% if t.net_win_pct >= 50 %}text-positive{% else %}text-negative{% endif %}">{{ "%.1f"|format(t.net_win_pct) }}%</div>{% endif %}
-        </div>
-    </div>
-    {% endif %}
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   STRATEGY BREAKDOWN — same shape rolled up by strategy
-   ════════════════════════════════════ #}
-{% if strategy_breakdown %}
-<div class="review-section">
-    <div class="section-label">Strategy Breakdown — Same lens, rolled up by strategy</div>
-    <div class="breakdown-wrap">
-        <table class="breakdown-table">
-            <thead>
-                <tr>
-                    <th class="left">Strategy</th>
-                    <th>Symbols</th>
-                    <th>G/L Stock</th>
-                    <th>G/L Option</th>
-                    <th>Dividend</th>
-                    <th>Net</th>
-                    <th>Capital</th>
-                    <th>Max Days</th>
-                    <th>%&nbsp;Return</th>
-                    <th>Annualized</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in strategy_breakdown %}
-                <tr>
+                    <td class="left">{{ r.strategy }}</td>
+                    <td class="left">{{ r.account_display }}</td>
+                    <td>{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
                     <td class="left">
-                        <a href="{{ url_for('strategies') }}#{{ r.strategy }}" class="row-symbol">{{ r.strategy }}</a>
-                        <div class="row-meta">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
+                        {% if r.is_closed %}
+                        <span class="pill-status closed">Closed {{ r.close_date.strftime('%b %-d') if r.close_date else '' }}</span>
+                        {% else %}
+                        <span class="pill-status open">Open</span>
+                        {% endif %}
                     </td>
-                    <td>{{ r.num_symbols }}</td>
-                    {{ net_cell(r.equity_pnl) }}
-                    {{ net_cell(r.option_pnl) }}
-                    {{ net_cell(r.dividend_income) }}
-                    {{ net_cell(r.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
-                    <td>{{ r.max_days_held }}</td>
-                    {{ pct_cell(r.pct_return) }}
-                    {{ pct_cell(r.annualized_pct) }}
-                </tr>
-                {% endfor %}
-                {% if strategy_breakdown_totals %}
-                {% set t = strategy_breakdown_totals %}
-                <tr class="totals-row">
-                    <td class="left">Total &middot; {{ t.num_symbols }} strategy bucket{{ 's' if t.num_symbols != 1 }}</td>
-                    <td></td>
-                    {{ net_cell(t.equity_pnl) }}
-                    {{ net_cell(t.option_pnl) }}
-                    {{ net_cell(t.dividend_income) }}
-                    {{ net_cell(t.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
-                    <td></td>
-                    {{ pct_cell(t.pct_return) }}
-                    <td></td>
-                </tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   SECTOR BREAKDOWN — by yfinance sector
-   ════════════════════════════════════ #}
-{% if sector_breakdown %}
-<div class="review-section">
-    <div class="section-label">Sector Breakdown — Where the work is paying off</div>
-    <p class="section-sub">
-        Sectors come from the yfinance symbol metadata (Technology / Financial Services / Energy / etc).
-        "Unknown" means yfinance has no sector for the symbol (often crypto, ETFs without classification,
-        or freshly listed names).
-    </p>
-    <div class="breakdown-wrap">
-        <table class="breakdown-table">
-            <thead>
-                <tr>
-                    <th class="left">Sector</th>
-                    <th>Symbols</th>
-                    <th>G/L Stock</th>
-                    <th>G/L Option</th>
-                    <th>Dividend</th>
-                    <th>Net</th>
-                    <th>Current Value</th>
-                    <th>%&nbsp;Return</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in sector_breakdown %}
-                <tr>
-                    <td class="left">
-                        <span class="row-symbol">{{ r.sector }}</span>
-                        <div class="row-meta">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
-                    </td>
-                    <td>{{ r.num_symbols }}</td>
-                    {{ net_cell(r.equity_pnl) }}
-                    {{ net_cell(r.option_pnl) }}
-                    {{ net_cell(r.dividend_income) }}
-                    {{ net_cell(r.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(r.current_value) }}</td>
-                    {{ pct_cell(r.pct_return) }}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   SUBSECTOR BREAKDOWN — by yfinance industry / subsector
-   ════════════════════════════════════ #}
-{% if subsector_breakdown and subsector_breakdown|length > 1 %}
-<div class="review-section">
-    <div class="section-label">Industry Breakdown — Finer-grained than sector</div>
-    <div class="breakdown-wrap">
-        <table class="breakdown-table">
-            <thead>
-                <tr>
-                    <th class="left">Industry</th>
-                    <th>Symbols</th>
-                    <th>G/L Stock</th>
-                    <th>G/L Option</th>
-                    <th>Dividend</th>
-                    <th>Net</th>
-                    <th>Current Value</th>
-                    <th>%&nbsp;Return</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in subsector_breakdown %}
-                <tr>
-                    <td class="left">
-                        <span class="row-symbol">{{ r.subsector }}</span>
-                        <div class="row-meta">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
-                    </td>
-                    <td>{{ r.num_symbols }}</td>
-                    {{ net_cell(r.equity_pnl) }}
-                    {{ net_cell(r.option_pnl) }}
-                    {{ net_cell(r.dividend_income) }}
-                    {{ net_cell(r.net_pnl) }}
-                    <td>${{ "{:,.0f}".format(r.current_value) }}</td>
-                    {{ pct_cell(r.pct_return) }}
+                    {% if r.is_closed %}
+                    {{ net_cell(r.total_pnl) }}
+                    {% else %}
+                    <td class="text-muted">${{ "{:,.0f}".format(r.trade_cost) }} cap</td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
