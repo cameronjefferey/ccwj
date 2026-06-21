@@ -960,19 +960,25 @@
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
         <span>Trades This Week</span>
+        <span style="display:flex; gap:14px; text-transform:none; letter-spacing:0;">
         {% if tw.closed_count %}
-        <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}"
-              style="text-transform:none; letter-spacing:0;">
+        <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}">
             {% if tw.realized_pnl == 0 %}$0{% else %}{{ "+" if tw.realized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.realized_pnl|abs) }}{% endif %} realized
         </span>
         {% endif %}
+        {% if tw.opened_count %}
+        <span class="trades-pnl {% if tw.unrealized_pnl > 0 %}text-positive{% elif tw.unrealized_pnl < 0 %}text-negative{% endif %}">
+            {% if tw.unrealized_pnl == 0 %}$0{% else %}{{ "+" if tw.unrealized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.unrealized_pnl|abs) }}{% endif %} unrealized
+        </span>
+        {% endif %}
+        </span>
     </div>
     <p class="section-sub">
         Everything you opened or closed since
         {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} opened.
         Closed rows show realized P&amp;L (an option that expired worthless shows its full
-        kept premium); still-open rows show capital deployed.
+        kept premium); open rows show unrealized G/L at the latest snapshot.
     </p>
     <div class="breakdown-wrap">
         <table class="breakdown-table">
@@ -1004,7 +1010,13 @@
                         {% endif %}
                     </td>
                     {% if r.is_closed %}
-                    {{ net_cell(r.total_pnl) }}
+                    {{ net_cell(r.result_pnl) }}
+                    {% elif r.current_market_value %}
+                    <td class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
+                        {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>
+                        {% else %}{{ "+" if r.result_pnl > 0 else "-" }}${{ "{:,.0f}".format(r.result_pnl|abs) }}{% endif %}
+                        <div class="row-meta">unrealized</div>
+                    </td>
                     {% else %}
                     <td class="text-muted">${{ "{:,.0f}".format(r.trade_cost) }} cap</td>
                     {% endif %}

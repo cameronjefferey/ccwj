@@ -2586,11 +2586,20 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
     uses the disambiguated tenant label map so several "Schwab Account"s
     read as their nicknames.
 
+    Each row also carries ``result_pnl`` / ``result_kind`` so the table can
+    show one number per option: Closed rows report realized lifetime P&L
+    (``total_pnl``); Open rows report unrealized G/L at the latest snapshot
+    (``current_unrealized_pnl`` = open premium + current value). A contract
+    that shows up as BOTH an opened-this-week and a closed-this-week group is
+    collapsed to a SINGLE row (the Closed outcome wins) so the same option
+    never appears twice.
+
     Returns a dict with a unified ``trades`` list plus summary counters
-    (``closed_count`` / ``opened_count`` / ``realized_pnl``) for the header.
+    (``closed_count`` / ``opened_count`` / ``realized_pnl`` /
+    ``unrealized_pnl``) for the header.
     """
     empty = {"trades": [], "count": 0, "opened_count": 0, "closed_count": 0,
-             "realized_pnl": 0.0, "has_any": False}
+             "realized_pnl": 0.0, "unrealized_pnl": 0.0, "has_any": False}
     if trades_df is None or trades_df.empty:
         return empty
     label_map = label_map or {}
@@ -2608,10 +2617,7 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
         except Exception:
             return None
 
-    trades = []
-    realized_pnl = 0.0
-    opened_count = 0
-    closed_count = 0
+    candidates = []
     for _, r in trades_df.iterrows():
         tid = str(r.get("tenant_id") or "")
         status = str(r.get("status") or "")
@@ -2628,27 +2634,69 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
         if not (closed_this_week or opened_this_week):
             continue
 
+        symbol = str(r.get("symbol") or "")
+        trade_symbol = str(r.get("trade_symbol") or "")
+        total_pnl = float(r.get("total_pnl") or 0)
+        unrealized = float(r.get("current_unrealized_pnl") or 0)
+        market_value = float(r.get("current_market_value") or 0)
+        is_closed = bool(closed_this_week)
+
         row = {
-            "symbol": str(r.get("symbol") or ""),
+            "symbol": symbol,
             "contract": _format_trade_contract(r.get("trade_symbol"), r.get("symbol")),
-            "trade_symbol": str(r.get("trade_symbol") or ""),
+            "trade_symbol": trade_symbol,
             "strategy": str(r.get("strategy") or "") or "Uncategorized",
             "account_display": label_map.get(tid) or str(r.get("account") or ""),
             "status": status,
             "open_date": od,
             "close_date": cd,
-            "total_pnl": float(r.get("total_pnl") or 0),
+            "total_pnl": total_pnl,
             "trade_cost": float(r.get("trade_cost") or 0),
+            "current_unrealized_pnl": unrealized,
+            "current_market_value": market_value,
             "num_trades": num_trades,
-            "is_closed": bool(closed_this_week),
+            "is_closed": is_closed,
             "opened_this_week": bool(opened_this_week),
+            # Result column: one number per option. Closed → realized
+            # lifetime P&L; Open → unrealized G/L at the latest snapshot
+            # (open premium + current value).
+            "result_pnl": total_pnl if is_closed else unrealized,
+            "result_kind": "realized" if is_closed else "unrealized",
+            # Dedup scope: the OCC option symbol (or equity session id),
+            # tenant-scoped. Falls back to the underlying when blank.
+            "_dedup_key": (tid, trade_symbol or symbol),
         }
-        trades.append(row)
-        if closed_this_week:
-            closed_count += 1
-            realized_pnl += row["total_pnl"]
-        if opened_this_week:
-            opened_count += 1
+        candidates.append(row)
+
+    # Collapse a contract that surfaces as BOTH an opened-this-week and a
+    # closed-this-week group into ONE row. A completed round trip is the
+    # outcome the trader cares about, so the Closed row wins (latest
+    # close_date if several closed). Distinct contracts / equity sessions
+    # carry distinct keys and stay as separate rows.
+    by_key = {}
+    for row in candidates:
+        key = row["_dedup_key"]
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = row
+        elif row["is_closed"] and not existing["is_closed"]:
+            by_key[key] = row
+        elif row["is_closed"] and existing["is_closed"]:
+            if (row["close_date"] or week_start) >= (existing["close_date"] or week_start):
+                by_key[key] = row
+        elif not row["is_closed"] and not existing["is_closed"]:
+            if (row["open_date"] or week_start) >= (existing["open_date"] or week_start):
+                by_key[key] = row
+        # else: existing closed, row open → keep the closed existing.
+
+    trades = list(by_key.values())
+    for row in trades:
+        row.pop("_dedup_key", None)
+
+    realized_pnl = sum(r["total_pnl"] for r in trades if r["is_closed"])
+    unrealized_pnl = sum(r["current_unrealized_pnl"] for r in trades if not r["is_closed"])
+    closed_count = sum(1 for r in trades if r["is_closed"])
+    opened_count = sum(1 for r in trades if r["opened_this_week"])
 
     # Closed (realized result) first, then still-open opens; each group most
     # recent first by its defining date (close for closed, open for open).
@@ -2665,6 +2713,7 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
         "opened_count": opened_count,
         "closed_count": closed_count,
         "realized_pnl": round(realized_pnl, 2),
+        "unrealized_pnl": round(unrealized_pnl, 2),
         "has_any": bool(trades),
     }
 
@@ -2769,7 +2818,8 @@ def weekly_review():
         "calendar_extra_weeks": max(0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS),
         "daily_calendar_no_query_rows": True,
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
-                             "closed_count": 0, "realized_pnl": 0.0, "has_any": False},
+                             "closed_count": 0, "realized_pnl": 0.0,
+                             "unrealized_pnl": 0.0, "has_any": False},
         "community_profile_visibility": "private",
         "community_publish_ready": False,
     }

@@ -432,6 +432,7 @@ class TestBuildTradesThisWeek:
             "strategy": "Covered Call", "status": "Closed",
             "open_date": date(2026, 6, 5), "close_date": date(2026, 6, 8),
             "total_pnl": 226.0, "trade_cost": 226.0, "num_trades": 2,
+            "current_unrealized_pnl": 0.0, "current_market_value": 0.0,
         }
         base.update(kw)
         return base
@@ -489,3 +490,63 @@ class TestBuildTradesThisWeek:
         ])
         out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
         assert out["has_any"] is False
+
+    def test_closed_row_result_is_realized(self):
+        # Closed row → one number: realized lifetime P&L.
+        df = pd.DataFrame([self._row()])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        r = out["trades"][0]
+        assert r["result_kind"] == "realized"
+        assert r["result_pnl"] == 226.0
+
+    def test_open_row_result_is_unrealized(self):
+        # Open row → unrealized G/L at the latest snapshot (open premium +
+        # current value), NOT capital deployed.
+        df = pd.DataFrame([self._row(
+            symbol="OPEN", trade_symbol="OPEN  260619C00050000", status="Open",
+            open_date=date(2026, 6, 9), close_date=None, num_trades=1,
+            total_pnl=0.0, current_unrealized_pnl=140.0, current_market_value=300.0,
+        )])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["opened_count"] == 1
+        assert out["closed_count"] == 0
+        assert out["unrealized_pnl"] == 140.0
+        r = out["trades"][0]
+        assert r["is_closed"] is False
+        assert r["result_kind"] == "unrealized"
+        assert r["result_pnl"] == 140.0
+        assert r["current_market_value"] == 300.0
+
+    def test_same_contract_open_and_closed_collapses_to_one_closed_row(self):
+        # The bug the user saw: the SAME option contract surfaces as both an
+        # opened-this-week group and a closed-this-week group. Collapse to a
+        # SINGLE row — the Closed (realized) outcome wins.
+        ts = "ASTS  260605C00102000"
+        df = pd.DataFrame([
+            self._row(trade_symbol=ts, status="Open", open_date=date(2026, 6, 9),
+                      close_date=None, num_trades=1, total_pnl=0.0,
+                      current_unrealized_pnl=50.0, current_market_value=120.0),
+            self._row(trade_symbol=ts, status="Closed", open_date=date(2026, 6, 5),
+                      close_date=date(2026, 6, 11), num_trades=2, total_pnl=226.0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["count"] == 1
+        r = out["trades"][0]
+        assert r["is_closed"] is True
+        assert r["result_kind"] == "realized"
+        assert r["result_pnl"] == 226.0
+
+    def test_distinct_contracts_same_underlying_stay_separate(self):
+        # Two different strikes on the same underlying are different
+        # contracts → two rows (not collapsed).
+        df = pd.DataFrame([
+            self._row(trade_symbol="ASTS  260605C00079000", status="Closed",
+                      open_date=date(2026, 6, 5), close_date=date(2026, 6, 8),
+                      total_pnl=-58.0),
+            self._row(trade_symbol="ASTS  260612C00098000", status="Closed",
+                      open_date=date(2026, 6, 8), close_date=date(2026, 6, 12),
+                      total_pnl=505.0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["count"] == 2
+        assert out["closed_count"] == 2
