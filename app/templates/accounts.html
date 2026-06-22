@@ -255,6 +255,235 @@
 </div>
 {% endif %}
 
+{# ── Detailed breakdown tables (Stock | Options | Dividend | Net | % |
+      Annualized) — the per-position / strategy / sector drill-down behind
+      the Daily Review account scorecard. Lifetime scope. ──────────────── #}
+{% macro money_cell(val) %}
+<td class="text-end {% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}" data-val="{{ val }}">
+    {% if val == 0 %}<span class="text-muted">$0</span>
+    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+</td>
+{% endmacro %}
+{% macro pct_cell(val) %}
+<td class="text-end {% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}" data-val="{{ val if val is not none else '' }}">
+    {% if val is none %}<span class="text-muted">&mdash;</span>
+    {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
+</td>
+{% endmacro %}
+
+{% if position_breakdown %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-1">Position Breakdown</h6>
+        <p class="text-muted small mb-3">
+            Lifetime per symbol: equity P&amp;L vs option P&amp;L vs dividends, net total,
+            % return on capital deployed, and a holding-period annualized estimate
+            (30-day minimum window, $200 capital floor so tiny/new lots don&rsquo;t
+            extrapolate to absurd rates).
+        </p>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th class="text-end">G/L Stock</th>
+                        <th class="text-end">G/L Option</th>
+                        <th class="text-end">Dividend</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">Capital</th>
+                        <th class="text-end">Days</th>
+                        <th class="text-end">% Return</th>
+                        <th class="text-end">Annualized</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in position_breakdown %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
+                            {% if r.strategy %}<div class="text-muted" style="font-size:.72rem;">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
+                        </td>
+                        {{ money_cell(r.equity_pnl) }}
+                        {{ money_cell(r.option_pnl) }}
+                        {{ money_cell(r.dividend_income) }}
+                        {{ money_cell(r.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                        <td class="text-end">{{ r.days_held }}</td>
+                        {{ pct_cell(r.pct_return) }}
+                        {{ pct_cell(r.annualized_pct) }}
+                        <td><span class="badge {{ 'bg-success-subtle text-success' if r.status == 'Open' else 'bg-secondary-subtle text-secondary' }}">{{ r.status }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    {% if position_breakdown_totals %}
+                    {% set t = position_breakdown_totals %}
+                    <tr class="fw-bold border-top">
+                        <td>Total &middot; {{ t.num_symbols }} symbol{{ 's' if t.num_symbols != 1 }}</td>
+                        {{ money_cell(t.equity_pnl) }}
+                        {{ money_cell(t.option_pnl) }}
+                        {{ money_cell(t.dividend_income) }}
+                        {{ money_cell(t.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
+                        <td></td>
+                        {{ pct_cell(t.pct_return) }}
+                        <td></td>
+                        <td></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if strategy_breakdown %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-3">Strategy Breakdown</h6>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Strategy</th>
+                        <th class="text-end">Symbols</th>
+                        <th class="text-end">G/L Stock</th>
+                        <th class="text-end">G/L Option</th>
+                        <th class="text-end">Dividend</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">Capital</th>
+                        <th class="text-end">Max Days</th>
+                        <th class="text-end">% Return</th>
+                        <th class="text-end">Annualized</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in strategy_breakdown %}
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">{{ r.strategy }}</span>
+                            <div class="text-muted" style="font-size:.72rem;">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
+                        </td>
+                        <td class="text-end">{{ r.num_symbols }}</td>
+                        {{ money_cell(r.equity_pnl) }}
+                        {{ money_cell(r.option_pnl) }}
+                        {{ money_cell(r.dividend_income) }}
+                        {{ money_cell(r.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                        <td class="text-end">{{ r.max_days_held }}</td>
+                        {{ pct_cell(r.pct_return) }}
+                        {{ pct_cell(r.annualized_pct) }}
+                    </tr>
+                    {% endfor %}
+                    {% if strategy_breakdown_totals %}
+                    {% set t = strategy_breakdown_totals %}
+                    <tr class="fw-bold border-top">
+                        <td>Total &middot; {{ t.num_symbols }} bucket{{ 's' if t.num_symbols != 1 }}</td>
+                        <td></td>
+                        {{ money_cell(t.equity_pnl) }}
+                        {{ money_cell(t.option_pnl) }}
+                        {{ money_cell(t.dividend_income) }}
+                        {{ money_cell(t.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
+                        <td></td>
+                        {{ pct_cell(t.pct_return) }}
+                        <td></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if sector_breakdown %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-1">Sector Breakdown</h6>
+        <p class="text-muted small mb-3">
+            Sectors come from yfinance symbol metadata. &ldquo;Unknown&rdquo; means
+            yfinance has no sector for the symbol (often crypto, unclassified ETFs,
+            or freshly listed names).
+        </p>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Sector</th>
+                        <th class="text-end">Symbols</th>
+                        <th class="text-end">G/L Stock</th>
+                        <th class="text-end">G/L Option</th>
+                        <th class="text-end">Dividend</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">Current Value</th>
+                        <th class="text-end">% Return</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in sector_breakdown %}
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">{{ r.sector }}</span>
+                            <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
+                        </td>
+                        <td class="text-end">{{ r.num_symbols }}</td>
+                        {{ money_cell(r.equity_pnl) }}
+                        {{ money_cell(r.option_pnl) }}
+                        {{ money_cell(r.dividend_income) }}
+                        {{ money_cell(r.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
+                        {{ pct_cell(r.pct_return) }}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if subsector_breakdown and subsector_breakdown|length > 1 %}
+<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-3">Industry Breakdown</h6>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Industry</th>
+                        <th class="text-end">Symbols</th>
+                        <th class="text-end">G/L Stock</th>
+                        <th class="text-end">G/L Option</th>
+                        <th class="text-end">Dividend</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">Current Value</th>
+                        <th class="text-end">% Return</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in subsector_breakdown %}
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">{{ r.subsector }}</span>
+                            <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
+                        </td>
+                        <td class="text-end">{{ r.num_symbols }}</td>
+                        {{ money_cell(r.equity_pnl) }}
+                        {{ money_cell(r.option_pnl) }}
+                        {{ money_cell(r.dividend_income) }}
+                        {{ money_cell(r.net_pnl) }}
+                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
+                        {{ pct_cell(r.pct_return) }}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endif %}{# end error check #}
 {% endblock %}
 

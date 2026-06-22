@@ -18,6 +18,9 @@ from app.weekly_review import (
     ANNUALIZED_MIN_DAYS,
     _aggregate_breakdown_by,
     _annualized_pct,
+    _build_account_breakdown,
+    _build_benchmark_rows,
+    _build_benchmark_snapshot,
     _build_breakdown_totals,
     _build_position_breakdown,
     _build_today_movers,
@@ -443,65 +446,51 @@ class TestBuildTradesThisWeek:
         assert out["trades"] == []
         assert out["count"] == 0
 
-    def test_closed_expiry_in_week(self):
+    def test_single_symbol_one_contract(self):
         df = pd.DataFrame([self._row()])
         out = _build_trades_this_week(
             df, self.WEEK_START, self.WEEK_END, label_map={"snaptrade:abc": "Sara Investment"}
         )
         assert out["count"] == 1
         assert out["closed_count"] == 1
-        assert out["opened_count"] == 0  # opened last week (Jun 5), not this week
+        assert out["opened_count"] == 0
         assert out["realized_pnl"] == 226.0
         r = out["trades"][0]
         assert r["is_closed"] is True
+        assert r["status"] == "Closed"
+        assert r["result_kind"] == "realized"
+        assert r["result_pnl"] == 226.0
         assert r["account_display"] == "Sara Investment"
+        # Single leg → show the actual contract name, not a count.
         assert r["contract"] == "ASTS Jun 5 $102 Call"
+        assert r["num_legs"] == 1
 
-    def test_opened_this_week_hides_synthetic_zero_trade_rows(self):
+    def test_two_contracts_same_symbol_net_to_one_row(self):
+        # The core fix: a trader writes a fresh weekly call on ASTS each week,
+        # so two different ASTS contracts must NET into ONE symbol row.
         df = pd.DataFrame([
-            self._row(symbol="NEW", trade_symbol="NEW_session_1", status="Open",
-                      open_date=date(2026, 6, 9), close_date=None, num_trades=1),
-            self._row(symbol="SYN", trade_symbol="SYN_session_1", status="Open",
-                      open_date=date(2026, 6, 9), close_date=None, num_trades=0),
-        ])
-        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
-        opened_syms = {r["symbol"] for r in out["trades"] if r["opened_this_week"]}
-        assert "NEW" in opened_syms
-        assert "SYN" not in opened_syms  # num_trades==0 synthetic snapshot open
-
-    def test_open_and_close_same_week_is_single_row(self):
-        # A same-week round trip is ONE trade group → ONE row (tagged closed
-        # so the table shows its realized P&L). It still counts toward both
-        # the opened and closed summary counters.
-        df = pd.DataFrame([
-            self._row(open_date=date(2026, 6, 9), close_date=date(2026, 6, 11)),
+            self._row(trade_symbol="ASTS  260605C00102000", status="Closed",
+                      open_date=date(2026, 6, 5), close_date=date(2026, 6, 8),
+                      total_pnl=226.0),
+            self._row(trade_symbol="ASTS  260612C00098000", status="Closed",
+                      open_date=date(2026, 6, 10), close_date=date(2026, 6, 12),
+                      total_pnl=-58.0),
         ])
         out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
         assert out["count"] == 1
         assert out["closed_count"] == 1
-        assert out["opened_count"] == 1
         r = out["trades"][0]
+        assert r["symbol"] == "ASTS"
+        assert r["num_legs"] == 2
+        assert r["contract"] == "2 contracts"
         assert r["is_closed"] is True
-        assert r["opened_this_week"] is True
-
-    def test_closed_outside_week_excluded(self):
-        df = pd.DataFrame([
-            self._row(close_date=date(2026, 6, 1), open_date=date(2026, 5, 28)),
-        ])
-        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
-        assert out["has_any"] is False
-
-    def test_closed_row_result_is_realized(self):
-        # Closed row → one number: realized lifetime P&L.
-        df = pd.DataFrame([self._row()])
-        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
-        r = out["trades"][0]
         assert r["result_kind"] == "realized"
-        assert r["result_pnl"] == 226.0
+        assert r["realized_pnl"] == 168.0  # 226 - 58
+        assert r["result_pnl"] == 168.0
+        assert out["realized_pnl"] == 168.0
 
-    def test_open_row_result_is_unrealized(self):
-        # Open row → unrealized G/L at the latest snapshot (open premium +
-        # current value), NOT capital deployed.
+    def test_open_contract_shows_unrealized(self):
+        # All-open symbol → unrealized G/L at the latest snapshot.
         df = pd.DataFrame([self._row(
             symbol="OPEN", trade_symbol="OPEN  260619C00050000", status="Open",
             open_date=date(2026, 6, 9), close_date=None, num_trades=1,
@@ -513,40 +502,285 @@ class TestBuildTradesThisWeek:
         assert out["unrealized_pnl"] == 140.0
         r = out["trades"][0]
         assert r["is_closed"] is False
+        assert r["status"] == "Open"
         assert r["result_kind"] == "unrealized"
         assert r["result_pnl"] == 140.0
-        assert r["current_market_value"] == 300.0
 
-    def test_same_contract_open_and_closed_collapses_to_one_closed_row(self):
-        # The bug the user saw: the SAME option contract surfaces as both an
-        # opened-this-week group and a closed-this-week group. Collapse to a
-        # SINGLE row — the Closed (realized) outcome wins.
-        ts = "ASTS  260605C00102000"
+    def test_mixed_open_and_closed_same_symbol_is_open_net(self):
+        # One ASTS contract closed this week (+200 realized) and another
+        # still open (+50 unrealized) → ONE row, status Open, result is the
+        # NET of both, tagged "net".
         df = pd.DataFrame([
-            self._row(trade_symbol=ts, status="Open", open_date=date(2026, 6, 9),
-                      close_date=None, num_trades=1, total_pnl=0.0,
-                      current_unrealized_pnl=50.0, current_market_value=120.0),
-            self._row(trade_symbol=ts, status="Closed", open_date=date(2026, 6, 5),
-                      close_date=date(2026, 6, 11), num_trades=2, total_pnl=226.0),
+            self._row(trade_symbol="ASTS  260605C00100000", status="Closed",
+                      open_date=date(2026, 6, 5), close_date=date(2026, 6, 10),
+                      total_pnl=200.0),
+            self._row(trade_symbol="ASTS  260619C00110000", status="Open",
+                      open_date=date(2026, 6, 9), close_date=None, num_trades=1,
+                      total_pnl=0.0, current_unrealized_pnl=50.0,
+                      current_market_value=120.0),
         ])
         out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
         assert out["count"] == 1
+        assert out["closed_count"] == 0
+        assert out["opened_count"] == 1
         r = out["trades"][0]
-        assert r["is_closed"] is True
-        assert r["result_kind"] == "realized"
-        assert r["result_pnl"] == 226.0
+        assert r["status"] == "Open"
+        assert r["is_closed"] is False
+        assert r["realized_pnl"] == 200.0
+        assert r["unrealized_pnl"] == 50.0
+        assert r["result_pnl"] == 250.0
+        assert r["result_kind"] == "net"
+        assert out["realized_pnl"] == 200.0
+        assert out["unrealized_pnl"] == 50.0
 
-    def test_distinct_contracts_same_underlying_stay_separate(self):
-        # Two different strikes on the same underlying are different
-        # contracts → two rows (not collapsed).
+    def test_opened_this_week_hides_synthetic_zero_trade_rows(self):
         df = pd.DataFrame([
-            self._row(trade_symbol="ASTS  260605C00079000", status="Closed",
-                      open_date=date(2026, 6, 5), close_date=date(2026, 6, 8),
-                      total_pnl=-58.0),
-            self._row(trade_symbol="ASTS  260612C00098000", status="Closed",
-                      open_date=date(2026, 6, 8), close_date=date(2026, 6, 12),
-                      total_pnl=505.0),
+            self._row(symbol="NEW", trade_symbol="NEW_session_1", status="Open",
+                      open_date=date(2026, 6, 9), close_date=None, num_trades=1),
+            self._row(symbol="SYN", trade_symbol="SYN_session_1", status="Open",
+                      open_date=date(2026, 6, 9), close_date=None, num_trades=0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        syms = {r["symbol"] for r in out["trades"]}
+        assert "NEW" in syms
+        assert "SYN" not in syms  # num_trades==0 synthetic snapshot open
+
+    def test_different_symbols_stay_separate(self):
+        df = pd.DataFrame([
+            self._row(symbol="ASTS", trade_symbol="ASTS  260605C00102000",
+                      close_date=date(2026, 6, 8), total_pnl=226.0),
+            self._row(symbol="BE", trade_symbol="BE    260605C00285000",
+                      close_date=date(2026, 6, 8), total_pnl=638.0),
         ])
         out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
         assert out["count"] == 2
-        assert out["closed_count"] == 2
+        assert {r["symbol"] for r in out["trades"]} == {"ASTS", "BE"}
+
+    def test_mixed_strategy_labels_as_mixed(self):
+        df = pd.DataFrame([
+            self._row(trade_symbol="ASTS  260605C00102000", strategy="Covered Call",
+                      close_date=date(2026, 6, 8), total_pnl=226.0),
+            self._row(trade_symbol="ASTS_session_1", strategy="Buy and Hold",
+                      close_date=date(2026, 6, 9), total_pnl=100.0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["count"] == 1
+        assert out["trades"][0]["strategy"] == "Mixed"
+
+    def test_closed_outside_week_excluded(self):
+        df = pd.DataFrame([
+            self._row(close_date=date(2026, 6, 1), open_date=date(2026, 5, 28)),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        assert out["has_any"] is False
+
+
+class TestBuildAccountBreakdown:
+    """One summarized row per ACCOUNT (tenant), split by asset type with
+    G/L % and annualized G/L %. Drives the Daily Review scorecard."""
+
+    def _row(self, **kw):
+        base = {
+            "tenant_id": "snaptrade:acct-A", "account": "Schwab Account",
+            "user_id": 1, "symbol": "JEPI",
+            "equity_pnl": 1000.0, "option_pnl": 0.0, "dividend_income": 250.0,
+            "net_pnl": 1250.0,
+            "equity_capital": 10000.0, "option_capital_paid": 0.0,
+            "option_premium_collected": 0.0,
+            "current_equity_cost": 10000.0,
+            "num_open_groups": 1, "num_equity_legs": 1, "num_option_legs": 0,
+            "first_open_date": date(2025, 5, 1),
+            "last_activity_date": date(2026, 5, 1),
+        }
+        base.update(kw)
+        return base
+
+    def test_empty_input(self):
+        assert _build_account_breakdown(None) == {"rows": [], "totals": None}
+        assert _build_account_breakdown(pd.DataFrame()) == {"rows": [], "totals": None}
+
+    def test_single_account_single_symbol(self):
+        df = pd.DataFrame([self._row()])
+        out = _build_account_breakdown(df, label_map={"snaptrade:acct-A": "Brokerage"})
+        assert len(out["rows"]) == 1
+        r = out["rows"][0]
+        assert r["account_display"] == "Brokerage"
+        assert r["equity_pnl"] == 1000.0
+        assert r["dividend_income"] == 250.0
+        assert r["net_pnl"] == 1250.0
+        assert r["pct_return"] == 12.5
+        assert r["annualized_pct"] == 12.5
+        # Single account → no all-accounts totals row.
+        assert out["totals"] is None
+
+    def test_collapses_symbols_within_account(self):
+        df = pd.DataFrame([
+            self._row(symbol="JEPI", equity_pnl=1000.0, option_pnl=0.0,
+                      dividend_income=250.0, net_pnl=1250.0),
+            self._row(symbol="ASTS", equity_pnl=0.0, option_pnl=500.0,
+                      dividend_income=0.0, net_pnl=500.0,
+                      equity_capital=0.0, option_capital_paid=2000.0,
+                      current_equity_cost=0.0),
+        ])
+        out = _build_account_breakdown(df)
+        assert len(out["rows"]) == 1
+        r = out["rows"][0]
+        assert r["equity_pnl"] == 1000.0
+        assert r["option_pnl"] == 500.0
+        assert r["net_pnl"] == 1750.0
+        # Capital is summed across the account's symbols.
+        assert r["capital_at_risk"] == 12000.0
+
+    def test_multiple_accounts_get_totals_row(self):
+        df = pd.DataFrame([
+            self._row(tenant_id="snaptrade:acct-A", net_pnl=1250.0),
+            self._row(tenant_id="snaptrade:acct-B", symbol="MSFT",
+                      equity_pnl=300.0, option_pnl=0.0, dividend_income=0.0,
+                      net_pnl=300.0),
+        ])
+        out = _build_account_breakdown(df)
+        assert len(out["rows"]) == 2
+        # Sorted by net descending → acct-A first.
+        assert out["rows"][0]["net_pnl"] == 1250.0
+        t = out["totals"]
+        assert t is not None
+        assert t["num_accounts"] == 2
+        assert t["net_pnl"] == 1550.0
+
+    def test_dust_account_annualized_none(self):
+        df = pd.DataFrame([self._row(
+            equity_capital=10.0, current_equity_cost=10.0,
+            net_pnl=5.0, equity_pnl=5.0, dividend_income=0.0,
+        )])
+        out = _build_account_breakdown(df)
+        r = out["rows"][0]
+        assert r["pct_return"] is None
+        assert r["annualized_pct"] is None
+
+    def test_week_scope_keeps_open_drops_old_closed(self):
+        week_start = date(2026, 6, 15)
+        df = pd.DataFrame([
+            # Open position (no week filter needed) — kept.
+            self._row(tenant_id="snaptrade:acct-A", symbol="JEPI",
+                      num_open_groups=1, num_equity_legs=1, net_pnl=1250.0,
+                      equity_pnl=1250.0, dividend_income=0.0),
+            # Closed before the week — dropped from the account total.
+            self._row(tenant_id="snaptrade:acct-A", symbol="OLDX",
+                      num_open_groups=0, num_equity_legs=0, num_option_legs=0,
+                      current_equity_cost=0.0,
+                      last_activity_date=date(2026, 5, 1),
+                      net_pnl=9999.0, equity_pnl=9999.0, dividend_income=0.0),
+        ])
+        out = _build_account_breakdown(df, week_start=week_start)
+        assert len(out["rows"]) == 1
+        # Only the open JEPI position contributes; the stale closed lot is gone.
+        assert out["rows"][0]["net_pnl"] == 1250.0
+
+    def test_week_scope_keeps_closed_this_week(self):
+        week_start = date(2026, 6, 15)
+        df = pd.DataFrame([
+            self._row(tenant_id="snaptrade:acct-A", symbol="RCNT",
+                      num_open_groups=0, num_equity_legs=0, num_option_legs=0,
+                      current_equity_cost=0.0,
+                      last_activity_date=date(2026, 6, 18),
+                      net_pnl=400.0, equity_pnl=400.0, dividend_income=0.0),
+        ])
+        out = _build_account_breakdown(df, week_start=week_start)
+        assert len(out["rows"]) == 1
+        assert out["rows"][0]["net_pnl"] == 400.0
+
+    def test_week_scope_none_keeps_everything(self):
+        week_start = None
+        df = pd.DataFrame([
+            self._row(symbol="JEPI", num_open_groups=1),
+            self._row(symbol="OLDX", num_open_groups=0, num_equity_legs=0,
+                      num_option_legs=0, current_equity_cost=0.0,
+                      last_activity_date=date(2024, 1, 1),
+                      net_pnl=50.0, equity_pnl=50.0, dividend_income=0.0),
+        ])
+        out = _build_account_breakdown(df, week_start=week_start)
+        # Lifetime view → both symbols roll into the one account row.
+        assert len(out["rows"]) == 1
+        assert out["rows"][0]["net_pnl"] == 1300.0
+
+    def test_basis_single_account_uses_row(self):
+        df = pd.DataFrame([self._row(
+            equity_capital=10000.0, current_equity_cost=10000.0,
+        )])
+        out = _build_account_breakdown(df)
+        # Single account → basis mirrors the one row (capital + window).
+        assert out["basis"]["capital_at_risk"] == 10000.0
+        assert out["basis"]["days"] == out["rows"][0]["max_days_held"]
+
+    def test_basis_multi_account_sums_capital(self):
+        df = pd.DataFrame([
+            self._row(tenant_id="snaptrade:acct-A"),
+            self._row(tenant_id="snaptrade:acct-B", symbol="MSFT"),
+        ])
+        out = _build_account_breakdown(df)
+        assert out["basis"]["capital_at_risk"] == out["totals"]["capital_at_risk"]
+
+
+class TestBuildBenchmarkRows:
+    """"If your capital had been in the index instead" comparison rows."""
+
+    BASIS = {"capital_at_risk": 10000.0, "days": 365}
+
+    def test_no_basis_or_returns_returns_empty(self):
+        assert _build_benchmark_rows(None, {"SPY": 8.0}) == []
+        assert _build_benchmark_rows(self.BASIS, {}) == []
+
+    def test_dollar_and_pct_and_annualized(self):
+        rows = _build_benchmark_rows(self.BASIS, {"SPY": 8.0, "QQQ": 12.0})
+        assert len(rows) == 2
+        spy = next(r for r in rows if r["symbol"] == "SPY")
+        # 8% of $10,000 = $800 over a 365-day window.
+        assert spy["total_pnl"] == 800.0
+        assert spy["pct_return"] == 8.0
+        # Annualized over exactly a year = the same 8%.
+        assert spy["annualized_pct"] == 8.0
+        assert spy["label"] == "S&P 500"
+
+    def test_annualized_scales_short_window(self):
+        # 90-day window: a 3% raw move annualizes up (× 365/90).
+        rows = _build_benchmark_rows({"capital_at_risk": 5000.0, "days": 90}, {"SPY": 3.0})
+        spy = rows[0]
+        assert spy["annualized_pct"] == round(3.0 * 365.0 / 90, 1)
+
+    def test_skips_index_with_no_data(self):
+        rows = _build_benchmark_rows(self.BASIS, {"SPY": 8.0, "QQQ": None})
+        assert [r["symbol"] for r in rows] == ["SPY"]
+
+
+class TestBuildBenchmarkSnapshot:
+    """Index 1d / 1w / 1m % for the row under the account-snapshot Total."""
+
+    def test_empty_returns_empty(self):
+        assert _build_benchmark_snapshot(None) == []
+        assert _build_benchmark_snapshot(pd.DataFrame()) == []
+
+    def test_computes_period_pcts_and_orders_spy_first(self):
+        df = pd.DataFrame([
+            {"symbol": "QQQ", "latest_close": 110.0,
+             "day_close": 108.0, "week_close": 100.0, "month_close": 90.0},
+            {"symbol": "SPY", "latest_close": 101.0,
+             "day_close": 100.0, "week_close": 100.0, "month_close": 98.0},
+        ])
+        out = _build_benchmark_snapshot(df)
+        assert [r["symbol"] for r in out] == ["SPY", "QQQ"]
+        spy = out[0]
+        assert spy["label"] == "S&P 500"
+        assert spy["day_pct"] == 1.0   # (101-100)/100
+        assert spy["month_pct"] == round((101.0 - 98.0) / 98.0 * 100, 2)
+        qqq = out[1]
+        assert qqq["week_pct"] == 10.0  # (110-100)/100
+
+    def test_missing_base_yields_none(self):
+        df = pd.DataFrame([
+            {"symbol": "SPY", "latest_close": 101.0,
+             "day_close": None, "week_close": 0.0, "month_close": 98.0},
+        ])
+        out = _build_benchmark_snapshot(df)
+        assert out[0]["day_pct"] is None    # base missing
+        assert out[0]["week_pct"] is None   # base <= 0 guarded
+        assert out[0]["month_pct"] is not None

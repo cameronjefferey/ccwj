@@ -60,7 +60,15 @@ rm -f "$WORKTREE/dbt/profiles.yml"
 echo "==> Step 4: merge prod seeds into the worktree (full local mirror)"
 "$VENV_PY" "$SCRIPT_DIR/scripts/merge_dev_seeds.py" "$SCRIPT_DIR" "$WORKTREE/dbt/seeds"
 
-echo "==> Step 5: dbt build into analytics_dev (profiles from ~/.dbt)"
+echo "==> Step 5: backfill accumulating snapshot history from prod"
+# The dbt snapshots (account balances + option MVs) accrue one row per day the
+# build runs. Prod runs daily and has continuous history; analytics_dev would
+# otherwise only have the days dev-refresh happened to run — making Daily
+# Review deltas / the Δ heatmap look nothing like prod. Seed dev from prod's
+# accumulated history; the dbt snapshot step below then MERGEs today on top.
+BQ_DATASET=analytics_dev "$VENV_PY" "$SCRIPT_DIR/scripts/dev_backfill_snapshots.py"
+
+echo "==> Step 6: dbt build into analytics_dev (profiles from ~/.dbt)"
 cd "$WORKTREE/dbt"
 "$VENV_DBT" build --profiles-dir "$HOME/.dbt" --target dev
 

@@ -13,11 +13,16 @@
      4. Today's movers     — biggest $ impact from stock moves on holdings
      5. Watch list         — earnings, expiring options, projected ex-div
      6. Daily account Δ    — rolling 12-week heatmap
-     7. Trades this week   — one row per group opened or closed this week
+     7. Performance by account — summarized scorecard, one row per account
+                            (stock / options / dividend / total / G/L % /
+                            annualized), links to /accounts for the full
+                            per-symbol / strategy / sector breakdown
+     8. Trades this week   — one row per group opened or closed this week
 
    Lifetime per-symbol / strategy / sector / industry breakdowns and the
-   "your positions right now" card grid were removed (June 2026): they're
-   not a daily/weekly signal and duplicated /positions and /strategies.
+   "your positions right now" card grid were removed from this page (June
+   2026): the full tables now live on /accounts (reachable from the
+   "Performance by account" rows) and on /positions and /strategies.
    The "Numbers" disclosure / mode-pills / behavioral-baseline / coaching-
    take / Mon-Fri diary sections were removed earlier — mode-specific
    pieces of a temporal hub that no longer exists. The dbt models that fed
@@ -186,6 +191,15 @@
     .snapshot-table-row.total .snap-cell-val { font-size: 1.1rem; }
     .snapshot-table .snap-cell-pct { font-size: .72rem; color: #6c757d; margin-top: .15rem; }
     .snapshot-table .snap-cell-dash { color: #cbd5e1; font-weight: 600; }
+    .snapshot-table-row.benchmark > div {
+        border-bottom: none;
+        background: #fbfcfe;
+        padding-top: .5rem; padding-bottom: .5rem;
+    }
+    .snapshot-table-row.benchmark .acct-name { font-weight: 600; font-style: italic; color: #64748b; font-size: .82rem; }
+    .snapshot-table-row.benchmark .snap-cell-pct { font-weight: 700; font-size: .82rem; margin-top: 0; }
+    .snap-bench { font-size: .68rem; color: #94a3b8; margin-top: .25rem; font-style: italic; }
+    .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
         .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(4, 1fr); }
         .snapshot-table .snap-col-month { display: none; }
@@ -370,6 +384,14 @@
         background: #f8fafc;
         padding-top: .75rem; padding-bottom: .75rem;
     }
+    .breakdown-table tr.benchmark-row td {
+        font-style: italic;
+        color: #64748b;
+        background: #fbfcfe;
+        border-bottom: none;
+    }
+    .breakdown-table tr.benchmark-row .row-meta { font-style: normal; }
+    .breakdown-table tr.benchmark-row .bench-na { color: #cbd5e1; }
     .pill-status {
         display: inline-block; font-size: .65rem; padding: .15rem .5rem;
         border-radius: 10px; text-transform: uppercase; letter-spacing: .4px;
@@ -611,6 +633,12 @@
             </div>
             {% if c.delta_pct is not none %}<div class="snap-meta">{{ "+" if c.delta_pct >= 0 else "" }}{{ "%.2f"|format(c.delta_pct) }}%</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
+            {% for b in benchmark_snapshot or [] %}
+            {% set bpct = b[key ~ '_pct'] %}
+            {% if bpct is not none %}
+            <div class="snap-bench">{{ b.label }} <span class="{% if bpct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if bpct >= 0 else "" }}{{ "%.2f"|format(bpct) }}%</span></div>
+            {% endif %}
+            {% endfor %}
         </div>
         {% endfor %}
         <div class="snap-cell">
@@ -635,6 +663,13 @@
     </div>
     {% endif %}
     {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
+{% endmacro %}
+{% macro bench_pct_cell(pct) %}
+    {% if pct is not none %}
+    <div class="snap-cell-pct {% if pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+        {{ "+" if pct >= 0 else "" }}{{ "%.2f"|format(pct) }}%
+    </div>
+    {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
 {% endmacro %}
 <div class="review-section snapshot-section">
     <div class="snapshot-table">
@@ -680,6 +715,19 @@
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
         </div>
         {% endif %}
+        {% for b in benchmark_snapshot or [] %}
+        <div class="snapshot-table-row benchmark">
+            <div>
+                <div class="acct-name">{{ b.label }}</div>
+                <div class="acct-meta">index</div>
+            </div>
+            <div><div class="snap-cell-val snap-cell-dash">—</div></div>
+            <div>{{ bench_pct_cell(b.day_pct) }}</div>
+            <div>{{ bench_pct_cell(b.week_pct) }}</div>
+            <div class="snap-col-month">{{ bench_pct_cell(b.month_pct) }}</div>
+            <div>{{ bench_pct_cell(b.day_pct) }}</div>
+        </div>
+        {% endfor %}
     </div>
 </div>
 {% endif %}
@@ -945,6 +993,101 @@
 {% endif %}
 
 {# ════════════════════════════════════
+   PERFORMANCE BY ACCOUNT — summarized scorecard, one row per account
+   (impacted by the account filter), split by asset type with lifetime
+   G/L % and annualized G/L %. Each row deep-links to /accounts?tenant=…
+   for the full per-symbol / strategy / sector breakdown.
+   ════════════════════════════════════ #}
+{% macro acct_pct_cell(val) %}
+<td class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
+    {% if val is none %}<span class="text-muted">&mdash;</span>
+    {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
+</td>
+{% endmacro %}
+{% macro acct_money_cell(val) %}
+<td class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
+    {% if val == 0 %}<span class="text-muted">$0</span>
+    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+</td>
+{% endmacro %}
+{% if account_breakdown and account_breakdown.rows %}
+<div class="review-section">
+    <div class="section-label">Performance by Account</div>
+    <p class="section-sub">
+        Open positions plus anything closed since
+        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }},
+        per account &mdash; split by stock, options, and dividends. Each
+        position&rsquo;s G/L is lifetime; annualized factors in how long it
+        has been held. Click an account for the full breakdown by position,
+        strategy, and sector.
+    </p>
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th class="left">Account</th>
+                    <th>Stock</th>
+                    <th>Options</th>
+                    <th>Dividend</th>
+                    <th>Total</th>
+                    <th>G/L %</th>
+                    <th>Annualized</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in account_breakdown.rows %}
+                <tr>
+                    <td class="left">
+                        <a href="{{ url_for('accounts', tenant=a.tenant_id) }}" class="row-symbol">{{ a.account_display }}</a>
+                    </td>
+                    {{ acct_money_cell(a.equity_pnl) }}
+                    {{ acct_money_cell(a.option_pnl) }}
+                    {{ acct_money_cell(a.dividend_income) }}
+                    {{ acct_money_cell(a.net_pnl) }}
+                    {{ acct_pct_cell(a.pct_return) }}
+                    {{ acct_pct_cell(a.annualized_pct) }}
+                </tr>
+                {% endfor %}
+                {% if account_breakdown.totals %}
+                {% set t = account_breakdown.totals %}
+                <tr class="totals-row">
+                    <td class="left">All accounts</td>
+                    {{ acct_money_cell(t.equity_pnl) }}
+                    {{ acct_money_cell(t.option_pnl) }}
+                    {{ acct_money_cell(t.dividend_income) }}
+                    {{ acct_money_cell(t.net_pnl) }}
+                    {{ acct_pct_cell(t.pct_return) }}
+                    {{ acct_pct_cell(t.annualized_pct) }}
+                </tr>
+                {% endif %}
+                {% for b in account_breakdown.benchmarks or [] %}
+                <tr class="benchmark-row">
+                    <td class="left">
+                        {{ b.label }}
+                        <div class="row-meta">same capital, same period</div>
+                    </td>
+                    <td class="bench-na">&mdash;</td>
+                    <td class="bench-na">&mdash;</td>
+                    <td class="bench-na">&mdash;</td>
+                    {{ acct_money_cell(b.total_pnl) }}
+                    {{ acct_pct_cell(b.pct_return) }}
+                    {{ acct_pct_cell(b.annualized_pct) }}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if account_breakdown.benchmarks or [] %}
+    <p class="section-sub" style="margin-top:.5rem;">
+        Benchmark rows show what the same capital would have returned in the
+        index over the same holding window &mdash; your Total / G/L % /
+        Annualized beating those rows means you outperformed the market.
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
    TRADES THIS WEEK — every trade group opened or closed in the ISO week,
    one row per group. Lifetime per-symbol / strategy / sector breakdowns
    live on /positions and /strategies — they're not a daily/weekly signal.
@@ -961,12 +1104,12 @@
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
         <span>Trades This Week</span>
         <span style="display:flex; gap:14px; text-transform:none; letter-spacing:0;">
-        {% if tw.closed_count %}
+        {% if tw.realized_pnl or tw.closed_count %}
         <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}">
             {% if tw.realized_pnl == 0 %}$0{% else %}{{ "+" if tw.realized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.realized_pnl|abs) }}{% endif %} realized
         </span>
         {% endif %}
-        {% if tw.opened_count %}
+        {% if tw.unrealized_pnl or tw.opened_count %}
         <span class="trades-pnl {% if tw.unrealized_pnl > 0 %}text-positive{% elif tw.unrealized_pnl < 0 %}text-negative{% endif %}">
             {% if tw.unrealized_pnl == 0 %}$0{% else %}{{ "+" if tw.unrealized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.unrealized_pnl|abs) }}{% endif %} unrealized
         </span>
@@ -976,9 +1119,10 @@
     <p class="section-sub">
         Everything you opened or closed since
         {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
-        &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} opened.
-        Closed rows show realized P&amp;L (an option that expired worthless shows its full
-        kept premium); open rows show unrealized G/L at the latest snapshot.
+        &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
+        One row per symbol &mdash; all of a symbol's contracts this week are netted
+        together. Closed rows show realized P&amp;L; open rows show unrealized G/L
+        at the latest snapshot.
     </p>
     <div class="breakdown-wrap">
         <table class="breakdown-table">
@@ -1009,17 +1153,11 @@
                         <span class="pill-status open">Open</span>
                         {% endif %}
                     </td>
-                    {% if r.is_closed %}
-                    {{ net_cell(r.result_pnl) }}
-                    {% elif r.current_market_value %}
                     <td class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
                         {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>
                         {% else %}{{ "+" if r.result_pnl > 0 else "-" }}${{ "{:,.0f}".format(r.result_pnl|abs) }}{% endif %}
-                        <div class="row-meta">unrealized</div>
+                        <div class="row-meta">{{ r.result_kind }}</div>
                     </td>
-                    {% else %}
-                    <td class="text-muted">${{ "{:,.0f}".format(r.trade_cost) }} cap</td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

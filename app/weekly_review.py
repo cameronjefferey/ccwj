@@ -202,6 +202,168 @@ def _get_market_performance(week_start, today):
     return out
 
 
+# Index total return between a start date and the latest available close.
+# Powers the "would you have beaten the index?" benchmark rows under the
+# Performance-by-Account scorecard. SPY (S&P 500) / QQQ (Nasdaq 100) daily
+# closes are pre-loaded into stg_daily_prices (no tenant data — public
+# market prices, nothing to leak).
+BENCHMARK_RETURN_QUERY = """
+WITH prices AS (
+    SELECT symbol, date, close_price
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE symbol IN ('SPY', 'QQQ')
+      AND date >= @start_date
+      AND close_price IS NOT NULL AND close_price > 0
+),
+start_close AS (
+    SELECT p.symbol, p.close_price AS start_price
+    FROM prices p
+    INNER JOIN (SELECT symbol, MIN(date) AS d FROM prices GROUP BY symbol) m
+        ON p.symbol = m.symbol AND p.date = m.d
+),
+latest_close AS (
+    SELECT p.symbol, p.close_price AS latest_price
+    FROM prices p
+    INNER JOIN (SELECT symbol, MAX(date) AS d FROM prices GROUP BY symbol) m
+        ON p.symbol = m.symbol AND p.date = m.d
+)
+SELECT s.symbol,
+       ROUND(SAFE_DIVIDE(l.latest_price - s.start_price, s.start_price) * 100, 2) AS return_pct
+FROM start_close s
+JOIN latest_close l USING (symbol)
+"""
+
+# (warehouse symbol, display label) for the benchmark comparison rows.
+BENCHMARK_INDEXES = [("SPY", "S&P 500"), ("QQQ", "Nasdaq 100")]
+
+
+def _get_benchmark_returns(start_date):
+    """Total % return of each benchmark index from ``start_date`` to the
+    latest available close. Returns ``{"SPY": pct, "QQQ": pct}`` (percent,
+    not fraction); empty dict on failure (caller renders no benchmark)."""
+    out = {}
+    try:
+        client = get_bigquery_client()
+        cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
+        ])
+        df = client.query(BENCHMARK_RETURN_QUERY, job_config=cfg).to_dataframe()
+        for _, row in df.iterrows():
+            sym = str(row["symbol"]).upper()
+            out[sym] = float(row["return_pct"]) if row["return_pct"] is not None else None
+    except Exception as e:
+        if app.debug:
+            app.logger.warning("Benchmark return query failed: %s", e)
+        return {}
+    return out
+
+
+def _build_benchmark_rows(basis, returns):
+    """"If your capital had been in the index instead" rows for the
+    scorecard. Uses the totals-line capital + holding window so the $,
+    G/L %, and annualized columns line up directly under the user's
+    Total row.
+
+    ``basis`` = {"capital_at_risk": float, "days": int} (from
+    ``_build_account_breakdown``). ``returns`` = output of
+    ``_get_benchmark_returns``. Annualized mirrors the portfolio math
+    (× 365 / max(days, 30)) so it's apples-to-apples with the user's
+    Annualized column.
+    """
+    if not basis or not returns:
+        return []
+    cap = float(basis.get("capital_at_risk") or 0)
+    days = int(basis.get("days") or 0)
+    rows = []
+    for sym, label in BENCHMARK_INDEXES:
+        pct = returns.get(sym)
+        if pct is None:
+            continue
+        dollar = round(cap * pct / 100.0, 2)
+        ann = (
+            round(pct * 365.0 / max(days, ANNUALIZED_MIN_DAYS), 1)
+            if days > 0 else None
+        )
+        rows.append({
+            "symbol": sym,
+            "label": label,
+            "total_pnl": dollar,
+            "pct_return": round(pct, 1),
+            "annualized_pct": ann,
+        })
+    return rows
+
+
+# Index % change over the account-snapshot periods (1 day / 1 week /
+# 1 month) so a benchmark row can sit under the snapshot table's Total.
+# Each window's base is the most recent close on/before (latest_date −
+# window) — mirrors how the account snapshot picks the prior trading-day /
+# week / month base. Pure market data (no tenant scope).
+BENCHMARK_SNAPSHOT_QUERY = """
+WITH prices AS (
+    SELECT symbol, date, close_price
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE symbol IN ('SPY', 'QQQ')
+      AND close_price IS NOT NULL AND close_price > 0
+      AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 70 DAY)
+),
+latest AS (
+    SELECT symbol, MAX(date) AS latest_date FROM prices GROUP BY symbol
+),
+px AS (
+    SELECT p.symbol, p.date, p.close_price, l.latest_date
+    FROM prices p JOIN latest l USING (symbol)
+)
+SELECT
+    symbol,
+    ANY_VALUE(IF(date = latest_date, close_price, NULL)) AS latest_close,
+    ARRAY_AGG(IF(date < latest_date, close_price, NULL)
+              IGNORE NULLS ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS day_close,
+    ARRAY_AGG(IF(date <= DATE_SUB(latest_date, INTERVAL 7 DAY), close_price, NULL)
+              IGNORE NULLS ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS week_close,
+    ARRAY_AGG(IF(date <= DATE_SUB(latest_date, INTERVAL 30 DAY), close_price, NULL)
+              IGNORE NULLS ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS month_close
+FROM px
+GROUP BY symbol
+"""
+
+# Compact labels for the snapshot benchmark rows.
+BENCHMARK_SHORT_LABELS = {"SPY": "S&P 500", "QQQ": "Nasdaq 100"}
+
+
+def _build_benchmark_snapshot(bench_df):
+    """Index % change over the snapshot periods (1d / 1w / 1m), one entry
+    per benchmark index, ordered SPY then QQQ. Renders as a benchmark row
+    beneath the account-snapshot Total so the trader can compare each
+    period's account move to the market. Returns [] on missing data.
+    """
+    if bench_df is None or bench_df.empty:
+        return []
+
+    def _pct(latest, base):
+        try:
+            lt = float(latest)
+            bs = float(base)
+        except (TypeError, ValueError):
+            return None
+        if bs <= 0:
+            return None
+        return round((lt - bs) / bs * 100.0, 2)
+
+    by_symbol = {}
+    for _, r in bench_df.iterrows():
+        sym = str(r.get("symbol") or "").upper()
+        latest = r.get("latest_close")
+        by_symbol[sym] = {
+            "symbol": sym,
+            "label": BENCHMARK_SHORT_LABELS.get(sym, sym),
+            "day_pct": _pct(latest, r.get("day_close")),
+            "week_pct": _pct(latest, r.get("week_close")),
+            "month_pct": _pct(latest, r.get("month_close")),
+        }
+    return [by_symbol[s] for s, _ in BENCHMARK_INDEXES if s in by_symbol]
+
+
 WEEKLY_SUMMARY_COMBINED_QUERY = """
 SELECT *
 FROM `ccwj-dbt.analytics.mart_weekly_summary`
@@ -698,10 +860,11 @@ WHERE date BETWEEN @start_date AND @end_date
 #   account_value comes from snapshot_account_balances_daily account_total
 #   rows (Schwab's reported "Account Total" at end-of-day) deduped to the
 #   latest snapshot per (account, user_id, date).
-#   delta_1d = account_value(d) - account_value(prior_snapshot_date)
-#   "prior_snapshot_date" is the most recent earlier date this account has
-#   a snapshot — so the first day a new account reports has NULL delta,
-#   and Monday's delta is against the previous Friday's close.
+#   delta_1d = account_value(d) - account_value(prior_trading_day)
+#   The enriched mart restricts its series to weekdays (Mon-Fri), so the
+#   "prior" date skips weekends — the first day a new account reports has
+#   NULL delta, and Monday's delta is against the previous Friday's close
+#   (never against Sat/Sun, which would always read $0).
 #
 # Multi-account scope: we SUM delta_1d across all accounts in the user's
 # filter (mirrors mart_account_equity_daily which is per-account). For a
@@ -2452,6 +2615,178 @@ def _build_breakdown_totals(rows):
     }
 
 
+def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None):
+    """One summarized row per ACCOUNT (tenant) for the Daily Review.
+
+    Rolls the per-(tenant, symbol) attribution up to one line per
+    physical account so the trader sees, at a glance, how each account
+    is doing split by asset type:
+
+        Account | Stock (equity P&L) | Options (option P&L) | Dividend
+                | Total (net) | G/L % | Annualized G/L %
+
+    Scope (Daily Review semantic): when ``week_start`` is provided, only
+    positions that are CURRENTLY OPEN or were CLOSED on/after
+    ``week_start`` contribute to each account's row — same filter the
+    per-symbol breakdown uses, so the scorecard reads as a "what's live
+    or just closed" pulse, not a lifetime ledger. Pass ``week_start=None``
+    for a full lifetime view. The per-symbol number themselves are always
+    lifetime (a symbol's G/L doesn't reset weekly); the filter only
+    decides which symbols are IN the account total.
+
+    The detailed per-symbol / strategy / sector breakdown lives on
+    /accounts; each row carries ``tenant_id`` so the template can
+    deep-link there via ``?tenant=<tenant_id>``.
+
+    Annualized math matches the per-symbol / strategy rollups:
+      • denominator = summed capital-at-risk (buy cash + current cost),
+        floored by ANNUALIZED_DENOMINATOR_FLOOR so dust lots don't
+        extrapolate to four-digit %.
+      • window anchors on the LONGEST-held position in the account
+        (max days_held) — a brand-new lot can't shrink the window and
+        inflate the rate.
+
+    Returns ``{"rows": [...], "totals": {...} | None}``.
+    """
+    label_map = label_map or {}
+    if attribution_df is None or attribution_df.empty:
+        return {"rows": [], "totals": None}
+
+    # Per (tenant, symbol) first so capital sums cleanly and we can take
+    # the MAX days_held within each account.
+    grouped = (
+        attribution_df.groupby(["tenant_id", "symbol"], dropna=False)
+        .agg(
+            equity_pnl=("equity_pnl", "sum"),
+            option_pnl=("option_pnl", "sum"),
+            dividend_income=("dividend_income", "sum"),
+            net_pnl=("net_pnl", "sum"),
+            equity_capital=("equity_capital", "sum"),
+            option_capital_paid=("option_capital_paid", "sum"),
+            option_premium_collected=("option_premium_collected", "sum"),
+            current_equity_cost=("current_equity_cost", "sum"),
+            num_open_groups=("num_open_groups", "sum"),
+            num_equity_legs=("num_equity_legs", "sum"),
+            num_option_legs=("num_option_legs", "sum"),
+            first_open_date=("first_open_date", "min"),
+            last_activity_date=("last_activity_date", "max"),
+            account=("account", "first"),
+        )
+        .reset_index()
+    )
+
+    by = {}
+    for _, r in grouped.iterrows():
+        tid = str(r.get("tenant_id") or "")
+        equity_cap = float(r.get("equity_capital") or 0)
+        opt_cap_paid = float(r.get("option_capital_paid") or 0)
+        opt_cap_coll = float(r.get("option_premium_collected") or 0)
+        cur_eq_cost = float(r.get("current_equity_cost") or 0)
+        capital_at_risk = max(equity_cap + opt_cap_paid + opt_cap_coll, cur_eq_cost)
+        try:
+            first_d = r.get("first_open_date")
+            last_d = r.get("last_activity_date")
+            if hasattr(first_d, "date"):
+                first_d = first_d.date()
+            if hasattr(last_d, "date"):
+                last_d = last_d.date()
+            days_held = (last_d - first_d).days if first_d and last_d else 0
+        except Exception:
+            last_d = None
+            days_held = 0
+
+        # Daily Review scope: keep currently-open positions plus anything
+        # closed on/after week_start. ``last_activity_date`` is today for
+        # open positions and the close date for closed ones (see
+        # POSITION_ATTRIBUTION_QUERY), so this filter is symmetric.
+        is_open = (
+            int(r.get("num_open_groups") or 0) > 0
+            or int(r.get("num_equity_legs") or 0) > 0
+            or int(r.get("num_option_legs") or 0) > 0
+        )
+        if week_start is not None and not is_open:
+            if last_d is None or last_d < week_start:
+                continue
+
+        slot = by.get(tid)
+        if slot is None:
+            slot = {
+                "tenant_id": tid,
+                "account": str(r.get("account") or ""),
+                "equity_pnl": 0.0,
+                "option_pnl": 0.0,
+                "dividend_income": 0.0,
+                "net_pnl": 0.0,
+                "capital_at_risk": 0.0,
+                "max_days_held": 0,
+            }
+            by[tid] = slot
+        slot["equity_pnl"] += float(r.get("equity_pnl") or 0)
+        slot["option_pnl"] += float(r.get("option_pnl") or 0)
+        slot["dividend_income"] += float(r.get("dividend_income") or 0)
+        slot["net_pnl"] += float(r.get("net_pnl") or 0)
+        slot["capital_at_risk"] += capital_at_risk
+        if days_held > slot["max_days_held"]:
+            slot["max_days_held"] = days_held
+
+    rows = []
+    for tid, s in by.items():
+        cap = s["capital_at_risk"]
+        net = s["net_pnl"]
+        pct = round(net / cap * 100.0, 1) if cap >= ANNUALIZED_DENOMINATOR_FLOOR else None
+        ann = _annualized_pct(net, cap, s["max_days_held"])
+        rows.append({
+            "tenant_id": tid,
+            "account_display": label_map.get(tid) or s["account"] or tid,
+            "equity_pnl": round(s["equity_pnl"], 2),
+            "option_pnl": round(s["option_pnl"], 2),
+            "dividend_income": round(s["dividend_income"], 2),
+            "net_pnl": round(net, 2),
+            "capital_at_risk": round(cap, 2),
+            "pct_return": pct,
+            "annualized_pct": ann,
+            "max_days_held": s["max_days_held"],
+        })
+    rows.sort(key=lambda x: x["net_pnl"], reverse=True)
+
+    totals = None
+    if len(rows) > 1:
+        t_eq = sum(r["equity_pnl"] for r in rows)
+        t_opt = sum(r["option_pnl"] for r in rows)
+        t_div = sum(r["dividend_income"] for r in rows)
+        t_net = sum(r["net_pnl"] for r in rows)
+        t_cap = sum(r["capital_at_risk"] for r in rows)
+        t_days = max((r["max_days_held"] for r in rows), default=0)
+        totals = {
+            "equity_pnl": round(t_eq, 2),
+            "option_pnl": round(t_opt, 2),
+            "dividend_income": round(t_div, 2),
+            "net_pnl": round(t_net, 2),
+            "capital_at_risk": round(t_cap, 2),
+            "pct_return": round(t_net / t_cap * 100.0, 1) if t_cap >= ANNUALIZED_DENOMINATOR_FLOOR else None,
+            "annualized_pct": _annualized_pct(t_net, t_cap, t_days),
+            "num_accounts": len(rows),
+        }
+
+    # Benchmark basis: capital + holding window of the "total" line, so a
+    # caller can compute "what the index returned over the SAME window on
+    # the SAME capital" and render it directly beneath the totals row.
+    # Single-account → the one row IS the total.
+    basis = None
+    if totals:
+        basis = {
+            "capital_at_risk": totals["capital_at_risk"],
+            "days": t_days,
+        }
+    elif rows:
+        basis = {
+            "capital_at_risk": rows[0]["capital_at_risk"],
+            "days": rows[0]["max_days_held"],
+        }
+
+    return {"rows": rows, "totals": totals, "basis": basis}
+
+
 def _build_today_movers(today_moves_df, account_total_value=None):
     """Today's biggest stock moves on currently-held symbols.
 
@@ -2586,13 +2921,21 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
     uses the disambiguated tenant label map so several "Schwab Account"s
     read as their nicknames.
 
-    Each row also carries ``result_pnl`` / ``result_kind`` so the table can
-    show one number per option: Closed rows report realized lifetime P&L
-    (``total_pnl``); Open rows report unrealized G/L at the latest snapshot
-    (``current_unrealized_pnl`` = open premium + current value). A contract
-    that shows up as BOTH an opened-this-week and a closed-this-week group is
-    collapsed to a SINGLE row (the Closed outcome wins) so the same option
-    never appears twice.
+    Rows are grouped to ONE line per ``(tenant_id, symbol)`` within the
+    account. Traders write a fresh weekly covered call on each underlying,
+    so per-contract rows read as duplicates ("ASTS again?"). We net every
+    contract/session on the same symbol this week into a single row:
+
+      - ``realized_pnl``   = Σ ``total_pnl`` of legs that CLOSED this week
+      - ``unrealized_pnl`` = Σ ``current_unrealized_pnl`` of legs still OPEN
+      - ``result_pnl``     = realized + unrealized (the one number shown)
+      - ``status``         = "Open" if ANY leg is still open, else "Closed"
+      - ``result_kind``    = "realized" (all closed) / "unrealized" (all
+        open) / "net" (a mix of closed + open legs this week)
+
+    ``contract`` shows the single contract name when the symbol has one leg
+    this week, otherwise an "N contracts" summary. Mixed strategies across a
+    symbol's legs render as "Mixed".
 
     Returns a dict with a unified ``trades`` list plus summary counters
     (``closed_count`` / ``opened_count`` / ``realized_pnl`` /
@@ -2617,7 +2960,10 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
         except Exception:
             return None
 
-    candidates = []
+    # Aggregate every qualifying leg (option contract or equity session
+    # that opened or closed this week) into one bucket per (tenant, symbol).
+    groups = {}
+    order = []
     for _, r in trades_df.iterrows():
         tid = str(r.get("tenant_id") or "")
         status = str(r.get("status") or "")
@@ -2635,76 +2981,98 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
             continue
 
         symbol = str(r.get("symbol") or "")
-        trade_symbol = str(r.get("trade_symbol") or "")
         total_pnl = float(r.get("total_pnl") or 0)
         unrealized = float(r.get("current_unrealized_pnl") or 0)
-        market_value = float(r.get("current_market_value") or 0)
-        is_closed = bool(closed_this_week)
+        leg_closed = bool(closed_this_week)
 
-        row = {
-            "symbol": symbol,
-            "contract": _format_trade_contract(r.get("trade_symbol"), r.get("symbol")),
-            "trade_symbol": trade_symbol,
-            "strategy": str(r.get("strategy") or "") or "Uncategorized",
-            "account_display": label_map.get(tid) or str(r.get("account") or ""),
-            "status": status,
-            "open_date": od,
-            "close_date": cd,
-            "total_pnl": total_pnl,
-            "trade_cost": float(r.get("trade_cost") or 0),
-            "current_unrealized_pnl": unrealized,
-            "current_market_value": market_value,
-            "num_trades": num_trades,
+        key = (tid, symbol)
+        g = groups.get(key)
+        if g is None:
+            g = {
+                "symbol": symbol,
+                "tenant_id": tid,
+                "account_display": label_map.get(tid) or str(r.get("account") or ""),
+                "strategies": set(),
+                "contracts": [],
+                "realized": 0.0,
+                "unrealized": 0.0,
+                "num_legs": 0,
+                "has_open": False,
+                "has_closed": False,
+                "opened_this_week": False,
+                "open_dates": [],
+                "close_dates": [],
+            }
+            groups[key] = g
+            order.append(key)
+
+        g["num_legs"] += 1
+        strat = str(r.get("strategy") or "").strip()
+        if strat:
+            g["strategies"].add(strat)
+        g["contracts"].append(_format_trade_contract(r.get("trade_symbol"), r.get("symbol")))
+        if od is not None:
+            g["open_dates"].append(od)
+        if opened_this_week:
+            g["opened_this_week"] = True
+        if leg_closed:
+            g["has_closed"] = True
+            g["realized"] += total_pnl
+            if cd is not None:
+                g["close_dates"].append(cd)
+        else:
+            g["has_open"] = True
+            g["unrealized"] += unrealized
+
+    trades = []
+    for key in order:
+        g = groups[key]
+        is_closed = not g["has_open"]
+        strategies = sorted(g["strategies"])
+        if len(strategies) == 1:
+            strategy = strategies[0]
+        elif strategies:
+            strategy = "Mixed"
+        else:
+            strategy = "Uncategorized"
+        realized = round(g["realized"], 2)
+        unrealized = round(g["unrealized"], 2)
+        if is_closed:
+            result_kind = "realized"
+        elif g["has_closed"]:
+            result_kind = "net"
+        else:
+            result_kind = "unrealized"
+        trades.append({
+            "symbol": g["symbol"],
+            "tenant_id": g["tenant_id"],
+            "account_display": g["account_display"],
+            "strategy": strategy,
+            "num_legs": g["num_legs"],
+            "contract": (
+                g["contracts"][0] if g["num_legs"] == 1
+                else f"{g['num_legs']} contracts"
+            ),
+            "status": "Closed" if is_closed else "Open",
             "is_closed": is_closed,
-            "opened_this_week": bool(opened_this_week),
-            # Result column: one number per option. Closed → realized
-            # lifetime P&L; Open → unrealized G/L at the latest snapshot
-            # (open premium + current value).
-            "result_pnl": total_pnl if is_closed else unrealized,
-            "result_kind": "realized" if is_closed else "unrealized",
-            # Dedup scope: the OCC option symbol (or equity session id),
-            # tenant-scoped. Falls back to the underlying when blank.
-            "_dedup_key": (tid, trade_symbol or symbol),
-        }
-        candidates.append(row)
+            "opened_this_week": g["opened_this_week"],
+            "open_date": min(g["open_dates"]) if g["open_dates"] else None,
+            "close_date": max(g["close_dates"]) if (is_closed and g["close_dates"]) else None,
+            "realized_pnl": realized,
+            "unrealized_pnl": unrealized,
+            "result_pnl": round(realized + unrealized, 2),
+            "result_kind": result_kind,
+        })
 
-    # Collapse a contract that surfaces as BOTH an opened-this-week and a
-    # closed-this-week group into ONE row. A completed round trip is the
-    # outcome the trader cares about, so the Closed row wins (latest
-    # close_date if several closed). Distinct contracts / equity sessions
-    # carry distinct keys and stay as separate rows.
-    by_key = {}
-    for row in candidates:
-        key = row["_dedup_key"]
-        existing = by_key.get(key)
-        if existing is None:
-            by_key[key] = row
-        elif row["is_closed"] and not existing["is_closed"]:
-            by_key[key] = row
-        elif row["is_closed"] and existing["is_closed"]:
-            if (row["close_date"] or week_start) >= (existing["close_date"] or week_start):
-                by_key[key] = row
-        elif not row["is_closed"] and not existing["is_closed"]:
-            if (row["open_date"] or week_start) >= (existing["open_date"] or week_start):
-                by_key[key] = row
-        # else: existing closed, row open → keep the closed existing.
-
-    trades = list(by_key.values())
-    for row in trades:
-        row.pop("_dedup_key", None)
-
-    realized_pnl = sum(r["total_pnl"] for r in trades if r["is_closed"])
-    unrealized_pnl = sum(r["current_unrealized_pnl"] for r in trades if not r["is_closed"])
+    realized_pnl = sum(r["realized_pnl"] for r in trades)
+    unrealized_pnl = sum(r["unrealized_pnl"] for r in trades)
     closed_count = sum(1 for r in trades if r["is_closed"])
-    opened_count = sum(1 for r in trades if r["opened_this_week"])
+    opened_count = sum(1 for r in trades if not r["is_closed"])
 
-    # Closed (realized result) first, then still-open opens; each group most
-    # recent first by its defining date (close for closed, open for open).
+    # Most recent activity first (close date for closed symbols, open date
+    # for still-open symbols).
     trades.sort(
-        key=lambda x: (
-            x["is_closed"],
-            (x["close_date"] if x["is_closed"] else x["open_date"]) or week_start,
-        ),
+        key=lambda x: (x["close_date"] if x["is_closed"] else x["open_date"]) or week_start,
         reverse=True,
     )
     return {
@@ -2820,6 +3188,8 @@ def weekly_review():
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
                              "closed_count": 0, "realized_pnl": 0.0,
                              "unrealized_pnl": 0.0, "has_any": False},
+        "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
+        "benchmark_snapshot": [],
         "community_profile_visibility": "private",
         "community_publish_ready": False,
     }
@@ -2851,6 +3221,8 @@ def weekly_review():
                 "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
                 "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
                 "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
+                "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
+                "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
             })
         except Exception as e:
             if app.debug:
@@ -2861,7 +3233,7 @@ def weekly_review():
         # filter before we touch it. The SQL also carries the predicate,
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
-                 "today_moves", "weekly_trades"):
+                 "today_moves", "weekly_trades", "attribution"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -2872,6 +3244,16 @@ def weekly_review():
         context["market_session"] = _us_market_session()
         context["market_open_today"] = context["market_session"]["state"] == "open"
         context["market_neutral_line"] = _neutral_market_line(context.get("market"))
+
+        # Benchmark snapshot (index 1d / 1w / 1m %) — sits under the account
+        # snapshot Total so each period's account move has a market baseline.
+        try:
+            context["benchmark_snapshot"] = _build_benchmark_snapshot(
+                batch.get("benchmark_snapshot", pd.DataFrame())
+            )
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Benchmark snapshot processing failed: %s", e)
 
         # ── Account value (cash / invested split) ─────────────────────
         try:
@@ -3137,6 +3519,29 @@ def weekly_review():
             if app.debug:
                 app.logger.warning("Trades-this-week processing failed: %s", e)
 
+        # ── Performance by account (summarized scorecard) ─────────────
+        try:
+            attr_df = batch.get("attribution", pd.DataFrame())
+            label_map = _tenant_label_map_for_user(current_user.id)
+            ab = _build_account_breakdown(
+                attr_df, label_map=label_map, week_start=this_week,
+            )
+            # Benchmark "did I beat the index?" rows: index return over the
+            # SAME holding window on the SAME capital, rendered under the
+            # totals line. One extra small market-data query (window depends
+            # on the attribution result, so it can't join the parallel batch).
+            basis = ab.get("basis")
+            if basis and basis.get("days"):
+                bench_start = today - timedelta(days=int(basis["days"]))
+                ab["benchmarks"] = _build_benchmark_rows(
+                    basis, _get_benchmark_returns(bench_start)
+                )
+                ab["benchmark_start"] = bench_start
+            context["account_breakdown"] = ab
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("Account breakdown processing failed: %s", e)
+
         # ── Since you last looked (daily-pull diff) ───────────────────
         try:
             context["since_last_looked"] = _since_last_looked(
@@ -3192,5 +3597,9 @@ def weekly_review():
     _vis = (_prof.get("profile_visibility") or "private").lower()
     context["community_profile_visibility"] = _vis
     context["community_publish_ready"] = _vis in ("followers", "public")
+
+    # NB: "Broker data as of" is now a GLOBAL freshness strip (base.html, fed
+    # by `_inject_broker_data_freshness` in app/snaptrade.py) so it shows on
+    # every page — no per-page context needed here.
 
     return render_template("weekly_review.html", **context)

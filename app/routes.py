@@ -7208,6 +7208,17 @@ def accounts():
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
 
+    # Attribution query + breakdown builders live in app.weekly_review.
+    # Deferred import: weekly_review imports from app.routes at module
+    # load, so a top-level import here would be circular.
+    from app.weekly_review import (
+        POSITION_ATTRIBUTION_QUERY,
+        _build_position_breakdown,
+        _aggregate_breakdown_by,
+        _build_breakdown_totals,
+        _strategy_for_symbol,
+    )
+
     try:
         dfs = _bq_parallel(client, {
             "balances": ACCOUNT_BALANCES_QUERY.format(tenant_filter=tenant_filter),
@@ -7215,12 +7226,14 @@ def accounts():
             "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
             "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
+            "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
         })
         balances_df = dfs["balances"]
         trades_df = dfs["trades"]
         current_df = dfs["current"]
         strat_class_df = dfs["strat_class"]
         strat_summary_df = dfs["strat_summary"]
+        attribution_df = dfs["attribution"]
     except Exception as exc:
         return render_template(
             "accounts.html",
@@ -7229,6 +7242,12 @@ def accounts():
             summary_chart_json="{}",
             strategy_chart_json="{}",
             strategy_rows=[],
+            position_breakdown=[],
+            position_breakdown_totals=None,
+            strategy_breakdown=[],
+            strategy_breakdown_totals=None,
+            sector_breakdown=[],
+            subsector_breakdown=[],
             accounts=[],
             selected_account="",
         )
@@ -7270,6 +7289,7 @@ def accounts():
     current_df = _filter_df_by_tenant_ids(current_df, tenant_ids)
     strat_class_df = _filter_df_by_tenant_ids(strat_class_df, tenant_ids)
     strat_summary_df = _filter_df_by_tenant_ids(strat_summary_df, tenant_ids)
+    attribution_df = _filter_df_by_tenant_ids(attribution_df, tenant_ids)
 
     # Picker lists the full disambiguated account set (non-admin) so every
     # physical account is selectable after tenant scope narrows the data.
@@ -7353,12 +7373,68 @@ def accounts():
     else:
         strategy_rows = []
 
+    # ------------------------------------------------------------------
+    # Detailed breakdown tables (the per-symbol / strategy / sector /
+    # subsector "CC Trading Summary" the Daily Review account scorecard
+    # drills into). Same Stock | Options | Dividend | Net | % | Annualized
+    # shape, lifetime scope (no week filter — this is the full account
+    # view). All four pull from POSITION_ATTRIBUTION_QUERY so the totals
+    # reconcile with the scorecard row on /daily-review.
+    # ------------------------------------------------------------------
+    position_breakdown = []
+    position_breakdown_totals = None
+    strategy_breakdown = []
+    strategy_breakdown_totals = None
+    sector_breakdown = []
+    subsector_breakdown = []
+    try:
+        # strategy_by_symbol: largest abs-P&L strategy label per symbol
+        # (matches the "primary strategy" lens on /positions).
+        strategy_by_symbol = {}
+        if strat_class_df is not None and not strat_class_df.empty:
+            sb = (
+                strat_class_df.groupby(["symbol", "strategy"], dropna=False)["total_pnl"]
+                .sum()
+                .reset_index()
+            )
+            lookup = {}
+            for _, r in sb.iterrows():
+                sym = str(r.get("symbol") or "")
+                lookup.setdefault(sym, []).append(
+                    {"strategy": r.get("strategy"), "total_pnl": r.get("total_pnl")}
+                )
+            for sym, classes in lookup.items():
+                strategy_by_symbol[sym] = _strategy_for_symbol(sym, {sym: classes})
+
+        position_breakdown = _build_position_breakdown(
+            attribution_df, strategy_by_symbol, week_start=None,
+        )
+        position_breakdown_totals = _build_breakdown_totals(position_breakdown)
+        strategy_breakdown = _aggregate_breakdown_by(
+            position_breakdown, "strategy", label_name="strategy"
+        )
+        strategy_breakdown_totals = _build_breakdown_totals(strategy_breakdown)
+        sector_breakdown = _aggregate_breakdown_by(
+            position_breakdown, "sector", label_name="sector"
+        )
+        subsector_breakdown = _aggregate_breakdown_by(
+            position_breakdown, "subsector", label_name="subsector"
+        )
+    except Exception as exc:
+        app.logger.warning("Account breakdown tables failed: %s", exc)
+
     return render_template(
         "accounts.html",
         kpis=kpis,
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),
         strategy_rows=strategy_rows,
+        position_breakdown=position_breakdown,
+        position_breakdown_totals=position_breakdown_totals,
+        strategy_breakdown=strategy_breakdown,
+        strategy_breakdown_totals=strategy_breakdown_totals,
+        sector_breakdown=sector_breakdown,
+        subsector_breakdown=subsector_breakdown,
         accounts=all_accounts,
         selected_account=selected_account,
     )

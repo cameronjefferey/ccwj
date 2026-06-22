@@ -64,7 +64,15 @@ def main():
     for name in TENANT_SEEDS:
         prod = master_seed(repo_root, name)
         dev = pd.read_csv(f"{seeds_dir}/{name}", dtype=str, keep_default_na=False)
-        prod_rows = prod[~prod["tenant_id"].isin(local_ids)]
+        # Only drop a master (prod) row when dev-seeds actually carries a
+        # fresher copy of that tenant. A local tenant with NO dev-seeds rows
+        # keeps its master copy — this is the "mirror a prod user to be them
+        # locally" case (scripts/dev-link-prod-tenants.py): the tenant is in
+        # local broker_tenants but its data only exists on master. Dropping it
+        # here would silently blank that user's local view on every refresh.
+        dev_ids = set(dev["tenant_id"]) if "tenant_id" in dev.columns else set()
+        drop_ids = {t for t in local_ids if t in dev_ids}
+        prod_rows = prod[~prod["tenant_id"].isin(drop_ids)]
         # concat unions columns if the two branches' schemas ever drift;
         # column order follows master (schema changes land there first).
         merged = pd.concat([prod_rows, dev], ignore_index=True)
@@ -72,9 +80,12 @@ def main():
             list(prod.columns) + [c for c in dev.columns if c not in prod.columns]
         ]
         merged.to_csv(f"{seeds_dir}/{name}", index=False)
+        mirrored = len(local_ids) - len(drop_ids)
         print(
             f"{name}: {len(prod)} master rows -> kept {len(prod_rows)} prod"
             f" + {len(dev)} dev = {len(merged)}"
+            f" (local tenants: {len(drop_ids)} replaced by dev-seeds,"
+            f" {mirrored} kept from master)"
         )
 
 

@@ -15,6 +15,16 @@
     Flask filters by account IN (user's accounts), then aggregates
     (sum account_value by date) and computes display deltas for the
     latest date so "Today's Snapshot" respects multi-account scope.
+
+    TRADING DAYS ONLY. The upstream mart_account_equity_daily forward-fills
+    a row for EVERY calendar day (so the equity chart has no gaps). For the
+    "vs yesterday / week / month" deltas we must NOT treat a weekend as a
+    day: the market never opens Sat/Sun, so "yesterday" loaded on a Monday
+    has to be the previous Friday. We restrict the series to weekdays here,
+    which makes base_1d the prior trading day and the latest row a trading
+    day. This also reads correctly across holidays: a holiday's forward-
+    filled value equals the last trading close, so the next session's delta
+    is still measured against that close.
 */
 
 with daily as (
@@ -25,6 +35,8 @@ with daily as (
         date,
         account_value
     from {{ ref('mart_account_equity_daily') }}
+    -- BigQuery DAYOFWEEK: 1 = Sunday, 7 = Saturday. Trading days are Mon-Fri.
+    where extract(dayofweek from date) not in (1, 7)
 ),
 
 ordered as (
