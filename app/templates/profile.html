@@ -459,7 +459,7 @@
                     {% set _any_first_pending_st = _ns.any_first_pending %}
                     <p class="small text-body-secondary mb-2">
                         You have <strong>{{ _snaptrade_accounts|length }}</strong>
-                        brokerage{{ '' if _snaptrade_accounts|length == 1 else 's' }}
+                        brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }}
                         connected via SnapTrade.
                     </p>
 
@@ -467,13 +467,13 @@
                     <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-3">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="sync_all" value="1">
-                        <button type="submit" class="btn btn-primary">Sync all brokerages</button>
+                        <button type="submit" class="btn btn-primary">Sync all accounts</button>
                         <div class="form-check mt-2 mb-0">
                             <input class="form-check-input" type="checkbox"
                                    name="full_history_again" id="snaptrade_sync_all_full"
                                    value="1"{% if _any_first_pending_st %} checked{% endif %}>
                             <label class="form-check-label small" for="snaptrade_sync_all_full">
-                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days, ~5 years) on every brokerage
+                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days, ~5 years) on every account
                             </label>
                         </div>
                         <p class="atlas-hint small mb-0 mt-1">
@@ -481,12 +481,13 @@
                             Each broker only returns what it carries on file &mdash; SnapTrade clamps to the broker's actual depth.
                         </p>
                         <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                            Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
+                            Pulling from each account. This can take a minute or two &mdash; keep this tab open.
                         </p>
                     </form>
 
-                    {# Per-brokerage rows with inline Sync (mirrors Schwab's per-account list) #}
-                    <p class="atlas-hint small mb-2">Or sync just one:</p>
+                    {# Per-account rows with inline Sync (each row is one brokerage
+                       account; the button syncs only that account's data). #}
+                    <p class="atlas-hint small mb-2">Or sync just one account:</p>
                     <ul class="list-unstyled mb-3">
                         {% for a in _snaptrade_accounts %}
                         <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -501,15 +502,15 @@
                                 {% if not a.first_sync_completed %}
                                 <input type="hidden" name="full_history_again" value="1">
                                 {% endif %}
-                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this brokerage</button>
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this account</button>
                                 <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                                    Pulling from your brokerage. This can take a minute &mdash; keep this tab open.
+                                    Pulling this account from your broker. This can take a minute &mdash; keep this tab open.
                                 </p>
                             </form>
                         </li>
                         {% endfor %}
                     </ul>
-                    <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname brokerages</a>
+                    <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
                     <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add another broker</a>
                     {% else %}
                     <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary">Connect a brokerage</a>
