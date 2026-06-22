@@ -79,6 +79,7 @@ def _patched_models(monkeypatch):
         "broken_marked": [],
         "broken_cleared": [],
         "sync_attempts": [],
+        "holdings_synced": [],
     }
 
     monkeypatch.setattr(_snap, "mark_snaptrade_first_sync_completed",
@@ -91,6 +92,9 @@ def _patched_models(monkeypatch):
     def _record_attempt(u, a, *, error=None):
         record["sync_attempts"].append((u, a, error))
     monkeypatch.setattr(_snap, "record_snaptrade_sync_attempt", _record_attempt)
+
+    monkeypatch.setattr(_snap, "record_snaptrade_holdings_sync",
+                        lambda u, a, when: record["holdings_synced"].append((u, a, when)))
 
     return record
 
@@ -414,6 +418,89 @@ def test_holdings_stale_days_none_when_signal_missing_or_future():
     assert _snap._holdings_stale_days({}, today=date(2026, 6, 19)) is None
     future = {"sync_status": {"holdings": {"last_successful_sync": "2026-06-25T00:00:00Z"}}}
     assert _snap._holdings_stale_days(future, today=date(2026, 6, 19)) is None
+
+
+# ---------------------------------------------------------------------------
+# Honest "broker data as of" — persist SnapTrade's OWN holdings sync timestamp
+# (NOT our cron's cache-read time) so the UI can publish real freshness.
+# ---------------------------------------------------------------------------
+
+
+def test_holdings_last_successful_sync_dt_keeps_full_timestamp():
+    """The persisted value keeps time-of-day (the date-only variant powers the
+    staleness backstop; the dt variant powers the freshness badge)."""
+    summary = {"sync_status": {"holdings": {"last_successful_sync": "2026-06-12T20:06:11Z"}}}
+    assert _snap._holdings_last_successful_sync_dt(summary) == datetime(2026, 6, 12, 20, 6, 11)
+    # Date-only reduction stays consistent with the dt variant.
+    assert _snap._holdings_last_successful_sync(summary) == date(2026, 6, 12)
+
+
+def test_holdings_last_successful_sync_dt_none_when_signal_absent():
+    assert _snap._holdings_last_successful_sync_dt({}) is None
+    assert _snap._holdings_last_successful_sync_dt({"sync_status": {"holdings": {}}}) is None
+    assert _snap._holdings_last_successful_sync_dt(None) is None
+
+
+def test_sync_one_persists_holdings_last_successful_sync(monkeypatch, _patched_models):
+    """A successful sync stamps the broker's honest 'data as of' timestamp
+    that _run_sync surfaced from account_summary."""
+    when = datetime(2026, 6, 19, 20, 6, 0)
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(_snap, "_run_sync",
+                        lambda *a, **k: _ok_run_sync({"holdings_last_successful_sync": when}))
+
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+    assert res["ok"] is True
+    assert _patched_models["holdings_synced"] == [(9, "abc", when)]
+
+
+def test_broker_data_freshness_uses_oldest_across_accounts(monkeypatch):
+    """The always-on freshness strip must show the OLDEST timestamp across a
+    user's accounts (the weakest link) so it never overstates how current the
+    data is — and report whole days stale."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": datetime(2026, 6, 19, 20, 6, 0)},
+        {"holdings_last_successful_sync": datetime(2026, 6, 12, 13, 0, 0)},  # oldest
+        {"holdings_last_successful_sync": None},  # ignored
+    ])
+    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 6, 22))
+    assert as_of == date(2026, 6, 12)
+    assert stale_days == 10
+
+
+def test_broker_data_freshness_none_when_no_timestamps(monkeypatch):
+    """Cold start / unauthorized creds → no badge, never a fake date."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": None},
+    ])
+    assert _snap.broker_data_freshness(99, today=date(2026, 6, 22)) == (None, None)
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [])
+    assert _snap.broker_data_freshness(99) == (None, None)
+
+
+def test_sync_one_passes_none_holdings_sync_through(monkeypatch, _patched_models):
+    """When SnapTrade omits the signal, _sync_one_connection still calls the
+    persist helper with None (which the helper treats as a no-op) — so a
+    missing timestamp never crashes and never clobbers a prior good value."""
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    # _ok_run_sync has no holdings key → result.get(...) returns None.
+    monkeypatch.setattr(_snap, "_run_sync", lambda *a, **k: _ok_run_sync())
+
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+    assert res["ok"] is True
+    assert _patched_models["holdings_synced"] == [(9, "abc", None)]
 
 
 def _patch_run_sync_fetches(monkeypatch, *, account_summary):

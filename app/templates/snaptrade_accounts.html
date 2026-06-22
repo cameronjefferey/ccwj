@@ -180,6 +180,16 @@
                 {% else %}
                 <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
                 {% endif %}
+                {# Honest "broker data as of" — SnapTrade's OWN holdings sync
+                   time (when SnapTrade last pulled fresh data FROM the broker),
+                   NOT when we last read its cache. This is the timestamp the
+                   trader should trust for "how current is this?". #}
+                {% if c.holdings_last_successful_sync %}
+                <div class="freshness small text-body-secondary mt-1"
+                     title="When SnapTrade last pulled fresh holdings from your broker. This is the data's true 'as of' time, not when we last checked.">
+                    Broker data as of {{ c.holdings_last_successful_sync.strftime('%b %-d, %Y') }}
+                </div>
+                {% endif %}
             </div>
             {# "Sync now" now ALWAYS asks SnapTrade to repoll the broker for
                fresh data before reading (a sync that only re-reads SnapTrade's

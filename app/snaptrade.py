@@ -45,6 +45,7 @@ from app.models import (
     list_all_snaptrade_accounts,
     mark_snaptrade_connection_broken,
     mark_snaptrade_first_sync_completed,
+    record_snaptrade_holdings_sync,
     record_snaptrade_sync_attempt,
     remove_snaptrade_account,
     remove_snaptrade_user,
@@ -1084,6 +1085,12 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
         record_snaptrade_sync_attempt(user_id, snaptrade_account_id, error=None)
+        # Persist SnapTrade's honest "broker data as of" timestamp (best-effort;
+        # None is a no-op so a missing signal never clobbers a good value).
+        record_snaptrade_holdings_sync(
+            user_id, snaptrade_account_id,
+            result.get("holdings_last_successful_sync"),
+        )
         out.update({
             "ok": True,
             "history_rows": int(result.get("history_rows", 0) or 0),
@@ -1596,6 +1603,11 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
         "github_seed_push_skipped": not ok_cfg,
         "github_skip_reason": github_skip_reason,
         "github_no_changes": bool(github_no_changes),
+        # Honest "broker data as of" — SnapTrade's OWN holdings sync timestamp
+        # (NOT when our cron read the cache). We already fetched account_summary
+        # for the staleness backstop above; surface it here so the caller can
+        # persist it for the freshness badge.
+        "holdings_last_successful_sync": _holdings_last_successful_sync_dt(account_summary),
     }
 
 
@@ -1932,15 +1944,17 @@ def _parse_iso_datetime(value):
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
-def _holdings_last_successful_sync(account_summary):
+def _holdings_last_successful_sync_dt(account_summary):
     """Extract SnapTrade's ``sync_status.holdings.last_successful_sync`` from
-    the ``/accounts/{id}`` payload as a ``date``; ``None`` if absent or
-    unparseable.
+    the ``/accounts/{id}`` payload as a full naive ``datetime``; ``None`` if
+    absent or unparseable.
 
     This is the authoritative "when did SnapTrade last pull fresh holdings
     from the broker" timestamp. A value many days old means the connection has
     stalled even when the brokerage authorization is not ``disabled`` — the
-    failure mode the disabled flag alone misses.
+    failure mode the disabled flag alone misses. We persist this (see
+    ``record_snaptrade_holdings_sync``) to publish an honest "broker data as
+    of" badge, and reduce it to a ``date`` for the staleness backstop.
     """
     if not isinstance(account_summary, dict):
         return None
@@ -1950,7 +1964,14 @@ def _holdings_last_successful_sync(account_summary):
     holdings = sync_status.get("holdings")
     if not isinstance(holdings, dict):
         return None
-    dt = _parse_iso_datetime(holdings.get("last_successful_sync"))
+    return _parse_iso_datetime(holdings.get("last_successful_sync"))
+
+
+def _holdings_last_successful_sync(account_summary):
+    """Same authoritative freshness signal as
+    ``_holdings_last_successful_sync_dt`` reduced to a ``date`` (the grain the
+    staleness backstop compares against); ``None`` if absent/unparseable."""
+    dt = _holdings_last_successful_sync_dt(account_summary)
     return dt.date() if dt is not None else None
 
 
@@ -2040,3 +2061,42 @@ def _inject_snaptrade_reauth_needed():
         return {"snaptrade_reauth_needed": rows}
     except Exception:
         return {"snaptrade_reauth_needed": []}
+
+
+def broker_data_freshness(user_id, *, today=None):
+    """Honest "broker data as of" for the always-on freshness strip.
+
+    Returns ``(as_of_date, stale_days)`` where ``as_of_date`` is the OLDEST
+    ``holdings_last_successful_sync`` across the user's connected accounts —
+    the weakest link, so we NEVER overstate freshness when one connection has
+    stalled — and ``stale_days`` is whole days since that date. ``(None, None)``
+    when no account reports a usable timestamp (cold start / pre-migration /
+    unauthorized creds). This is SnapTrade's own "fresh from the broker" clock,
+    NOT our cron's cache-read ``last_sync_at``."""
+    stamps = [
+        r.get("holdings_last_successful_sync")
+        for r in (get_snaptrade_accounts(user_id) or [])
+        if r.get("holdings_last_successful_sync") is not None
+    ]
+    if not stamps:
+        return None, None
+    oldest = _as_date(min(stamps))
+    if oldest is None:
+        return None, None
+    today = today or date.today()
+    days = (today - oldest).days
+    return oldest, (days if days >= 0 else 0)
+
+
+@app.context_processor
+def _inject_broker_data_freshness():
+    """Global "broker data as of" — surfaced on EVERY page via the slim strip
+    in base.html so a trader always knows how current their numbers are.
+    Best-effort; never breaks a render."""
+    try:
+        if not getattr(current_user, "is_authenticated", False):
+            return {"broker_data_as_of": None, "broker_data_stale_days": None}
+        as_of, stale_days = broker_data_freshness(current_user.id)
+        return {"broker_data_as_of": as_of, "broker_data_stale_days": stale_days}
+    except Exception:
+        return {"broker_data_as_of": None, "broker_data_stale_days": None}

@@ -348,6 +348,7 @@ def init_db():
             display_nickname            TEXT,
             first_sync_completed        BOOLEAN NOT NULL DEFAULT FALSE,
             last_sync_at                TIMESTAMPTZ,
+            holdings_last_successful_sync TIMESTAMPTZ,
             last_sync_error             TEXT,
             connection_broken_at        TIMESTAMPTZ,
             created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -466,6 +467,7 @@ def init_db():
     _migrate_account_name_unique_index()
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
+    _migrate_snaptrade_holdings_sync_column()
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
@@ -664,6 +666,30 @@ def _migrate_snaptrade_force_refresh_columns():
         )
     except Exception as e:
         _log.warning("snaptrade_accounts last_force_refresh_at migration skipped: %s", e)
+
+
+def _migrate_snaptrade_holdings_sync_column():
+    """Idempotent: add ``holdings_last_successful_sync`` — the honest
+    "broker data as of" timestamp.
+
+    Distinct from ``last_sync_at`` (= when OUR cron last read SnapTrade's
+    cache): this is SnapTrade's own ``sync_status.holdings.last_successful_sync``,
+    i.e. when SnapTrade last pulled fresh holdings FROM the broker. The two
+    clocks diverge exactly when a connection stalls — ``last_sync_at`` keeps
+    advancing (we read the cache nightly) while the underlying broker data is
+    frozen (June 2026: user_id=9 Schwab frozen 7 days while every sync
+    "succeeded"). We already fetch this value for the holdings-freshness
+    backstop; persisting it lets the UI publish an honest freshness badge.
+    """
+    try:
+        execute(
+            "ALTER TABLE snaptrade_accounts "
+            "ADD COLUMN IF NOT EXISTS holdings_last_successful_sync TIMESTAMPTZ"
+        )
+    except Exception as e:
+        _log.warning(
+            "snaptrade_accounts holdings_last_successful_sync migration skipped: %s", e,
+        )
 
 
 def _migrate_schwab_display_nickname_column():
@@ -1653,6 +1679,7 @@ def get_snaptrade_accounts(user_id):
     return fetch_all(
         "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
+        "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
         "last_force_refresh_at, created_at "
         "FROM snaptrade_accounts WHERE user_id = %s "
@@ -1666,6 +1693,7 @@ def get_snaptrade_account(user_id, snaptrade_account_id):
     return fetch_one(
         "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
+        "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
         "last_force_refresh_at "
         "FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
@@ -1774,6 +1802,29 @@ def record_snaptrade_sync_attempt(user_id, snaptrade_account_id, *, error=None):
         "WHERE user_id = %s AND snaptrade_account_id = %s",
         (error, user_id, snaptrade_account_id),
     )
+
+
+def record_snaptrade_holdings_sync(user_id, snaptrade_account_id, when):
+    """Persist SnapTrade's own ``holdings.last_successful_sync`` — the
+    honest "broker data as of" timestamp surfaced in the UI.
+
+    ``when`` is a ``datetime``/``date`` (or None). None is a no-op so a
+    missing/unparseable signal never clobbers a previously-good value (mirrors
+    the None-is-safe philosophy of the freshness backstop). Best-effort: a
+    failure here must never break an otherwise-successful sync."""
+    if when is None:
+        return False
+    try:
+        execute(
+            "UPDATE snaptrade_accounts "
+            "SET holdings_last_successful_sync = %s, updated_at = NOW() "
+            "WHERE user_id = %s AND snaptrade_account_id = %s",
+            (when, user_id, snaptrade_account_id),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("record_snaptrade_holdings_sync failed: %s", exc)
+        return False
 
 
 def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):

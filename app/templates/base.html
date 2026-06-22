@@ -110,6 +110,33 @@
             .ht-feedback-fab { right: 12px; bottom: 12px; padding: .45rem .85rem; font-size: .8rem; }
         }
 
+        /* Always-on broker data-freshness strip (under the navbar). Subtle
+           when fresh, amber when data is going stale. */
+        .data-freshness-strip {
+            background: #eef2f7;
+            border-bottom: 1px solid #dde3ec;
+            color: #4a5568;
+            font-size: .82rem;
+            padding: .4rem 0;
+        }
+        .data-freshness-strip strong { color: #1a1a2e; font-weight: 600; }
+        .data-freshness-strip .fresh-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #2f9e44; display: inline-block; flex: 0 0 auto;
+        }
+        .data-freshness-strip .freshness-link {
+            color: inherit; text-decoration: underline;
+            text-underline-offset: 2px; font-weight: 600; white-space: nowrap;
+        }
+        .data-freshness-strip .freshness-link:hover { color: #1a1a2e; }
+        .data-freshness-strip.is-stale {
+            background: #fff4e0;
+            border-bottom-color: #ffe0a8;
+            color: #8a5a00;
+        }
+        .data-freshness-strip.is-stale strong { color: #663f00; }
+        .data-freshness-strip.is-stale .fresh-dot { background: #f08c00; }
+
         /* ──────────────────────────────────────────────────────────────
            Shared filter bar primitives (the "fun" Strategy Fit pattern).
 
@@ -387,6 +414,32 @@
             </div>
         </div>
     </nav>
+
+    {# Always-on data-freshness strip. SnapTrade's OWN "fresh from the broker"
+       timestamp (oldest across the user's connected accounts), NOT our cron's
+       cache-read time. Global via `_inject_broker_data_freshness` in
+       app/snaptrade.py so the trader knows on every page how current the
+       numbers are. Goes amber once data is older than 3 days (a weekend +
+       holiday of SnapTrade refresh skew is normal). #}
+    {% if current_user.is_authenticated and broker_data_as_of %}
+    {% set _is_stale = broker_data_stale_days is not none and broker_data_stale_days > 3 %}
+    <div class="data-freshness-strip{% if _is_stale %} is-stale{% endif %}">
+        <div class="container-fluid px-4 d-flex align-items-center justify-content-center gap-2">
+            <span class="fresh-dot" aria-hidden="true"></span>
+            <span>
+                Broker data as of <strong>{{ broker_data_as_of.strftime('%b %-d, %Y') }}</strong>
+                {% if broker_data_stale_days == 0 %}
+                    &middot; updated today
+                {% elif broker_data_stale_days == 1 %}
+                    &middot; 1 day ago
+                {% elif broker_data_stale_days is not none %}
+                    &middot; {{ broker_data_stale_days }} days ago
+                {% endif %}
+            </span>
+            <a href="{{ url_for('snaptrade_accounts_page') }}" class="freshness-link">Manage&nbsp;data</a>
+        </div>
+    </div>
+    {% endif %}
 
     {% if current_user.is_authenticated and current_user.username == 'demo' %}
     <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
