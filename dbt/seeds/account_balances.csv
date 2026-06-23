@@ -1,8 +1,6 @@
 account,user_id,tenant_id,row_type,market_value,cost_basis,unrealized_pnl,unrealized_pnl_pct,percent_of_account
 Alpaca Paper Account,8,snaptrade:1d141871-6f2b-408a-a0f0-4ff4f9379161,cash,79397.93,,,,81.763756
 Alpaca Paper Account,8,snaptrade:1d141871-6f2b-408a-a0f0-4ff4f9379161,account_total,97106.51,,,,
-Schwab Account,10,snaptrade:29168a13-a60f-4061-a238-1650769bc635,cash,28.85,,,,0.177247
-Schwab Account,10,snaptrade:29168a13-a60f-4061-a238-1650769bc635,account_total,16276.73,,,,
 Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,cash,-627.37,,,,-1.605484
 Schwab Account,10,snaptrade:b139379c-1239-4f97-9458-4b374e5114e8,account_total,39076.68,,,,
 Schwab Account,10,snaptrade:d02188ec-4890-4b97-afcd-20c334ba508c,cash,882.77,,,,1.497045
@@ -13,3 +11,5 @@ Schwab Account,10,snaptrade:8ee88aa2-44ae-405e-9285-5a587cc65766,cash,5.01,,,,0.
 Schwab Account,10,snaptrade:8ee88aa2-44ae-405e-9285-5a587cc65766,account_total,968.37,,,,
 Schwab Account,10,snaptrade:63395d74-1669-4d3f-a108-d1bc0cf24854,cash,994.09,,,,0.568234
 Schwab Account,10,snaptrade:63395d74-1669-4d3f-a108-d1bc0cf24854,account_total,174943.82,,,,
+Schwab Account,10,snaptrade:29168a13-a60f-4061-a238-1650769bc635,cash,28.13,,,,0.176447
+Schwab Account,10,snaptrade:29168a13-a60f-4061-a238-1650769bc635,account_total,15942.44,,,,
