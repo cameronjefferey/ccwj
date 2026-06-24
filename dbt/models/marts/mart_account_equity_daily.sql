@@ -151,10 +151,17 @@ equity_rows as (
       and snapshot_date is not null
 ),
 
+-- DEDUP: stg_daily_prices grain is (account, user_id, symbol, date); the
+-- join below is on (account, symbol) only and the result is SUMmed, so an
+-- un-collapsed user_id dimension would multiply close_equity_mv by the
+-- number of user_id rows per (account, symbol) (orphan-tenancy NULL +
+-- real-uid). close_price is per-symbol for the day, so max() collapses to
+-- one row per (account, symbol) safely.
 today_close_prices as (
-    select account, symbol, close_price
+    select account, symbol, max(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
     where date = current_date()
+    group by account, symbol
 ),
 
 equity_by_account_day as (

@@ -293,10 +293,17 @@ latest_session as (
 -- broker's after-hours mark, so it reconciles with int_enriched_current
 -- (same ladder) and the chart terminal. Intraday it falls back to the broker
 -- snapshot mark.
+-- DEDUP: stg_daily_prices grain is (account, user_id, symbol, date); the
+-- join below is on (account, symbol) only. Without collapsing user_id a
+-- symbol held under multiple user_ids for one account (orphan-tenancy
+-- NULL + real-uid) fans out every joined row. close_price is per-symbol
+-- for the day (identical across user_id stamps), so max() is a safe
+-- one-row-per-(account, symbol) collapse.
 today_close_prices as (
-    select account, symbol, close_price
+    select account, symbol, max(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
     where date = current_date()
+    group by account, symbol
 ),
 
 final as (

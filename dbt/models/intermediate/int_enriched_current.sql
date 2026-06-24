@@ -109,10 +109,21 @@ latest_prices as (
 -- Today's official close: only populated AFTER yfinance publishes it for
 -- the regular session (i.e. after the bell). Its presence is our "the
 -- close is settled, snap to it" signal. NULL during the trading day.
+--
+-- DEDUP (critical): stg_daily_prices grain is (account, user_id, symbol,
+-- date) — user_id is in the key. The join below is on (account, symbol)
+-- only, so without collapsing user_id a symbol that has rows under
+-- multiple user_ids for the same account (the NULL + real-uid orphan
+-- tenancy case) would fan out EVERY position row for that account+symbol
+-- (incl. options, which only pass through). close_price is the yfinance
+-- close for the symbol that day — identical across the user_id stamps —
+-- so max() collapses to one row per (account, symbol) safely. Mirrors the
+-- row_number() dedup in latest_prices above.
 today_prices as (
-    select account, symbol, close_price
+    select account, symbol, max(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
     where date = current_date()
+    group by account, symbol
 ),
 
 symbol_meta as (
