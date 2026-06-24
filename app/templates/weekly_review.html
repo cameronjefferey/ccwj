@@ -797,6 +797,73 @@
 {% endif %}
 
 {# ════════════════════════════════════
+   AFTER-HOURS MOVERS — broker mark vs official close
+   Reporting above is close-based (the price you traded against during the
+   day). This shows the post-close drift your broker last captured, so it
+   informs without polluting the core numbers.
+   ════════════════════════════════════ #}
+{% if after_hours_movers and (after_hours_movers.winners or after_hours_movers.losers) %}
+<div class="review-section">
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>After-Hours Movers (vs today's close)</span>
+        {% if after_hours_movers.total_impact %}
+        {% set ahti = after_hours_movers.total_impact %}
+        <span style="font-size: .8rem; color: {% if ahti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
+            Net after-hours drift: {{ "+" if ahti >= 0 else "-" }}${{ "{:,.0f}".format(ahti|abs) }}
+        </span>
+        {% endif %}
+    </div>
+    <p class="section-sub">
+        Where your broker's last mark sits relative to today's official close.
+        The app reports on the close (the price you made decisions on); this is
+        extended-hours movement only{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %}.
+    </p>
+    <div class="movers-grid">
+        <div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up after hours</div>
+            <div class="movers-list">
+                {% for m in after_hours_movers.winners %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
+                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No green names after hours.</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down after hours</div>
+            <div class="movers-list">
+                {% for m in after_hours_movers.losers %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
+                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No red names after hours.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
    WATCH LIST — earnings, expiring opts, projected ex-div
    ════════════════════════════════════ #}
 {% set _all_earnings = (upcoming_earnings_this_week or []) + (upcoming_earnings_next_week or []) %}

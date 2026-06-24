@@ -705,6 +705,61 @@ JOIN pair p USING (symbol)
 WHERE h.shares > 0
 """
 
+# After-hours movers (CLOSE-BASED REPORTING, June 2026).
+#
+# Core reporting now anchors equities on the official close (see AGENTS.md
+# "Pricing Precedence" + int_enriched_current). The broker's after-hours
+# mark — captured whenever the connection last synced — is no longer allowed
+# to drive any "current value" number, but it is still useful signal, so we
+# surface it HERE explicitly, clearly labeled "as of last broker sync".
+#
+# after-hours move per share = broker mark (stg_current.market_value/quantity,
+# the raw broker snapshot) - today's official yfinance close. The join to
+# today's close gates this to AFTER the bell (yfinance only publishes the
+# close once the regular session ends) — intraday there is no close row, so
+# the section is naturally empty until the close lands. Read from stg_current
+# directly (NOT int_enriched_current, which is now close-priced and would
+# show ~zero after-hours move by construction).
+AFTER_HOURS_MOVERS_QUERY = """
+WITH holdings AS (
+    SELECT
+        underlying_symbol AS symbol,
+        SUM(ABS(COALESCE(quantity, 0)))   AS shares,
+        SUM(COALESCE(market_value, 0))    AS broker_mv,
+        MAX(snapshot_date)                AS snapshot_date
+    FROM `ccwj-dbt.analytics.stg_current`
+    WHERE instrument_type = 'Equity'
+      AND quantity IS NOT NULL AND quantity != 0
+      AND market_value IS NOT NULL AND market_value != 0
+      {tenant_filter}
+    GROUP BY 1
+),
+today_close AS (
+    -- stg_daily_prices is keyed (account, symbol, date); the close is
+    -- market-wide so collapse to one row per symbol to avoid fanning the
+    -- holdings join when a symbol is held in multiple accounts.
+    SELECT symbol, MAX(close_price) AS close_price
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE date = CURRENT_DATE()
+      AND close_price IS NOT NULL AND close_price > 0
+    GROUP BY symbol
+)
+SELECT
+    h.symbol,
+    h.shares,
+    h.snapshot_date,
+    ROUND(SAFE_DIVIDE(h.broker_mv, h.shares), 4)            AS broker_mark,
+    tc.close_price                                          AS today_close,
+    ROUND(SAFE_DIVIDE(h.broker_mv, h.shares) - tc.close_price, 4) AS price_change,
+    ROUND(SAFE_DIVIDE(
+        SAFE_DIVIDE(h.broker_mv, h.shares) - tc.close_price,
+        tc.close_price) * 100, 2)                           AS price_change_pct,
+    ROUND(h.shares * (SAFE_DIVIDE(h.broker_mv, h.shares) - tc.close_price), 2) AS dollar_impact
+FROM holdings h
+JOIN today_close tc USING (symbol)
+WHERE h.shares > 0
+"""
+
 # Projected next ex-dividend dates for holdings, inferred from yfinance
 # historical cadence (stg_daily_prices.dividend > 0). Reads the last 6
 # distinct ex-div dates per symbol, computes median spacing in days, and
@@ -2829,6 +2884,57 @@ def _build_today_movers(today_moves_df, account_total_value=None):
     }
 
 
+def _build_after_hours_movers(ah_df):
+    """After-hours moves: broker mark (as of last sync) vs today's close.
+
+    Reporting is close-based (the close is the price the trader decided on
+    during the day); this section surfaces the after-hours drift separately
+    so it informs without polluting the core numbers. Returns at most 8
+    winners and 8 losers by absolute $ impact, plus the broker snapshot date
+    ("as of last broker sync"). Empty until today's official close publishes.
+    """
+    empty = {"winners": [], "losers": [], "total_impact": 0.0, "as_of": None}
+    if ah_df is None or ah_df.empty:
+        return empty
+    df = ah_df.copy()
+    for col in ["shares", "broker_mark", "today_close", "price_change",
+                "price_change_pct", "dollar_impact"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    total_impact = float(df["dollar_impact"].sum()) if "dollar_impact" in df.columns else 0.0
+    items = []
+    as_of = None
+    for _, r in df.iterrows():
+        sd = r.get("snapshot_date")
+        if as_of is None and sd is not None:
+            as_of = sd.isoformat() if hasattr(sd, "isoformat") else str(sd)[:10]
+        items.append({
+            "symbol": str(r.get("symbol") or ""),
+            "shares": float(r.get("shares") or 0),
+            "broker_mark": round(float(r.get("broker_mark") or 0), 2),
+            "today_close": round(float(r.get("today_close") or 0), 2),
+            "price_change": round(float(r.get("price_change") or 0), 2),
+            "price_change_pct": round(float(r.get("price_change_pct") or 0), 2),
+            "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
+        })
+
+    # Only surface meaningful drift (broker mark genuinely differs from close).
+    items = [i for i in items if abs(i["dollar_impact"]) >= 0.01]
+    winners = sorted([i for i in items if i["dollar_impact"] > 0],
+                     key=lambda x: x["dollar_impact"], reverse=True)[:8]
+    losers = sorted([i for i in items if i["dollar_impact"] < 0],
+                    key=lambda x: x["dollar_impact"])[:8]
+    if not winners and not losers:
+        return {**empty, "as_of": as_of}
+    return {
+        "winners": winners,
+        "losers": losers,
+        "total_impact": round(total_impact, 2),
+        "as_of": as_of,
+    }
+
+
 def _build_upcoming_dividends(div_df):
     """Projected next ex-div dates for held dividend-paying symbols."""
     if div_df is None or div_df.empty:
@@ -3172,6 +3278,7 @@ def weekly_review():
         "upcoming_earnings_next_week": [],
         "upcoming_ex_dividends": [],
         "today_movers": None,
+        "after_hours_movers": None,
         "today_pulse": None,
         "today_snapshots_total": None,
         "today_headline": None,
@@ -3219,6 +3326,7 @@ def weekly_review():
                 "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
                 "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
                 "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
+                "after_hours": AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter),
                 "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
                 "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
                 "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
@@ -3499,6 +3607,14 @@ def weekly_review():
         except Exception as e:
             if app.debug:
                 app.logger.warning("Today movers processing failed: %s", e)
+
+        # ── After-hours movers (broker mark vs official close) ─────────
+        try:
+            ah_df = batch.get("after_hours", pd.DataFrame())
+            context["after_hours_movers"] = _build_after_hours_movers(ah_df)
+        except Exception as e:
+            if app.debug:
+                app.logger.warning("After-hours movers processing failed: %s", e)
 
         # ── Projected ex-dividend dates ───────────────────────────────
         try:

@@ -44,19 +44,23 @@
       source — broker doesn't provide historical OHLC, and the chart
       mark-to-market math depends on having a value every day.
 
-      Today's row (date = current_date()): prefer the broker snapshot's
-      implied price (market_value / quantity from stg_current) when the
-      snapshot is FRESH (snapshot_date = today). yfinance is the fallback.
+      Today's row (date = current_date()) — CLOSE-BASED REPORTING (June
+      2026): prefer today's OFFICIAL yfinance close once it is published
+      (after the regular session ends). The broker snapshot's implied price
+      (market_value / quantity from stg_current, fresh today) is used only
+      DURING the trading day, before yfinance has the settled close. This
+      flips the old broker-first ordering so reporting anchors on the price
+      the trader actually traded against, not a transient after-hours mark
+      a post-bell sync may have captured.
 
       Why: the position page renders three "current value" totals
       (Strategy Breakdown, Breakdown by Type, Chart Terminal) all of which
-      should agree. Strategy Breakdown / Breakdown by Type read broker
-      directly via int_enriched_current. The chart used to read yfinance
-      close for today's row, which created a structural disagreement
-      hidden only by `_align_position_pnl_chart_with_kpi` rescaling the
-      whole chart series (a silent distortion, see app/routes.py).
-      Sourcing today's close from broker when fresh makes all three
-      surfaces reconcile by construction.
+      should agree. Strategy Breakdown / Breakdown by Type read price via
+      int_enriched_current, which uses the SAME close-first ladder, so all
+      three surfaces reconcile by construction. (The chart used to read
+      yfinance close for today's row, creating a structural disagreement
+      hidden only by `_align_position_pnl_chart_with_kpi` rescaling — now
+      both surfaces agree on close, so no rescaling is needed.)
 */
 
 -- Split-adjust equity quantities. The chart's running average-cost
@@ -326,10 +330,21 @@ joined as (
         coalesce(opd.realized_today, 0)        as options_realized_today,
         coalesce(opd.open_unrealized_today, 0) as open_unrealized_today,
 
-        -- Price source: fresh broker snapshot today (when present) trumps
-        -- yfinance close. yfinance handles every other day. See header
-        -- comment for why this asymmetry matters for chart reconciliation.
+        -- Price source (CLOSE-BASED REPORTING, June 2026 — see AGENTS.md
+        -- "Pricing Precedence" + int_enriched_current header):
+        --   1) today's OFFICIAL yfinance close once published (after the
+        --      bell) — p.close_price for date = current_date. This SNAPS
+        --      today's equity to the settled close instead of the broker's
+        --      transient after-hours mark.
+        --   2) else the broker live mark (bt.close_price, mv/qty) — the
+        --      intraday "right now" price while today's close isn't out yet.
+        --   3) every historical day is yfinance close (p.close_price) as
+        --      before.
         case
+            when ad.date = current_date()
+                 and p.close_price is not null
+                 and p.close_price > 0
+            then p.close_price
             when ad.date = current_date()
                  and bt.close_price is not null
                  and bt.close_price > 0

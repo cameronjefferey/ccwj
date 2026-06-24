@@ -1,22 +1,36 @@
 /*
     Current positions enriched with the right "current price".
 
-    Price precedence (from most-trusted to least):
+    Price precedence for EQUITY (from most-trusted to least) — CLOSE-BASED
+    REPORTING (June 2026, see AGENTS.md "Pricing Precedence"):
 
-      1) Broker-derived current price = market_value / quantity, when the
-         broker snapshot is FRESH (snapshot_date >= current_date - 7).
-         This is the broker's own implied current per-share price at the
-         time of last sync — by definition consistent with market_value /
-         cost_basis / unrealized_pnl that the rest of the model carries
-         through unchanged.
+      1) Today's OFFICIAL yfinance close (`stg_daily_prices` where
+         date = current_date). yfinance only publishes today's close AFTER
+         the regular session ends, so "today's close exists" means the bell
+         has rung — at which point reporting SNAPS to the official close and
+         ignores the broker's after-hours mark. This is the price the trader
+         made decisions on during the day; after-hours drift is noise we
+         surface separately (the After-hours movers section), never in the
+         core numbers.
 
-      2) yfinance daily close (`stg_daily_prices.close_price`), when
-         broker is stale or quantity == 0. yfinance is updated end-of-day,
-         which is more current than a 2-week-old broker snapshot but less
-         current than today's broker tick.
+      2) Broker-derived live mark = market_value / quantity, when the broker
+         snapshot is FRESH (snapshot_date >= current_date - 7) and today's
+         close is NOT yet published — i.e. DURING the trading day. This is
+         the intraday "right now" price. It is by definition consistent with
+         market_value / cost_basis / unrealized_pnl carried through unchanged.
 
-      3) Broker `current_price` column itself, as a final fallback (covers
+      3) Latest prior yfinance close (`stg_daily_prices.close_price`), as a
+         cold-start fallback when the broker snapshot is stale/absent and
+         today's close hasn't landed.
+
+      4) Broker `current_price` column itself, as a final fallback (covers
          odd cases where market_value is missing but Price isn't).
+
+    Why close-first now (was broker-first): a sync that lands after 4pm ET
+    captured the broker's transient after-hours mark, which then drove every
+    "current value" surface and disagreed with what the trader saw at the
+    close (real case June 2026: 1:49pm PT manual sync pulled 4:49pm ET
+    extended-hours marks). Reporting is now anchored on the settled close.
 
     Why deriving rather than trusting `current_price` directly:
 
@@ -92,6 +106,15 @@ latest_prices as (
     where rn = 1
 ),
 
+-- Today's official close: only populated AFTER yfinance publishes it for
+-- the regular session (i.e. after the bell). Its presence is our "the
+-- close is settled, snap to it" signal. NULL during the trading day.
+today_prices as (
+    select account, symbol, close_price
+    from {{ ref('stg_daily_prices') }}
+    where date = current_date()
+),
+
 symbol_meta as (
     select * from {{ ref('stg_symbol_metadata') }}
 ),
@@ -101,6 +124,7 @@ priced as (
         cp.*,
         lp.close_price as yf_close,
         lp.price_date as yf_price_date,
+        tp.close_price as today_close,
 
         -- Broker freshness gate: last sync within 7d.
         case
@@ -127,6 +151,9 @@ priced as (
     left join latest_prices lp
         on cp.account = lp.account
         and cp.underlying_symbol = lp.symbol
+    left join today_prices tp
+        on cp.account = tp.account
+        and cp.underlying_symbol = tp.symbol
 )
 
 select
@@ -143,8 +170,13 @@ select
     p.description,
     p.quantity,
 
-    -- Equity current_price: fresh broker -> yfinance fallback -> raw broker
+    -- Equity current_price (close-based): today's official close (after the
+    -- bell) -> broker live mark (intraday) -> latest prior close -> raw broker
     case
+        when p.instrument_type = 'Equity'
+             and p.today_close is not null
+             and p.today_close > 0
+        then p.today_close
         when p.instrument_type = 'Equity'
              and p.broker_is_fresh
              and p.broker_implied_price is not null
@@ -168,6 +200,12 @@ select
     -- the same definition.
     case
         when p.instrument_type = 'Equity'
+             and p.today_close is not null
+             and p.today_close > 0
+             and p.quantity is not null
+             and p.quantity != 0
+        then p.quantity * p.today_close
+        when p.instrument_type = 'Equity'
              and p.broker_is_fresh
              and p.broker_implied_price is not null
              and p.broker_implied_price > 0
@@ -187,6 +225,14 @@ select
 
     -- Unrealized P&L: same precedence ladder as price/mv.
     case
+        when p.instrument_type = 'Equity'
+             and p.today_close is not null
+             and p.today_close > 0
+             and p.quantity is not null
+             and p.quantity != 0
+             and p.cost_basis is not null
+             and p.cost_basis != 0
+        then p.quantity * p.today_close - p.cost_basis
         when p.instrument_type = 'Equity'
              and p.broker_is_fresh
              and p.broker_implied_price is not null
@@ -209,6 +255,14 @@ select
 
     -- Unrealized P&L % — mirrors unrealized_pnl path, divided by |cost_basis|.
     case
+        when p.instrument_type = 'Equity'
+             and p.today_close is not null
+             and p.today_close > 0
+             and p.quantity is not null
+             and p.quantity != 0
+             and p.cost_basis is not null
+             and p.cost_basis != 0
+        then 100.0 * (p.quantity * p.today_close - p.cost_basis) / abs(p.cost_basis)
         when p.instrument_type = 'Equity'
              and p.broker_is_fresh
              and p.broker_implied_price is not null

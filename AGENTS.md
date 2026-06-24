@@ -86,6 +86,10 @@ What's working (May 2026 rebuild):
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
+- After-hours movers: broker mark (as of last sync) vs today's official close,
+  per held equity — surfaces post-close drift without polluting the
+  close-based core numbers (reads `stg_current` mark deliberately; the only
+  user-facing surface that intentionally shows the broker after-hours mark)
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
@@ -359,7 +363,7 @@ Page speed matters.
 - Optimize for weekly read performance
 - Market data comes from `stg_daily_prices` in BigQuery (not live yfinance calls)
 
-### 5. Pricing Precedence (broker-first when fresh, yfinance fallback)
+### 5. Pricing Precedence (CLOSE-BASED for equities; broker for cash/options/intraday)
 
 The product reads "what is this symbol worth right now" from two
 fundamentally different sources, and they have different freshness and
@@ -368,30 +372,56 @@ in the repo (May 2026: a single position page showed $7,465 / $7,463.61 /
 $11,709 across three "current value" totals — three different sources,
 three different prices, all rendered to the user as if they agreed).
 
+**CLOSE-BASED REPORTING (June 2026 amendment).** The rule used to be
+"broker snapshot wins when fresh, even for today." That captured the
+broker's transient AFTER-HOURS mark whenever a sync landed after the 4pm
+ET bell (real case June 2026: a 1:49pm PT manual sync pulled 4:49pm ET
+extended-hours marks, so every "current value" disagreed with the close
+the trader actually traded against). We flipped it for **equities/ETFs**:
+reporting now anchors on the **official daily close**, and the broker mark
+is used only as the intraday "right now" price before the close publishes.
+The after-hours drift is surfaced separately (Daily Review → After-hours
+movers), never in the core numbers.
+
 **The rule, anywhere a UI surface displays "current value":**
 
-1. **Broker snapshot wins when fresh.** `stg_current` (the Schwab /
-   manual-CSV positions snapshot) is the source of truth for current
-   per-share price, market value, cost basis, and unrealized P&L
-   whenever `snapshot_date >= current_date - 7`. Derive per-share price
-   as `market_value / quantity` (the broker's own implied current price)
-   rather than trusting `current_price` directly — Schwab's API has
-   shipped at least one bug where `Price` was actually the per-share cost
-   basis (see `~/.cursor/skills/broker-sync-safety/SKILL.md` 2026-05-11).
+1. **Equities snap to the official close once published.** For an
+   equity/ETF, today's price is `stg_daily_prices.close_price` where
+   `date = current_date()` whenever that row exists (yfinance only
+   publishes today's close AFTER the regular session ends, so its
+   presence means "the bell rang, snap to it"). **Before** the close
+   publishes (intraday), fall back to the broker live mark
+   `market_value / quantity` from a FRESH `stg_current`
+   (`snapshot_date >= current_date - 7`) — derive `mv / quantity`, not
+   `current_price` directly (Schwab once shipped `Price` = per-share cost
+   basis; see `~/.cursor/skills/broker-sync-safety/SKILL.md` 2026-05-11).
+   Then latest prior close, then raw broker `current_price`. Cash and
+   OPTIONS stay broker-based (no per-contract close exists; the broker
+   mark is the only intraday option price). This ladder lives at the
+   chokepoints: `int_enriched_current`, `mart_daily_pnl` (`broker_today_prices`
+   + today CASE), `int_equity_sessions`, `mart_account_equity_daily`
+   (equity-sleeve repricing — cash/margin/options untouched), and the
+   Flask LIVE TODAY OVERRIDEs in `_build_chart_from_daily_pnl` /
+   `_build_account_chart_from_daily_pnl` (which read close-priced
+   `int_enriched_current`).
 
 2. **yfinance fills the gap when broker is stale or absent.**
-   `stg_daily_prices.close_price` (yfinance daily close) is the fallback
-   for stale snapshots, cold-start users, or positions where the broker
-   never reported a snapshot. yfinance is also the only legitimate source
-   for HISTORICAL prices (broker doesn't ship per-day OHLC) and for
+   `stg_daily_prices.close_price` (yfinance daily close) is also the
+   fallback for stale snapshots, cold-start users, or positions where the
+   broker never reported a snapshot. yfinance is the only legitimate
+   source for HISTORICAL prices (broker doesn't ship per-day OHLC) and for
    contextual data (SPY/QQQ benchmarks, sector metadata, ex-dividend
    amounts).
 
-3. **Today is asymmetric.** For mart_daily_pnl's *today* row,
-   broker-implied (mv/qty) wins over yfinance close when the snapshot is
-   fresh — see the "PRICE PRECEDENCE" header comment in
+3. **Today's equity row prefers the close; historical days are
+   always yfinance.** For `mart_daily_pnl`'s *today* row, the official
+   close wins over the broker mark once published, else the broker live
+   mark carries intraday — see the "PRICE PRECEDENCE" header comment in
    `dbt/models/marts/mart_daily_pnl.sql`. For every historical day
-   yfinance is the only source.
+   yfinance is the only source. For "snap to close" to show the settled
+   close the SAME evening, today's close must be in `stg_daily_prices` at
+   build time — the evening price-only refresh
+   (`.github/workflows/prices_refresh.yml`) exists for exactly this.
 
 4. **Use full-precision broker fields, not derived ones.** Schwab's
    stg_history fill `price` rounds to 2 decimals; stg_current's

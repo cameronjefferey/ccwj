@@ -286,6 +286,19 @@ latest_session as (
     group by 1, 2, 3, 4
 ),
 
+-- Today's official close (CLOSE-BASED REPORTING, June 2026 — see AGENTS.md
+-- "Pricing Precedence"). Populated only after yfinance publishes today's
+-- close (after the bell); NULL during the trading day. When present, the
+-- open session's current value SNAPS to qty * close instead of carrying the
+-- broker's after-hours mark, so it reconciles with int_enriched_current
+-- (same ladder) and the chart terminal. Intraday it falls back to the broker
+-- snapshot mark.
+today_close_prices as (
+    select account, symbol, close_price
+    from {{ ref('stg_daily_prices') }}
+    where date = current_date()
+),
+
 final as (
     select
         s.tenant_id,
@@ -322,18 +335,31 @@ final as (
         -- guard as `status`: a closed round-trip whose symbol still has
         -- a snapshot row must NOT pick up the snapshot's market value
         -- (that belongs to the separate snapshot session).
+        --
+        -- CLOSE-BASED REPORTING (June 2026): once today's official close is
+        -- published, reprice the equity sleeve to qty * close (keeps the
+        -- broker cash/options untouched, and qty*price=mv holds by
+        -- construction). Intraday (no close yet) carry the broker mark.
         case
             when ls.latest_session_id = s.session_id
                  and c.trade_symbol is not null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
-            then c.market_value
+            then case
+                     when tc.close_price is not null and tc.close_price > 0
+                     then c.quantity * tc.close_price
+                     else c.market_value
+                 end
         end as current_market_value,
 
         case
             when ls.latest_session_id = s.session_id
                  and c.trade_symbol is not null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
-            then c.current_price
+            then case
+                     when tc.close_price is not null and tc.close_price > 0
+                     then tc.close_price
+                     else c.current_price
+                 end
         end as current_price,
 
         -- Total P&L for OPEN sessions = realized + broker_unrealized.
@@ -384,8 +410,14 @@ final as (
                         0,
                         s.total_buy_cost - coalesce(c.cost_basis, 0)
                     )
-                    -- broker unrealized
-                    + coalesce(c.market_value, 0) - coalesce(c.cost_basis, 0)
+                    -- unrealized: close-based mv when today's close is
+                    -- published (snap to close), else broker mark (intraday)
+                    + (case
+                           when tc.close_price is not null and tc.close_price > 0
+                           then c.quantity * tc.close_price
+                           else coalesce(c.market_value, 0)
+                       end)
+                    - coalesce(c.cost_basis, 0)
             when c.trade_symbol is null
                  and coalesce(s.total_buy_qty, 0) > coalesce(s.total_sell_qty, 0)
                  and coalesce(uth.shares_held_anywhere, 0)
@@ -444,6 +476,9 @@ final as (
         and (s.tenant_id is not distinct from c.tenant_id)
         and s.symbol = c.underlying_symbol
         and c.instrument_type = 'Equity'
+    left join today_close_prices tc
+        on c.account = tc.account
+        and c.underlying_symbol = tc.symbol
     left join user_total_holdings uth
         on (s.user_id is not distinct from uth.user_id)
         and s.symbol = uth.symbol

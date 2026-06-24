@@ -21,6 +21,7 @@ from app.weekly_review import (
     _build_account_breakdown,
     _build_benchmark_rows,
     _build_benchmark_snapshot,
+    _build_after_hours_movers,
     _build_breakdown_totals,
     _build_position_breakdown,
     _build_today_movers,
@@ -349,6 +350,52 @@ class TestBuildTodayMovers:
         assert result["losers"][0]["symbol"] == "TSLA"
         assert result["total_impact"] == 50.0
         assert result["as_of"] == "2026-05-18"
+
+
+class TestBuildAfterHoursMovers:
+    """After-hours movers: broker mark (last sync) vs today's official close.
+
+    Close-based reporting surfaces this drift separately so it informs
+    without polluting the core numbers.
+    """
+
+    def test_empty_input(self):
+        result = _build_after_hours_movers(None)
+        assert result == {"winners": [], "losers": [], "total_impact": 0.0, "as_of": None}
+        assert _build_after_hours_movers(pd.DataFrame())["winners"] == []
+
+    def test_splits_winners_and_losers_with_as_of(self):
+        df = pd.DataFrame([
+            {"symbol": "NVDA", "shares": 100, "broker_mark": 211.0,
+             "today_close": 208.0, "price_change": 3.0,
+             "price_change_pct": 1.44, "dollar_impact": 300.0,
+             "snapshot_date": date(2026, 6, 23)},
+            {"symbol": "AAPL", "shares": 50, "broker_mark": 296.0,
+             "today_close": 297.0, "price_change": -1.0,
+             "price_change_pct": -0.34, "dollar_impact": -50.0,
+             "snapshot_date": date(2026, 6, 23)},
+        ])
+        result = _build_after_hours_movers(df)
+        assert [w["symbol"] for w in result["winners"]] == ["NVDA"]
+        assert [l["symbol"] for l in result["losers"]] == ["AAPL"]
+        assert result["winners"][0]["broker_mark"] == 211.0
+        assert result["winners"][0]["today_close"] == 208.0
+        assert result["total_impact"] == 250.0
+        assert result["as_of"] == "2026-06-23"
+
+    def test_zero_drift_filtered_out(self):
+        # Broker mark == close (no after-hours move) → not surfaced.
+        df = pd.DataFrame([
+            {"symbol": "MSFT", "shares": 10, "broker_mark": 400.0,
+             "today_close": 400.0, "price_change": 0.0,
+             "price_change_pct": 0.0, "dollar_impact": 0.0,
+             "snapshot_date": date(2026, 6, 23)},
+        ])
+        result = _build_after_hours_movers(df)
+        assert result["winners"] == []
+        assert result["losers"] == []
+        # as_of still threads through so the label can show last sync date.
+        assert result["as_of"] == "2026-06-23"
 
 
 class TestBuildUpcomingDividends:

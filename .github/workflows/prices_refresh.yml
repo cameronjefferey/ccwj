@@ -1,0 +1,75 @@
+name: Evening price refresh (snap equities to official close)
+
+# CLOSE-BASED REPORTING (June 2026 — see AGENTS.md "Pricing Precedence").
+#
+# Reporting now values today's equities at the official yfinance close once
+# it is published. For the evening page to actually SHOW the settled close,
+# today's close must be in stg_daily_prices at build time. The main
+# bigquery_update workflow is triggered by the SnapTrade sync seed push,
+# which fires ~6 min after the 4pm ET bell — usually too early for yfinance's
+# settled close.
+#
+# This lightweight, price-ONLY job runs later in the evening so equities snap
+# to the official close the same day:
+#   1) current_position_stock_price.py  (fetch yfinance daily closes + splits)
+#   2) dbt build --select stg_daily_prices+  (propagate close into the marts)
+#
+# It intentionally does NOT touch seeds, the broker sync, or the non-price
+# dbt graph — those are owned by bigquery_update.yml.
+#
+# Timing note (provisional — revisit with scripts/analyze_snaptrade_sync_timing.py
+# once Phase 3 has a few days of data): GitHub cron is UTC and does NOT adjust
+# for US DST, so we schedule both ~1h-after-close slots to cover EDT and EST.
+#   - EDT: 4:00pm ET = 20:00 UTC → run 21:00 UTC
+#   - EST: 4:00pm ET = 21:00 UTC → run 22:00 UTC
+# Running both on weekdays is cheap and idempotent (WRITE_TRUNCATE prices).
+on:
+  schedule:
+    - cron: '0 21 * * 1-5'
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: prices-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh-prices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.DBT_KEYFILE_JSON }}'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up DBT profiles
+        run: |
+          mkdir -p ~/.dbt
+          cp dbt/profiles.yml ~/.dbt/profiles.yml
+          echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
+
+      - name: Fetch daily stock prices (official close + splits)
+        run: python current_position_stock_price.py
+
+      - name: Run DBT build (price-dependent models only)
+        run: |
+          cd dbt
+          dbt build --select "stg_daily_prices+"
+        env:
+          DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
+          DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
+          DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}

@@ -5492,13 +5492,22 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         # in ``int_option_contract_daily_pnl``). That row reflects
         # the LATEST DAILY SNAPSHOT, which can be 1-3 trading days
         # stale (Schwab's nightly sync hasn't booked today yet, or
-        # the user's connection paused). For "today" the broker's
-        # LIVE snapshot in stg_current is the source of truth — it's
-        # always intra-day fresh. We must therefore override the
-        # mart's today row with values computed from current_df so
-        # the chart's terminal value matches the headline KPIs and
-        # the positions_summary mart (which also reads stg_current
-        # live for unrealized).
+        # the user's connection paused). For "today" we override the
+        # mart's row with values computed from ``current_df`` (which
+        # comes from ``int_enriched_current``) so the chart's terminal
+        # matches the headline KPIs / positions_summary / Breakdown-by-
+        # type — all of which read the SAME ``int_enriched_current``.
+        #
+        # CLOSE-BASED REPORTING (June 2026): ``int_enriched_current``
+        # now prices today's EQUITY at the official yfinance close once
+        # it is published (after the bell), falling back to the broker
+        # live mark only intraday — see int_enriched_current header +
+        # AGENTS.md "Pricing Precedence". So this override automatically
+        # uses the close when published; we no longer paint the broker's
+        # transient after-hours mark onto the terminal. Options/cash stay
+        # broker-derived. Because both the mart today-row and this override
+        # resolve to close-when-published, the chart terminal == hero by
+        # construction (the reconciliation invariant) with no rescaling.
         #
         # When the chart already ends at today (mart spine), REPLACE
         # the last row's equity/options/total with the live-derived
@@ -6302,6 +6311,13 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         # day, so adding today's unrealized double-counts when the
         # mart is fresh as of yesterday). Pre-existing; out of scope
         # for the option-attribution rewrite.
+        #
+        # CLOSE-BASED REPORTING (June 2026): ``current_df`` comes from
+        # ``int_enriched_current``, whose equity unrealized is now priced
+        # at the official close once published (broker live mark only
+        # intraday). So this synthetic today row snaps to the close too,
+        # matching mart_account_equity_daily / the account hero. See
+        # AGENTS.md "Pricing Precedence".
         #
         # Options: under realize-on-close, the right value is
         #   today_options = (last realized cumulative across symbols)

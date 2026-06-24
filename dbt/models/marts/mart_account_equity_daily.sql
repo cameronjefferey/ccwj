@@ -4,10 +4,19 @@
     Daily account value, broken into equity vs options vs cash.
 
     One row per (tenant_id, account, user_id, date) with:
-      - account_value  (account_total rows of the daily balances snapshot)
+      - account_value  (account_total rows of the daily balances snapshot,
+                        with today's EQUITY sleeve repriced to the official
+                        close once published — see equity_by_account_day)
       - cash_value     (cash rows of the daily balances snapshot)
       - option_value   (today's live option rows from stg_current, summed)
       - equity_value   (account_value - cash_value - option_value)
+
+    CLOSE-BASED REPORTING (June 2026): today's broker account_total can bake
+    in transient after-hours equity marks if the sync lands after the bell.
+    We snap the equity sleeve to the official yfinance close once it is
+    published; cash, margin, and options stay broker-reported. Historical
+    days and intraday (close not yet out) are unchanged. See AGENTS.md
+    "Pricing Precedence".
 
     HISTORY SOURCE (June 2026 fix): the per-day ``account_value`` /
     ``cash_value`` series reads from the accumulating
@@ -114,6 +123,59 @@ option_rows as (
       and snapshot_date is not null
 ),
 
+-- CLOSE-BASED REPORTING (June 2026 — see AGENTS.md "Pricing Precedence").
+-- Today's account_value is the broker account_total, which (when synced
+-- after the bell) bakes in the broker's transient after-hours EQUITY marks.
+-- We reprice ONLY the equity sleeve to the official close:
+--   account_value(today) = broker account_total
+--                          - broker equity MV
+--                          + close-priced equity MV
+-- Cash, margin, and option_value stay broker-reported. stg_current carries
+-- only today's snapshot, so this adjustment is naturally today-only; on
+-- historical days both sums are 0 and account_value is unchanged. When
+-- today's close is not yet published (intraday), close-priced MV == broker
+-- MV per symbol, so the adjustment nets to 0 and the live broker mark
+-- carries — exactly the int_enriched_current ladder.
+equity_rows as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        underlying_symbol,
+        quantity,
+        market_value,
+        snapshot_date
+    from {{ ref('stg_current') }}
+    where account != 'Demo Account'
+      and instrument_type = 'Equity'
+      and snapshot_date is not null
+),
+
+today_close_prices as (
+    select account, symbol, close_price
+    from {{ ref('stg_daily_prices') }}
+    where date = current_date()
+),
+
+equity_by_account_day as (
+    select
+        er.tenant_id,
+        er.account,
+        er.user_id,
+        er.snapshot_date as date,
+        sum(er.market_value) as broker_equity_mv,
+        sum(case
+                when tc.close_price is not null and tc.close_price > 0
+                then er.quantity * tc.close_price
+                else er.market_value
+            end) as close_equity_mv
+    from equity_rows er
+    left join today_close_prices tc
+        on er.account = tc.account
+        and er.underlying_symbol = tc.symbol
+    group by 1, 2, 3, 4
+),
+
 options_by_account_day as (
     select
         tenant_id,
@@ -143,16 +205,32 @@ snapshot_result as (
         b.account,
         b.user_id,
         b.date,
-        b.account_value - b.cash_value - coalesce(o.option_value, 0) as equity_value,
+        -- Equity sleeve is the plug so the three sleeves always sum to the
+        -- (repriced) account_value. The repricing below shifts account_value
+        -- by (close equity MV − broker equity MV); cash/option are untouched.
+        (b.account_value
+            - coalesce(e.broker_equity_mv, 0)
+            + coalesce(e.close_equity_mv, 0))
+            - b.cash_value
+            - coalesce(o.option_value, 0)                            as equity_value,
         coalesce(o.option_value, 0)                                  as option_value,
         b.cash_value,
+        -- account_value snapped to the official close for today's equity
+        -- sleeve (no-op on historical days and intraday; see equity CTE).
         b.account_value
+            - coalesce(e.broker_equity_mv, 0)
+            + coalesce(e.close_equity_mv, 0)                         as account_value
     from by_account_day b
     left join options_by_account_day o
       on b.account = o.account
      and (b.user_id is not distinct from o.user_id)
      and (b.tenant_id is not distinct from o.tenant_id)
      and b.date    = o.date
+    left join equity_by_account_day e
+      on b.account = e.account
+     and (b.user_id is not distinct from e.user_id)
+     and (b.tenant_id is not distinct from e.tenant_id)
+     and b.date    = e.date
 ),
 
 -- v2 tenant_id is carried natively from staging and is part of the grain
