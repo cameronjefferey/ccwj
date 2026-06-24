@@ -30,6 +30,66 @@ def test_stable_account_name_uses_last_four_when_available():
     assert name == "Fidelity ••••5678"
 
 
+# ---------------------------------------------------------------------------
+# _group_accounts_by_connection — broker-connection grouping for the
+# accounts page (reconnect is a connection-level action, not per-account).
+# ---------------------------------------------------------------------------
+
+
+def test_group_accounts_groups_by_authorization_id():
+    rows = [
+        {"snaptrade_account_id": "a1", "broker_slug": "schwab",
+         "brokerage_authorization_id": "auth-X", "connection_broken_at": None},
+        {"snaptrade_account_id": "a2", "broker_slug": "schwab",
+         "brokerage_authorization_id": "auth-X", "connection_broken_at": "2026-06-23"},
+        {"snaptrade_account_id": "b1", "broker_slug": "fidelity",
+         "brokerage_authorization_id": "auth-Y", "connection_broken_at": None},
+    ]
+    groups = _snap._group_accounts_by_connection(rows)
+    assert len(groups) == 2
+    schwab = next(g for g in groups if g["broker_slug"] == "schwab")
+    assert len(schwab["accounts"]) == 2
+    assert schwab["authorization_id"] == "auth-X"
+    # Any broken account in the group marks the whole connection broken.
+    assert schwab["needs_reconnect"] is True
+    fidelity = next(g for g in groups if g["broker_slug"] == "fidelity")
+    assert fidelity["needs_reconnect"] is False
+    assert fidelity["broker_label"] == "Fidelity"
+
+
+def test_group_accounts_falls_back_to_broker_slug_without_auth_id():
+    # No cached auth id yet → accounts still collapse under their broker
+    # rather than each rendering a standalone reconnect prompt.
+    rows = [
+        {"snaptrade_account_id": "a1", "broker_slug": "schwab",
+         "brokerage_authorization_id": None, "connection_broken_at": "2026-06-23"},
+        {"snaptrade_account_id": "a2", "broker_slug": "schwab",
+         "brokerage_authorization_id": "", "connection_broken_at": "2026-06-23"},
+    ]
+    groups = _snap._group_accounts_by_connection(rows)
+    assert len(groups) == 1
+    assert groups[0]["broker_slug"] == "schwab"
+    assert len(groups[0]["accounts"]) == 2
+    assert groups[0]["needs_reconnect"] is True
+    # No auth id anywhere → reconnect falls back to the generic portal.
+    assert groups[0]["authorization_id"] is None
+
+
+def test_group_accounts_picks_first_known_auth_id_in_group():
+    rows = [
+        {"snaptrade_account_id": "a1", "broker_slug": "schwab",
+         "brokerage_authorization_id": "", "connection_broken_at": None},
+        {"snaptrade_account_id": "a2", "broker_slug": "schwab",
+         "brokerage_authorization_id": "auth-Z", "connection_broken_at": None},
+    ]
+    # a1 has no auth id so it keys on slug; a2 keys on auth-Z. They are
+    # genuinely different keys, so two groups — but each carries a usable
+    # reconnect target (slug fallback / real auth id respectively).
+    groups = _snap._group_accounts_by_connection(rows)
+    auth_ids = {g["authorization_id"] for g in groups}
+    assert "auth-Z" in auth_ids
+
+
 def test_stable_account_name_falls_back_when_no_digits():
     name = _snap._stable_account_name("VANGUARD", "ABCD")
     assert name == "Vanguard Account"

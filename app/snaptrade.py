@@ -47,6 +47,7 @@ from app.models import (
     mark_snaptrade_first_sync_completed,
     record_snaptrade_holdings_sync,
     record_snaptrade_sync_attempt,
+    record_snaptrade_sync_observation,
     remove_snaptrade_account,
     remove_snaptrade_user,
     save_snaptrade_user,
@@ -238,10 +239,21 @@ def snaptrade_connect():
     HappyTrader user with SnapTrade if needed, then redirects them to
     the SnapTrade-hosted Connection Portal where they pick a broker
     and authenticate. SnapTrade redirects back to ``/snaptrade/callback``.
+
+    RECONNECT MODE: when the form carries ``reconnect_authorization_id``
+    (a broken connection's SnapTrade brokerage-authorization UUID), we pass
+    SnapTrade's ``reconnect`` param so the portal goes straight to repairing
+    THAT connection instead of adding a brand-new one. One broker grant backs
+    many accounts, so fixing the grant clears every sibling account at once.
+    Falls back to the normal "add a brokerage" portal when no id is supplied
+    (e.g. the auth id was never cached because the account never refreshed).
     """
     blocked = demo_block_writes("connecting a brokerage account")
     if blocked:
         return blocked
+    reconnect_auth_id = (request.form.get("reconnect_authorization_id") or "").strip()
+    reconnect_broker_label = (request.form.get("reconnect_broker_label") or "").strip()
+    is_reconnect = bool(reconnect_auth_id or reconnect_broker_label)
     client = _get_snaptrade_client()
     if not client:
         flash("Multi-broker connect is not configured. Contact the administrator.", "danger")
@@ -323,11 +335,19 @@ def snaptrade_connect():
         custom_redirect = (cfg[2] if cfg and cfg[2] else "") or url_for(
             "snaptrade_callback", _external=True
         )
-        login_resp = client.authentication.login_snap_trade_user(
-            user_id=snap["snaptrade_user_id"],
-            user_secret=snap["snaptrade_secret"],
-            custom_redirect=custom_redirect,
-        )
+        login_kwargs = {
+            "user_id": snap["snaptrade_user_id"],
+            "user_secret": snap["snaptrade_secret"],
+            "custom_redirect": custom_redirect,
+        }
+        # Reconnect a specific broken grant rather than adding a new one.
+        if reconnect_auth_id:
+            login_kwargs["reconnect"] = reconnect_auth_id
+            _log.info(
+                "SnapTrade reconnect requested for user_id=%s auth_id=%s",
+                user_id, reconnect_auth_id,
+            )
+        login_resp = client.authentication.login_snap_trade_user(**login_kwargs)
         login_payload = _unwrap_body(login_resp)
         portal_url = (
             login_payload.get("redirectURI")
@@ -350,6 +370,13 @@ def snaptrade_connect():
     # callback uses login_required already, but this guards against a
     # race where a user logs out / in between connect and callback).
     session["snaptrade_callback_user_id"] = user_id
+    # Remember this was a reconnect so the callback can confirm it
+    # specifically ("Schwab reconnected") instead of the generic
+    # "Connected N accounts" copy. Cleared (popped) in the callback.
+    if is_reconnect:
+        session["snaptrade_reconnect_label"] = reconnect_broker_label or "broker"
+    else:
+        session.pop("snaptrade_reconnect_label", None)
     return redirect(portal_url)
 
 
@@ -361,6 +388,9 @@ def snaptrade_callback():
     and persists each one as a row in ``snaptrade_accounts``.
     """
     expected_user_id = session.pop("snaptrade_callback_user_id", None)
+    # Pop the reconnect marker unconditionally so it can never leak into a
+    # later unrelated connect; only the success path below uses it.
+    reconnect_label = session.pop("snaptrade_reconnect_label", None)
     if expected_user_id and expected_user_id != current_user.id:
         flash("Session mismatch. Please try connecting again.", "danger")
         return redirect(url_for("profile", tab="account"))
@@ -425,6 +455,19 @@ def snaptrade_callback():
             set_snaptrade_brokerage_authorization_id(
                 user_id, snaptrade_account_id, auth_id,
             )
+        # Being returned by the relist means SnapTrade has an AUTHORIZED
+        # grant for this account, so clear any stale "Reconnect needed"
+        # flag immediately — the page banner shouldn't linger until the
+        # next sync. No-op on a fresh connect (flag was already NULL); on a
+        # reconnect this is what makes the red banner disappear right away.
+        try:
+            clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
+        except Exception as exc:
+            app.logger.warning(
+                "clear_snaptrade_connection_broken failed for user_id=%s "
+                "snaptrade_account_id=%s: %s",
+                user_id, snaptrade_account_id, exc,
+            )
         add_account_for_user(user_id, account_name)
         # v2 tenancy: register broker_tenants row so the first sync
         # after callback has a real tenant_id to stamp into seed rows.
@@ -443,11 +486,18 @@ def snaptrade_callback():
             )
         saved += 1
 
-    flash(
-        f"Connected {saved} account{'s' if saved != 1 else ''}. "
-        f"Use Sync now to pull your data.",
-        "success",
-    )
+    if reconnect_label:
+        flash(
+            f"{reconnect_label} reconnected — your connection is healthy "
+            f"again. Use Sync now to pull the latest data.",
+            "success",
+        )
+    else:
+        flash(
+            f"Connected {saved} account{'s' if saved != 1 else ''}. "
+            f"Use Sync now to pull your data.",
+            "success",
+        )
     return redirect(url_for("snaptrade_accounts_page"))
 
 
@@ -560,14 +610,68 @@ def _institution_slug_from(acc) -> str:
 def snaptrade_accounts_page():
     """Multi-account manager: list every linked broker, sync each,
     rename, disconnect. Mirrors ``schwab_accounts.html``.
+
+    Accounts are grouped by BROKER CONNECTION (the SnapTrade brokerage
+    authorization) because a single broker grant authorizes many accounts
+    and reconnection is a connection-level action — showing "Reconnect
+    needed" on every individual account is confusing and wrong (the user
+    reconnects the broker once, not each account). See
+    ``_group_accounts_by_connection``.
     """
     rows = get_snaptrade_accounts(current_user.id) or []
+    groups = _group_accounts_by_connection(rows)
     return render_template(
         "snaptrade_accounts.html",
         title="Connected brokerages",
         accounts=rows,
+        connection_groups=groups,
+        any_reconnect_needed=any(g["needs_reconnect"] for g in groups),
         snaptrade_enabled=snaptrade_enabled(),
     )
+
+
+def _group_accounts_by_connection(rows):
+    """Group SnapTrade account rows by broker connection.
+
+    Grouping key is the SnapTrade ``brokerage_authorization_id`` (the
+    per-grant connection UUID) when known, else the ``broker_slug`` (so
+    accounts whose auth id hasn't been cached yet still collapse under
+    their broker instead of each rendering a standalone "reconnect"
+    prompt). Order is preserved by first-seen ``created_at`` so the page
+    layout is stable.
+
+    Each group exposes:
+      - ``broker_slug`` / ``broker_label`` — for the header + reconnect copy
+      - ``authorization_id`` — first known auth id in the group, passed to
+        the reconnect flow so SnapTrade fixes THIS connection directly
+      - ``needs_reconnect`` — True if any account in the group is broken
+      - ``accounts`` — the member rows (unchanged shape)
+    """
+    groups = []
+    by_key = {}
+    for r in rows:
+        slug = (r.get("broker_slug") or "").strip()
+        auth_id = (r.get("brokerage_authorization_id") or "").strip()
+        key = auth_id or f"slug:{slug.lower()}"
+        g = by_key.get(key)
+        if g is None:
+            g = {
+                "key": key,
+                "broker_slug": slug,
+                "broker_label": (slug.title() if slug else "Brokerage"),
+                "authorization_id": auth_id or None,
+                "needs_reconnect": False,
+                "accounts": [],
+            }
+            by_key[key] = g
+            groups.append(g)
+        # Fill in the first known auth id for the group (used for reconnect).
+        if auth_id and not g["authorization_id"]:
+            g["authorization_id"] = auth_id
+        if r.get("connection_broken_at"):
+            g["needs_reconnect"] = True
+        g["accounts"].append(r)
+    return groups
 
 
 @app.route("/snaptrade/accounts/nickname", methods=["POST"])
@@ -1091,6 +1195,16 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             user_id, snaptrade_account_id,
             result.get("holdings_last_successful_sync"),
         )
+        # Append a per-run observation row (CLOSE-BASED REPORTING Phase 3):
+        # full history of how late after the close SnapTrade's
+        # holdings_last_successful_sync actually advances, so we can retime
+        # the cron precisely. Best-effort — never breaks a successful sync.
+        record_snaptrade_sync_observation(
+            user_id, snaptrade_account_id,
+            broker_slug=acc_row.get("broker_slug"),
+            holdings_last_successful_sync=result.get("holdings_last_successful_sync"),
+            ok=True,
+        )
         out.update({
             "ok": True,
             "history_rows": int(result.get("history_rows", 0) or 0),
@@ -1146,6 +1260,10 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         record_snaptrade_sync_attempt(
             user_id, snaptrade_account_id, error=f"connection_broken:{endpoint}",
         )
+        record_snaptrade_sync_observation(
+            user_id, snaptrade_account_id,
+            broker_slug=acc_row.get("broker_slug"), ok=False,
+        )
         out["error"] = "connection_broken"
     except Exception as exc:
         from app import app as _app
@@ -1155,6 +1273,10 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         )
         record_snaptrade_sync_attempt(
             user_id, snaptrade_account_id, error=str(exc)[:500],
+        )
+        record_snaptrade_sync_observation(
+            user_id, snaptrade_account_id,
+            broker_slug=acc_row.get("broker_slug"), ok=False,
         )
         out["error"] = "unknown"
     return out

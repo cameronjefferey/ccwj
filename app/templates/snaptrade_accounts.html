@@ -74,6 +74,59 @@
         margin: 0;
     }
     .broker-mgr-back { font-size: .875rem; }
+
+    /* Per-broker connection grouping */
+    .broker-group {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1.1rem;
+    }
+    .broker-group.is-broken { border-color: #fecaca; background: #fffbfa; }
+    .broker-group-head {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        margin-bottom: .35rem;
+    }
+    .broker-group-head .broker-tag { margin-bottom: 0; }
+    .broker-group-count { font-size: .8125rem; color: #64748b; }
+
+    /* Prominent connection-level reconnect call-to-action */
+    .reconnect-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .9rem;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        margin: .5rem 0 1rem;
+    }
+    .reconnect-banner .rb-title {
+        font-weight: 700;
+        color: #991b1b;
+        font-size: .95rem;
+        margin-bottom: .2rem;
+    }
+    .reconnect-banner .rb-sub {
+        font-size: .82rem;
+        color: #7f1d1d;
+        line-height: 1.5;
+        max-width: 60ch;
+    }
+    .reconnect-banner .reconnect-form { margin: 0; }
+    .reconnect-banner .reconnect-btn {
+        white-space: nowrap;
+        font-weight: 600;
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #fff;
+    }
+    .reconnect-banner .reconnect-btn:hover { background: #b91c1c; border-color: #b91c1c; }
+    .needs-reconnect-note { font-size: .8125rem; color: #b91c1c; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -108,6 +161,17 @@
             placing a trade, that's <strong>SnapTrade still indexing</strong>,
             not data loss. Sync again later &mdash; the trades will appear.
         </div>
+
+        {% if any_reconnect_needed %}
+        <div class="alert small mb-3" role="alert"
+             style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+            <strong>Action needed:</strong> one or more broker connections need to be
+            reconnected before they can sync again. Use the
+            <strong>Reconnect</strong> button on the affected broker below &mdash;
+            it fixes every account on that connection at once. Your already-synced
+            data stays put.
+        </div>
+        {% endif %}
 
 
         {% if accounts %}
@@ -146,72 +210,105 @@
             </form>
         </div>
         {% endif %}
-        {% for c in accounts %}
-        {% set heading = c.display_nickname or c.account_name %}
-        {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
-        <div class="broker-row">
-            <div class="who">
-                {% if c.broker_slug %}
-                <span class="broker-tag">{{ c.broker_slug | title }}</span>
-                {% endif %}
-                <div class="name">{{ heading }}</div>
-                {% if show_label %}
-                <div class="label">{{ c.account_name }}</div>
-                {% endif %}
-                {% if c.account_number_masked %}
-                <div class="num">••••{{ c.account_number_masked[-4:] }}</div>
-                {% endif %}
+        {# Accounts are grouped by BROKER CONNECTION. One broker grant backs
+           many accounts, and reconnection is a connection-level action — so
+           "Reconnect" lives once per broker (not on every account row). #}
+        {% for g in connection_groups %}
+        <div class="broker-group{% if g.needs_reconnect %} is-broken{% endif %}">
+            <div class="broker-group-head">
+                <span class="broker-tag">{{ g.broker_label }}</span>
+                <span class="broker-group-count">{{ g.accounts|length }} account{{ 's' if g.accounts|length != 1 else '' }}</span>
             </div>
-            <form method="POST" action="{{ url_for('snaptrade_account_nickname') }}" class="nick">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                <input type="text" name="nickname" maxlength="80"
-                       class="form-control form-control-sm"
-                       placeholder="Add a nickname"
-                       value="{{ c.display_nickname or '' }}"
-                       aria-label="Nickname for {{ c.account_name }}">
-                <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
-            </form>
-            <div class="meta">
-                {% if c.connection_broken_at %}
-                <span class="badge text-bg-danger">Reconnect needed</span>
-                {% elif c.first_sync_completed %}
-                <span class="badge text-bg-light">Synced before</span>
-                {% else %}
-                <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
-                {% endif %}
-                {# Honest "broker data as of" — SnapTrade's OWN holdings sync
-                   time (when SnapTrade last pulled fresh data FROM the broker),
-                   NOT when we last read its cache. This is the timestamp the
-                   trader should trust for "how current is this?". #}
-                {% if c.holdings_last_successful_sync %}
-                <div class="freshness small text-body-secondary mt-1"
-                     title="When SnapTrade last pulled fresh holdings from your broker. This is the data's true 'as of' time, not when we last checked.">
-                    Broker data as of {{ c.holdings_last_successful_sync.strftime('%b %-d, %Y') }}
+
+            {% if g.needs_reconnect %}
+            <div class="reconnect-banner">
+                <div class="reconnect-banner-text">
+                    <div class="rb-title">Reconnect your {{ g.broker_label }} connection</div>
+                    <div class="rb-sub">
+                        Your link to {{ g.broker_label }} expired or was revoked, so it
+                        can't pull fresh data. Reconnecting fixes
+                        {% if g.accounts|length > 1 %}all {{ g.accounts|length }} {{ g.broker_label }} accounts{% else %}this account{% endif %}
+                        at once — your already-synced data is safe.
+                    </div>
                 </div>
-                {% endif %}
+                <form method="POST" action="{{ url_for('snaptrade_connect') }}" class="reconnect-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="reconnect_broker_label" value="{{ g.broker_label }}">
+                    {% if g.authorization_id %}
+                    <input type="hidden" name="reconnect_authorization_id" value="{{ g.authorization_id }}">
+                    {% endif %}
+                    <button type="submit" class="btn reconnect-btn">Reconnect {{ g.broker_label }}</button>
+                </form>
             </div>
-            {# "Sync now" now ALWAYS asks SnapTrade to repoll the broker for
-               fresh data before reading (a sync that only re-reads SnapTrade's
-               cache is pointless when the cache is stale). The broker repoll
-               is rate-limited to ~once per 10 min server-side, so rapid
-               re-clicks won't double-charge. The old separate "Refresh from
-               broker" button was removed — its behavior is now the default. #}
-            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                <button type="submit" class="btn btn-sm btn-primary"
-                        title="Asks your broker for fresh data, then syncs. If nothing has changed since last time, no rebuild runs.">
-                    Sync now
-                </button>
-                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Asking your broker for fresh data, then syncing. This can take a minute — keep this tab open.</p>
-            </form>
-            <form method="POST" action="{{ url_for('snaptrade_disconnect') }}"
-                  onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
-            </form>
+            {% endif %}
+
+            {% for c in g.accounts %}
+            {% set heading = c.display_nickname or c.account_name %}
+            {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
+            <div class="broker-row">
+                <div class="who">
+                    <div class="name">{{ heading }}</div>
+                    {% if show_label %}
+                    <div class="label">{{ c.account_name }}</div>
+                    {% endif %}
+                    {% if c.account_number_masked %}
+                    <div class="num">••••{{ c.account_number_masked[-4:] }}</div>
+                    {% endif %}
+                </div>
+                <form method="POST" action="{{ url_for('snaptrade_account_nickname') }}" class="nick">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                    <input type="text" name="nickname" maxlength="80"
+                           class="form-control form-control-sm"
+                           placeholder="Add a nickname"
+                           value="{{ c.display_nickname or '' }}"
+                           aria-label="Nickname for {{ c.account_name }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+                </form>
+                <div class="meta">
+                    {% if c.connection_broken_at %}
+                    {# The loud action lives in the group banner above; keep a
+                       quiet per-account marker so the row's state is still clear. #}
+                    <span class="needs-reconnect-note">Paused — reconnect above</span>
+                    {% elif c.first_sync_completed %}
+                    <span class="badge text-bg-light">Synced before</span>
+                    {% else %}
+                    <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
+                    {% endif %}
+                    {# Honest "broker data as of" — SnapTrade's OWN holdings sync
+                       time (when SnapTrade last pulled fresh data FROM the broker),
+                       NOT when we last read its cache. This is the timestamp the
+                       trader should trust for "how current is this?". #}
+                    {% if c.holdings_last_successful_sync %}
+                    <div class="freshness small text-body-secondary mt-1"
+                         title="When SnapTrade last pulled fresh holdings from your broker. This is the data's true 'as of' time, not when we last checked.">
+                        Broker data as of {{ c.holdings_last_successful_sync.strftime('%b %-d, %Y') }}
+                    </div>
+                    {% endif %}
+                </div>
+                {# "Sync now" now ALWAYS asks SnapTrade to repoll the broker for
+                   fresh data before reading (a sync that only re-reads SnapTrade's
+                   cache is pointless when the cache is stale). The broker repoll
+                   is rate-limited to ~once per 10 min server-side, so rapid
+                   re-clicks won't double-charge. The old separate "Refresh from
+                   broker" button was removed — its behavior is now the default. #}
+                <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                    <button type="submit" class="btn btn-sm btn-primary"
+                            title="Asks your broker for fresh data, then syncs. If nothing has changed since last time, no rebuild runs.">
+                        Sync now
+                    </button>
+                    <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Asking your broker for fresh data, then syncing. This can take a minute — keep this tab open.</p>
+                </form>
+                <form method="POST" action="{{ url_for('snaptrade_disconnect') }}"
+                      onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                </form>
+            </div>
+            {% endfor %}
         </div>
         {% endfor %}
         {% else %}

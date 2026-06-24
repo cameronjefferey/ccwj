@@ -259,9 +259,21 @@
                 </div>
                 <div class="atlas-card-b">
                     {% if _snaptrade_accounts %}
-                    {% set _ns_st_o = namespace(any_first_pending=false) %}
+                    {% set _ns_st_o = namespace(any_first_pending=false, any_broken=false) %}
                     {% for a in _snaptrade_accounts %}
                         {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
+                        {% if a.connection_broken_at %}{% set _ns_st_o.any_broken = true %}{% endif %}
+                    {% endfor %}
+                    {% if _ns_st_o.any_broken %}
+                    <div class="alert small mb-3" role="alert"
+                         style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+                        <strong>A broker connection needs reconnecting.</strong>
+                        Syncing won't help until it's fixed — reconnect the broker (one
+                        click fixes every account on that connection).
+                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="fw-semibold">Reconnect now →</a>
+                    </div>
+                    {% endif %}
+                    {% for a in _snaptrade_accounts %}
                     <div class="conn-row">
                         <div>
                             <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>

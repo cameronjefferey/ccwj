@@ -455,6 +455,34 @@ def init_db():
             submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        # SnapTrade sync observation log — APPEND-ONLY (mirrors the
+        # login_attempts pattern). One row per (account, sync run). Unlike
+        # snaptrade_accounts.holdings_last_successful_sync, which only keeps
+        # the LATEST value, this keeps the full history so we can measure
+        # "how many minutes after the 4pm ET close does each broker's
+        # holdings_last_successful_sync actually advance" and retime the
+        # sync cron precisely (see CLOSE-BASED REPORTING plan, Phase 3/4).
+        #   cron_run_at                  = when THIS sync run executed (our clock)
+        #   holdings_last_successful_sync = SnapTrade's authoritative "broker
+        #                                   data as of" at run time
+        #   last_sync_at                 = when we last read SnapTrade's cache
+        #   ok                           = whether the run succeeded
+        """
+        CREATE TABLE IF NOT EXISTS snaptrade_sync_observations (
+            id                            SERIAL PRIMARY KEY,
+            user_id                       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            snaptrade_account_id          TEXT,
+            broker_slug                   TEXT,
+            cron_run_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            holdings_last_successful_sync TIMESTAMPTZ,
+            last_sync_at                  TIMESTAMPTZ,
+            ok                            BOOLEAN NOT NULL DEFAULT TRUE
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_snaptrade_sync_obs_account_recent
+        ON snaptrade_sync_observations (snaptrade_account_id, cron_run_at DESC)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -1824,6 +1852,45 @@ def record_snaptrade_holdings_sync(user_id, snaptrade_account_id, when):
         return True
     except Exception as exc:
         _log.warning("record_snaptrade_holdings_sync failed: %s", exc)
+        return False
+
+
+def record_snaptrade_sync_observation(
+    user_id,
+    snaptrade_account_id,
+    *,
+    broker_slug=None,
+    holdings_last_successful_sync=None,
+    last_sync_at=None,
+    ok=True,
+):
+    """Append ONE row to the append-only ``snaptrade_sync_observations`` log
+    per sync run (see CLOSE-BASED REPORTING plan, Phase 3).
+
+    Unlike ``record_snaptrade_holdings_sync`` (which keeps only the latest
+    value on ``snaptrade_accounts``), this preserves the FULL history so we
+    can measure how late after the 4pm ET close SnapTrade's
+    ``holdings_last_successful_sync`` actually advances for each broker, and
+    retime the cron precisely. Best-effort: a failure here must never break
+    an otherwise-successful sync."""
+    try:
+        execute(
+            "INSERT INTO snaptrade_sync_observations "
+            "(user_id, snaptrade_account_id, broker_slug, cron_run_at, "
+            " holdings_last_successful_sync, last_sync_at, ok) "
+            "VALUES (%s, %s, %s, NOW(), %s, %s, %s)",
+            (
+                user_id,
+                snaptrade_account_id,
+                broker_slug,
+                holdings_last_successful_sync,
+                last_sync_at,
+                bool(ok),
+            ),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("record_snaptrade_sync_observation failed: %s", exc)
         return False
 
 
