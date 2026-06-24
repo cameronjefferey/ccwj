@@ -50,6 +50,50 @@ _LANDING = {
 }
 
 
+def _lookup_login_user(identifier):
+    """Return a user for either username or email, preferring exact username."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    user = User.get_by_username(ident)
+    if user is not None:
+        return user
+    if "@" not in ident:
+        return None
+    email, err = _validate_email(ident)
+    if err or not email:
+        return None
+    return User.get_by_email(email)
+
+
+def _login_attempt_keys(identifier, user=None):
+    """Keys that represent the same login target for lockout accounting."""
+    keys = []
+    for key in (
+        identifier,
+        getattr(user, "username", None),
+        getattr(user, "email", None),
+    ):
+        clean = (key or "").strip().lower()
+        if clean and clean not in keys:
+            keys.append(clean)
+    return keys
+
+
+def _login_lockout_remaining(keys):
+    return max((login_lockout_remaining_seconds(key) for key in keys), default=0)
+
+
+def _record_login_attempt_for_keys(keys, *, success, ip_address, user_agent):
+    for key in keys:
+        record_login_attempt(
+            key,
+            success=success,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+
 def _landing_endpoint(prof) -> str:
     dr = ((prof or {}).get("default_route") or "weekly_review").strip()
     if dr == "insights" and not app.config.get("INSIGHTS_ENABLED", True):
@@ -70,13 +114,15 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         remember = request.form.get("remember") == "on"
+        user = _lookup_login_user(username)
+        attempt_keys = _login_attempt_keys(username, user)
 
-        # Per-username lockout: stop credential-stuffing that cycles IPs.
+        # Per-account lockout: stop credential-stuffing that cycles IPs.
         # The IP-keyed flask-limiter cap above blocks one host hammering
         # us; this catches a botnet probing a single account from many
-        # hosts. Cooldown is computed from the most recent failures so
-        # legitimate users naturally clear once the window slides.
-        remaining = login_lockout_remaining_seconds(username)
+        # hosts. Email login aliases share the canonical user's bucket so
+        # switching between username and email cannot bypass cooldown.
+        remaining = _login_lockout_remaining(attempt_keys)
         if remaining > 0:
             mins = max(1, (remaining + 59) // 60)
             # Don't disclose whether the username exists. Same message
@@ -89,10 +135,9 @@ def login():
             )
             return redirect(url_for("login"))
 
-        user = User.get_by_username(username)
         if user is None or not user.check_password(password):
-            record_login_attempt(
-                username,
+            _record_login_attempt_for_keys(
+                attempt_keys,
                 success=False,
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
@@ -100,7 +145,7 @@ def login():
             # Re-check after recording: this attempt may have just tipped
             # the username into lockout. Surface the imminent-lockout
             # message at the right moment.
-            after_remaining = login_lockout_remaining_seconds(username)
+            after_remaining = _login_lockout_remaining(attempt_keys)
             if after_remaining > 0:
                 mins = max(1, (after_remaining + 59) // 60)
                 flash(
@@ -110,7 +155,7 @@ def login():
                     "danger",
                 )
             else:
-                flash("Invalid username or password.", "danger")
+                flash("Invalid username/email or password.", "danger")
             nxt = safe_internal_next(
                 request.form.get("next") or request.args.get("next")
             )
@@ -118,8 +163,8 @@ def login():
                 return redirect(url_for("login", next=nxt))
             return redirect(url_for("login"))
 
-        record_login_attempt(
-            username,
+        _record_login_attempt_for_keys(
+            attempt_keys,
             success=True,
             ip_address=request.remote_addr,
             user_agent=request.headers.get("User-Agent"),
