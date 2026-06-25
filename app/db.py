@@ -121,6 +121,37 @@ def get_conn():
             pass
 
 
+@contextmanager
+def advisory_lock(key: int):
+    """Hold a cluster-wide Postgres session advisory lock for the block.
+
+    Serializes a critical section across ALL web workers/processes (unlike a
+    Python ``threading.Lock``, which is per-process). Used to serialize
+    webhook-triggered broker syncs so concurrent GitHub seed pushes can't race
+    the ref update (the push path is not fast-forward-safe under concurrency).
+
+    Blocks until the lock is acquired. Holds a dedicated connection (autocommit
+    so the session-level lock persists regardless of transaction state) for the
+    duration, and always unlocks + closes on exit.
+    """
+    conn = _connect()
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s)", (key,))
+        yield
+    finally:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (key,))
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict]:
     def _go():
         with get_conn() as conn:

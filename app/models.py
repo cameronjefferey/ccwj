@@ -1649,6 +1649,23 @@ def get_snaptrade_user(user_id):
     )
 
 
+def get_user_id_by_snaptrade_user_id(snaptrade_user_id):
+    """Reverse lookup: SnapTrade's ``userId`` → our HappyTrader ``user_id``.
+
+    Used by the SnapTrade webhook handler — webhook payloads carry SnapTrade's
+    own userId, and we store that verbatim (namespaced when dev/staging share a
+    clientId) in ``snaptrade_connections.snaptrade_user_id``. Returns the int
+    user_id or None.
+    """
+    if not snaptrade_user_id:
+        return None
+    row = fetch_one(
+        "SELECT user_id FROM snaptrade_connections WHERE snaptrade_user_id = %s",
+        (snaptrade_user_id,),
+    )
+    return row["user_id"] if row else None
+
+
 def remove_snaptrade_user(user_id):
     """Drop the SnapTrade user record. ON DELETE CASCADE removes account rows."""
     execute(

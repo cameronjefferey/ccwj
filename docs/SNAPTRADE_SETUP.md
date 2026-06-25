@@ -86,6 +86,34 @@ Portal accepts non-HTTPS localhost URIs for development.
    auto-refreshes nightly) and relies on the holdings-freshness
    backstop to flag stalled connections.
 
+## Step 5 — Enable event-driven syncs (webhook, recommended)
+
+SnapTrade fires an **`ACCOUNT_HOLDINGS_UPDATED`** webhook the moment its own
+daily sync finishes pulling fresh holdings for an account from the broker. That
+is the authoritative "SnapTrade is updated" signal — HappyTrader listens for it
+and immediately runs our sync for that account (read SnapTrade's now-fresh data
+→ merge → push seeds). This is the "once SnapTrade completes, kick off
+HappyTrader" flow: it costs **zero** billed API calls (no forced refresh) and
+keeps the "Broker data as of" strip honest without any polling.
+
+To enable it:
+
+1. In the SnapTrade dashboard, configure a webhook with URL
+   `https://<your-domain>/webhooks/snaptrade`.
+2. Copy its secret into HappyTrader's env:
+
+```bash
+SNAPTRADE_WEBHOOK_SECRET=the-secret-from-the-dashboard
+```
+
+The handler (`app/webhooks.py` → `snaptrade_webhook`) verifies the payload's
+`webhookSecret` against this value, maps the SnapTrade `userId` back to a
+HappyTrader user, and runs `_sync_one_connection(..., force_refresh=False)` in a
+background thread serialized by a cluster-wide Postgres advisory lock (a burst
+of per-account webhooks must push the shared seed CSVs one-at-a-time). If
+`SNAPTRADE_WEBHOOK_SECRET` is unset the endpoint logs a warning and skips
+verification — acceptable for local dev only.
+
 ## Architecture notes
 
 - **No new seed CSVs.** SnapTrade writes to the same `trade_history.csv`,
@@ -101,11 +129,13 @@ Portal accepts non-HTTPS localhost URIs for development.
   Postgres `snaptrade_connections` (one row per HappyTrader user) and
   per-broker accounts in `snaptrade_accounts` (mirrors the
   one-row-per-account grain of `schwab_connections`).
-- **Cron schedule.** A separate cron entry
-  (`happytrader-snaptrade-sync` in `app/render.yaml`) runs daily,
-  offset by 30 minutes from the Schwab cron so they don't push to
-  GitHub in the same minute (the GitHub Actions concurrency policy
-  silently drops a duplicate push otherwise).
+- **Sync trigger.** Primary path is the `ACCOUNT_HOLDINGS_UPDATED`
+  webhook (Step 5) — event-driven, fires when SnapTrade finishes its
+  broker poll. The daily cron (`happytrader-snaptrade-sync` in
+  `app/render.yaml`, offset 30 min from the Schwab cron so they don't
+  push to GitHub in the same minute) is now a **backstop** that re-reads
+  SnapTrade's cache in case a webhook delivery is missed; it does not
+  force a refresh and is no longer the freshness driver.
 
 ## Limitations
 
