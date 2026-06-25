@@ -3175,12 +3175,15 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
     closed_count = sum(1 for r in trades if r["is_closed"])
     opened_count = sum(1 for r in trades if not r["is_closed"])
 
-    # Most recent activity first (close date for closed symbols, open date
-    # for still-open symbols).
+    # Group by account (alphabetical, case-insensitive) so the table reads
+    # account-by-account; within an account keep most-recent activity first
+    # (close date for closed symbols, open date for still-open symbols).
+    # Python's sort is stable, so sort by the secondary key first.
     trades.sort(
         key=lambda x: (x["close_date"] if x["is_closed"] else x["open_date"]) or week_start,
         reverse=True,
     )
+    trades.sort(key=lambda x: (x["account_display"] or "").lower())
     return {
         "trades": trades,
         "count": len(trades),

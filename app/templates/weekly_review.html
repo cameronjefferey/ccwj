@@ -1195,9 +1195,9 @@
         <table class="breakdown-table">
             <thead>
                 <tr>
+                    <th class="left">Account</th>
                     <th class="left">Trade</th>
                     <th class="left">Strategy</th>
-                    <th class="left">Account</th>
                     <th>Opened</th>
                     <th class="left">Status</th>
                     <th>Result</th>
@@ -1206,12 +1206,12 @@
             <tbody>
                 {% for r in tw.trades %}
                 <tr>
+                    <td class="left">{{ r.account_display }}</td>
                     <td class="left">
                         <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
                     <td class="left">{{ r.strategy }}</td>
-                    <td class="left">{{ r.account_display }}</td>
                     <td>{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
                     <td class="left">
                         {% if r.is_closed %}

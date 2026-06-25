@@ -603,6 +603,24 @@ class TestBuildTradesThisWeek:
         assert out["count"] == 2
         assert {r["symbol"] for r in out["trades"]} == {"ASTS", "BE"}
 
+    def test_rows_sorted_alphabetically_by_account(self):
+        df = pd.DataFrame([
+            self._row(tenant_id="snaptrade:z", account="Zoe Investment",
+                      symbol="ZZZ", trade_symbol="ZZZ   260605C00100000",
+                      close_date=date(2026, 6, 12), total_pnl=10.0),
+            self._row(tenant_id="snaptrade:a", account="Aaron Investment",
+                      symbol="AAA", trade_symbol="AAA   260605C00100000",
+                      close_date=date(2026, 6, 8), total_pnl=20.0),
+            self._row(tenant_id="snaptrade:m", account="Mike Investment",
+                      symbol="MMM", trade_symbol="MMM   260605C00100000",
+                      close_date=date(2026, 6, 14), total_pnl=30.0),
+        ])
+        out = _build_trades_this_week(df, self.WEEK_START, self.WEEK_END)
+        accounts = [r["account_display"] for r in out["trades"]]
+        assert accounts == [
+            "Aaron Investment", "Mike Investment", "Zoe Investment",
+        ]
+
     def test_mixed_strategy_labels_as_mixed(self):
         df = pd.DataFrame([
             self._row(trade_symbol="ASTS  260605C00102000", strategy="Covered Call",
