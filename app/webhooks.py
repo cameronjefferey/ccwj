@@ -165,22 +165,6 @@ def _verify_snaptrade_signature(payload: dict, signature: str, consumer_key: str
     return hmac.compare_digest(signature, expected)
 
 
-def _snaptrade_event_is_recent(event_timestamp, tolerance_seconds=600) -> bool:
-    """Replay protection: ``eventTimestamp`` must be recent. Lenient — a missing
-    or unparseable timestamp is allowed (the signature already authenticates the
-    sender; we don't want clock skew to drop a genuine event)."""
-    if not event_timestamp:
-        return True
-    from datetime import datetime, timezone
-    try:
-        t = datetime.fromisoformat(str(event_timestamp))
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
-        return abs((datetime.now(timezone.utc) - t).total_seconds()) <= tolerance_seconds
-    except Exception:
-        return True
-
-
 def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
     """Background worker: SnapTrade just finished updating this account's
     holdings, so read its (now-fresh) data and push our seeds.
@@ -255,9 +239,12 @@ def snaptrade_webhook():
         if not _verify_snaptrade_signature(event, signature, consumer_key):
             _log.warning("snaptrade_webhook: signature verification failed — rejecting")
             return ("invalid signature", 401)
-        if not _snaptrade_event_is_recent(event.get("eventTimestamp")):
-            _log.warning("snaptrade_webhook: stale eventTimestamp — rejecting")
-            return ("stale event", 401)
+        # NOTE: no eventTimestamp/replay rejection. The HMAC signature already
+        # authenticates the sender, and the action (re-read SnapTrade + push
+        # seeds) is idempotent. SnapTrade RETRIES undelivered webhooks with a
+        # 30-min backoff, carrying the ORIGINAL (now-old) eventTimestamp — a
+        # freshness window would reject every retry, which previously dropped
+        # legitimate events. Accept and process regardless of age.
     else:
         _log.warning(
             "snaptrade_webhook: SNAPTRADE_CONSUMER_KEY unset — skipping "
