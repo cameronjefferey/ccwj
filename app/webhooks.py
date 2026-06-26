@@ -12,11 +12,16 @@ Inbound webhooks.
    fresh holdings from the broker. That is the "SnapTrade is updated" signal —
    we react by running OUR sync for that account (read SnapTrade's now-fresh
    data → merge → push seeds). This is the event-driven "once X completes, kick
-   off Y" flow; it needs NO paid force-refresh and NO polling cron. Set
-   ``SNAPTRADE_WEBHOOK_SECRET`` to the value configured in the SnapTrade
-   dashboard webhook (it arrives in the payload's ``webhookSecret`` field).
+   off Y" flow; it needs NO paid force-refresh and NO polling cron.
 
-If a secret env var is unset we skip verification and log a warning — fine for
+   AUTH: SnapTrade **deprecated webhook secrets**. Authenticity is now proven by
+   the ``Signature`` header: base64( HMAC-SHA256( canonical-json-body, key =
+   your **consumer key** ) ), where the canonical body is
+   ``json.dumps(payload, separators=(",", ":"), sort_keys=True)``. We verify
+   against ``SNAPTRADE_CONSUMER_KEY`` (already set for the API). There is no
+   separate webhook secret to configure in the dashboard.
+
+If the verifying key is unset we skip verification and log a warning — fine for
 local dev, never for prod.
 """
 from __future__ import annotations
@@ -142,6 +147,40 @@ def resend_webhook():
     return ("", 200)
 
 
+def _verify_snaptrade_signature(payload: dict, signature: str, consumer_key: str) -> bool:
+    """Verify SnapTrade's ``Signature`` header (secrets are deprecated).
+
+    expected = base64( HMAC_SHA256( consumer_key, canonical_body ) )
+    canonical_body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+    SnapTrade computes the HMAC over the RE-SERIALIZED canonical JSON (sorted
+    keys, compact separators), not the raw bytes — so we recompute from the
+    parsed dict, exactly per their docs example.
+    """
+    if not signature or not consumer_key:
+        return False
+    sig_content = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    digest = hmac.new(consumer_key.encode(), sig_content.encode(), hashlib.sha256).digest()
+    expected = base64.b64encode(digest).decode()
+    return hmac.compare_digest(signature, expected)
+
+
+def _snaptrade_event_is_recent(event_timestamp, tolerance_seconds=600) -> bool:
+    """Replay protection: ``eventTimestamp`` must be recent. Lenient — a missing
+    or unparseable timestamp is allowed (the signature already authenticates the
+    sender; we don't want clock skew to drop a genuine event)."""
+    if not event_timestamp:
+        return True
+    from datetime import datetime, timezone
+    try:
+        t = datetime.fromisoformat(str(event_timestamp))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return abs((datetime.now(timezone.utc) - t).total_seconds()) <= tolerance_seconds
+    except Exception:
+        return True
+
+
 def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
     """Background worker: SnapTrade just finished updating this account's
     holdings, so read its (now-fresh) data and push our seeds.
@@ -207,17 +246,21 @@ def snaptrade_webhook():
     if not isinstance(event, dict):
         return ("bad payload", 400)
 
-    # SnapTrade authenticates by echoing the shared secret in the payload
-    # (``webhookSecret``), not via an HMAC header. Constant-time compare.
-    expected = (os.environ.get("SNAPTRADE_WEBHOOK_SECRET") or "").strip()
-    if expected:
-        provided = str(event.get("webhookSecret") or "")
-        if not hmac.compare_digest(provided, expected):
-            _log.warning("snaptrade_webhook: secret mismatch — rejecting")
+    # SnapTrade signs with the `Signature` header = base64(HMAC-SHA256(body,
+    # key=consumer_key)). Webhook secrets are deprecated, so verify against
+    # SNAPTRADE_CONSUMER_KEY (the same key used for API calls).
+    consumer_key = (os.environ.get("SNAPTRADE_CONSUMER_KEY") or "").strip()
+    if consumer_key:
+        signature = request.headers.get("Signature") or ""
+        if not _verify_snaptrade_signature(event, signature, consumer_key):
+            _log.warning("snaptrade_webhook: signature verification failed — rejecting")
             return ("invalid signature", 401)
+        if not _snaptrade_event_is_recent(event.get("eventTimestamp")):
+            _log.warning("snaptrade_webhook: stale eventTimestamp — rejecting")
+            return ("stale event", 401)
     else:
         _log.warning(
-            "snaptrade_webhook: SNAPTRADE_WEBHOOK_SECRET unset — skipping "
+            "snaptrade_webhook: SNAPTRADE_CONSUMER_KEY unset — skipping "
             "verification (acceptable in dev only)."
         )
 

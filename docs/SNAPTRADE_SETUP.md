@@ -96,22 +96,23 @@ and immediately runs our sync for that account (read SnapTrade's now-fresh data
 HappyTrader" flow: it costs **zero** billed API calls (no forced refresh) and
 keeps the "Broker data as of" strip honest without any polling.
 
-To enable it:
+To enable it: in the SnapTrade dashboard → **Webhooks**, set the listener URL to
+`https://<your-domain>/webhooks/snaptrade`. That's it — there is **no secret to
+configure**.
 
-1. In the SnapTrade dashboard, configure a webhook with URL
-   `https://<your-domain>/webhooks/snaptrade`.
-2. Copy its secret into HappyTrader's env:
+**Authentication.** SnapTrade **deprecated webhook secrets**. Every delivery now
+carries a `Signature` header = `base64(HMAC-SHA256(canonical-json-body, key =
+your consumer key))`, where the canonical body is
+`json.dumps(payload, separators=(",", ":"), sort_keys=True)`. The handler
+(`app/webhooks.py` → `snaptrade_webhook`) recomputes that HMAC with
+`SNAPTRADE_CONSUMER_KEY` (already set for the API) and rejects mismatches with
+`401`. No `SNAPTRADE_WEBHOOK_SECRET` is needed.
 
-```bash
-SNAPTRADE_WEBHOOK_SECRET=the-secret-from-the-dashboard
-```
-
-The handler (`app/webhooks.py` → `snaptrade_webhook`) verifies the payload's
-`webhookSecret` against this value, maps the SnapTrade `userId` back to a
-HappyTrader user, and runs `_sync_one_connection(..., force_refresh=False)` in a
-background thread serialized by a cluster-wide Postgres advisory lock (a burst
-of per-account webhooks must push the shared seed CSVs one-at-a-time). If
-`SNAPTRADE_WEBHOOK_SECRET` is unset the endpoint logs a warning and skips
+On a verified `ACCOUNT_HOLDINGS_UPDATED`, the handler maps the SnapTrade `userId`
+back to a HappyTrader user and runs `_sync_one_connection(..., force_refresh=False)`
+in a background thread serialized by a cluster-wide Postgres advisory lock (a
+burst of per-account webhooks must push the shared seed CSVs one-at-a-time). If
+`SNAPTRADE_CONSUMER_KEY` is unset the endpoint logs a warning and skips
 verification — acceptable for local dev only.
 
 ## Architecture notes
