@@ -5,59 +5,17 @@
 # declared here — it was created manually in the Render dashboard and
 # stays manually managed for now.
 #
-# Going forward, broker sync runs through SnapTrade only. Add additional
-# cron entries here only if a second scheduled job is needed (e.g. price
-# refresh); do not reintroduce direct broker OAuth crons.
+# Broker sync is EVENT-DRIVEN via the SnapTrade ACCOUNT_HOLDINGS_UPDATED webhook
+# (app/webhooks.py): SnapTrade finishes its once-daily broker sync (plan = Daily)
+# → pings POST /webhooks/snaptrade → we sync that account. There is intentionally
+# NO scheduled SnapTrade sync cron: the old timed job ran at 20:06 UTC, ~34 min
+# BEFORE SnapTrade's daily Schwab refresh landed (~20:40 UTC), so it always read
+# stale data. The in-product "Sync now" button is the manual fallback. Do not
+# reintroduce a timed SnapTrade sync or direct broker OAuth crons.
 #
-# DST NOTE — Render cron schedules are UTC and DO NOT observe DST.
-# Preferred local time: ~1:06pm Pacific post-close. When DST ends in
-# November, add +1 hour to the UTC schedule below.
-#
-# Stagger choreography (post-close window in PDT):
-#   20:06 UTC → 1:06pm PDT → `happytrader-snaptrade-sync`
+# DST NOTE — Render cron schedules below are UTC and DO NOT observe DST.
 #
 services:
-
-  # ──────────────────────────────────────────────────────────────────
-  # SnapTrade sync (1:06pm PDT / 20:06 UTC).
-  #
-  # Covers every broker connected through SnapTrade (Schwab, Fidelity,
-  # Vanguard, Robinhood, IBKR, Tradier, etc.). Iterates every row in
-  # `broker_tenants` / legacy `snaptrade_accounts`, normalizes activities
-  # + positions + balances, pushes seed CSVs to GitHub which triggers the
-  # dbt rebuild.
-  # ──────────────────────────────────────────────────────────────────
-  - type: cron
-    name: happytrader-snaptrade-sync
-    env: python
-    schedule: "6 20 * * 1-5"
-    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
-    startCommand: python -m app.snaptrade_sync_cli
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.8"
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: ccwj
-          envVarKey: DATABASE_URL
-      - key: SECRET_KEY
-        sync: false
-
-      - key: SNAPTRADE_SYNC_TRANSACTION_DAYS
-        value: "3"
-
-      - key: SNAPTRADE_CLIENT_ID
-        sync: false
-      - key: SNAPTRADE_CONSUMER_KEY
-        sync: false
-
-      - key: GITHUB_PAT
-        sync: false
-      - key: GITHUB_REPO
-        sync: false
-      - key: GITHUB_BRANCH
-        sync: false
 
   # ──────────────────────────────────────────────────────────────────
   # Lifecycle / product-marketing email digests.
