@@ -11,8 +11,6 @@ Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,cash,-24300.15,
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,account_total,740196.74,,,,
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,cash,37984.62,,,,100.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,account_total,37984.62,,,,
-Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,cash,935.68,,,,1.663723
-Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,account_total,56240.13,,,,
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,cash,-24854.46,,,,-3.505098
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,account_total,709094.67,,,,
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,cash,21209.78,,,,5.17246
@@ -39,3 +37,5 @@ Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,cash,5.88,,,,0.6
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,account_total,925.3,,,,
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,cash,1053.75,,,,0.614703
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,account_total,171424.32,,,,
+Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,cash,935.68,,,,1.659355
+Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,account_total,56388.16,,,,
