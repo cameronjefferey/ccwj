@@ -24,32 +24,32 @@
 -- The demo seed union is preserved so the demo user keeps working —
 -- demo rows have tenant_id = NULL by convention and are filtered out
 -- of every tenant-scoped read by ``_filter_df_by_tenant_ids``.
+--
+-- Real-broker rows now arrive via the per-broker staging adapters
+-- (dbt/models/staging/brokers/stg_broker_<slug>_history) rather than a
+-- direct read of the trade_history seed. Each broker has its own model so
+-- broker-specific quirks stay isolated and independently testable; the
+-- ``_other_`` catch-all carries any not-yet-modeled broker so no row is
+-- dropped. See dbt/macros/broker_slug_from_account.sql for how to add a
+-- brokerage. The heavy OSI/option/dividend parse below is unchanged.
 {% if execute %}
-    {%- set _hist_cols = adapter.get_columns_in_relation(ref('trade_history')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_history')) | map(attribute='name') | list -%}
 {% else %}
-    {%- set _hist_cols = [] -%}
     {%- set _demo_cols = [] -%}
 {% endif %}
-{% set _hist_user_id_expr = "cast(user_id as string)" if 'user_id' in _hist_cols else "cast(null as string)" %}
 {% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
-{% set _hist_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _hist_cols else "cast(null as string)" %}
 {% set _demo_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _demo_cols else "cast(null as string)" %}
 
 with trade_history_as_strings as (
-    select
-        cast(Account as string) as Account,
-        {{ _hist_user_id_expr }} as user_id,
-        {{ _hist_tenant_id_expr }} as tenant_id,
-        cast(Date as string) as Date,
-        cast(Action as string) as Action,
-        cast(Symbol as string) as Symbol,
-        cast(Description as string) as Description,
-        cast(Quantity as string) as Quantity,
-        cast(Price as string) as Price,
-        cast(fees_and_comm as string) as fees_and_comm,
-        cast(Amount as string) as Amount
-    from {{ ref('trade_history') }}
+    select * from {{ ref('stg_broker_schwab_history') }}
+    union all
+    select * from {{ ref('stg_broker_alpaca_history') }}
+    union all
+    select * from {{ ref('stg_broker_fidelity_history') }}
+    union all
+    select * from {{ ref('stg_broker_interactive_history') }}
+    union all
+    select * from {{ ref('stg_broker_other_history') }}
 ),
 
 demo_as_strings as (

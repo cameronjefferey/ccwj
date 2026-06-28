@@ -10,16 +10,18 @@
 -- is stamped at sync time with a broker-stable, never-recycled
 -- tenant_id, so the v1 orphan-tenant / split-uid bug class is
 -- structurally impossible. See docs/V2_TENANT_KEY_DESIGN.md.
+-- Real-broker rows now arrive via the per-broker staging adapters
+-- (dbt/models/staging/brokers/stg_broker_<slug>_current) rather than a
+-- direct read of the current_positions seed. See stg_history.sql and
+-- dbt/macros/broker_slug_from_account.sql for the rationale and the
+-- add-a-brokerage procedure. The OSI parse / short-aware recompute /
+-- dedup below are unchanged.
 {% if execute %}
-    {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
     {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
 {% else %}
-    {%- set _curr_cols = [] -%}
     {%- set _demo_cols = [] -%}
 {% endif %}
-{% set _curr_user_id_expr = "cast(user_id as string)" if 'user_id' in _curr_cols else "cast(null as string)" %}
 {% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
-{% set _curr_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _curr_cols else "cast(null as string)" %}
 {% set _demo_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _demo_cols else "cast(null as string)" %}
 
 {%- set common_string_cols -%}
@@ -57,11 +59,15 @@
 {%- endset %}
 
 with current_as_strings as (
-    select
-        {{ _curr_user_id_expr }} as user_id,
-        {{ _curr_tenant_id_expr }} as tenant_id,
-        {{ common_string_cols }}
-    from {{ ref('current_positions') }}
+    select * from {{ ref('stg_broker_schwab_current') }}
+    union all
+    select * from {{ ref('stg_broker_alpaca_current') }}
+    union all
+    select * from {{ ref('stg_broker_fidelity_current') }}
+    union all
+    select * from {{ ref('stg_broker_interactive_current') }}
+    union all
+    select * from {{ ref('stg_broker_other_current') }}
 ),
 
 demo_as_strings as (

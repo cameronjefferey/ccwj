@@ -72,7 +72,14 @@ select
     tenant_id,
     any_value(user_id) as user_id,
     any_value(account_name) as account_name,
-    split(tenant_id, ':')[safe_offset(0)] as broker_slug,
+    -- Real brokerage (schwab / alpaca / ...), derived from the account
+    -- label. The tenant_id prefix is the literal "snaptrade" for EVERY
+    -- broker (all routed through SnapTrade), so it can't tell brokerages
+    -- apart — the account-label prefix is the only broker signal in the
+    -- warehouse. See dbt/macros/broker_slug_from_account.sql.
+    {{ broker_slug_from_account('any_value(account_name)') }} as broker_slug,
+    -- Aggregator slug kept for debugging (always "snaptrade" under v2).
+    split(tenant_id, ':')[safe_offset(0)] as aggregator_slug,
     substr(tenant_id, length(split(tenant_id, ':')[safe_offset(0)]) + 2) as broker_uuid,
     count(*) as source_row_count
 from cleaned
