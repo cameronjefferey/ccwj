@@ -619,7 +619,8 @@
             <div class="snap-label">Account Value</div>
             {% if snap.today_value is not none %}
             <div class="snap-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
-            {% if snap.today_date %}<div class="snap-meta">{{ snap.today_date }}</div>{% endif %}
+            {% if snap.today_date %}<div class="snap-meta">{{ snap.today_date }}</div>
+            {% elif snap.today_is_live %}<div class="snap-meta">as of last sync</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
         {% for key, label in [('day', 'vs Yesterday'), ('week', 'vs 1 Week'), ('month', 'vs 1 Month')] %}
@@ -685,7 +686,8 @@
         <div class="snapshot-table-row">
             <div>
                 <div class="acct-name">{{ snap.account | account_label }}</div>
-                {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>{% endif %}
+                {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>
+                {% elif snap.today_is_live %}<div class="acct-meta">as of last sync</div>{% endif %}
             </div>
             <div>
                 {% if snap.today_value is not none %}

@@ -378,13 +378,22 @@ WHERE (trades_closed > 0 OR trades_opened > 0)
   {tenant_filter}
 """
 
-# Total account value (from current positions snapshot) for context and return % vs account
+# Live account value per tenant (from the latest balances snapshot) for
+# context, return % vs account, AND a fallback for the Daily Review
+# "Account Value" hero when the daily-snapshot mart hasn't captured a
+# brand-new account yet (mart_account_snapshots_enriched lags a build
+# behind a just-connected account's first balance row). Per-tenant grain
+# so Flask can both SUM for the aggregate equity_snapshot and map each
+# account's live total onto its placeholder snapshot row.
 ACCOUNT_VALUE_QUERY = """
 SELECT
+  tenant_id,
+  ANY_VALUE(account) AS account,
   COALESCE(SUM(CASE WHEN row_type = 'account_total' THEN market_value ELSE 0 END), 0) AS account_value,
   COALESCE(SUM(CASE WHEN row_type = 'cash' THEN market_value ELSE 0 END), 0) AS cash_balance
 FROM `ccwj-dbt.analytics.stg_account_balances`
 WHERE 1=1 {tenant_filter}
+GROUP BY tenant_id
 """
 
 # Weekly account return from dbt mart (replaces inline WEEKLY_ACCOUNT_CHANGE_QUERY)
@@ -3367,17 +3376,37 @@ def weekly_review():
                 app.logger.warning("Benchmark snapshot processing failed: %s", e)
 
         # ── Account value (cash / invested split) ─────────────────────
+        # ``live_av_by_label`` is the per-account live total used as a
+        # fallback in the snapshot placeholder fill below, so a freshly
+        # connected account shows its broker balance immediately instead
+        # of "—" until the daily-snapshot mart catches up. Keyed by the
+        # SAME disambiguated label the placeholder rows use (tenant_label_map)
+        # so the lookup matches.
+        live_av_by_label = {}
+        try:
+            from app.routes import _tenant_label_map_for_user
+            _tenant_label_map = _tenant_label_map_for_user(current_user.id)
+        except Exception:
+            _tenant_label_map = {}
         try:
             av_df = batch.get("account_value", pd.DataFrame())
             if not av_df.empty:
-                row = av_df.iloc[0]
-                account_value = float(row.get("account_value", 0) or 0)
-                cash_balance = float(row.get("cash_balance", 0) or 0)
-                invested_value = account_value - cash_balance
-                pct_invested = round(invested_value / account_value * 100, 1) if account_value > 0 else None
+                total_account_value = 0.0
+                total_cash = 0.0
+                for _, row in av_df.iterrows():
+                    av = float(row.get("account_value", 0) or 0)
+                    cb = float(row.get("cash_balance", 0) or 0)
+                    total_account_value += av
+                    total_cash += cb
+                    tid = row.get("tenant_id")
+                    label = _tenant_label_map.get(tid) or row.get("account") or tid
+                    if label is not None:
+                        live_av_by_label[label] = live_av_by_label.get(label, 0.0) + av
+                invested_value = total_account_value - total_cash
+                pct_invested = round(invested_value / total_account_value * 100, 1) if total_account_value > 0 else None
                 context["equity_snapshot"] = {
-                    "account_value": account_value,
-                    "cash_balance": cash_balance,
+                    "account_value": total_account_value,
+                    "cash_balance": total_cash,
                     "invested_value": invested_value,
                     "pct_invested": pct_invested,
                 }
@@ -3401,8 +3430,7 @@ def weekly_review():
                 # render as distinct rows. The display label is resolved
                 # per tenant via the disambiguating label map (nickname >
                 # broker label, with a stable suffix when labels collide).
-                from app.routes import _tenant_label_map_for_user
-                tenant_label_map = _tenant_label_map_for_user(current_user.id)
+                tenant_label_map = _tenant_label_map
 
                 def _round_opt(val):
                     if val is None or (hasattr(val, "__float__") and pd.isna(val)):
@@ -3451,6 +3479,7 @@ def weekly_review():
                         "account": acct,
                         "today_value": today_value,
                         "today_date": today_date,
+                        "today_is_live": False,
                         "comparisons": comps,
                         "vs_week_start": vs_week_start,
                     })
@@ -3467,10 +3496,17 @@ def weekly_review():
             if display_labels:
                 for label in display_labels:
                     if label not in seen_accounts:
+                        # Fallback to the live broker balance so a freshly
+                        # connected account shows its value immediately
+                        # instead of "—" until the snapshot mart captures
+                        # its first daily row. Deltas stay blank (no history
+                        # yet); today_is_live flags the UI to label it.
+                        live_val = live_av_by_label.get(label)
                         context["today_snapshots_by_account"].append({
                             "account": label,
-                            "today_value": None,
+                            "today_value": live_val,
                             "today_date": None,
+                            "today_is_live": live_val is not None,
                             "comparisons": {
                                 "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
                                 "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
