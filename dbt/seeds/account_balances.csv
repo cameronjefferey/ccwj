@@ -11,8 +11,6 @@ Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,cash,-24300.15,
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,account_total,740196.74,,,,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,cash,104316.34,,,,100.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,account_total,104316.34,,,,
-Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,cash,233.87,,,,0.737378
-Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,account_total,31716.42,,,,
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,cash,28442.56,,,,2.027587
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,account_total,1402778.61,,,,
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,cash,-148470.71,,,,-8.315185
@@ -39,3 +37,5 @@ Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,cash,138.67,,,,
 Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,account_total,27933.88,,,,
 Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,cash,23.45,,,,0.153262
 Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,account_total,15300.57,,,,
+Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,cash,233.87,,,,0.737378
+Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,account_total,31716.42,,,,
