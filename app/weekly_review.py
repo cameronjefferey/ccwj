@@ -3499,6 +3499,10 @@ def weekly_review():
                     vs_week_start = {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week}
                     context["today_snapshots_by_account"].append({
                         "account": acct,
+                        # Carry tenant_id so the Account snapshot table can
+                        # deep-link the account name to /accounts?tenant=<id>,
+                        # mirroring the Performance by Account rows.
+                        "tenant_id": tid,
                         "today_value": today_value,
                         "today_date": today_date,
                         "today_is_live": False,
@@ -3515,6 +3519,11 @@ def weekly_review():
             # the bug visible on Daily Review when two accounts rendered
             # as four rows (two raw tenant_id labels + two real labels).
             display_labels = user_accounts or []
+            # Reverse map (disambiguated label -> tenant_id) for deep-linking
+            # placeholder rows. _tenant_label_map values are unique by
+            # construction (colliding broker labels get a ••<uuid tail>
+            # suffix), so this inversion is safe.
+            label_to_tid = {v: k for k, v in (_tenant_label_map or {}).items()}
             if display_labels:
                 for label in display_labels:
                     if label not in seen_accounts:
@@ -3526,6 +3535,7 @@ def weekly_review():
                         live_val = live_av_by_label.get(label)
                         context["today_snapshots_by_account"].append({
                             "account": label,
+                            "tenant_id": label_to_tid.get(label),
                             "today_value": live_val,
                             "today_date": None,
                             "today_is_live": live_val is not None,

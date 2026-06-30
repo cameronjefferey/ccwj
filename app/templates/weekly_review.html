@@ -185,6 +185,8 @@
         padding-top: .85rem; padding-bottom: .85rem;
     }
     .snapshot-table .acct-name { font-weight: 600; color: #1f2937; font-size: .9rem; line-height: 1.2; }
+    .snapshot-table a.acct-link { display: block; text-decoration: none; }
+    .snapshot-table a.acct-link:hover { color: #2563eb; }
     .snapshot-table .acct-meta { font-size: .68rem; color: #9ca3af; margin-top: .1rem; }
     .snapshot-table-row.total .acct-name { color: #0f172a; }
     .snapshot-table .snap-cell-val { font-weight: 700; font-size: .98rem; line-height: 1.15; }
@@ -685,7 +687,11 @@
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
             <div>
+                {% if snap.tenant_id %}
+                <a href="{{ url_for('accounts', tenant=snap.tenant_id) }}" class="acct-name acct-link">{{ snap.account | account_label }}</a>
+                {% else %}
                 <div class="acct-name">{{ snap.account | account_label }}</div>
+                {% endif %}
                 {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>
                 {% elif snap.today_is_live %}<div class="acct-meta">as of last sync</div>{% endif %}
             </div>
