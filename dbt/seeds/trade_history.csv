@@ -1128,25 +1128,6 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-23 by PA3HS6VB43PX,,,,-0.11
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Sell,RKLB,RKLB SELL FILL at 131.98,10.0,131.98,,1319.8
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Sell,NVDA,NVDA SELL FILL at 234.22,98.0,234.22,,22953.56
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,JPM,JPM BUY FILL at 301.12,1.0,301.12,,-301.12
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,SPY,SPY BUY FILL at 747.07,10.0,747.07,,-7470.7
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,LINK,LINK BUY FILL at 10.621,95.0,10.621,,-1008.995
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY FILL at 131.6,4.0,131.6,,-526.4
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,2.0,131.6,,-263.2
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,7.0,131.6,,-921.2
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,8.0,131.6,,-1052.8
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,10.0,131.6,,-1316.0
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,69.0,131.6,,-9080.4
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY FILL at 234.04,1.0,234.04,,-234.04
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.03,1.0,234.03,,-234.03
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,1.0,234.01,,-234.01
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,17.0,234.04,,-3978.68
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,28.0,234.04,,-6553.12
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
@@ -5287,3 +5268,22 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/01/2026,Sell
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/01/2026,Buy to Close,BE    260501C00200000,CALL BLOOM ENERGY CORP $200 EXP 05/01/26,3.0,87.41,1.24,-26224.24
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/01/2026,Sell to Open,AMZN  260515C00270000,CALL AMAZON.COM INC $270 EXP 05/15/26,2.0,6.25,0.86,1249.14
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/01/2026,Buy to Close,BE    260501C00200000,CALL BLOOM ENERGY CORP $200 EXP 05/01/26,3.0,86.88,1.24,-26065.24
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Sell,RKLB,RKLB SELL FILL at 131.98,10.0,131.98,,1319.8
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Sell,NVDA,NVDA SELL FILL at 234.22,98.0,234.22,,22953.56
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,JPM,JPM BUY FILL at 301.12,1.0,301.12,,-301.12
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,SPY,SPY BUY FILL at 747.07,10.0,747.07,,-7470.7
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,LINK,LINK BUY FILL at 10.621,95.0,10.621,,-1008.995
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY FILL at 131.6,4.0,131.6,,-526.4
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,2.0,131.6,,-263.2
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,7.0,131.6,,-921.2
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,8.0,131.6,,-1052.8
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,10.0,131.6,,-1316.0
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,RKLB,RKLB BUY PARTIAL_FILL at 131.6,69.0,131.6,,-9080.4
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY FILL at 234.04,1.0,234.04,,-234.04
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.03,1.0,234.03,,-234.03
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,1.0,234.01,,-234.01
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,17.0,234.04,,-3978.68
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,28.0,234.04,,-6553.12
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
