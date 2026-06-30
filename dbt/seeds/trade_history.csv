@@ -1112,11 +1112,6 @@ Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,11/18/2024,Cred
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,11/14/2024,Sell to Open,CFLT  241220C00030000,CALL CONFLUENT INC $30 EXP 12/20/24,200.0,1.15,133.4,22866.6
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,11/14/2024,Buy to Close,CFLT  241115C00028000,CALL CONFLUENT INC $28 EXP 11/15/24,200.0,0.98,132.2,-19732.2
 Schwab Account,10,snaptrade:72865207-ba8a-4f3a-aaf4-364ee95a4d89,11/01/2024,Sell to Open,CFLT  241115C00028000,CALL CONFLUENT INC $28 EXP 11/15/24,200.0,0.4,132.98,7867.02
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626P00990000,MU260626P00990000 SELL FILL at 31.05,1.0,31.05,,31.05
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Buy to Open,MU    260626P01075000,MU260626P01075000 BUY FILL at 12.5,1.0,12.5,,-12.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626C01425000,MU260626C01425000 SELL FILL at 0.71,1.0,0.71,,0.71
@@ -5281,3 +5276,8 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/26/2026,Buy 
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/26/2026,Sell to Open,AVGO  260706C00400000,CALL BROADCOM INC $400 EXP 07/06/26,1.0,1.94,0.41,193.59
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/26/2026,Sell to Open,AMZN  260706C00240000,CALL AMAZON.COM INC $240 EXP 07/06/26,2.0,1.45,0.84,289.16
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/26/2026,Cash Dividend,NVDA,NVIDIA CORP,,,,175.0
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
