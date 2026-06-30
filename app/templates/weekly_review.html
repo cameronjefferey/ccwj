@@ -1083,12 +1083,14 @@
 <div class="review-section">
     <div class="section-label">Performance by Account</div>
     <p class="section-sub">
-        Open positions plus anything closed since
-        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }},
-        per account &mdash; split by stock, options, and dividends. Each
-        position&rsquo;s G/L is lifetime; annualized factors in how long it
-        has been held. Click an account for the full breakdown by position,
-        strategy, and sector.
+        Open positions plus anything closed this week (since
+        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}),
+        per account &mdash; split by stock, options, and dividends. Each column
+        counts only positions currently open or closed this week; older closed
+        trades are excluded (they live in the full account breakdown).
+        Annualized factors in how long a position has been held. Click an
+        account for the full lifetime breakdown by position, strategy, and
+        sector.
     </p>
     <div class="breakdown-wrap">
         <table class="breakdown-table">

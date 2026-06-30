@@ -1,6 +1,11 @@
 """
-CLI for daily SnapTrade sync. Run via cron:
-  0 22 * * * cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli
+CLI for the SnapTrade sync BACKSTOP. The freshness driver is the
+``ACCOUNT_HOLDINGS_UPDATED`` webhook (``app/webhooks.py``); this CLI is the
+daily safety net for days a webhook delivery is missed. It runs on the Render
+cron ``happytrader-snaptrade-sync`` at 23:00 UTC weekdays — AFTER SnapTrade's
+daily broker refresh completes (~20:40–22:10 UTC; ≈1h later under EST). Do not
+schedule it earlier or it will read day-old data. Manual local invocation:
+  cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli
 
 Requires: SNAPTRADE_CLIENT_ID, SNAPTRADE_CONSUMER_KEY in env. The
 ``SNAPTRADE_REDIRECT_URI`` env var is only used by the OAuth callback

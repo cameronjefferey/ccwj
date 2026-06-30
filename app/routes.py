@@ -7229,6 +7229,7 @@ def accounts():
     # load, so a top-level import here would be circular.
     from app.weekly_review import (
         POSITION_ATTRIBUTION_QUERY,
+        ATTRIBUTION_LIFETIME_SENTINEL,
         _build_position_breakdown,
         _aggregate_breakdown_by,
         _build_breakdown_totals,
@@ -7242,7 +7243,11 @@ def accounts():
             "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
             "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
-            "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
+            # Lifetime view: pass the far-past sentinel so the per-asset-class
+            # P&L sums include every closed group (the /accounts page is the
+            # full lifetime breakdown; the week scoping is the Daily Review's).
+            "attribution": POSITION_ATTRIBUTION_QUERY.format(
+                tenant_filter=tenant_filter, week_start=ATTRIBUTION_LIFETIME_SENTINEL),
         })
         balances_df = dfs["balances"]
         trades_df = dfs["trades"]
@@ -7393,9 +7398,11 @@ def accounts():
     # Detailed breakdown tables (the per-symbol / strategy / sector /
     # subsector "CC Trading Summary" the Daily Review account scorecard
     # drills into). Same Stock | Options | Dividend | Net | % | Annualized
-    # shape, lifetime scope (no week filter — this is the full account
+    # shape, lifetime scope (week_start=None here + the SENTINEL passed to
+    # the SQL above, so every closed group counts — this is the full account
     # view). All four pull from POSITION_ATTRIBUTION_QUERY so the totals
-    # reconcile with the scorecard row on /daily-review.
+    # reconcile with the scorecard row on /daily-review (which scopes to the
+    # current week instead).
     # ------------------------------------------------------------------
     position_breakdown = []
     position_breakdown_totals = None

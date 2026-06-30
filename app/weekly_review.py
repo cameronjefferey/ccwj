@@ -536,6 +536,12 @@ ORDER BY e.next_earnings_date, e.symbol
 # annualized column doesn't go ±infinity on a free-money dividend lot.
 #
 # Tenancy: every CTE that hits a user-data table carries {tenant_filter}.
+# Sentinel passed as ``week_start`` when a caller wants the LIFETIME view
+# (every closed group qualifies, so the scoped sums collapse back to lifetime).
+# Used by the /accounts detail page; the Daily Review scorecard passes the real
+# Monday so old closed groups drop out of the per-asset-class columns.
+ATTRIBUTION_LIFETIME_SENTINEL = "1900-01-01"
+
 POSITION_ATTRIBUTION_QUERY = """
 WITH classification AS (
     SELECT tenant_id, account, user_id, symbol, trade_group_type, total_pnl,
@@ -544,10 +550,25 @@ WITH classification AS (
     WHERE 1=1 {tenant_filter}
 ),
 per_sym_pnl AS (
+    -- equity_pnl / option_pnl are scoped to trade groups that are CURRENTLY
+    -- OPEN or were CLOSED on/after {week_start}. This keeps each asset-class
+    -- column honest under the Daily Review "open + closed this week" lens: a
+    -- symbol that's only in scope because it has an open EQUITY leg must NOT
+    -- drag in option P&L from contracts that closed months ago (the "stale
+    -- option line" bug — Cameron 401k showed -$3,757 of options that all
+    -- closed in Jul/Aug 2025). Callers wanting the LIFETIME view (e.g. the
+    -- /accounts detail page) pass a far-past sentinel date so every closed
+    -- group qualifies and the sums collapse back to lifetime. The COUNTIF /
+    -- first_open / last_activity fields below stay LIFETIME on purpose — they
+    -- drive "is this symbol open / when did it last move" row selection.
     SELECT
         tenant_id, account, user_id, symbol,
-        SUM(CASE WHEN trade_group_type='equity_session'  THEN total_pnl ELSE 0 END) AS equity_pnl,
-        SUM(CASE WHEN trade_group_type='option_contract' THEN total_pnl ELSE 0 END) AS option_pnl,
+        SUM(CASE WHEN trade_group_type='equity_session'
+                  AND (status='Open' OR close_date >= DATE '{week_start}')
+                 THEN total_pnl ELSE 0 END) AS equity_pnl,
+        SUM(CASE WHEN trade_group_type='option_contract'
+                  AND (status='Open' OR close_date >= DATE '{week_start}')
+                 THEN total_pnl ELSE 0 END) AS option_pnl,
         COUNTIF(trade_group_type='equity_session'  AND status='Open') AS num_equity_open,
         COUNTIF(trade_group_type='option_contract' AND status='Open') AS num_option_open,
         COUNTIF(trade_group_type='option_contract' AND status='Closed') AS num_option_closed,
@@ -3341,7 +3362,8 @@ def weekly_review():
                 "after_hours": AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter),
                 "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
                 "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
-                "attribution": POSITION_ATTRIBUTION_QUERY.format(tenant_filter=tenant_filter),
+                "attribution": POSITION_ATTRIBUTION_QUERY.format(
+                    tenant_filter=tenant_filter, week_start=this_week.isoformat()),
                 "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
             })
         except Exception as e:

@@ -45,6 +45,6 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
 When adding a broker-facing surface:
 
 - [ ] Connect flow uses `url_for('snaptrade_connect')` only
-- [ ] Sync cron is `happytrader-snaptrade-sync` (see `app/render.yaml`)
+- [ ] Sync is webhook-driven (`ACCOUNT_HOLDINGS_UPDATED` → `app/webhooks.py`); the `happytrader-snaptrade-sync` Render cron is only a 23:00 UTC fresh backstop (see `app/render.yaml`)
 - [ ] Seed writes include `tenant_id` from `get_or_create_broker_tenant`
 - [ ] No new imports from deleted `app/schwab.py`

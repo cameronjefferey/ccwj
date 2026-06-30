@@ -80,7 +80,21 @@ contract_summary as (
         --   3. NULL (still open with no terminal event)
         min(o.trade_date)  as open_date,
         -- ``close_date`` precedence:
-        --   1. last fill date among closing actions
+        --   1. last fill date among closing actions — BUT settlement events
+        --      (option_expired / option_assigned / option_exercised) are
+        --      CAPPED at option_expiry. Schwab books these 1-2 trading days
+        --      LATE: a Friday 6/26 OTM expiry posts as ``option_expired`` on
+        --      Monday 6/29. The position really ended on the expiry date, so
+        --      crediting the broker's late booking date would (a) inflate
+        --      days_in_trade and (b) push the trade into the WRONG ISO week —
+        --      making an option that expired last week reappear in "Trades
+        --      this week" days later. ``least(trade_date, option_expiry)``
+        --      keeps the real date for genuine EARLY assignment/exercise
+        --      (trade_date < expiry) while pulling late-booked expiries back
+        --      to the expiry date. Active closes (BTC / STC) are booked
+        --      same-day and keep their trade_date. This makes close_date
+        --      STABLE across the Monday sync (matches the otm_at_expiry
+        --      inference, which already dates worthless expiries to expiry).
         --   2. option_expiry, if past current_date()
         --   3. NULL (still open with no terminal event)
         -- Defensive guard for broker-error fills that record an STO
@@ -98,9 +112,15 @@ contract_summary as (
         case
             when coalesce(
                     max(case
+                            -- Settlement events booked late → cap at expiry
+                            -- (least() preserves genuine early exercise).
                             when o.action in (
-                                'option_buy_to_close', 'option_sell_to_close',
                                 'option_expired', 'option_assigned', 'option_exercised'
+                            )
+                            then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
+                            -- Active closes are booked same-day → trust them.
+                            when o.action in (
+                                'option_buy_to_close', 'option_sell_to_close'
                             )
                             then o.trade_date
                         end),
@@ -112,9 +132,15 @@ contract_summary as (
             else greatest(
                 coalesce(
                     max(case
+                            -- Settlement events booked late → cap at expiry
+                            -- (least() preserves genuine early exercise).
                             when o.action in (
-                                'option_buy_to_close', 'option_sell_to_close',
                                 'option_expired', 'option_assigned', 'option_exercised'
+                            )
+                            then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
+                            -- Active closes are booked same-day → trust them.
+                            when o.action in (
+                                'option_buy_to_close', 'option_sell_to_close'
                             )
                             then o.trade_date
                         end),

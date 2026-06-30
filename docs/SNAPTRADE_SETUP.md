@@ -132,11 +132,13 @@ verification — acceptable for local dev only.
   one-row-per-account grain of `schwab_connections`).
 - **Sync trigger.** Primary path is the `ACCOUNT_HOLDINGS_UPDATED`
   webhook (Step 5) — event-driven, fires when SnapTrade finishes its
-  broker poll. The daily cron (`happytrader-snaptrade-sync` in
-  `app/render.yaml`, offset 30 min from the Schwab cron so they don't
-  push to GitHub in the same minute) is now a **backstop** that re-reads
-  SnapTrade's cache in case a webhook delivery is missed; it does not
-  force a refresh and is no longer the freshness driver.
+  broker poll (so the data it reads is fresh). The `happytrader-snaptrade-sync`
+  Render cron (manually managed in the dashboard) is a **fresh daily
+  backstop** for days a webhook delivery is missed; it does not force a
+  refresh and is not the freshness driver. It runs at **23:00 UTC weekdays**,
+  AFTER SnapTrade's daily broker refresh completes (observed ~20:40–22:10 UTC,
+  ≈1h later under EST). The original 20:06 UTC schedule fired *before* that
+  refresh and always read day-old data — do not move it earlier.
 
 ## Limitations
 
