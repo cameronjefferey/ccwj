@@ -485,15 +485,15 @@
               style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
             {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(today_pulse.delta|abs) }}
         </span>
-        {% if equity_snapshot and equity_snapshot.account_value and (equity_snapshot.account_value - today_pulse.delta) > 0 %}
-        {% set _pct = today_pulse.delta / (equity_snapshot.account_value - today_pulse.delta) * 100 %}
+        {% if hero_account_value and (hero_account_value - today_pulse.delta) > 0 %}
+        {% set _pct = today_pulse.delta / (hero_account_value - today_pulse.delta) * 100 %}
         <span style="font-size:1rem; color: rgba(255,255,255,.6); font-weight:500;">
             ({{ "+" if _pct >= 0 else "" }}{{ "%.2f"|format(_pct) }}%)
         </span>
         {% endif %}
-        {% if equity_snapshot and equity_snapshot.account_value %}
+        {% if hero_account_value %}
         <span style="font-size:.85rem; color: rgba(255,255,255,.45); font-weight:500;">
-            &middot; ${{ "{:,.0f}".format(equity_snapshot.account_value) }} total
+            &middot; ${{ "{:,.0f}".format(hero_account_value) }} total
         </span>
         {% endif %}
     </p>

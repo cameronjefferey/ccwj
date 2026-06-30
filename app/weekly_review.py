@@ -3774,6 +3774,27 @@ def weekly_review():
 
     context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
     context["today_snapshots_total"] = _today_totals(context.get("today_snapshots_by_account", []))
+
+    # Hero "total" must anchor on the SAME close-based account value the
+    # Account snapshot table totals to. Otherwise the page shows two
+    # different totals: equity_snapshot.account_value is the LIVE broker
+    # balance (latest sync — an after-hours mark when the page is opened
+    # after the bell), while the snapshot table sums the close-based daily
+    # snapshot. Close-based wins for the core number (pricing-precedence
+    # rule: after-hours drift is surfaced only in After-hours movers, never
+    # in core numbers). Falls back to the live equity_snapshot when no daily
+    # snapshot exists yet (cold-start / freshly connected account).
+    _snaps = context.get("today_snapshots_by_account") or []
+    _total_row = context.get("today_snapshots_total")
+    _hero_av = None
+    if _total_row and _total_row.get("today_value") is not None:
+        _hero_av = _total_row["today_value"]
+    elif len(_snaps) == 1 and _snaps[0].get("today_value") is not None:
+        _hero_av = _snaps[0]["today_value"]
+    if _hero_av is None:
+        _hero_av = (context.get("equity_snapshot") or {}).get("account_value")
+    context["hero_account_value"] = _hero_av
+
     context["today_headline"] = _today_headline(
         context.get("today_pulse"),
         context.get("today_movers"),
