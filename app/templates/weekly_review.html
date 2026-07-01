@@ -164,7 +164,7 @@
     }
     .snapshot-table {
         display: grid;
-        grid-template-columns: minmax(140px, 1.4fr) repeat(5, 1fr);
+        grid-template-columns: minmax(140px, 1.4fr) repeat(4, 1fr);
         gap: 0; align-items: baseline;
     }
     .snapshot-table-head, .snapshot-table-row { display: contents; }
@@ -203,7 +203,7 @@
     .snap-bench { font-size: .68rem; color: #94a3b8; margin-top: .25rem; font-style: italic; }
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
-        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(4, 1fr); }
+        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, 1fr); }
         .snapshot-table .snap-col-month { display: none; }
     }
 
@@ -682,7 +682,6 @@
             <div>vs Yesterday</div>
             <div>vs 1 Week</div>
             <div class="snap-col-month">vs 1 Month</div>
-            <div>Today vs Open</div>
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
@@ -703,7 +702,6 @@
             <div>{{ money_cell(snap.comparisons.day) }}</div>
             <div>{{ money_cell(snap.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
-            <div>{{ money_cell(snap.comparisons.day) }}</div>
         </div>
         {% endfor %}
         {% if today_snapshots_total %}
@@ -720,7 +718,6 @@
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
             <div>{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
-            <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
         </div>
         {% endif %}
         {% for b in benchmark_snapshot or [] %}
@@ -733,7 +730,6 @@
             <div>{{ bench_pct_cell(b.day_pct) }}</div>
             <div>{{ bench_pct_cell(b.week_pct) }}</div>
             <div class="snap-col-month">{{ bench_pct_cell(b.month_pct) }}</div>
-            <div>{{ bench_pct_cell(b.day_pct) }}</div>
         </div>
         {% endfor %}
     </div>
