@@ -1388,71 +1388,6 @@ Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,05/15/2026,Cash
 Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,05/14/2026,Buy,AAPL,APPLE INC,0.0018,298.1514,,-0.55
 Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,05/14/2026,Cash Dividend,AAPL,APPLE INC,,,,0.55
 Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,05/05/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,9.11
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00046000,NKE260717C00046000 BUY FILL at 0.84,25.0,0.84,,-21.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00044500,NKE260717C00044500 SELL FILL at 1.37,25.0,1.37,,34.25
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,PEP   260710P00132000,PEP260710P00132000 BUY FILL at 0.59,12.0,0.59,,-7.08
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,PEP   260710P00135000,PEP260710P00135000 SELL_SHORT FILL at 0.51,12.0,0.51,,6.12
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,PEP   260710C00152500,PEP260710C00152500 BUY FILL at 0.77,12.0,0.77,,-9.24
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,PEP   260710C00150000,PEP260710C00150000 SELL_SHORT FILL at 0.84,12.0,0.84,,10.08
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00046000,NKE260717C00046000 SELL_SHORT FILL at 0.63,3.0,0.63,,1.89
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00044500,NKE260717C00044500 BUY FILL at 1.5,3.0,1.5,,-4.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00046000,NKE260717C00046000 SELL_SHORT PARTIAL_FILL at 0.63,22.0,0.63,,13.86
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00044500,NKE260717C00044500 BUY PARTIAL_FILL at 1.5,22.0,1.5,,-33.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00175000,AVAV260717C00175000 BUY FILL at 10.5,3.0,10.5,,-31.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00167500,AVAV260717C00167500 SELL FILL at 11.6,3.0,11.6,,34.8
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00175000,AVAV260717C00175000 BUY PARTIAL_FILL at 10.5,1.0,10.5,,-10.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00167500,AVAV260717C00167500 SELL PARTIAL_FILL at 11.6,1.0,11.6,,11.6
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00175000,AVAV260717C00175000 SELL_SHORT FILL at 10.1,4.0,10.1,,40.4
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00167500,AVAV260717C00167500 BUY FILL at 15.2,4.0,15.2,,-60.8
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,GOOGL 260724C00370000,GOOGL260724C00370000 SELL_SHORT FILL at 7.75,4.0,7.75,,31.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,GOOGL 260724C00360000,GOOGL260724C00360000 BUY FILL at 12.65,4.0,12.65,,-50.6
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,ORF fee for proceed of 24 contracts on 2026-07-01 by PA3HS6VB43PX,,,,-0.65
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 12 contracts (4 trades) on 2026-07-01 by PA3HS6VB43PX,,,,-0.04
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,CAT fee for proceed of 8 trades on 2026-07-01 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.08
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.06
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Buy to Open,MSM   260717P00105000,MSM260717P00105000 BUY FILL at 0.95,6.0,0.95,,-5.7
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Sell to Open,MSM   260717P00110000,MSM260717P00110000 SELL_SHORT FILL at 1.3,6.0,1.3,,7.8
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Buy to Open,PENG  260717P00040000,PENG260717P00040000 BUY FILL at 0.9,3.0,0.9,,-2.7
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Sell to Open,PENG  260717P00045000,PENG260717P00045000 SELL_SHORT FILL at 1,3.0,1.0,,3.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,ORF fee for proceed of 18 contracts on 2026-06-30 by PA3HS6VB43PX,,,,-0.49
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-30 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 9 contracts (2 trades) on 2026-06-30 by PA3HS6VB43PX,,,,-0.03
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.12
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.06
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,TSM   260717C00472500,TSM260717C00472500 SELL_SHORT FILL at 14.3,2.0,14.3,,28.6
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,TSM   260717C00455000,TSM260717C00455000 BUY FILL at 22.1,2.0,22.1,,-44.2
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,JEF   260717P00045000,JEF260717P00045000 BUY FILL at 1,18.0,1.0,,-18.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,JEF   260717P00047500,JEF260717P00047500 SELL FILL at 1.5,18.0,1.5,,27.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,WOR   260717P00050000,WOR260717P00050000 BUY FILL at 0.45,10.0,0.45,,-4.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,WOR   260717P00055000,WOR260717P00055000 SELL FILL at 1.65,10.0,1.65,,16.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,JEF   260717P00045000,JEF260717P00045000 SELL_SHORT FILL at 0.85,18.0,0.85,,15.3
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,JEF   260717P00047500,JEF260717P00047500 BUY FILL at 2,18.0,2.0,,-36.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,WOR   260717P00050000,WOR260717P00050000 SELL_SHORT FILL at 0.35,10.0,0.35,,3.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,WOR   260717P00055000,WOR260717P00055000 BUY FILL at 1.9,10.0,1.9,,-19.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 58 contracts (5 trades) on 2026-06-29 by PA3HS6VB43PX,,,,-0.17
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,ORF fee for proceed of 116 contracts on 2026-06-29 by PA3HS6VB43PX,,,,-3.12
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.36
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.2
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,CAT fee for proceed of 10 trades on 2026-06-29 by PA3HS6VB43PX,,,,-0.04
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.04
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626P00990000,MU260626P00990000 SELL FILL at 31.05,1.0,31.05,,31.05
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Buy to Open,MU    260626P01075000,MU260626P01075000 BUY FILL at 12.5,1.0,12.5,,-12.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626C01425000,MU260626C01425000 SELL FILL at 0.71,1.0,0.71,,0.71
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Buy to Open,MU    260626C01350000,MU260626C01350000 BUY FILL at 2.47,1.0,2.47,,-2.47
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-25 by PA3HS6VB43PX,,,,-0.11
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 2 contracts (2 trades) on 2026-06-25 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-25 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Buy to Open,MU    260626P00990000,MU260626P00990000 BUY FILL at 37.95,1.0,37.95,,-37.95
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Sell to Open,MU    260626P01075000,MU260626P01075000 SELL_SHORT FILL at 77.05,1.0,77.05,,77.05
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Buy to Open,MU    260626C01425000,MU260626C01425000 BUY FILL at 4,1.0,4.0,,-4.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Sell to Open,MU    260626C01350000,MU260626C01350000 SELL_SHORT FILL at 6.5,1.0,6.5,,6.5
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 2 contracts (2 trades) on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-23 by PA3HS6VB43PX,,,,-0.11
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,04/20/2026,Exchange or Exercise,,CALL PROCURE ETF TR II $50 EXP 04/17/26,1.0,,,0.0
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,04/17/2026,Exchange or Exercise,,CALL PROCURE ETF TR II $50 EXP 04/17/26,4.0,,,0.0
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,03/23/2026,Sell,,CALL PROCURE ETF TR II $50 EXP 04/17/26,5.0,0.95,3.33,471.67
@@ -5384,3 +5319,68 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/30/2026,Cash
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/30/2026,Sell to Open,GOOG  260710C00357500,CALL ALPHABET INC $357.5 EXP 07/10/26,1.0,5.65,0.42,564.58
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/30/2026,Buy to Close,GOOG  260702C00350000,CALL ALPHABET INC $350 EXP 07/02/26,1.0,6.3,0.41,-630.41
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,06/30/2026,Sell to Open,VRT   260710C00345000,CALL VERTIV HLDGS CO $345 EXP 07/10/26,1.0,8.6,0.43,859.57
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,TSM   260717C00472500,TSM260717C00472500 SELL_SHORT FILL at 14.3,2.0,14.3,,28.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,TSM   260717C00455000,TSM260717C00455000 BUY FILL at 22.1,2.0,22.1,,-44.2
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,JEF   260717P00045000,JEF260717P00045000 BUY FILL at 1,18.0,1.0,,-18.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,JEF   260717P00047500,JEF260717P00047500 SELL FILL at 1.5,18.0,1.5,,27.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,WOR   260717P00050000,WOR260717P00050000 BUY FILL at 0.45,10.0,0.45,,-4.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,WOR   260717P00055000,WOR260717P00055000 SELL FILL at 1.65,10.0,1.65,,16.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,JEF   260717P00045000,JEF260717P00045000 SELL_SHORT FILL at 0.85,18.0,0.85,,15.3
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,JEF   260717P00047500,JEF260717P00047500 BUY FILL at 2,18.0,2.0,,-36.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Sell to Open,WOR   260717P00050000,WOR260717P00050000 SELL_SHORT FILL at 0.35,10.0,0.35,,3.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,Buy to Open,WOR   260717P00055000,WOR260717P00055000 BUY FILL at 1.9,10.0,1.9,,-19.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 58 contracts (5 trades) on 2026-06-29 by PA3HS6VB43PX,,,,-0.17
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,ORF fee for proceed of 116 contracts on 2026-06-29 by PA3HS6VB43PX,,,,-3.12
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.36
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.2
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,CAT fee for proceed of 10 trades on 2026-06-29 by PA3HS6VB43PX,,,,-0.04
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/29/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.04
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626P00990000,MU260626P00990000 SELL FILL at 31.05,1.0,31.05,,31.05
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Buy to Open,MU    260626P01075000,MU260626P01075000 BUY FILL at 12.5,1.0,12.5,,-12.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Sell to Open,MU    260626C01425000,MU260626C01425000 SELL FILL at 0.71,1.0,0.71,,0.71
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,Buy to Open,MU    260626C01350000,MU260626C01350000 BUY FILL at 2.47,1.0,2.47,,-2.47
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-25 by PA3HS6VB43PX,,,,-0.11
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 2 contracts (2 trades) on 2026-06-25 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-25 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/25/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Buy to Open,MU    260626P00990000,MU260626P00990000 BUY FILL at 37.95,1.0,37.95,,-37.95
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Sell to Open,MU    260626P01075000,MU260626P01075000 SELL_SHORT FILL at 77.05,1.0,77.05,,77.05
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Buy to Open,MU    260626C01425000,MU260626C01425000 BUY FILL at 4,1.0,4.0,,-4.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,Sell to Open,MU    260626C01350000,MU260626C01350000 SELL_SHORT FILL at 6.5,1.0,6.5,,6.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 2 contracts (2 trades) on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-23 by PA3HS6VB43PX,,,,-0.11
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00046000,NKE260717C00046000 BUY FILL at 0.84,25.0,0.84,,-21.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00044500,NKE260717C00044500 SELL FILL at 1.37,25.0,1.37,,34.25
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,PEP   260710P00132000,PEP260710P00132000 BUY FILL at 0.59,12.0,0.59,,-7.08
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,PEP   260710P00135000,PEP260710P00135000 SELL_SHORT FILL at 0.51,12.0,0.51,,6.12
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,PEP   260710C00152500,PEP260710C00152500 BUY FILL at 0.77,12.0,0.77,,-9.24
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,PEP   260710C00150000,PEP260710C00150000 SELL_SHORT FILL at 0.84,12.0,0.84,,10.08
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00046000,NKE260717C00046000 SELL_SHORT FILL at 0.63,3.0,0.63,,1.89
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00044500,NKE260717C00044500 BUY FILL at 1.5,3.0,1.5,,-4.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Sell to Open,NKE   260717C00046000,NKE260717C00046000 SELL_SHORT PARTIAL_FILL at 0.63,22.0,0.63,,13.86
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/02/2026,Buy to Open,NKE   260717C00044500,NKE260717C00044500 BUY PARTIAL_FILL at 1.5,22.0,1.5,,-33.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00175000,AVAV260717C00175000 BUY FILL at 10.5,3.0,10.5,,-31.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00167500,AVAV260717C00167500 SELL FILL at 11.6,3.0,11.6,,34.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00175000,AVAV260717C00175000 BUY PARTIAL_FILL at 10.5,1.0,10.5,,-10.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00167500,AVAV260717C00167500 SELL PARTIAL_FILL at 11.6,1.0,11.6,,11.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,AVAV  260717C00175000,AVAV260717C00175000 SELL_SHORT FILL at 10.1,4.0,10.1,,40.4
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,AVAV  260717C00167500,AVAV260717C00167500 BUY FILL at 15.2,4.0,15.2,,-60.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Sell to Open,GOOGL 260724C00370000,GOOGL260724C00370000 SELL_SHORT FILL at 7.75,4.0,7.75,,31.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,Buy to Open,GOOGL 260724C00360000,GOOGL260724C00360000 BUY FILL at 12.65,4.0,12.65,,-50.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,ORF fee for proceed of 24 contracts on 2026-07-01 by PA3HS6VB43PX,,,,-0.65
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 12 contracts (4 trades) on 2026-07-01 by PA3HS6VB43PX,,,,-0.04
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,CAT fee for proceed of 8 trades on 2026-07-01 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.08
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.06
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/01/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Buy to Open,MSM   260717P00105000,MSM260717P00105000 BUY FILL at 0.95,6.0,0.95,,-5.7
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Sell to Open,MSM   260717P00110000,MSM260717P00110000 SELL_SHORT FILL at 1.3,6.0,1.3,,7.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Buy to Open,PENG  260717P00040000,PENG260717P00040000 BUY FILL at 0.9,3.0,0.9,,-2.7
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,Sell to Open,PENG  260717P00045000,PENG260717P00045000 SELL_SHORT FILL at 1,3.0,1.0,,3.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,ORF fee for proceed of 18 contracts on 2026-06-30 by PA3HS6VB43PX,,,,-0.49
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-30 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 9 contracts (2 trades) on 2026-06-30 by PA3HS6VB43PX,,,,-0.03
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.12
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/30/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.06
