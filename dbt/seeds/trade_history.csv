@@ -4022,10 +4022,6 @@ Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/25/2026,Cash 
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/16/2026,Credit Interest,SCHFDX0,BANK INT 051626-061526 SCHWAB BANK,,,,0.21
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/12/2026,Buy,KLAC,KLA CORP,100.0,249.56,,-24956.0
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,05/18/2026,Credit Interest,SCHFDX0,BANK INT 041626-051526 SCHWAB BANK,,,,0.2
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.47
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,170.6
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2893,589.73,,-170.6
@@ -5384,3 +5380,7 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/11/2026,Expir
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/11/2026,Buy,ASTS,AST SPACEMOBILE INC CLASS CLASS A,324.0,76.5575,,-24804.62
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/05/2026,Cash Dividend,ASML,ASML HLDG N V FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,101.39
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,72.52
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
