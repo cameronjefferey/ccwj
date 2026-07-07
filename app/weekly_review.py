@@ -3369,9 +3369,19 @@ def weekly_review():
             "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
         }
         # After-hours drift compares the broker mark to today's *official*
-        # close, which only exists once the bell rings; skip it during the
-        # open session and pre-market (numbers are still moving).
-        if market_session.get("state") == "after_hours":
+        # close. Two conditions must hold or the reading is noise/wrong:
+        #   1) the bell has rung (state == after_hours) so the close exists;
+        #   2) the broker mark itself was captured AFTER the close — else we'd
+        #      compare a mid-session mark to the close and show the intraday
+        #      move backwards (see broker_marks_are_post_close). We have no
+        #      per-row capture time in the warehouse, so gate on SnapTrade's
+        #      holdings_last_successful_sync via Postgres.
+        from app.snaptrade import broker_marks_are_post_close
+        after_hours_ready = (
+            market_session.get("state") == "after_hours"
+            and broker_marks_are_post_close(current_user.id)
+        )
+        if after_hours_ready:
             batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter)
 
         try:
@@ -3690,13 +3700,13 @@ def weekly_review():
                 app.logger.warning("Today movers processing failed: %s", e)
 
         # ── After-hours movers (broker mark vs official close) ─────────
-        # Only meaningful once the regular session has closed: the query
-        # compares the broker mark against today's *official* close. During
-        # the open session (and pre-market) yfinance may already carry a
-        # provisional CURRENT_DATE() price that is still moving, so the
-        # "drift vs close" is noise. Suppress until state == "after_hours".
+        # Only built when after_hours_ready (bell has rung AND the broker mark
+        # is post-close per SnapTrade's holdings_last_successful_sync). Before
+        # the close, and whenever the last broker sync predates the close, the
+        # "drift vs close" is noise or the intraday move shown backwards, so
+        # the query wasn't run and we leave the section hidden.
         try:
-            if (context.get("market_session") or {}).get("state") == "after_hours":
+            if after_hours_ready:
                 ah_df = batch.get("after_hours", pd.DataFrame())
                 context["after_hours_movers"] = _build_after_hours_movers(ah_df)
             else:

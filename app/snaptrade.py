@@ -2256,6 +2256,52 @@ def broker_data_freshness(user_id, *, today=None):
     return oldest, (days if days >= 0 else 0)
 
 
+def broker_marks_are_post_close(user_id, *, now=None):
+    """Gate for the Daily Review "After-hours movers" section.
+
+    That section compares each holding's broker mark to today's OFFICIAL
+    close to surface extended-hours drift. The comparison is only meaningful
+    when the broker mark was captured AFTER the 4pm ET bell — otherwise a mark
+    from earlier in the session is compared against the close and the intraday
+    move is shown BACKWARDS (real case 2026-07-07: BE synced mid-session at
+    ~$295, closed $269.57, and the section reported a bogus +$25.88/sh
+    "after-hours" gain that was really the day's -8.6% drop inverted).
+
+    The warehouse has no per-row capture time (``stg_current.snapshot_date``
+    is just ``current_date()``), so we gate on SnapTrade's authoritative
+    ``holdings_last_successful_sync`` per account. WEAKEST-LINK: EVERY
+    connected account must have synced at/after today's close, or we suppress
+    the whole section — the after-hours query sums ``market_value`` across
+    accounts by symbol, so one stale (pre-close) account would poison the
+    aggregate for any symbol it also holds. Returns ``False`` off-hours, on
+    weekends, and on cold start / missing timestamps."""
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    now_et = now or datetime.now(et)
+    if now_et.tzinfo is None:
+        now_et = now_et.replace(tzinfo=et)
+    now_et = now_et.astimezone(et)
+
+    # U.S. regular-session close = 16:00 ET, Mon–Fri. No holiday calendar:
+    # on a holiday no official close publishes, so the query is empty anyway.
+    close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+    if now_et.weekday() >= 5 or now_et < close_et:
+        return False
+
+    rows = get_snaptrade_accounts(user_id) or []
+    if not rows:
+        return False
+    for r in rows:
+        stamp = r.get("holdings_last_successful_sync")
+        if not isinstance(stamp, datetime):
+            return False
+        s = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=ZoneInfo("UTC"))
+        if s.astimezone(et) < close_et:
+            return False
+    return True
+
+
 @app.context_processor
 def _inject_broker_data_freshness():
     """Global "broker data as of" — surfaced on EVERY page via the slim strip

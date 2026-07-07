@@ -441,6 +441,7 @@ def test_authorization_disabled_none_when_no_matching_auth():
 # ---------------------------------------------------------------------------
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 
 def test_parse_iso_datetime_handles_z_suffix_and_date_prefix():
@@ -542,6 +543,75 @@ def test_broker_data_freshness_none_when_no_timestamps(monkeypatch):
     assert _snap.broker_data_freshness(99, today=date(2026, 6, 22)) == (None, None)
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [])
     assert _snap.broker_data_freshness(99) == (None, None)
+
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _et(y, mo, d, h, mi=0):
+    return datetime(y, mo, d, h, mi, tzinfo=_ET)
+
+
+def test_after_hours_gate_true_when_all_accounts_synced_post_close(monkeypatch):
+    """The After-hours movers section may render only when EVERY connected
+    account synced at/after today's 4pm ET close — otherwise a pre-close mark
+    would be compared to the close and show the intraday move backwards."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": _et(2026, 7, 7, 16, 5)},
+        {"holdings_last_successful_sync": _et(2026, 7, 7, 17, 30)},
+    ])
+    # Viewing at 5:10pm ET, both accounts synced after the 4pm close.
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 17, 10)) is True
+
+
+def test_after_hours_gate_false_when_any_account_synced_pre_close(monkeypatch):
+    """One mid-session sync poisons the aggregate (the query sums market_value
+    by symbol across accounts), so a single pre-close account suppresses the
+    whole section. This is the BE 2026-07-07 case: synced ~$295 mid-session,
+    closed $269.57 → a bogus +$25.88/sh 'after-hours' gain."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": _et(2026, 7, 7, 16, 5)},
+        {"holdings_last_successful_sync": _et(2026, 7, 7, 10, 30)},  # pre-close
+    ])
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 17, 10)) is False
+
+
+def test_after_hours_gate_false_before_the_close(monkeypatch):
+    """During the open session (and pre-market) there is no settled close to
+    compare against, so the gate is False regardless of sync times."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": _et(2026, 7, 7, 13, 0)},
+    ])
+    # 1:00pm ET — market still open.
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 13, 5)) is False
+
+
+def test_after_hours_gate_false_on_weekend(monkeypatch):
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": _et(2026, 7, 4, 18, 0)},
+    ])
+    # Saturday 2026-07-11 evening.
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 11, 18, 0)) is False
+
+
+def test_after_hours_gate_false_when_no_timestamps(monkeypatch):
+    """Cold start / missing timestamp → never show (never fabricate drift)."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": None},
+    ])
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 17, 10)) is False
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [])
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 17, 10)) is False
+
+
+def test_after_hours_gate_handles_utc_naive_timestamps(monkeypatch):
+    """Postgres TIMESTAMPTZ usually returns tz-aware datetimes, but if a naive
+    one slips through we assume UTC. 21:00 UTC on 2026-07-07 = 17:00 ET, which
+    is post-close."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": datetime(2026, 7, 7, 21, 0)},  # naive UTC
+    ])
+    assert _snap.broker_marks_are_post_close(99, now=_et(2026, 7, 7, 17, 10)) is True
 
 
 def test_sync_one_passes_none_holdings_sync_through(monkeypatch, _patched_models):
