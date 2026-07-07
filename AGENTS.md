@@ -89,9 +89,13 @@ What's working (May 2026 rebuild):
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
 - After-hours movers: broker mark (as of last sync) vs today's official close,
-  per held equity — surfaces post-close drift without polluting the
-  close-based core numbers (reads `stg_current` mark deliberately; the only
-  user-facing surface that intentionally shows the broker after-hours mark)
+ per held equity — surfaces post-close drift without polluting the
+ close-based core numbers (reads `stg_current` mark deliberately; the only
+ user-facing surface that intentionally shows the broker after-hours mark).
+ Only rendered once the U.S. regular session has closed (`_us_market_session()`
+ state == `after_hours`); during the open session and pre-market the query is
+ skipped entirely because today's "close" is still provisional/moving, so a
+ "drift vs close" reading would be noise.
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)

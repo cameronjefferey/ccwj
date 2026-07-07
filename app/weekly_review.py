@@ -3351,21 +3351,31 @@ def weekly_review():
             bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
         ])
 
+        # Compute the market session up front so we can skip queries whose
+        # results are only meaningful once the regular session has closed.
+        market_session = _us_market_session()
+
+        batch_queries = {
+            "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
+            "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
+            "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+            "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
+            "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
+            "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
+            "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
+            "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
+            "attribution": POSITION_ATTRIBUTION_QUERY.format(
+                tenant_filter=tenant_filter, week_start=this_week.isoformat()),
+            "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
+        }
+        # After-hours drift compares the broker mark to today's *official*
+        # close, which only exists once the bell rings; skip it during the
+        # open session and pre-market (numbers are still moving).
+        if market_session.get("state") == "after_hours":
+            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter)
+
         try:
-            batch = _bq_parallel(client, {
-                "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
-                "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
-                "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
-                "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
-                "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
-                "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
-                "after_hours": AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter),
-                "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
-                "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
-                "attribution": POSITION_ATTRIBUTION_QUERY.format(
-                    tenant_filter=tenant_filter, week_start=this_week.isoformat()),
-                "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
-            })
+            batch = _bq_parallel(client, batch_queries)
         except Exception as e:
             if app.debug:
                 app.logger.warning("Daily review parallel batch failed: %s", e)
@@ -3383,7 +3393,7 @@ def weekly_review():
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
         context["market"] = _get_market_performance(this_week, today)
-        context["market_session"] = _us_market_session()
+        context["market_session"] = market_session
         context["market_open_today"] = context["market_session"]["state"] == "open"
         context["market_neutral_line"] = _neutral_market_line(context.get("market"))
 
@@ -3680,9 +3690,17 @@ def weekly_review():
                 app.logger.warning("Today movers processing failed: %s", e)
 
         # ── After-hours movers (broker mark vs official close) ─────────
+        # Only meaningful once the regular session has closed: the query
+        # compares the broker mark against today's *official* close. During
+        # the open session (and pre-market) yfinance may already carry a
+        # provisional CURRENT_DATE() price that is still moving, so the
+        # "drift vs close" is noise. Suppress until state == "after_hours".
         try:
-            ah_df = batch.get("after_hours", pd.DataFrame())
-            context["after_hours_movers"] = _build_after_hours_movers(ah_df)
+            if (context.get("market_session") or {}).get("state") == "after_hours":
+                ah_df = batch.get("after_hours", pd.DataFrame())
+                context["after_hours_movers"] = _build_after_hours_movers(ah_df)
+            else:
+                context["after_hours_movers"] = None
         except Exception as e:
             if app.debug:
                 app.logger.warning("After-hours movers processing failed: %s", e)
