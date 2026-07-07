@@ -1064,3 +1064,166 @@ def test_commit_git_paths_commits_when_changed(monkeypatch):
     )
     assert ok is True and sha == "abc123" and no_changes is False
     assert calls["path"] == "dbt/seeds/x.csv"
+
+
+# ---------------------------------------------------------------------------
+# Batched multi-account push (nightly backstop cron) — merge_and_push_seeds_batch.
+# The CRITICAL property: folding N accounts into ONE commit must produce
+# BYTE-IDENTICAL seeds to N sequential per-account pushes. If this ever drifts,
+# the cron batching silently corrupts the monotonic merge.
+# ---------------------------------------------------------------------------
+
+CURRENT_SEED_COLUMNS = _upload.CURRENT_SEED_COLUMNS
+
+
+def _cur_df(symbol, qty, price, *, sectype="Equity", desc=""):
+    return pd.DataFrame([{
+        "Symbol": symbol, "Description": desc or symbol,
+        "Quantity": float(qty), "Price": float(price),
+        "security_type": sectype,
+    }])
+
+
+class _FakeSeedStore:
+    """In-memory stand-in for the GitHub seed files. ``get`` mirrors
+    ``_get_file_content`` (None == 404); ``commit`` mirrors
+    ``_commit_git_paths`` (no-op when unchanged)."""
+
+    def __init__(self):
+        self.files = {}
+
+    def get(self, path):
+        return self.files.get(path)
+
+    def commit(self, path_contents, message):
+        no_changes = all(self.files.get(p) == c for p, c in path_contents)
+        for p, c in path_contents:
+            self.files[p] = c
+        return True, None, "sha", no_changes
+
+
+def _install_store(monkeypatch, store):
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: store.get(path))
+    monkeypatch.setattr(_upload, "_commit_git_paths",
+                        lambda pc, msg: store.commit(pc, msg))
+    monkeypatch.setattr(_upload, "add_account_for_user", lambda *a, **k: None)
+    monkeypatch.setattr(_upload, "record_upload", lambda *a, **k: None)
+
+
+def _sample_entries():
+    """Three distinct tenants — two SHARING the generic 'Schwab Account'
+    label (the exact collision the cron fan-out log showed) plus a separate
+    Alpaca account — each with a couple of trades + a snapshot line."""
+    return [
+        {
+            "account_name": "Schwab Account", "user_id": 9,
+            "tenant_id": TENANT_SCHWAB_5989, "skip_history": False,
+            "history_df": pd.DataFrame([
+                _row("Schwab Account", 9, "01/02/2025", "Buy", "AAPL", 10, 200.0, -2000.0,
+                     tenant_id=TENANT_SCHWAB_5989, desc="APPLE INC"),
+            ]),
+            "current_df": _cur_df("AAPL", 10, 205.0),
+            "balances_df": None,
+        },
+        {
+            "account_name": "Schwab Account", "user_id": 9,
+            "tenant_id": TENANT_SCHWAB_5167, "skip_history": False,
+            "history_df": pd.DataFrame([
+                _row("Schwab Account", 9, "01/03/2025", "Buy", "MSFT", 5, 400.0, -2000.0,
+                     tenant_id=TENANT_SCHWAB_5167, desc="MICROSOFT"),
+            ]),
+            "current_df": _cur_df("MSFT", 5, 410.0),
+            "balances_df": None,
+        },
+        {
+            "account_name": "Alpaca Paper Account", "user_id": 18,
+            "tenant_id": TENANT_ALPACA, "skip_history": True,  # positions only
+            "history_df": None,
+            "current_df": _cur_df("TSLA", 3, 250.0),
+            "balances_df": None,
+        },
+    ]
+
+
+def _clone_entries(entries):
+    out = []
+    for e in entries:
+        c = dict(e)
+        if c.get("history_df") is not None:
+            c["history_df"] = c["history_df"].copy()
+        c["current_df"] = c["current_df"].copy()
+        out.append(c)
+    return out
+
+
+def test_batch_push_is_byte_identical_to_sequential_pushes(monkeypatch):
+    entries = _sample_entries()
+
+    # Sequential: one merge_and_push_seeds per account, each seeing the prior
+    # push's committed state (exactly what the per-account cron did).
+    seq_store = _FakeSeedStore()
+    _install_store(monkeypatch, seq_store)
+    for e in _clone_entries(entries):
+        ok, err, _hr, _cr, _sha, _nc = _upload.merge_and_push_seeds(
+            e["account_name"], e["history_df"], e["current_df"],
+            commit_message=f"sync {e['account_name']}",
+            user_id=e["user_id"], tenant_id=e["tenant_id"],
+            skip_history=e["skip_history"], balances_df=e["balances_df"],
+        )
+        assert ok, err
+
+    # Batched: one commit for all accounts.
+    batch_store = _FakeSeedStore()
+    _install_store(monkeypatch, batch_store)
+    ok, err, _sha, no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        _clone_entries(entries), commit_message="nightly batch",
+    )
+    assert ok, err
+    assert no_changes is False
+    assert n_pushed == 3
+
+    assert set(seq_store.files.keys()) == set(batch_store.files.keys())
+    for path in seq_store.files:
+        assert batch_store.files[path] == seq_store.files[path], (
+            f"batched seed for {path} diverged from sequential result"
+        )
+
+
+def test_batch_push_preserves_every_tenant(monkeypatch):
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    _upload.merge_and_push_seeds_batch(
+        _clone_entries(_sample_entries()), commit_message="nightly batch",
+    )
+    hist = _parse(store.files[HISTORY_PATH])
+    cur = _parse(store.files[_upload.CURRENT_PATH])
+    # Both Schwab tenants' history survived (not clobbered by the other).
+    assert set(hist["tenant_id"]) == {TENANT_SCHWAB_5989, TENANT_SCHWAB_5167}
+    assert set(hist["Symbol"]) == {"AAPL", "MSFT"}
+    # All three tenants' snapshot lines present.
+    assert set(cur["tenant_id"]) == {TENANT_SCHWAB_5989, TENANT_SCHWAB_5167, TENANT_ALPACA}
+    assert set(cur["Symbol"]) == {"AAPL", "MSFT", "TSLA"}
+
+
+def test_batch_push_skips_entries_missing_tenant_id(monkeypatch):
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    entries = _clone_entries(_sample_entries())
+    entries[0]["tenant_id"] = None  # invalid → must be skipped, not crash
+    ok, err, _sha, no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        entries, commit_message="nightly batch",
+    )
+    assert ok, err
+    assert n_pushed == 2
+    cur = _parse(store.files[_upload.CURRENT_PATH])
+    assert TENANT_SCHWAB_5989 not in set(cur["tenant_id"])
+
+
+def test_batch_push_empty_is_noop(monkeypatch):
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    ok, err, sha, no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        [], commit_message="nothing",
+    )
+    assert ok is True and no_changes is True and n_pushed == 0 and sha is None
+    assert store.files == {}

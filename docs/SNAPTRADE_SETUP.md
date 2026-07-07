@@ -82,19 +82,26 @@ Portal accepts non-HTTPS localhost URIs for development.
    broker repoll is rate-limited to ~once per 10 min per brokerage so
    rapid clicks don't incur extra SnapTrade billing. The standalone
    "Refresh from broker" button was retired because Sync now now does
-   it by default; the daily cron still reads SnapTrade's cache (it
-   auto-refreshes nightly) and relies on the holdings-freshness
-   backstop to flag stalled connections.
+   it by default; the backstop cron still reads SnapTrade's cache (on
+   the real-time plan it is continuously fresh) and relies on the
+   holdings-freshness backstop to flag stalled connections.
 
 ## Step 5 — Enable event-driven syncs (webhook, recommended)
 
-SnapTrade fires an **`ACCOUNT_HOLDINGS_UPDATED`** webhook the moment its own
-daily sync finishes pulling fresh holdings for an account from the broker. That
-is the authoritative "SnapTrade is updated" signal — HappyTrader listens for it
-and immediately runs our sync for that account (read SnapTrade's now-fresh data
-→ merge → push seeds). This is the "once SnapTrade completes, kick off
-HappyTrader" flow: it costs **zero** billed API calls (no forced refresh) and
-keeps the "Broker data as of" strip honest without any polling.
+SnapTrade fires an **`ACCOUNT_HOLDINGS_UPDATED`** webhook when it detects a
+holdings change for an account at the broker. On the **real-time plan** (this
+account was upgraded from Daily/cached on 2026-07-02) this fires in
+near-real-time and can arrive many times a day; under the old Daily plan it
+fired once after the nightly refresh. Either way it is the authoritative
+"SnapTrade is updated" signal — HappyTrader listens for it and runs our sync for
+that account (read SnapTrade's now-fresh data → merge → push seeds). This is the
+"once SnapTrade completes, kick off HappyTrader" flow: it costs **zero** billed
+API calls (no forced refresh) and keeps the "Broker data as of" strip honest
+without any polling. Because the real-time plan fires so often and each *changed*
+sync triggers a dbt build, the handler **debounces per account**
+(`SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS`, default 60s) so a burst of intraday
+holdings updates collapses into one sync — reporting is close-based, so intraday
+mark churn is not worth a build-per-event.
 
 To enable it: in the SnapTrade dashboard → **Webhooks**, set the listener URL to
 `https://<your-domain>/webhooks/snaptrade`. That's it — there is **no secret to
@@ -131,14 +138,18 @@ verification — acceptable for local dev only.
   per-broker accounts in `snaptrade_accounts` (mirrors the
   one-row-per-account grain of `schwab_connections`).
 - **Sync trigger.** Primary path is the `ACCOUNT_HOLDINGS_UPDATED`
-  webhook (Step 5) — event-driven, fires when SnapTrade finishes its
-  broker poll (so the data it reads is fresh). The `happytrader-snaptrade-sync`
-  Render cron (manually managed in the dashboard) is a **fresh daily
-  backstop** for days a webhook delivery is missed; it does not force a
-  refresh and is not the freshness driver. It runs at **23:00 UTC weekdays**,
-  AFTER SnapTrade's daily broker refresh completes (observed ~20:40–22:10 UTC,
-  ≈1h later under EST). The original 20:06 UTC schedule fired *before* that
-  refresh and always read day-old data — do not move it earlier.
+  webhook (Step 5) — event-driven, fires when SnapTrade detects a
+  holdings change (so the data it reads is fresh), debounced per account
+  under the real-time plan. The `happytrader-snaptrade-sync` Render cron
+  (manually managed in the dashboard) is a **daily backstop** for days a
+  webhook delivery is missed; it does not force a refresh and is not the
+  freshness driver. It runs at **23:00 UTC weekdays**. On the real-time
+  plan SnapTrade's cache is continuously fresh, so the cron's timing is no
+  longer critical (under the old Daily plan it had to run AFTER the
+  ~20:40–22:10 UTC nightly refresh or it read day-old data); 23:00 UTC is
+  kept as a quiet off-hours slot. The cron syncs every account then pushes
+  **one batched seed commit** (`merge_and_push_seeds_batch`), so it triggers a
+  single dbt build rather than one build per account.
 
 ## Limitations
 

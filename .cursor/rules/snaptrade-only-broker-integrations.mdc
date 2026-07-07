@@ -40,11 +40,31 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
 - Comments / DDL for legacy tables until `scripts/admin/v2_cutover_reset.py` Phase 6 drop
 - Historical references in `docs/archive/` and regression tests for **data shape**, not live OAuth
 
+## SnapTrade plan & webhook scope (2026-07-02)
+
+- **Plan is REAL-TIME** (upgraded from Daily/cached). `ACCOUNT_HOLDINGS_UPDATED` now
+  fires many times a day; the handler **debounces per account** (`_queue_snaptrade_sync`
+  in `app/webhooks.py`, `SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS` default 60s) because
+  reporting is close-based and one dbt build per intraday mark wiggle is wasted CI.
+- **Trade Detection (`TRADE_DETECTION`) is DEFERRED, not built.** SnapTrade's
+  `TRADE_DETECTION` feed is only supported for Webull, tastytrade, Alpaca, moomoo —
+  **NOT Schwab**, which is the only broker connected today — and is billed as an
+  *extra per-account monthly subscription*. Do not build subscription management
+  (subscribe/list/cancel) or a `TRADE_DETECTION` webhook branch until a supported
+  broker is actually connected and the per-account cost is signed off. Docs:
+  https://docs.snaptrade.com/docs/trade-detection
+- **Known gap (accepted):** we do NOT consume SnapTrade's `CONNECTION_BROKEN` /
+  `CONNECTION_FIXED` webhooks. Broken state is inferred *reactively* during a sync
+  attempt (`mark_snaptrade_connection_broken` on an auth error in `app/snaptrade.py`).
+  If Trade Detection is ever built, pair it with these connection-health events
+  (per SnapTrade guidance) so a subscribed account with a dead connection is
+  surfaced instead of silently emitting nothing.
+
 ## Verification
 
 When adding a broker-facing surface:
 
 - [ ] Connect flow uses `url_for('snaptrade_connect')` only
-- [ ] Sync is webhook-driven (`ACCOUNT_HOLDINGS_UPDATED` → `app/webhooks.py`); the `happytrader-snaptrade-sync` Render cron is only a 23:00 UTC fresh backstop (see `app/render.yaml`)
+- [ ] Sync is webhook-driven (`ACCOUNT_HOLDINGS_UPDATED` → `app/webhooks.py`, debounced per account under the real-time plan); the `happytrader-snaptrade-sync` Render cron is only a 23:00 UTC backstop for missed deliveries (see `app/render.yaml`)
 - [ ] Seed writes include `tenant_id` from `get_or_create_broker_tenant`
 - [ ] No new imports from deleted `app/schwab.py`

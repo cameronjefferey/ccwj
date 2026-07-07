@@ -525,16 +525,29 @@ def _dedup_history_rows(df, seed_columns):
     return df_sorted.loc[keep_mask2].reset_index(drop=True)
 
 
+# Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
+# GitHub" (default) apart from an explicit ``existing_content=None`` (caller
+# asserting the file does not exist yet — same as a 404). Needed for batched
+# multi-account commits that fold accounts in-memory without re-fetching.
+_FETCH_FROM_GITHUB = object()
+
+
 def _merge_seed_with_existing(
     path, account_name, new_df, seed_columns,
-    *, tenant_id=None,
+    *, tenant_id=None, existing_content=_FETCH_FROM_GITHUB,
 ):
     """
     Merge new account data with existing seed data.
-    - Fetches current file from GitHub
+    - Fetches current file from GitHub (unless ``existing_content`` is given)
     - For current positions: replace that account's rows (snapshot semantics)
     - For history: append new rows for that account and de-duplicate
     - Returns CSV string ready to commit
+
+    ``existing_content`` — by default the current file is fetched from GitHub.
+    A caller batching several accounts into ONE commit passes the running
+    merged CSV of the PREVIOUS account here so each account folds onto the
+    last instead of re-fetching (and clobbering) the branch. Pass the raw CSV
+    string, or ``None`` to mean "file does not exist yet" (same as a 404).
 
     ``tenant_id`` (the syncing broker tenant key) MUST be passed for any
     merge that lands user-facing data. The dedup window is scoped to
@@ -549,7 +562,8 @@ def _merge_seed_with_existing(
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
     why a silent "treat as empty" path is unacceptable.
     """
-    existing_content = _get_file_content(path)
+    if existing_content is _FETCH_FROM_GITHUB:
+        existing_content = _get_file_content(path)
     if existing_content is None:
         # File truly does not exist yet (HTTP 404). Safe to use only new data.
         for col in seed_columns:
@@ -914,54 +928,18 @@ def _prepare_seed_df(
     return out[columns]
 
 
-def merge_and_push_seeds(
-    account_name,
-    history_df,
-    current_df,
-    *,
-    commit_message,
-    user_id,
-    tenant_id,
-    skip_history=False,
-    balances_df=None,
+def _normalize_account_seed_frames(
+    account_name, history_df, current_df, *,
+    user_id_int, tenant_id_str, skip_history, balances_df,
 ):
+    """Shape one account's frames into ``(path, prepared_df, seed_columns)``
+    tuples ready for ``_merge_seed_with_existing`` — the normalization half of
+    ``merge_and_push_seeds`` factored out so both the single-account push and
+    the batched multi-account commit run byte-identical logic.
+
+    Returns ``(specs, history_rows, current_rows)`` where ``specs`` is an
+    ordered list (history first when present, then current, then balances).
     """
-    Normalize DataFrames, merge into the GitHub seed files, and commit.
-    Both manual uploads and SnapTrade sync call this so trade_history.csv +
-    current_positions.csv stay the single pair of seeds that feed dbt.
-
-    Args:
-        history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
-        current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
-        user_id: required Postgres ``users.id`` of the row owner. Stamped
-            into every emitted row's ``user_id`` column (informational).
-        tenant_id: required v2 warehouse tenant key
-            (``<broker_slug>:<broker_uuid>``). Stamped into every emitted
-            row's ``tenant_id`` column. Every writer (SnapTrade, manual
-            upload) derives this via ``get_or_create_broker_tenant`` or
-            accepts it from the caller. See ``docs/V2_TENANT_KEY_DESIGN.md``.
-        balances_df: optional cash + account_total rows shaped for
-            BALANCE_SEED_COLUMNS. Committed atomically with the others.
-            Any broker connector writes here.
-        skip_history: when True, commit positions only (and balances if given).
-
-    Returns:
-        (ok, err_message, history_rows, current_rows, head_commit_sha or None,
-         no_changes). ``no_changes=True`` means the merged seed was identical
-        to what's already on the branch, so NO commit/push/dbt-build happened.
-
-    Caller must verify _upload_github_config_ok() first.
-    """
-    if current_df is None:
-        return False, "current_df is required.", 0, 0, None, False
-    if user_id is None:
-        return False, "user_id is required.", 0, 0, None, False
-    if tenant_id is None or not str(tenant_id).strip():
-        return False, "tenant_id is required.", 0, 0, None, False
-
-    user_id_int = int(user_id)
-    tenant_id_str = str(tenant_id).strip()
-
     if history_df is not None:
         history_df = history_df.copy()
     current_df = current_df.copy()
@@ -1010,40 +988,82 @@ def merge_and_push_seeds(
             current_df[seed_col] = ""
     current_df = current_df[CURRENT_SEED_COLUMNS]
 
-    path_contents = []
+    specs = []
     if not skip_history and history_df is not None:
-        history_content = _merge_seed_with_existing(
-            HISTORY_PATH, account_name, history_df, HISTORY_SEED_COLUMNS,
-            tenant_id=tenant_id_str,
-        )
-        path_contents.append((HISTORY_PATH, history_content))
-
-    current_content = _merge_seed_with_existing(
-        CURRENT_PATH, account_name, current_df, CURRENT_SEED_COLUMNS,
-        tenant_id=tenant_id_str,
-    )
-    path_contents.append((CURRENT_PATH, current_content))
-
+        specs.append((HISTORY_PATH, history_df, HISTORY_SEED_COLUMNS))
+    specs.append((CURRENT_PATH, current_df, CURRENT_SEED_COLUMNS))
     if balances_df is not None and len(balances_df) > 0:
         balances_prepared = _prepare_seed_df(
-            balances_df,
-            account_name,
-            BALANCE_SEED_COLUMNS,
-            account_col="account",
-            user_id=user_id_int,
-            tenant_id=tenant_id_str,
+            balances_df, account_name, BALANCE_SEED_COLUMNS,
+            account_col="account", user_id=user_id_int, tenant_id=tenant_id_str,
         )
-        bal_content = _merge_seed_with_existing(
-            BALANCE_SEED_PATH,
-            account_name,
-            balances_prepared,
-            BALANCE_SEED_COLUMNS,
-            tenant_id=tenant_id_str,
-        )
-        path_contents.append((BALANCE_SEED_PATH, bal_content))
+        specs.append((BALANCE_SEED_PATH, balances_prepared, BALANCE_SEED_COLUMNS))
 
     history_rows = len(history_df) if history_df is not None else 0
     current_rows = len(current_df)
+    return specs, history_rows, current_rows
+
+
+def merge_and_push_seeds(
+    account_name,
+    history_df,
+    current_df,
+    *,
+    commit_message,
+    user_id,
+    tenant_id,
+    skip_history=False,
+    balances_df=None,
+):
+    """
+    Normalize DataFrames, merge into the GitHub seed files, and commit.
+    Both manual uploads and SnapTrade sync call this so trade_history.csv +
+    current_positions.csv stay the single pair of seeds that feed dbt.
+
+    Args:
+        history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
+        current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
+        user_id: required Postgres ``users.id`` of the row owner. Stamped
+            into every emitted row's ``user_id`` column (informational).
+        tenant_id: required v2 warehouse tenant key
+            (``<broker_slug>:<broker_uuid>``). Stamped into every emitted
+            row's ``tenant_id`` column. Every writer (SnapTrade, manual
+            upload) derives this via ``get_or_create_broker_tenant`` or
+            accepts it from the caller. See ``docs/V2_TENANT_KEY_DESIGN.md``.
+        balances_df: optional cash + account_total rows shaped for
+            BALANCE_SEED_COLUMNS. Committed atomically with the others.
+            Any broker connector writes here.
+        skip_history: when True, commit positions only (and balances if given).
+
+    Returns:
+        (ok, err_message, history_rows, current_rows, head_commit_sha or None,
+         no_changes). ``no_changes=True`` means the merged seed was identical
+        to what's already on the branch, so NO commit/push/dbt-build happened.
+
+    Caller must verify _upload_github_config_ok() first.
+    """
+    if current_df is None:
+        return False, "current_df is required.", 0, 0, None, False
+    if user_id is None:
+        return False, "user_id is required.", 0, 0, None, False
+    if tenant_id is None or not str(tenant_id).strip():
+        return False, "tenant_id is required.", 0, 0, None, False
+
+    user_id_int = int(user_id)
+    tenant_id_str = str(tenant_id).strip()
+
+    specs, history_rows, current_rows = _normalize_account_seed_frames(
+        account_name, history_df, current_df,
+        user_id_int=user_id_int, tenant_id_str=tenant_id_str,
+        skip_history=skip_history, balances_df=balances_df,
+    )
+
+    path_contents = []
+    for path, prepared_df, seed_columns in specs:
+        content = _merge_seed_with_existing(
+            path, account_name, prepared_df, seed_columns, tenant_id=tenant_id_str,
+        )
+        path_contents.append((path, content))
 
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
@@ -1056,6 +1076,94 @@ def merge_and_push_seeds(
     record_upload(user_id_int, account_name, history_rows, current_rows)
 
     return True, None, history_rows, current_rows, head_sha, no_changes
+
+
+def merge_and_push_seeds_batch(entries, *, commit_message):
+    """Merge SEVERAL accounts' frames into the seed CSVs and commit them in a
+    SINGLE push (one push = one dbt build).
+
+    The nightly backstop cron syncs every account; doing a per-account
+    ``merge_and_push_seeds`` fanned out into one GitHub commit — and therefore
+    one full ``Update Daily Position Performance`` workflow run — PER ACCOUNT
+    (~14 near-simultaneous runs a night, most immediately cancelled by
+    ``concurrency: cancel-in-progress``). This folds every account onto the
+    prior account's merged CSV in-memory (via ``_merge_seed_with_existing``'s
+    ``existing_content`` hand-off) and commits once, so the same monotonic
+    merge semantics collapse to a single build.
+
+    ``entries`` — list of dicts, each:
+        ``account_name`` (str), ``history_df`` (DataFrame|None),
+        ``current_df`` (DataFrame), ``user_id`` (int), ``tenant_id`` (str),
+        ``skip_history`` (bool), ``balances_df`` (DataFrame|None).
+    Order matters and must match the per-account push order it replaces:
+    each entry folds onto the previous, exactly as sequential pushes did.
+
+    Returns ``(ok, err_message, head_commit_sha or None, no_changes,
+    pushed_entry_count)``. Caller must verify ``_upload_github_config_ok()``
+    first (same contract as ``merge_and_push_seeds``).
+    """
+    valid = []
+    for e in entries or []:
+        if e.get("current_df") is None:
+            continue
+        if e.get("user_id") is None:
+            continue
+        if e.get("tenant_id") is None or not str(e.get("tenant_id")).strip():
+            continue
+        valid.append(e)
+
+    if not valid:
+        return True, None, None, True, 0
+
+    # Normalize every entry up front → {path: [(account_name, tenant_id, df, cols), ...]}
+    # preserving entry order, so each path folds accounts in the same sequence
+    # the per-account pushes used.
+    from collections import OrderedDict
+    per_path = OrderedDict()  # path -> list of (account_name, tenant_id_str, df, cols)
+    prepared_counts = []      # (entry, history_rows, current_rows)
+    for e in valid:
+        user_id_int = int(e["user_id"])
+        tenant_id_str = str(e["tenant_id"]).strip()
+        specs, hr, cr = _normalize_account_seed_frames(
+            e["account_name"], e.get("history_df"), e["current_df"],
+            user_id_int=user_id_int, tenant_id_str=tenant_id_str,
+            skip_history=bool(e.get("skip_history")), balances_df=e.get("balances_df"),
+        )
+        prepared_counts.append((e, hr, cr))
+        for path, prepared_df, seed_columns in specs:
+            per_path.setdefault(path, []).append(
+                (e["account_name"], tenant_id_str, prepared_df, seed_columns)
+            )
+
+    # Fold each path once, in the canonical seed order (history, current,
+    # balances), fetching the branch file a single time and threading the
+    # running merged CSV through each account.
+    path_contents = []
+    for path in (HISTORY_PATH, CURRENT_PATH, BALANCE_SEED_PATH):
+        contributions = per_path.get(path)
+        if not contributions:
+            continue
+        content = _get_file_content(path)  # single fetch per file for the whole batch
+        for account_name, tenant_id_str, prepared_df, seed_columns in contributions:
+            content = _merge_seed_with_existing(
+                path, account_name, prepared_df, seed_columns,
+                tenant_id=tenant_id_str, existing_content=content,
+            )
+        path_contents.append((path, content))
+
+    try:
+        ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
+        if not ok:
+            return False, err or "GitHub commit failed.", None, False, 0
+    except Exception as exc:
+        return False, str(exc), None, False, 0
+
+    # Per-account bookkeeping (idempotent), matching the single-push path.
+    for e, hr, cr in prepared_counts:
+        add_account_for_user(int(e["user_id"]), e["account_name"])
+        record_upload(int(e["user_id"]), e["account_name"], hr, cr)
+
+    return True, None, head_sha, no_changes, len(valid)
 
 
 def purge_user_id_from_seeds(user_id, *, commit_message):

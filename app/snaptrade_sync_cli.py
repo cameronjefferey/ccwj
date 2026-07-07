@@ -2,9 +2,19 @@
 CLI for the SnapTrade sync BACKSTOP. The freshness driver is the
 ``ACCOUNT_HOLDINGS_UPDATED`` webhook (``app/webhooks.py``); this CLI is the
 daily safety net for days a webhook delivery is missed. It runs on the Render
-cron ``happytrader-snaptrade-sync`` at 23:00 UTC weekdays — AFTER SnapTrade's
-daily broker refresh completes (~20:40–22:10 UTC; ≈1h later under EST). Do not
-schedule it earlier or it will read day-old data. Manual local invocation:
+cron ``happytrader-snaptrade-sync`` at 23:00 UTC weekdays. Since the SnapTrade
+plan is now REAL-TIME (upgraded from Daily/cached on 2026-07-02), SnapTrade's
+cache is continuously fresh, so this backstop's TIMING is no longer critical —
+it used to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read
+day-old data; 23:00 UTC is now just a quiet off-hours slot.
+
+Each account is synced with ``defer_push=True`` (fetch + normalize, no commit);
+after the loop we push ONE batched seed commit via ``merge_and_push_seeds_batch``.
+This replaced the old per-account push that fanned this cron out into ~14 GitHub
+commits a night → ~14 ``Update Daily Position Performance`` runs (most instantly
+cancelled by ``concurrency: cancel-in-progress``). One commit = one dbt build;
+monotonic-merge semantics are preserved because the batch folds accounts in the
+same order the sequential pushes used. Manual local invocation:
   cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli
 
 Requires: SNAPTRADE_CLIENT_ID, SNAPTRADE_CONSUMER_KEY in env. The
@@ -94,6 +104,10 @@ def main():
         snaptrade_enabled,
     )
     from app.snaptrade import _bulk_sync_lookback_days
+    from app.upload import (
+        _upload_github_config_ok,
+        merge_and_push_seeds_batch,
+    )
 
     if not snaptrade_enabled():
         print("SnapTrade is not configured (missing env or SDK). Exiting.", file=sys.stderr)
@@ -106,14 +120,20 @@ def main():
 
     total = len(rows)
     succeeded = 0
-    pushed = 0
     broken = 0
     errors = 0
-    push_skipped = 0
-    last_skip_reason = None
 
     routine_days = _routine_lookback_days()
     full_days = SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS
+
+    # Each account is synced with defer_push=True (fetch + normalize, NO
+    # commit). We collect every account's frames and push ONE batched commit
+    # at the end. Rationale: a per-account push fanned this cron out into ~14
+    # GitHub commits a night → ~14 workflow runs (most instantly cancelled by
+    # cancel-in-progress). One commit = one dbt build. Monotonic-merge
+    # semantics are preserved because the batch folds accounts in the same
+    # order sequential pushes did.
+    batch_entries = []
 
     for row in rows:
         user_id = row["user_id"]
@@ -130,7 +150,9 @@ def main():
             full_days=full_days,
         )
         try:
-            res = _sync_one_connection(user_id, row, lookback_days=lookback)
+            res = _sync_one_connection(
+                user_id, row, lookback_days=lookback, defer_push=True,
+            )
         except Exception as exc:
             errors += 1
             print(
@@ -139,27 +161,15 @@ def main():
             )
             continue
 
-        line = (
-            f"User {user_id} ({row.get('account_name') or snaptrade_account_id}): "
-            f"{res['history_rows']} history, {res['current_rows']} positions"
-        )
-
         if res["ok"]:
             succeeded += 1
-            if res["github_pushed"]:
-                pushed += 1
-                line += " (GitHub seeds updated)"
-            elif res["github_error"]:
-                line += f" (GitHub: {str(res['github_error'])[:120]})"
-            elif res["github_seed_push_skipped"]:
-                push_skipped += 1
-                reason = (
-                    res.get("github_skip_reason")
-                    or "GitHub seed push not configured."
-                )
-                last_skip_reason = reason
-                line += f" (GitHub skipped: {reason})"
-            print(line)
+            print(
+                f"User {user_id} ({row.get('account_name') or snaptrade_account_id}): "
+                f"{res['history_rows']} history, {res['current_rows']} positions"
+            )
+            frames = res.get("frames")
+            if frames and frames.get("current_df") is not None:
+                batch_entries.append(frames)
         else:
             err = res["error"] or "unknown"
             if err == "connection_broken":
@@ -177,21 +187,59 @@ def main():
                     file=sys.stderr,
                 )
 
+    # Single batched push for every account synced this run.
+    pushed_note = ""
+    if batch_entries:
+        ok_cfg, cfg_err = _upload_github_config_ok()
+        if not ok_cfg:
+            print(
+                f"WARNING: {len(batch_entries)} synced account(s) did not reach "
+                f"GitHub. Reason: {cfg_err or 'GitHub seed push not configured.'}",
+                file=sys.stderr,
+            )
+        else:
+            n = len(batch_entries)
+            commit_message = _batch_commit_message(batch_entries)
+            try:
+                ok, err, _sha, no_changes, n_pushed = merge_and_push_seeds_batch(
+                    batch_entries, commit_message=commit_message,
+                )
+            except Exception as exc:
+                ok, err, no_changes, n_pushed = False, str(exc), False, 0
+            if ok and not no_changes:
+                pushed_note = f", 1 batched push ({n_pushed} accounts) → GitHub"
+            elif ok and no_changes:
+                pushed_note = f", no changes across {n} accounts (no push)"
+            else:
+                pushed_note = f", batched push FAILED: {str(err)[:160]}"
+                print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
+
     print(
         f"SnapTrade sync summary: {succeeded}/{total} succeeded, "
-        f"{pushed} pushed to GitHub, "
-        f"{broken} broken connections, {errors} errors"
+        f"{broken} broken connections, {errors} errors{pushed_note}"
     )
-    if push_skipped and not pushed:
-        print(
-            f"WARNING: {push_skipped} successful sync(s) did not reach GitHub. "
-            f"Reason: {last_skip_reason}",
-            file=sys.stderr,
-        )
 
     if total > 0 and succeeded == 0:
         return 1
     return 0
+
+
+def _batch_commit_message(entries):
+    """Human-readable one-liner + per-account detail for the batched commit."""
+    n = len(entries)
+    header = f"SnapTrade nightly backstop sync: {n} account{'s' if n != 1 else ''}"
+    lines = [header]
+    for e in entries:
+        acct = e.get("account_name") or "?"
+        cur = e.get("current_df")
+        cur_n = 0 if cur is None else len(cur)
+        if e.get("skip_history"):
+            lines.append(f"- {acct}: positions only ({cur_n} lines)")
+        else:
+            hist = e.get("history_df")
+            hist_n = 0 if hist is None else len(hist)
+            lines.append(f"- {acct}: {hist_n} tx, {cur_n} open lines")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

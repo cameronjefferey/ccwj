@@ -1099,7 +1099,7 @@ def snaptrade_sync():
 # Sync orchestration
 # ---------------------------------------------------------------------------
 
-def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False):
+def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False, defer_push=False):
     """Sync ONE SnapTrade-managed broker account end-to-end.
 
     Returns a structured dict like ``_sync_one_connection`` in
@@ -1185,6 +1185,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             snap=snap,
             acc_row=acc_row,
             lookback_days=lookback_days,
+            defer_push=defer_push,
         )
         mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
@@ -1217,6 +1218,20 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             "github_skip_reason": result.get("github_skip_reason"),
             "github_no_changes": bool(result.get("github_no_changes")),
         })
+        # Deferred-push mode: carry the normalized frames back so the batch
+        # caller (nightly cron) can merge every account into ONE commit. The
+        # per-account push has NOT happened yet (github_pushed stays False).
+        if result.get("deferred"):
+            out["deferred"] = True
+            out["frames"] = {
+                "account_name": result.get("account_name"),
+                "tenant_id": result.get("tenant_id"),
+                "history_df": result.get("history_df"),
+                "current_df": result.get("current_df"),
+                "balances_df": result.get("balances_df"),
+                "skip_history": bool(result.get("skip_history")),
+                "user_id": user_id,
+            }
         # First-activation nudge: once data has actually landed for this user,
         # email "your data is ready" exactly once (dedupe per user via
         # email_sends). Best-effort — never let email break a sync.
@@ -1508,12 +1523,19 @@ def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
     return None
 
 
-def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
+def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False):
     """Pull activities + positions + balances from SnapTrade,
     normalize, push to GitHub seeds.
 
     Mirrors ``app.schwab._run_sync`` shape so the orchestration layer
     can treat the two connectors identically.
+
+    ``defer_push`` — when True, do everything EXCEPT the GitHub commit:
+    return the normalized frames (``history_df`` / ``current_df`` /
+    ``balances_df`` + tenant metadata) so a multi-account caller (the nightly
+    backstop cron) can merge every account and push ONE commit instead of one
+    per account. The single-account webhook / Sync-now paths leave this False
+    and push inline as before.
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     account_name = acc_row["account_name"]
@@ -1665,6 +1687,30 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days):
     )
 
     skip_history = history_df is None or history_df.empty
+
+    # Deferred-push mode (nightly batch cron): hand the normalized frames back
+    # to the caller instead of committing, so many accounts collapse into ONE
+    # push. Everything above (fetch, staleness backstop, normalize) already ran.
+    if defer_push:
+        return {
+            "deferred": True,
+            "account_name": account_name,
+            "tenant_id": tenant_id,
+            "history_df": None if skip_history else history_df,
+            "current_df": current_df,
+            "balances_df": balances_df,
+            "skip_history": skip_history,
+            "history_rows": 0 if skip_history else len(history_df),
+            "current_rows": len(current_df),
+            "lookback_days": int(lookback_days),
+            "github_pushed": False,
+            "github_error": None,
+            "github_head_sha": None,
+            "github_seed_push_skipped": False,
+            "github_skip_reason": None,
+            "github_no_changes": False,
+            "holdings_last_successful_sync": _holdings_last_successful_sync_dt(account_summary),
+        }
 
     github_pushed = False
     github_error = None

@@ -49,8 +49,14 @@ def _no_real_threads(monkeypatch):
     monkeypatch.setattr(webhooks, "threading",
                         types.SimpleNamespace(Thread=_FakeThread))
     monkeypatch.setenv("SNAPTRADE_CONSUMER_KEY", _CONSUMER_KEY)
+    # Reset the per-account debounce/coalesce state so keys don't leak across
+    # tests (the FakeThread never runs the worker that would clear them).
+    webhooks._scheduled_keys.clear()
+    webhooks._pending_sync_at.clear()
     yield
     _FakeThread.instances = []
+    webhooks._scheduled_keys.clear()
+    webhooks._pending_sync_at.clear()
 
 
 def _post(payload, signature=None):
@@ -99,9 +105,37 @@ def test_webhook_triggers_sync_on_holdings_updated(monkeypatch):
     assert r.status_code == 200
     assert len(_FakeThread.instances) == 1
     t = _FakeThread.instances[0]
-    assert t.target is webhooks._run_snaptrade_holdings_sync
+    # The event now goes through the per-account debounce worker (which then
+    # calls _run_snaptrade_holdings_sync once the account goes quiet).
+    assert t.target is webhooks._run_debounced_snaptrade_sync
     assert t.args == (9, "acc-1")
     assert t.started is True
+
+
+def test_webhook_coalesces_burst_for_same_account(monkeypatch):
+    # Under the real-time plan SnapTrade fires many holdings events per day.
+    # A burst for the SAME account must spawn only ONE debounce worker; later
+    # events are absorbed (they just bump the pending timestamp).
+    monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id",
+                        lambda sid: 9 if sid == "snap-user-1" else None)
+    payload = {
+        "eventType": "ACCOUNT_HOLDINGS_UPDATED",
+        "userId": "snap-user-1",
+        "accountId": "acc-1",
+    }
+    sig = _sign(payload)
+    for _ in range(4):
+        assert _post(payload, signature=sig).status_code == 200
+    assert len(_FakeThread.instances) == 1, "burst must coalesce into one worker"
+
+    # A different account is independent — it gets its own worker.
+    other = {
+        "eventType": "ACCOUNT_HOLDINGS_UPDATED",
+        "userId": "snap-user-1",
+        "accountId": "acc-2",
+    }
+    assert _post(other, signature=_sign(other)).status_code == 200
+    assert len(_FakeThread.instances) == 2
 
 
 def test_webhook_ignores_non_holdings_events():

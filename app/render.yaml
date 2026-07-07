@@ -6,21 +6,26 @@
 # stays manually managed for now.
 #
 # Broker sync is PRIMARILY EVENT-DRIVEN via the SnapTrade ACCOUNT_HOLDINGS_UPDATED
-# webhook (app/webhooks.py): SnapTrade finishes its once-daily broker sync
-# (plan = Daily) → pings POST /webhooks/snaptrade → we sync that account. The
-# webhook is the FRESHNESS DRIVER because it fires AFTER SnapTrade has pulled
-# fresh data from the broker, so the data we read is current. The in-product
-# "Sync now" button is the manual path.
+# webhook (app/webhooks.py): SnapTrade detects a holdings change (plan = REAL-TIME
+# as of 2026-07-02, upgraded from Daily/cached) → pings POST /webhooks/snaptrade →
+# we sync that account. The webhook is the FRESHNESS DRIVER because it fires AFTER
+# SnapTrade has pulled fresh data from the broker, so the data we read is current.
+# On the real-time plan these fire many times a day, so the handler DEBOUNCES per
+# account (SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS, default 60s) — a burst collapses
+# into one sync+build (reporting is close-based; intraday marks aren't core). The
+# in-product "Sync now" button is the manual path.
 #
 # BACKSTOP: a manually-managed Render cron `happytrader-snaptrade-sync` (created
 # in the dashboard, NOT declared in this Blueprint) runs at 23:00 UTC weekdays as
-# a FRESH daily safety net for days a webhook delivery is missed (the
-# snaptrade_sync_observations log showed real misses — e.g. 2026-06-24/25 synced
-# only via the cron). It MUST run AFTER SnapTrade's daily broker refresh, which
-# completes anywhere from ~20:40 to ~22:10 UTC (≈an hour later under EST). The
-# original 20:06 UTC schedule fired BEFORE the refresh and therefore always read
-# day-old data — it was retimed to 23:00 UTC (2026-06-29). Do not move it earlier
-# (it would re-introduce the stale read) and do not add direct broker OAuth crons.
+# a daily safety net for days every webhook delivery is missed (the
+# snaptrade_sync_observations log showed real misses under the old Daily plan —
+# e.g. 2026-06-24/25 synced only via the cron). On the real-time plan SnapTrade's
+# cache is continuously fresh, so the cron's TIMING is no longer critical (it used
+# to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read day-old
+# data); 23:00 UTC is retained simply as a quiet off-hours slot. The cron syncs
+# every account then pushes ONE batched seed commit (app/snaptrade_sync_cli.py →
+# merge_and_push_seeds_batch), so it triggers a single dbt build instead of the
+# old ~14-commits-a-night fan-out. Do not add direct broker OAuth crons.
 #
 # DST NOTE — Render cron schedules below are UTC and DO NOT observe DST.
 #

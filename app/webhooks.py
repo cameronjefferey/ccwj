@@ -7,12 +7,17 @@ Inbound webhooks.
    bounce / complaint events by adding the recipient to the email suppression
    list (``app.models.add_email_suppression``). Set ``RESEND_WEBHOOK_SECRET``.
 
-2. SnapTrade account events. SnapTrade fires ``ACCOUNT_HOLDINGS_UPDATED`` once
-   per account when ITS OWN daily sync (or a manual refresh) finishes pulling
-   fresh holdings from the broker. That is the "SnapTrade is updated" signal —
+2. SnapTrade account events. SnapTrade fires ``ACCOUNT_HOLDINGS_UPDATED`` per
+   account when it detects a holdings change from the broker (on the REAL-TIME
+   plan this is near-real-time and can fire many times a day; it was once-daily
+   under the old Daily/cached plan). That is the "SnapTrade is updated" signal —
    we react by running OUR sync for that account (read SnapTrade's now-fresh
    data → merge → push seeds). This is the event-driven "once X completes, kick
-   off Y" flow; it needs NO paid force-refresh and NO polling cron.
+   off Y" flow; it needs NO paid force-refresh and NO polling cron. Because the
+   real-time plan fires so often and each changed sync triggers a dbt build, the
+   handler DEBOUNCES per account (``_queue_snaptrade_sync``) so a burst collapses
+   into a single sync — reporting is close-based, so intraday mark churn is not
+   worth a build-per-event.
 
    AUTH: SnapTrade **deprecated webhook secrets**. Authenticity is now proven by
    the ``Signature`` header: base64( HMAC-SHA256( canonical-json-body, key =
@@ -51,6 +56,28 @@ _SNAPTRADE_SYNC_LOCK_KEY = 8274013
 
 # Reject events whose timestamp is too far from now (replay protection).
 _WEBHOOK_TOLERANCE_SECONDS = 5 * 60
+
+# Debounce/coalesce window for webhook-triggered syncs. Under SnapTrade's
+# REAL-TIME plan (upgraded from Daily/cached), ``ACCOUNT_HOLDINGS_UPDATED``
+# fires many times a day — every holdings/mark change, not just once after the
+# nightly broker refresh. Each *changed* sync pushes seeds → triggers a dbt
+# build. Because reporting is CLOSE-BASED (intraday broker marks are NOT our
+# core numbers — see the pricing-precedence rule in AGENTS.md), running one
+# full sync+build per intraday mark wiggle is wasted CI. So we COALESCE a burst
+# of events for the same account into a single sync: the first event spawns a
+# worker that waits for the account to go quiet for this window, absorbing any
+# events that land meanwhile. Set ``SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS=0`` to
+# disable (sync immediately, one per event — the pre-real-time behavior).
+_WEBHOOK_DEBOUNCE_SECONDS = int(
+    os.environ.get("SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS", "60") or "60"
+)
+
+# Per-account coalescing state (per process). Combined with the cluster-wide
+# advisory lock in ``_run_snaptrade_holdings_sync`` this both collapses bursts
+# WITHIN a worker (debounce) and serializes pushes ACROSS workers (lock).
+_pending_lock = threading.Lock()
+_pending_sync_at: dict = {}   # (user_id, account_id) -> latest event monotonic ts
+_scheduled_keys: set = set()  # keys that currently have a live debounce worker
 
 
 def _verify_svix_signature(secret: str, headers, body: bytes) -> bool:
@@ -213,6 +240,51 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
             )
 
 
+def _run_debounced_snaptrade_sync(user_id, snaptrade_account_id):
+    """Debounce worker: wait until this account has been *quiet* for the full
+    ``_WEBHOOK_DEBOUNCE_SECONDS`` window (absorbing any events that arrive in
+    the meantime), then run exactly one real sync. Spawned by
+    ``_queue_snaptrade_sync``; one per account at a time.
+    """
+    key = (user_id, snaptrade_account_id)
+    debounce = _WEBHOOK_DEBOUNCE_SECONDS
+    if debounce > 0:
+        # Sleep until the window elapses with no newer event. Each incoming
+        # event bumps _pending_sync_at[key], extending the wait (coalesce).
+        while True:
+            with _pending_lock:
+                last = _pending_sync_at.get(key, 0.0)
+            remaining = debounce - (time.monotonic() - last)
+            if remaining <= 0:
+                break
+            time.sleep(remaining)
+    with _pending_lock:
+        _scheduled_keys.discard(key)
+        _pending_sync_at.pop(key, None)
+    _run_snaptrade_holdings_sync(user_id, snaptrade_account_id)
+
+
+def _queue_snaptrade_sync(user_id, snaptrade_account_id):
+    """Coalesce a burst of ``ACCOUNT_HOLDINGS_UPDATED`` events for one account
+    into a single sync. Marks the account dirty; spawns a debounce worker only
+    if one isn't already running for it. Returns True when a NEW worker was
+    spawned, False when an existing worker will absorb this event.
+    """
+    key = (user_id, snaptrade_account_id)
+    with _pending_lock:
+        _pending_sync_at[key] = time.monotonic()
+        if key in _scheduled_keys:
+            return False
+        _scheduled_keys.add(key)
+    threading.Thread(
+        target=_run_debounced_snaptrade_sync,
+        args=(user_id, snaptrade_account_id),
+        name=f"snaptrade-sync-{str(snaptrade_account_id)[:8]}",
+        daemon=True,
+    ).start()
+    return True
+
+
 @app.route("/webhooks/snaptrade", methods=["POST"])
 @csrf.exempt
 @limiter.limit("240 per minute")
@@ -260,17 +332,15 @@ def snaptrade_webhook():
         user_id = get_user_id_by_snaptrade_user_id(str(snap_user_id))
         if user_id is not None:
             # Fire-and-forget: SnapTrade expects a prompt 200; the sync (broker
-            # read + GitHub push) runs in a background thread, serialized by the
-            # advisory lock so a burst of per-account events doesn't race.
-            threading.Thread(
-                target=_run_snaptrade_holdings_sync,
-                args=(user_id, account_id),
-                name=f"snaptrade-sync-{account_id[:8]}",
-                daemon=True,
-            ).start()
+            # read + GitHub push) runs off-thread, DEBOUNCED per account so a
+            # real-time burst collapses into one sync, and serialized by the
+            # advisory lock so pushes across workers don't race.
+            spawned = _queue_snaptrade_sync(user_id, account_id)
             _log.info(
-                "snaptrade_webhook: ACCOUNT_HOLDINGS_UPDATED queued sync "
-                "user_id=%s account=%s", user_id, account_id,
+                "snaptrade_webhook: ACCOUNT_HOLDINGS_UPDATED %s "
+                "user_id=%s account=%s",
+                "queued sync" if spawned else "coalesced into pending sync",
+                user_id, account_id,
             )
         else:
             _log.warning(
