@@ -21,8 +21,6 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,cash,-25083.2,,,
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,account_total,729895.37,,,,
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,cash,6.4,,,,0.660809
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,account_total,968.51,,,,
-Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,cash,-160256.98,,,,-8.902577
-Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,account_total,1800119.06,,,,
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,cash,21269.76,,,,5.131973
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,account_total,414455.77,,,,
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,cash,79397.93,,,,82.970438
@@ -39,3 +37,5 @@ Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,cash,138.67,,,,
 Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,account_total,27183.85,,,,
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,cash,28254.02,,,,2.014779
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,account_total,1402338.65,,,,
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,cash,-160256.98,,,,-9.097566
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,account_total,1761536.97,,,,
