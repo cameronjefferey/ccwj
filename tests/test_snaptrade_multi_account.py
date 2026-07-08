@@ -552,8 +552,25 @@ def _et(y, mo, d, h, mi=0):
     return datetime(y, mo, d, h, mi, tzinfo=_ET)
 
 
-def _acct(acct_id, stamp):
-    return {"snaptrade_account_id": acct_id, "holdings_last_successful_sync": stamp}
+def _acct(acct_id, stamp, last_sync_at=None):
+    return {
+        "snaptrade_account_id": acct_id,
+        "holdings_last_successful_sync": stamp,
+        "last_sync_at": last_sync_at,
+    }
+
+
+def test_after_hours_scope_falls_back_to_last_sync_at(monkeypatch):
+    """Some brokers never report holdings_last_successful_sync; fall back to our
+    cache-read time (last_sync_at) so those accounts still qualify when we read
+    SnapTrade's (real-time, post-close) cache after the bell."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        _acct("uuid-a", None, last_sync_at=_et(2026, 7, 7, 16, 30)),
+        _acct("uuid-b", None, last_sync_at=_et(2026, 7, 7, 10, 0)),  # pre-close
+    ])
+    assert _snap.post_close_broker_tenant_ids(99, now=_et(2026, 7, 7, 17, 10)) == {
+        "snaptrade:uuid-a",
+    }
 
 
 def test_after_hours_scope_includes_all_post_close_accounts(monkeypatch):

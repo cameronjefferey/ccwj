@@ -2299,7 +2299,13 @@ def post_close_broker_tenant_ids(user_id, *, now=None):
 
     out = set()
     for r in get_snaptrade_accounts(user_id) or []:
+        # Prefer SnapTrade's own broker-pull time; fall back to our
+        # cache-read time (last_sync_at) for brokers/accounts that don't
+        # report holdings_last_successful_sync. Under the real-time plan the
+        # two are close, and both prove the mark we hold is post-close.
         stamp = r.get("holdings_last_successful_sync")
+        if not isinstance(stamp, datetime):
+            stamp = r.get("last_sync_at")
         if not isinstance(stamp, datetime):
             continue
         s = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=ZoneInfo("UTC"))

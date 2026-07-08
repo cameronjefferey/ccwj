@@ -97,7 +97,8 @@ What's working (May 2026 rebuild):
  warehouse has no per-row capture time (`stg_current.snapshot_date` is just
  `current_date()`), so `post_close_broker_tenant_ids` in `app/snaptrade.py`
  reads SnapTrade's authoritative per-account `holdings_last_successful_sync`
- and returns the SET of tenant_ids that synced at/after today's 4pm ET close;
+ (falling back to `last_sync_at` when a broker never reports the former) and
+ returns the SET of tenant_ids that synced at/after today's 4pm ET close;
  the query is SCOPED to exactly those tenants (`tenant_id = snaptrade:<uuid>`).
  A mid-session/stale sync would otherwise compare a pre-close intraday mark to
  the official close and render the day's move BACKWARDS (real case 2026-07-07:
@@ -108,7 +109,11 @@ What's working (May 2026 rebuild):
  the query is skipped entirely. NOTE the query anchors the close on
  `CURRENT_DATE('America/New_York')`, not bare `CURRENT_DATE()` (UTC) — the
  latter rolls to "tomorrow" at 8pm ET and made the section silently empty every
- evening (the window it's most useful).
+ evening (the window it's most useful). DEV NOTE: local dev is built from
+ committed seed CSVs (no live syncs), so all Postgres sync timestamps are NULL
+ and the strict gate can never pass — in `app.debug` mode ONLY the gate falls
+ back to the user's scoped tenants so the UI renders (with possibly stale dev
+ marks); prod runs `debug=False` so the strict, accurate gate always applies.
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
