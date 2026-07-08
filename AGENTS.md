@@ -93,17 +93,22 @@ What's working (May 2026 rebuild):
  close-based core numbers (reads `stg_current` mark deliberately; the only
  user-facing surface that intentionally shows the broker after-hours mark).
  Only rendered once the U.S. regular session has closed (`_us_market_session()`
- state == `after_hours`) AND the broker mark itself is post-close
- (`broker_marks_are_post_close` in `app/snaptrade.py`: EVERY connected
- account's SnapTrade `holdings_last_successful_sync` is at/after today's 4pm
- ET close). The second gate is essential — the warehouse has no per-row
- capture time (`stg_current.snapshot_date` is just `current_date()`), so a
- mid-session sync would otherwise compare a pre-close intraday mark to the
- official close and render the day's move BACKWARDS (real case 2026-07-07:
- BE synced ~$295 mid-session, closed $269.57 → a bogus +$25.88/sh
- "after-hours" gain). Weakest-link across accounts because the query sums
- `market_value` by symbol across accounts; one stale account poisons the
- aggregate. During the open session/pre-market the query is skipped entirely.
+ state == `after_hours`) AND the broker mark itself is post-close. The
+ warehouse has no per-row capture time (`stg_current.snapshot_date` is just
+ `current_date()`), so `post_close_broker_tenant_ids` in `app/snaptrade.py`
+ reads SnapTrade's authoritative per-account `holdings_last_successful_sync`
+ and returns the SET of tenant_ids that synced at/after today's 4pm ET close;
+ the query is SCOPED to exactly those tenants (`tenant_id = snaptrade:<uuid>`).
+ A mid-session/stale sync would otherwise compare a pre-close intraday mark to
+ the official close and render the day's move BACKWARDS (real case 2026-07-07:
+ BE synced ~$295 mid-session, closed $269.57 → a bogus +$25.88/sh "after-hours"
+ gain). Per-tenant scoping (NOT an all-or-nothing weakest-link gate) so one
+ stale/broken account is dropped from the aggregate instead of hiding the whole
+ section from the healthy post-close accounts. During the open session/pre-market
+ the query is skipped entirely. NOTE the query anchors the close on
+ `CURRENT_DATE('America/New_York')`, not bare `CURRENT_DATE()` (UTC) — the
+ latter rolls to "tomorrow" at 8pm ET and made the section silently empty every
+ evening (the window it's most useful).
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)

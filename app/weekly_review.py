@@ -768,9 +768,15 @@ today_close AS (
     -- stg_daily_prices is keyed (account, symbol, date); the close is
     -- market-wide so collapse to one row per symbol to avoid fanning the
     -- holdings join when a symbol is held in multiple accounts.
+    --
+    -- Trading day is ET, NOT UTC: BigQuery CURRENT_DATE() defaults to UTC,
+    -- which rolls over to "tomorrow" at 8pm ET (midnight UTC). A bare
+    -- CURRENT_DATE() therefore looks for tomorrow's (nonexistent) close all
+    -- evening ET and returns nothing — exactly when the after-hours section
+    -- is most relevant. Anchor on the America/New_York calendar date.
     SELECT symbol, MAX(close_price) AS close_price
     FROM `ccwj-dbt.analytics.stg_daily_prices`
-    WHERE date = CURRENT_DATE()
+    WHERE date = CURRENT_DATE('America/New_York')
       AND close_price IS NOT NULL AND close_price > 0
     GROUP BY symbol
 )
@@ -3373,16 +3379,23 @@ def weekly_review():
         #   1) the bell has rung (state == after_hours) so the close exists;
         #   2) the broker mark itself was captured AFTER the close — else we'd
         #      compare a mid-session mark to the close and show the intraday
-        #      move backwards (see broker_marks_are_post_close). We have no
-        #      per-row capture time in the warehouse, so gate on SnapTrade's
-        #      holdings_last_successful_sync via Postgres.
-        from app.snaptrade import broker_marks_are_post_close
+        #      move backwards. We have no per-row capture time in the warehouse,
+        #      so we ask SnapTrade's holdings_last_successful_sync WHICH accounts
+        #      are post-close and scope the query to exactly those tenants. An
+        #      account that hasn't re-synced since the close (or is broken) is
+        #      dropped rather than hiding the whole section for the others.
+        from app.snaptrade import post_close_broker_tenant_ids
+        ah_tenants = post_close_broker_tenant_ids(current_user.id)
+        if tenant_ids is not None:
+            # Respect the active account filter (?account= / ?tenant=).
+            ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
         after_hours_ready = (
             market_session.get("state") == "after_hours"
-            and broker_marks_are_post_close(current_user.id)
+            and bool(ah_tenants)
         )
         if after_hours_ready:
-            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(tenant_filter=tenant_filter)
+            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(
+                tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
 
         try:
             batch = _bq_parallel(client, batch_queries)

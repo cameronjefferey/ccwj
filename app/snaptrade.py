@@ -56,6 +56,7 @@ from app.models import (
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
     get_or_create_broker_tenant,
+    build_tenant_id,
     SNAPTRADE_BROKER_SLUG,
 )
 from app.snaptrade_normalize import (
@@ -2256,8 +2257,9 @@ def broker_data_freshness(user_id, *, today=None):
     return oldest, (days if days >= 0 else 0)
 
 
-def broker_marks_are_post_close(user_id, *, now=None):
-    """Gate for the Daily Review "After-hours movers" section.
+def post_close_broker_tenant_ids(user_id, *, now=None):
+    """Tenant_ids whose broker mark is a genuine POST-CLOSE mark — the scope
+    for the Daily Review "After-hours movers" section.
 
     That section compares each holding's broker mark to today's OFFICIAL
     close to surface extended-hours drift. The comparison is only meaningful
@@ -2269,12 +2271,18 @@ def broker_marks_are_post_close(user_id, *, now=None):
 
     The warehouse has no per-row capture time (``stg_current.snapshot_date``
     is just ``current_date()``), so we gate on SnapTrade's authoritative
-    ``holdings_last_successful_sync`` per account. WEAKEST-LINK: EVERY
-    connected account must have synced at/after today's close, or we suppress
-    the whole section — the after-hours query sums ``market_value`` across
-    accounts by symbol, so one stale (pre-close) account would poison the
-    aggregate for any symbol it also holds. Returns ``False`` off-hours, on
-    weekends, and on cold start / missing timestamps."""
+    per-account ``holdings_last_successful_sync``. Rather than the old
+    all-or-nothing weakest-link gate (one stale account — a broken connection,
+    or an account that simply hasn't re-synced since the close — hid the WHOLE
+    section for everyone else), we return the SET of tenant_ids that ARE
+    post-close so the caller can scope the query to exactly those accounts.
+    Accounts that aren't post-close are dropped from the aggregate; healthy
+    post-close accounts still render. ``tenant_id`` is ``snaptrade:<uuid>``
+    where the uuid is the account's ``snaptrade_account_id`` (the after-hours
+    query is tenant-keyed, so scoping by tenant_id is exact).
+
+    Returns an EMPTY set off-hours, on weekends, and on cold start / missing
+    timestamps — which the caller treats as "hide the section"."""
     from zoneinfo import ZoneInfo
 
     et = ZoneInfo("America/New_York")
@@ -2287,19 +2295,24 @@ def broker_marks_are_post_close(user_id, *, now=None):
     # on a holiday no official close publishes, so the query is empty anyway.
     close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
     if now_et.weekday() >= 5 or now_et < close_et:
-        return False
+        return set()
 
-    rows = get_snaptrade_accounts(user_id) or []
-    if not rows:
-        return False
-    for r in rows:
+    out = set()
+    for r in get_snaptrade_accounts(user_id) or []:
         stamp = r.get("holdings_last_successful_sync")
         if not isinstance(stamp, datetime):
-            return False
+            continue
         s = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=ZoneInfo("UTC"))
         if s.astimezone(et) < close_et:
-            return False
-    return True
+            continue
+        acct_id = (r.get("snaptrade_account_id") or "").strip()
+        if not acct_id:
+            continue
+        try:
+            out.add(build_tenant_id(SNAPTRADE_BROKER_SLUG, acct_id))
+        except ValueError:
+            continue
+    return out
 
 
 @app.context_processor
