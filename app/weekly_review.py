@@ -3389,16 +3389,14 @@ def weekly_review():
         if tenant_ids is not None:
             # Respect the active account filter (?account= / ?tenant=).
             ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
-        # DEV PREVIEW: local dev is built from committed seed CSVs (no live
-        # SnapTrade syncs), so every Postgres sync timestamp is NULL and the
-        # strict post-close gate can never pass — the section would be
-        # permanently invisible for UI work. In debug mode ONLY, once the bell
-        # has rung, fall back to the user's scoped tenants so the section
-        # renders (with whatever — possibly stale — dev marks exist). Prod runs
-        # with debug=False, so the strict, accurate gate always applies there.
-        if (not ah_tenants and app.debug and tenant_ids is not None
-                and market_session.get("state") == "after_hours"):
-            ah_tenants = set(tenant_ids)
+        # Strict, correct gate — NEVER show stale/incorrect after-hours numbers
+        # (they erode trust in the whole page). All three must hold:
+        #   1) it's after hours (state == after_hours),
+        #   2) the broker mark is genuinely post-close (ah_tenants non-empty),
+        #   3) today's official close is published (enforced by the query's
+        #      JOIN to stg_daily_prices on CURRENT_DATE('America/New_York')).
+        # If any is missing (e.g. dev has no live post-close sync), the section
+        # stays hidden rather than rendering an intraday/stale mark as "drift".
         after_hours_ready = (
             market_session.get("state") == "after_hours"
             and bool(ah_tenants)
