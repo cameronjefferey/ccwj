@@ -15,17 +15,33 @@
 # into one sync+build (reporting is close-based; intraday marks aren't core). The
 # in-product "Sync now" button is the manual path.
 #
-# BACKSTOP: a manually-managed Render cron `happytrader-snaptrade-sync` (created
-# in the dashboard, NOT declared in this Blueprint) runs at 23:00 UTC weekdays as
-# a daily safety net for days every webhook delivery is missed (the
-# snaptrade_sync_observations log showed real misses under the old Daily plan —
-# e.g. 2026-06-24/25 synced only via the cron). On the real-time plan SnapTrade's
-# cache is continuously fresh, so the cron's TIMING is no longer critical (it used
-# to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read day-old
-# data); 23:00 UTC is retained simply as a quiet off-hours slot. The cron syncs
-# every account then pushes ONE batched seed commit (app/snaptrade_sync_cli.py →
-# merge_and_push_seeds_batch), so it triggers a single dbt build instead of the
-# old ~14-commits-a-night fan-out. Do not add direct broker OAuth crons.
+# TWO manually-managed Render crons (created in the dashboard, NOT declared in
+# this Blueprint) run app/snaptrade_sync_cli.py. Both sync every account then push
+# ONE batched seed commit (merge_and_push_seeds_batch) → a single dbt build,
+# instead of the old ~14-commits-a-night fan-out.
+#
+#   1. happytrader-snaptrade-refresh — MARKET-CLOSE FORCE-REFRESH.
+#      `python -m app.snaptrade_sync_cli --force-refresh` at ~20:10 UTC weekdays
+#      (4:10pm ET in summer; crons ignore DST so it's ~1h before close in winter,
+#      which the 23:00 backstop covers). It ACTIVELY asks SnapTrade to repoll every
+#      broker before reading — the only way to pull intraday changes from brokers
+#      SnapTrade does not poll in real-time. Schwab is daily-only via SnapTrade
+#      regardless of the real-time plan (the plan governs SnapTrade's AUTOMATIC
+#      polling; a manual refresh_brokerage_authorization is a separate, per-call-
+#      billed API), so this pass is what lets a Schwab trader see same-day
+#      closes/opens instead of waiting for SnapTrade's once-a-day Schwab poll.
+#      BILLED per refresh — only this cron passes --force-refresh.
+#
+#   2. happytrader-snaptrade-sync — PLAIN BACKSTOP at 23:00 UTC weekdays
+#      (force_refresh=False, no billed refresh): re-reads SnapTrade's cache as a
+#      safety net for days every webhook delivery is missed (the
+#      snaptrade_sync_observations log showed real misses under the old Daily plan
+#      — e.g. 2026-06-24/25 synced only via the cron). On the real-time plan
+#      SnapTrade's cache is continuously fresh, so its TIMING is no longer critical
+#      (it used to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read
+#      day-old data); 23:00 UTC is retained simply as a quiet off-hours slot.
+#
+# Do not add direct broker OAuth crons.
 #
 # DST NOTE — Render cron schedules below are UTC and DO NOT observe DST.
 #

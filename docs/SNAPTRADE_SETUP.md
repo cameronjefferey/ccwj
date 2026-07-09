@@ -140,16 +140,25 @@ verification — acceptable for local dev only.
 - **Sync trigger.** Primary path is the `ACCOUNT_HOLDINGS_UPDATED`
   webhook (Step 5) — event-driven, fires when SnapTrade detects a
   holdings change (so the data it reads is fresh), debounced per account
-  under the real-time plan. The `happytrader-snaptrade-sync` Render cron
-  (manually managed in the dashboard) is a **daily backstop** for days a
-  webhook delivery is missed; it does not force a refresh and is not the
-  freshness driver. It runs at **23:00 UTC weekdays**. On the real-time
-  plan SnapTrade's cache is continuously fresh, so the cron's timing is no
-  longer critical (under the old Daily plan it had to run AFTER the
-  ~20:40–22:10 UTC nightly refresh or it read day-old data); 23:00 UTC is
-  kept as a quiet off-hours slot. The cron syncs every account then pushes
-  **one batched seed commit** (`merge_and_push_seeds_batch`), so it triggers a
-  single dbt build rather than one build per account.
+  under the real-time plan. Two manually-managed Render crons back it up
+  (both run `app/snaptrade_sync_cli.py`, both push **one batched seed
+  commit** via `merge_and_push_seeds_batch` = a single dbt build):
+    - **`happytrader-snaptrade-refresh` — market-close force-refresh,
+      ~20:10 UTC weekdays** (`--force-refresh`). ACTIVELY asks SnapTrade to
+      repoll every broker before reading. This is the only way to pull
+      **intraday** changes from brokers SnapTrade does not poll in
+      real-time. **Schwab is daily-only via SnapTrade regardless of the
+      real-time plan** — the plan governs SnapTrade's *automatic* polling;
+      a manual `refresh_brokerage_authorization` is a separate, **per-call-
+      billed** API. This pass is what lets a Schwab trader see same-day
+      closes/opens instead of waiting for SnapTrade's once-a-day Schwab poll.
+      Because it is billed, only THIS cron force-refreshes.
+    - **`happytrader-snaptrade-sync` — plain backstop, 23:00 UTC weekdays**
+      (`force_refresh=False`, unbilled). Re-reads SnapTrade's cache as a
+      safety net for days a webhook delivery is missed. Timing is not
+      critical on the real-time plan; 23:00 UTC is a quiet off-hours slot
+      (and covers the winter DST hour-shift of the 20:10 UTC refresh cron,
+      since Render crons are UTC and don't observe DST).
 
 ## Limitations
 

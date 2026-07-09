@@ -136,3 +136,100 @@ def test_cron_no_accounts_returns_0(_wire, monkeypatch):
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: [])
     assert cli.main() == 0
     assert _wire["batch"] == []
+
+
+# ---------------------------------------------------------------------------
+# Market-close force-refresh pass (--force-refresh)
+# ---------------------------------------------------------------------------
+
+def test_force_refresh_enabled_parses_flag_and_env(monkeypatch):
+    assert cli._force_refresh_enabled([]) is False
+    assert cli._force_refresh_enabled(["--force-refresh"]) is True
+    monkeypatch.setenv("SNAPTRADE_CRON_FORCE_REFRESH", "1")
+    assert cli._force_refresh_enabled([]) is True
+    monkeypatch.setenv("SNAPTRADE_CRON_FORCE_REFRESH", "0")
+    assert cli._force_refresh_enabled([]) is False
+
+
+def test_default_run_does_not_force_refresh(_wire, monkeypatch):
+    """The plain 23:00 backstop must NOT call the billed force-refresh API."""
+    rows = [_row(9, "a1", "Schwab Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap, "_sync_one_connection",
+        lambda *a, **k: _ok("Schwab Account", 9, "snaptrade:t-a1"),
+    )
+
+    refreshed = []
+    monkeypatch.setattr(
+        _snap, "_force_refresh_brokerage",
+        lambda *a, **k: refreshed.append(a) or (True, "ok", None),
+    )
+    # No flag, no env → force_refresh stays off.
+    monkeypatch.setattr(cli, "_force_refresh_enabled", lambda *a, **k: False)
+
+    assert cli.main() == 0
+    assert refreshed == []  # never billed a refresh
+    assert len(_wire["batch"]) == 1
+
+
+def test_force_refresh_repolls_every_account_then_syncs(_wire, monkeypatch):
+    """--force-refresh fires one repoll per account UP FRONT, then reads +
+    pushes one batch. Settle sleep is zeroed so the test doesn't wait 90s."""
+    rows = [
+        _row(9, "a1", "Schwab Account"),
+        _row(18, "a2", "Alpaca Paper Account"),
+    ]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(cli, "_force_refresh_enabled", lambda *a, **k: True)
+    monkeypatch.setattr(_snap, "SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS", 0, raising=False)
+
+    order = []
+
+    def _fake_refresh(user_id, acct_id, **k):
+        order.append(("refresh", acct_id))
+        return (True, "Asked your broker to send fresh data.", None)
+
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False):
+        order.append(("sync", row["snaptrade_account_id"]))
+        return _ok(row["account_name"], user_id, f"snaptrade:t-{row['snaptrade_account_id']}")
+
+    monkeypatch.setattr(_snap, "_force_refresh_brokerage", _fake_refresh)
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    rc = cli.main()
+    assert rc == 0
+    # BOTH refreshes fire BEFORE any read (single settle window in between).
+    assert order == [
+        ("refresh", "a1"), ("refresh", "a2"),
+        ("sync", "a1"), ("sync", "a2"),
+    ]
+    # Still exactly one batched push.
+    assert len(_wire["batch"]) == 1
+    assert len(_wire["batch"][0]["entries"]) == 2
+    # Commit message distinguishes this pass from the nightly backstop.
+    assert "force-refresh" in _wire["batch"][0]["message"]
+
+
+def test_force_refresh_survives_a_refresh_error(_wire, monkeypatch):
+    """A raised/failed refresh is non-fatal — the sync still runs for all."""
+    rows = [_row(9, "a1", "Schwab Account"), _row(9, "a2", "Schwab Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(cli, "_force_refresh_enabled", lambda *a, **k: True)
+    monkeypatch.setattr(_snap, "SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS", 0, raising=False)
+
+    def _fake_refresh(user_id, acct_id, **k):
+        if acct_id == "a1":
+            raise RuntimeError("boom")
+        return (True, "ok", None)
+
+    monkeypatch.setattr(_snap, "_force_refresh_brokerage", _fake_refresh)
+    monkeypatch.setattr(
+        _snap, "_sync_one_connection",
+        lambda user_id, row, **k: _ok(row["account_name"], user_id, "snaptrade:t"),
+    )
+
+    rc = cli.main()
+    assert rc == 0
+    # Both accounts still synced + pushed despite the a1 refresh raising.
+    assert len(_wire["batch"][0]["entries"]) == 2

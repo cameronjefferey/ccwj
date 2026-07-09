@@ -760,6 +760,18 @@ SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS = int(
     os.environ.get("SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS", "5") or "5"
 )
 
+# The market-close backstop cron (snaptrade_sync_cli --force-refresh) uses a
+# LONGER settle window than the interactive "Sync now": it isn't holding a user
+# request open, and it wants the freshly-repolled snapshot in the SAME run
+# rather than leaning on the follow-up webhook. SnapTrade typically completes a
+# broker repoll in 30–60s, so 90s gives Schwab (which is not real-time via
+# SnapTrade — see docs) time to return the day's fills. The ACCOUNT_HOLDINGS_
+# UPDATED webhook is still the guaranteed catch if the read races the repoll.
+# Env-overridable.
+SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS = int(
+    os.environ.get("SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS", "90") or "90"
+)
+
 
 def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=None):
     """Trigger a SnapTrade ``refresh_brokerage_authorization`` for one

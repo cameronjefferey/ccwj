@@ -1,12 +1,33 @@
 """
 CLI for the SnapTrade sync BACKSTOP. The freshness driver is the
 ``ACCOUNT_HOLDINGS_UPDATED`` webhook (``app/webhooks.py``); this CLI is the
-daily safety net for days a webhook delivery is missed. It runs on the Render
-cron ``happytrader-snaptrade-sync`` at 23:00 UTC weekdays. Since the SnapTrade
-plan is now REAL-TIME (upgraded from Daily/cached on 2026-07-02), SnapTrade's
-cache is continuously fresh, so this backstop's TIMING is no longer critical —
-it used to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read
-day-old data; 23:00 UTC is now just a quiet off-hours slot.
+safety net for days a webhook delivery is missed. It runs on two Render crons:
+
+  * happytrader-snaptrade-sync (23:00 UTC weekdays) — PLAIN read backstop
+    (``force_refresh=False``): re-reads whatever SnapTrade already has cached.
+    Cheap (no billed refresh), catches missed webhooks off-hours.
+
+  * happytrader-snaptrade-refresh (~20:10 UTC weekdays, market close) —
+    FORCE-REFRESH pass (``--force-refresh``): actively asks SnapTrade to repoll
+    every broker BEFORE reading. This is the ONLY way to pull intraday changes
+    from brokers SnapTrade does not poll in real-time — Schwab in particular is
+    daily-only via SnapTrade regardless of the real-time plan (the plan governs
+    SnapTrade's AUTOMATIC polling; a manual ``refresh_brokerage_authorization``
+    is a separate, per-call-billed API). So a trader who closes/opens positions
+    intraday sees them the same evening instead of waiting for SnapTrade's own
+    once-a-day Schwab poll. Mirrors the in-product "Sync now" force-refresh.
+
+--force-refresh flow (mirrors ``_sync_all_for_user``): fire a
+``_force_refresh_brokerage`` for EVERY account up front, sleep ONE settle window
+(``SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS``, default 90s) so the bulk repoll
+adds a single wait rather than one per account, then read each with the normal
+``defer_push=True`` path (no further per-account refresh — the up-front refresh
+already fired, and the per-authorization throttle would block a second one). The
+follow-up ACCOUNT_HOLDINGS_UPDATED webhook is still the guaranteed catch if a
+read races SnapTrade's repoll; the batched push + monotonic merge make the
+overlap harmless (newer data wins). BILLING: force-refresh is billed per call by
+SnapTrade, so ONLY the market-close cron passes ``--force-refresh``; the 23:00
+backstop stays a plain read.
 
 Each account is synced with ``defer_push=True`` (fetch + normalize, no commit);
 after the loop we push ONE batched seed commit via ``merge_and_push_seeds_batch``.
@@ -15,11 +36,12 @@ commits a night → ~14 ``Update Daily Position Performance`` runs (most instant
 cancelled by ``concurrency: cancel-in-progress``). One commit = one dbt build;
 monotonic-merge semantics are preserved because the batch folds accounts in the
 same order the sequential pushes used. Manual local invocation:
-  cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli
+  cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli [--force-refresh]
 
 Requires: SNAPTRADE_CLIENT_ID, SNAPTRADE_CONSUMER_KEY in env. The
 ``SNAPTRADE_REDIRECT_URI`` env var is only used by the OAuth callback
-flow; the cron does not need it.
+flow; the cron does not need it. ``--force-refresh`` can also be enabled via
+``SNAPTRADE_CRON_FORCE_REFRESH=1`` for cron platforms that only set env vars.
 
 Exit codes:
   0  — at least one connection synced (or there were no connections to sync).
@@ -86,6 +108,63 @@ def _notify_connection_dropped(user_id, snaptrade_account_id, row):
         )
 
 
+def _force_refresh_enabled(argv=None):
+    """--force-refresh CLI flag OR SNAPTRADE_CRON_FORCE_REFRESH=1 env.
+
+    The market-close cron passes the flag; the 23:00 backstop does not (a plain
+    read is free, a force-refresh is billed per call — see module docstring).
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    if "--force-refresh" in argv:
+        return True
+    return (os.environ.get("SNAPTRADE_CRON_FORCE_REFRESH", "") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _force_refresh_all(rows):
+    """Fire a broker repoll for every account UP FRONT, then sleep ONE settle
+    window so the bulk request adds a single wait (not one per account).
+
+    Mirrors ``_sync_all_for_user``'s batch-refresh pattern. Each refresh is
+    throttled + non-fatal; a throttled/failed refresh just falls through to the
+    normal read (same outcome as the plain backstop). Returns the count of
+    accounts SnapTrade accepted a refresh for.
+    """
+    from app.snaptrade import (
+        _force_refresh_brokerage,
+        SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS,
+    )
+
+    refreshed = 0
+    for row in rows:
+        user_id = row["user_id"]
+        snaptrade_account_id = row["snaptrade_account_id"]
+        try:
+            ok_r, msg_r, _rem = _force_refresh_brokerage(user_id, snaptrade_account_id)
+            if ok_r:
+                refreshed += 1
+            print(
+                f"User {user_id} ({row.get('account_name') or snaptrade_account_id}): "
+                f"force-refresh {'ok' if ok_r else 'skipped'} — {msg_r}"
+            )
+        except Exception as exc:
+            print(
+                f"User {user_id} ({snaptrade_account_id}): force-refresh raised "
+                f"(non-fatal): {exc}",
+                file=sys.stderr,
+            )
+
+    if refreshed:
+        import time
+        print(
+            f"Requested {refreshed} broker repoll(s); waiting "
+            f"{SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS}s for SnapTrade to settle…"
+        )
+        time.sleep(SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS)
+    return refreshed
+
+
 def main():
     from app.models import init_db, list_all_snaptrade_accounts
 
@@ -117,6 +196,14 @@ def main():
     if client is None:
         print("Could not build SnapTrade client. Exiting.", file=sys.stderr)
         return 1
+
+    # Market-close pass: ask SnapTrade to repoll every broker BEFORE reading, so
+    # brokers it does not poll in real-time (Schwab) surface the day's fills the
+    # same evening. Billed per call, so gated behind --force-refresh.
+    force_refresh = _force_refresh_enabled()
+    if force_refresh:
+        print(f"Force-refresh pass: requesting broker repoll for {len(rows)} account(s).")
+        _force_refresh_all(rows)
 
     total = len(rows)
     succeeded = 0
@@ -199,7 +286,7 @@ def main():
             )
         else:
             n = len(batch_entries)
-            commit_message = _batch_commit_message(batch_entries)
+            commit_message = _batch_commit_message(batch_entries, force_refresh=force_refresh)
             try:
                 ok, err, _sha, no_changes, n_pushed = merge_and_push_seeds_batch(
                     batch_entries, commit_message=commit_message,
@@ -214,8 +301,9 @@ def main():
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
 
+    mode = "market-close force-refresh" if force_refresh else "backstop"
     print(
-        f"SnapTrade sync summary: {succeeded}/{total} succeeded, "
+        f"SnapTrade {mode} sync summary: {succeeded}/{total} succeeded, "
         f"{broken} broken connections, {errors} errors{pushed_note}"
     )
 
@@ -224,10 +312,11 @@ def main():
     return 0
 
 
-def _batch_commit_message(entries):
+def _batch_commit_message(entries, *, force_refresh=False):
     """Human-readable one-liner + per-account detail for the batched commit."""
     n = len(entries)
-    header = f"SnapTrade nightly backstop sync: {n} account{'s' if n != 1 else ''}"
+    kind = "market-close force-refresh" if force_refresh else "nightly backstop"
+    header = f"SnapTrade {kind} sync: {n} account{'s' if n != 1 else ''}"
     lines = [header]
     for e in entries:
         acct = e.get("account_name") or "?"
