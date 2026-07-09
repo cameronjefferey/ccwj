@@ -3630,10 +3630,6 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Open,PENG  260821C00085000,PENG  260821C00085000,5.0,15.8,,-7900.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Open,PENG  260821C00090000,PENG  260821C00090000,5.0,13.5,,6750.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,04/20/2026,Exchange or Exercise,,CALL PROCURE ETF TR II $50 EXP 04/17/26,1.0,,,0.0
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,04/17/2026,Exchange or Exercise,,CALL PROCURE ETF TR II $50 EXP 04/17/26,4.0,,,0.0
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,03/23/2026,Sell,,CALL PROCURE ETF TR II $50 EXP 04/17/26,5.0,0.95,3.33,471.67
@@ -5530,3 +5526,7 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/12/2026,Sell 
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/12/2026,Sell to Open,GOOG  260515C00390000,CALL ALPHABET INC $390 EXP 05/15/26,1.0,2.61,0.67,260.33
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/11/2026,Expired,BE    260508C00290000,CALL BLOOM ENERGY CORP $290 EXP 05/08/26,2.0,,,0.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/11/2026,Buy,ASTS,AST SPACEMOBILE INC CLASS CLASS A,324.0,76.5575,,-24804.62
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
