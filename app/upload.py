@@ -501,6 +501,21 @@ def _dedup_history_rows(df, seed_columns):
     # Description (heuristic: activities-source has the broker's
     # original wording, which is more useful to users than the
     # symbol-name fallback orders-source emits).
+    #
+    # ELIGIBILITY GUARD (critical). This pass drops BOTH Description and
+    # Amount from the key, so it must ONLY see rows whose remaining cells
+    # (Symbol, Price, Quantity) actually pin the identity — i.e. real trade
+    # fills. Non-fill events (Expired, dividends, ADR/regulatory fees, bank
+    # interest) land with a BLANK Symbol and/or Price and are distinguished
+    # ONLY by Description/Amount: e.g. four different expired contracts on
+    # one day (CRWV/PLTR/QBTS/RKLB, Symbol="", Price="") or four different
+    # fee lines (Symbol="", Price="", distinct Amount). The orders feed NEVER
+    # emits those (it only reports BUY/SELL/option fills with a symbol and a
+    # price), so there is no orders-vs-activities collision to resolve for
+    # them — and collapsing them here would silently DELETE genuinely
+    # distinct rows. So require a non-empty Symbol AND Price; every other row
+    # is passed through untouched (the strict first pass already handled its
+    # exact/float-drift dupes).
     cross_key_lower = {"date", "action", "symbol", "quantity", "price"}
     cross_key_cols = [
         c for c in seed_columns
@@ -512,17 +527,35 @@ def _dedup_history_rows(df, seed_columns):
         return df
     if "Description" not in df.columns:
         return df
+
+    df = df.reset_index(drop=True)
+    sym_col = next((c for c in df.columns if str(c).lower() == "symbol"), None)
+    price_col = next((c for c in cross_key_cols if str(c).lower() == "price"), None)
+    sym_blank = df[sym_col].map(lambda v: _canonicalize_seed_cell(v) == "")
+    price_blank = df[price_col].map(lambda v: _canonicalize_seed_cell(v) == "")
+    eligible = ~(sym_blank | price_blank)
+
     canon2 = df[cross_key_cols].copy()
     for c in cross_key_cols:
         canon2[c] = canon2[c].map(_canonicalize_seed_cell)
-    # Stable sort: longer description first within each duplicate
-    # group, so ``keep="first"`` retains the richer row.
     desc_lens = df["Description"].fillna("").astype(str).str.len()
-    order = (-desc_lens).argsort(kind="stable")
-    df_sorted = df.iloc[order].reset_index(drop=True)
-    canon2_sorted = canon2.iloc[order].reset_index(drop=True)
-    keep_mask2 = ~canon2_sorted.duplicated(subset=cross_key_cols, keep="first")
-    return df_sorted.loc[keep_mask2].reset_index(drop=True)
+    # Visit longer-description rows first so the richer one wins its group.
+    order = (-desc_lens.to_numpy()).argsort(kind="stable")
+
+    seen: set = set()
+    drop_positions: set = set()
+    for pos in order:
+        if not bool(eligible.iloc[pos]):
+            continue  # non-fill event — never cross-source deduped
+        key = tuple(canon2.iloc[pos][c] for c in cross_key_cols)
+        if key in seen:
+            drop_positions.add(pos)
+        else:
+            seen.add(key)
+    if not drop_positions:
+        return df
+    keep_mask2 = [i not in drop_positions for i in range(len(df))]
+    return df.loc[keep_mask2].reset_index(drop=True)
 
 
 # Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
@@ -706,6 +739,25 @@ def _merge_seed_with_existing(
         keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
         combined = combined.loc[keep_mask].reset_index(drop=True)
         merged_account = combined.drop(columns=["__src"])
+
+        # CROSS-SOURCE pass over the combined (existing + new) tenant frame.
+        # The strict-key dedup above keys on EVERY column incl Description
+        # and fees, so the SAME economic fill reported by two SnapTrade
+        # sources — the real-time ``recent_orders`` feed and the slower
+        # ``activities`` feed — survives as two rows whenever they disagree
+        # on description text (orders emits the symbol name "FB Financial
+        # Corp"; activities emits the broker wording "FB FINL CORP" — and
+        # for options, orders "…BUY FILL at 0.96" vs "…BUY PARTIAL_FILL…").
+        # Those land in DIFFERENT sync cycles, so the strict pass never
+        # collapses them and the warehouse test
+        # ``stg_history_no_duplicate_fills_per_tenant`` (grain excludes
+        # description/fees) trips. ``_dedup_history_rows`` re-keys on the
+        # source-agnostic identity (Date, Action, Symbol, Quantity, Price),
+        # keeping the richer description. Previously this pass only ran in
+        # the empty/first-sync branches, so cross-cycle cross-source dupes
+        # slipped through here. Regression: tests/test_upload_merge.py
+        # ::test_cross_source_dupe_collapses_across_sync_cycles.
+        merged_account = _dedup_history_rows(merged_account, seed_columns)
     else:
         # Current positions (snapshot): replace that account entirely
         merged_account = new_df

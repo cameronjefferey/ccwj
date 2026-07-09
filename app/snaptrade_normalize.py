@@ -172,6 +172,27 @@ SNAPTRADE_OPTION_TYPE_TO_ACTION: dict[str, str] = {
 }
 
 
+# SnapTrade's ``recent_orders`` record-level ``action`` field ALSO carries the
+# explicit open/close for options on brokers that support it. The value shape is
+# broker-dependent: Schwab-via-SnapTrade ships the underscore form
+# (``BUY_OPEN`` / ``SELL_CLOSE`` / …, verified 2026-07-08 against a live Cameron
+# Investment condor + FBK STO + PENG BTC); the strict ``ActionStrictWithOptions``
+# enum documents the ``_TO_`` form. Accept BOTH so the orders fast-path can carry
+# options with ZERO guessing. A broker that ships only bare ``BUY`` / ``SELL``
+# for an option (e.g. Alpaca paper) is NOT in this map, so it correctly falls
+# through to "defer to the activities feed" rather than guessing open vs close.
+SNAPTRADE_ORDER_ACTION_TO_OPTION_ACTION: dict[str, str] = {
+    "BUY_OPEN": "Buy to Open",
+    "BUY_TO_OPEN": "Buy to Open",
+    "BUY_CLOSE": "Buy to Close",
+    "BUY_TO_CLOSE": "Buy to Close",
+    "SELL_OPEN": "Sell to Open",
+    "SELL_TO_OPEN": "Sell to Open",
+    "SELL_CLOSE": "Sell to Close",
+    "SELL_TO_CLOSE": "Sell to Close",
+}
+
+
 def _resolve_option_action(canonical: str, description: str, option_type: str = "") -> str:
     """Pick the open/close-aware option action.
 
@@ -543,14 +564,21 @@ def orders_to_history_df(
     The first commit shipped 0 trade rows for an account that clearly
     had trades — a trust-killer for first-time users.
 
-    **What this function does NOT handle (intentionally).**
-    Options orders. The ``recent_orders`` payload does not carry a
-    description string we can use to disambiguate
-    Buy-to-Open vs Buy-to-Close (whereas activities do — the broker
-    text says "Bought to Open" / "Sold to Close"). Without prior
-    position state we'd guess wrong half the time. Defer options-via-
-    orders until we either (a) reconstruct held-state per symbol or
-    (b) SnapTrade adds an order-side open/close flag.
+    **Options (open/close-aware, 2026-07-08).** Earlier this path skipped
+    ALL option orders on the premise that ``recent_orders`` couldn't
+    disambiguate Buy-to-Open vs Sell-to-Close. That premise was only true
+    for brokers that ship bare ``BUY`` / ``SELL`` (Alpaca paper). The
+    record-level ``action`` field DOES carry the explicit open/close on
+    brokers that support it (Schwab-via-SnapTrade ships ``BUY_OPEN`` /
+    ``SELL_CLOSE`` / …; the strict enum documents the ``_TO_`` form). So we
+    now emit option rows when ``action`` maps through
+    ``SNAPTRADE_ORDER_ACTION_TO_OPTION_ACTION`` (zero guessing) and STILL
+    defer to the activities feed when a broker ships only bare BUY/SELL for
+    an option (open vs close genuinely unknowable from the order alone).
+    Option Amount applies the 100x contract multiplier so the seed dollars
+    match the activities row (whose ``amount`` is the broker's gross premium);
+    the cross-source dedup key omits Amount, so the two collapse on
+    (Date, Action, Symbol, Quantity, Price) when activities catches up.
 
     **Dedup contract.** Description is intentionally minimal
     (``universal_symbol.description`` — the company name) so that when
@@ -578,32 +606,53 @@ def orders_to_history_df(
             # writing them would create phantom rows.
             continue
 
-        # Skip options orders (see docstring — Open/Close needs
-        # description text we don't have on the orders side).
-        option_symbol = order.get("option_symbol")
-        if option_symbol:
-            continue
-
         action = str(order.get("action") or "").strip().upper()
-        if action == "BUY":
-            action_label = "Buy"
-        elif action == "SELL":
-            action_label = "Sell"
-        else:
-            # Unknown action verb. Activities will catch this trade
-            # eventually — better to skip than guess.
-            _log.warning(
-                "snaptrade_normalize: dropping order with unknown action %r "
-                "for symbol %r — will be picked up via activities later",
-                action,
-                ((order.get("universal_symbol") or {}).get("raw_symbol")),
-            )
-            continue
+        option_symbol = order.get("option_symbol")
+        is_option = bool(option_symbol)
 
-        usym = order.get("universal_symbol") or {}
-        sym_str = (usym.get("raw_symbol") or usym.get("symbol") or "").strip()
-        if not sym_str:
-            continue
+        if is_option:
+            # Options: emit ONLY when the action explicitly disambiguates
+            # open/close (Schwab ships BUY_OPEN/SELL_CLOSE/…; strict enum
+            # uses the _TO_ form). A bare BUY/SELL on an option is NOT in
+            # the map → defer to the activities feed rather than guess
+            # (guessing open/close wrong corrupts the contract lifecycle —
+            # see the ORCL phantom-open incident in broker-sync-safety).
+            action_label = SNAPTRADE_ORDER_ACTION_TO_OPTION_ACTION.get(action)
+            if not action_label:
+                _log.info(
+                    "snaptrade_normalize: option order action %r lacks an "
+                    "open/close signal — deferring to activities feed",
+                    action,
+                )
+                continue
+            # ``recent_orders`` puts the contract in a flat ``option_symbol``
+            # dict; snaptrade_symbol_to_osi expects it nested under that key
+            # (same shape the activities/positions paths fold in). Verified
+            # 2026-07-08 to yield the canonical OSI ("DAL   260717C00095000")
+            # that matches the positions snapshot exactly.
+            sym_str = snaptrade_symbol_to_osi({"option_symbol": option_symbol})
+            if not sym_str:
+                continue
+        else:
+            if action == "BUY":
+                action_label = "Buy"
+            elif action == "SELL":
+                action_label = "Sell"
+            else:
+                # Unknown action verb. Activities will catch this trade
+                # eventually — better to skip than guess.
+                _log.warning(
+                    "snaptrade_normalize: dropping order with unknown action %r "
+                    "for symbol %r — will be picked up via activities later",
+                    action,
+                    ((order.get("universal_symbol") or {}).get("raw_symbol")),
+                )
+                continue
+
+            usym = order.get("universal_symbol") or {}
+            sym_str = (usym.get("raw_symbol") or usym.get("symbol") or "").strip()
+            if not sym_str:
+                continue
 
         # Date: orders carry ISO-8601 UTC ``time_executed``; the
         # activities path uses MDY. Reuse the same formatter so dedup
@@ -631,16 +680,30 @@ def orders_to_history_df(
             # activities-side will eventually carry the right amount.
             continue
 
-        amount = round(units * price, 6)
-        if action_label == "Buy":
+        # Options are quoted per-share but the contract is 100 shares, so
+        # the dollar Amount needs the 100x multiplier to match the
+        # activities row's gross premium (equities are 1x). Amount is NOT
+        # part of the cross-source dedup key, but it IS the value that
+        # survives downstream until activities catches up, so it must be
+        # the real dollars.
+        contract_mult = 100.0 if is_option else 1.0
+        amount = round(abs(units) * price * contract_mult, 6)
+        # Sign by cash direction: any Buy* is cash out (negative); any
+        # Sell* is cash in (positive). Covers equity Buy/Sell AND the
+        # option Buy/Sell to Open/Close labels.
+        if action_label.startswith("Buy"):
             amount_signed = -abs(amount)
-        else:  # Sell
+        else:  # Sell / Sell to Open / Sell to Close
             amount_signed = abs(amount)
 
-        # Description from the symbol object. Intentionally minimal so
-        # the cross-source dedup prefers activities' richer text. See
-        # docstring "Dedup contract".
-        description = (usym.get("description") or sym_str).strip()
+        # Description: minimal so the cross-source dedup prefers activities'
+        # richer broker text. Options have no universal_symbol (the contract
+        # lives in option_symbol), so use the OSI string; equities use the
+        # company name. See docstring "Dedup contract".
+        if is_option:
+            description = sym_str
+        else:
+            description = ((order.get("universal_symbol") or {}).get("description") or sym_str).strip()
 
         rows.append({
             "Account": account_name,

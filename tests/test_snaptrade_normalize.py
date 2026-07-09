@@ -802,14 +802,40 @@ def test_orders_df_drops_non_executed_statuses():
     assert len(df) == 0
 
 
-def test_orders_df_skips_options_orders():
-    """Orders endpoint doesn't carry the broker-text description we
-    need to disambiguate Buy-to-Open vs Buy-to-Close. Skip options;
-    they will arrive via activities (which carries the description)."""
+# Real Schwab-via-SnapTrade recent_orders option shape (verbatim from the
+# 2026-07-08 Cameron Investment condor + FBK STO + PENG BTC). Schwab ships the
+# EXPLICIT open/close in the record-level ``action`` (underscore form), and the
+# contract in a flat ``option_symbol`` dict with no ``universal_symbol``.
+def _schwab_option_order(action, ticker, otype, strike, exp, qty, price):
+    under = ticker.split()[0]
+    return {
+        "brokerage_order_id": f"o-{ticker}-{action}",
+        "status": "EXECUTED",
+        "universal_symbol": None,
+        "option_symbol": {
+            "ticker": ticker,
+            "option_type": otype,
+            "strike_price": strike,
+            "expiration_date": exp,
+            "underlying_symbol": {"symbol": under, "raw_symbol": under},
+        },
+        "action": action,
+        "total_quantity": f"{qty}.000000000000000000",
+        "filled_quantity": f"{qty}.000000000000000000",
+        "execution_price": f"{price}",
+        "time_executed": "2026-07-08T18:30:00.000000Z",
+    }
+
+
+def test_orders_df_defers_bare_buy_sell_options():
+    """A broker that ships only bare BUY/SELL for an option (Alpaca paper)
+    gives us NO open/close signal, so we still defer to the activities feed —
+    guessing open vs close corrupts the contract lifecycle."""
     options_order = dict(
         _ALPACA_ORDER_NVDA_BUY,
+        action="BUY",
         option_symbol={
-            "underlying_symbol": "NVDA",
+            "underlying_symbol": {"symbol": "NVDA", "raw_symbol": "NVDA"},
             "expiration_date": "2026-06-21",
             "strike_price": 230,
             "option_type": "CALL",
@@ -817,6 +843,80 @@ def test_orders_df_skips_options_orders():
     )
     df = orders_to_history_df([options_order], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert len(df) == 0
+
+
+def test_orders_df_emits_schwab_option_with_explicit_open_close():
+    """Schwab ships BUY_OPEN/SELL_OPEN/BUY_CLOSE on recent_orders — zero
+    guessing. Each maps to the open/close-aware Action, the Symbol is the
+    canonical OSI (matches the positions snapshot), and the Amount carries the
+    100x contract multiplier with the correct cash-direction sign."""
+    orders = [
+        _schwab_option_order("SELL_OPEN", "FBK   260717C00060000", "CALL", 60.0, "2026-07-17", 3, "0.01"),
+        _schwab_option_order("BUY_CLOSE", "PENG  260717C00080000", "CALL", 80.0, "2026-07-17", 2, "4.90"),
+        _schwab_option_order("BUY_OPEN", "DAL   260717P00083000", "PUT", 83.0, "2026-07-17", 10, "1.74"),
+    ]
+    df = orders_to_history_df(orders, account_name="Schwab Account", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    assert len(df) == 3
+    by_sym = {r["Symbol"]: r for _, r in df.iterrows()}
+
+    sto = by_sym["FBK   260717C00060000"]
+    assert sto["Action"] == "Sell to Open"
+    assert float(sto["Quantity"]) == pytest.approx(3.0)
+    assert float(sto["Amount"]) == pytest.approx(3.0)  # 3 * 100 * 0.01, cash IN
+
+    btc = by_sym["PENG  260717C00080000"]
+    assert btc["Action"] == "Buy to Close"
+    assert float(btc["Amount"]) == pytest.approx(-980.0)  # 2 * 100 * 4.90, cash OUT
+
+    bto = by_sym["DAL   260717P00083000"]
+    assert bto["Action"] == "Buy to Open"
+    assert float(bto["Amount"]) == pytest.approx(-1740.0)  # 10 * 100 * 1.74
+
+
+def test_orders_df_accepts_strict_enum_to_form():
+    """The ActionStrictWithOptions enum uses the ``_TO_`` form; accept it too
+    so a broker on that vocabulary also fast-paths without guessing."""
+    order = _schwab_option_order("SELL_TO_CLOSE", "AAPL  260117C00150000", "CALL", 150.0, "2026-01-17", 1, "2.50")
+    df = orders_to_history_df([order], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    assert len(df) == 1
+    assert df.iloc[0]["Action"] == "Sell to Close"
+    assert float(df.iloc[0]["Amount"]) == pytest.approx(250.0)  # cash IN
+
+
+def test_orders_option_dedup_key_matches_activities_row():
+    """The whole point of adding options to the fast path: when the slower
+    activities feed catches up, the two rows MUST collapse. The cross-source
+    dedup key is (Date, Action, Symbol, Quantity, Price) — assert the orders
+    row and the activities row for the SAME fill agree on all five."""
+    orders_df = orders_to_history_df(
+        [_schwab_option_order("SELL_OPEN", "FBK   260717C00060000", "CALL", 60.0, "2026-07-17", 3, "0.7")],
+        account_name="Schwab Account", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    # Same fill as it arrives later via the activities feed (option_symbol at
+    # the activity top level, explicit option_type, per-share price 0.7).
+    activity = {
+        "type": "SELL",
+        "option_type": "SELL_TO_OPEN",
+        "option_symbol": {
+            "ticker": "FBK   260717C00060000",
+            "option_type": "CALL",
+            "strike_price": 60.0,
+            "expiration_date": "2026-07-17",
+            "underlying_symbol": {"symbol": "FBK", "raw_symbol": "FBK"},
+        },
+        "description": "SOLD TO OPEN FBK 07/17/2026 60.00 C",
+        "trade_date": "2026-07-08",
+        "units": 3,
+        "price": 0.7,
+        "amount": 210.0,
+    }
+    activities_df = activities_to_history_df(
+        [activity], account_name="Schwab Account", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    key = ["Date", "Action", "Symbol", "Quantity", "Price"]
+    o = {k: str(orders_df.iloc[0][k]) for k in key}
+    a = {k: str(activities_df.iloc[0][k]) for k in key}
+    assert o == a, f"dedup key mismatch:\n orders={o}\n activities={a}"
 
 
 def test_orders_df_empty_input_returns_canonical_empty_df():

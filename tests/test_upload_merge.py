@@ -272,6 +272,171 @@ def test_merge_is_idempotent_for_repeated_sync(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Bug (Jul 2026): the SAME fill reported by SnapTrade's real-time recent_orders
+# feed and its slower activities feed differ ONLY in Description text (orders
+# "FB Financial Corp" vs activities "FB FINL CORP"; option orders "…BUY FILL"
+# vs Alpaca activities "…BUY PARTIAL_FILL"). They land in DIFFERENT sync
+# cycles, so the strict-key dedup (which includes Description) keeps both and
+# the warehouse test stg_history_no_duplicate_fills_per_tenant (grain excludes
+# description) trips. The main merge path must run the cross-source pass over
+# the combined existing+new frame, not just in the empty-seed branches.
+# ---------------------------------------------------------------------------
+
+
+def test_cross_source_dupe_collapses_across_sync_cycles(monkeypatch):
+    """Cycle 1 wrote the orders-source row; cycle 2 brings the activities-source
+    row for the SAME fill (same Date/Action/Symbol/Quantity/Price, different
+    Description). Exactly one row must survive, keeping the richer description."""
+    existing = _csv_from_rows([
+        _row("Schwab Account", 9, "07/08/2026", "Buy", "FBK", 300, 55.95, -16785.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="FB Financial Corp"),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    new_df = pd.DataFrame([
+        _row("Schwab Account", 9, "07/08/2026", "Buy", "FBK", 300, 55.95, -16785.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="FB FINL CORP"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Schwab Account", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_9437,
+    )
+    out = _parse(out_csv)
+    fbk = out[out["Symbol"] == "FBK"]
+    assert len(fbk) == 1, out.to_dict("records")
+    # richer (longer) description wins
+    assert fbk.iloc[0]["Description"] == "FB Financial Corp"
+
+
+def test_cross_source_option_fill_vs_partial_fill_collapses(monkeypatch):
+    """Alpaca's activities feed reports one option fill as two records —
+    "BUY FILL" and "BUY PARTIAL_FILL" — same grain, different description.
+    Must collapse to a single row (this is the exact UAL 145C prod dupe)."""
+    existing = _csv_from_rows([
+        _row("Alpaca Paper Account", 20, "07/08/2026", "Buy to Open",
+             "UAL   260717C00145000", 1, 0.96, -0.96,
+             tenant_id=TENANT_ALPACA, desc="UAL260717C00145000 BUY FILL at 0.96"),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    new_df = pd.DataFrame([
+        _row("Alpaca Paper Account", 20, "07/08/2026", "Buy to Open",
+             "UAL   260717C00145000", 1, 0.96, -0.96,
+             tenant_id=TENANT_ALPACA, desc="UAL260717C00145000 BUY PARTIAL_FILL at 0.96"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Alpaca Paper Account", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id=TENANT_ALPACA,
+    )
+    out = _parse(out_csv)
+    assert len(out[out["Symbol"] == "UAL   260717C00145000"]) == 1, out.to_dict("records")
+
+
+def test_distinct_option_fills_different_price_are_kept(monkeypatch):
+    """Guardrail: two genuinely different fills (different Price) of the same
+    contract on the same day must NOT be collapsed by the cross-source pass —
+    Price is part of the identity key."""
+    existing = _csv_from_rows([
+        _row("Alpaca Paper Account", 20, "07/08/2026", "Sell to Open",
+             "UAL   260717C00140000", 1, 1.15, 1.15,
+             tenant_id=TENANT_ALPACA, desc="STO 1.15"),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    new_df = pd.DataFrame([
+        _row("Alpaca Paper Account", 20, "07/08/2026", "Sell to Open",
+             "UAL   260717C00140000", 1, 1.25, 1.25,
+             tenant_id=TENANT_ALPACA, desc="STO 1.25"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Alpaca Paper Account", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id=TENANT_ALPACA,
+    )
+    out = _parse(out_csv)
+    assert len(out[out["Symbol"] == "UAL   260717C00140000"]) == 2, out.to_dict("records")
+
+
+def test_cross_source_never_collapses_blank_symbol_events(monkeypatch):
+    """Non-fill events (Expired, fees, dividends) land with a BLANK Symbol
+    and/or Price and are distinguished ONLY by Description/Amount. The
+    cross-source pass drops Description AND Amount from its key, so it MUST
+    skip these — else four different expired contracts on one day (all
+    Symbol="", Price="", Qty=1) would fuse into one. This is the exact prod
+    shape at trade_history.csv:2180-2183 (CRWV/QBTS/RKLB expiries)."""
+    existing = _csv_from_rows([
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL COREWEAVE INC $85 EXP 03/13/26"),
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL D-WAVE QUANTUM INC $19.5 EXP 03/13/26"),
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL ROCKET LAB CORP $72 EXP 03/13/26"),
+    ])
+    _stub_existing(monkeypatch, existing)
+
+    # Re-sync brings the same three expiries again (idempotent). Strict pass
+    # collapses the exact re-lands; the cross-source pass must NOT further
+    # fuse the three distinct contracts.
+    new_df = pd.DataFrame([
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL COREWEAVE INC $85 EXP 03/13/26"),
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL D-WAVE QUANTUM INC $19.5 EXP 03/13/26"),
+        _row("Schwab Account", 9, "03/16/2026", "Expired", "", 1, "", 0.0,
+             tenant_id=TENANT_SCHWAB_9437, desc="CALL ROCKET LAB CORP $72 EXP 03/13/26"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Schwab Account", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_9437,
+    )
+    out = _parse(out_csv)
+    expired = out[out["Action"] == "Expired"]
+    assert len(expired) == 3, expired.to_dict("records")
+    assert set(expired["Description"]) == {
+        "CALL COREWEAVE INC $85 EXP 03/13/26",
+        "CALL D-WAVE QUANTUM INC $19.5 EXP 03/13/26",
+        "CALL ROCKET LAB CORP $72 EXP 03/13/26",
+    }
+
+
+def test_cross_source_never_collapses_blank_symbol_fees(monkeypatch):
+    """ADR/regulatory fee lines: Symbol="" and Price="", distinct Amounts —
+    two may even share Amount. Must all survive (prod shape :5524-5527)."""
+    existing = _csv_from_rows([
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.11,
+             tenant_id=TENANT_ALPACA, desc="ORF fee for proceed of 4 contracts"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.01,
+             tenant_id=TENANT_ALPACA, desc="OPT TAF fee for proceed of 2 contracts"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.01,
+             tenant_id=TENANT_ALPACA, desc="CAT fee for proceed of 4 trades"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.02,
+             tenant_id=TENANT_ALPACA, desc="OCC Clearing Fee"),
+    ])
+    _stub_existing(monkeypatch, existing)
+    # Idempotent re-sync of the same four fee lines.
+    new_df = pd.DataFrame([
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.11,
+             tenant_id=TENANT_ALPACA, desc="ORF fee for proceed of 4 contracts"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.01,
+             tenant_id=TENANT_ALPACA, desc="OPT TAF fee for proceed of 2 contracts"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.01,
+             tenant_id=TENANT_ALPACA, desc="CAT fee for proceed of 4 trades"),
+        _row("Alpaca Paper Account", 20, "06/25/2026", "ADR Mgmt Fee", "", "", "", -0.02,
+             tenant_id=TENANT_ALPACA, desc="OCC Clearing Fee"),
+    ])
+
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Alpaca Paper Account", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id=TENANT_ALPACA,
+    )
+    out = _parse(out_csv)
+    assert len(out[out["Action"] == "ADR Mgmt Fee"]) == 4, out.to_dict("records")
+
+
+# ---------------------------------------------------------------------------
 # Defensive: when no user_id is plumbed through (legacy callers, tests),
 # the merge falls back to the unscoped behavior. Pinning so the fallback
 # stays explicit and future refactors don't drop the kwarg silently.
