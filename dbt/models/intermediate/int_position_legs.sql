@@ -53,6 +53,14 @@ with equity_intervals as (
         account,
         user_id,
         symbol,
+        -- Stable per-interval identity used only by the defensive dedup
+        -- below. For equity it's the equity session number; for options
+        -- it's the option contract's OSI trade_symbol. Keying dedup on this
+        -- (instead of open_date/close_date) is what stops two GENUINELY
+        -- distinct legs that happen to share both dates — e.g. all four
+        -- legs of an iron condor opened the same day with the same expiry —
+        -- from being collapsed into one.
+        cast(session_id as string)     as interval_key,
         open_date,
         case when status = 'Open' then current_date() else last_trade_date end as close_date,
         cast('equity' as string) as source,
@@ -73,6 +81,7 @@ option_intervals as (
         account,
         user_id,
         underlying_symbol as symbol,
+        trade_symbol      as interval_key,
         open_date,
         case
             when status = 'Open' then current_date()
@@ -104,12 +113,22 @@ all_intervals_raw as (
 -- the chronological walk below would treat them as a real chapter split
 -- because two intervals starting on the same day with the same close_date
 -- still consume two `row_number()` slots. Visually that produced phantom
--- "Leg 1 / Leg 1 / Leg 2" pills under the merged-interval mart. Dropping
--- exact (account, user_id, symbol, source, open_date, close_date) duplicates
--- here keeps the leg sequence stable under input duplication. The plan-of-
--- record fix is upstream (the `_canonicalize_seed_cell` dedup in the seed
--- merge + the dbt singular test on stg_history), but this guard means a
--- future regression in either upstream model can't split a leg by accident.
+-- "Leg 1 / Leg 1 / Leg 2" pills under the merged-interval mart.
+--
+-- The partition key is (…, source, interval_key) — the session number for
+-- equity, the OSI trade_symbol for options — NOT (…, open_date, close_date).
+-- Keying on the dates was too aggressive: the four legs of an iron condor
+-- (or any multi-leg option structure legged in on one day with a single
+-- expiry) all share the same open_date AND close_date, so the date-keyed
+-- dedup collapsed four genuinely distinct contracts into ONE interval —
+-- making the merged leg report options_count=1 and only one contract's
+-- unrealized P&L (DAL iron condor: open_options_pnl=$138.28 instead of the
+-- true $73.34 across all four legs). interval_key is unique per real
+-- contract/session, so true upstream duplicates still collapse while
+-- distinct legs survive. The plan-of-record fix for the source dupes is
+-- upstream (`_canonicalize_seed_cell` dedup in the seed merge + the dbt
+-- singular test on stg_history); this guard means a future regression in
+-- either upstream model can't split a leg by accident.
 -- See ~/.cursor/skills/broker-sync-safety/SKILL.md (2026-05-11).
 all_intervals as (
     select
@@ -130,7 +149,7 @@ all_intervals as (
         num_trades
     from all_intervals_raw
     qualify row_number() over (
-        partition by tenant_id, account, user_id, symbol, source, open_date, close_date
+        partition by tenant_id, account, user_id, symbol, source, interval_key
         order by is_open desc,                  -- prefer the still-open copy
                  option_unrealized_pnl desc,    -- then the richer P&L copy
                  num_trades desc

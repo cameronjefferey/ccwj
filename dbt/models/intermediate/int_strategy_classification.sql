@@ -9,6 +9,8 @@
       - Wheel             (put assigned → equity acquired, possibly with CCs)
       - Call Spread        (bought + sold call, same expiry, different strikes)
       - Put Spread         (bought + sold put,  same expiry, different strikes)
+      - Iron Condor        (a call spread AND a put spread on the same
+                            underlying + expiry, legged in together)
       - Long Call          (bought call, standalone)
       - Long Put           (bought put,  standalone, no equity)
       - Protective Put     (bought put while holding equity)
@@ -138,6 +140,64 @@ spread_legs as (
 ),
 
 ---------------------------------------------------------------------
+-- 3a. Iron Condor: a call spread AND a put spread on the SAME underlying
+--    and SAME expiry, legged in together (net-credit defined-risk range
+--    trade — short call above + long call further above, short put below
+--    + long put further below). We detect it structurally rather than by
+--    strike geometry: within one (tenant, account, user, underlying,
+--    expiry) there are >= 2 call legs that are spread members AND >= 2
+--    put legs that are spread members. The open-date span guard (<= 7d)
+--    keeps a call spread and a put spread opened months apart on the same
+--    LEAP expiry from being fused into a "condor" they were never traded
+--    as. A pure call spread OR pure put spread (only one side present)
+--    stays 'Call Spread' / 'Put Spread' — this branch only fires when
+--    BOTH sides exist, and it takes precedence over the generic spread
+--    label below so the four legs read as one strategy.
+--    Note: an iron butterfly (short call & short put at the same strike)
+--    also satisfies this and will read as 'Iron Condor' — acceptable; we
+--    do not distinguish the wingspan today.
+iron_condor_groups as (
+    select
+        oc.tenant_id,
+        oc.account,
+        oc.user_id,
+        oc.underlying_symbol,
+        oc.option_expiry
+    from option_contracts oc
+    join spread_legs sl
+        on oc.account = sl.account
+        and (oc.user_id is not distinct from sl.user_id)
+        and (oc.tenant_id is not distinct from sl.tenant_id)
+        and oc.trade_symbol = sl.trade_symbol
+    group by 1, 2, 3, 4, 5
+    having count(distinct case when oc.option_type = 'C' then oc.trade_symbol end) >= 2
+       and count(distinct case when oc.option_type = 'P' then oc.trade_symbol end) >= 2
+       and date_diff(max(oc.open_date), min(oc.open_date), day) <= 7
+),
+
+iron_condor_legs as (
+    select distinct
+        oc.tenant_id,
+        oc.account,
+        oc.user_id,
+        oc.trade_symbol
+    from option_contracts oc
+    -- Must itself be a spread leg (skips any stray naked leg on the same
+    -- underlying/expiry that isn't part of a vertical).
+    join spread_legs sl
+        on oc.account = sl.account
+        and (oc.user_id is not distinct from sl.user_id)
+        and (oc.tenant_id is not distinct from sl.tenant_id)
+        and oc.trade_symbol = sl.trade_symbol
+    join iron_condor_groups g
+        on oc.account = g.account
+        and (oc.user_id is not distinct from g.user_id)
+        and (oc.tenant_id is not distinct from g.tenant_id)
+        and oc.underlying_symbol = g.underlying_symbol
+        and oc.option_expiry     = g.option_expiry
+),
+
+---------------------------------------------------------------------
 -- 3b. Poor Man Covered Call: short legs of matched pairs from int_pmcc_pairs.
 --    PMCC = long call (expiry >= 180d, deep ITM proxy), short call (expiry <= 60d),
 --    short strike > long strike, short qty <= long qty, long open when short written.
@@ -184,6 +244,12 @@ options_classified as (
 
         -- Strategy
         case
+            -- Iron Condor: this leg is part of a call spread + put spread
+            -- on the same underlying/expiry legged in together. Checked
+            -- BEFORE the generic spread branch so all four legs collapse
+            -- to one strategy label instead of splitting Call/Put Spread.
+            when ic.trade_symbol is not null then 'Iron Condor'
+
             -- Spread (has a matching opposite-direction leg)
             when sl.trade_symbol is not null then
                 case when oc.option_type = 'C' then 'Call Spread' else 'Put Spread' end
@@ -230,6 +296,12 @@ options_classified as (
         and (oc.user_id is not distinct from sl.user_id)
         and (oc.tenant_id is not distinct from sl.tenant_id)
         and oc.trade_symbol = sl.trade_symbol
+    -- Check for iron-condor membership (call spread + put spread together)
+    left join iron_condor_legs ic
+        on oc.account = ic.account
+        and (oc.user_id is not distinct from ic.user_id)
+        and (oc.tenant_id is not distinct from ic.tenant_id)
+        and oc.trade_symbol = ic.trade_symbol
     -- Check for PMCC (short call covered by long call on same underlying)
     left join pmcc_short_calls pmcc
         on oc.account = pmcc.account

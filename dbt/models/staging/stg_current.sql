@@ -139,18 +139,38 @@ cleaned_raw as (
             safe_cast(safe_divide(safe_cast(osi_strike_raw as int64), 1000) as float64)
         ) as option_strike,
 
+        -- Option Call/Put flag. The space-split token is ONLY honored when
+        -- it is literally 'C'/'P' (the alternate human-readable format
+        -- "AAPL 01/17/2026 150 C", where offset(3) = 'C'); otherwise the
+        -- unambiguous OSI C/P char (osi_cp, from the `\d{6}[CP]\d{8}` slice)
+        -- wins. Bug fixed 2026-07-08: for a 3-character root the OSI string
+        -- is space-padded to 6 chars ("DAL   260717C00093000"), so
+        -- split(' ')[3] lands on the OSI tail ("260717C00093000") instead
+        -- of a C/P token; the old unguarded coalesce(token, osi_cp) let that
+        -- tail shadow the correct osi_cp='C', typing every 3-char-root
+        -- option as 'Other'. That dropped them from int_option_contracts'
+        -- snapshot join (instrument_type in ('Call','Put')), so open-option
+        -- P&L fell back to net premium instead of mark-to-market (DAL iron
+        -- condor showed the $1,483 net credit as "unrealized" vs the true
+        -- $73.34 MTM). This mirrors the guarded form already in stg_history.
         coalesce(
-            nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+            case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                 then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+            end,
             osi_cp
         ) as option_type,
 
         case
             when coalesce(
-                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                     then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+                end,
                 osi_cp
             ) = 'C' then 'Call'
             when coalesce(
-                nullif(split(sym_trim, ' ')[safe_offset(3)], ''),
+                case when nullif(split(sym_trim, ' ')[safe_offset(3)], '') in ('C', 'P')
+                     then nullif(split(sym_trim, ' ')[safe_offset(3)], '')
+                end,
                 osi_cp
             ) = 'P' then 'Put'
             when lower(trim(coalesce(security_type, ''))) in (
