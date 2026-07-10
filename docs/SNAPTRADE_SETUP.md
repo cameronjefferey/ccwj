@@ -146,12 +146,17 @@ verification — acceptable for local dev only.
   via `merge_and_push_seeds_batch` = a single dbt build):
     - **`happytrader-snaptrade-intraday` — real-time orders poll, every
       ~15 min during market hours** (`--intraday`; suggested
-      `*/15 13-21 * * 1-5` UTC). Reads ONLY the real-time `recent_orders`
-      feed (+ positions/balances), skipping the T+1 `activities` feed.
+      `*/15 13-21 * * 1-5` UTC). Reads the real-time `recent_orders` feed
+      (skipping the T+1 `activities` feed) and pushes a **history-only**
+      diff — only NEW trade fills hit `trade_history.csv`; the
+      positions/balances **snapshots are NOT rewritten** (they drift on
+      every read, so pushing them every 15 min would rebuild the whole
+      warehouse each run). Snapshot freshness stays with the webhook syncs
+      + 23:00 backstop; daily valuation with the evening price refresh.
       Surfaces same-day trades for brokers whose holdings webhook lags
       (Schwab is ~once/day evening even on the real-time plan) — because
-      `recent_orders` IS real-time on read. No billed refresh; most runs
-      are no-ops (no new fills → no commit → no build).
+      `recent_orders` IS real-time on read. No billed refresh; a poll with
+      no new fills is a true no-op (no commit → no build).
     - **`happytrader-snaptrade-sync` — plain backstop, 23:00 UTC weekdays**
       (`force_refresh=False`, unbilled, reads activities + orders). Safety
       net for missed webhooks AND lands the authoritative T+1 `activities`

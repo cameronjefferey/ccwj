@@ -23,14 +23,19 @@
 #   1. happytrader-snaptrade-intraday — REAL-TIME ORDERS POLL, every ~15 min
 #      during market hours (`--intraday`; suggested schedule `*/15 13-21 * * 1-5`
 #      UTC, covering 9:30am–4pm ET year-round + a post-close buffer, DST-agnostic).
-#      Reads ONLY the real-time recent_orders feed (+ positions/balances),
-#      skipping the T+1 activities feed. This exists because a broker's holdings
-#      poll — and thus its ACCOUNT_HOLDINGS_UPDATED webhook — can lag hours
-#      (Schwab: ~once/day evening) even on the real-time plan, yet recent_orders
-#      IS real-time on read (proven 2026-07-10: a Schwab account ~19h stale on
-#      holdings still returned the just-closed contracts). So the poll surfaces
-#      same-day trades without waiting on the daily Schwab webhook, with NO
-#      billed refresh. Most runs are no-ops (no new fills → no commit → no build).
+#      Reads the real-time recent_orders feed (skipping the T+1 activities feed)
+#      and pushes a HISTORY-ONLY diff: only NEW trade fills hit trade_history.csv;
+#      the positions/balances SNAPSHOTS are NOT rewritten (they drift on every
+#      read as marks move — pushing them every 15 min rebuilt the whole warehouse
+#      each run). Snapshot freshness stays with the webhook syncs + 23:00
+#      backstop; daily valuation with prices_refresh.yml. This exists because a
+#      broker's holdings poll — and thus its ACCOUNT_HOLDINGS_UPDATED webhook —
+#      can lag hours (Schwab: ~once/day evening) even on the real-time plan, yet
+#      recent_orders IS real-time on read (proven 2026-07-10: a Schwab account
+#      ~19h stale on holdings still returned the just-closed contracts). So the
+#      poll surfaces same-day trades without waiting on the daily Schwab webhook,
+#      with NO billed refresh. A poll with no new fills is a true no-op (no
+#      commit → no build).
 #   2. happytrader-snaptrade-sync — PLAIN BACKSTOP at 23:00 UTC weekdays
 #      (force_refresh=False, reads activities + orders): re-reads SnapTrade's
 #      cache as a safety net for missed webhooks AND lands the authoritative T+1

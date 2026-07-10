@@ -1751,13 +1751,25 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # to the caller instead of committing, so many accounts collapse into ONE
     # push. Everything above (fetch, staleness backstop, normalize) already ran.
     if defer_push:
+        # INTRADAY POLL is TRADE-DETECTION ONLY. It pushes just new trade
+        # fills (trade_history) and NEVER the positions/balances snapshots,
+        # because those snapshots drift on EVERY read (intraday broker marks +
+        # balances move constantly). Pushing them on a ~15-min cadence would
+        # rewrite current_positions.csv / account_balances.csv every run → a
+        # full dbt build every 15 minutes even when nothing traded. Snapshot
+        # freshness is owned by the webhook syncs + the 23:00 backstop; daily
+        # valuation of held positions is owned by the evening price refresh
+        # (prices_refresh.yml). So a poll with no new fills is a true no-op
+        # (empty history → skip_history → nothing appended → no commit/build).
+        push_history_only = bool(skip_activities)
         return {
             "deferred": True,
             "account_name": account_name,
             "tenant_id": tenant_id,
             "history_df": None if skip_history else history_df,
-            "current_df": current_df,
-            "balances_df": balances_df,
+            "current_df": None if push_history_only else current_df,
+            "balances_df": None if push_history_only else balances_df,
+            "push_history_only": push_history_only,
             "skip_history": skip_history,
             "history_rows": 0 if skip_history else len(history_df),
             "current_rows": len(current_df),

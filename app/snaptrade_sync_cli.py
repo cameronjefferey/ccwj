@@ -10,17 +10,23 @@ CLI runs on two Render crons:
 
   * happytrader-snaptrade-intraday (every ~15 min during market hours,
     ``--intraday``) — REAL-TIME ORDERS poll (``skip_activities=True``). Reads
-    only the real-time ``recent_orders`` feed (+ positions/balances), NOT the
-    T+1 activities feed. This exists because a broker's background holdings
+    the real-time ``recent_orders`` feed (NOT the T+1 activities feed) and
+    pushes a HISTORY-ONLY seed diff: only NEW trade fills land in
+    trade_history.csv — the positions/balances SNAPSHOTS are deliberately NOT
+    rewritten. (Those snapshots drift on every read as intraday marks/balances
+    move; pushing them on a 15-min cadence rebuilt the whole warehouse every
+    run — the bug that shipped in the first cut. Snapshot freshness is owned by
+    the webhook syncs + the 23:00 backstop; daily VALUATION by the evening
+    prices_refresh.yml.) This exists because a broker's background holdings
     poll — and therefore its ACCOUNT_HOLDINGS_UPDATED webhook — can lag hours
     (Schwab: ~once/day evening), yet ``recent_orders`` IS real-time on read
     (proven 2026-07-10: a Schwab account with a ~19h-stale
     holdings_last_successful_sync still returned the just-closed contracts on a
     live recent_orders call). So the poll surfaces same-day trades without
-    waiting on the daily Schwab webhook, and without any billed refresh. Plain
-    read; the merge is monotonic + cross-source-deduped so the overnight
-    activities copy collapses onto the order rows. Most runs are no-ops (no new
-    fills → no commit → no dbt build).
+    waiting on the daily Schwab webhook, and without any billed refresh. The
+    merge is monotonic + cross-source-deduped so the overnight activities copy
+    collapses onto the order rows. A poll with no new fills is a TRUE no-op (no
+    commit → no dbt build).
 
 PLAN NOTE (SnapTrade support, 2026-07-10): on our REAL-TIME plan, positions,
 orders, and balances are already LIVE — there is nothing to force-refresh.
@@ -293,7 +299,13 @@ def main():
                 f"{res['history_rows']} history, {res['current_rows']} positions"
             )
             frames = res.get("frames")
-            if frames and frames.get("current_df") is not None:
+            # Append if there's ANYTHING to push. The intraday poll returns a
+            # history-only entry (current_df=None) so a snapshot-free trade push
+            # still lands; a no-new-fills intraday run returns neither → skipped.
+            if frames and (
+                frames.get("current_df") is not None
+                or frames.get("history_df") is not None
+            ):
                 batch_entries.append(frames)
         else:
             err = res["error"] or "unknown"
@@ -370,11 +382,14 @@ def _batch_commit_message(entries, *, force_refresh=False, intraday=False):
         acct = e.get("account_name") or "?"
         cur = e.get("current_df")
         cur_n = 0 if cur is None else len(cur)
-        if e.get("skip_history"):
+        hist = e.get("history_df")
+        hist_n = 0 if hist is None else len(hist)
+        if e.get("push_history_only"):
+            # Intraday poll: only new trade fills were pushed (no snapshot).
+            lines.append(f"- {acct}: {hist_n} tx (orders only)")
+        elif e.get("skip_history"):
             lines.append(f"- {acct}: positions only ({cur_n} lines)")
         else:
-            hist = e.get("history_df")
-            hist_n = 0 if hist is None else len(hist)
             lines.append(f"- {acct}: {hist_n} tx, {cur_n} open lines")
     return "\n".join(lines)
 

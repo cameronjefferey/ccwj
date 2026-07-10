@@ -741,6 +741,12 @@ def test_run_sync_intraday_skips_activities_reads_orders(monkeypatch):
     assert calls["activities"] == 0   # T+1 feed skipped intraday
     assert calls["orders"] == 1       # real-time orders feed still read
     assert res.get("deferred") is True
+    # Intraday is a HISTORY-ONLY push: the drifting positions/balances snapshot
+    # is NOT carried, so a 15-min cadence can't rebuild the warehouse on snapshot
+    # drift. (No orders here → nothing to push at all → true no-op.)
+    assert res.get("push_history_only") is True
+    assert res.get("current_df") is None
+    assert res.get("balances_df") is None
 
 
 def test_run_sync_default_reads_both_feeds(monkeypatch):
@@ -771,6 +777,9 @@ def test_run_sync_default_reads_both_feeds(monkeypatch):
     assert calls["activities"] == 1
     assert calls["orders"] == 1
     assert res.get("deferred") is True
+    # Normal syncs still carry the full snapshot (NOT history-only).
+    assert not res.get("push_history_only")
+    assert res.get("current_df") is not None
 
 
 # ---------------------------------------------------------------------------

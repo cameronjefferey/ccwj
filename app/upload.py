@@ -994,7 +994,10 @@ def _normalize_account_seed_frames(
     """
     if history_df is not None:
         history_df = history_df.copy()
-    current_df = current_df.copy()
+    # current_df is None for a history-only push (the intraday trade poll):
+    # only trade_history is rewritten, never the positions/balances snapshot.
+    if current_df is not None:
+        current_df = current_df.copy()
 
     for df in [history_df, current_df]:
         if df is None:
@@ -1024,26 +1027,28 @@ def _normalize_account_seed_frames(
                 history_df[col] = ""
         history_df = history_df[HISTORY_SEED_COLUMNS]
 
-    # Schwab API uses cost_basis; seed column is cost_bases
-    if "cost_basis" in current_df.columns and "cost_bases" not in current_df.columns:
-        current_df = current_df.rename(columns={"cost_basis": "cost_bases"})
+    if current_df is not None:
+        # Schwab API uses cost_basis; seed column is cost_bases
+        if "cost_basis" in current_df.columns and "cost_bases" not in current_df.columns:
+            current_df = current_df.rename(columns={"cost_basis": "cost_bases"})
 
-    current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
-    current_col_map = {}
-    for col in current_df.columns:
-        lower = col.lower()
-        if lower in current_norm:
-            current_col_map[col] = current_norm[lower]
-    current_df = current_df.rename(columns=current_col_map)
-    for seed_col in CURRENT_SEED_COLUMNS:
-        if seed_col not in current_df.columns:
-            current_df[seed_col] = ""
-    current_df = current_df[CURRENT_SEED_COLUMNS]
+        current_norm = {c.lower(): c for c in CURRENT_SEED_COLUMNS}
+        current_col_map = {}
+        for col in current_df.columns:
+            lower = col.lower()
+            if lower in current_norm:
+                current_col_map[col] = current_norm[lower]
+        current_df = current_df.rename(columns=current_col_map)
+        for seed_col in CURRENT_SEED_COLUMNS:
+            if seed_col not in current_df.columns:
+                current_df[seed_col] = ""
+        current_df = current_df[CURRENT_SEED_COLUMNS]
 
     specs = []
     if not skip_history and history_df is not None:
         specs.append((HISTORY_PATH, history_df, HISTORY_SEED_COLUMNS))
-    specs.append((CURRENT_PATH, current_df, CURRENT_SEED_COLUMNS))
+    if current_df is not None:
+        specs.append((CURRENT_PATH, current_df, CURRENT_SEED_COLUMNS))
     if balances_df is not None and len(balances_df) > 0:
         balances_prepared = _prepare_seed_df(
             balances_df, account_name, BALANCE_SEED_COLUMNS,
@@ -1052,7 +1057,7 @@ def _normalize_account_seed_frames(
         specs.append((BALANCE_SEED_PATH, balances_prepared, BALANCE_SEED_COLUMNS))
 
     history_rows = len(history_df) if history_df is not None else 0
-    current_rows = len(current_df)
+    current_rows = len(current_df) if current_df is not None else 0
     return specs, history_rows, current_rows
 
 
@@ -1145,8 +1150,12 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
 
     ``entries`` — list of dicts, each:
         ``account_name`` (str), ``history_df`` (DataFrame|None),
-        ``current_df`` (DataFrame), ``user_id`` (int), ``tenant_id`` (str),
+        ``current_df`` (DataFrame|None), ``user_id`` (int), ``tenant_id`` (str),
         ``skip_history`` (bool), ``balances_df`` (DataFrame|None).
+    ``current_df=None`` is a HISTORY-ONLY push (the intraday trade poll): only
+    trade_history is rewritten — the positions/balances snapshots are left
+    untouched so an intraday cadence doesn't rebuild the warehouse on snapshot
+    drift. Such an entry is kept only when it carries new trade fills.
     Order matters and must match the per-account push order it replaces:
     each entry folds onto the previous, exactly as sequential pushes did.
 
@@ -1156,7 +1165,11 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     """
     valid = []
     for e in entries or []:
-        if e.get("current_df") is None:
+        has_current = e.get("current_df") is not None
+        # Intraday poll entries are history-only (current_df=None): keep them
+        # as long as there are new trade fills to push.
+        has_history = e.get("history_df") is not None and not e.get("skip_history")
+        if not has_current and not has_history:
             continue
         if e.get("user_id") is None:
             continue

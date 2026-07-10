@@ -1392,3 +1392,62 @@ def test_batch_push_empty_is_noop(monkeypatch):
     )
     assert ok is True and no_changes is True and n_pushed == 0 and sha is None
     assert store.files == {}
+
+
+def test_intraday_history_only_entry_writes_only_trade_history(monkeypatch):
+    """The intraday poll emits history-only entries (current_df=None). The batch
+    must write ONLY trade_history.csv — NEVER the positions/balances snapshots —
+    so an intraday cadence can't rebuild the warehouse on snapshot drift."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+
+    entry = {
+        "account_name": "Schwab Account", "user_id": 9,
+        "tenant_id": TENANT_SCHWAB_5989, "skip_history": False,
+        "push_history_only": True,
+        "history_df": pd.DataFrame([
+            _row("Schwab Account", 9, "07/10/2026", "Buy", "DAL", 100, 48.0, -4800.0,
+                 tenant_id=TENANT_SCHWAB_5989, desc="DELTA AIR LINES"),
+        ]),
+        "current_df": None,   # history-only — no snapshot carried
+        "balances_df": None,
+    }
+    ok, err, _sha, no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        [entry], commit_message="SnapTrade intraday poll sync: 1 account",
+    )
+    assert ok, err
+    assert n_pushed == 1
+    # ONLY the trade-history seed was touched.
+    assert set(store.files.keys()) == {HISTORY_PATH}
+    assert _upload.CURRENT_PATH not in store.files
+    assert _upload.BALANCE_SEED_PATH not in store.files
+    hist = _parse(store.files[HISTORY_PATH])
+    assert set(hist["Symbol"]) == {"DAL"}
+
+
+def test_intraday_history_only_reruns_are_noop_when_no_new_fills(monkeypatch):
+    """Re-polling the SAME fill (every 15 min) must be byte-stable → no commit,
+    so a quiet market produces no dbt builds."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+
+    def _entry():
+        return {
+            "account_name": "Schwab Account", "user_id": 9,
+            "tenant_id": TENANT_SCHWAB_5989, "skip_history": False,
+            "push_history_only": True,
+            "history_df": pd.DataFrame([
+                _row("Schwab Account", 9, "07/10/2026", "Buy", "DAL", 100, 48.0, -4800.0,
+                     tenant_id=TENANT_SCHWAB_5989, desc="DELTA AIR LINES"),
+            ]),
+            "current_df": None, "balances_df": None,
+        }
+
+    ok1, _e1, _s1, nc1, _n1 = _upload.merge_and_push_seeds_batch(
+        [_entry()], commit_message="intraday 1",
+    )
+    assert ok1 and nc1 is False           # first push lands the fill
+    ok2, _e2, _s2, nc2, _n2 = _upload.merge_and_push_seeds_batch(
+        [_entry()], commit_message="intraday 2",
+    )
+    assert ok2 and nc2 is True            # identical re-poll → no change → no build
