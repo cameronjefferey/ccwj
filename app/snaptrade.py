@@ -760,14 +760,13 @@ SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS = int(
     os.environ.get("SNAPTRADE_FORCE_REFRESH_SETTLE_SECONDS", "5") or "5"
 )
 
-# The market-close backstop cron (snaptrade_sync_cli --force-refresh) uses a
-# LONGER settle window than the interactive "Sync now": it isn't holding a user
-# request open, and it wants the freshly-repolled snapshot in the SAME run
-# rather than leaning on the follow-up webhook. SnapTrade typically completes a
-# broker repoll in 30–60s, so 90s gives Schwab (which is not real-time via
-# SnapTrade — see docs) time to return the day's fills. The ACCOUNT_HOLDINGS_
-# UPDATED webhook is still the guaranteed catch if the read races the repoll.
-# Env-overridable.
+# Settle window for the DORMANT --force-refresh CLI pass. On our real-time plan
+# refresh_brokerage_authorization is a no-op (cached-plan-only; 403s), and trade
+# ACTIVITIES are T+1 for every broker regardless (SnapTrade support 2026-07-10 —
+# see docs / broker-sync-safety SKILL). So this window is only meaningful if we
+# ever downgrade to a cached plan; the market-close cron that used it was removed.
+# Kept longer than the interactive "Sync now" settle so a batch repoll would land
+# in the SAME run rather than leaning on the follow-up webhook. Env-overridable.
 SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS = int(
     os.environ.get("SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS", "90") or "90"
 )
@@ -849,19 +848,24 @@ def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=
                 account_id=snaptrade_account_id,
             )
         except Exception as exc:
-            if _looks_like_auth_error(exc):
-                mark_snaptrade_connection_broken(user_id, snaptrade_account_id)
-                return (
-                    False,
-                    "SnapTrade said this connection isn't authorized anymore. "
-                    "Reconnect the broker and try again.",
-                    None,
-                )
+            # Best-effort pre-pass — log the raw exception so the exact
+            # status/body is diagnosable, but do NOT mark the connection
+            # broken from here. Broken-detection is owned by the read path's
+            # authoritative _brokerage_authorization_disabled check; inferring
+            # "broken" from a per-endpoint 401/403 is the first-Fidelity
+            # misclassification (see broker-sync-safety SKILL.md).
             app.logger.warning(
                 "_force_refresh_brokerage: get_user_account_details failed for "
-                "user_id=%s account=%s: %s",
-                user_id, snaptrade_account_id, exc,
+                "user_id=%s account=%s: %s: %s",
+                user_id, snaptrade_account_id, type(exc).__name__, exc,
             )
+            if _looks_like_auth_error(exc):
+                return (
+                    False,
+                    "SnapTrade wouldn't look up this connection to refresh it "
+                    "(it may not be permitted on the current plan).",
+                    None,
+                )
             return (
                 False,
                 "Couldn't reach SnapTrade to look up the brokerage. "
@@ -896,14 +900,16 @@ def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=
             user_secret=snap["snaptrade_secret"],
         )
     except Exception as exc:
-        if _looks_like_auth_error(exc):
-            mark_snaptrade_connection_broken(user_id, snaptrade_account_id)
-            return (
-                False,
-                "SnapTrade said this connection isn't authorized anymore. "
-                "Reconnect the broker and try again.",
-                None,
-            )
+        # Always log the raw exception first — the refresh endpoint is BILLED
+        # + entitlement-gated, so its exact status/body (401 vs 403 vs 425) is
+        # the only way to tell "plan doesn't allow manual refresh" from "broker
+        # rate-limited" from "genuinely revoked". The auth-error branch used to
+        # swallow the body entirely, leaving us blind (2026-07-09).
+        app.logger.warning(
+            "_force_refresh_brokerage: refresh call failed for user_id=%s "
+            "auth=%s account=%s: %s: %s",
+            user_id, auth_id, snaptrade_account_id, type(exc).__name__, exc,
+        )
         msg = str(exc)
         # SnapTrade returns 425 / 429 when refreshes happen too often
         # broker-side (not our throttle — the broker's). Surface that
@@ -916,11 +922,24 @@ def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=
                 "minutes and try again — this is the broker's limit, not ours.",
                 None,
             )
-        app.logger.warning(
-            "_force_refresh_brokerage: refresh failed for user_id=%s "
-            "auth=%s account=%s: %s",
-            user_id, auth_id, snaptrade_account_id, exc,
-        )
+        if _looks_like_auth_error(exc):
+            # 401/403 on the REFRESH endpoint ONLY. This does NOT mean the
+            # connection is dead — reads on the same authorization keep working
+            # when manual refresh simply isn't permitted on the plan (real case
+            # 2026-07-09: every broker 403'd on refresh while holdings reads
+            # returned 200). So we do NOT mark_snaptrade_connection_broken here
+            # — that would false-flag every user "reconnect your broker" off an
+            # entitlement error and fire reconnect emails. The read that follows
+            # this pre-pass (_brokerage_authorization_disabled + the sync error
+            # handler) owns authoritative broken-detection. Same lesson as the
+            # first-Fidelity 402/403 misclassification (broker-sync-safety).
+            return (
+                False,
+                "SnapTrade wouldn't refresh this connection right now (it may "
+                "not be permitted on the current plan). Showing the latest data "
+                "SnapTrade already has.",
+                None,
+            )
         return (
             False,
             "SnapTrade couldn't reach the broker to refresh right now. "
@@ -1112,7 +1131,8 @@ def snaptrade_sync():
 # Sync orchestration
 # ---------------------------------------------------------------------------
 
-def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False, defer_push=False):
+def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False, defer_push=False,
+                         skip_activities=False):
     """Sync ONE SnapTrade-managed broker account end-to-end.
 
     Returns a structured dict like ``_sync_one_connection`` in
@@ -1135,6 +1155,10 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
     multiply cost for data that lands too late for that same run anyway —
     stalled connections are caught instead by the holdings-freshness
     backstop in ``_run_sync``.
+
+    ``skip_activities`` — pass True for the INTRADAY POLL (read the real-time
+    ``recent_orders`` feed only, skip the T+1 ``activities`` feed). See
+    ``_run_sync`` for the full rationale.
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     label = (
@@ -1199,6 +1223,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             acc_row=acc_row,
             lookback_days=lookback_days,
             defer_push=defer_push,
+            skip_activities=skip_activities,
         )
         mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
@@ -1536,7 +1561,8 @@ def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
     return None
 
 
-def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False):
+def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False,
+              skip_activities=False):
     """Pull activities + positions + balances from SnapTrade,
     normalize, push to GitHub seeds.
 
@@ -1549,6 +1575,21 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     backstop cron) can merge every account and push ONE commit instead of one
     per account. The single-account webhook / Sync-now paths leave this False
     and push inline as before.
+
+    ``skip_activities`` — when True, DON'T read the ``activities`` feed; use
+    only the real-time ``recent_orders`` feed for trade history (positions +
+    balances still read as normal). This is the INTRADAY POLL path. Rationale
+    (SnapTrade support 2026-07-10): ``activities`` are T+1 for every broker —
+    reading them every few minutes is wasted work and never carries today's
+    fill. ``recent_orders`` IS real-time on read even for brokers whose
+    background holdings poll (and thus the ACCOUNT_HOLDINGS_UPDATED webhook)
+    lags — proven live for a Schwab account whose ``holdings_last_successful_
+    sync`` was ~19h stale yet ``recent_orders`` returned the just-closed
+    contracts. So the intraday poll reads orders to surface same-day trades
+    without waiting on the daily Schwab holdings webhook; the 23:00 backstop
+    and webhook syncs (which DO read activities) reconcile the authoritative
+    copy overnight. The seed merge is monotonic + cross-source-deduped, so a
+    later activities row for the same fill collapses onto the order row.
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     account_name = acc_row["account_name"]
@@ -1589,7 +1630,12 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     end_date = date.today()
     start_date = end_date - timedelta(days=int(lookback_days))
 
-    activities = _fetch_activities(client, snap_user_id, snap_secret, snaptrade_account_id, start_date, end_date)
+    # Intraday poll skips the T+1 activities feed (never carries today's fill)
+    # and leans on the real-time recent_orders read instead. See docstring.
+    if skip_activities:
+        activities = []
+    else:
+        activities = _fetch_activities(client, snap_user_id, snap_secret, snaptrade_account_id, start_date, end_date)
     orders = _fetch_recent_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)

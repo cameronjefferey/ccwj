@@ -72,6 +72,22 @@ _WEBHOOK_DEBOUNCE_SECONDS = int(
     os.environ.get("SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS", "60") or "60"
 )
 
+# Retry a failed webhook-triggered sync. The sync runs OFF-thread AFTER we've
+# already returned 200 to SnapTrade, so svix will NOT redeliver it for us — a
+# transient failure (broker hiccup, SnapTrade 5xx, GitHub blip) would otherwise
+# leave that ONE account stale until the next cron, hours later (real case
+# 2026-07-09: account 8c597f1a returned ok=false on its webhook sync and sat
+# stale until the user hit "Sync All" manually). ``_sync_one_connection`` is
+# idempotent — the seed merge dedups — so re-running after a failed attempt is
+# safe. A few attempts with a short backoff self-heals the common transient
+# case in seconds. Env-overridable; set attempts to 1 to disable retries.
+_WEBHOOK_SYNC_MAX_ATTEMPTS = max(1, int(
+    os.environ.get("SNAPTRADE_WEBHOOK_SYNC_MAX_ATTEMPTS", "3") or "3"
+))
+_WEBHOOK_SYNC_RETRY_BACKOFF_SECONDS = float(
+    os.environ.get("SNAPTRADE_WEBHOOK_SYNC_RETRY_BACKOFF_SECONDS", "8") or "8"
+)
+
 # Per-account coalescing state (per process). Combined with the cluster-wide
 # advisory lock in ``_run_snaptrade_holdings_sync`` this both collapses bursts
 # WITHIN a worker (debounce) and serializes pushes ACROSS workers (lock).
@@ -226,7 +242,34 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
                     routine_days=_routine_lookback_days(),
                     full_days=SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
                 )
-                res = _sync_one_connection(user_id, acc_row, lookback_days=lookback)
+                # Retry on failure: no svix redelivery reaches us here (we
+                # already 200'd), so a transient ok=false / raise would strand
+                # this account until the next cron. Idempotent merge makes the
+                # retry safe. See _WEBHOOK_SYNC_MAX_ATTEMPTS.
+                res: dict = {"ok": False}
+                for attempt in range(1, _WEBHOOK_SYNC_MAX_ATTEMPTS + 1):
+                    try:
+                        res = _sync_one_connection(
+                            user_id, acc_row, lookback_days=lookback,
+                        )
+                    except Exception as exc:  # keep retrying transient blowups
+                        _log.warning(
+                            "snaptrade_webhook sync attempt %d/%d raised for "
+                            "user_id=%s account=%s: %s",
+                            attempt, _WEBHOOK_SYNC_MAX_ATTEMPTS, user_id,
+                            snaptrade_account_id, exc,
+                        )
+                        res = {"ok": False, "error": f"exception:{exc}"}
+                    if res.get("ok") or attempt == _WEBHOOK_SYNC_MAX_ATTEMPTS:
+                        break
+                    _log.warning(
+                        "snaptrade_webhook sync attempt %d/%d not ok for "
+                        "user_id=%s account=%s (%s) — retrying in %ss",
+                        attempt, _WEBHOOK_SYNC_MAX_ATTEMPTS, user_id,
+                        snaptrade_account_id, res.get("error"),
+                        _WEBHOOK_SYNC_RETRY_BACKOFF_SECONDS,
+                    )
+                    time.sleep(_WEBHOOK_SYNC_RETRY_BACKOFF_SECONDS)
                 _log.info(
                     "snaptrade_webhook sync user_id=%s account=%s: ok=%s rows=%s/%s pushed=%s",
                     user_id, snaptrade_account_id, res.get("ok"),

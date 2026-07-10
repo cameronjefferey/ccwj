@@ -1,33 +1,45 @@
 """
-CLI for the SnapTrade sync BACKSTOP. The freshness driver is the
-``ACCOUNT_HOLDINGS_UPDATED`` webhook (``app/webhooks.py``); this CLI is the
-safety net for days a webhook delivery is missed. It runs on two Render crons:
+CLI for the SnapTrade sync BACKSTOP + INTRADAY POLL. The primary freshness
+driver is the ``ACCOUNT_HOLDINGS_UPDATED`` webhook (``app/webhooks.py``); this
+CLI runs on two Render crons:
 
   * happytrader-snaptrade-sync (23:00 UTC weekdays) — PLAIN read backstop
-    (``force_refresh=False``): re-reads whatever SnapTrade already has cached.
-    Cheap (no billed refresh), catches missed webhooks off-hours.
+    (``force_refresh=False``, reads activities + orders): re-reads whatever
+    SnapTrade has cached. Cheap (no billed refresh), catches missed webhooks
+    off-hours and lands the authoritative T+1 ``activities`` detail overnight.
 
-  * happytrader-snaptrade-refresh (~20:10 UTC weekdays, market close) —
-    FORCE-REFRESH pass (``--force-refresh``): actively asks SnapTrade to repoll
-    every broker BEFORE reading. This is the ONLY way to pull intraday changes
-    from brokers SnapTrade does not poll in real-time — Schwab in particular is
-    daily-only via SnapTrade regardless of the real-time plan (the plan governs
-    SnapTrade's AUTOMATIC polling; a manual ``refresh_brokerage_authorization``
-    is a separate, per-call-billed API). So a trader who closes/opens positions
-    intraday sees them the same evening instead of waiting for SnapTrade's own
-    once-a-day Schwab poll. Mirrors the in-product "Sync now" force-refresh.
+  * happytrader-snaptrade-intraday (every ~15 min during market hours,
+    ``--intraday``) — REAL-TIME ORDERS poll (``skip_activities=True``). Reads
+    only the real-time ``recent_orders`` feed (+ positions/balances), NOT the
+    T+1 activities feed. This exists because a broker's background holdings
+    poll — and therefore its ACCOUNT_HOLDINGS_UPDATED webhook — can lag hours
+    (Schwab: ~once/day evening), yet ``recent_orders`` IS real-time on read
+    (proven 2026-07-10: a Schwab account with a ~19h-stale
+    holdings_last_successful_sync still returned the just-closed contracts on a
+    live recent_orders call). So the poll surfaces same-day trades without
+    waiting on the daily Schwab webhook, and without any billed refresh. Plain
+    read; the merge is monotonic + cross-source-deduped so the overnight
+    activities copy collapses onto the order rows. Most runs are no-ops (no new
+    fills → no commit → no dbt build).
 
---force-refresh flow (mirrors ``_sync_all_for_user``): fire a
-``_force_refresh_brokerage`` for EVERY account up front, sleep ONE settle window
-(``SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS``, default 90s) so the bulk repoll
-adds a single wait rather than one per account, then read each with the normal
-``defer_push=True`` path (no further per-account refresh — the up-front refresh
-already fired, and the per-authorization throttle would block a second one). The
-follow-up ACCOUNT_HOLDINGS_UPDATED webhook is still the guaranteed catch if a
-read races SnapTrade's repoll; the batched push + monotonic merge make the
-overlap harmless (newer data wins). BILLING: force-refresh is billed per call by
-SnapTrade, so ONLY the market-close cron passes ``--force-refresh``; the 23:00
-backstop stays a plain read.
+PLAN NOTE (SnapTrade support, 2026-07-10): on our REAL-TIME plan, positions,
+orders, and balances are already LIVE — there is nothing to force-refresh.
+``refresh_brokerage_authorization`` is a CACHED-plan-only endpoint (real-time
+returns 403) and even where it applies it only touches ``activities``, which are
+**T+1 for EVERY brokerage** (the broker posts transactions the night after
+market close). So the old market-close ``happytrader-snaptrade-refresh`` cron was
+REMOVED — it could never advance same-day data. Same-day trades come from the
+real-time ORDERS feed (``recent_orders`` → ``orders_to_history_df``); the settled
+``activities`` detail backfills the next day.
+
+DORMANT: the ``--force-refresh`` flag / ``_force_refresh_all`` below are kept
+only in case we ever move to a cached plan. On the real-time plan every
+``_force_refresh_brokerage`` call 403s (logged, non-fatal — see the auth-error
+branch) and the read still runs, so passing the flag today just wastes API
+calls. Do NOT wire a cron to it. When set, the flow fires a
+``_force_refresh_brokerage`` per account up front, sleeps ONE settle window
+(``SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS``, default 90s), then reads each
+with the normal ``defer_push=True`` path and one batched push.
 
 Each account is synced with ``defer_push=True`` (fetch + normalize, no commit);
 after the loop we push ONE batched seed commit via ``merge_and_push_seeds_batch``.
@@ -36,12 +48,14 @@ commits a night → ~14 ``Update Daily Position Performance`` runs (most instant
 cancelled by ``concurrency: cancel-in-progress``). One commit = one dbt build;
 monotonic-merge semantics are preserved because the batch folds accounts in the
 same order the sequential pushes used. Manual local invocation:
-  cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli [--force-refresh]
+  cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli [--intraday|--force-refresh]
 
 Requires: SNAPTRADE_CLIENT_ID, SNAPTRADE_CONSUMER_KEY in env. The
 ``SNAPTRADE_REDIRECT_URI`` env var is only used by the OAuth callback
-flow; the cron does not need it. ``--force-refresh`` can also be enabled via
+flow; the cron does not need it. ``--intraday`` can also be enabled via
+``SNAPTRADE_CRON_INTRADAY=1`` and ``--force-refresh`` via
 ``SNAPTRADE_CRON_FORCE_REFRESH=1`` for cron platforms that only set env vars.
+``--intraday`` takes precedence (a plain real-time read; never force-refreshes).
 
 Exit codes:
   0  — at least one connection synced (or there were no connections to sync).
@@ -122,6 +136,22 @@ def _force_refresh_enabled(argv=None):
     )
 
 
+def _intraday_enabled(argv=None):
+    """--intraday CLI flag OR SNAPTRADE_CRON_INTRADAY=1 env.
+
+    The intraday poll cron passes ``--intraday``: it reads the REAL-TIME
+    ``recent_orders`` feed (skipping the T+1 ``activities`` feed) so same-day
+    trades surface without waiting on a broker's daily holdings webhook
+    (Schwab). Plain reads — no billed refresh. See the module docstring.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    if "--intraday" in argv:
+        return True
+    return (os.environ.get("SNAPTRADE_CRON_INTRADAY", "") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 def _force_refresh_all(rows):
     """Fire a broker repoll for every account UP FRONT, then sleep ONE settle
     window so the bulk request adds a single wait (not one per account).
@@ -197,10 +227,17 @@ def main():
         print("Could not build SnapTrade client. Exiting.", file=sys.stderr)
         return 1
 
+    # Intraday poll: read the REAL-TIME recent_orders feed only (skip the T+1
+    # activities feed) so same-day trades surface without waiting on a broker's
+    # daily holdings webhook (Schwab). Plain reads — no billed refresh.
+    intraday = _intraday_enabled()
+
     # Market-close pass: ask SnapTrade to repoll every broker BEFORE reading, so
     # brokers it does not poll in real-time (Schwab) surface the day's fills the
-    # same evening. Billed per call, so gated behind --force-refresh.
-    force_refresh = _force_refresh_enabled()
+    # same evening. Billed per call, so gated behind --force-refresh. The DORMANT
+    # force-refresh path (cached-plan-only; 403s on real-time) is mutually
+    # exclusive with the intraday poll, which never refreshes.
+    force_refresh = (not intraday) and _force_refresh_enabled()
     if force_refresh:
         print(f"Force-refresh pass: requesting broker repoll for {len(rows)} account(s).")
         _force_refresh_all(rows)
@@ -239,6 +276,7 @@ def main():
         try:
             res = _sync_one_connection(
                 user_id, row, lookback_days=lookback, defer_push=True,
+                skip_activities=intraday,
             )
         except Exception as exc:
             errors += 1
@@ -286,7 +324,9 @@ def main():
             )
         else:
             n = len(batch_entries)
-            commit_message = _batch_commit_message(batch_entries, force_refresh=force_refresh)
+            commit_message = _batch_commit_message(
+                batch_entries, force_refresh=force_refresh, intraday=intraday,
+            )
             try:
                 ok, err, _sha, no_changes, n_pushed = merge_and_push_seeds_batch(
                     batch_entries, commit_message=commit_message,
@@ -301,7 +341,11 @@ def main():
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
 
-    mode = "market-close force-refresh" if force_refresh else "backstop"
+    mode = (
+        "intraday poll" if intraday
+        else "market-close force-refresh" if force_refresh
+        else "backstop"
+    )
     print(
         f"SnapTrade {mode} sync summary: {succeeded}/{total} succeeded, "
         f"{broken} broken connections, {errors} errors{pushed_note}"
@@ -312,10 +356,14 @@ def main():
     return 0
 
 
-def _batch_commit_message(entries, *, force_refresh=False):
+def _batch_commit_message(entries, *, force_refresh=False, intraday=False):
     """Human-readable one-liner + per-account detail for the batched commit."""
     n = len(entries)
-    kind = "market-close force-refresh" if force_refresh else "nightly backstop"
+    kind = (
+        "intraday poll" if intraday
+        else "market-close force-refresh" if force_refresh
+        else "nightly backstop"
+    )
     header = f"SnapTrade {kind} sync: {n} account{'s' if n != 1 else ''}"
     lines = [header]
     for e in entries:

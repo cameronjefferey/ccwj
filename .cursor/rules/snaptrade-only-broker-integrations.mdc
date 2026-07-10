@@ -46,19 +46,28 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
   fires many times a day; the handler **debounces per account** (`_queue_snaptrade_sync`
   in `app/webhooks.py`, `SNAPTRADE_WEBHOOK_DEBOUNCE_SECONDS` default 60s) because
   reporting is close-based and one dbt build per intraday mark wiggle is wasted CI.
-- **The real-time plan is per-broker, NOT universal — Schwab is daily-only via SnapTrade.**
-  `snaptrade_sync_observations` proved SnapTrade auto-polls Schwab exactly once/day
-  (evening UTC), unchanged before vs after the 2026-07-02 upgrade. The plan governs
-  SnapTrade's *automatic* poll cadence; it does nothing for a broker SnapTrade can't
-  poll in real-time (same broker list as Trade Detection — Schwab excluded). So
-  webhook freshness has a floor = the broker's auto-poll cadence.
-- **Intraday freshness for daily-only brokers = force-refresh (BILLED).** The
-  market-close cron `happytrader-snaptrade-refresh` (~20:10 UTC weekdays) runs
-  `python -m app.snaptrade_sync_cli --force-refresh`, which calls
-  `refresh_brokerage_authorization` per account UP FRONT (one settle window), then
-  reads + one batched push. This is a **separate, per-call-billed** SnapTrade API —
-  being on real-time does NOT make it free. Only the close-time cron force-refreshes;
-  the 23:00 UTC `happytrader-snaptrade-sync` cron stays a plain unbilled read backstop.
+- **Real-time = positions / orders / balances; ACTIVITIES are T+1 for EVERY broker**
+  (confirmed by SnapTrade support 2026-07-10). On the real-time plan, positions,
+  orders, and account balances (Schwab included) are returned live — no refresh
+  needed. But `activities` (the settled transaction / trade-history feed) is **T+1 for
+  all brokerages**: SnapTrade can only return a transaction once the broker POSTS it,
+  the night after market close. **So same-day trades must come from the real-time
+  ORDERS feed** (`recent_orders` → `orders_to_history_df` in `app/snaptrade_normalize.py`),
+  NOT from `activities`; full transaction detail backfills the next day. (Our own
+  `snaptrade_sync_observations` showed Schwab holdings *detection* lagging ~1–2h
+  intraday some days — treat that as detection jitter, not a plan limitation; do NOT
+  design around it with billed refresh calls.)
+- **DO NOT call `refresh_brokerage_authorization` on this plan.** Per SnapTrade
+  support: the refresh endpoint is **only useful on a CACHED plan** — on a real-time
+  plan it returns `403` and is a no-op, and even where it applies it only changes
+  `activities`, which are T+1 regardless. The old `happytrader-snaptrade-refresh`
+  market-close cron was built on the wrong premise ("Schwab is daily-only, force a
+  repoll to beat it") and was **removed** — it could never advance same-day data. The
+  `--force-refresh` CLI flag / `_force_refresh_all` code is kept only for a hypothetical
+  future cached plan and is dormant. `happytrader-snaptrade-sync` (23:00 UTC, unbilled
+  plain read) remains the missed-webhook backstop; webhook-driven syncs
+  (`ACCOUNT_HOLDINGS_UPDATED`, now retried on failure in `app/webhooks.py`) are the
+  primary path.
 - **Trade Detection (`TRADE_DETECTION`) is DEFERRED, not built.** SnapTrade's
   `TRADE_DETECTION` feed is only supported for Webull, tastytrade, Alpaca, moomoo —
   **NOT Schwab**, which is the only broker connected today — and is billed as an
@@ -78,6 +87,6 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
 When adding a broker-facing surface:
 
 - [ ] Connect flow uses `url_for('snaptrade_connect')` only
-- [ ] Sync is webhook-driven (`ACCOUNT_HOLDINGS_UPDATED` → `app/webhooks.py`, debounced per account under the real-time plan); the `happytrader-snaptrade-refresh` cron (~20:10 UTC, `--force-refresh`, billed) forces an intraday repoll for daily-only brokers (Schwab), and `happytrader-snaptrade-sync` (23:00 UTC, unbilled) is the plain missed-delivery backstop (see `app/render.yaml`)
+- [ ] Sync is webhook-driven (`ACCOUNT_HOLDINGS_UPDATED` → `app/webhooks.py`, debounced + retried per account under the real-time plan); `happytrader-snaptrade-sync` (23:00 UTC, unbilled) is the plain missed-delivery backstop. Do NOT add a `refresh_brokerage_authorization` cron — that endpoint is cached-plan-only (real-time plan 403s) and only ever touches T+1 activities (see `app/render.yaml`)
 - [ ] Seed writes include `tenant_id` from `get_or_create_broker_tenant`
 - [ ] No new imports from deleted `app/schwab.py`

@@ -16,30 +16,36 @@
 # in-product "Sync now" button is the manual path.
 #
 # TWO manually-managed Render crons (created in the dashboard, NOT declared in
-# this Blueprint) run app/snaptrade_sync_cli.py. Both sync every account then push
-# ONE batched seed commit (merge_and_push_seeds_batch) → a single dbt build,
-# instead of the old ~14-commits-a-night fan-out.
+# this Blueprint) run app/snaptrade_sync_cli.py. Each syncs every account then
+# pushes ONE batched seed commit (merge_and_push_seeds_batch) → a single dbt
+# build, instead of the old ~14-commits-a-night fan-out.
 #
-#   1. happytrader-snaptrade-refresh — MARKET-CLOSE FORCE-REFRESH.
-#      `python -m app.snaptrade_sync_cli --force-refresh` at ~20:10 UTC weekdays
-#      (4:10pm ET in summer; crons ignore DST so it's ~1h before close in winter,
-#      which the 23:00 backstop covers). It ACTIVELY asks SnapTrade to repoll every
-#      broker before reading — the only way to pull intraday changes from brokers
-#      SnapTrade does not poll in real-time. Schwab is daily-only via SnapTrade
-#      regardless of the real-time plan (the plan governs SnapTrade's AUTOMATIC
-#      polling; a manual refresh_brokerage_authorization is a separate, per-call-
-#      billed API), so this pass is what lets a Schwab trader see same-day
-#      closes/opens instead of waiting for SnapTrade's once-a-day Schwab poll.
-#      BILLED per refresh — only this cron passes --force-refresh.
-#
+#   1. happytrader-snaptrade-intraday — REAL-TIME ORDERS POLL, every ~15 min
+#      during market hours (`--intraday`; suggested schedule `*/15 13-21 * * 1-5`
+#      UTC, covering 9:30am–4pm ET year-round + a post-close buffer, DST-agnostic).
+#      Reads ONLY the real-time recent_orders feed (+ positions/balances),
+#      skipping the T+1 activities feed. This exists because a broker's holdings
+#      poll — and thus its ACCOUNT_HOLDINGS_UPDATED webhook — can lag hours
+#      (Schwab: ~once/day evening) even on the real-time plan, yet recent_orders
+#      IS real-time on read (proven 2026-07-10: a Schwab account ~19h stale on
+#      holdings still returned the just-closed contracts). So the poll surfaces
+#      same-day trades without waiting on the daily Schwab webhook, with NO
+#      billed refresh. Most runs are no-ops (no new fills → no commit → no build).
 #   2. happytrader-snaptrade-sync — PLAIN BACKSTOP at 23:00 UTC weekdays
-#      (force_refresh=False, no billed refresh): re-reads SnapTrade's cache as a
-#      safety net for days every webhook delivery is missed (the
-#      snaptrade_sync_observations log showed real misses under the old Daily plan
-#      — e.g. 2026-06-24/25 synced only via the cron). On the real-time plan
-#      SnapTrade's cache is continuously fresh, so its TIMING is no longer critical
-#      (it used to have to run AFTER the ~20:40–22:10 UTC nightly refresh or it read
-#      day-old data); 23:00 UTC is retained simply as a quiet off-hours slot.
+#      (force_refresh=False, reads activities + orders): re-reads SnapTrade's
+#      cache as a safety net for missed webhooks AND lands the authoritative T+1
+#      activities detail overnight (which the intraday poll deliberately skips).
+#      The snaptrade_sync_observations log showed real webhook misses under the
+#      old Daily plan (e.g. 2026-06-24/25 synced only via the cron); 23:00 UTC is
+#      a quiet off-hours slot.
+#
+# REMOVED: the market-close `happytrader-snaptrade-refresh --force-refresh` cron.
+# SnapTrade support (2026-07-10) confirmed refresh_brokerage_authorization is a
+# CACHED-plan-only endpoint (our real-time plan 403s it) and only ever touches
+# `activities`, which are T+1 for EVERY broker. It could never surface same-day
+# trades, so it was deleted. Same-day trades ride the real-time ORDERS feed
+# (recent_orders — now polled by the intraday cron above). If
+# happytrader-snaptrade-refresh still exists in the Render dashboard, DELETE it.
 #
 # Do not add direct broker OAuth crons.
 #

@@ -86,9 +86,11 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
         "a3": _ok("Alpaca Paper Account", 18, "snaptrade:t-a3", skip_history=True),
     }
     seen_defer = []
+    seen_skip = []
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
         seen_defer.append(defer_push)
+        seen_skip.append(skip_activities)
         return results[row["snaptrade_account_id"]]
 
     monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
@@ -97,6 +99,8 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
     assert rc == 0
     # Every account synced in deferred mode.
     assert seen_defer == [True, True, True]
+    # Plain backstop run does NOT skip activities (reads the T+1 feed).
+    assert seen_skip == [False, False, False]
     # Exactly ONE batched push, carrying all three accounts.
     assert len(_wire["batch"]) == 1
     assert len(_wire["batch"][0]["entries"]) == 3
@@ -106,7 +110,7 @@ def test_cron_skips_broken_connection_from_batch(_wire, monkeypatch):
     rows = [_row(9, "a1", "Schwab Account"), _row(9, "a2", "Schwab Account")]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
         if row["snaptrade_account_id"] == "a2":
             return {"ok": False, "error": "connection_broken"}
         return _ok("Schwab Account", 9, "snaptrade:t-a1")
@@ -190,7 +194,7 @@ def test_force_refresh_repolls_every_account_then_syncs(_wire, monkeypatch):
         order.append(("refresh", acct_id))
         return (True, "Asked your broker to send fresh data.", None)
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
         order.append(("sync", row["snaptrade_account_id"]))
         return _ok(row["account_name"], user_id, f"snaptrade:t-{row['snaptrade_account_id']}")
 
@@ -233,3 +237,51 @@ def test_force_refresh_survives_a_refresh_error(_wire, monkeypatch):
     assert rc == 0
     # Both accounts still synced + pushed despite the a1 refresh raising.
     assert len(_wire["batch"][0]["entries"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Intraday real-time-orders poll (--intraday)
+# ---------------------------------------------------------------------------
+
+def test_intraday_enabled_parses_flag_and_env(monkeypatch):
+    assert cli._intraday_enabled([]) is False
+    assert cli._intraday_enabled(["--intraday"]) is True
+    monkeypatch.setenv("SNAPTRADE_CRON_INTRADAY", "1")
+    assert cli._intraday_enabled([]) is True
+    monkeypatch.setenv("SNAPTRADE_CRON_INTRADAY", "0")
+    assert cli._intraday_enabled([]) is False
+
+
+def test_intraday_skips_activities_and_never_force_refreshes(_wire, monkeypatch):
+    """--intraday syncs every account with skip_activities=True (real-time
+    orders only) and NEVER calls the billed force-refresh, even if the
+    force-refresh env happens to be set (intraday takes precedence)."""
+    rows = [_row(9, "a1", "Schwab Account"), _row(18, "a2", "Alpaca Paper Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(cli, "_intraday_enabled", lambda *a, **k: True)
+    # Even with force-refresh "on", intraday must suppress it.
+    monkeypatch.setattr(cli, "_force_refresh_enabled", lambda *a, **k: True)
+
+    refreshed = []
+    monkeypatch.setattr(
+        _snap, "_force_refresh_brokerage",
+        lambda *a, **k: refreshed.append(a) or (True, "ok", None),
+    )
+
+    seen_skip = []
+
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
+        seen_skip.append(skip_activities)
+        return _ok(row["account_name"], user_id, f"snaptrade:t-{row['snaptrade_account_id']}")
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    rc = cli.main()
+    assert rc == 0
+    # Every account read with skip_activities=True.
+    assert seen_skip == [True, True]
+    # Never touched the billed refresh endpoint.
+    assert refreshed == []
+    # One batched push, commit message tagged "intraday".
+    assert len(_wire["batch"]) == 1
+    assert "intraday" in _wire["batch"][0]["message"]

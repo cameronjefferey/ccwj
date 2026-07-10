@@ -712,6 +712,67 @@ def test_run_sync_does_not_flag_fresh_holdings(monkeypatch):
     assert ei.value is sentinel  # NOT a _SnapTradeAuthError[stale]
 
 
+def test_run_sync_intraday_skips_activities_reads_orders(monkeypatch):
+    """Intraday poll (``skip_activities=True``): the T+1 ``activities`` feed is
+    NOT read, but the real-time ``recent_orders`` feed IS — that's the whole
+    point (surface same-day trades without the daily Schwab holdings webhook)."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={"sync_status": {"holdings": {"last_successful_sync": fresh}}},
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    calls = {"activities": 0, "orders": 0}
+    monkeypatch.setattr(
+        _snap, "_fetch_activities",
+        lambda *a, **k: (calls.__setitem__("activities", calls["activities"] + 1), [])[1],
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_recent_orders",
+        lambda *a, **k: (calls.__setitem__("orders", calls["orders"] + 1), [])[1],
+    )
+
+    acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
+    res = _snap._run_sync(
+        9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60,
+        defer_push=True, skip_activities=True,
+    )
+    assert calls["activities"] == 0   # T+1 feed skipped intraday
+    assert calls["orders"] == 1       # real-time orders feed still read
+    assert res.get("deferred") is True
+
+
+def test_run_sync_default_reads_both_feeds(monkeypatch):
+    """The normal (non-intraday) path reads BOTH activities and orders — the
+    guard against accidentally leaving skip_activities on for every sync."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={"sync_status": {"holdings": {"last_successful_sync": fresh}}},
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    calls = {"activities": 0, "orders": 0}
+    monkeypatch.setattr(
+        _snap, "_fetch_activities",
+        lambda *a, **k: (calls.__setitem__("activities", calls["activities"] + 1), [])[1],
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_recent_orders",
+        lambda *a, **k: (calls.__setitem__("orders", calls["orders"] + 1), [])[1],
+    )
+
+    acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
+    res = _snap._run_sync(
+        9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60,
+        defer_push=True,
+    )
+    assert calls["activities"] == 1
+    assert calls["orders"] == 1
+    assert res.get("deferred") is True
+
+
 # ---------------------------------------------------------------------------
 # _connection_attention — proactive "X days" alert classification
 # ---------------------------------------------------------------------------
@@ -1204,6 +1265,63 @@ def test_force_refresh_returns_friendly_error_on_unconfigured_server(monkeypatch
     ok, message, _ = _snap._force_refresh_brokerage(user_id=7, snaptrade_account_id="x")
     assert ok is False
     assert "not configured" in message.lower()
+
+
+def test_force_refresh_403_does_not_mark_connection_broken(monkeypatch):
+    """A 401/403 from the REFRESH endpoint must NOT flag the connection as
+    broken. Real case 2026-07-09: on the real-time plan every broker 403'd on
+    ``refresh_brokerage_authorization`` while holdings reads kept returning 200,
+    so the connection was fine — only manual refresh wasn't permitted. Marking
+    broken here would false-flag every user "reconnect your broker" and fire
+    reconnect emails off an entitlement error. Broken-detection is owned by the
+    read path (_brokerage_authorization_disabled), not this billed pre-pass."""
+    fake_acc = {
+        "snaptrade_account_id": "acc-id-403",
+        "first_sync_completed": True,
+        "brokerage_authorization_id": "auth-403",  # cached → refresh call is what 403s
+        "last_force_refresh_at": None,
+    }
+    monkeypatch.setattr(_snap, "_snaptrade_config", lambda: ("cid", "ckey", "redir"))
+    monkeypatch.setattr(_snap, "get_snaptrade_user", lambda uid: {
+        "snaptrade_user_id": "u", "snaptrade_secret": "s",
+    })
+    monkeypatch.setattr(_snap, "get_snaptrade_account", lambda uid, aid: fake_acc)
+
+    broken_calls = []
+    monkeypatch.setattr(
+        _snap, "mark_snaptrade_connection_broken",
+        lambda uid, aid: broken_calls.append((uid, aid)),
+    )
+    stamp_calls = []
+    monkeypatch.setattr(
+        _snap, "stamp_snaptrade_force_refresh_attempt",
+        lambda uid, aid: stamp_calls.append((uid, aid)),
+    )
+
+    class _MockClient:
+        class connections:
+            @staticmethod
+            def refresh_brokerage_authorization(**kwargs):
+                raise RuntimeError("(403) Forbidden: refresh not permitted on plan")
+
+        class account_information:
+            @staticmethod
+            def get_user_account_details(**kwargs):  # pragma: no cover - cached
+                raise AssertionError("cached auth id should skip the detail lookup")
+
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: _MockClient())
+
+    ok, message, _ = _snap._force_refresh_brokerage(
+        user_id=7, snaptrade_account_id="acc-id-403",
+    )
+
+    assert ok is False, "a rejected refresh is non-fatal but not a success"
+    assert broken_calls == [], \
+        "a 403 on the refresh endpoint must NOT mark the connection broken"
+    assert stamp_calls == [], \
+        "a failed refresh must not stamp the throttle (nothing was billed/succeeded)"
+    # Message stays honest: not a 'reconnect your broker' accusation.
+    assert "reconnect" not in message.lower()
 
 
 def test_stamp_force_refresh_attempt_writes_correct_sql(monkeypatch):

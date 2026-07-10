@@ -169,3 +169,75 @@ def test_webhook_missing_account_id_no_sync(monkeypatch):
     r = _post(payload, signature=_sign(payload))
     assert r.status_code == 200
     assert _FakeThread.instances == []
+
+
+# ---------------------------------------------------------------------------
+# Retry-on-failure for the off-thread webhook sync (no svix redelivery reaches
+# us here, so a transient failure must self-heal instead of stranding the
+# account until the next cron — real case 2026-07-09, account 8c597f1a).
+# ---------------------------------------------------------------------------
+
+def _wire_holdings_sync(monkeypatch, sync_fn):
+    """Patch everything ``_run_snaptrade_holdings_sync`` imports so we can drive
+    just the retry loop with a fake ``_sync_one_connection``."""
+    import contextlib
+    from app import db as _db
+    from app import snaptrade as _snap
+
+    monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_RETRY_BACKOFF_SECONDS", 0)
+
+    @contextlib.contextmanager
+    def _fake_lock(_key):
+        yield
+    monkeypatch.setattr(_db, "advisory_lock", _fake_lock)
+    monkeypatch.setattr(_models, "get_snaptrade_account",
+                        lambda u, a: {"first_sync_completed": True})
+    monkeypatch.setattr(_snap, "_bulk_sync_lookback_days", lambda *a, **k: 60)
+    monkeypatch.setattr(_snap, "_routine_lookback_days", lambda: 60)
+    monkeypatch.setattr(_snap, "SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS", 3650,
+                        raising=False)
+    monkeypatch.setattr(_snap, "_sync_one_connection", sync_fn)
+
+
+def test_holdings_sync_retries_until_success(monkeypatch):
+    monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
+    calls = {"n": 0}
+
+    def _flaky(user_id, acc_row, lookback_days=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return {"ok": False, "error": "transient"}
+        return {"ok": True, "history_rows": 1, "current_rows": 1,
+                "github_pushed": True}
+
+    _wire_holdings_sync(monkeypatch, _flaky)
+    webhooks._run_snaptrade_holdings_sync(9, "acc-1")
+    assert calls["n"] == 3, "must retry an ok=false sync until it succeeds"
+
+
+def test_holdings_sync_retries_on_exception(monkeypatch):
+    monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
+    calls = {"n": 0}
+
+    def _raises_then_ok(user_id, acc_row, lookback_days=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom")
+        return {"ok": True}
+
+    _wire_holdings_sync(monkeypatch, _raises_then_ok)
+    webhooks._run_snaptrade_holdings_sync(9, "acc-1")
+    assert calls["n"] == 2, "a raised exception must also be retried"
+
+
+def test_holdings_sync_stops_after_max_attempts(monkeypatch):
+    monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
+    calls = {"n": 0}
+
+    def _always_fail(user_id, acc_row, lookback_days=None):
+        calls["n"] += 1
+        return {"ok": False, "error": "still down"}
+
+    _wire_holdings_sync(monkeypatch, _always_fail)
+    webhooks._run_snaptrade_holdings_sync(9, "acc-1")
+    assert calls["n"] == 3, "must give up after _WEBHOOK_SYNC_MAX_ATTEMPTS (no infinite loop)"
