@@ -87,12 +87,36 @@ services:
           envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
+      # Email provider config: prod sends via Resend SMTP (the resend HTTP API
+      # is 403'd on Render egress — see docs/EMAIL_STRATEGY.md). Inherit the
+      # working config from the web service instead of `sync: false` so the cron
+      # actually SENDS instead of silently falling back to the `log` backend
+      # (which just prints the email and never delivers it).
       - key: EMAIL_BACKEND
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_BACKEND
       - key: EMAIL_FROM
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_FROM
+      - key: EMAIL_SMTP_HOST
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_HOST
+      - key: EMAIL_SMTP_USER
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_USER
+      - key: EMAIL_SMTP_PASSWORD
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_PASSWORD
       # weekly_summary reads BigQuery (mart_weekly_summary) for digest content,
       # so it needs the service-account creds. Inherit from the web service
       # (same pattern as DATABASE_URL/SECRET_KEY) rather than `sync: false` —
@@ -127,12 +151,36 @@ services:
           envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
+      # Email provider config: prod sends via Resend SMTP (the resend HTTP API
+      # is 403'd on Render egress — see docs/EMAIL_STRATEGY.md). Inherit the
+      # working config from the web service instead of `sync: false` so the cron
+      # actually SENDS instead of silently falling back to the `log` backend
+      # (which just prints the email and never delivers it).
       - key: EMAIL_BACKEND
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_BACKEND
       - key: EMAIL_FROM
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_FROM
+      - key: EMAIL_SMTP_HOST
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_HOST
+      - key: EMAIL_SMTP_USER
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_USER
+      - key: EMAIL_SMTP_PASSWORD
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_PASSWORD
       # weekly_preview reads BigQuery (int_enriched_current / stg_* ) for digest
       # content, so it needs the service-account creds. Inherit from the web
       # service (same pattern as DATABASE_URL/SECRET_KEY) rather than
@@ -168,12 +216,36 @@ services:
           envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
+      # Email provider config: prod sends via Resend SMTP (the resend HTTP API
+      # is 403'd on Render egress — see docs/EMAIL_STRATEGY.md). Inherit the
+      # working config from the web service instead of `sync: false` so the cron
+      # actually SENDS instead of silently falling back to the `log` backend
+      # (which just prints the email and never delivers it).
       - key: EMAIL_BACKEND
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_BACKEND
       - key: EMAIL_FROM
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_FROM
+      - key: EMAIL_SMTP_HOST
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_HOST
+      - key: EMAIL_SMTP_USER
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_USER
+      - key: EMAIL_SMTP_PASSWORD
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_PASSWORD
 
   # Recurring "still disconnected — reconnect" reminder. Pure Postgres (no
   # BigQuery). Runs DAILY; the email_sends dedupe (key embeds stale-week
@@ -206,17 +278,33 @@ services:
           envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
+      # Email provider config: prod sends via Resend SMTP (the resend HTTP API
+      # is 403'd on Render egress — see docs/EMAIL_STRATEGY.md). Inherit the
+      # working config from the web service instead of `sync: false` so the cron
+      # actually SENDS instead of silently falling back to the `log` backend
+      # (which just prints the email and never delivers it).
       - key: EMAIL_BACKEND
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_BACKEND
       - key: EMAIL_FROM
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_FROM
       - key: EMAIL_SMTP_HOST
-        sync: false
-      - key: EMAIL_SMTP_PORT
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_HOST
       - key: EMAIL_SMTP_USER
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_USER
       - key: EMAIL_SMTP_PASSWORD
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_PASSWORD
