@@ -77,8 +77,14 @@ services:
           type: web
           name: ccwj
           envVarKey: DATABASE_URL
+      # config.py hard-fails at import if SECRET_KEY is unset (the CLI imports
+      # app/__init__.py -> config). Inherit the web service's key instead of
+      # `sync: false` so the cron never fails on a blank/forgotten manual value.
       - key: SECRET_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
       - key: EMAIL_BACKEND
@@ -87,8 +93,15 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
+      # weekly_summary reads BigQuery (mart_weekly_summary) for digest content,
+      # so it needs the service-account creds. Inherit from the web service
+      # (same pattern as DATABASE_URL/SECRET_KEY) rather than `sync: false` —
+      # a blank value falls through to ADC and 500s with DefaultCredentialsError.
       - key: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
 
   - type: cron
     name: happytrader-email-weekly-preview
@@ -104,8 +117,14 @@ services:
           type: web
           name: ccwj
           envVarKey: DATABASE_URL
+      # config.py hard-fails at import if SECRET_KEY is unset (the CLI imports
+      # app/__init__.py -> config). Inherit the web service's key instead of
+      # `sync: false` so the cron never fails on a blank/forgotten manual value.
       - key: SECRET_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
       - key: EMAIL_BACKEND
@@ -114,8 +133,16 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
+      # weekly_preview reads BigQuery (int_enriched_current / stg_* ) for digest
+      # content, so it needs the service-account creds. Inherit from the web
+      # service (same pattern as DATABASE_URL/SECRET_KEY) rather than
+      # `sync: false` — a blank value falls through to ADC and 500s with
+      # DefaultCredentialsError.
       - key: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64
 
   - type: cron
     name: happytrader-email-reengagement
@@ -131,8 +158,14 @@ services:
           type: web
           name: ccwj
           envVarKey: DATABASE_URL
+      # config.py hard-fails at import if SECRET_KEY is unset (the CLI imports
+      # app/__init__.py -> config). Inherit the web service's key instead of
+      # `sync: false` so the cron never fails on a blank/forgotten manual value.
       - key: SECRET_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
       - key: EMAIL_BACKEND
@@ -163,8 +196,14 @@ services:
           type: web
           name: ccwj
           envVarKey: DATABASE_URL
+      # config.py hard-fails at import if SECRET_KEY is unset (the CLI imports
+      # app/__init__.py -> config). Inherit the web service's key instead of
+      # `sync: false` so the cron never fails on a blank/forgotten manual value.
       - key: SECRET_KEY
-        sync: false
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SECRET_KEY
       - key: APP_BASE_URL
         value: "https://happytrader.me"
       - key: EMAIL_BACKEND
