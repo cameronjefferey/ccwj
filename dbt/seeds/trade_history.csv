@@ -3322,96 +3322,6 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/10/2026,Buy t
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/10/2026,Sell to Close,DAL   260717P00083000,DAL   260717P00083000,10.0,0.61,,610.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/10/2026,Buy to Close,DAL   260717P00086000,DAL   260717P00086000,10.0,1.41,,-1410.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/10/2026,Sell to Close,DAL   260717C00095000,DAL   260717C00095000,10.0,0.17,,170.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/01/2026,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/27/2026,Cash Dividend,QQQ,INVESCO QQQ TR,,,,3.66
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/26/2026,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.5
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,1.4
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/16/2026,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,1.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/12/2026,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Buy,AMZN,AMAZON.COM INC,3.0,231.42,,-694.26
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Buy,RDDT,REDDIT INC CLASS A,1.0,232.2,,-232.2
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Sell,UBER,UBER TECHNOLOGIES INC,4.0,81.83,,327.32
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Sell,AES,AES CORP,50.0,14.4517,0.01,722.58
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Cash Dividend,AIPO,DEFIANCE AI AND POWER INFRA ETF,,,,0.02
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.97
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/26/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/24/2025,Buy,GOOG,ALPHABET INC CLASS CLASS C,3.0,313.9,,-941.7
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.11
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/18/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/15/2025,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,0.42
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/11/2025,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,11/14/2025,Cash Dividend,AES,AES CORP,,,,8.8
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/31/2025,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.47
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Buy,AES,AES CORP,50.0,14.545,,-727.25
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Buy,AIPO,DEFIANCE AI & POWER INFRASTRUCTURE ETF,9.0,23.9413,,-215.47
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Sell,COST,COSTCO WHSL CORP NEW,1.0,908.73,,908.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/02/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/25/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.19
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/15/2025,Cash Dividend,GOOG,ALPHABET INC CLASS C,,,,0.42
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/11/2025,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.49
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/15/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.3
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2025,Cash Dividend,QQQ,INVESCO QQQ ETF,,,,2.96
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/15/2025,Buy,MSFT,MICROSOFT CORP,3.0,506.89,,-1520.67
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/15/2025,Sell,LLY,ELI LILLY AND CO,2.0,771.0,,1542.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/11/2025,Buy,UBER,UBER TECHNOLOGIES INC,1.0,96.405,,-96.41
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/09/2025,Buy,GOOG,ALPHABET INC CLASS C,2.0,178.49,,-356.98
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Sell,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,5.0,70.32,,351.6
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Buy,RDDT,REDDIT INC CLASS A,5.0,147.56,,-737.8
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Buy,UBER,UBER TECHNOLOGIES INC,2.0,96.95,,-193.9
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/03/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/26/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.72
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/10/2025,Cash Dividend,LLY,ELI LILLY AND CO,,,,3.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/06/2025,Buy,UBER,UBER TECHNOLOGIES INC,1.0,85.7299,,-85.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,05/16/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.3
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/30/2025,Cash Dividend,QQQ,INVESCO QQQ TRUST,,,,3.58
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/08/2025,ADR Mgmt Fee,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-0.08
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/08/2025,Cash Dividend,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,5.71
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/02/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.51
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/20/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/10/2025,Cash Dividend,LLY,ELI LILLY AND CO,,,,3.0
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,02/21/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.16
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2024,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,4.17
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/27/2024,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.32
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/19/2024,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,3.5
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,2.6
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,11/15/2024,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.16
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/31/2024,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.38
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/18/2024,Buy,NVDA,NVIDIA CORP,1.0,137.604,,-137.6
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/03/2024,Cash Dividend,NVDA,NVIDIA CORP,,,,0.04
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,2.14
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/19/2024,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,3.5
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,2.6
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/29/2024,Credit Interest,SCHFDX0,SCHWAB1 INT 07/30-08/28,,,,0.31
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/26/2024,ADR Mgmt Fee,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-0.08
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/26/2024,Cash Dividend,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,2.58
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/21/2024,Buy,COST,COSTCO WHOLESALE CO,1.0,880.74,,-880.74
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,LLY,ELI LILLY AND CO,2.0,797.7,,-1595.4
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,5.0,132.17,,-660.85
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,JXN,JACKSON FINL INC CLASS A,5.0,88.82,,-444.1
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,NVDA,NVIDIA CORP,4.0,115.1,,-460.4
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/30/2024,Credit Interest,SCHFDX0,SCHWAB1 INT 06/27-07/29,,,,0.48
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/29/2024,Buy,DXCM,DEXCOM INC,5.0,64.25,,-321.25
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/23/2024,Buy,IYW,ISHARES US TECHNOLOGY ETF,20.0,151.0331,,-3020.66
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/23/2024,Buy,QQQ,INVSC QQQ TRUST SRS 1 ETF,5.0,481.45,,-2407.25
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,DXCM,DEXCOM INC,5.0,62.2479,0.01,311.23
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,1.0,197.2566,,-197.26
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,RDDT,REDDIT INC CLASS A,1.0,147.97,,147.97
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Buy,CRM,SALESFORCE INC,7.0,172.93,,-1210.51
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,RDDT,REDDIT INC CLASS A,5.0,148.64,0.02,743.18
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/02/2026,Cash Dividend,CRM,SALESFORCE INC,,,,3.08
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/26/2026,Cash Dividend,NVDA,NVIDIA CORP,,,,1.25
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/25/2026,Buy,JXN,JACKSON FINL INC CLASS A,0.0416,108.1688,,-4.5
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/25/2026,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.5
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,1.51
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/18/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.006,252.5294,,-1.51
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/15/2026,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,1.1
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/11/2026,Buy,MSFT,MICROSOFT CORP,0.007,392.168,,-2.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/11/2026,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/10/2026,Buy,QQQ,"Invesco QQQ Trust, Series 1",0.0056,723.25,,-4.0502
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,841.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Sell to Open,BE    260410C00145000,CALL BLOOM ENERGY CORP $145 EXP 04/10/26,10.0,3.35,4.15,3345.85
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Buy to Close,BE    260402C00140000,CALL BLOOM ENERGY CORP $140 EXP 04/02/26,10.0,0.04,0.12,-40.12
@@ -5558,3 +5468,94 @@ Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expi
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,CEG   260508C00330000,CALL CONSTELLATION ENERG$330 EXP 05/08/26,1.0,,,0.0
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/11/2026,Expired,RDDT  260508C00180000,CALL REDDIT INC $180 EXP 05/08/26,2.0,,,0.0
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/10/2026,Buy,BEN,Franklin Resources Inc.,8.1308,33.83044,,-275.068542
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/01/2026,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/27/2026,Cash Dividend,QQQ,INVESCO QQQ TR,,,,3.66
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/26/2026,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.5
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,1.4
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/16/2026,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,1.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/12/2026,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Buy,AMZN,AMAZON.COM INC,3.0,231.42,,-694.26
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Buy,RDDT,REDDIT INC CLASS A,1.0,232.2,,-232.2
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Sell,UBER,UBER TECHNOLOGIES INC,4.0,81.83,,327.32
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Sell,AES,AES CORP,50.0,14.4517,0.01,722.58
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Cash Dividend,AIPO,DEFIANCE AI AND POWER INFRA ETF,,,,0.02
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2025,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.97
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/26/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/24/2025,Buy,GOOG,ALPHABET INC CLASS CLASS C,3.0,313.9,,-941.7
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.11
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/18/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/15/2025,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,0.42
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/11/2025,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,11/14/2025,Cash Dividend,AES,AES CORP,,,,8.8
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/31/2025,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.47
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Buy,AES,AES CORP,50.0,14.545,,-727.25
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Buy,AIPO,DEFIANCE AI & POWER INFRASTRUCTURE ETF,9.0,23.9413,,-215.47
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/07/2025,Sell,COST,COSTCO WHSL CORP NEW,1.0,908.73,,908.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/02/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/25/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.19
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/15/2025,Cash Dividend,GOOG,ALPHABET INC CLASS C,,,,0.42
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/11/2025,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.49
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/15/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.3
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2025,Cash Dividend,QQQ,INVESCO QQQ ETF,,,,2.96
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/15/2025,Buy,MSFT,MICROSOFT CORP,3.0,506.89,,-1520.67
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/15/2025,Sell,LLY,ELI LILLY AND CO,2.0,771.0,,1542.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/11/2025,Buy,UBER,UBER TECHNOLOGIES INC,1.0,96.405,,-96.41
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/09/2025,Buy,GOOG,ALPHABET INC CLASS C,2.0,178.49,,-356.98
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Sell,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,5.0,70.32,,351.6
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Buy,RDDT,REDDIT INC CLASS A,5.0,147.56,,-737.8
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/08/2025,Buy,UBER,UBER TECHNOLOGIES INC,2.0,96.95,,-193.9
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/03/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/26/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.72
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/10/2025,Cash Dividend,LLY,ELI LILLY AND CO,,,,3.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/06/2025,Buy,UBER,UBER TECHNOLOGIES INC,1.0,85.7299,,-85.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,05/16/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.3
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/30/2025,Cash Dividend,QQQ,INVESCO QQQ TRUST,,,,3.58
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/08/2025,ADR Mgmt Fee,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-0.08
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/08/2025,Cash Dividend,NVO,NOVO-NORDISK A S FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,5.71
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/02/2025,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.51
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/20/2025,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,03/10/2025,Cash Dividend,LLY,ELI LILLY AND CO,,,,3.0
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,02/21/2025,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.16
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/31/2024,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,4.17
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/27/2024,Cash Dividend,NVDA,NVIDIA CORP,,,,0.05
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,1.32
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/19/2024,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,3.5
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,12/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,2.6
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,11/15/2024,Cash Dividend,COST,COSTCO WHSL CORP NEW,,,,1.16
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/31/2024,Cash Dividend,QQQ,INVSC QQQ TRUST SRS 1 ETF,,,,3.38
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/18/2024,Buy,NVDA,NVIDIA CORP,1.0,137.604,,-137.6
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,10/03/2024,Cash Dividend,NVDA,NVIDIA CORP,,,,0.04
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,2.14
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/19/2024,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,3.5
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,09/10/2024,Cash Dividend,LLY,ELI LILLY AND CO,,,,2.6
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/29/2024,Credit Interest,SCHFDX0,SCHWAB1 INT 07/30-08/28,,,,0.31
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/26/2024,ADR Mgmt Fee,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,-0.08
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/26/2024,Cash Dividend,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,,,,2.58
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,08/21/2024,Buy,COST,COSTCO WHOLESALE CO,1.0,880.74,,-880.74
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,LLY,ELI LILLY AND CO,2.0,797.7,,-1595.4
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,NVO,NOVO-NORDISK AS VORMAL FSPONSORED ADR 1 ADR REPS 1 ORD SHS,5.0,132.17,,-660.85
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,JXN,JACKSON FINL INC CLASS A,5.0,88.82,,-444.1
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/31/2024,Buy,NVDA,NVIDIA CORP,4.0,115.1,,-460.4
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/30/2024,Credit Interest,SCHFDX0,SCHWAB1 INT 06/27-07/29,,,,0.48
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/29/2024,Buy,DXCM,DEXCOM INC,5.0,64.25,,-321.25
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/23/2024,Buy,IYW,ISHARES US TECHNOLOGY ETF,20.0,151.0331,,-3020.66
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/23/2024,Buy,QQQ,INVSC QQQ TRUST SRS 1 ETF,5.0,481.45,,-2407.25
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,DXCM,DEXCOM INC,5.0,62.2479,0.01,311.23
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,1.0,197.2566,,-197.26
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,RDDT,REDDIT INC CLASS A,1.0,147.97,,147.97
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Buy,CRM,SALESFORCE INC,7.0,172.93,,-1210.51
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,04/13/2026,Sell,RDDT,REDDIT INC CLASS A,5.0,148.64,0.02,743.18
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/10/2026,Cash Dividend,QQQ,INVESCO QQQ TR,,,,4.07
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/02/2026,Cash Dividend,CRM,SALESFORCE INC,,,,3.08
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/26/2026,Cash Dividend,NVDA,NVIDIA CORP,,,,1.25
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/25/2026,Buy,JXN,JACKSON FINL INC CLASS A,0.0416,108.1688,,-4.5
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/25/2026,Cash Dividend,JXN,JACKSON FINL INC CLASS A,,,,4.5
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,1.51
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/18/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.006,252.5294,,-1.51
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/15/2026,Cash Dividend,GOOG,ALPHABET INC CLASS CLASS C,,,,1.1
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/11/2026,Buy,MSFT,MICROSOFT CORP,0.007,392.168,,-2.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,06/11/2026,Cash Dividend,MSFT,MICROSOFT CORP,,,,2.73
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,07/10/2026,Buy,QQQ,"Invesco QQQ Trust, Series 1",0.0056,723.25,,-4.0502
