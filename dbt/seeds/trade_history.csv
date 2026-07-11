@@ -3438,10 +3438,6 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/10/2026,Buy 
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/10/2026,Sell to Open,JPM   260717P00320000,PUT JPMORGAN CHASE & CO $320 EXP 07/17/26,5.0,1.23,2.1,612.9
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/10/2026,Buy to Close,VRT   260710C00345000,CALL VERTIV HLDGS CO $345 EXP 07/10/26,1.0,0.18,0.41,-18.41
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/07/2026,Expired,AVGO  260706C00400000,CALL BROADCOM INC $400 EXP 07/06/26,1.0,,,0.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.47
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,170.6
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2893,589.73,,-170.6
@@ -5572,3 +5568,7 @@ Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/202
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
