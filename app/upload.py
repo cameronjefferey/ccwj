@@ -1079,7 +1079,9 @@ def merge_and_push_seeds(
 
     Args:
         history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
-        current_df: open-position rows shaped for CURRENT_SEED_COLUMNS.
+        current_df: open-position rows shaped for CURRENT_SEED_COLUMNS. Pass
+            None for a HISTORY-ONLY push (intraday poll / weekend auto-sync) —
+            only trade_history is written, the snapshots are left untouched.
         user_id: required Postgres ``users.id`` of the row owner. Stamped
             into every emitted row's ``user_id`` column (informational).
         tenant_id: required v2 warehouse tenant key
@@ -1099,8 +1101,11 @@ def merge_and_push_seeds(
 
     Caller must verify _upload_github_config_ok() first.
     """
-    if current_df is None:
-        return False, "current_df is required.", 0, 0, None, False
+    # current_df=None is a HISTORY-ONLY push (intraday poll / weekend auto-sync):
+    # only trade_history is rewritten. It's valid as long as there's history to
+    # push — otherwise there's genuinely nothing to commit.
+    if current_df is None and (skip_history or history_df is None):
+        return False, "nothing to push (no positions and no history).", 0, 0, None, False
     if user_id is None:
         return False, "user_id is required.", 0, 0, None, False
     if tenant_id is None or not str(tenant_id).strip():

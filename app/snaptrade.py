@@ -1131,8 +1131,29 @@ def snaptrade_sync():
 # Sync orchestration
 # ---------------------------------------------------------------------------
 
+def _market_closed_all_day(now=None):
+    """True when the US equity market is closed for the ENTIRE current ET day
+    (i.e. a weekend).
+
+    Used to make the webhook auto-sync HISTORY-ONLY on days with no live
+    session: broker marks/balances drift on every read, and pushing that drift
+    triggers a full dbt build for ZERO trade activity. On a weekend we still
+    ingest new fills (Friday's T+1 activities post Saturday) but skip the
+    snapshot rewrite. Weekday holidays are intentionally NOT special-cased — a
+    holiday just does one full sync that mostly no-ops; not worth a calendar.
+    """
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    now_et = now or datetime.now(et)
+    if now_et.tzinfo is None:
+        now_et = now_et.replace(tzinfo=et)
+    now_et = now_et.astimezone(et)
+    return now_et.weekday() >= 5
+
+
 def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False, defer_push=False,
-                         skip_activities=False):
+                         skip_activities=False, history_only=False):
     """Sync ONE SnapTrade-managed broker account end-to-end.
 
     Returns a structured dict like ``_sync_one_connection`` in
@@ -1159,6 +1180,11 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
     ``skip_activities`` — pass True for the INTRADAY POLL (read the real-time
     ``recent_orders`` feed only, skip the T+1 ``activities`` feed). See
     ``_run_sync`` for the full rationale.
+
+    ``history_only`` — pass True to push only new trade fills and leave the
+    positions/balances snapshots untouched (the WEEKEND auto-sync uses this to
+    avoid rebuilding the warehouse on snapshot drift while markets are closed,
+    yet still ingest Friday's T+1 fills). See ``_run_sync``.
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     label = (
@@ -1224,6 +1250,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             lookback_days=lookback_days,
             defer_push=defer_push,
             skip_activities=skip_activities,
+            history_only=history_only,
         )
         mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
@@ -1562,7 +1589,7 @@ def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
 
 
 def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False,
-              skip_activities=False):
+              skip_activities=False, history_only=False):
     """Pull activities + positions + balances from SnapTrade,
     normalize, push to GitHub seeds.
 
@@ -1590,6 +1617,15 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     and webhook syncs (which DO read activities) reconcile the authoritative
     copy overnight. The seed merge is monotonic + cross-source-deduped, so a
     later activities row for the same fill collapses onto the order row.
+
+    ``history_only`` — when True, push ONLY new trade fills (trade_history);
+    NEVER rewrite the positions/balances snapshots. Same push shape as the
+    intraday poll, but DECOUPLED from ``skip_activities`` so a caller can still
+    READ activities (e.g. the WEEKEND auto-sync, which must catch Friday's T+1
+    fills that post Saturday) while suppressing the snapshot churn that would
+    otherwise trigger a full dbt build for nothing but drifting marks. A sync
+    with no new fills then becomes a true no-op. (``skip_activities`` implies
+    ``history_only`` — the intraday poll wants both.)
     """
     snaptrade_account_id = acc_row["snaptrade_account_id"]
     account_name = acc_row["account_name"]
@@ -1747,6 +1783,12 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
 
     skip_history = history_df is None or history_df.empty
 
+    # History-only push: only new trade fills go to trade_history; the
+    # positions/balances snapshots are NOT rewritten. skip_activities (intraday
+    # poll) always implies this; the weekend auto-sync sets history_only
+    # directly while still reading activities for Friday's T+1 fills.
+    push_history_only = bool(history_only or skip_activities)
+
     # Deferred-push mode (nightly batch cron): hand the normalized frames back
     # to the caller instead of committing, so many accounts collapse into ONE
     # push. Everything above (fetch, staleness backstop, normalize) already ran.
@@ -1761,7 +1803,6 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         # valuation of held positions is owned by the evening price refresh
         # (prices_refresh.yml). So a poll with no new fills is a true no-op
         # (empty history → skip_history → nothing appended → no commit/build).
-        push_history_only = bool(skip_activities)
         return {
             "deferred": True,
             "account_name": account_name,
@@ -1798,12 +1839,27 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "SnapTrade sync: skipping GitHub push for user_id=%s account=%s — %s",
             user_id, account_name, github_skip_reason,
         )
+    elif push_history_only and skip_history:
+        # History-only push (weekend auto-sync / intraday) with NO new fills:
+        # nothing to push. Skip the merge entirely so drifting snapshot marks
+        # can't trigger a full dbt build for zero trade activity.
+        github_skip_reason = "history_only_no_new_trades"
+        app.logger.info(
+            "SnapTrade sync (history-only, no new trades): no push for "
+            "user_id=%s account=%s", user_id, account_name,
+        )
     else:
         uname = "user"
         u = User.get_by_id(user_id)
         if u:
             uname = u.username
-        if skip_history:
+        if push_history_only:
+            # Only new trade fills are pushed; snapshots left untouched.
+            commit_msg = (
+                f"SnapTrade sync ({uname}): {len(history_df)} tx "
+                f"(orders only) ({account_name})"
+            )
+        elif skip_history:
             commit_msg = (
                 f"SnapTrade sync ({uname}): positions only "
                 f"({len(current_df)} lines) ({account_name})"
@@ -1816,12 +1872,12 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         ok, err, _hr, _cr, github_head_sha, github_no_changes = merge_and_push_seeds(
             account_name,
             history_df,
-            current_df,
+            None if push_history_only else current_df,
             commit_message=commit_msg,
             user_id=user_id,
             tenant_id=tenant_id,
             skip_history=skip_history,
-            balances_df=balances_df,
+            balances_df=None if push_history_only else balances_df,
         )
         # "Pushed" means a commit (and therefore a dbt build) actually
         # happened. A no-op merge (identical seed) reports ok=True but pushes

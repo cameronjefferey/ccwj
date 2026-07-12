@@ -177,6 +177,45 @@ verification — acceptable for local dev only.
       (and covers the winter DST hour-shift of the 20:10 UTC refresh cron,
       since Render crons are UTC and don't observe DST).
 
+## Keeping deploy / CI churn down
+
+Every SnapTrade sync that finds a change pushes a seed commit to `master`. Two
+guards keep that from redeploying the app and rebuilding the warehouse for no
+reason:
+
+- **Render build filter on the `ccwj` web service (REQUIRED).** The Flask app
+  does NOT read `dbt/seeds/*.csv` at runtime (it reads BigQuery). Without a
+  build filter, every seed push auto-redeploys the whole web service — dozens
+  of pointless redeploys a day (a Fri-evening/weekend burst was ~25+, most
+  instantly cancelled). Set **Render → `ccwj` → Settings → Build & Deploy →
+  Build Filters → Ignored Paths** to:
+
+  ```
+  dbt/**
+  docs/**
+  tests/**
+  scripts/**
+  .github/**
+  .cursor/**
+  **/*.md
+  ```
+
+  A seed-only commit then skips the deploy; a commit touching `app/**` or
+  `requirements.txt` still deploys. (Not settable via the Render API — it's a
+  dashboard toggle. It does NOT affect the GitHub Actions dbt build, which
+  SHOULD run on seed changes.)
+
+- **Weekend auto-syncs are HISTORY-ONLY.** Broker positions/balances snapshots
+  carry live marks that drift on every read. On weekends (ET) the webhook
+  auto-sync (`_run_snaptrade_holdings_sync`) still READS activities — so
+  Friday's T+1 fills that post Saturday are ingested — but pushes a
+  history-only seed diff: it does NOT rewrite the snapshots. So a quiet weekend
+  produces no seed change → no commit → no dbt build, instead of a full
+  warehouse rebuild per snapshot-mark wobble. First syncs are exempt (a new
+  account needs its initial snapshot); weekday behavior is unchanged (fresh
+  snapshots still feed intraday value + after-hours movers). Gate:
+  `app/snaptrade.py::_market_closed_all_day`.
+
 ## Limitations
 
 - **History depth varies by broker.** Schwab via SnapTrade can give

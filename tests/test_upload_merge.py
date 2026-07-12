@@ -1425,6 +1425,38 @@ def test_intraday_history_only_entry_writes_only_trade_history(monkeypatch):
     assert set(hist["Symbol"]) == {"DAL"}
 
 
+def test_merge_and_push_history_only_writes_only_trade_history(monkeypatch):
+    """The inline single-account push (webhook weekend auto-sync) with
+    current_df=None writes ONLY trade_history.csv — never the snapshots."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    hist = pd.DataFrame([
+        _row("Schwab Account", 9, "07/11/2026", "Sell", "DAL", 100, 50.0, 5000.0,
+             tenant_id=TENANT_SCHWAB_5989, desc="DELTA AIR LINES"),
+    ])
+    ok, err, hr, cr, _sha, no_changes = _upload.merge_and_push_seeds(
+        "Schwab Account", hist, None, commit_message="weekend orders-only",
+        user_id=9, tenant_id=TENANT_SCHWAB_5989, skip_history=False,
+        balances_df=None,
+    )
+    assert ok, err
+    assert set(store.files.keys()) == {HISTORY_PATH}
+    assert _upload.CURRENT_PATH not in store.files
+
+
+def test_merge_and_push_history_only_rejects_when_no_history(monkeypatch):
+    """current_df=None AND no history = nothing to push → explicit error, no
+    commit (guards against a history-only call that would write nothing)."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    ok, err, _hr, _cr, _sha, _nc = _upload.merge_and_push_seeds(
+        "Schwab Account", None, None, commit_message="noop", user_id=9,
+        tenant_id=TENANT_SCHWAB_5989, skip_history=False, balances_df=None,
+    )
+    assert ok is False
+    assert store.files == {}
+
+
 def test_intraday_history_only_reruns_are_noop_when_no_new_fills(monkeypatch):
     """Re-polling the SAME fill (every 15 min) must be byte-stable → no commit,
     so a quiet market produces no dbt builds."""

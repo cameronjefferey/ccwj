@@ -203,7 +203,7 @@ def test_holdings_sync_retries_until_success(monkeypatch):
     monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
     calls = {"n": 0}
 
-    def _flaky(user_id, acc_row, lookback_days=None):
+    def _flaky(user_id, acc_row, lookback_days=None, **_kw):
         calls["n"] += 1
         if calls["n"] < 3:
             return {"ok": False, "error": "transient"}
@@ -219,7 +219,7 @@ def test_holdings_sync_retries_on_exception(monkeypatch):
     monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
     calls = {"n": 0}
 
-    def _raises_then_ok(user_id, acc_row, lookback_days=None):
+    def _raises_then_ok(user_id, acc_row, lookback_days=None, **_kw):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("boom")
@@ -234,10 +234,50 @@ def test_holdings_sync_stops_after_max_attempts(monkeypatch):
     monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
     calls = {"n": 0}
 
-    def _always_fail(user_id, acc_row, lookback_days=None):
+    def _always_fail(user_id, acc_row, lookback_days=None, **_kw):
         calls["n"] += 1
         return {"ok": False, "error": "still down"}
 
     _wire_holdings_sync(monkeypatch, _always_fail)
     webhooks._run_snaptrade_holdings_sync(9, "acc-1")
     assert calls["n"] == 3, "must give up after _WEBHOOK_SYNC_MAX_ATTEMPTS (no infinite loop)"
+
+
+# ---------------------------------------------------------------------------
+# Weekend auto-sync is HISTORY-ONLY (suppress full-warehouse rebuilds on
+# snapshot drift while markets are closed; still ingest Friday's T+1 fills).
+# ---------------------------------------------------------------------------
+
+def _capture_history_only(monkeypatch, *, weekend, first_done=True):
+    from app import snaptrade as _snap
+    seen = {}
+
+    def _fake(user_id, acc_row, lookback_days=None, history_only=False, **_kw):
+        seen["history_only"] = history_only
+        return {"ok": True, "history_rows": 0, "current_rows": 0,
+                "github_pushed": False}
+
+    _wire_holdings_sync(monkeypatch, _fake)
+    # _wire_holdings_sync stubs get_snaptrade_account → first_sync_completed True;
+    # override for the first-sync case.
+    monkeypatch.setattr(_models, "get_snaptrade_account",
+                        lambda u, a: {"first_sync_completed": first_done})
+    monkeypatch.setattr(_snap, "_market_closed_all_day", lambda: weekend)
+    webhooks._run_snaptrade_holdings_sync(9, "acc-1")
+    return seen
+
+
+def test_weekend_auto_sync_is_history_only(monkeypatch):
+    seen = _capture_history_only(monkeypatch, weekend=True)
+    assert seen["history_only"] is True
+
+
+def test_weekday_auto_sync_is_full(monkeypatch):
+    seen = _capture_history_only(monkeypatch, weekend=False)
+    assert seen["history_only"] is False
+
+
+def test_weekend_first_sync_is_full(monkeypatch):
+    # A brand-new account still needs its initial snapshot, even on a weekend.
+    seen = _capture_history_only(monkeypatch, weekend=True, first_done=False)
+    assert seen["history_only"] is False

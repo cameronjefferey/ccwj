@@ -782,6 +782,35 @@ def test_run_sync_default_reads_both_feeds(monkeypatch):
     assert res.get("current_df") is not None
 
 
+def test_run_sync_history_only_no_new_fills_does_not_push(monkeypatch):
+    """Weekend auto-sync (history_only=True, reads activities) with NO new fills
+    must NOT push — otherwise drifting weekend snapshot marks would trigger a
+    full dbt build for zero trade activity. This is the weekend-churn fix."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={"sync_status": {"holdings": {"last_successful_sync": fresh}}},
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    import app.upload as _upload
+    monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
+    pushed = []
+    monkeypatch.setattr(
+        _upload, "merge_and_push_seeds",
+        lambda *a, **k: pushed.append((a, k)) or (True, None, 0, 0, "sha", False),
+    )
+
+    acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
+    res = _snap._run_sync(
+        9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60,
+        history_only=True,   # reads activities, but pushes history-only
+    )
+    assert pushed == []                                   # nothing pushed
+    assert res["github_pushed"] is False
+    assert res["github_skip_reason"] == "history_only_no_new_trades"
+
+
 # ---------------------------------------------------------------------------
 # _connection_attention — proactive "X days" alert classification
 # ---------------------------------------------------------------------------

@@ -221,6 +221,7 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
     from app.models import get_snaptrade_account
     from app.snaptrade import (
         _bulk_sync_lookback_days,
+        _market_closed_all_day,
         _routine_lookback_days,
         _sync_one_connection,
         SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
@@ -236,12 +237,19 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
                         user_id, snaptrade_account_id,
                     )
                     return
+                first_done = bool(acc_row.get("first_sync_completed"))
                 lookback = _bulk_sync_lookback_days(
-                    bool(acc_row.get("first_sync_completed")),
+                    first_done,
                     force_full_history=False,
                     routine_days=_routine_lookback_days(),
                     full_days=SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
                 )
+                # WEEKEND auto-syncs are HISTORY-ONLY: still read activities
+                # (Friday's T+1 fills post Saturday) but do NOT rewrite the
+                # positions/balances snapshots — otherwise drifting weekend
+                # marks trigger a full dbt build for zero trade activity. First
+                # syncs are exempt (a new account needs its initial snapshot).
+                history_only = _market_closed_all_day() and first_done
                 # Retry on failure: no svix redelivery reaches us here (we
                 # already 200'd), so a transient ok=false / raise would strand
                 # this account until the next cron. Idempotent merge makes the
@@ -251,6 +259,7 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
                     try:
                         res = _sync_one_connection(
                             user_id, acc_row, lookback_days=lookback,
+                            history_only=history_only,
                         )
                     except Exception as exc:  # keep retrying transient blowups
                         _log.warning(

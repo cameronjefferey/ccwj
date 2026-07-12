@@ -647,6 +647,19 @@ checkout → dbt build (full) → python current_position_stock_price.py → dbt
 ```
 Note: CI runs two full `dbt build`s vs local targeted selects. These could be aligned.
 
+**Deploy/CI churn guards (July 2026).** Every SnapTrade sync that finds a change
+pushes a seed commit to `master`. Two guards stop that from redeploying the app
+and rebuilding the warehouse pointlessly: (1) the **`ccwj` Render web service has
+a Build Filter** (Ignored Paths: `dbt/**`, `docs/**`, `tests/**`, `scripts/**`,
+`.github/**`, `.cursor/**`, `**/*.md`) so a data-only commit doesn't auto-redeploy
+the Flask app — it doesn't read the seeds at runtime; **this is a dashboard toggle,
+not in `render.yaml`** — see `docs/SNAPTRADE_SETUP.md`; (2) **weekend webhook
+auto-syncs are history-only** (`history_only` in `_run_sync`/`_sync_one_connection`,
+gated by `_market_closed_all_day`): they still read activities to catch Friday's
+T+1 fills but never rewrite the drifting positions/balances snapshots, so a quiet
+weekend produces no commit → no build. The intraday poll (`--intraday`) is
+history-only for the same reason every run.
+
 ---
 
 ## Error Handling (Known Debt)

@@ -282,7 +282,7 @@ def main():
         try:
             res = _sync_one_connection(
                 user_id, row, lookback_days=lookback, defer_push=True,
-                skip_activities=intraday,
+                skip_activities=intraday, history_only=intraday,
             )
         except Exception as exc:
             errors += 1

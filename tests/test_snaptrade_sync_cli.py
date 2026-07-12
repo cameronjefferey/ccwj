@@ -88,7 +88,7 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
     seen_defer = []
     seen_skip = []
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False, history_only=False):
         seen_defer.append(defer_push)
         seen_skip.append(skip_activities)
         return results[row["snaptrade_account_id"]]
@@ -110,7 +110,7 @@ def test_cron_skips_broken_connection_from_batch(_wire, monkeypatch):
     rows = [_row(9, "a1", "Schwab Account"), _row(9, "a2", "Schwab Account")]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False, history_only=False):
         if row["snaptrade_account_id"] == "a2":
             return {"ok": False, "error": "connection_broken"}
         return _ok("Schwab Account", 9, "snaptrade:t-a1")
@@ -194,7 +194,7 @@ def test_force_refresh_repolls_every_account_then_syncs(_wire, monkeypatch):
         order.append(("refresh", acct_id))
         return (True, "Asked your broker to send fresh data.", None)
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False, history_only=False):
         order.append(("sync", row["snaptrade_account_id"]))
         return _ok(row["account_name"], user_id, f"snaptrade:t-{row['snaptrade_account_id']}")
 
@@ -270,7 +270,7 @@ def test_intraday_skips_activities_and_never_force_refreshes(_wire, monkeypatch)
 
     seen_skip = []
 
-    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False):
+    def _fake_sync(user_id, row, *, lookback_days, defer_push=False, skip_activities=False, history_only=False):
         seen_skip.append(skip_activities)
         return _ok(row["account_name"], user_id, f"snaptrade:t-{row['snaptrade_account_id']}")
 
