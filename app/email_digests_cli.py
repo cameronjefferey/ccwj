@@ -201,7 +201,7 @@ ORDER BY e.next_earnings_date, e.symbol
 """
 
 _EXPIRATIONS_SQL = f"""
-SELECT underlying_symbol AS symbol, instrument_type, strike, option_expiry,
+SELECT underlying_symbol AS symbol, instrument_type, option_strike AS strike, option_expiry,
        DATE_DIFF(option_expiry, CURRENT_DATE(), DAY) AS days_until
 FROM `{_PROJECT}.int_enriched_current`
 WHERE instrument_type IN ('Call', 'Put')
