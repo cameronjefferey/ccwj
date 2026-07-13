@@ -630,6 +630,43 @@ Patterns must be deterministic, traceable to trade-level data, and link to suppo
 
 ---
 
+## Email digests read the warehouse directly — keep SQL + templates in sync
+
+The lifecycle/product email crons (`app/email_digests_cli.py`, run on Render —
+weekly summary / weekly preview / re-engagement / connection reminder) run
+**outside dbt** and query marts + intermediate models with **inlined SQL**
+(`mart_weekly_summary`, `int_enriched_current`, `stg_earnings_calendar`,
+`stg_daily_prices`, …). They are a **hidden downstream consumer of the schema**:
+renaming/removing a column, changing a mart's grain, or altering a data
+definition silently breaks a digest. The sub-query raises a runtime
+`400 Unrecognized name: <col>`, the CLI **catches it and the whole section just
+vanishes from the email** — no failing dbt test, no failing pytest, nothing in
+the UI. The only symptom is a user saying "my email is missing X."
+
+**Therefore: any change to a dbt model column, mart shape, or user-facing data
+definition MUST also update, in the same change:**
+1. the inlined SQL in `app/email_digests_cli.py` (the `_*_SQL` constants for
+   weekly_summary / weekly_preview), AND
+2. the matching render/template code in `app/email.py` (the `send_*_email`
+   helpers + `_wrap_html`) if the fields those templates read changed.
+
+This is the same "surface-change consistency" discipline the Flask routes get —
+the email CLI is just an easily-forgotten surface because it's a cron, not a
+page. Grep `email_digests_cli.py` for the model/column you're touching before
+calling a schema change done.
+
+**Canonical example (Jul 2026):** `int_enriched_current` exposes the option
+strike as `option_strike`, not `strike`. The weekly_preview expirations query
+selected `strike`, 400'd every run, and the entire "Options expiring" section
+disappeared from every preview email with no error surfaced to the user or any
+test. Fix: `option_strike AS strike` in `_EXPIRATIONS_SQL`.
+
+To preview a template fully populated without sending, monkeypatch
+`app.email.send_email` to capture `html_body`, call the `send_*_email` helper
+with sample data, and render the HTML (e.g. headless Chrome `--screenshot`).
+
+---
+
 ## Build Pipeline
 
 ### Local Development (`refresh.sh`)

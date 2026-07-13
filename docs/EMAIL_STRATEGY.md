@@ -92,6 +92,35 @@ opt-in). Content sources: weekly summary reads `mart_weekly_summary`; weekly
 preview reads `int_enriched_current` + `stg_earnings_calendar` + the ex-div
 cadence heuristic (mirrors `weekly_review.py`).
 
+### Maintenance: the digests are a hidden schema consumer
+
+The digest crons run **outside dbt** and query marts / intermediate models with
+**inlined SQL** (the `_*_SQL` constants in `app/email_digests_cli.py`). A dbt
+column rename, mart re-grain, or data-definition change silently breaks a digest:
+the sub-query raises `400 Unrecognized name: <col>`, `_build_weekly_preview`
+**catches it and the section just disappears from the email** — no failing test,
+nothing in the UI. So **any schema/data change must update the email SQL
+(`app/email_digests_cli.py`) and the matching template (`send_*_email` /
+`_wrap_html` in `app/email.py`) in the same change.** Grep `email_digests_cli.py`
+for the model/column before declaring a schema change done. See AGENTS.md
+"Email digests read the warehouse directly — keep SQL + templates in sync."
+
+Known columns the digests depend on today (non-exhaustive): weekly summary —
+`mart_weekly_summary`(`account, week_start, total_return, total_pnl,
+dividends_amount, trades_closed, num_winners, num_losers, best_symbol, best_pnl,
+worst_symbol, worst_pnl, user_id, tenant_id`); weekly preview —
+`int_enriched_current`(`underlying_symbol, instrument_type, option_strike,
+option_expiry, quantity, user_id, tenant_id`), `stg_earnings_calendar`(`symbol,
+next_earnings_date`), `stg_daily_prices`(`symbol, date, dividend`).
+
+Regression note (Jul 2026): the preview expirations query selected `strike`, but
+`int_enriched_current` exposes it as `option_strike` — the whole "Options
+expiring" section vanished from every preview with no error surfaced. Fixed via
+`option_strike AS strike`. To preview a template fully populated without sending,
+monkeypatch `app.email.send_email` to capture `html_body`, call the `send_*_email`
+helper with sample data, and rasterize the HTML (e.g. headless Chrome
+`--screenshot`).
+
 ## Opt-out / unsubscribe
 
 - Every lifecycle email carries a `List-Unsubscribe` header (+ RFC 8058
