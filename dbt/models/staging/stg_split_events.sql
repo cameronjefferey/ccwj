@@ -57,10 +57,13 @@ where symbol is not null
 -- Empty fallback: relation doesn't exist yet (pre-loader deploy).
 -- All downstream split factors will collapse to 1.0 (no adjustment),
 -- which is the correct "no splits known" behavior.
+-- NOTE: use `limit 0`, NOT `where false` — BigQuery rejects a WHERE on a
+-- FROM-less query ("Query without FROM clause cannot have a WHERE clause").
+-- A FROM-less SELECT of typed NULLs + `limit 0` returns the empty shape.
 select
     cast(null as string)  as symbol,
     cast(null as date)    as split_date,
     cast(null as float64) as split_ratio
-where false
+limit 0
 
 {% endif %}
