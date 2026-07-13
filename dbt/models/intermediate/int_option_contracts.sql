@@ -450,9 +450,25 @@ select
     -- market_value, accumulating ~$1-2 of rounding drift per
     -- contract (Sara/BE 290C 5/8 STO at fill price $15.01305 →
     -- seed amount $3,004 vs snapshot cost_basis $3,002.61 → $1.39
-    -- drift, trips the page-level reconciliation invariant). Falls
-    -- back to ``net_cash_flow`` when the snapshot is missing
-    -- (pre-snapshot warm-up window for newly opened contracts).
+    -- drift, trips the page-level reconciliation invariant).
+    --
+    -- OPEN + NEVER SNAPSHOTTED: contribute $0, NOT net_cash_flow.
+    -- A contract opened via the real-time ORDERS feed (intraday poll)
+    -- has a fill in stg_history but no stg_current snapshot yet — the
+    -- broker holdings snapshot lags (intraday sync is history-only by
+    -- design; see broker-sync-safety skill 2026-07-10). Booking
+    -- ``net_cash_flow`` here credits the raw premium on the open date:
+    -- a freshly BOUGHT call reads as a full -premium LOSS (real case
+    -- 2026-07-13: SEI 260821C00070000, net_cash_flow -$9,200 rendered
+    -- as -$9,200 unrealized when the call is worth ~what was paid), and
+    -- a freshly SOLD call reads as a full +premium phantom GAIN. Both
+    -- violate the realize-on-close rule (AGENTS "Option P&L Attribution"
+    -- #3: "$0 contribution while open if the contract has NEVER been
+    -- snapshotted — defer the credit to close_date"). ``$0`` also keeps
+    -- this column reconciled with ``int_option_contract_daily_pnl``,
+    -- whose lifetime spine for a never-snapshotted open contract is just
+    -- [open_date] with mtm=0 → chart terminal $0. The real mark-to-
+    -- market lands once the daily holdings sync writes a stg_current row.
     case
         when c.close_type is not null         then c.net_cash_flow
         when c.option_expiry < current_date() then c.net_cash_flow
@@ -462,7 +478,7 @@ select
         then cur.unrealized_pnl
         when cur.trade_symbol is not null
         then c.net_cash_flow + coalesce(cur.market_value, 0)
-        else c.net_cash_flow
+        else 0.0
     end as total_pnl,
 
     -- Duration
