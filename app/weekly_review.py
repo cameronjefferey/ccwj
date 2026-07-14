@@ -28,6 +28,7 @@ from flask import render_template, request
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.query_cache import cached_query_df
 from app.models import (
     is_admin,
     get_mirror_score_for_user, get_mirror_score_history,
@@ -185,17 +186,27 @@ JOIN latest l USING (symbol)
 """
 
 
-def _get_market_performance(week_start, today):
-    """SPY/QQQ returns from pre-loaded daily prices in BigQuery."""
+def _get_market_performance(week_start, today, prefetched_df=None):
+    """SPY/QQQ returns from pre-loaded daily prices in BigQuery.
+
+    ``prefetched_df`` lets the daily-review view pass the result it already
+    fetched in the parallel batch so we don't pay a second serial round
+    trip. When absent (other callers / tests) we fetch it here — cached and
+    shared across users, since it's public SPY/QQQ data that changes once a
+    day and carries no tenant rows to leak.
+    """
     out = {"spy_week_pct": None, "qqq_week_pct": None, "spy_ytd_pct": None, "qqq_ytd_pct": None}
     try:
-        client = get_bigquery_client()
-        ytd_start = date(today.year, 1, 1)
-        cfg = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
-            bigquery.ScalarQueryParameter("ytd_start", "DATE", ytd_start),
-        ])
-        df = client.query(MARKET_PERF_QUERY, job_config=cfg).to_dataframe()
+        if prefetched_df is not None:
+            df = prefetched_df
+        else:
+            client = get_bigquery_client()
+            ytd_start = date(today.year, 1, 1)
+            cfg = bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
+                bigquery.ScalarQueryParameter("ytd_start", "DATE", ytd_start),
+            ])
+            df = cached_query_df(client, MARKET_PERF_QUERY, job_config=cfg, label="market_perf")
         for _, row in df.iterrows():
             sym = str(row["symbol"]).upper()
             if sym == "SPY":
@@ -256,7 +267,9 @@ def _get_benchmark_returns(start_date):
         cfg = bigquery.QueryJobConfig(query_parameters=[
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
         ])
-        df = client.query(BENCHMARK_RETURN_QUERY, job_config=cfg).to_dataframe()
+        # SPY/QQQ public market data — cacheable and shared across users
+        # (keyed by start_date param); no tenant data to leak.
+        df = cached_query_df(client, BENCHMARK_RETURN_QUERY, job_config=cfg, label="benchmark_returns")
         for _, row in df.iterrows():
             sym = str(row["symbol"]).upper()
             out[sym] = float(row["return_pct"]) if row["return_pct"] is not None else None
@@ -1399,7 +1412,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                     bigquery.ArrayQueryParameter("symbols", "STRING", symbols),
                     bigquery.ScalarQueryParameter("cutoff_date", "DATE", anchor_date),
                 ])
-                df = client.query(PRIOR_CLOSE_QUERY, job_config=cfg).to_dataframe()
+                df = cached_query_df(client, PRIOR_CLOSE_QUERY, job_config=cfg, label="since_prior_close")
                 # Map: symbol → prior_close  (PRIOR_CLOSE_QUERY is symbol-only,
                 # not user-data; account scoping doesn't apply.)
                 prior_map = {}
@@ -1439,10 +1452,12 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                 bigquery.ScalarQueryParameter("since_date", "DATE", anchor_date),
                 bigquery.ScalarQueryParameter("today_date", "DATE", today),
             ])
-            closed_df = client.query(
+            closed_df = cached_query_df(
+                client,
                 TRADES_CLOSED_SINCE_QUERY.format(tenant_filter=tenant_filter),
                 job_config=cfg,
-            ).to_dataframe()
+                label="since_closed",
+            )
             for _, row in closed_df.iterrows():
                 pnl = row.get("total_pnl")
                 pnl_v = float(pnl) if pnl is not None else None
@@ -1457,10 +1472,12 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                     "positive": (pnl_v is not None and pnl_v >= 0),
                 })
 
-            opened_df = client.query(
+            opened_df = cached_query_df(
+                client,
                 TRADES_OPENED_SINCE_QUERY.format(tenant_filter=tenant_filter),
                 job_config=cfg,
-            ).to_dataframe()
+                label="since_opened",
+            )
             for _, row in opened_df.iterrows():
                 od = row.get("open_date")
                 od_s = od.isoformat() if hasattr(od, "isoformat") else str(od)[:10]
@@ -3366,6 +3383,14 @@ def weekly_review():
             bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
         ])
 
+        # SPY/QQQ week/YTD context. Independent of the batch results (only
+        # needs the calendar dates), so fold it into the parallel wave rather
+        # than paying a serial ~1-2s round trip after the batch.
+        market_perf_cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
+            bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
+        ])
+
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
@@ -3382,6 +3407,7 @@ def weekly_review():
             "attribution": POSITION_ATTRIBUTION_QUERY.format(
                 tenant_filter=tenant_filter, week_start=this_week.isoformat()),
             "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
+            "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
         }
         # After-hours drift compares the broker mark to today's *official*
         # close. Two conditions must hold or the reading is noise/wrong:
@@ -3432,7 +3458,10 @@ def weekly_review():
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
-        context["market"] = _get_market_performance(this_week, today)
+        # The SPY/QQQ frame was fetched in the parallel batch above; pass it
+        # through so we don't issue a second serial round trip.
+        context["market"] = _get_market_performance(
+            this_week, today, prefetched_df=batch.get("market_perf"))
         context["market_session"] = market_session
         context["market_open_today"] = context["market_session"]["state"] == "open"
         context["market_neutral_line"] = _neutral_market_line(context.get("market"))
