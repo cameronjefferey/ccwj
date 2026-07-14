@@ -476,13 +476,21 @@ def test_current_df_options_keep_per_share_price():
     assert df.iloc[0]["security_type"] == "Option"
 
 
-def test_current_df_option_holding_applies_100x_contract_multiplier():
-    """Open option holdings from ``list_option_holdings`` ship a per-share
-    ``price`` / ``average_purchase_price`` and NO market_value/cost_basis.
-    The derived totals must apply the 100x contract multiplier so an open
-    leg snapshots at its real dollar value, not 1/100th. Regression for the
-    LITE LEAP that showed in trade history but never as a current position
-    (SnapTrade serves options from a separate endpoint)."""
+def test_current_df_option_holding_price_per_share_cost_per_contract():
+    """Open option holdings from ``list_option_holdings`` ship ``price``
+    PER SHARE but ``average_purchase_price`` PER CONTRACT (SnapTrade
+    OptionsPosition schema), and NO market_value/cost_basis. So the 100x
+    contract multiplier applies to the per-share price when deriving
+    market_value, but NOT to the already-per-contract cost basis:
+
+        market_value = |units| * price * 100
+        cost_basis   = |units| * average_purchase_price   (no extra ×100)
+
+    Regression for the 2026-07-13 SEI bug: a 10x $70C with a per-contract
+    cost of $920.663 (=$9.20663/share) was double-multiplied to a
+    $920,663 cost basis → -$913,563 phantom unrealized loss. Here the LITE
+    LEAP's per-contract cost is $23,780.66 (=$237.8066/share) for one
+    contract."""
     holding = {
         "symbol": {
             "description": "",
@@ -494,25 +502,54 @@ def test_current_df_option_holding_applies_100x_contract_multiplier():
                 "option_type": "CALL",
             },
         },
-        "price": 180.85,
-        "units": 1.0,
-        "average_purchase_price": 237.8066,
+        "price": 180.85,               # per SHARE
+        "units": 1.0,                  # contracts
+        "average_purchase_price": 23780.66,   # per CONTRACT
     }
     df = positions_to_current_df([holding], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     row = df.iloc[0]
     assert row["Symbol"] == "LITE  261120C01100000"
     assert row["security_type"] == "Option"
     assert float(row["Price"]) == 180.85
+    # market_value applies ×100 to the per-share price.
     assert abs(float(row["market_value"]) - 18085.0) < 0.01
+    # cost_basis is |units| * per-contract cost — NO extra ×100.
     assert abs(float(row["cost_bases"]) - 23780.66) < 0.01
     # Long option: unrealized = market_value - cost_basis.
     assert abs(float(row["gain_or_loss_dollat"]) - (18085.0 - 23780.66)) < 0.01
 
 
+def test_current_df_option_cost_basis_not_double_multiplied():
+    """Direct regression for the 2026-07-13 SEI ×100 cost-basis bug.
+    ``average_purchase_price`` is PER CONTRACT, so a 10-contract call with
+    a $920.663/contract cost must snapshot a $9,206.63 cost basis — NOT
+    $920,663 (which produced -$913,563 phantom unrealized)."""
+    holding = {
+        "symbol": {
+            "option_symbol": {
+                "ticker": "SEI   260821C00070000",
+                "strike_price": 70.0,
+                "expiration_date": "2026-08-21",
+                "underlying_symbol": {"symbol": "SEI"},
+                "option_type": "CALL",
+            },
+        },
+        "price": 7.1,                        # per SHARE
+        "units": 10.0,                       # contracts
+        "average_purchase_price": 920.663,   # per CONTRACT ($9.20663/share)
+    }
+    df = positions_to_current_df([holding], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
+    row = df.iloc[0]
+    assert abs(float(row["market_value"]) - 7100.0) < 0.01
+    assert abs(float(row["cost_bases"]) - 9206.63) < 0.01
+    assert abs(float(row["gain_or_loss_dollat"]) - (7100.0 - 9206.63)) < 0.01
+
+
 def test_current_df_short_option_holding_nets_premium_received():
     """A short option holding (negative units) carries a positive
     cost_basis (premium received) and negative market_value (cost to buy
-    back); unrealized P&L nets to market_value + cost_basis."""
+    back); unrealized P&L nets to market_value + cost_basis.
+    ``average_purchase_price`` is PER CONTRACT ($148.66 = $1.4866/share)."""
     holding = {
         "symbol": {
             "option_symbol": {
@@ -523,9 +560,9 @@ def test_current_df_short_option_holding_nets_premium_received():
                 "option_type": "CALL",
             },
         },
-        "price": 0.55,
-        "units": -1.0,
-        "average_purchase_price": 1.4866,
+        "price": 0.55,                       # per SHARE
+        "units": -1.0,                       # contracts (short)
+        "average_purchase_price": 148.66,    # per CONTRACT
     }
     df = positions_to_current_df([holding], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     row = df.iloc[0]

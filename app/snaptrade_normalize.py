@@ -781,14 +781,22 @@ def positions_to_current_df(
         units = _safe_float(pos.get("units"), 0.0)
         price = _safe_float(pos.get("price"), 0.0)
 
-        # Option contracts are quoted per-share but represent 100 shares
-        # of the underlying. SnapTrade's ``list_option_holdings`` ships a
-        # per-share ``price`` / ``average_purchase_price`` and NO
-        # market_value / cost_basis, so the derived fallbacks below must
-        # apply the 100x contract multiplier to land total dollars —
-        # which is the convention stg_current reads market_value /
-        # cost_basis in (e.g. PLTR 2x80C @ $42 → market_value $8,400).
-        # Without it an open option snapshots at 1/100th its real value.
+        # Option contracts represent 100 shares of the underlying, but the
+        # two SnapTrade per-unit fields on ``OptionsPosition`` are in
+        # DIFFERENT units (verified against the SDK schema, options_position.py):
+        #   * ``price``                 = market price PER SHARE
+        #   * ``average_purchase_price``= cost basis  PER CONTRACT
+        #     ("divide by shares per contract (usually 100) to get per share")
+        # SnapTrade ships NO market_value / cost_basis for option holdings,
+        # so both are derived — but the 100x multiplier applies ONLY to the
+        # per-share ``price``:
+        #   market_value = |units| * price * 100          (per-share → total)
+        #   cost_basis   = |units| * average_purchase_price (already per-contract)
+        # Applying ×100 to cost_basis too double-counts the multiplier and
+        # snapshots the option at 100× its real cost (2026-07-13 SEI bug:
+        # 10× $70C real cost $9,206.63 stored as $920,663 → -$913,563 phantom
+        # unrealized loss). ``contract_mult`` is therefore used for
+        # market_value ONLY; cost_basis below intentionally omits it.
         contract_mult = 100.0 if is_option else 1.0
 
         # market_value: SnapTrade does NOT ship this at the position
@@ -808,17 +816,20 @@ def positions_to_current_df(
         )
 
         # cost_basis: prefer broker-supplied total, else derive from
-        # average_purchase_price * units. Same shape comment — no
-        # `cost_basis` field on Alpaca via SnapTrade. Options derive a
-        # POSITIVE magnitude (abs units * 100) so the short-aware
-        # unrealized formula in stg_current (market_value + cost_basis)
-        # nets correctly for both long and short legs.
+        # average_purchase_price * units. No `cost_basis` field on Alpaca
+        # (or Schwab option holdings) via SnapTrade, so we usually derive.
+        # Options: ``average_purchase_price`` is PER CONTRACT (see the
+        # contract_mult comment above), so total cost basis = avg * |units|
+        # with NO extra ×100. abs(units) yields a POSITIVE magnitude so the
+        # short-aware unrealized formula in stg_current
+        # (market_value + cost_basis) nets correctly for both long and
+        # short legs. Equities: average_purchase_price is per share.
         cost_basis = _safe_float(pos.get("cost_basis"), 0.0)
         if not cost_basis:
             avg_purchase = _safe_float(pos.get("average_purchase_price"), 0.0)
             if avg_purchase and units:
                 if is_option:
-                    cost_basis = avg_purchase * abs(units) * contract_mult
+                    cost_basis = avg_purchase * abs(units)
                 else:
                     cost_basis = avg_purchase * units
 
