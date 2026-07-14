@@ -1085,6 +1085,66 @@ def test_positions_df_unknown_non_option_still_equity():
     assert df.iloc[0]["security_type"] == "Equity"
 
 
+def test_positions_df_whitelist_ticker_with_equity_type_block_is_equity():
+    """Ticker-collision regression (2026-07-14): ``SEI`` is on the crypto
+    whitelist (the Sei token) AND is Solaris Energy Infrastructure, a real
+    NYSE equity. A user holding Solaris on Schwab (equity-only broker) had
+    the share tagged ``Cryptocurrency`` purely from the whitelist, which
+    rendered a bogus "Crypto" strategy row on an equity + long-call
+    position.
+
+    SnapTrade ships the share with an explicit non-crypto ``type`` block
+    (``code='cs'`` / 'Common Stock'). The broker's own instrument type MUST
+    win over the ticker whitelist — otherwise every collision ticker (LINK,
+    COMP, UNI, W, …) mis-tags a legitimate equity as crypto."""
+    sei_equity = {
+        "symbol": {
+            "symbol": {
+                "raw_symbol": "SEI",
+                "symbol": "SEI",
+                "description": "Solaris Energy Infrastructure Inc.",
+                "type": {"code": "cs", "description": "Common Stock"},
+            },
+            "description": "Solaris Energy Infrastructure Inc.",
+        },
+        "units": 1,
+        "price": 67.11,
+        "average_purchase_price": 70.39,
+        "open_pnl": -3.28,
+    }
+    df = positions_to_current_df(
+        [sei_equity], account_name="Schwab Account", user_id=9, tenant_id=TENANT_SNAPTRADE
+    )
+    assert df.iloc[0]["Symbol"] == "SEI"
+    assert df.iloc[0]["security_type"] == "Equity"
+
+
+def test_positions_df_whitelist_ticker_with_crypto_type_block_stays_crypto():
+    """The mirror of the collision guard: a whitelisted ticker that the
+    broker DOES report as crypto (Coinbase SEI token, ``type.code='crypto'``)
+    must still be marked Cryptocurrency. The broker signal wins in BOTH
+    directions."""
+    sei_token = {
+        "symbol": {
+            "symbol": {
+                "raw_symbol": "SEI",
+                "symbol": "SEI",
+                "description": "Sei",
+                "type": {"code": "crypto", "description": "Cryptocurrency"},
+            },
+            "description": "Sei",
+        },
+        "units": 100,
+        "price": 0.42,
+        "average_purchase_price": 0.5,
+        "open_pnl": -8.0,
+    }
+    df = positions_to_current_df(
+        [sei_token], account_name="Coinbase Account", user_id=9, tenant_id=TENANT_SNAPTRADE
+    )
+    assert df.iloc[0]["security_type"] == "Cryptocurrency"
+
+
 def test_crypto_symbols_whitelist_matches_dbt_seed():
     """The runtime CRYPTO_SYMBOLS frozenset in app/upload.py mirrors
     the dbt seed dbt/seeds/crypto_symbols.csv. They MUST stay in sync —

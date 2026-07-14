@@ -69,17 +69,32 @@ _CRYPTO_TYPE_CODES = frozenset({"CRYPTO", "CRYPTOCURRENCY", "DIGITAL_ASSET"})
 def _is_crypto(symbol_obj: Mapping) -> bool:
     """Decide whether a SnapTrade position/activity's symbol is crypto.
 
-    Two signals, OR'd:
+    Precedence (broker signal wins over the ticker whitelist):
       1. ``symbol.symbol.type.code`` (or ``symbol.type.code`` for flattened
-         payloads) matches a known crypto code.
-      2. Underlying ticker is on the curated CRYPTO_SYMBOLS whitelist.
+         payloads) matches a known crypto code  → crypto.
+      2. The broker gave us an EXPLICIT, non-crypto ``type`` block (e.g.
+         common stock ``code='cs'``, ETF ``code='et'``)  → NOT crypto,
+         and we do NOT consult the ticker whitelist. The broker's own
+         instrument type is authoritative.
+      3. No usable ``type`` block at all (e.g. early Coinbase rows that
+         omitted it)  → fall back to the curated CRYPTO_SYMBOLS whitelist.
+
+    Why the broker signal must win (2026-07-14): several crypto tickers
+    COLLIDE with real equities/ETFs — ``SEI`` is both the Sei token AND
+    Solaris Energy Infrastructure (NYSE). A user holding Solaris on Schwab
+    (an equity-only broker) had the share tagged ``Cryptocurrency`` purely
+    because the ticker was on the whitelist, which then rendered a "Crypto"
+    strategy row on an equity + long-call position. SnapTrade's
+    UniversalSymbol carries ``type.code='cs'`` for that share, so trusting
+    the broker resolves the collision at the source. Other colliding
+    tickers (LINK, COMP, UNI, W, …) get the same protection for free.
 
     Returns False for non-Mapping inputs / unknown shapes — better to
     fall through to "Equity" than mis-classify an equity row as crypto.
     """
     if not isinstance(symbol_obj, Mapping):
         return False
-    # Type code (preferred — broker-canonical when present)
+    saw_type_block = False
     for candidate in (
         symbol_obj.get("symbol") if isinstance(symbol_obj.get("symbol"), Mapping) else None,
         symbol_obj,
@@ -89,12 +104,16 @@ def _is_crypto(symbol_obj: Mapping) -> bool:
         type_block = candidate.get("type")
         if isinstance(type_block, Mapping):
             code = str(type_block.get("code") or "").strip().upper()
-            if code in _CRYPTO_TYPE_CODES:
-                return True
             desc = str(type_block.get("description") or "").strip().upper()
-            if "CRYPTO" in desc:
+            if code in _CRYPTO_TYPE_CODES or "CRYPTO" in desc:
                 return True
-    # Symbol-whitelist fallback
+            # A non-empty, non-crypto type block is the broker's explicit
+            # "this is a normal security" verdict — trust it (step 2).
+            if code or desc:
+                saw_type_block = True
+    if saw_type_block:
+        return False
+    # No broker type info → curated whitelist fallback (step 3).
     underlying = _underlying_from_symbol(symbol_obj).upper()
     return underlying in CRYPTO_SYMBOLS
 
@@ -873,12 +892,14 @@ def positions_to_current_df(
         if is_option:
             security_type = "Option"
         elif _is_crypto(symbol_obj):
-            # ``Cryptocurrency`` is the agreed marker that
-            # ``stg_current`` parses into ``instrument_type='Crypto'``.
-            # Older Coinbase rows in the seed shipped as ``Equity`` and
-            # are retro-classified via the symbol whitelist in
-            # ``stg_crypto_symbols`` — this marker exists so FUTURE
-            # syncs are self-describing without needing the whitelist.
+            # ``Cryptocurrency`` is the broker-corroborated crypto marker
+            # (SnapTrade type.code, or whitelist ONLY when the broker gave
+            # no type block — see _is_crypto). ``stg_current`` folds it into
+            # ``instrument_type='Equity'`` (crypto has no options and behaves
+            # like a spot holding for P&L); the "Crypto" STRATEGY bucket is
+            # then assigned downstream in ``int_strategy_classification`` and
+            # is gated on THIS security_type so a ticker collision (e.g. SEI =
+            # Solaris Energy equity vs the Sei token) can't mislabel an equity.
             security_type = "Cryptocurrency"
         else:
             security_type = "Equity"
