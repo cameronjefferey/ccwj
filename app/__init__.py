@@ -267,6 +267,8 @@ def _touch_session_last_activity():
 
 @app.before_request
 def _before_request_sentry_user():
+    from flask import g
+    g._req_start = time.perf_counter()
     if _sentry_dsn:
         _set_sentry_user()
     idle = _check_session_idle()
@@ -277,6 +279,49 @@ def _before_request_sentry_user():
 @app.after_request
 def _after_request_touch_session_activity(response):
     _touch_session_last_activity()
+    return response
+
+
+@app.after_request
+def _after_request_timing(response):
+    """Log a one-line REQUEST_TIMING per page and expose Server-Timing.
+
+    ``total_ms`` is the whole request; ``bq_hit``/``bq_miss`` and
+    ``chart_hit``/``chart_miss`` come from the query/payload cache
+    (``app/query_cache.py``). A slow page with all-miss counters is a COLD
+    load (BigQuery-bound); the same page reloaded should show hits and a
+    much smaller total_ms. The ``Server-Timing`` header surfaces total_ms
+    in the browser devtools Network tab (Timing) with no extra tooling.
+    """
+    try:
+        from flask import g
+        # Skip static assets / health probes — pure noise.
+        path = request.path or ""
+        if path.startswith("/static/") or path.startswith("/healthz"):
+            return response
+        start = getattr(g, "_req_start", None)
+        if start is None:
+            return response
+        total_ms = (time.perf_counter() - start) * 1000.0
+        bq_hit = getattr(g, "_qc_query_hits", 0)
+        bq_miss = getattr(g, "_qc_query_misses", 0)
+        ch_hit = getattr(g, "_qc_payload_hits", 0)
+        ch_miss = getattr(g, "_qc_payload_misses", 0)
+        response.headers["Server-Timing"] = (
+            f"total;dur={total_ms:.0f}, "
+            f"bqmiss;dur=0;desc=\"bq_miss={bq_miss} bq_hit={bq_hit}\""
+        )
+        # Only log the pages that actually do data work (any cache activity)
+        # or that were slow, so the log isn't flooded by trivial redirects.
+        if bq_hit or bq_miss or ch_hit or ch_miss or total_ms > 500:
+            app.logger.info(
+                "REQUEST_TIMING path=%s status=%s total_ms=%.0f "
+                "bq_hit=%d bq_miss=%d chart_hit=%d chart_miss=%d",
+                path, response.status_code, total_ms,
+                bq_hit, bq_miss, ch_hit, ch_miss,
+            )
+    except Exception:
+        pass
     return response
 
 

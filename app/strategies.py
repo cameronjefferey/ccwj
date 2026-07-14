@@ -11,6 +11,7 @@ import pandas as pd
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.query_cache import cached_query_df
 from app.models import is_admin
 
 
@@ -363,9 +364,10 @@ def strategies():
 
     try:
         client = get_bigquery_client()
-        df = client.query(
+        df = cached_query_df(
+            client,
             STRATEGY_PERFORMANCE_QUERY.format(tenant_filter=tenant_filter)
-        ).to_dataframe()
+        )
 
         df = _filter_df_by_tenant_ids(df, tenant_ids)
 
@@ -461,9 +463,10 @@ def strategies():
         # ── Trend data: monthly performance per strategy ──
         trend_df = pd.DataFrame()
         try:
-            trend_df = client.query(
+            trend_df = cached_query_df(
+                client,
                 STRATEGY_TREND_QUERY.format(tenant_filter=tenant_filter)
-            ).to_dataframe()
+            )
             trend_df = _filter_df_by_tenant_ids(trend_df, tenant_ids)
         except Exception:
             app.logger.exception("mart_strategy_trend lookup failed")
@@ -601,15 +604,17 @@ def strategies():
                             bigquery.ScalarQueryParameter("strategy", "STRING", selected_strategy),
                         ]
                     )
-                    bdf = client.query(
+                    bdf = cached_query_df(
+                        client,
                         STRATEGY_TYPE_BREAKDOWN_QUERY.format(tenant_filter=tenant_filter),
                         job_config=strat_job,
-                    ).to_dataframe()
+                    )
                     bdf = _filter_df_by_tenant_ids(bdf, tenant_ids)
-                    div_df = client.query(
+                    div_df = cached_query_df(
+                        client,
                         STRATEGY_DIVIDEND_ROLLUP_QUERY.format(tenant_filter=tenant_filter),
                         job_config=strat_job,
-                    ).to_dataframe()
+                    )
                     div_tot, div_ev = 0.0, 0
                     if not div_df.empty:
                         div_tot = float(div_df.iloc[0].get("dividend_total") or 0)
@@ -625,10 +630,11 @@ def strategies():
                             bigquery.ScalarQueryParameter("strategy", "STRING", selected_strategy),
                         ]
                     )
-                    dte_df = client.query(
+                    dte_df = cached_query_df(
+                        client,
                         DTE_MONEYNESS_QUERY.format(tenant_filter=tenant_filter),
                         job_config=dte_cfg,
-                    ).to_dataframe()
+                    )
                     dte_df = _filter_df_by_tenant_ids(dte_df, tenant_ids)
                     if not dte_df.empty:
                         for col in ["num_trades", "total_pnl"]:
@@ -691,7 +697,7 @@ def strategies():
                             bigquery.ScalarQueryParameter("strategy", "STRING", selected_strategy),
                         ]
                     )
-                    pos_df = client.query(pos_query, job_config=job_config).to_dataframe()
+                    pos_df = cached_query_df(client, pos_query, job_config=job_config)
                     pos_df = _filter_df_by_tenant_ids(pos_df, tenant_ids)
                     if not pos_df.empty:
                         sym_rows = []

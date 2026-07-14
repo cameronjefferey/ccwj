@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
+from app.query_cache import cached_query_df, cached_payload, frame_fingerprint
 from app.utils import earnings_follower_url
 from app.llm import llm_available as _llm_available
 from app.models import (
@@ -44,8 +45,8 @@ def _bq_parallel(client, queries):
         try:
             if isinstance(spec, tuple):
                 sql, cfg = spec
-                return name, client.query(sql, job_config=cfg).to_dataframe(), None
-            return name, client.query(spec).to_dataframe(), None
+                return name, cached_query_df(client, sql, job_config=cfg), None
+            return name, cached_query_df(client, spec), None
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
@@ -2019,9 +2020,9 @@ def positions():
                     bigquery.ScalarQueryParameter("end_date", "DATE", effective_end),
                 ]
             )
-            df = client.query(DATE_FILTERED_QUERY.format(tenant_filter=tenant_filter), job_config=job_config).to_dataframe()
+            df = cached_query_df(client, DATE_FILTERED_QUERY.format(tenant_filter=tenant_filter), job_config=job_config)
         else:
-            df = client.query(DEFAULT_QUERY.format(tenant_filter=tenant_filter)).to_dataframe()
+            df = cached_query_df(client, DEFAULT_QUERY.format(tenant_filter=tenant_filter))
     except Exception as exc:
         ctx = dict(ERROR_DEFAULTS)
         ctx["error"] = str(exc)
@@ -2481,25 +2482,28 @@ SYMBOL_TABS_QUERY = """
     GROUP BY account, symbol
 """
 
+# Win/Loss matrix cells are PRE-BUCKETED in dbt (mart_option_win_matrix).
+# Flask no longer loops over raw contracts to build the DTE x strike grid;
+# it just reshapes these aggregated cells into the template's nested dict.
+# The mart already restricts to closed contracts with a known strike
+# distance (the old ``status='Closed' AND strike_distance IS NOT NULL``).
 POSITION_MATRIX_QUERY = """
     SELECT
         account,
+        user_id,
+        tenant_id,
         underlying_symbol,
-        strategy,
         trade_symbol,
-        dte_at_open,
-        dte_bucket,
-        strike_distance,
-        underlying_price_at_open,
-        pnl_pct,
-        total_pnl,
-        direction,
-        option_type,
-        outcome
-    FROM `ccwj-dbt.analytics.int_option_trade_kinds`
-    WHERE status = 'Closed'
-      AND strike_distance IS NOT NULL
-      AND UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
+        strategy,
+        dte_label,
+        dte_order,
+        strike_col,
+        strike_order,
+        trade_count,
+        wins,
+        sum_pnl
+    FROM `ccwj-dbt.analytics.mart_option_win_matrix`
+    WHERE UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {tenant_filter}
 """
 
@@ -3170,14 +3174,15 @@ def _compute_breakdown_by_type(
     elif tenant_scope is None or len(tenant_scope) > 0:
         try:
             tenant_filter = _tenant_sql_and(tenant_scope)
-            div_df = client.query(
+            div_df = cached_query_df(
+                client,
                 """
                 SELECT account, user_id, symbol, trade_date, amount
                 FROM `ccwj-dbt.analytics.int_dividend_events`
                 WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
                 {tenant_filter}
                 """.format(symbol=safe_symbol, tenant_filter=tenant_filter)
-            ).to_dataframe()
+            )
             # Belt-and-suspenders tenancy guard. The SQL is already user_id +
             # account scoped via _account_sql_and, but the BQ-tenant rule
             # requires a Python filter on every BQ result before any
@@ -3992,9 +3997,10 @@ def position_detail(symbol):
     prices_through_date = None
     try:
         tenant_filter = _tenant_sql_and(_tenants_for_scope(selected_account))
-        chart_df = client.query(
+        chart_df = cached_query_df(
+            client,
             CHART_DATA_QUERY.format(symbol=safe_symbol, tenant_filter=tenant_filter)
-        ).to_dataframe()
+        )
         chart_df = _filter_df_by_tenant_ids(chart_df, tenant_scope)
         chart_df = _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
             chart_df, summary_df
@@ -4034,7 +4040,20 @@ def position_detail(symbol):
                     if col in chart_df.columns:
                         chart_df[col] = 0 if col == "open_options_unrealized_pnl" else None
         if not chart_df.empty:
-            chart_data = _build_chart_from_daily_pnl(chart_df, current_df)
+            # Cache the computed chart payload keyed on the (tenant- and
+            # leg-scoped) input frames + today. The equity P&L walk is a
+            # heavy row-by-row Python state machine; on a warm cache we skip
+            # it and only pay the vectorized fingerprint hash. Tenant-safe:
+            # the key is a content hash of the already tenant-scoped inputs.
+            _chart_key = (
+                "pos_chart",
+                str(date.today()),
+                frame_fingerprint(chart_df, current_df),
+            )
+            chart_data = cached_payload(
+                _chart_key,
+                lambda: _build_chart_from_daily_pnl(chart_df, current_df),
+            )
             # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
             if "date" in chart_df.columns:
                 prices_through_date = str(chart_df["date"].max())[:10]
@@ -4650,16 +4669,20 @@ SYMBOLS_PNL_QUERY = """
 """
 
 def _build_option_matrices(matrix_df, symbol):
-    """Build per-strategy DTE × Strike-Distance heatmap matrices for one position.
+    """Reshape pre-bucketed matrix cells into per-strategy heatmaps.
+
+    The DTE x Strike-Distance bucketing now happens in dbt
+    (``mart_option_win_matrix``); ``matrix_df`` already carries one row per
+    (tenant, account, user, strategy, dte_label, strike_col) with raw
+    ``trade_count`` / ``wins`` / ``sum_pnl``. This function only:
+      1. combines cells across tenants/accounts for the scoped view, then
+      2. rounds avg P&L and win rate ONCE (after the union), matching the
+         old per-contract math exactly.
 
     ``matrix_df`` arrives ALREADY tenant-scoped (SQL ``{tenant_filter}`` +
     ``_filter_df_by_tenant_ids`` in the caller), so no account predicate is
-    applied here. The old ``matrix_df["account"] == account`` filter compared
-    the user's *display* selection (nickname / disambiguated label, e.g.
-    "Cameron Investment") against the warehouse's raw broker label
-    ("Schwab Account") — it never matched, so the matrices silently fell back
-    to an unfiltered per-label rebuild that ignored the account filter and
-    re-fused colliding-label accounts.
+    applied here — the old display-label filter never matched the warehouse
+    broker label and re-fused colliding-label accounts.
     """
     import math
 
@@ -4667,74 +4690,48 @@ def _build_option_matrices(matrix_df, symbol):
     if df.empty:
         return []
 
-    DTE_BINS = [
-        (0, 7, "0–7"),
-        (8, 14, "8–14"),
-        (15, 30, "15–30"),
-        (31, 60, "31–60"),
-        (61, 999, "61+"),
-    ]
+    for col in ("trade_count", "wins", "sum_pnl"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    def dte_label(dte):
-        for lo, hi, lbl in DTE_BINS:
-            if lo <= dte <= hi:
-                return lbl
-        return "61+"
-
-    # Bucket strike distance as % of the underlying at open so the matrix
-    # is readable across symbols of any price (a $50 distance means very
-    # different things on a $50 stock vs a $500 stock). Buckets are signed
-    # to preserve ITM vs OTM directionality.
-    PCT_BINS = [
-        (-9999, -10, "<-10%"),
-        (-10, -5, "-10 to -5%"),
-        (-5, -2, "-5 to -2%"),
-        (-2, 2, "ATM ±2%"),
-        (2, 5, "+2 to +5%"),
-        (5, 10, "+5 to +10%"),
-        (10, 9999, ">+10%"),
-    ]
-
-    def strike_bucket(row):
-        dist = row.get("strike_distance")
-        underlying = row.get("underlying_price_at_open")
-        if dist is None or not underlying or underlying <= 0:
-            return "—"
-        pct = (dist / underlying) * 100
-        for lo, hi, lbl in PCT_BINS:
-            if lo <= pct < hi:
-                return lbl
-        return "—"
+    # Canonical label ordering (mirrors the dbt bucket labels). Columns read
+    # left-to-right ITM -> OTM; the em-dash "unknown" column is appended last.
+    PCT_ORDER = ["<-10%", "-10 to -5%", "-5 to -2%", "ATM ±2%", "+2 to +5%", "+5 to +10%", ">+10%"]
+    DTE_ORDER = ["0–7", "8–14", "15–30", "31–60", "61+"]
 
     matrices = []
     for strategy, grp in df.groupby("strategy"):
-        grp = grp.copy()
-        grp["dte_label"] = grp["dte_at_open"].apply(dte_label)
-        grp["strike_col"] = grp.apply(strike_bucket, axis=1)
-
-        # Preserve PCT_BINS order so columns read left-to-right ITM → OTM
-        col_range = [lbl for _, _, lbl in PCT_BINS if lbl in grp["strike_col"].values]
-        if "—" in grp["strike_col"].values and "—" not in col_range:
+        # Combine duplicate cells across tenants/accounts. sum_pnl + count
+        # aggregate cleanly: mean over the union == Σsum_pnl / Σcount.
+        agg = grp.groupby(["dte_label", "strike_col"], as_index=False).agg(
+            count=("trade_count", "sum"),
+            wins=("wins", "sum"),
+            sum_pnl=("sum_pnl", "sum"),
+        )
+        present_cols = set(agg["strike_col"])
+        col_range = [lbl for lbl in PCT_ORDER if lbl in present_cols]
+        if "—" in present_cols:
             col_range.append("—")
 
-        dte_order = [lbl for _, _, lbl in DTE_BINS if lbl in grp["dte_label"].values]
+        present_dtes = set(agg["dte_label"])
+        dte_order = [lbl for lbl in DTE_ORDER if lbl in present_dtes]
+
+        cell_map = {(r["dte_label"], r["strike_col"]): r for _, r in agg.iterrows()}
 
         rows = []
         for dte_lbl in dte_order:
             cells = []
             for col_val in col_range:
-                bucket = grp[
-                    (grp["dte_label"] == dte_lbl) & (grp["strike_col"] == col_val)
-                ]
-                if bucket.empty:
+                r = cell_map.get((dte_lbl, col_val))
+                total = int(r["count"]) if r is not None else 0
+                if total <= 0:
                     cells.append({"count": 0, "avg_pnl": None, "win_rate": None})
                 else:
-                    wins = int((bucket["total_pnl"] > 0).sum())
-                    total = len(bucket)
-                    avg_pnl_dollar = bucket["total_pnl"].mean()
+                    wins = int(r["wins"])
+                    avg_pnl_dollar = float(r["sum_pnl"]) / total
                     cells.append({
                         "count": total,
-                        "avg_pnl": round(float(avg_pnl_dollar), 0) if not math.isnan(avg_pnl_dollar) else None,
+                        "avg_pnl": round(avg_pnl_dollar, 0) if not math.isnan(avg_pnl_dollar) else None,
                         "win_rate": round(wins / total * 100, 0),
                         "wins": wins,
                     })
@@ -4742,7 +4739,7 @@ def _build_option_matrices(matrix_df, symbol):
 
         matrices.append({
             "strategy": strategy,
-            "trade_count": len(grp),
+            "trade_count": int(agg["count"].sum()),
             "col_headers": col_range,
             "rows": rows,
         })
@@ -5789,9 +5786,10 @@ def symbols_detail():
     # Fetch pre-aggregated chart data from mart
     try:
         tenant_filter = _tenant_sql_and(_tenants_for_scope(selected_account))
-        all_chart_df = client.query(
+        all_chart_df = cached_query_df(
+            client,
             CHART_DATA_ALL_QUERY.format(tenant_filter=tenant_filter)
-        ).to_dataframe()
+        )
         all_chart_df = _filter_df_by_tenant_ids(all_chart_df, tenant_ids)
         # tenant scope already narrowed to the selected account's tenant
     except Exception:
@@ -5943,7 +5941,10 @@ def symbols_detail():
                     min(group["trade_date"].max(), sym_chart_df["date"].min())
                 )
 
-        chart = _build_chart_from_daily_pnl(sym_chart_df, sym_current)
+        chart = cached_payload(
+            ("sym_chart", str(date.today()), frame_fingerprint(sym_chart_df, sym_current)),
+            lambda sdf=sym_chart_df, scur=sym_current: _build_chart_from_daily_pnl(sdf, scur),
+        )
 
         # When viewing "this position only", rebase chart so it starts at 0
         # (first point = start of position, not cumulative from prior history)
@@ -7367,12 +7368,16 @@ def accounts():
     try:
         chart_tenant_ids = _tenants_for_scope(selected_account)
         chart_tenant_filter = _tenant_sql_and(chart_tenant_ids)
-        chart_df = client.query(
+        chart_df = cached_query_df(
+            client,
             CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter)
-        ).to_dataframe()
+        )
         chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
         # tenant scope already narrowed chart_df to the selected account's tenant
-        summary_chart = _build_account_chart_from_daily_pnl(chart_df, current_df)
+        summary_chart = cached_payload(
+            ("acct_chart", str(date.today()), frame_fingerprint(chart_df, current_df)),
+            lambda: _build_account_chart_from_daily_pnl(chart_df, current_df),
+        )
     except Exception:
         summary_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
 

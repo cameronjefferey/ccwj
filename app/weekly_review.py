@@ -55,14 +55,16 @@ def _bq_parallel(client, queries):
     other eight sections still render real data. Mirrors the contract
     on ``app.routes._bq_parallel``.
     """
+    from app.query_cache import cached_query_df
+
     results = {}
 
     def _run(name, spec):
         try:
             if isinstance(spec, tuple):
                 sql, cfg = spec
-                return name, client.query(sql, job_config=cfg).to_dataframe(), None
-            return name, client.query(spec).to_dataframe(), None
+                return name, cached_query_df(client, sql, job_config=cfg), None
+            return name, cached_query_df(client, spec), None
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
