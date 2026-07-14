@@ -68,7 +68,9 @@ def _bq_parallel(client, queries):
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
-    with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
+    # Cap at 16 (was 8): Daily Review fans out to ~10 tiny queries, each
+    # dominated by BigQuery's fixed per-job latency; one wave beats two.
+    with ThreadPoolExecutor(max_workers=min(len(queries), 16)) as pool:
         # Copy the request context per task so the query-cache stats
         # ContextVar reaches the worker thread (per-query timing).
         futures = [

@@ -52,7 +52,12 @@ def _bq_parallel(client, queries):
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
-    with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
+    # Cap at 16: pages fan out to ~11 tiny queries (each dominated by BQ's
+    # ~1-2s fixed per-job latency, NOT scan size — stg_history is ~1MB). With
+    # the old cap of 8 an 11-query page ran in 2 waves (~2x the floor); 16
+    # lets the whole batch run in a single wave. BQ handles the concurrent
+    # small jobs fine and the pool is per-request/short-lived.
+    with ThreadPoolExecutor(max_workers=min(len(queries), 16)) as pool:
         # Copy the request context per task so the query-cache stats
         # ContextVar reaches the worker thread (per-query timing).
         futures = [
@@ -3071,6 +3076,7 @@ def _compute_breakdown_by_type(
     closed_legs_df: pd.DataFrame,
     current_df: pd.DataFrame,
     leg_predicate,
+    dividends_df: pd.DataFrame = None,
 ):
     """Build the Equity / Options / Dividends rollup the position page renders
     above Strategy Breakdown.
@@ -3180,16 +3186,19 @@ def _compute_breakdown_by_type(
         pass
     elif tenant_scope is None or len(tenant_scope) > 0:
         try:
-            tenant_filter = _tenant_sql_and(tenant_scope)
-            div_df = cached_query_df(
-                client,
-                """
-                SELECT account, user_id, symbol, trade_date, amount
-                FROM `ccwj-dbt.analytics.int_dividend_events`
-                WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
-                {tenant_filter}
-                """.format(symbol=safe_symbol, tenant_filter=tenant_filter)
-            )
+            # Prefer the frame fetched in the position_detail parallel batch
+            # (one wave instead of a serial ~1-2s BQ round trip here). Fall
+            # back to a direct query for any other caller / when not provided.
+            if dividends_df is not None:
+                div_df = dividends_df
+            else:
+                tenant_filter = _tenant_sql_and(tenant_scope)
+                div_df = cached_query_df(
+                    client,
+                    POSITION_DIVIDENDS_QUERY.format(
+                        symbol=safe_symbol, tenant_filter=tenant_filter
+                    ),
+                )
             # Belt-and-suspenders tenancy guard. The SQL is already user_id +
             # account scoped via _account_sql_and, but the BQ-tenant rule
             # requires a Python filter on every BQ result before any
@@ -3327,6 +3336,19 @@ CHART_DATA_ALL_QUERY = """
     ORDER BY symbol, date
 """
 
+# Per-symbol dividend events for the Breakdown-by-Type card. Extracted to a
+# module constant (was inlined inside _compute_breakdown_by_type) so the
+# position_detail route can fetch it in the SAME parallel _bq_parallel wave
+# as everything else instead of paying a separate ~1-2s BigQuery job round
+# trip serially after the batch. _compute_breakdown_by_type still owns the
+# tenant + leg filtering of the returned frame.
+POSITION_DIVIDENDS_QUERY = """
+    SELECT account, user_id, symbol, trade_date, amount
+    FROM `ccwj-dbt.analytics.int_dividend_events`
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
+    {tenant_filter}
+"""
+
 
 @app.route("/position/<symbol>")
 @login_required
@@ -3351,7 +3373,17 @@ def position_detail(symbol):
         # POSITION_TRADES_QUERY joins stg_history (alias h) to int_drip_fills (alias d);
         # both tables have an `account` column so the filter must be scoped to h.
         _pos_h_acct = _tenant_sql_and(tenant_scope, col="h.tenant_id")
-        dfs = _bq_parallel(client, {
+        # Single parallel wave. Every query below is a tiny (~MB) read whose
+        # cost is BigQuery's fixed per-job latency, so the win is running them
+        # ALL AT ONCE rather than in serial phases. The chart (mart_daily_pnl)
+        # and dividends (int_dividend_events) reads used to run serially AFTER
+        # this batch (a ~2s round trip each); they are URL-derived and
+        # independent of the batch, so they join the wave here. All the
+        # batch-result-dependent logic (summary narrowing, leg filtering)
+        # stays in Python after the fetch.
+        from app.upload import is_crypto_symbol
+        _is_crypto = is_crypto_symbol(safe_symbol)
+        _pos_queries = {
             "summary": POSITION_SUMMARY_QUERY.format(
                 symbol=safe_symbol, tenant_filter=_pos_acct
             ),
@@ -3381,7 +3413,18 @@ def position_detail(symbol):
             # Symbol-level next-earnings date for the hero pill. No account
             # filter — stg_earnings_calendar is symbol-grain public data.
             "earnings": POSITION_EARNINGS_QUERY.format(symbol=safe_symbol),
-        })
+            # Cumulative daily P&L for the chart (post-processed below).
+            "chart": CHART_DATA_QUERY.format(
+                symbol=safe_symbol, tenant_filter=_pos_acct
+            ),
+        }
+        # Crypto positions don't pay dividends in our pipeline, so
+        # _compute_breakdown_by_type skips them — don't fetch the frame.
+        if not _is_crypto:
+            _pos_queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
+                symbol=safe_symbol, tenant_filter=_pos_acct
+            )
+        dfs = _bq_parallel(client, _pos_queries)
         summary_df = dfs["summary"]
         trades_df = dfs["trades"]
         current_df = dfs["current"]
@@ -3391,6 +3434,12 @@ def position_detail(symbol):
         legs_df = dfs["legs"]
         tabs_df = dfs["tabs"]
         earnings_df = dfs["earnings"]
+        # Fetched in the batch above; post-processed later in the route
+        # (chart) / inside _compute_breakdown_by_type (dividends). Not run
+        # through _df_normalize_account_column to match their prior serial
+        # behavior.
+        chart_df = dfs.get("chart", pd.DataFrame())
+        dividends_df = dfs.get("dividends")
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -3983,6 +4032,7 @@ def position_detail(symbol):
         closed_legs_df=closed_legs_df,
         current_df=current_df,
         leg_predicate=(_in_leg_range if (leg_param and _leg_ranges) else None),
+        dividends_df=dividends_df,
     )
 
     # Headline KPI used ``Σ positions_summary.total_dividend_income`` + realized
@@ -4003,11 +4053,9 @@ def position_detail(symbol):
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
     prices_through_date = None
     try:
-        tenant_filter = _tenant_sql_and(_tenants_for_scope(selected_account))
-        chart_df = cached_query_df(
-            client,
-            CHART_DATA_QUERY.format(symbol=safe_symbol, tenant_filter=tenant_filter)
-        )
+        # chart_df was fetched in the parallel batch above (was a serial
+        # ~2s BQ round trip here). Everything below is unchanged Python
+        # post-processing on the same frame.
         chart_df = _filter_df_by_tenant_ids(chart_df, tenant_scope)
         chart_df = _narrow_mart_daily_pnl_chart_df_to_summary_tenant(
             chart_df, summary_df
