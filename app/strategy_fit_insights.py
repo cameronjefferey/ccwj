@@ -565,7 +565,7 @@ def generate_strategy_fit_insights():
         summary, full = result
         save_strategy_fit_insight(
             current_user.id,
-            tenant_filter=selected_account or "",
+            account_filter=selected_account or "",
             summary=summary,
             full_analysis=full,
             brief_text=brief_text,

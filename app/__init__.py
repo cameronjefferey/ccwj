@@ -282,6 +282,23 @@ def _after_request_touch_session_activity(response):
     return response
 
 
+import logging as _logging
+import sys as _sys
+
+# Dedicated stdout logger for REQUEST_TIMING. Flask's app.logger defaults to
+# WARNING under gunicorn (no INFO handler), so app.logger.info(...) lines never
+# reach Render's log stream. A small dedicated logger with its own stdout
+# handler and propagate=False guarantees the timing lines show up without
+# changing the level/handlers of every other app.logger call.
+_timing_logger = _logging.getLogger("happytrader.timing")
+if not _timing_logger.handlers:
+    _th = _logging.StreamHandler(_sys.stdout)
+    _th.setFormatter(_logging.Formatter("%(message)s"))
+    _timing_logger.addHandler(_th)
+    _timing_logger.setLevel(_logging.INFO)
+    _timing_logger.propagate = False
+
+
 @app.after_request
 def _after_request_timing(response):
     """Log a one-line REQUEST_TIMING per page and expose Server-Timing.
@@ -314,7 +331,7 @@ def _after_request_timing(response):
         # Only log the pages that actually do data work (any cache activity)
         # or that were slow, so the log isn't flooded by trivial redirects.
         if bq_hit or bq_miss or ch_hit or ch_miss or total_ms > 500:
-            app.logger.info(
+            _timing_logger.info(
                 "REQUEST_TIMING path=%s status=%s total_ms=%.0f "
                 "bq_hit=%d bq_miss=%d chart_hit=%d chart_miss=%d",
                 path, response.status_code, total_ms,
