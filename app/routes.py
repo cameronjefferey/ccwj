@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
-from app.query_cache import cached_query_df, cached_payload, frame_fingerprint
+from app.query_cache import cached_query_df, cached_payload, frame_fingerprint, timed
 from app.utils import earnings_follower_url
 from app.llm import llm_available as _llm_available
 from app.models import (
@@ -39,19 +39,26 @@ def _bq_parallel(client, queries):
     one bad query produces one empty DataFrame, logged loudly, and the
     other eight sections still render real data.
     """
+    from app.query_cache import propagate_context
+
     results = {}
 
     def _run(name, spec):
         try:
             if isinstance(spec, tuple):
                 sql, cfg = spec
-                return name, cached_query_df(client, sql, job_config=cfg), None
-            return name, cached_query_df(client, spec), None
+                return name, cached_query_df(client, sql, job_config=cfg, label=name), None
+            return name, cached_query_df(client, spec, label=name), None
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
     with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
-        futures = [pool.submit(_run, n, s) for n, s in queries.items()]
+        # Copy the request context per task so the query-cache stats
+        # ContextVar reaches the worker thread (per-query timing).
+        futures = [
+            pool.submit(propagate_context().run, _run, n, s)
+            for n, s in queries.items()
+        ]
         for f in futures:
             name, df, exc = f.result()
             results[name] = df
@@ -4050,10 +4057,11 @@ def position_detail(symbol):
                 str(date.today()),
                 frame_fingerprint(chart_df, current_df),
             )
-            chart_data = cached_payload(
-                _chart_key,
-                lambda: _build_chart_from_daily_pnl(chart_df, current_df),
-            )
+            with timed("chart"):
+                chart_data = cached_payload(
+                    _chart_key,
+                    lambda: _build_chart_from_daily_pnl(chart_df, current_df),
+                )
             # Latest date we have close_price for (from pipeline); user can run current_position_stock_price.py to refresh
             if "date" in chart_df.columns:
                 prices_through_date = str(chart_df["date"].max())[:10]
@@ -4353,9 +4361,10 @@ def position_detail(symbol):
             matrix_df = matrix_df[matrix_df["trade_symbol"].isin(filtered_trade_syms)]
     # matrix_df is tenant-scoped to the current ?account/?tenant selection
     # upstream, so the matrices honor the filter by construction.
-    option_matrices = (
-        _build_option_matrices(matrix_df, symbol) if not matrix_df.empty else []
-    )
+    with timed("matrix"):
+        option_matrices = (
+            _build_option_matrices(matrix_df, symbol) if not matrix_df.empty else []
+        )
 
     # Available accounts for filter. Non-admin: the full disambiguated
     # account set so each physical account (incl. colliding "Schwab
@@ -5941,10 +5950,11 @@ def symbols_detail():
                     min(group["trade_date"].max(), sym_chart_df["date"].min())
                 )
 
-        chart = cached_payload(
-            ("sym_chart", str(date.today()), frame_fingerprint(sym_chart_df, sym_current)),
-            lambda sdf=sym_chart_df, scur=sym_current: _build_chart_from_daily_pnl(sdf, scur),
-        )
+        with timed("symbol_charts"):
+            chart = cached_payload(
+                ("sym_chart", str(date.today()), frame_fingerprint(sym_chart_df, sym_current)),
+                lambda sdf=sym_chart_df, scur=sym_current: _build_chart_from_daily_pnl(sdf, scur),
+            )
 
         # When viewing "this position only", rebase chart so it starts at 0
         # (first point = start of position, not cumulative from prior history)
@@ -7374,10 +7384,11 @@ def accounts():
         )
         chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
         # tenant scope already narrowed chart_df to the selected account's tenant
-        summary_chart = cached_payload(
-            ("acct_chart", str(date.today()), frame_fingerprint(chart_df, current_df)),
-            lambda: _build_account_chart_from_daily_pnl(chart_df, current_df),
-        )
+        with timed("acct_chart"):
+            summary_chart = cached_payload(
+                ("acct_chart", str(date.today()), frame_fingerprint(chart_df, current_df)),
+                lambda: _build_account_chart_from_daily_pnl(chart_df, current_df),
+            )
     except Exception:
         summary_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
 

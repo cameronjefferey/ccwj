@@ -33,12 +33,15 @@ surface (``get`` / ``set`` / ``make_key`` / ``clear``) is intentionally
 backend-agnostic so a shared Redis backend can be dropped in later via an
 env var, mirroring the rate limiter's ``RATELIMIT_STORAGE_URI`` pattern.
 """
+import contextlib
+import contextvars
 import copy
 import hashlib
 import logging
 import os
 import sys
 import threading
+import time
 
 import pandas as pd
 from cachetools import TTLCache
@@ -69,19 +72,112 @@ def _running_under_pytest() -> bool:
     return "pytest" in sys.modules or bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
 
-def _bump(counter: str) -> None:
-    """Increment a per-request cache counter on ``flask.g`` (best-effort).
+class _ReqStats:
+    """Per-request profiling accumulator (thread-safe).
 
-    Lets the request-timing logger in ``app/__init__.py`` report cache
-    hit/miss rates per page so we can SEE whether a slow load was cold
-    (all misses) or warm. No-op outside a request context (CLI, tests).
+    ``_bq_parallel`` runs queries on ``ThreadPoolExecutor`` worker threads,
+    so ``flask.g`` (thread-local to the request thread) is invisible there
+    and undercounts BQ activity. We accumulate here instead and propagate
+    the object into the worker threads via ``contextvars`` (see
+    ``propagate_context`` / ``_bq_parallel``). All mutation is under a lock
+    because several query threads report concurrently.
     """
+
+    __slots__ = ("lock", "query_hits", "query_miss", "payload_hits",
+                 "payload_miss", "bq_ms", "queries", "steps")
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.query_hits = 0
+        self.query_miss = 0
+        self.payload_hits = 0
+        self.payload_miss = 0
+        self.bq_ms = 0.0          # summed wall-clock of MISS executions
+        self.queries = []          # (label, ms, hit) per cached_query_df call
+        self.steps = {}            # named step -> summed ms (chart/matrix/...)
+
+    def add_query(self, label, ms, hit):
+        with self.lock:
+            if hit:
+                self.query_hits += 1
+            else:
+                self.query_miss += 1
+                self.bq_ms += ms
+            self.queries.append((label or "?", ms, hit))
+
+    def add_payload(self, hit):
+        with self.lock:
+            if hit:
+                self.payload_hits += 1
+            else:
+                self.payload_miss += 1
+
+    def add_step(self, name, ms):
+        with self.lock:
+            self.steps[name] = self.steps.get(name, 0.0) + ms
+
+
+# Per-request stats live in a ContextVar (not flask.g) so they survive the
+# hop onto _bq_parallel worker threads when the request's context is copied.
+_req_stats: contextvars.ContextVar = contextvars.ContextVar(
+    "qc_req_stats", default=None
+)
+
+
+def start_request_stats() -> "_ReqStats":
+    stats = _ReqStats()
+    _req_stats.set(stats)
+    return stats
+
+
+def get_request_stats():
+    return _req_stats.get()
+
+
+def propagate_context():
+    """Snapshot the current context so a worker thread can adopt it.
+
+    Call in the REQUEST thread; run the returned context's ``.run`` in the
+    worker so the ``_req_stats`` ContextVar (and thus per-query timing)
+    reaches ``cached_query_df`` inside the pool. Each caller gets its own
+    copy — the same context object cannot be entered concurrently.
+    """
+    return contextvars.copy_context()
+
+
+@contextlib.contextmanager
+def timed(step: str):
+    """Accumulate wall-clock into a named step (``chart``/``matrix``/...).
+
+    No-op when there is no active request-stats object (CLI, tests).
+    """
+    t0 = time.perf_counter()
     try:
-        from flask import g, has_request_context
-        if has_request_context():
-            setattr(g, counter, getattr(g, counter, 0) + 1)
-    except Exception:
-        pass
+        yield
+    finally:
+        stats = _req_stats.get()
+        if stats is not None:
+            stats.add_step(step, (time.perf_counter() - t0) * 1000.0)
+
+
+def format_stats(stats) -> str:
+    """Compact one-line summary for the REQUEST_TIMING log."""
+    if stats is None:
+        return "bq_ms=0 nq=0 qhit=0 qmiss=0 chit=0 cmiss=0"
+    misses = [(lbl, ms) for (lbl, ms, hit) in stats.queries if not hit]
+    slow = max(misses, key=lambda x: x[1], default=None)
+    slow_str = f" slow={slow[0]}:{slow[1]:.0f}" if slow else ""
+    steps = sorted(stats.steps.items(), key=lambda x: x[1], reverse=True)
+    steps_str = ""
+    if steps:
+        steps_str = " steps=" + ",".join(f"{n}:{ms:.0f}" for n, ms in steps)
+    nq = stats.query_hits + stats.query_miss
+    return (
+        f"bq_ms={stats.bq_ms:.0f} nq={nq} "
+        f"qhit={stats.query_hits} qmiss={stats.query_miss} "
+        f"chit={stats.payload_hits} cmiss={stats.payload_miss}"
+        f"{slow_str}{steps_str}"
+    )
 
 
 def cache_enabled() -> bool:
@@ -153,7 +249,7 @@ def _execute(client, sql, job_config):
     return client.query(sql, job_config=job_config).to_dataframe()
 
 
-def cached_query_df(client, sql, job_config=None):
+def cached_query_df(client, sql, job_config=None, label=None):
     """Run ``client.query(sql, job_config).to_dataframe()`` with caching.
 
     - Cache MISS (or disabled): execute against BigQuery, store the result,
@@ -165,19 +261,28 @@ def cached_query_df(client, sql, job_config=None):
     would poison every subsequent reader. Errors are never cached — they
     propagate to the caller, preserving ``_bq_parallel``'s per-query
     empty-DataFrame-on-error contract.
+
+    ``label`` (e.g. the ``_bq_parallel`` query name) is recorded with the
+    execution time so the REQUEST_TIMING log can name the slowest cold
+    query.
     """
     if not cache_enabled():
         return _execute(client, sql, job_config)
 
     key = make_key(sql, job_config)
     hit = get(key)
+    stats = _req_stats.get()
     if hit is not None:
-        _bump("_qc_query_hits")
+        if stats is not None:
+            stats.add_query(label, 0.0, True)
         return hit.copy()
 
-    _bump("_qc_query_misses")
+    t0 = time.perf_counter()
     df = _execute(client, sql, job_config)
+    exec_ms = (time.perf_counter() - t0) * 1000.0
     set(key, df)
+    if stats is not None:
+        stats.add_query(label, exec_ms, False)
     return df.copy()
 
 
@@ -220,10 +325,13 @@ def cached_payload(key, producer):
     if not cache_enabled():
         return producer()
     hit = get(key)
+    stats = _req_stats.get()
     if hit is not None:
-        _bump("_qc_payload_hits")
+        if stats is not None:
+            stats.add_payload(True)
         return copy.deepcopy(hit)
-    _bump("_qc_payload_misses")
+    if stats is not None:
+        stats.add_payload(False)
     value = producer()
     set(key, copy.deepcopy(value))
     return copy.deepcopy(value)

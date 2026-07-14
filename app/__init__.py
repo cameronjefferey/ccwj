@@ -269,6 +269,11 @@ def _touch_session_last_activity():
 def _before_request_sentry_user():
     from flask import g
     g._req_start = time.perf_counter()
+    try:
+        from app import query_cache
+        query_cache.start_request_stats()
+    except Exception:
+        pass
     if _sentry_dsn:
         _set_sentry_user()
     idle = _check_session_idle()
@@ -303,15 +308,19 @@ if not _timing_logger.handlers:
 def _after_request_timing(response):
     """Log a one-line REQUEST_TIMING per page and expose Server-Timing.
 
-    ``total_ms`` is the whole request; ``bq_hit``/``bq_miss`` and
-    ``chart_hit``/``chart_miss`` come from the query/payload cache
-    (``app/query_cache.py``). A slow page with all-miss counters is a COLD
-    load (BigQuery-bound); the same page reloaded should show hits and a
-    much smaller total_ms. The ``Server-Timing`` header surfaces total_ms
-    in the browser devtools Network tab (Timing) with no extra tooling.
+    ``total_ms`` is the whole request. ``bq_ms`` is the summed wall-clock of
+    the cold (cache-miss) BigQuery executions across ALL threads (query
+    counters are thread-aware via a ContextVar, so ``_bq_parallel`` fan-out
+    is counted); ``slow=<label>:<ms>`` names the single slowest cold query;
+    ``steps=chart:..,matrix:..`` breaks out the heavy Python builders. A
+    cold page shows ``qmiss`` high and ``total_ms ≈ bq_ms + steps``; a warm
+    reload shows ``qhit`` high and a much smaller ``total_ms``. The
+    ``Server-Timing`` header surfaces total_ms in the browser devtools
+    Network tab (Timing) with no extra tooling.
     """
     try:
         from flask import g
+        from app import query_cache
         # Skip static assets / health probes — pure noise.
         path = request.path or ""
         if path.startswith("/static/") or path.startswith("/healthz"):
@@ -320,22 +329,19 @@ def _after_request_timing(response):
         if start is None:
             return response
         total_ms = (time.perf_counter() - start) * 1000.0
-        bq_hit = getattr(g, "_qc_query_hits", 0)
-        bq_miss = getattr(g, "_qc_query_misses", 0)
-        ch_hit = getattr(g, "_qc_payload_hits", 0)
-        ch_miss = getattr(g, "_qc_payload_misses", 0)
-        response.headers["Server-Timing"] = (
-            f"total;dur={total_ms:.0f}, "
-            f"bqmiss;dur=0;desc=\"bq_miss={bq_miss} bq_hit={bq_hit}\""
+        stats = query_cache.get_request_stats()
+        response.headers["Server-Timing"] = f"total;dur={total_ms:.0f}"
+        had_work = stats is not None and bool(
+            stats.query_hits or stats.query_miss
+            or stats.payload_hits or stats.payload_miss
         )
-        # Only log the pages that actually do data work (any cache activity)
-        # or that were slow, so the log isn't flooded by trivial redirects.
-        if bq_hit or bq_miss or ch_hit or ch_miss or total_ms > 500:
+        # Only log pages that actually do data work or were slow, so the log
+        # isn't flooded by trivial redirects / static-ish responses.
+        if had_work or total_ms > 500:
             _timing_logger.info(
-                "REQUEST_TIMING path=%s status=%s total_ms=%.0f "
-                "bq_hit=%d bq_miss=%d chart_hit=%d chart_miss=%d",
+                "REQUEST_TIMING path=%s status=%s total_ms=%.0f %s",
                 path, response.status_code, total_ms,
-                bq_hit, bq_miss, ch_hit, ch_miss,
+                query_cache.format_stats(stats),
             )
     except Exception:
         pass

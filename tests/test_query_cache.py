@@ -7,6 +7,9 @@ or a cache hit could return the wrong tenant's / wrong slice's rows — a
 security incident per .cursor/rules/bigquery-tenant-isolation.mdc.
 """
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 import pytest
 from google.cloud import bigquery
@@ -220,3 +223,78 @@ def test_cached_payload_disabled_runs_producer_each_time(monkeypatch):
     cached_payload(key, producer)
     cached_payload(key, producer)
     assert calls["n"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Per-request profiling stats (thread-aware)
+# ---------------------------------------------------------------------------
+
+def test_stats_count_hits_and_misses_and_bq_ms(cache_on):
+    stats = query_cache.start_request_stats()
+    client = _FakeClient()
+    sql = "SELECT 1 FROM t WHERE tenant_id IN ('snaptrade:aaa')"
+    cached_query_df(client, sql, label="q1")   # miss
+    cached_query_df(client, sql, label="q1")   # hit
+    assert stats.query_miss == 1
+    assert stats.query_hits == 1
+    assert stats.bq_ms >= 0.0
+    labels = [lbl for (lbl, _ms, _hit) in stats.queries]
+    assert labels == ["q1", "q1"]
+
+
+def test_stats_are_thread_aware_via_context_propagation(cache_on):
+    """The whole point of the ContextVar: cache activity on _bq_parallel
+    worker THREADS must still land on the request's stats object."""
+    stats = query_cache.start_request_stats()
+    client = _FakeClient()
+
+    def _work(i):
+        sql = f"SELECT {i} FROM t WHERE tenant_id IN ('snaptrade:aaa')"
+        cached_query_df(client, sql, label=f"q{i}")
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        # Mirror _bq_parallel: copy the request context per task so the
+        # worker thread sees the same _req_stats object.
+        futures = [
+            pool.submit(query_cache.propagate_context().run, _work, i)
+            for i in range(4)
+        ]
+        for f in futures:
+            f.result()
+
+    # Without context propagation these misses would be invisible (the
+    # blind spot we fixed): assert all four were counted.
+    assert stats.query_miss == 4
+
+
+def test_timed_records_named_step(cache_on):
+    stats = query_cache.start_request_stats()
+    with query_cache.timed("chart"):
+        time.sleep(0.005)
+    assert "chart" in stats.steps
+    assert stats.steps["chart"] >= 4.0  # ~5ms, allow scheduling slack
+
+
+def test_format_stats_names_slowest_query_and_steps(cache_on):
+    stats = query_cache.start_request_stats()
+    stats.add_query("fast", 5.0, False)
+    stats.add_query("slow", 900.0, False)
+    stats.add_query("cached", 0.0, True)
+    stats.add_step("chart", 1234.0)
+    out = query_cache.format_stats(stats)
+    assert "slow=slow:900" in out
+    assert "chart:1234" in out
+    assert "qmiss=2" in out
+    assert "qhit=1" in out
+
+
+def test_stats_helpers_noop_without_active_request(cache_on):
+    # Simulate "no active request stats" (CLI / background thread).
+    query_cache._req_stats.set(None)
+    assert query_cache.get_request_stats() is None
+    with query_cache.timed("chart"):
+        pass  # must not raise
+    client = _FakeClient()
+    # cached_query_df must still work when there's no stats object.
+    df = cached_query_df(client, "SELECT 1 FROM t", label="x")
+    assert not df.empty

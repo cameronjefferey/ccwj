@@ -55,7 +55,7 @@ def _bq_parallel(client, queries):
     other eight sections still render real data. Mirrors the contract
     on ``app.routes._bq_parallel``.
     """
-    from app.query_cache import cached_query_df
+    from app.query_cache import cached_query_df, propagate_context
 
     results = {}
 
@@ -63,13 +63,18 @@ def _bq_parallel(client, queries):
         try:
             if isinstance(spec, tuple):
                 sql, cfg = spec
-                return name, cached_query_df(client, sql, job_config=cfg), None
-            return name, cached_query_df(client, spec), None
+                return name, cached_query_df(client, sql, job_config=cfg, label=name), None
+            return name, cached_query_df(client, spec, label=name), None
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
     with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
-        futures = [pool.submit(_run, n, s) for n, s in queries.items()]
+        # Copy the request context per task so the query-cache stats
+        # ContextVar reaches the worker thread (per-query timing).
+        futures = [
+            pool.submit(propagate_context().run, _run, n, s)
+            for n, s in queries.items()
+        ]
         for f in futures:
             name, df, exc = f.result()
             results[name] = df
