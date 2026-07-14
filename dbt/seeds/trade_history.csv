@@ -5392,6 +5392,18 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/14/2026,Sell
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Open,DAL   260710P00087000,DAL260710P00087000 BUY FILL at 0.11,12.0,0.11,,-1.32
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710C00098000,Options Expiry,22.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710P00135000,Options Expiry,12.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710P00132000,Options Expiry,12.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710C00152500,Options Expiry,12.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710P00087000,Options Expiry,10.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,CAT fee for proceed of 1 trades on 2026-07-10 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710C00100000,Options Expiry,22.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,ORF fee for proceed of 12 contracts on 2026-07-10 by PA3HS6VB43PX,,,,-0.18
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.24
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710P00084000,Options Expiry,22.0,,,0.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710C00150000,Options Expiry,12.0,,,0.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Open,PENG  260821C00090000,PENG260821C00090000 BUY FILL at 15.6,5.0,15.6,,-78.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Open,PENG  260821C00085000,PENG260821C00085000 SELL FILL at 16.3,5.0,16.3,,81.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Open,PENG  260821C00090000,PENG260821C00090000 SELL_SHORT FILL at 13.5,5.0,13.5,,67.5
@@ -5586,18 +5598,6 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-23 by PA3HS6VB43PX,,,,-0.11
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Open,DAL   260710P00087000,DAL260710P00087000 BUY FILL at 0.11,12.0,0.11,,-1.32
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710C00098000,Options Expiry,22.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710P00135000,Options Expiry,12.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710P00132000,Options Expiry,12.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710C00152500,Options Expiry,12.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710P00087000,Options Expiry,10.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,CAT fee for proceed of 1 trades on 2026-07-10 by PA3HS6VB43PX,,,,-0.01
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710C00100000,Options Expiry,22.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,ORF fee for proceed of 12 contracts on 2026-07-10 by PA3HS6VB43PX,,,,-0.18
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.24
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,DAL   260710P00084000,Options Expiry,22.0,,,0.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Expired,PEP   260710C00150000,Options Expiry,12.0,,,0.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Buy,DX,Dynex Capital Inc.,193.0,13.37,,-2580.41
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Buy,IBN,ICICI Bank Limited Sponsored ADR,87.0,29.12,,-2533.44
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Sell,HDB,HDFC Bank Limited ADR,97.0,26.02,,2523.94
