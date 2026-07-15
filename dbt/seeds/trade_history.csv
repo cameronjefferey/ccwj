@@ -1131,80 +1131,6 @@ Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/202
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.47
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,170.6
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2893,589.73,,-170.6
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,12.59
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Cash Dividend,IHI,ISHARES U.S. MEDICAL DEVICES ETF,,,,14.76
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Buy,IHI,ISHARES U.S. MEDICAL DEVICES ETF,0.2695,54.7711,,-14.76
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.0677,186.0162,,-12.59
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/24/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.2534,634.9299,,-160.91
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/24/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,160.91
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,21.62
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,9.99
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3456,62.5531,,-21.62
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0502,198.8977,,-9.99
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/16/2025,Credit Interest,SCHFDX0,BANK INT 111625-121525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/17/2025,Credit Interest,SCHFDX0,BANK INT 101625-111525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/16/2025,Credit Interest,SCHFDX0,BANK INT 091625-101525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/01/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,157.64
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/01/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.258,611.0198,,-157.64
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0556,193.1199,,-10.73
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,20.84
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,10.73
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3447,60.4599,,-20.84
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/16/2025,Credit Interest,SCHFDX0,BANK INT 081625-091525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,08/18/2025,Credit Interest,SCHFDX0,BANK INT 071625-081525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/16/2025,Credit Interest,SCHFDX0,BANK INT 061625-071525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/02/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.2774,568.1397,,-157.59
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/02/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,157.59
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,18.93
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0935,165.3899,,-15.46
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3133,60.4197,,-18.93
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,15.46
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/16/2025,Credit Interest,SCHFDX0,BANK INT 051625-061525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/16/2025,Credit Interest,SCHFDX0,BANK INT 041625-051525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2025,Credit Interest,SCHFDX0,BANK INT 031625-041525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,163.09
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.3225,505.67,,-163.09
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.094,144.2041,,-13.56
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,13.56
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.1897,59.4535,,-11.28
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,11.28
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/17/2025,Credit Interest,SCHFDX0,BANK INT 021625-031525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,02/18/2025,Credit Interest,SCHFDX0,BANK INT 011625-021525 SCHWAB BANK,,,,0.01
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,01/16/2025,Credit Interest,SCHFDX0,BANK INT 121624-011525 SCHWAB BANK,,,,0.03
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,01/16/2025,Buy,VOO,VANGUARD S&P 500 ETF,1.0,544.289,,-544.29
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/26/2024,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,154.73
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,36.62
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,11.89
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.6304,58.0865,,-36.62
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/16/2024,Credit Interest,SCHFDX0,BANK INT 111624-121524 SCHWAB BANK,,,,0.04
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/18/2024,Credit Interest,SCHFDX0,BANK INT 101624-111524 SCHWAB BANK,,,,0.56
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/06/2024,Buy,VOO,VANGUARD S&P 500 ETF,89.0,541.32,,-48177.48
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/16/2024,Credit Interest,SCHFDX0,BANK INT 091624-101524 SCHWAB BANK,,,,0.45
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.4603,58.9622,,-27.14
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,27.14
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,19.28
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/16/2024,Credit Interest,SCHFDX0,BANK INT 081624-091524 SCHWAB BANK,,,,0.92
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,08/16/2024,Credit Interest,SCHFDX0,BANK INT 071624-081524 SCHWAB BANK,,,,0.92
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/16/2024,Credit Interest,SCHFDX0,BANK INT 061624-071524 SCHWAB BANK,,,,0.89
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Credit Interest,SCHFDX0,BANK INT 051624-061524 SCHWAB BANK,,,,0.91
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,14.34
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,18.02
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3241,55.5997,,-18.02
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2613,686.4199,,-179.35
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,17.45
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,179.35
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,59.66
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.0513,252.5294,,-12.95
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Buy,IHI,ISHARES U.S. MEDICAL DEVICES ETF,0.5265,48.9661,,-25.78
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IHI,ISHARES U.S. MEDICAL DEVICES ETF,,,,25.78
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,12.95
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/16/2026,Credit Interest,SCHFDX0,BANK INT 051626-061526 SCHWAB BANK,,,,0.17
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/26/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,221.0,157.8996,,-34895.81
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/26/2026,Buy,UFO,PROCURE SPACE ETF,300.0,66.56,,-19968.0
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/18/2026,Credit Interest,SCHFDX0,BANK INT 041626-051526 SCHWAB BANK,,,,0.46
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR MAY 2026,,,,-4.5
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR MAY 2026,,,,-10.0
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/05/2026,Cash Dividend,JEPI,JEPI(US46641Q3323) CASH DIVIDEND USD 0.44761 PER SHARE (Ordinary Dividend),99.99776591,0.4476,,44.76
@@ -5660,3 +5586,77 @@ Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash 
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
 Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2026,Credit Interest,SCHFDX0,BANK INT 031626-041526 SCHWAB BANK,,,,0.47
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,170.6
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2893,589.73,,-170.6
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,12.59
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Cash Dividend,IHI,ISHARES U.S. MEDICAL DEVICES ETF,,,,14.76
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Buy,IHI,ISHARES U.S. MEDICAL DEVICES ETF,0.2695,54.7711,,-14.76
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/20/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.0677,186.0162,,-12.59
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/24/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.2534,634.9299,,-160.91
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/24/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,160.91
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,21.62
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,9.99
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3456,62.5531,,-21.62
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0502,198.8977,,-9.99
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/16/2025,Credit Interest,SCHFDX0,BANK INT 111625-121525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/17/2025,Credit Interest,SCHFDX0,BANK INT 101625-111525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/16/2025,Credit Interest,SCHFDX0,BANK INT 091625-101525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/01/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,157.64
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/01/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.258,611.0198,,-157.64
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0556,193.1199,,-10.73
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,20.84
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,10.73
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/19/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3447,60.4599,,-20.84
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/16/2025,Credit Interest,SCHFDX0,BANK INT 081625-091525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,08/18/2025,Credit Interest,SCHFDX0,BANK INT 071625-081525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/16/2025,Credit Interest,SCHFDX0,BANK INT 061625-071525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/02/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.2774,568.1397,,-157.59
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/02/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,157.59
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,18.93
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.0935,165.3899,,-15.46
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3133,60.4197,,-18.93
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/20/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,15.46
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/16/2025,Credit Interest,SCHFDX0,BANK INT 051625-061525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/16/2025,Credit Interest,SCHFDX0,BANK INT 041625-051525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,04/16/2025,Credit Interest,SCHFDX0,BANK INT 031625-041525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2025,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,163.09
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/31/2025,Buy,VOO,VANGUARD S&P 500 ETF,0.3225,505.67,,-163.09
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Buy,IYW,ISHARES US TECHNOLOGY ETF,0.094,144.2041,,-13.56
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,13.56
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.1897,59.4535,,-11.28
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/21/2025,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,11.28
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,03/17/2025,Credit Interest,SCHFDX0,BANK INT 021625-031525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,02/18/2025,Credit Interest,SCHFDX0,BANK INT 011625-021525 SCHWAB BANK,,,,0.01
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,01/16/2025,Credit Interest,SCHFDX0,BANK INT 121624-011525 SCHWAB BANK,,,,0.03
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,01/16/2025,Buy,VOO,VANGUARD S&P 500 ETF,1.0,544.289,,-544.29
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/26/2024,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,154.73
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,36.62
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,11.89
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/20/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.6304,58.0865,,-36.62
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,12/16/2024,Credit Interest,SCHFDX0,BANK INT 111624-121524 SCHWAB BANK,,,,0.04
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/18/2024,Credit Interest,SCHFDX0,BANK INT 101624-111524 SCHWAB BANK,,,,0.56
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,11/06/2024,Buy,VOO,VANGUARD S&P 500 ETF,89.0,541.32,,-48177.48
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,10/16/2024,Credit Interest,SCHFDX0,BANK INT 091624-101524 SCHWAB BANK,,,,0.45
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.4603,58.9622,,-27.14
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,27.14
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/30/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,19.28
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,09/16/2024,Credit Interest,SCHFDX0,BANK INT 081624-091524 SCHWAB BANK,,,,0.92
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,08/16/2024,Credit Interest,SCHFDX0,BANK INT 071624-081524 SCHWAB BANK,,,,0.92
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,07/16/2024,Credit Interest,SCHFDX0,BANK INT 061624-071524 SCHWAB BANK,,,,0.89
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Credit Interest,SCHFDX0,BANK INT 051624-061524 SCHWAB BANK,,,,0.91
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Cash Dividend,IYW,ISHARES US TECHNOLOGY ETF,,,,14.34
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Cash Dividend,IHI,ISHARES US MEDICAL DEVICES ETF,,,,18.02
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/17/2024,Buy,IHI,ISHARES US MEDICAL DEVICES ETF,0.3241,55.5997,,-18.02
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Buy,VOO,VANGUARD S&P 500 ETF,0.2613,686.4199,,-179.35
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,17.45
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/30/2026,Cash Dividend,VOO,VANGUARD S&P 500 ETF,,,,179.35
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,59.66
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.0513,252.5294,,-12.95
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Buy,IHI,ISHARES U.S. MEDICAL DEVICES ETF,0.5265,48.9661,,-25.78
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IHI,ISHARES U.S. MEDICAL DEVICES ETF,,,,25.78
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,12.95
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/16/2026,Credit Interest,SCHFDX0,BANK INT 051626-061526 SCHWAB BANK,,,,0.17
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/26/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,221.0,157.8996,,-34895.81
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/26/2026,Buy,UFO,PROCURE SPACE ETF,300.0,66.56,,-19968.0
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,05/18/2026,Credit Interest,SCHFDX0,BANK INT 041626-051526 SCHWAB BANK,,,,0.46
