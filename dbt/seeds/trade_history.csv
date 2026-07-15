@@ -5606,6 +5606,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,ELV,"Elevance Health, Inc.",6.0,381.436667,,2288.620002
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,C,Citigroup Inc.,30.0,132.05,,3961.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,AEHR,Aehr Test Systems,35.0,100.43,,3515.05
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell to Close,NOW   260724C00110000,NOW   260724C00110000,2.0,6.1,,1220.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy to Close,NOW   260724C00123000,NOW   260724C00123000,2.0,2.59,,-518.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Buy,DX,Dynex Capital Inc.,193.0,13.37,,-2580.41
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Buy,IBN,ICICI Bank Limited Sponsored ADR,87.0,29.12,,-2533.44
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/14/2026,Sell,HDB,HDFC Bank Limited ADR,97.0,26.02,,2523.94
