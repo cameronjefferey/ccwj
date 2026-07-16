@@ -5391,6 +5391,8 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/14/2026,ADR 
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/13/2026,Expired,BE    260710C00320000,CALL BLOOM ENERGY CORP $320 EXP 07/10/26,3.0,,,0.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/13/2026,Expired,BE    260710C00330000,CALL BLOOM ENERGY CORP $330 EXP 07/10/26,3.0,,,0.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/13/2026,Expired,BE    260710C00310000,CALL BLOOM ENERGY CORP $310 EXP 07/10/26,3.0,,,0.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/16/2026,Sell to Close,JPM   260717P00310000,JPM   260717P00310000,5.0,0.01,,5.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/16/2026,Buy to Close,JPM   260717P00320000,JPM   260717P00320000,5.0,0.02,,-10.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
@@ -5739,6 +5741,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,EFX,Equifax Inc.,24.0,172.57,,4141.68
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,CALX,Calix Inc.,108.0,38.97,,4208.76
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,AGYS,Agilysys Inc.,39.0,107.27,,-4183.53
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,WFC   260731C00089000,WFC   260731C00089000,11.0,1.82,,-2002.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,WFC   260731C00092000,WFC   260731C00092000,11.0,0.63,,693.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,MRVL  260731P00195000,MRVL  260731P00195000,1.0,15.35,,-1535.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,MRVL  260731P00172500,MRVL  260731P00172500,1.0,5.7,,570.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,EQR,Equity Residential,60.0,69.5,,-4170.0
