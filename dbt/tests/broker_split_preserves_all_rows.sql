@@ -9,8 +9,17 @@
     This asserts the row count of the union of the per-broker models equals
     the row count of the underlying raw source for each surface.
 
-    - history / current: broker models are pure passthrough of the whole
-      seed, so union count == seed count exactly.
+    - history: broker models are pure passthrough of the whole seed EXCEPT
+      stg_broker_alpaca_history, which intentionally drops Alpaca's duplicate
+      activities partial-fill rows when an orders-aggregate covers the same
+      order (see stg_broker_alpaca_history.sql + broker-sync-safety 2026-07-16).
+      So the expected history count is seed count MINUS those dropped dupes,
+      computed below with the identical rule. This still protects routing
+      integrity: any accidental drop/double-count from broker_row_filter /
+      known_brokers for ANY broker (or an Alpaca drop beyond the exact dedup
+      set) still fails the count.
+    - current: broker models are pure passthrough of the whole seed, so union
+      count == seed count exactly.
     - balances: broker models pull cash/account_total rows from BOTH the
       account_balances seed and the legacy current_positions export, so the
       expected count is the sum of those filtered source counts. Demo rows
@@ -29,8 +38,28 @@ with history_split as (
         union all select * from {{ ref('stg_broker_other_history') }}
     )
 ),
+-- Alpaca activities partial-fill rows that stg_broker_alpaca_history drops
+-- because an orders-aggregate row covers the same
+-- (tenant_id, Date, Symbol, Action) equity group. MUST mirror the keep/drop
+-- rule in stg_broker_alpaca_history.sql exactly.
+alpaca_history_dropped as (
+    select count(*) as n from (
+        select
+            regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at ') as is_partial_fill,
+            (cast(Action as string) in ('Buy', 'Sell')) as is_equity,
+            countif(cast(Action as string) in ('Buy', 'Sell')
+                    and not regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '))
+                over (partition by cast(tenant_id as string), cast(Date as string),
+                                   cast(Symbol as string), cast(Action as string)) as n_aggregate
+        from {{ ref('trade_history') }}
+        where {{ broker_row_filter('Account', 'alpaca') }}
+    )
+    where is_equity and is_partial_fill and n_aggregate >= 1
+),
 history_source as (
-    select count(*) as n from {{ ref('trade_history') }}
+    select
+        (select count(*) from {{ ref('trade_history') }})
+        - (select n from alpaca_history_dropped) as n
 ),
 
 current_split as (
