@@ -5733,6 +5733,18 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,AEHR,Aehr Test Systems,35.0,100.43,,3515.05
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell to Close,NOW   260724C00110000,NOW   260724C00110000,2.0,6.1,,1220.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy to Close,NOW   260724C00123000,NOW   260724C00123000,2.0,2.59,,-518.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,ICLR,ICON plc,25.0,169.4,,-4235.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,SON,Sonoco Products Co.,75.0,53.87,,4040.25
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,VICR,Vicor Corporation,16.0,270.0,,-4320.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,EFX,Equifax Inc.,24.0,172.57,,4141.68
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,CALX,Calix Inc.,108.0,38.97,,4208.76
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,AGYS,Agilysys Inc.,39.0,107.27,,-4183.53
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,EQR,Equity Residential,60.0,69.5,,-4170.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MOH,Molina Healthcare Inc.,17.0,233.6,,-3971.2
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,SEI,Solaris Energy Infrastructure Inc.,59.0,62.779322,,-3703.979998
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,NEE,"NextEra Energy, Inc.",47.0,89.63,,4212.61
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,VMI,"Valmont Industries, Inc.",7.0,543.87,,-3807.09
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MCRI,Monarch Casino & Resort Inc.,33.0,128.91,,-4254.03
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,JBHT,"J.B. Hunt Transport Services, Inc.",9.0,294.666667,,2652.000003
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,MCRI,Monarch Casino & Resort Inc.,33.0,126.172728,,4163.700024
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,KMI,"Kinder Morgan, Inc.",78.0,32.29,,-2518.62
@@ -5740,13 +5752,9 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,JNJ,Johnson & Johnson,9.0,247.046667,,2223.420003
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,HOMB,Home BancShares Inc.,43.0,29.868373,,-1284.340039
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,BNY,BlackRock New York Municipal Income Trust,16.0,162.9875,,2607.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,RKLB  260724C00086000,RKLB  260724C00086000,3.0,0.31,,93.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,RKLB  260724C00096000,RKLB  260724C00096000,3.0,0.22,,-66.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,TXN,Texas Instruments Inc,13.0,298.1,,-3875.3
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,VICR,Vicor Corporation,16.0,248.54,,3976.64
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,KALU,Kaiser Aluminum Corporation,26.0,162.127692,,-4215.319992
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,BLK,"BlackRock, Inc.",2.0,1105.99,,-2211.98
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,ICLR,ICON plc,25.0,169.4,,-4235.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,SON,Sonoco Products Co.,75.0,53.87,,4040.25
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,VICR,Vicor Corporation,16.0,270.0,,-4320.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,EFX,Equifax Inc.,24.0,172.57,,4141.68
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,CALX,Calix Inc.,108.0,38.97,,4208.76
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,AGYS,Agilysys Inc.,39.0,107.27,,-4183.53
