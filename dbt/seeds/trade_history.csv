@@ -5743,6 +5743,7 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,AGYS,Agilysys Inc.,39.0,107.27,,-4183.53
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,BLK,"BlackRock, Inc.",2.0,1105.99,,-2211.98
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,KALU,Kaiser Aluminum Corporation,26.0,162.127692,,-4215.319992
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,VICR,Vicor Corporation,16.0,248.54,,3976.64
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,WFC   260731C00089000,WFC   260731C00089000,11.0,1.82,,-2002.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,WFC   260731C00092000,WFC   260731C00092000,11.0,0.63,,693.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,MRVL  260731P00195000,MRVL  260731P00195000,1.0,15.35,,-1535.0
@@ -5763,4 +5764,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,RKLB  260724C00086000,RKLB  260724C00086000,3.0,0.31,,93.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,RKLB  260724C00096000,RKLB  260724C00096000,3.0,0.22,,-66.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Buy,TXN,Texas Instruments Inc,13.0,298.1,,-3875.3
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/15/2026,Sell,VICR,Vicor Corporation,16.0,248.54,,3976.64
