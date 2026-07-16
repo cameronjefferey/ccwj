@@ -64,3 +64,33 @@ def test_chart_empty_when_no_activity_at_all():
     out = _build_account_chart_from_daily_pnl(pd.DataFrame(rows), pd.DataFrame())
     assert out["dates"] == []
     assert out["equity"] == []
+
+
+def _short_row(d, *, sell_qty=0.0, sell_proceeds=0.0, close=0.0):
+    r = _row(d, close=close)
+    r["symbol"] = "SHORTY"
+    r["equity_sell_qty"] = sell_qty
+    r["equity_sell_proceeds"] = sell_proceeds
+    r["has_trade"] = sell_qty > 0
+    return r
+
+
+def test_short_sale_marked_to_market_not_booked_as_full_proceeds():
+    """A sale with no long inventory opens a SHORT; its P&L is
+    proceeds - shares*close, NOT the full proceeds as realized gain. The
+    account chart previously booked the entire proceeds (the +$46,937
+    phantom-equity bug on a short-heavy day-trading account)."""
+    rows = [
+        # Short 100 @ $50; same-day close $50 → short P&L = 5000 - 100*50 = 0.
+        _short_row(date(2026, 7, 14), sell_qty=100.0, sell_proceeds=5000.0, close=50.0),
+        # Held short, price falls to $45 → short P&L = 5000 - 100*45 = +500.
+        _short_row(date(2026, 7, 15), close=45.0),
+        # Price rises to $60 → short P&L = 5000 - 100*60 = -1000.
+        _short_row(date(2026, 7, 16), close=60.0),
+    ]
+    out = _build_account_chart_from_daily_pnl(pd.DataFrame(rows), pd.DataFrame())
+
+    assert out["equity"] == [0.0, 500.0, -1000.0], (
+        f"short position not marked to market: {out['equity']} "
+        f"(full-proceeds bug would show ~5000)"
+    )

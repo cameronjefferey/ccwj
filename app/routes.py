@@ -6332,32 +6332,69 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         for _, row in day.iterrows():
             key = _eq_key(row)
             if key not in eq_state:
-                eq_state[key] = {"shares": 0.0, "cost": 0.0, "realized": 0.0}
+                eq_state[key] = {
+                    "shares": 0.0, "cost": 0.0,
+                    "short_shares": 0.0, "short_cost": 0.0,
+                    "realized": 0.0,
+                }
             s = eq_state[key]
             bq = float(row.get("equity_buy_qty") or 0)
             bc = float(row.get("equity_buy_cost") or 0)
             sq = float(row.get("equity_sell_qty") or 0)
             sp = float(row.get("equity_sell_proceeds") or 0)
 
+            # Sells first: close any long lot (realized vs avg cost), then
+            # open/extend a SHORT with the remainder. Without the short branch
+            # a sale with no long inventory booked the ENTIRE proceeds as
+            # realized profit (zero cost basis), so a short-heavy day-trader's
+            # equity line rocketed to a phantom gain (cameronbot: +$46,937 on
+            # 10 short positions). Mirrors _build_chart_from_daily_pnl.
+            if sq > 0:
+                remaining_sell = sq
+                remaining_proceeds = sp
+                if s["shares"] > 0:
+                    sold_long = min(remaining_sell, s["shares"])
+                    avg = s["cost"] / s["shares"] if s["shares"] > 0 else 0.0
+                    frac = sold_long / sq if sq > 0 else 1.0
+                    sold_long_proceeds = sp * frac
+                    s["realized"] += sold_long_proceeds - avg * sold_long
+                    s["cost"] = max(0.0, s["cost"] - avg * sold_long)
+                    s["shares"] = max(0.0, s["shares"] - sold_long)
+                    remaining_sell -= sold_long
+                    remaining_proceeds -= sold_long_proceeds
+                if remaining_sell > 0:
+                    s["short_shares"] += remaining_sell
+                    s["short_cost"] += remaining_proceeds
+
+            # Buys: cover any short first (realized vs avg short proceeds),
+            # then extend the long.
             if bq > 0:
-                s["shares"] += bq
-                s["cost"] += bc
-            if sq > 0 and s["shares"] > 0:
-                avg = s["cost"] / s["shares"]
-                sold = min(sq, s["shares"])
-                s["realized"] += sp - avg * sold
-                s["cost"] = max(0, s["cost"] - avg * sold)
-                s["shares"] = max(0, s["shares"] - sold)
-            elif sq > 0:
-                s["realized"] += sp
+                remaining_buy = bq
+                remaining_cost = bc
+                if s["short_shares"] > 0:
+                    covered = min(remaining_buy, s["short_shares"])
+                    frac = covered / bq if bq > 0 else 1.0
+                    cover_cost = bc * frac
+                    avg_short = s["short_cost"] / s["short_shares"] if s["short_shares"] > 0 else 0.0
+                    s["realized"] += avg_short * covered - cover_cost
+                    s["short_cost"] = max(0.0, s["short_cost"] - avg_short * covered)
+                    s["short_shares"] = max(0.0, s["short_shares"] - covered)
+                    remaining_buy -= covered
+                    remaining_cost -= cover_cost
+                if remaining_buy > 0:
+                    s["shares"] += remaining_buy
+                    s["cost"] += remaining_cost
 
         eq_total = sum(s["realized"] for s in eq_state.values())
         for _, row in day.iterrows():
             key = _eq_key(row)
             s = eq_state[key]
             close = float(row.get("close_price") or 0)
-            if close > 0 and s["shares"] > 0:
-                eq_total += s["shares"] * close - s["cost"]
+            if close > 0:
+                if s["shares"] > 0:
+                    eq_total += s["shares"] * close - s["cost"]
+                if s["short_shares"] > 0:
+                    eq_total += s["short_cost"] - s["short_shares"] * close
 
         # Trim the leading pre-first-trade prefix. Until the account has any
         # activity, every series value is 0 and there are no holdings. Detect
@@ -6368,7 +6405,10 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         if not account_started:
             day_buy = float(day["equity_buy_qty"].fillna(0).sum()) if "equity_buy_qty" in day.columns else 0.0
             day_sell = float(day["equity_sell_qty"].fillna(0).sum()) if "equity_sell_qty" in day.columns else 0.0
-            has_holdings = any(abs(s["shares"]) > 1e-9 for s in eq_state.values())
+            has_holdings = any(
+                abs(s["shares"]) > 1e-9 or abs(s["short_shares"]) > 1e-9
+                for s in eq_state.values()
+            )
             if (day_buy > 0 or day_sell > 0 or has_holdings
                     or abs(eq_total) > 1e-9 or abs(cum_opt) > 1e-9
                     or abs(cum_div) > 1e-9 or abs(cum_oth) > 1e-9):
