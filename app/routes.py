@@ -6296,6 +6296,14 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     # except worse because it couldn't even mark-to-market.
     options_per_symbol_realized = {}  # (account, symbol) -> last realized cum
 
+    # mart_daily_pnl's dense spine starts at the account's earliest activity
+    # date, but for a freshly-connected account that can be weeks of leading
+    # flat-$0 days before the first trade (e.g. an Alpaca account created in
+    # late June rendering a flat line back to mid-May). Skip those leading
+    # zero days so the chart begins when the account actually started trading
+    # — mirrors the per-position chart's ``position_started`` trim.
+    account_started = False
+
     for d in all_dates:
         day = daily_df[daily_df["date"] == d]
 
@@ -6350,6 +6358,23 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
             close = float(row.get("close_price") or 0)
             if close > 0 and s["shares"] > 0:
                 eq_total += s["shares"] * close - s["cost"]
+
+        # Trim the leading pre-first-trade prefix. Until the account has any
+        # activity, every series value is 0 and there are no holdings. Detect
+        # activity via a trade today, any held/short equity, or any non-zero
+        # cumulative series (eq_total can be 0 on the first buy day when the
+        # mark equals cost, so a trade-today check is required — not just the
+        # totals).
+        if not account_started:
+            day_buy = float(day["equity_buy_qty"].fillna(0).sum()) if "equity_buy_qty" in day.columns else 0.0
+            day_sell = float(day["equity_sell_qty"].fillna(0).sum()) if "equity_sell_qty" in day.columns else 0.0
+            has_holdings = any(abs(s["shares"]) > 1e-9 for s in eq_state.values())
+            if (day_buy > 0 or day_sell > 0 or has_holdings
+                    or abs(eq_total) > 1e-9 or abs(cum_opt) > 1e-9
+                    or abs(cum_div) > 1e-9 or abs(cum_oth) > 1e-9):
+                account_started = True
+            else:
+                continue
 
         dates_out.append(str(d)[:10])
         equity_s.append(round(eq_total, 2))
