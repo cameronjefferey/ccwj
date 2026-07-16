@@ -38,23 +38,34 @@ with history_split as (
         union all select * from {{ ref('stg_broker_other_history') }}
     )
 ),
--- Alpaca activities partial-fill rows that stg_broker_alpaca_history drops
--- because an orders-aggregate row covers the same
--- (tenant_id, Date, Symbol, Action) equity group. MUST mirror the keep/drop
--- rule in stg_broker_alpaca_history.sql exactly.
+-- Alpaca activities rows that stg_broker_alpaca_history intentionally drops.
+-- MUST mirror the keep/drop rules in stg_broker_alpaca_history.sql exactly:
+--   (a) EQUITY partial-fill rows when an orders-aggregate covers the same
+--       (tenant_id, Date, Symbol, Action) group.
+--   (b) OPTION activities fills when a matching orders row exists for the
+--       same (tenant_id, Date, Symbol, side, Quantity, Price).
 alpaca_history_dropped as (
     select count(*) as n from (
         select
-            regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at ') as is_partial_fill,
+            coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false) as is_partial_fill,
             (cast(Action as string) in ('Buy', 'Sell')) as is_equity,
+            coalesce(regexp_contains(upper(cast(Symbol as string)), r'\d{6}[CP]\d{8}'), false) as is_option,
             countif(cast(Action as string) in ('Buy', 'Sell')
-                    and not regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '))
+                    and not coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false))
                 over (partition by cast(tenant_id as string), cast(Date as string),
-                                   cast(Symbol as string), cast(Action as string)) as n_aggregate
+                                   cast(Symbol as string), cast(Action as string)) as n_aggregate,
+            countif(coalesce(regexp_contains(upper(cast(Symbol as string)), r'\d{6}[CP]\d{8}'), false)
+                    and not coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false))
+                over (partition by cast(tenant_id as string), cast(Date as string),
+                                   cast(Symbol as string),
+                                   if(starts_with(cast(Action as string), 'Buy'), 'buy', 'sell'),
+                                   cast(round(safe_cast(Quantity as float64), 6) as string),
+                                   cast(round(safe_cast(Price as float64), 6) as string)) as n_opt_ord
         from {{ ref('trade_history') }}
         where {{ broker_row_filter('Account', 'alpaca') }}
     )
-    where is_equity and is_partial_fill and n_aggregate >= 1
+    where (is_equity and is_partial_fill and n_aggregate >= 1)
+       or (is_option and is_partial_fill and n_opt_ord >= 1)
 ),
 history_source as (
     select
