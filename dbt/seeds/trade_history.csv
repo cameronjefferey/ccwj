@@ -5782,6 +5782,13 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,JNJ,Johnson & Johnson,9.0,247.046667,,2223.420003
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,HOMB,Home BancShares Inc.,43.0,29.868373,,-1284.340039
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,BNY,BlackRock New York Municipal Income Trust,16.0,162.9875,,2607.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,NEE,"NextEra Energy, Inc.",47.0,89.63,,4212.61
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,VMI,"Valmont Industries, Inc.",7.0,543.87,,-3807.09
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MCRI,Monarch Casino & Resort Inc.,33.0,128.91,,-4254.03
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,RKLB  260724C00086000,RKLB  260724C00086000,3.0,0.31,,93.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,RKLB  260724C00096000,RKLB  260724C00096000,3.0,0.22,,-66.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Sell,FCX,Freeport-McMoRan Inc.,70.0,58.25,,4077.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,GOOGL,Alphabet Inc.,11.0,347.242727,,-3819.669997
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,AMX,"América Móvil, S.A.B. de C.V.",151.0,26.069139,,-3936.439989
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,TCBI,Texas Capital Bancshares Inc.,41.0,107.01,,-4387.41
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Sell,CNS,Cohen & Steers Inc.,33.0,74.71,,2465.43
@@ -5809,8 +5816,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,EQR,Equity Residential,60.0,69.5,,-4170.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MOH,Molina Healthcare Inc.,17.0,233.6,,-3971.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,SEI,Solaris Energy Infrastructure Inc.,59.0,62.779322,,-3703.979998
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell,NEE,"NextEra Energy, Inc.",47.0,89.63,,4212.61
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,VMI,"Valmont Industries, Inc.",7.0,543.87,,-3807.09
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MCRI,Monarch Casino & Resort Inc.,33.0,128.91,,-4254.03
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,RKLB  260724C00086000,RKLB  260724C00086000,3.0,0.31,,93.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,RKLB  260724C00096000,RKLB  260724C00096000,3.0,0.22,,-66.0
