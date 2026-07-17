@@ -4246,6 +4246,18 @@ Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUN 2026,,,,-4.5
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUN 2026,,,,-10.0
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/21/2026,Sell to Open,NVDA  260605C00230000,TRADE NVDA 05JUN26 230 C,1.0,4.45,1.0607,443.9393
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,841.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Sell to Open,BE    260410C00145000,CALL BLOOM ENERGY CORP $145 EXP 04/10/26,10.0,3.35,4.15,3345.85
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Buy to Close,BE    260402C00140000,CALL BLOOM ENERGY CORP $140 EXP 04/02/26,10.0,0.04,0.12,-40.12
@@ -5383,18 +5395,12 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/13/2026,Expi
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/13/2026,Expired,BE    260710C00310000,CALL BLOOM ENERGY CORP $310 EXP 07/10/26,3.0,,,0.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/16/2026,Sell to Close,JPM   260717P00310000,JPM   260717P00310000,5.0,0.01,,5.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/16/2026,Buy to Close,JPM   260717P00320000,JPM   260717P00320000,5.0,0.02,,-10.0
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Sell to Open,VRT   260724C00320000,VRT   260724C00320000,1.0,4.89,,489.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Buy to Close,VRT   260717C00330000,VRT   260717C00330000,1.0,0.64,,-64.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Sell to Open,VRT   260724C00310000,VRT   260724C00310000,1.0,7.25,,725.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Buy to Close,VRT   260717C00340000,VRT   260717C00340000,1.0,0.05,,-5.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Sell to Open,AVGO  260724P00380000,AVGO  260724P00380000,1.0,12.73,,1273.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,07/17/2026,Buy to Close,AVGO  260717P00380000,AVGO  260717P00380000,1.0,3.99,,-399.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
@@ -5794,6 +5800,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,MRVL  260731P00172500,MRVL  260731P00172500,1.0,5.7,,570.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,WFC   260731C00089000,WFC   260731C00089000,11.0,1.82,,-2002.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,WFC   260731C00092000,WFC   260731C00092000,11.0,0.63,,693.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,MRVL  260731P00195000,MRVL  260731P00195000,1.0,18.1,,1810.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,MRVL  260731P00172500,MRVL  260731P00172500,1.0,7.9,,-790.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,KOF,Coca-Cola FEMSA S.A.B. de C.V. ADR,39.0,103.5,,-4036.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,BKR,Baker Hughes Company,72.0,56.18,,-4044.96
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,THC,Tenet Healthcare Corporation,22.0,198.492727,,-4366.839994
@@ -5821,5 +5829,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Sell,SEI,Solaris Energy Infrastructure Inc.,59.0,57.8,,3410.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Sell to Close,IBKR  260724C00093000,IBKR  260724C00093000,4.0,2.35,,940.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy to Close,IBKR  260724C00104000,IBKR  260724C00104000,4.0,2.3,,-920.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Close,MRVL  260731P00195000,MRVL  260731P00195000,1.0,18.1,,1810.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,MRVL  260731P00172500,MRVL  260731P00172500,1.0,7.9,,-790.0
