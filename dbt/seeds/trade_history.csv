@@ -5790,6 +5790,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,EQR,Equity Residential,60.0,69.5,,-4170.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,MOH,Molina Healthcare Inc.,17.0,233.6,,-3971.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy,SEI,Solaris Energy Infrastructure Inc.,59.0,62.779322,,-3703.979998
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,MRVL  260731P00195000,MRVL  260731P00195000,1.0,15.35,,-1535.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,MRVL  260731P00172500,MRVL  260731P00172500,1.0,5.7,,570.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,KOF,Coca-Cola FEMSA S.A.B. de C.V. ADR,39.0,103.5,,-4036.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,BKR,Baker Hughes Company,72.0,56.18,,-4044.96
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/17/2026,Buy,THC,Tenet Healthcare Corporation,22.0,198.492727,,-4366.839994
@@ -5819,5 +5821,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Close,MRVL  260731P00172500,MRVL  260731P00172500,1.0,7.9,,-790.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,WFC   260731C00089000,WFC   260731C00089000,11.0,1.82,,-2002.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,WFC   260731C00092000,WFC   260731C00092000,11.0,0.63,,693.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Buy to Open,MRVL  260731P00195000,MRVL  260731P00195000,1.0,15.35,,-1535.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/16/2026,Sell to Open,MRVL  260731P00172500,MRVL  260731P00172500,1.0,5.7,,570.0
