@@ -280,11 +280,16 @@ def _tenants_for_scope(selected_account=None):
          single physical account, even when its display label collides
          with siblings. Validated against the user's owned tenants
          (never let a URL widen tenancy); admin may address any tenant.
-      2. ``?account=<label>`` (legacy alias) — matches a base label OR a
+      2. ``?tenants=<tid>,<tid>`` — multi-account on/off toggle set (the
+         Position Detail account toggles). A SUBSET of the user's owned
+         tenants; validated the same way as ``?tenant=`` so a URL can
+         never widen tenancy. Any tenant not owned is dropped; if none of
+         the requested ids are owned we fall through to safe defaults.
+      3. ``?account=<label>`` (legacy alias) — matches a base label OR a
          disambiguated label (e.g. "Schwab Account (\u2022\u20226342)").
          A bare colliding base label still selects all matching tenants
          for backward compatibility.
-      3. No selection → admin: ``None`` (no SQL filter); user: all owned.
+      4. No selection → admin: ``None`` (no SQL filter); user: all owned.
 
     Unknown selections fall back to all of the user's tenants (same safe
     default as the v2 design doc).
@@ -309,6 +314,27 @@ def _tenants_for_scope(selected_account=None):
         if requested_tenant in owned:
             return [requested_tenant]
         # Not owned → ignore the param and fall through to safe defaults.
+
+    # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles.
+    #     Encodes "show these accounts, hide the rest". Same never-widen
+    #     validation as ?tenant=; intersect with owned for non-admins.
+    try:
+        requested_tenants_raw = (request.args.get("tenants") or "").strip()
+    except Exception:
+        requested_tenants_raw = ""
+    if requested_tenants_raw:
+        requested = [t.strip() for t in requested_tenants_raw.split(",") if t.strip()]
+        if requested:
+            if admin:
+                return list(dict.fromkeys(requested))
+            owned = [
+                row["tenant_id"]
+                for row in (get_broker_tenants_for_user(current_user.id) or [])
+            ]
+            allowed = [t for t in requested if t in owned]
+            if allowed:
+                return list(dict.fromkeys(allowed))
+            # None owned → ignore the param and fall through to safe defaults.
 
     if admin and not selected:
         return None
@@ -1184,6 +1210,10 @@ def _legs_df_to_sessions_list(legs_df):
       - ``display_leg`` ← ``display_leg_num`` (chronological 1..N)
       - ``last_trade_date`` ← ``last_activity_date`` (string YYYY-MM-DD)
       - ``options_pnl`` ← ``closed_options_pnl + open_options_pnl``
+      - ``tenant_id`` / ``account`` ← carried through so legs can be
+        grouped by account when a symbol is traded across several
+        accounts (leg_id / display_leg_num restart per tenant, so the
+        template groups + labels pills by ``account_display``).
 
     Replaces ~150 lines of stateful Python (orphan-grouping, gap-id
     assignment, P&L overlap re-aggregation) — the dbt mart owns all of
@@ -1224,6 +1254,8 @@ def _legs_df_to_sessions_list(legs_df):
         out.append({
             "session_id": int(r["leg_id"]),
             "display_leg": int(r["display_leg_num"]),
+            "tenant_id": str(r.get("tenant_id") or ""),
+            "account": str(r.get("account") or ""),
             "status": str(r.get("status") or "Closed"),
             "open_date": str(od) if od is not None and not pd.isna(od) else "",
             "last_trade_date": str(ld) if ld is not None and not pd.isna(ld) else "",
@@ -2447,6 +2479,7 @@ POSITION_CLOSED_EQUITY_QUERY = """
 
 POSITION_LEGS_QUERY = """
     SELECT
+        tenant_id,
         account,
         user_id,
         symbol,
@@ -2469,7 +2502,21 @@ POSITION_LEGS_QUERY = """
     FROM `ccwj-dbt.analytics.int_position_legs`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {tenant_filter}
-    ORDER BY account, display_leg_num
+    ORDER BY account, tenant_id, display_leg_num
+"""
+
+# Distinct accounts (tenants) that have traded this symbol, scoped to the
+# viewer's FULL owned tenant set — NOT the ?tenants= on/off subset. Powers
+# the Position Detail account-toggle bar so a toggled-OFF account can still
+# be turned back on (it must appear in the list even when it's filtered out
+# of the main legs query). Isolation is still enforced (owned tenants only).
+POSITION_ACCOUNTS_QUERY = """
+    SELECT DISTINCT
+        tenant_id,
+        account
+    FROM `ccwj-dbt.analytics.int_position_legs`
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
+    {tenant_filter}
 """
 
 # Lightweight per-(account,symbol) rollup for the position-detail tab strip.
@@ -3367,8 +3414,15 @@ def position_detail(symbol):
     selected_account = request.args.get("account", "").strip()
     tenant_scope = _tenants_for_scope(selected_account)
 
+    # Full owned-tenant scope (ignores the ?tenants= on/off subset) so the
+    # account-toggle bar can list every account that traded this symbol —
+    # including ones currently toggled off. Isolation is preserved: for a
+    # non-admin this is exactly their owned tenants, for admin it's None.
+    all_owned_scope = _user_tenant_list()
+
     try:
         _pos_acct = _tenant_sql_and(tenant_scope)
+        _pos_all_acct = _tenant_sql_and(all_owned_scope)
         _pos_sc_acct = _tenant_sql_and(tenant_scope, col="sc.tenant_id")
         # POSITION_TRADES_QUERY joins stg_history (alias h) to int_drip_fills (alias d);
         # both tables have an `account` column so the filter must be scoped to h.
@@ -3405,6 +3459,12 @@ def position_detail(symbol):
             "legs": POSITION_LEGS_QUERY.format(
                 symbol=safe_symbol, tenant_filter=_pos_acct
             ),
+            # Account-toggle bar source: every account that traded this
+            # symbol across the viewer's FULL owned set (not the ?tenants=
+            # subset), so a toggled-off account is still listed.
+            "accounts_all": POSITION_ACCOUNTS_QUERY.format(
+                symbol=safe_symbol, tenant_filter=_pos_all_acct
+            ),
             # Lightweight all-symbols rollup that powers the symbol tab strip
             # at the top of the page. Scoped by `tenant_scope` so the
             # tabs match the page's account filter (when ?account= is set the
@@ -3432,6 +3492,7 @@ def position_detail(symbol):
         closed_equity_df = dfs["closed_equity"]
         matrix_df = dfs["matrix"]
         legs_df = dfs["legs"]
+        accounts_all_df = dfs.get("accounts_all", pd.DataFrame())
         tabs_df = dfs["tabs"]
         earnings_df = dfs["earnings"]
         # Fetched in the batch above; post-processed later in the route
@@ -3447,6 +3508,7 @@ def position_detail(symbol):
         closed_equity_df = _df_normalize_account_column(closed_equity_df)
         matrix_df = _df_normalize_account_column(matrix_df)
         legs_df = _df_normalize_account_column(legs_df)
+        accounts_all_df = _df_normalize_account_column(accounts_all_df)
         tabs_df = _df_normalize_account_column(tabs_df)
     except Exception as exc:
         return render_template(
@@ -3461,6 +3523,9 @@ def position_detail(symbol):
             current_positions=[],
             option_matrices=[],
             sessions=[],
+            legs_by_account=[],
+            account_toggles=[],
+            tenants_param="",
             selected_legs=[],
             leg_param="",
             chart_data_json="{}",
@@ -3580,6 +3645,66 @@ def position_detail(symbol):
     # Tenant scope already narrowed legs to the selected account's tenant.
 
     sessions_list = _legs_df_to_sessions_list(legs_df)
+
+    # ── Group legs by account ──
+    # When a symbol is traded across several accounts, leg_id / display_leg
+    # restart per tenant (so two accounts can both show "Leg 1"). Attach a
+    # disambiguated per-account label to each session so the template can
+    # GROUP the pills under account headers instead of interleaving a
+    # confusing run of duplicate leg numbers.
+    _viewer_id = getattr(current_user, "id", None)
+    _tenant_label_map = _tenant_label_map_for_user(_viewer_id)
+    _acct_nick_map = _account_label_map(_viewer_id)
+
+    def _account_display_for(tenant_id, account_raw):
+        label = _tenant_label_map.get(tenant_id or "") if tenant_id else None
+        if not label:
+            raw = account_raw or ""
+            label = _acct_nick_map.get(raw, raw)
+        return label or "Account"
+
+    for s in sessions_list:
+        s["account_display"] = _account_display_for(
+            s.get("tenant_id"), s.get("account")
+        )
+
+    legs_by_account = []
+    _leg_groups = {}
+    for s in sessions_list:
+        _leg_groups.setdefault(s.get("tenant_id") or "", []).append(s)
+    for _tid, _sess in _leg_groups.items():
+        legs_by_account.append({
+            "tenant_id": _tid,
+            "label": _sess[0].get("account_display") or "Account",
+            "sessions": _sess,
+        })
+    legs_by_account.sort(key=lambda g: g["label"])
+
+    # ── Account toggle bar (turn entire accounts on/off) ──
+    # Built from the FULL owned-tenant set (accounts_all_df), so an account
+    # that's currently toggled off still appears and can be turned back on.
+    accounts_all_df = _filter_df_by_tenant_ids(accounts_all_df, all_owned_scope)
+    selected_tenant_set = set(tenant_scope) if tenant_scope is not None else None
+    account_toggles = []
+    if (
+        accounts_all_df is not None
+        and not accounts_all_df.empty
+        and "tenant_id" in accounts_all_df.columns
+    ):
+        _seen_tids = set()
+        for _, _r in accounts_all_df.iterrows():
+            _tid = str(_r.get("tenant_id") or "")
+            if not _tid or _tid in _seen_tids:
+                continue
+            _seen_tids.add(_tid)
+            account_toggles.append({
+                "tenant_id": _tid,
+                "label": _account_display_for(_tid, str(_r.get("account") or "")),
+                "selected": True if selected_tenant_set is None else (_tid in selected_tenant_set),
+            })
+        account_toggles.sort(key=lambda a: a["label"])
+    # Preserve the current account subset on leg "Show All" / navigation.
+    tenants_param = request.args.get("tenants", "").strip()
 
     leg_param = request.args.get("leg", "")
     if leg_param:
@@ -4592,6 +4717,9 @@ def position_detail(symbol):
         current_positions=current_positions,
         option_matrices=option_matrices,
         sessions=sessions_list,
+        legs_by_account=legs_by_account,
+        account_toggles=account_toggles,
+        tenants_param=tenants_param,
         selected_legs=selected_legs,
         leg_param=leg_param,
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
