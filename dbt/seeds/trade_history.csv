@@ -1131,18 +1131,6 @@ Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/202
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
@@ -5892,3 +5880,15 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/20/2026,Sell
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/20/2026,Sell to Open,AMZN  260605C00275000,CALL AMAZON.COM INC $275 EXP 06/05/26,2.0,2.86,0.84,571.16
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/20/2026,Sell to Open,JPM   260605C00315000,CALL JPMORGAN CHASE & CO$315 EXP 06/05/26,3.0,1.75,1.26,523.74
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,05/20/2026,Sell to Open,IYW   260618C00250000,CALL ISHR US TECH $250 EXP 06/18/26,10.0,3.2,4.22,3195.78
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
