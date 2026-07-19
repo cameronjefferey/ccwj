@@ -18,12 +18,14 @@ def _legs_row(
     leg_id, display_leg_num, status, open_date, last_activity_date,
     equity_pnl=0.0, closed_options_pnl=0.0, open_options_pnl=0.0,
     options_count=0, open_options_count=0, options_only=False,
+    account="Cameron Investment", tenant_id="snaptrade:cam-uuid",
 ):
     """Shape mirrors int_position_legs SELECT — keeps the test honest about
     the mart contract."""
     combined = round(equity_pnl + closed_options_pnl + open_options_pnl, 2)
     return {
-        "account": "Cameron Investment",
+        "tenant_id": tenant_id,
+        "account": account,
         "user_id": 9,
         "symbol": "PLTR",
         "leg_id": leg_id,
@@ -439,6 +441,34 @@ def test_legs_to_sessions_list_preserves_leg_id_and_display_order():
     assert [s["display_leg"] for s in out] == [1, 2]
     assert [s["session_id"] for s in out] == [1, 2]
     assert [s["status"] for s in out] == ["Closed", "Open"]
+
+
+def test_legs_to_sessions_list_carries_tenant_and_account_for_grouping():
+    """Legs must carry ``tenant_id`` + ``account`` so the position page can
+    group pills by account when a symbol is traded across several accounts
+    (leg_id / display_leg restart per tenant → without a grouping key the
+    UI shows a confusing run of duplicate 'Leg 1' pills)."""
+    rows = [
+        _legs_row(
+            leg_id=1, display_leg_num=1, status="Closed",
+            open_date="2024-06-17", last_activity_date="2024-09-23",
+            equity_pnl=100.0,
+            account="Schwab Account", tenant_id="snaptrade:aaa",
+        ),
+        _legs_row(
+            leg_id=1, display_leg_num=1, status="Open",
+            open_date="2026-05-11", last_activity_date="2026-07-17",
+            equity_pnl=200.0,
+            account="Schwab Account", tenant_id="snaptrade:bbb",
+        ),
+    ]
+    out = _legs_df_to_sessions_list(pd.DataFrame(rows))
+    # Same display_leg / session_id across the two accounts (the collision
+    # the grouping fixes) — but distinct tenant_id keys the group.
+    assert [s["display_leg"] for s in out] == [1, 1]
+    assert [s["session_id"] for s in out] == [1, 1]
+    assert {s["tenant_id"] for s in out} == {"snaptrade:aaa", "snaptrade:bbb"}
+    assert all(s["account"] == "Schwab Account" for s in out)
 
 
 def test_legs_to_sessions_list_open_leg_merges_equity_and_live_options():

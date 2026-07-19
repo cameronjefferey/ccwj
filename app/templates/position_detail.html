@@ -54,6 +54,26 @@
     .session-pill .pill-dot.open  { background: #198754; }
     .session-pill .pill-dot.closed { background: #6c757d; }
     .session-pill .pill-pnl { font-size: .7rem; opacity: .8; }
+    .leg-account-group { margin-top: .5rem; }
+    .leg-account-group:first-of-type { margin-top: 0; }
+    .leg-account-label {
+        font-size: .72rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: #6c757d; margin-bottom: .35rem;
+    }
+    .account-toggles { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .account-toggle {
+        display: inline-flex; align-items: center; gap: .45rem; margin: 0;
+        padding: .4rem .9rem; border-radius: 20px; font-size: .8rem; font-weight: 600;
+        cursor: pointer; user-select: none; transition: all .15s;
+        border: 2px solid #dee2e6; background: #f8f9fa; color: #adb5bd;
+    }
+    .account-toggle:hover { border-color: #6c757d; }
+    .account-toggle.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
+    .account-toggle .pill-dot {
+        width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    }
+    .account-toggle .pill-dot.open { background: #198754; }
+    .account-toggle .pill-dot.closed { background: #ced4da; }
 
     @media (max-width: 640px) {
         .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
@@ -189,7 +209,11 @@
         {% endif %}
     </div>
 
-    {% if accounts|length > 1 %}
+    {# When a symbol is traded across multiple accounts the grouped
+       account-toggle bar below supersedes this single-select dropdown.
+       Keep the dropdown only for the single-account / no-toggle case
+       (e.g. picking an account that hasn't traded this symbol). #}
+    {% if accounts|length > 1 and not (account_toggles and account_toggles|length > 1) %}
     <form method="get" class="mt-3">
         <select name="account" class="form-select form-select-sm d-inline-block" style="max-width:220px; background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2)"
                 onchange="this.form.submit()">
@@ -327,47 +351,120 @@
     </div>
 </div>
 
-{# ── Session / Leg Filter ── #}
+{# ── Account Toggle Bar (turn entire accounts on/off) ── #}
+{% if account_toggles and account_toggles|length > 1 %}
+<div class="card stat-card p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0">Accounts</h6>
+        <span class="text-muted small">Traded {{ symbol }} in {{ account_toggles|length }} accounts</span>
+    </div>
+    <p class="text-muted small mb-2">Click an account to include or exclude its legs and totals.</p>
+    <div class="account-toggles" id="accountToggles">
+        {% for a in account_toggles %}
+        <label class="account-toggle {{ 'active' if a.selected }}">
+            <input type="checkbox" class="account-toggle-input" data-tenant-id="{{ a.tenant_id }}" {{ 'checked' if a.selected }} hidden>
+            <span class="pill-dot {{ 'open' if a.selected else 'closed' }}"></span>
+            <span>{{ a.label }}</span>
+        </label>
+        {% endfor %}
+    </div>
+</div>
+<script>
+(function() {
+    const inputs = document.querySelectorAll('.account-toggle-input');
+    inputs.forEach(inp => {
+        inp.addEventListener('change', () => {
+            inp.closest('.account-toggle').classList.toggle('active', inp.checked);
+            const checked = Array.from(inputs).filter(x => x.checked).map(x => x.dataset.tenantId);
+            const url = new URL(window.location);
+            // Account set changed → leg ids are per-account, so drop any leg
+            // filter and the legacy single-account params. All-on / all-off
+            // collapse to the default "everything" view.
+            url.searchParams.delete('leg');
+            url.searchParams.delete('account');
+            url.searchParams.delete('tenant');
+            if (checked.length === 0 || checked.length === inputs.length) {
+                url.searchParams.delete('tenants');
+            } else {
+                url.searchParams.set('tenants', checked.join(','));
+            }
+            window.location = url.toString();
+        });
+    });
+})();
+</script>
+{% endif %}
+
+{# ── Session / Leg Filter (grouped by account) ── #}
 {% if sessions and sessions|length > 1 %}
+{% set multi_account = legs_by_account and legs_by_account|length > 1 %}
 <div class="card stat-card p-3 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0">Position Legs</h6>
         {% if leg_param %}
-        <a href="{{ url_for('position_detail', symbol=symbol, account=selected_account) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
+        <a href="{{ url_for('position_detail', symbol=symbol, account=(selected_account or None), tenants=(tenants_param or None)) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
         {% endif %}
     </div>
-    <p class="text-muted small mb-2">Filter the entire page by leg. Click to toggle.</p>
-    <div class="session-pills" id="sessionPills">
-        {% for s in sessions %}
-        <div class="session-pill {{ 'active' if s.session_id in selected_legs }} {{ 'session-open' if s.status == 'Open' else 'session-closed' }}"
-             data-session-id="{{ s.session_id }}">
-            <span class="pill-dot {{ 'open' if s.status == 'Open' else 'closed' }}"></span>
-            <span>Leg {{ s.display_leg }}</span>
-            <span class="pill-pnl">
-                {{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}
-            </span>
-            <span class="pill-pnl {% if s.combined_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                ${{ "{:,.0f}".format(s.combined_pnl) }}
-            </span>
-            {% if s.options_only is defined and s.options_only %}
-            <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(options only)</span>
-            {% elif s.options_count > 0 and s.equity_pnl != 0 %}
-            <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq ${{ "{:,.0f}".format(s.equity_pnl) }} + {{ s.options_count }} opt)</span>
+    <p class="text-muted small mb-2">
+        {% if multi_account %}
+        Legs are grouped by account. Click a leg to focus that account and leg.
+        {% else %}
+        Filter the entire page by leg. Click to toggle.
+        {% endif %}
+    </p>
+    <div id="sessionPills" data-multi-account="{{ '1' if multi_account else '0' }}">
+        {% for grp in legs_by_account %}
+        <div class="leg-account-group">
+            {% if multi_account %}
+            <div class="leg-account-label">{{ grp.label }}</div>
             {% endif %}
+            <div class="session-pills">
+                {% for s in grp.sessions %}
+                <div class="session-pill {{ 'active' if s.session_id in selected_legs }} {{ 'session-open' if s.status == 'Open' else 'session-closed' }}"
+                     data-session-id="{{ s.session_id }}" data-tenant-id="{{ s.tenant_id }}">
+                    <span class="pill-dot {{ 'open' if s.status == 'Open' else 'closed' }}"></span>
+                    <span>Leg {{ s.display_leg }}</span>
+                    <span class="pill-pnl">
+                        {{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}
+                    </span>
+                    <span class="pill-pnl {% if s.combined_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        ${{ "{:,.0f}".format(s.combined_pnl) }}
+                    </span>
+                    {% if s.options_only is defined and s.options_only %}
+                    <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(options only)</span>
+                    {% elif s.options_count > 0 and s.equity_pnl != 0 %}
+                    <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq ${{ "{:,.0f}".format(s.equity_pnl) }} + {{ s.options_count }} opt)</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
         {% endfor %}
     </div>
 </div>
 <script>
 (function() {
+    const container = document.getElementById('sessionPills');
+    const multiAccount = container && container.dataset.multiAccount === '1';
     const pills = document.querySelectorAll('.session-pill');
     pills.forEach(pill => {
         pill.addEventListener('click', () => {
+            const url = new URL(window.location);
+            if (multiAccount) {
+                // Across multiple accounts a bare leg id is ambiguous (each
+                // account restarts at Leg 1). Focus this leg's account, then
+                // select just this leg — the rest of the page scopes to it.
+                url.searchParams.set('tenants', pill.dataset.tenantId);
+                url.searchParams.delete('account');
+                url.searchParams.delete('tenant');
+                url.searchParams.set('leg', pill.dataset.sessionId);
+                window.location = url.toString();
+                return;
+            }
             pill.classList.toggle('active');
             const active = document.querySelectorAll('.session-pill.active');
             const ids = Array.from(active).map(p => p.dataset.sessionId);
             const allIds = Array.from(pills).map(p => p.dataset.sessionId);
-            const url = new URL(window.location);
             if (ids.length === 0 || ids.length === allIds.length) {
                 url.searchParams.delete('leg');
             } else {
