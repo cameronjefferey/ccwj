@@ -3929,6 +3929,9 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/11/2026,Buy,I
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/08/2026,Buy,MU,MICRON TECHNOLOGY INC,10.0,950.2399,,-9502.4
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/02/2026,Sell,IREN,IREN LTD F,250.0,67.92,0.4,16979.6
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/28/2026,Credit Interest,SCHFDX0,INTEREST 04/29THRU 05/27,,,,39.27
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/20/2026,Buy,DPZ,Domino's Pizza Inc.,100.0,325.15,,-32515.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/20/2026,Sell to Open,DPZ   260821C00330000,DPZ   260821C00330000,1.0,12.4,,1240.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/20/2026,Sell,FBK,FB Financial Corp,300.0,59.55,,17865.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/20/2026,Sell to Close,SEI   260821C00070000,SEI   260821C00070000,10.0,3.45,,3450.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL AST SPACEMOBILE INC$102 EXP 06/05/26,3.0,0.76,2.0,226.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL INTUITIVE MACHS INC$32 EXP 06/05/26,12.0,0.25,7.99,292.01
@@ -4263,6 +4266,7 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/26/2026,Expir
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/22/2026,Sell to Open,GOOG  260522C00382500,CALL ALPHABET INC $382.5 EXP 05/22/26,1.0,0.14,0.66,13.34
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/22/2026,Sell to Open,ASTS  260522C00106000,CALL AST SPACEMOBILE INC$106 EXP 05/22/26,3.0,0.34,2.0,100.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/22/2026,Sell to Open,BE    260522C00315000,CALL BLOOM ENERGY CORP $315 EXP 05/22/26,2.0,3.7,1.35,738.65
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,07/20/2026,Sell to Open,BE    260731C00260000,BE    260731C00260000,1.0,14.2,,1420.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,07/20/2026,Sell,GOOG,Alphabet Inc.,100.0,345.0,,34500.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,841.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Sell to Open,BE    260410C00145000,CALL BLOOM ENERGY CORP $145 EXP 04/10/26,10.0,3.35,4.15,3345.85
