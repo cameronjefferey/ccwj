@@ -3009,6 +3009,24 @@ Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/3
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR MAY 2026,,,,-4.5
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR MAY 2026,,,,-10.0
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/05/2026,Cash Dividend,JEPI,JEPI(US46641Q3323) CASH DIVIDEND USD 0.44761 PER SHARE (Ordinary Dividend),99.99776591,0.4476,,44.76
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/06/2026,Credit Interest,,USD CREDIT INT FOR JUN-2026,,,,0.55
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUL 2026,,,,-10.0
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUL 2026,,,,-4.5
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Buy,GRID,TRADE FIRST TRST NASD CL EDG SGIIF,50.0,191.76,1.0002,-9589.0002
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Sell,AMZN,TRADE AMAZON.COM INC,5.0,237.71,0.0255,1188.5245
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Sell,AMZN,TRADE AMAZON.COM INC,15.0,237.71,1.0764,3564.5736
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/29/2026,Sell,RDDT,TRADE REDDIT INC-CL A,40.0,172.73,1.1502,6908.0498
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/29/2026,Sell,DXCM,TRADE DEXCOM INC,100.0,69.86,1.1637,6984.8363
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/26/2026,Cash Dividend,NVDA,NVDA(US67066G1040) CASH DIVIDEND USD 0.25 PER SHARE (Ordinary Dividend),100.0,0.25,,25.0
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/18/2026,Cash Dividend,IYW,IYW(US4642877215) CASH DIVIDEND USD 0.071819 PER SHARE (Ordinary Dividend),199.94708921,0.0718,,14.36
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/15/2026,Cash Dividend,GOOG,GOOG(US02079K1079) CASH DIVIDEND USD 0.22 PER SHARE (Ordinary Dividend),30.0,0.22,,6.6
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/05/2026,Expired,NVDA  260605C00230000,Expired NVDA 05JUN26 230 C,1.0,,,0.0
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUN 2026,,,,-4.5
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUN 2026,,,,-10.0
+Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/21/2026,Sell to Open,NVDA  260605C00230000,TRADE NVDA 05JUN26 230 C,1.0,4.45,1.0607,443.9393
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/18/2026,Expired,,CALL PALANTIR TECHNOLOGI$135 EXP 05/15/26,2.0,,,0.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/14/2026,Sell,,CALL PALANTIR TECHNOLOGI$135 EXP 05/15/26,2.0,1.04,1.33,206.67
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/11/2026,Expired,,CALL PALANTIR TECHNOLOGI$147 EXP 05/08/26,2.0,,,0.0
@@ -5992,21 +6010,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Sell,RF,Regions Financial Corporation,137.0,31.611241,,4330.740017
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Buy,MMM,3M Company,16.0,161.10375,,-2577.66
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Sell,ARX,Accelerant Holdings Ltd Class A Ordinary Shares,100.0,13.21,,1321.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR MAY 2026,,,,-4.5
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/04/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR MAY 2026,,,,-10.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/05/2026,Cash Dividend,JEPI,JEPI(US46641Q3323) CASH DIVIDEND USD 0.44761 PER SHARE (Ordinary Dividend),99.99776591,0.4476,,44.76
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/06/2026,Credit Interest,,USD CREDIT INT FOR JUN-2026,,,,0.55
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUL 2026,,,,-10.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,07/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUL 2026,,,,-4.5
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Buy,GRID,TRADE FIRST TRST NASD CL EDG SGIIF,50.0,191.76,1.0002,-9589.0002
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Sell,AMZN,TRADE AMAZON.COM INC,5.0,237.71,0.0255,1188.5245
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/30/2026,Sell,AMZN,TRADE AMAZON.COM INC,15.0,237.71,1.0764,3564.5736
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/29/2026,Sell,RDDT,TRADE REDDIT INC-CL A,40.0,172.73,1.1502,6908.0498
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/29/2026,Sell,DXCM,TRADE DEXCOM INC,100.0,69.86,1.1637,6984.8363
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/26/2026,Cash Dividend,NVDA,NVDA(US67066G1040) CASH DIVIDEND USD 0.25 PER SHARE (Ordinary Dividend),100.0,0.25,,25.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/18/2026,Cash Dividend,IYW,IYW(US4642877215) CASH DIVIDEND USD 0.071819 PER SHARE (Ordinary Dividend),199.94708921,0.0718,,14.36
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/15/2026,Cash Dividend,GOOG,GOOG(US02079K1079) CASH DIVIDEND USD 0.22 PER SHARE (Ordinary Dividend),30.0,0.22,,6.6
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/05/2026,Expired,NVDA  260605C00230000,Expired NVDA 05JUN26 230 C,1.0,,,0.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUN 2026,,,,-4.5
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUN 2026,,,,-10.0
-Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,05/21/2026,Sell to Open,NVDA  260605C00230000,TRADE NVDA 05JUN26 230 C,1.0,4.45,1.0607,443.9393
