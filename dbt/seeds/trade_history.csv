@@ -6066,6 +6066,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.02
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,ORF fee for proceed of 4 contracts on 2026-06-23 by PA3HS6VB43PX,,,,-0.11
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,06/23/2026,ADR Mgmt Fee,,CAT fee for proceed of 4 trades on 2026-06-23 by PA3HS6VB43PX,,,,-0.01
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,EQNR  260821C00039000,EQNR  260821C00039000,16.0,1.1,,1760.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,EQNR  260821C00041000,EQNR  260821C00041000,16.0,0.7,,-1120.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,PM    260724P00185000,PM    260724P00185000,6.0,2.75,,1650.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,PM    260724P00180000,PM    260724P00180000,6.0,1.55,,-930.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,TEL   260821C00210000,TEL   260821C00210000,2.0,14.2,,2840.0
