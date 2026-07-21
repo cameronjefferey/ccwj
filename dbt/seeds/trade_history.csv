@@ -6024,8 +6024,14 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Buy,WRB,W.R. Berkley Corporation,58.0,72.14,,-4184.12
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Buy,PBA,Pembina Pipeline Corporation,82.0,51.27,,-4204.14
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/20/2026,Buy,CSX,CSX Corporation,83.0,50.633735,,-4202.600005
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,TEL   260821C00210000,TEL   260821C00210000,2.0,14.2,,2840.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,TEL   260821C00230000,TEL   260821C00230000,2.0,7.2,,-1440.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,FCX   260724C00061000,FCX   260724C00061000,25.0,2.67,,6675.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,FCX   260724C00063000,FCX   260724C00063000,25.0,1.72,,-4300.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,MSCI  260821P00600000,MSCI  260821P00600000,2.0,43.2,,8640.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,MSCI  260821P00570000,MSCI  260821P00570000,2.0,27.7,,-5540.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,KEY   260821P00023000,KEY   260821P00023000,25.0,0.65,,1625.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,KEY   260821P00022000,KEY   260821P00022000,25.0,0.35,,-875.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,NUE,Nucor Corporation,18.0,235.36,,-4236.48
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,FCX,Freeport-McMoRan Inc.,70.0,62.38,,-4366.6
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,WELL,Welltower Inc.,17.0,246.13,,-4184.21
