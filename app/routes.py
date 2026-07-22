@@ -7538,8 +7538,10 @@ def accounts():
             balances_df[col] = pd.to_numeric(balances_df[col], errors="coerce").fillna(0)
 
     for col in ["amount", "quantity", "price", "fees"]:
-        trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
-    trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
+        if col in trades_df.columns:
+            trades_df[col] = pd.to_numeric(trades_df[col], errors="coerce").fillna(0)
+    if "trade_date" in trades_df.columns:
+        trades_df["trade_date"] = pd.to_datetime(trades_df["trade_date"]).dt.date
 
     for col in ["unrealized_pnl", "market_value", "quantity", "current_price", "cost_basis"]:
         if col in current_df.columns:
@@ -7584,21 +7586,39 @@ def accounts():
     # ------------------------------------------------------------------
     # KPIs from balances
     # ------------------------------------------------------------------
-    cash_rows = balances_df[balances_df["row_type"] == "cash"]
-    total_rows = balances_df[balances_df["row_type"] == "account_total"]
-
-    cash_balance = float(cash_rows["market_value"].sum())
-    account_value = float(total_rows["market_value"].sum())
+    # Degrade gracefully if the balances query failed (e.g. a cold-start
+    # transient right after deploy): _bq_parallel returns a column-less empty
+    # frame on failure, so guard every column access rather than 500 the whole
+    # page. Mirrors the per-section resilience the Daily Review page uses.
+    if not balances_df.empty and "row_type" in balances_df.columns:
+        cash_rows = balances_df[balances_df["row_type"] == "cash"]
+        total_rows = balances_df[balances_df["row_type"] == "account_total"]
+        cash_balance = (
+            float(cash_rows["market_value"].sum())
+            if "market_value" in cash_rows.columns else 0.0
+        )
+        account_value = (
+            float(total_rows["market_value"].sum())
+            if "market_value" in total_rows.columns else 0.0
+        )
+        acct_cost_basis = (
+            float(total_rows["cost_basis"].sum())
+            if "cost_basis" in total_rows.columns else 0.0
+        )
+    else:
+        cash_balance = account_value = acct_cost_basis = 0.0
     invested_value = account_value - cash_balance
-    acct_cost_basis = float(total_rows["cost_basis"].sum())
 
     # Realized + unrealized + total_return all come from the same source
     # (positions_summary) so the three KPIs reconcile: total_return =
     # realized + unrealized + dividends. Mixing the snapshot's unrealized
     # with positions_summary's realized has shipped a $300+ discrepancy.
-    realized_pnl = float(strat_summary_df["realized_pnl"].sum())
-    acct_unrealized = float(strat_summary_df["unrealized_pnl"].sum())
-    total_return = float(strat_summary_df["total_return"].sum())
+    def _sum_col(df, col):
+        return float(df[col].sum()) if col in df.columns else 0.0
+
+    realized_pnl = _sum_col(strat_summary_df, "realized_pnl")
+    acct_unrealized = _sum_col(strat_summary_df, "unrealized_pnl")
+    total_return = _sum_col(strat_summary_df, "total_return")
     # Surfacing dividends as its own KPI so the math reconciles for the
     # reader: realized + unrealized + dividends = total return. Without
     # this card the row silently failed by ~$200-300 (the missing piece
