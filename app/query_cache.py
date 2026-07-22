@@ -39,6 +39,7 @@ import copy
 import hashlib
 import logging
 import os
+import pickle
 import sys
 import threading
 import time
@@ -66,6 +67,85 @@ _MAXSIZE = _env_int("QUERY_CACHE_MAXSIZE", 512)
 
 _cache = TTLCache(maxsize=_MAXSIZE, ttl=_TTL_SECONDS)
 _lock = threading.Lock()
+
+
+# ----------------------------------------------------------------------
+# Optional shared L2 cache (Redis / Render Key Value)
+# ----------------------------------------------------------------------
+# The in-process L1 above is PER-WORKER: Gunicorn runs 2 workers, recycles
+# them on ``--max-requests``, and the TTL is short — so a real user whose
+# visits are spread out (and load-balanced across workers) misses L1 on
+# essentially every page, forcing a fresh 2-4s BigQuery round trip. A shared
+# L2 lets any worker reuse any other worker's (and prior request's) result.
+# Reporting is CLOSE-BASED, so a shared short-TTL cache is safe — same
+# tenant-isolation guarantee as L1 (keys derive from the tenant-scoped SQL /
+# tenant-scoped frame fingerprint; see module docstring).
+#
+# ROBUSTNESS CONTRACT: Redis is a SPEEDUP, never a hard dependency. Every op
+# is wrapped so a missing / slow / broken instance silently degrades to L1
+# (and then to a live BQ query). We NEVER raise from a cache path.
+_REDIS_URL = os.environ.get("QUERY_CACHE_REDIS_URL", "").strip()
+_REDIS_TTL = _env_int("QUERY_CACHE_REDIS_TTL_SECONDS", _TTL_SECONDS)
+# Don't round-trip values too big to be worth (de)serialization + network,
+# or that would thrash a small shared store.
+_REDIS_MAX_BYTES = _env_int("QUERY_CACHE_REDIS_MAX_BYTES", 8 * 1024 * 1024)
+# Namespace so a pickle-format / schema change can be invalidated wholesale
+# by bumping the version; dev/prod use different URLs so they never collide.
+_REDIS_PREFIX = "qc:v1:"
+
+_redis_client = None
+_redis_init_done = False
+_redis_lock = threading.Lock()
+
+
+def _get_redis():
+    """Lazily build the shared cache client; return None if unavailable.
+
+    Never raises. On the first failure it logs once and disables further
+    attempts for the life of the process, so a wrong/unreachable URL costs
+    one connect timeout total — not one per request.
+    """
+    global _redis_client, _redis_init_done
+    if _redis_init_done:
+        return _redis_client
+    with _redis_lock:
+        if _redis_init_done:
+            return _redis_client
+        _redis_init_done = True
+        if not _REDIS_URL:
+            _redis_client = None
+            return None
+        try:
+            import redis  # optional dependency; only needed in prod
+            client = redis.Redis.from_url(
+                _REDIS_URL,
+                socket_connect_timeout=1.0,
+                socket_timeout=1.0,
+                retry_on_timeout=False,
+                health_check_interval=30,
+            )
+            client.ping()
+            _redis_client = client
+            _log.info("query_cache: shared L2 cache connected")
+        except Exception as exc:
+            _log.warning(
+                "query_cache: shared L2 cache unavailable (%s); "
+                "using in-process cache only", exc,
+            )
+            _redis_client = None
+    return _redis_client
+
+
+def _redis_key(key) -> str:
+    """Stringify an L1 key for Redis. ``make_key`` yields a sha256 hex str;
+    ``cached_payload`` passes a tuple. Both hash to a bounded namespaced key."""
+    if isinstance(key, str):
+        raw = key
+    elif isinstance(key, tuple):
+        raw = "\x00".join(str(p) for p in key)
+    else:
+        raw = str(key)
+    return _REDIS_PREFIX + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _running_under_pytest() -> bool:
@@ -223,18 +303,63 @@ def make_key(sql: str, job_config=None) -> str:
 
 
 def get(key):
+    # L1 (per-worker, fast) first.
     with _lock:
-        return _cache.get(key)
+        val = _cache.get(key)
+    if val is not None:
+        return val
+    # L1 miss → shared L2 (cross-worker). Never hold ``_lock`` across the
+    # network call. Any failure → treat as a miss.
+    client = _get_redis()
+    if client is None:
+        return None
+    try:
+        blob = client.get(_redis_key(key))
+    except Exception:
+        return None
+    if blob is None:
+        return None
+    try:
+        val = pickle.loads(blob)
+    except Exception:
+        return None
+    # Promote into L1 so subsequent same-worker reads skip the round trip.
+    with _lock:
+        _cache[key] = val
+    return val
 
 
 def set(key, value):  # noqa: A001 - deliberate cache-style API
     with _lock:
         _cache[key] = value
+    client = _get_redis()
+    if client is None:
+        return
+    try:
+        blob = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        return
+    if len(blob) > _REDIS_MAX_BYTES:
+        return
+    try:
+        client.setex(_redis_key(key), _REDIS_TTL, blob)
+    except Exception:
+        pass
 
 
 def clear():
     with _lock:
         _cache.clear()
+    # Best-effort L2 flush of our namespace (used by tests / admin). TTL
+    # expiry covers prod; this just makes an explicit clear immediate.
+    client = _get_redis()
+    if client is None:
+        return
+    try:
+        for k in client.scan_iter(match=_REDIS_PREFIX + "*", count=500):
+            client.delete(k)
+    except Exception:
+        pass
 
 
 def _execute(client, sql, job_config):
