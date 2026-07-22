@@ -6072,9 +6072,16 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,CALX,Calix Inc.,108.0,35.48,,-3831.84
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell,AGYS,Agilysys Inc.,39.0,102.69,,4004.91
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell,MCRI,Monarch Casino & Resort Inc.,33.0,113.3,,3738.9
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell,DTE,DTE Energy Company,28.0,144.84,,4055.52
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Sell to Open,NOK   260724P00010000,NOK   260724P00010000,25.0,0.4,,1000.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Buy to Open,NOK   260724P00009000,NOK   260724P00009000,25.0,0.11,,-275.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Sell,KEY,KeyCorp,177.0,22.865311,,4047.160047
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Buy,GM,General Motors Company,55.0,81.8,,-4499.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Sell,EWBC,East West Bancorp Inc.,32.0,130.3,,4169.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Sell,AMX,"América Móvil, S.A.B. de C.V.",151.0,26.192914,,3955.130014
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Buy,EFX,Equifax Inc.,24.0,171.62375,,-4118.97
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Buy,DHI,"D.R. Horton, Inc.",28.0,144.412857,,-4043.559996
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/22/2026,Sell,VMI,"Valmont Industries, Inc.",7.0,490.242857,,3431.699999
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,EQNR  260821C00039000,EQNR  260821C00039000,16.0,1.1,,1760.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Open,EQNR  260821C00041000,EQNR  260821C00041000,16.0,0.7,,-1120.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Open,PM    260724P00185000,PM    260724P00185000,6.0,2.75,,1650.0
@@ -6095,6 +6102,5 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,FBNC,"First Bancorp, Inc.",65.0,64.4,,-4186.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell,DHI,"D.R. Horton, Inc.",28.0,144.0,,4032.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy,KEY,KeyCorp,177.0,23.24,,-4113.48
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell,DTE,DTE Energy Company,28.0,144.84,,4055.52
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Sell to Close,WFC   260731C00089000,WFC   260731C00089000,11.0,0.69,,759.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/21/2026,Buy to Close,WFC   260731C00092000,WFC   260731C00092000,11.0,0.25,,-275.0
