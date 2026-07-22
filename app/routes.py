@@ -6393,7 +6393,6 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
 
     daily_df = _collapse_mart_daily_pnl_duplicate_grain(daily_df)
     daily_df = daily_df.sort_values("date")
-    all_dates = sorted(daily_df["date"].dropna().unique())
 
     # Equity cost-basis state and per-symbol realized options are keyed by
     # the broker-stable tenant_id (v2 grain) when present, so several
@@ -6432,8 +6431,14 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     # — mirrors the per-position chart's ``position_started`` trim.
     account_started = False
 
-    for d in all_dates:
-        day = daily_df[daily_df["date"] == d]
+    # Iterate one date at a time via a single groupby pass. Previously this
+    # re-scanned the WHOLE frame per date (``daily_df[daily_df["date"] == d]``
+    # inside a loop over every date) — O(dates × rows), which for a
+    # day-trader's dense multi-symbol spine blew the account-chart build to
+    # ~16s of pure Python (see REQUEST_TIMING steps=acct_chart). groupby is a
+    # single O(rows) partition; groups come back sorted by date and NaN dates
+    # are dropped, matching the old ``sorted(...dropna().unique())`` semantics.
+    for d, day in daily_df.groupby("date", sort=True):
 
         # Update per-symbol realized cumulative from the mart (carried
         # forward across days when no new realization happened).

@@ -1405,14 +1405,39 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
             if s.get("symbol")
         })
 
+        # Fire the (mutually independent) since-anchor queries in ONE parallel
+        # wave instead of three serial round trips. On the home page these were
+        # the serial tail after the main parallel batch — ~3× BQ fixed latency
+        # (~6s cold). The visibility gate above already returned early when
+        # nothing changed, so we only pay for these on a genuine new session.
+        trade_cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("since_date", "DATE", anchor_date),
+            bigquery.ScalarQueryParameter("today_date", "DATE", today),
+        ])
+        since_queries = {
+            "since_closed": (
+                TRADES_CLOSED_SINCE_QUERY.format(tenant_filter=tenant_filter),
+                trade_cfg,
+            ),
+            "since_opened": (
+                TRADES_OPENED_SINCE_QUERY.format(tenant_filter=tenant_filter),
+                trade_cfg,
+            ),
+        }
+        if symbols:
+            since_queries["since_prior_close"] = (
+                PRIOR_CLOSE_QUERY,
+                bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ArrayQueryParameter("symbols", "STRING", symbols),
+                    bigquery.ScalarQueryParameter("cutoff_date", "DATE", anchor_date),
+                ]),
+            )
+        since_batch = _bq_parallel(client, since_queries)
+
         moves = []
         if symbols:
             try:
-                cfg = bigquery.QueryJobConfig(query_parameters=[
-                    bigquery.ArrayQueryParameter("symbols", "STRING", symbols),
-                    bigquery.ScalarQueryParameter("cutoff_date", "DATE", anchor_date),
-                ])
-                df = cached_query_df(client, PRIOR_CLOSE_QUERY, job_config=cfg, label="since_prior_close")
+                df = since_batch.get("since_prior_close", pd.DataFrame())
                 # Map: symbol → prior_close  (PRIOR_CLOSE_QUERY is symbol-only,
                 # not user-data; account scoping doesn't apply.)
                 prior_map = {}
@@ -1448,16 +1473,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
         opened = []
         closed = []
         try:
-            cfg = bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("since_date", "DATE", anchor_date),
-                bigquery.ScalarQueryParameter("today_date", "DATE", today),
-            ])
-            closed_df = cached_query_df(
-                client,
-                TRADES_CLOSED_SINCE_QUERY.format(tenant_filter=tenant_filter),
-                job_config=cfg,
-                label="since_closed",
-            )
+            closed_df = since_batch.get("since_closed", pd.DataFrame())
             for _, row in closed_df.iterrows():
                 pnl = row.get("total_pnl")
                 pnl_v = float(pnl) if pnl is not None else None
@@ -1472,12 +1488,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                     "positive": (pnl_v is not None and pnl_v >= 0),
                 })
 
-            opened_df = cached_query_df(
-                client,
-                TRADES_OPENED_SINCE_QUERY.format(tenant_filter=tenant_filter),
-                job_config=cfg,
-                label="since_opened",
-            )
+            opened_df = since_batch.get("since_opened", pd.DataFrame())
             for _, row in opened_df.iterrows():
                 od = row.get("open_date")
                 od_s = od.isoformat() if hasattr(od, "isoformat") else str(od)[:10]
