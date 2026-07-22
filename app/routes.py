@@ -6440,9 +6440,17 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     # are dropped, matching the old ``sorted(...dropna().unique())`` semantics.
     for d, day in daily_df.groupby("date", sort=True):
 
+        # Materialize this date's rows ONCE as plain dicts and reuse across
+        # all three passes below. ``iterrows`` builds a fresh Series per row
+        # and is ~5-10× slower than ``to_dict("records")`` — for the heavy
+        # day-trader account (dense spine × many symbols) the three iterrows
+        # passes were ~8s of the acct_chart build. ``_eq_key`` and every
+        # ``.get(...)`` / ``[...]`` access below work identically on a dict.
+        day_records = day.to_dict("records")
+
         # Update per-symbol realized cumulative from the mart (carried
         # forward across days when no new realization happened).
-        for _, r in day.iterrows():
+        for r in day_records:
             key = _eq_key(r)
             options_per_symbol_realized[key] = float(
                 r.get("cumulative_options_pnl") or 0
@@ -6462,7 +6470,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         cum_div += float(day["dividends_amount"].sum())
         cum_oth += float(day["other_amount"].sum())
 
-        for _, row in day.iterrows():
+        for row in day_records:
             key = _eq_key(row)
             if key not in eq_state:
                 eq_state[key] = {
@@ -6519,7 +6527,7 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
                     s["cost"] += remaining_cost
 
         eq_total = sum(s["realized"] for s in eq_state.values())
-        for _, row in day.iterrows():
+        for row in day_records:
             key = _eq_key(row)
             s = eq_state[key]
             close = float(row.get("close_price") or 0)
