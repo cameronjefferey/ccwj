@@ -5441,6 +5441,15 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/26/2026,Expir
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/26/2026,Expired,ASTS  260522C00106000,CALL AST SPACEMOBILE INC$106 EXP 05/22/26,3.0,,,0.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/26/2026,Expired,NVDA  260522C00235000,CALL NVIDIA CORP $235 EXP 05/22/26,30.0,,,0.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,05/26/2026,Expired,GOOG  260522C00382500,CALL ALPHABET INC $382.5 EXP 05/22/26,1.0,,,0.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
@@ -6137,14 +6146,7 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Sell,FBNC,"First Bancorp, Inc.",65.0,61.26,,3981.9
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Sell,MOH,Molina Healthcare Inc.,17.0,214.001765,,3638.030005
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Buy,NEE,"NextEra Energy, Inc.",47.0,89.29,,-4196.63
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Buy to Close,EQNR  260821C00039000,EQNR  260821C00039000,16.0,3.3,,-5280.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Sell to Close,EQNR  260821C00041000,EQNR  260821C00041000,16.0,2.1,,3360.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Buy to Close,TEL   260821C00210000,TEL   260821C00210000,2.0,6.5,,-1300.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/23/2026,Sell to Close,TEL   260821C00230000,TEL   260821C00230000,2.0,1.75,,350.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
