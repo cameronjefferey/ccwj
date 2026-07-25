@@ -7480,6 +7480,43 @@ def strategy_fit():
     )
 
 
+def _validate_accounts_financial_frames(dfs, *, needs_trade_accounts=False):
+    """Reject failed /accounts query frames before they become plausible $0s.
+
+    BigQuery preserves the selected columns for a legitimate zero-row result.
+    ``_bq_parallel`` returns a column-less frame only when that query failed.
+    The balances and summary frames drive the headline financial KPIs, so
+    treating their failures as real zero balances silently misstates the
+    account. Admins also need the trades frame's account column for the picker.
+    """
+    required = {
+        "balances": {"row_type", "market_value", "cost_basis"},
+        "strat_summary": {
+            "realized_pnl",
+            "unrealized_pnl",
+            "dividend_income",
+            "total_return",
+            "num_winners",
+            "num_losers",
+        },
+    }
+    if needs_trade_accounts:
+        required["trades"] = {"account"}
+
+    failures = []
+    for name, expected in required.items():
+        frame = dfs.get(name)
+        columns = set(frame.columns) if isinstance(frame, pd.DataFrame) else set()
+        missing = sorted(expected - columns)
+        if missing:
+            failures.append(f"{name} ({', '.join(missing)})")
+
+    if failures:
+        raise RuntimeError(
+            "Required account data unavailable: " + "; ".join(failures)
+        )
+
+
 @app.route("/accounts")
 @login_required
 def accounts():
@@ -7514,6 +7551,9 @@ def accounts():
             "attribution": POSITION_ATTRIBUTION_QUERY.format(
                 tenant_filter=tenant_filter, week_start=ATTRIBUTION_LIFETIME_SENTINEL),
         })
+        _validate_accounts_financial_frames(
+            dfs, needs_trade_accounts=not bool(user_accounts)
+        )
         balances_df = dfs["balances"]
         trades_df = dfs["trades"]
         current_df = dfs["current"]
@@ -7594,10 +7634,9 @@ def accounts():
     # ------------------------------------------------------------------
     # KPIs from balances
     # ------------------------------------------------------------------
-    # Degrade gracefully if the balances query failed (e.g. a cold-start
-    # transient right after deploy): _bq_parallel returns a column-less empty
-    # frame on failure, so guard every column access rather than 500 the whole
-    # page. Mirrors the per-section resilience the Daily Review page uses.
+    # Query failures were rejected above. A zero-row frame that still has the
+    # selected schema is legitimate (for example, an account with no balance
+    # snapshots yet) and should render as zero.
     if not balances_df.empty and "row_type" in balances_df.columns:
         cash_rows = balances_df[balances_df["row_type"] == "cash"]
         total_rows = balances_df[balances_df["row_type"] == "account_total"]
