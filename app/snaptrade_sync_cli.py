@@ -216,6 +216,7 @@ def main():
         _routine_lookback_days,
         _sync_one_connection,
         SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS,
+        mark_snaptrade_first_sync_completed,
         snaptrade_enabled,
     )
     from app.snaptrade import _bulk_sync_lookback_days
@@ -264,6 +265,7 @@ def main():
     # semantics are preserved because the batch folds accounts in the same
     # order sequential pushes did.
     batch_entries = []
+    pending_first_sync_marks = []
 
     for row in rows:
         user_id = row["user_id"]
@@ -282,7 +284,11 @@ def main():
         try:
             res = _sync_one_connection(
                 user_id, row, lookback_days=lookback, defer_push=True,
-                skip_activities=intraday, history_only=intraday,
+                # A brand-new account must land activities + snapshots before
+                # it can switch to routine lookbacks. Orders-only intraday mode
+                # is safe only after that initial full sync has committed.
+                skip_activities=intraday and first_done,
+                history_only=intraday and first_done,
             )
         except Exception as exc:
             errors += 1
@@ -307,6 +313,10 @@ def main():
                 or frames.get("history_df") is not None
             ):
                 batch_entries.append(frames)
+                if not first_done:
+                    pending_first_sync_marks.append(
+                        (user_id, snaptrade_account_id)
+                    )
         else:
             err = res["error"] or "unknown"
             if err == "connection_broken":
@@ -352,6 +362,23 @@ def main():
             else:
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
+            if ok:
+                # The deferred account reads are not durable until this one
+                # batch operation succeeds. A byte-identical no-op also proves
+                # the full first-sync rows are already on the seed branch.
+                for pending_user_id, pending_account_id in pending_first_sync_marks:
+                    try:
+                        mark_snaptrade_first_sync_completed(
+                            pending_user_id, pending_account_id,
+                        )
+                    except Exception as exc:
+                        # Safe failure mode: leave it pending so the next cron
+                        # retries the full lookback instead of truncating it.
+                        print(
+                            "WARNING: could not mark first sync complete for "
+                            f"user {pending_user_id} ({pending_account_id}): {exc}",
+                            file=sys.stderr,
+                        )
 
     mode = (
         "intraday poll" if intraday

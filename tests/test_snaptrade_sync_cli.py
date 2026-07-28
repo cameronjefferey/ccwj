@@ -62,7 +62,14 @@ def _wire(monkeypatch):
     monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
     monkeypatch.setattr(cli, "_notify_connection_dropped", lambda *a, **k: None)
 
-    calls = {"batch": [], "synced": []}
+    calls = {"batch": [], "synced": [], "first_sync_marked": []}
+    monkeypatch.setattr(
+        _snap,
+        "mark_snaptrade_first_sync_completed",
+        lambda user_id, account_id: calls["first_sync_marked"].append(
+            (user_id, account_id)
+        ),
+    )
 
     def _fake_batch(entries, *, commit_message):
         calls["batch"].append({"entries": list(entries), "message": commit_message})
@@ -285,3 +292,49 @@ def test_intraday_skips_activities_and_never_force_refreshes(_wire, monkeypatch)
     # One batched push, commit message tagged "intraday".
     assert len(_wire["batch"]) == 1
     assert "intraday" in _wire["batch"][0]["message"]
+
+
+def test_intraday_first_sync_fetches_full_data_and_marks_after_batch(_wire, monkeypatch):
+    """Orders-only mode must not complete a new account's first sync.
+
+    The first run needs activities + snapshots, and the Postgres flag may flip
+    only after the deferred seed batch is durable.
+    """
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(cli, "_intraday_enabled", lambda *a, **k: True)
+
+    seen = []
+
+    def _fake_sync(
+        user_id, row, *, lookback_days, defer_push=False,
+        skip_activities=False, history_only=False,
+    ):
+        seen.append((lookback_days, defer_push, skip_activities, history_only))
+        return _ok(row["account_name"], user_id, "snaptrade:new")
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    assert cli.main() == 0
+    assert seen == [(3650, True, False, False)]
+    assert _wire["first_sync_marked"] == [(14, "new-account")]
+
+
+def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"], user_id, "snaptrade:new",
+        ),
+    )
+    monkeypatch.setattr(
+        _upload,
+        "merge_and_push_seeds_batch",
+        lambda *args, **kwargs: (False, "GitHub unavailable", None, False, 0),
+    )
+
+    assert cli.main() == 0
+    assert _wire["first_sync_marked"] == []
