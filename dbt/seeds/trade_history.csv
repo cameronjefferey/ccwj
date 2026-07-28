@@ -5482,6 +5482,7 @@ Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,CEG   260529C00305000,CALL CONSTELLATION ENERG$305 EXP 05/29/26,1.0,0.01,0.01,-1.01
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Sell to Open,CEG   260605C00305000,CALL CONSTELLATION ENERG$305 EXP 06/05/26,1.0,1.86,0.41,185.59
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,05/29/2026,Buy to Close,MSFT  260605C00430000,CALL MICROSOFT CORP $430 EXP 06/05/26,1.0,15.92,0.41,-1592.41
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/28/2026,Buy,CP,Canadian Pacific Kansas City Limited,200.0,91.67,,-18334.0
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,07/28/2026,Sell,NEE,"NextEra Energy, Inc.",400.0,89.53,,35812.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
