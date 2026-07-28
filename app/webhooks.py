@@ -48,12 +48,6 @@ from app.models import add_email_suppression
 
 _log = logging.getLogger(__name__)
 
-# One global advisory-lock key for ALL SnapTrade webhook-triggered syncs: every
-# sync pushes the SAME seed CSVs (trade_history / current_positions /
-# account_balances), and the GitHub ref update is not fast-forward-safe under
-# concurrency, so a burst of per-account webhooks must push one-at-a-time.
-_SNAPTRADE_SYNC_LOCK_KEY = 8274013
-
 # Reject events whose timestamp is too far from now (replay protection).
 _WEBHOOK_TOLERANCE_SECONDS = 5 * 60
 
@@ -217,8 +211,8 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
     seeds one-at-a-time. ``force_refresh=False`` — SnapTrade already pulled
     fresh data, so we must NOT pay to force another refresh. Never raises.
     """
-    from app.db import advisory_lock
     from app.models import get_snaptrade_account
+    from app.upload import seed_write_lock
     from app.snaptrade import (
         _bulk_sync_lookback_days,
         _market_closed_all_day,
@@ -229,7 +223,10 @@ def _run_snaptrade_holdings_sync(user_id, snaptrade_account_id):
 
     with app.app_context():
         try:
-            with advisory_lock(_SNAPTRADE_SYNC_LOCK_KEY):
+            # This outer lock coalesces the full webhook sync. The seed writer
+            # itself uses the same re-entrant lock, shared with cron/manual
+            # writers, so no path can overwrite a concurrent seed update.
+            with seed_write_lock():
                 acc_row = get_snaptrade_account(user_id, snaptrade_account_id)
                 if not acc_row:
                     _log.warning(
