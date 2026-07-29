@@ -2723,16 +2723,6 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/22/2026,Sell 
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/11/2026,Buy,INTC,INTEL CORP,10.0,117.855,,-1178.55
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/08/2026,Buy,MU,MICRON TECHNOLOGY INC,10.0,950.2399,,-9502.4
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/02/2026,Sell,IREN,IREN LTD F,250.0,67.92,0.4,16979.6
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
@@ -6311,3 +6301,13 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/2026,Sell,UL,Unilever PLC Sponsored American Depositary Receipt,67.0,66.6,,4462.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/2026,Sell to Open,STRC  260821C00090000,STRC  260821C00090000,3.0,1.2,,360.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/2026,Buy to Open,STRC  260821C00095000,STRC  260821C00095000,3.0,0.2,,-60.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
