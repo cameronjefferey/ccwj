@@ -45,13 +45,16 @@
 -- NFLX -290, MSFT +151, MRVL +55, …) and account cash reconciles to within
 -- <1% (float/fee noise) of broker truth.
 --
--- Fix (option lane): match activities fills to orders rows on
--- (tenant_id, Date, Symbol, Quantity, Price, buy/sell-side) — side is safe
--- because the mislabel only flips open/close, never the Buy/Sell verb.
+-- Fix (option lane): if an orders-aggregate exists for
+-- (tenant_id, Date, Symbol, buy/sell-side), keep the authoritative aggregate
+-- row(s) and drop ALL activities fills in that group. Quantity/price cannot be
+-- part of the match because recent_orders reports one aggregate while
+-- activities reports N executions (for example, 11 contracts versus 7+4).
+-- Side is safe because the mislabel only flips open/close, never Buy/Sell.
 --   * orders / Expired rows (plain description): authoritative, kept as-is.
---   * activities fill WITH a matching orders row: a mislabeled 100x-too-small
---     dup of that order → DROP.
---   * activities fill with NO matching orders row: a genuine open whose order
+--   * activities fill in a group WITH an orders row: a duplicate execution of
+--     the aggregate order → DROP.
+--   * activities fill in a group with NO orders row: a genuine open whose order
 --     aged out of recent_orders. KEEP it, but RECOMPUTE Amount as
 --     Quantity*Price*100 (immune to the raw per-share scale) and trust its
 --     "to Open" label (the only fills that survive are genuine opens; every
@@ -96,15 +99,13 @@ grouped as (
         -- Equity: does an orders-aggregate exist for this trade group?
         countif(_is_equity_trade and not _is_partial_fill)
             over (partition by tenant_id, Date, Symbol, Action) as _n_aggregate,
-        -- Option: does an authoritative orders row exist for this fill's
-        -- (contract, date, qty, price, side)? Normalize qty/price so
-        -- "16.30" and "16.3" collapse.
+        -- Option: does an authoritative orders aggregate exist for this
+        -- (contract, date, side) group? Do NOT include quantity/price: the
+        -- aggregate quantity equals the sum of activities executions.
         countif(_is_option and not _is_partial_fill) over (
             partition by
-                tenant_id, Date, Symbol, _opt_side,
-                cast(round(safe_cast(Quantity as float64), 6) as string),
-                cast(round(safe_cast(Price as float64), 6) as string)
-        ) as _opt_n_ord
+                tenant_id, Date, Symbol, _opt_side
+        ) as _opt_n_aggregate
     from flagged
 )
 
@@ -139,9 +140,9 @@ where
     or (_is_equity_trade and _n_aggregate = 0)
     -- Option orders / Expired rows: authoritative, kept as-is.
     or (_is_option and not _is_partial_fill)
-    -- Option activities fill with NO matching orders row: genuine aged-out
-    -- open, kept (Amount recomputed above). Fills WITH a matching orders row
-    -- are mislabeled 100x-too-small dups and fall through (dropped).
-    or (_is_option and _is_partial_fill and _opt_n_ord = 0)
+    -- Option activities fill in a group with NO orders aggregate: genuine
+    -- aged-out open, kept (Amount recomputed above). Fills in a group WITH an
+    -- aggregate are duplicate executions and fall through (dropped).
+    or (_is_option and _is_partial_fill and _opt_n_aggregate = 0)
     -- Everything else (dividends, cash events, non-OSI misc): untouched.
     or (not _is_equity_trade and not _is_option)

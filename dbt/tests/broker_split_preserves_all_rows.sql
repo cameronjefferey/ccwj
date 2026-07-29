@@ -12,7 +12,8 @@
     - history: broker models are pure passthrough of the whole seed EXCEPT
       stg_broker_alpaca_history, which intentionally drops Alpaca's duplicate
       activities partial-fill rows when an orders-aggregate covers the same
-      order (see stg_broker_alpaca_history.sql + broker-sync-safety 2026-07-16).
+      trade group (see stg_broker_alpaca_history.sql + broker-sync-safety
+      2026-07-16).
       So the expected history count is seed count MINUS those dropped dupes,
       computed below with the identical rule. This still protects routing
       integrity: any accidental drop/double-count from broker_row_filter /
@@ -42,8 +43,8 @@ with history_split as (
 -- MUST mirror the keep/drop rules in stg_broker_alpaca_history.sql exactly:
 --   (a) EQUITY partial-fill rows when an orders-aggregate covers the same
 --       (tenant_id, Date, Symbol, Action) group.
---   (b) OPTION activities fills when a matching orders row exists for the
---       same (tenant_id, Date, Symbol, side, Quantity, Price).
+--   (b) OPTION activities fills when an orders aggregate exists for the same
+--       (tenant_id, Date, Symbol, side) group.
 alpaca_history_dropped as (
     select count(*) as n from (
         select
@@ -58,14 +59,12 @@ alpaca_history_dropped as (
                     and not coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false))
                 over (partition by cast(tenant_id as string), cast(Date as string),
                                    cast(Symbol as string),
-                                   if(starts_with(cast(Action as string), 'Buy'), 'buy', 'sell'),
-                                   cast(round(safe_cast(Quantity as float64), 6) as string),
-                                   cast(round(safe_cast(Price as float64), 6) as string)) as n_opt_ord
+                                   if(starts_with(cast(Action as string), 'Buy'), 'buy', 'sell')) as n_opt_aggregate
         from {{ ref('trade_history') }}
         where {{ broker_row_filter('Account', 'alpaca') }}
     )
     where (is_equity and is_partial_fill and n_aggregate >= 1)
-       or (is_option and is_partial_fill and n_opt_ord >= 1)
+       or (is_option and is_partial_fill and n_opt_aggregate >= 1)
 ),
 history_source as (
     select
