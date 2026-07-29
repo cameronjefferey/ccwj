@@ -1812,10 +1812,6 @@ Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Buy,I
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IHI,ISHARES U.S. MEDICAL DEVICES ETF,,,,25.78
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,12.95
 Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,06/16/2026,Credit Interest,SCHFDX0,BANK INT 051626-061526 SCHWAB BANK,,,,0.17
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/18/2026,Expired,,CALL PALANTIR TECHNOLOGI$135 EXP 05/15/26,2.0,,,0.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/14/2026,Sell,,CALL PALANTIR TECHNOLOGI$135 EXP 05/15/26,2.0,1.04,1.33,206.67
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,05/11/2026,Expired,,CALL PALANTIR TECHNOLOGI$147 EXP 05/08/26,2.0,,,0.0
@@ -6334,3 +6330,7 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/2026,Sell,UL,Unilever PLC Sponsored American Depositary Receipt,67.0,66.6,,4462.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/28/2026,Sell,EIX,Edison International,54.0,80.25,,4333.5
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/29/2026,Buy,DTE,DTE Energy Company,28.0,147.43,,-4128.04
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/30/2026,Cash Dividend,UFO,PROCURE SPACE ETF,,,,0.52
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,0.87
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,UFO,PROCURE SPACE ETF,9.0,55.0,,-495.0
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,06/11/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,3.2295,154.8196,,-499.99
