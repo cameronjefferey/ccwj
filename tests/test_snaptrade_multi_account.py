@@ -276,6 +276,64 @@ def _ok_run_sync(extra=None):
     return base
 
 
+@pytest.mark.parametrize(
+    ("extra", "should_mark"),
+    [
+        ({"github_pushed": False, "github_error": "GitHub unavailable"}, False),
+        (
+            {
+                "github_pushed": False,
+                "github_no_changes": False,
+                "github_seed_push_skipped": True,
+                "github_skip_reason": "not configured",
+            },
+            False,
+        ),
+        ({"github_pushed": False, "github_no_changes": True}, True),
+        (
+            {
+                "deferred": True,
+                "github_pushed": False,
+                "github_no_changes": False,
+                "account_name": "X",
+                "tenant_id": "snaptrade:abc",
+                "history_df": None,
+                "current_df": object(),
+                "balances_df": None,
+                "skip_history": True,
+            },
+            False,
+        ),
+    ],
+)
+def test_sync_one_marks_first_sync_only_after_durable_seed_write(
+    monkeypatch, _patched_models, extra, should_mark,
+):
+    monkeypatch.setattr(
+        _snap,
+        "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(
+        _snap, "_run_sync", lambda *args, **kwargs: _ok_run_sync(extra),
+    )
+
+    res = _snap._sync_one_connection(
+        9,
+        {
+            "snaptrade_account_id": "abc",
+            "account_name": "X",
+            "first_sync_completed": False,
+        },
+        lookback_days=3650,
+        defer_push=bool(extra.get("deferred")),
+    )
+
+    assert res["ok"] is True
+    assert bool(_patched_models["first_sync_marked"]) is should_mark
+
+
 def test_sync_one_force_refresh_calls_broker_repoll(monkeypatch, _patched_models):
     monkeypatch.setattr(_snap, "get_snaptrade_user",
                         lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})

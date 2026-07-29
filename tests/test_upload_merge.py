@@ -24,15 +24,28 @@ Tests use small in-memory CSV strings and monkeypatch ``_get_file_content``
 so they stay unit-fast and don't touch GitHub or pandas IO machinery.
 """
 import io
+from contextlib import contextmanager
 
 import pandas as pd
 import pytest
 
+from app import db as _db
 from app import upload as _upload
 
 
 HISTORY_PATH = _upload.HISTORY_PATH
 HISTORY_SEED_COLUMNS = _upload.HISTORY_SEED_COLUMNS
+
+
+@pytest.fixture(autouse=True)
+def _stub_seed_write_lock(monkeypatch):
+    """Unit tests use an in-memory lock instead of a Postgres connection."""
+    @contextmanager
+    def _lock(_key):
+        yield
+
+    monkeypatch.setattr(_db, "advisory_lock", _lock)
+    _upload._seed_write_lock_state.depth = 0
 
 
 def _stub_existing(monkeypatch, csv_text):
@@ -1319,6 +1332,36 @@ def _clone_entries(entries):
         c["current_df"] = c["current_df"].copy()
         out.append(c)
     return out
+
+
+def test_seed_writers_share_one_reentrant_cluster_lock(monkeypatch):
+    """The seed fetch/merge/commit critical section must be serialized.
+
+    An outer webhook lock and the decorated batch writer may nest in the same
+    thread, but they must acquire Postgres only once.
+    """
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    events = []
+
+    @contextmanager
+    def _recording_lock(key):
+        events.append(("enter", key))
+        yield
+        events.append(("exit", key))
+
+    monkeypatch.setattr(_db, "advisory_lock", _recording_lock)
+
+    with _upload.seed_write_lock():
+        ok, err, _sha, _no_changes, _n = _upload.merge_and_push_seeds_batch(
+            _clone_entries(_sample_entries()), commit_message="nightly batch",
+        )
+
+    assert ok, err
+    assert events == [
+        ("enter", _upload.SEED_WRITE_LOCK_KEY),
+        ("exit", _upload.SEED_WRITE_LOCK_KEY),
+    ]
 
 
 def test_batch_push_is_byte_identical_to_sequential_pushes(monkeypatch):

@@ -1,6 +1,9 @@
 import os
 import re
 import base64
+import threading
+from contextlib import contextmanager
+from functools import wraps
 import requests
 import pandas as pd
 from io import StringIO
@@ -15,6 +18,45 @@ from app.models import (
     get_or_create_broker_tenant, MANUAL_BROKER_SLUG,
 )
 from app.utils import demo_block_writes
+
+
+# Every seed writer performs a read/merge/commit against the same three files.
+# Hold one cluster-wide lock across that entire operation so a webhook, cron,
+# manual sync, or CSV upload cannot build content from a stale branch snapshot
+# and overwrite another writer's rows.
+SEED_WRITE_LOCK_KEY = 8274013
+_seed_write_lock_state = threading.local()
+
+
+@contextmanager
+def seed_write_lock():
+    """Cluster-wide seed lock, re-entrant within the current worker thread."""
+    depth = getattr(_seed_write_lock_state, "depth", 0)
+    if depth:
+        _seed_write_lock_state.depth = depth + 1
+        try:
+            yield
+        finally:
+            _seed_write_lock_state.depth -= 1
+        return
+
+    # Runtime import avoids a module cycle and lets unit tests replace the
+    # Postgres lock with an in-memory context manager.
+    from app.db import advisory_lock
+    with advisory_lock(SEED_WRITE_LOCK_KEY):
+        _seed_write_lock_state.depth = 1
+        try:
+            yield
+        finally:
+            _seed_write_lock_state.depth = 0
+
+
+def _serialized_seed_write(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with seed_write_lock():
+            return func(*args, **kwargs)
+    return wrapped
 
 
 # ------------------------------------------------------------------
@@ -1061,6 +1103,7 @@ def _normalize_account_seed_frames(
     return specs, history_rows, current_rows
 
 
+@_serialized_seed_write
 def merge_and_push_seeds(
     account_name,
     history_df,
@@ -1140,6 +1183,7 @@ def merge_and_push_seeds(
     return True, None, history_rows, current_rows, head_sha, no_changes
 
 
+@_serialized_seed_write
 def merge_and_push_seeds_batch(entries, *, commit_message):
     """Merge SEVERAL accounts' frames into the seed CSVs and commit them in a
     SINGLE push (one push = one dbt build).
@@ -1236,6 +1280,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     return True, None, head_sha, no_changes, len(valid)
 
 
+@_serialized_seed_write
 def purge_user_id_from_seeds(user_id, *, commit_message):
     """Strip every seed-CSV row whose ``user_id`` matches and commit a
     cleaned version to GitHub in a single atomic commit.
