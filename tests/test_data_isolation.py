@@ -44,7 +44,12 @@ def _unique_username(prefix: str = "test_iso") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def _create_user(conn, username: str, password: str = "testpass123") -> int:
+def _create_user(
+    conn,
+    username: str,
+    password: str = "testpass123",
+    email: str | None = None,
+) -> int:
     """Create a user via the same Postgres connection the test fixture yields.
 
     The ``db_conn`` fixture hands us a psycopg connection wrapped in
@@ -57,8 +62,8 @@ def _create_user(conn, username: str, password: str = "testpass123") -> int:
 
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
-            (username, generate_password_hash(password)),
+            "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s) RETURNING id",
+            (username, generate_password_hash(password), email),
         )
         row = cur.fetchone()
     return int(row["id"])
@@ -357,6 +362,48 @@ class TestLoginLockout:
             record_login_attempt(username.lower(), success=False, ip_address="10.0.0.1")
         # Querying with mixed case still sees the lock.
         assert login_lockout_remaining_seconds(username.upper()) > 0
+        assert login_lockout_remaining_seconds(username) > 0
+
+
+class TestLoginIdentifier:
+    """Users can recover from forgotten usernames by signing in with email."""
+
+    def test_login_accepts_email_identifier(self, client, db_conn):
+        client.post("/logout")
+        username = _unique_username("email_login")
+        email = f"{username}@example.com"
+        user_id = _create_user(db_conn, username, email=email)
+
+        response = client.post(
+            "/login",
+            data={"username": email.upper(), "password": "testpass123"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 302
+        with client.session_transaction() as sess:
+            assert sess.get("_user_id") == str(user_id)
+        client.post("/logout")
+
+    def test_email_failures_lock_canonical_username(self, client, db_conn):
+        client.post("/logout")
+        from app.models import (
+            LOGIN_FAILURE_LIMIT,
+            login_lockout_remaining_seconds,
+        )
+
+        username = _unique_username("email_lock")
+        email = f"{username}@example.com"
+        _create_user(db_conn, username, email=email)
+
+        for _ in range(LOGIN_FAILURE_LIMIT):
+            client.post(
+                "/login",
+                data={"username": email, "password": "wrong-password"},
+                follow_redirects=False,
+            )
+
+        assert login_lockout_remaining_seconds(email) > 0
         assert login_lockout_remaining_seconds(username) > 0
 
 
