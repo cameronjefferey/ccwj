@@ -21,6 +21,7 @@ with option_trades as (
         option_type,
         trade_date,
         action,
+        description,
         quantity,
         amount,
         fees
@@ -177,7 +178,47 @@ contract_summary as (
             when o.action in ('option_buy_to_close', 'option_sell_to_close') then 'Closed'
         end) as close_type,
 
-        count(*) as num_trades
+        count(*) as num_trades,
+
+        -- Alpaca activities do not expose open/close metadata: ambiguous
+        -- "... FILL at ..." rows are normalized as "to Open". When the
+        -- authoritative recent-orders row has aged out, a fully offset
+        -- buy/sell round trip therefore has no closing action and used to
+        -- remain Open until expiry. Exact offset + no explicit terminal event
+        -- is enough to prove that the contract ended; the final SELECT also
+        -- requires that the broker snapshot no longer carries the contract.
+        case
+            when {{ broker_slug_from_account('o.account') }} = 'alpaca'
+             and countif(
+                    regexp_contains(
+                        coalesce(o.description, ''),
+                        r'(?i) (PARTIAL_)?FILL at '
+                    )
+                 ) > 0
+             and countif(o.action in (
+                    'option_buy_to_close', 'option_sell_to_close',
+                    'option_expired', 'option_assigned', 'option_exercised'
+                 )) = 0
+             and sum(case
+                    when o.action in ('option_buy_to_open', 'option_buy_to_close')
+                    then o.quantity else 0
+                 end) > 0
+             and sum(case
+                    when o.action in ('option_sell_to_open', 'option_sell_to_close')
+                    then o.quantity else 0
+                 end) > 0
+             and abs(
+                    sum(case
+                        when o.action in ('option_buy_to_open', 'option_buy_to_close')
+                        then o.quantity else 0
+                    end)
+                    - sum(case
+                        when o.action in ('option_sell_to_open', 'option_sell_to_close')
+                        then o.quantity else 0
+                    end)
+                 ) < 1e-9
+            then max(o.trade_date)
+        end as _activity_flat_close_date
 
     from option_trades o
     join direction_lookup d
@@ -238,7 +279,8 @@ snapshot_only_options as (
 
         0.0 as total_fees,
         cast(null as string) as close_type,
-        0 as num_trades
+        0 as num_trades,
+        cast(null as date) as _activity_flat_close_date
 
     from {{ ref('stg_current') }} c
     where c.instrument_type in ('Call', 'Put')
@@ -362,6 +404,9 @@ select
     -- (int_option_contract_daily_pnl realized_close branch) emits
     -- the realized credit on the right calendar day.
     coalesce(
+        case
+            when cur.trade_symbol is null then c._activity_flat_close_date
+        end,
         c.close_date,
         case when iotm.inferred_otm_today then c.option_expiry end
     ) as close_date,
@@ -385,6 +430,8 @@ select
     -- credit either way — net_cash_flow doesn't change).
     case
         when c.close_type is not null then c.close_type
+        when c._activity_flat_close_date is not null
+             and cur.trade_symbol is null then 'Closed'
         when iotm.inferred_otm_today  then 'ExpiredOTM'
         else c.close_type
     end as close_type,
@@ -413,6 +460,8 @@ select
     -- broker confirms on Monday. See ``otm_at_expiry`` CTE header.
     case
         when c.close_type is not null         then 'Closed'
+        when c._activity_flat_close_date is not null
+             and cur.trade_symbol is null     then 'Closed'
         when c.option_expiry < current_date() then 'Closed'
         when iotm.inferred_otm_today          then 'Closed'
         when cur.trade_symbol is not null     then 'Open'
@@ -471,6 +520,8 @@ select
     -- market lands once the daily holdings sync writes a stg_current row.
     case
         when c.close_type is not null         then c.net_cash_flow
+        when c._activity_flat_close_date is not null
+             and cur.trade_symbol is null     then c.net_cash_flow
         when c.option_expiry < current_date() then c.net_cash_flow
         when iotm.inferred_otm_today          then c.net_cash_flow
         when cur.trade_symbol is not null
@@ -491,6 +542,10 @@ select
     -- open → today.
     date_diff(
         coalesce(
+            case
+                when cur.trade_symbol is null
+                then c._activity_flat_close_date
+            end,
             c.close_date,
             case when iotm.inferred_otm_today then c.option_expiry end,
             current_date()
