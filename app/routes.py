@@ -1273,6 +1273,37 @@ def _legs_df_to_sessions_list(legs_df):
     return out
 
 
+def _resolve_position_leg_filter(sessions_list, leg_param):
+    """Resolve legacy ``?leg=`` ids without mixing account-local leg numbers.
+
+    Leg ids restart for every tenant.  The downstream position-detail filter is
+    date-range based, so it cannot safely apply a bare leg id while more than
+    one tenant is in scope: ``leg=1`` would otherwise select every account's
+    first leg and spill each date range across all scoped accounts.  The UI
+    narrows to one tenant before setting ``leg``; old/bookmarked ambiguous URLs
+    are therefore treated as the unfiltered position view.
+    """
+    all_leg_ids = [s["session_id"] for s in sessions_list]
+    raw = str(leg_param or "").strip()
+    if not raw:
+        return "", all_leg_ids
+
+    tenant_ids = {
+        str(s.get("tenant_id") or "")
+        for s in sessions_list
+    }
+    if len(tenant_ids) > 1:
+        return "", all_leg_ids
+
+    selected_legs = []
+    for value in raw.split(","):
+        try:
+            selected_legs.append(int(value.strip()))
+        except ValueError:
+            pass
+    return raw, selected_legs
+
+
 def _iter_symbols_for_daily_detail(trades_df, pnl_df, current_df, open_pairs):
     """
     Row keys (account, symbol) for /symbols. dbt can classify open options from
@@ -3706,17 +3737,9 @@ def position_detail(symbol):
     # Preserve the current account subset on leg "Show All" / navigation.
     tenants_param = request.args.get("tenants", "").strip()
 
-    leg_param = request.args.get("leg", "")
-    if leg_param:
-        selected_legs = []
-        for x in leg_param.split(","):
-            x = x.strip()
-            try:
-                selected_legs.append(int(x))
-            except ValueError:
-                pass
-    else:
-        selected_legs = [s["session_id"] for s in sessions_list]
+    leg_param, selected_legs = _resolve_position_leg_filter(
+        sessions_list, request.args.get("leg", "")
+    )
 
     # Build date ranges for selected sessions
     _leg_ranges = []
