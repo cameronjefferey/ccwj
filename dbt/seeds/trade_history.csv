@@ -1131,16 +1131,6 @@ Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/202
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.04,7.0,234.04,,-1638.28
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,Buy,NVDA,NVDA BUY PARTIAL_FILL at 234.01,43.0,234.01,,-10062.43
 Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,05/14/2026,ADR Mgmt Fee,,TAF fee for proceed of 108 shares (2 trades) on 2026-05-14 by PA3QFV4411J0,,,,-0.02
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
@@ -6348,3 +6338,13 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/02/2026,Buy,L
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/02/2026,Sell to Close,ORCL  260618C00200000,CALL ORACLE CORP $200 EXP 06/18/26,30.0,46.85,22.86,140527.14
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/01/2026,Expired,BE    260529C00320000,CALL BLOOM ENERGY CORP $320 EXP 05/29/26,2.0,,,0.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/01/2026,Expired,ASTS  260529C00130000,CALL AST SPACEMOBILE INC$130 EXP 05/29/26,3.0,,,0.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
