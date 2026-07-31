@@ -6350,5 +6350,7 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/27/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/27/2026,ADR Mgmt Fee,,CAT fee for proceed of 3 trades on 2026-07-27 by PA3HS6VB43PX,,,,-0.01
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/27/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.06
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/31/2026,Sell,PBA,Pembina Pipeline Corporation,82.0,49.39,,4049.98
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/31/2026,Buy to Close,SYK   260821C00340000,SYK   260821C00340000,3.0,6.8,,-2040.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/31/2026,Sell to Close,SYK   260821C00360000,SYK   260821C00360000,3.0,0.5,,150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/31/2026,Buy to Close,STRC  260821C00090000,STRC  260821C00090000,3.0,1.85,,-555.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/31/2026,Sell to Close,STRC  260821C00095000,STRC  260821C00095000,3.0,0.2,,60.0
