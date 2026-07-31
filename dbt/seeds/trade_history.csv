@@ -1816,16 +1816,6 @@ Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,06/25/2026,Cash 
 Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,06/25/2026,Buy,QTUM,DEFIANCE QUANTUM ETF,0.0438,160.4463,,-7.03
 Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,06/18/2026,Cash Dividend,IYW,ISHARES U.S. TECHNOLOGY ETF,,,,0.72
 Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,06/18/2026,Buy,IYW,ISHARES U.S. TECHNOLOGY ETF,0.0029,252.5294,,-0.72
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL AST SPACEMOBILE INC$102 EXP 06/05/26,3.0,0.76,2.0,226.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL INTUITIVE MACHS INC$32 EXP 06/05/26,12.0,0.25,7.99,292.01
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL D-WAVE QUANTUM INC $26 EXP 06/05/26,8.0,0.18,5.33,138.67
@@ -4912,6 +4902,17 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/30/2026,Buy,S
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/30/2026,Sell,SEI,Solaris Energy Infrastructure Inc.,1.0,51.3201,,51.3201
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/30/2026,Sell,DPZ,Domino's Pizza Inc.,100.0,349.9537,,34995.37
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,07/31/2026,Sell,SNDK,SanDisk Corporation,24.0,1383.61,,33206.64
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/31/2026,Buy,USDC,USDC,100.0,1.0,,-100.0
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,3456.3
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Cash Dividend,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,,,,624.58
 Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,04/06/2026,Buy,JEPQ,JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF,11.1792,55.87,,-624.58
