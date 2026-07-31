@@ -7,6 +7,8 @@ pin: each account is synced deferred, exactly one batched push happens, broken
 connections are skipped (not batched) and notified, and the exit code contract
 holds.
 """
+from contextlib import contextmanager
+
 import pandas as pd
 import pytest
 
@@ -52,6 +54,10 @@ def _ok(name, uid, tenant, *, hist=3, cur=5, skip_history=False):
 @pytest.fixture
 def _wire(monkeypatch):
     """Wire up the CLI's external deps; return a dict for per-test overrides."""
+    @contextmanager
+    def _seed_lock():
+        yield
+
     monkeypatch.setattr(_models, "init_db", lambda: None)
     monkeypatch.setattr(_snap, "snaptrade_enabled", lambda: True)
     monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
@@ -60,6 +66,7 @@ def _wire(monkeypatch):
     monkeypatch.setattr(_snap, "_bulk_sync_lookback_days",
                         lambda first_done, **k: 60 if first_done else 3650)
     monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
+    monkeypatch.setattr(_upload, "seed_write_lock", _seed_lock)
     monkeypatch.setattr(cli, "_notify_connection_dropped", lambda *a, **k: None)
 
     calls = {"batch": [], "synced": [], "first_sync_marked": []}
@@ -111,6 +118,40 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
     # Exactly ONE batched push, carrying all three accounts.
     assert len(_wire["batch"]) == 1
     assert len(_wire["batch"][0]["entries"]) == 3
+
+
+def test_cron_holds_seed_lock_across_deferred_reads_and_batch(_wire, monkeypatch):
+    """A webhook cannot commit between a cron read and its deferred batch."""
+    rows = [_row(9, "a1", "Schwab Account"), _row(18, "a2", "Alpaca Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    events = []
+
+    @contextmanager
+    def _recording_lock():
+        events.append("lock_enter")
+        yield
+        events.append("lock_exit")
+
+    def _fake_sync(user_id, row, **kwargs):
+        events.append(f"read:{row['snaptrade_account_id']}")
+        return _ok(row["account_name"], user_id, f"snaptrade:{row['snaptrade_account_id']}")
+
+    def _fake_batch(entries, *, commit_message):
+        events.append("batch_commit")
+        return True, None, "sha123", False, len(entries)
+
+    monkeypatch.setattr(_upload, "seed_write_lock", _recording_lock)
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+    monkeypatch.setattr(_upload, "merge_and_push_seeds_batch", _fake_batch)
+
+    assert cli.main() == 0
+    assert events == [
+        "lock_enter",
+        "read:a1",
+        "read:a2",
+        "batch_commit",
+        "lock_exit",
+    ]
 
 
 def test_cron_skips_broken_connection_from_batch(_wire, monkeypatch):

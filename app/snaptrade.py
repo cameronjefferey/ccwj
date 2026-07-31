@@ -1242,16 +1242,23 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             )
 
     try:
-        result = _run_sync(
-            user_id,
-            client,
-            snap=snap,
-            acc_row=acc_row,
-            lookback_days=lookback_days,
-            defer_push=defer_push,
-            skip_activities=skip_activities,
-            history_only=history_only,
-        )
+        # The broker read and seed merge are one consistency boundary. Locking
+        # only merge_and_push_seeds() still lets an older in-flight read commit
+        # after a newer webhook/manual sync and regress the tenant's positions
+        # snapshot. Webhook workers already hold this re-entrant lock; manual
+        # and Sync-All paths need the same fetch-through-write protection.
+        from app.upload import seed_write_lock
+        with seed_write_lock():
+            result = _run_sync(
+                user_id,
+                client,
+                snap=snap,
+                acc_row=acc_row,
+                lookback_days=lookback_days,
+                defer_push=defer_push,
+                skip_activities=skip_activities,
+                history_only=history_only,
+            )
         # A successful SnapTrade read is not yet a completed first sync: the
         # normalized rows must actually reach the seed branch. Otherwise a
         # transient/misconfigured GitHub push flips this account to the short
