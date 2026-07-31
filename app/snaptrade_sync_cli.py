@@ -202,6 +202,19 @@ def _force_refresh_all(rows):
 
 
 def main():
+    """Run the complete deferred fetch + batch commit under one seed lock.
+
+    The deferred frames are snapshots, not merge-time reads. Releasing the
+    lock between account fetches and ``merge_and_push_seeds_batch`` would let a
+    webhook commit fresher positions in the gap, then let this cron overwrite
+    them with its older in-memory frame.
+    """
+    from app.upload import seed_write_lock
+    with seed_write_lock():
+        return _main_under_seed_lock()
+
+
+def _main_under_seed_lock():
     from app.models import init_db, list_all_snaptrade_accounts
 
     init_db()

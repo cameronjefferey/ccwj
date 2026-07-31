@@ -8,6 +8,7 @@ monkey-patched).
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 
 # Tests import the app module which calls init_db on import unless
 # this env var is set. Set it BEFORE any app.* import.
@@ -17,6 +18,7 @@ import pytest
 
 from app import models as _models
 from app import snaptrade as _snap
+from app import upload as _upload
 from app.snaptrade import _bulk_sync_lookback_days
 
 
@@ -142,6 +144,11 @@ def _patched_models(monkeypatch):
         "holdings_synced": [],
     }
 
+    @contextmanager
+    def _seed_lock():
+        yield
+
+    monkeypatch.setattr(_upload, "seed_write_lock", _seed_lock)
     monkeypatch.setattr(_snap, "mark_snaptrade_first_sync_completed",
                         lambda u, a: record["first_sync_marked"].append((u, a)))
     monkeypatch.setattr(_snap, "mark_snaptrade_connection_broken",
@@ -233,6 +240,38 @@ def test_sync_one_clears_broken_flag_and_marks_first_sync_on_success(monkeypatch
     assert _patched_models["first_sync_marked"] == [(9, "abc")]
     assert _patched_models["broken_cleared"] == [(9, "abc")]
     assert _patched_models["sync_attempts"] == [(9, "abc", None)]
+
+
+def test_sync_one_holds_seed_lock_across_broker_read_and_write(monkeypatch, _patched_models):
+    """Manual/Sync-All reads cannot later overwrite a newer webhook snapshot."""
+    monkeypatch.setattr(
+        _snap, "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+    events = []
+
+    @contextmanager
+    def _recording_lock():
+        events.append("lock_enter")
+        yield
+        events.append("lock_exit")
+
+    def _fake_run_sync(*args, **kwargs):
+        events.append("broker_read_and_seed_write")
+        return _ok_run_sync()
+
+    monkeypatch.setattr(_upload, "seed_write_lock", _recording_lock)
+    monkeypatch.setattr(_snap, "_run_sync", _fake_run_sync)
+
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+
+    assert res["ok"] is True
+    assert events == ["lock_enter", "broker_read_and_seed_write", "lock_exit"]
 
 
 def test_sync_one_unknown_error_records_string_truncated(monkeypatch, _patched_models):
