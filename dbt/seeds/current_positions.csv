@@ -155,7 +155,7 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,NVDA  260803C00
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,NOK,Nokia Corporation Sponsored ADR,2500.0,9.3,,,23250.0,,,24000.0,-750.0,-3.125,,,,,,,,,,,,,,,,,Equity,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,PBA,Pembina Pipeline Corporation,82.0,50.43,,,4135.26,,,4204.14,-68.88,-1.6384,,,,,,,,,,,,,,,,,Equity,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,UAL,"United Airlines Holdings, Inc.",100.0,123.44,,,12344.0,,,11675.0,669.0,5.7302,,,,,,,,,,,,,,,,,Equity,
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,STRC  260821C00090000,STRC  260821C00090000,-3.0,1.7,,,-509.99999999999994,,,360.0,-150.0,-41.6667,,,,,,,,,,,,,,,,,Option,
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,STRC  260821C00090000,STRC  260821C00090000,-3.0,1.7,,,-510.0,,,360.0,-150.0,-41.6667,,,,,,,,,,,,,,,,,Option,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,STRC  260821C00095000,STRC  260821C00095000,3.0,0.15,,,44.99999999999999,,,60.0,-15.0,-25.0,,,,,,,,,,,,,,,,,Option,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,SYK   260821C00340000,SYK   260821C00340000,-3.0,19.1,,,-5730.0,,,3360.0,-2370.0,-70.5357,,,,,,,,,,,,,,,,,Option,
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,SYK   260821C00360000,SYK   260821C00360000,3.0,7.8,,,2340.0,,,1650.0,690.0,41.8182,,,,,,,,,,,,,,,,,Option,
