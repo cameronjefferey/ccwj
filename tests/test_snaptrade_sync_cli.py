@@ -320,6 +320,28 @@ def test_intraday_first_sync_fetches_full_data_and_marks_after_batch(_wire, monk
     assert _wire["first_sync_marked"] == [(14, "new-account")]
 
 
+def test_positions_only_first_sync_stays_pending_after_batch(_wire, monkeypatch):
+    """A durable snapshot does not prove the T+1 history archive is ready."""
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"],
+            user_id,
+            "snaptrade:new",
+            hist=0,
+            cur=5,
+            skip_history=True,
+        ),
+    )
+
+    assert cli.main() == 0
+    assert len(_wire["batch"]) == 1
+    assert _wire["first_sync_marked"] == []
+
+
 def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
     rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)

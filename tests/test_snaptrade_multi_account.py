@@ -292,6 +292,14 @@ def _ok_run_sync(extra=None):
         ({"github_pushed": False, "github_no_changes": True}, True),
         (
             {
+                "history_rows": 0,
+                "current_rows": 5,
+                "github_pushed": True,
+            },
+            False,
+        ),
+        (
+            {
                 "deferred": True,
                 "github_pushed": False,
                 "github_no_changes": False,
@@ -306,7 +314,7 @@ def _ok_run_sync(extra=None):
         ),
     ],
 )
-def test_sync_one_marks_first_sync_only_after_durable_seed_write(
+def test_sync_one_marks_first_sync_only_after_durable_nonempty_history(
     monkeypatch, _patched_models, extra, should_mark,
 ):
     monkeypatch.setattr(

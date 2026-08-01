@@ -1252,16 +1252,23 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             skip_activities=skip_activities,
             history_only=history_only,
         )
-        # A successful SnapTrade read is not yet a completed first sync: the
-        # normalized rows must actually reach the seed branch. Otherwise a
-        # transient/misconfigured GitHub push flips this account to the short
-        # routine lookback and its older history may never be fetched again.
+        # A successful SnapTrade read is not yet a completed first sync: at
+        # least one history row must actually reach the seed branch. SnapTrade
+        # commonly returns positions before its T+1 activities archive has
+        # finished indexing. Marking that positions-only write complete would
+        # switch the next run to the short routine lookback and permanently
+        # omit older history once the archive becomes available.
         # Deferred cron pushes are marked by the batch caller only after its
         # single commit succeeds.
         seed_write_confirmed = bool(
             result.get("github_pushed") or result.get("github_no_changes")
         )
-        if not result.get("deferred") and seed_write_confirmed:
+        history_ready = int(result.get("history_rows", 0) or 0) > 0
+        if (
+            not result.get("deferred")
+            and seed_write_confirmed
+            and history_ready
+        ):
             mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
         record_snaptrade_sync_attempt(user_id, snaptrade_account_id, error=None)
