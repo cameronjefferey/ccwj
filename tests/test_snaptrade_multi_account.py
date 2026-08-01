@@ -219,6 +219,7 @@ def test_sync_one_clears_broken_flag_and_marks_first_sync_on_success(monkeypatch
         "github_head_sha": "deadbeef",
         "github_seed_push_skipped": False,
         "github_skip_reason": None,
+        "transactions_initial_sync_completed": True,
     })
 
     res = _snap._sync_one_connection(
@@ -270,6 +271,7 @@ def _ok_run_sync(extra=None):
         "github_pushed": True, "github_error": None, "github_head_sha": "sha1",
         "github_seed_push_skipped": False, "github_skip_reason": None,
         "github_no_changes": False,
+        "transactions_initial_sync_completed": True,
     }
     if extra:
         base.update(extra)
@@ -292,6 +294,23 @@ def _ok_run_sync(extra=None):
         ({"github_pushed": False, "github_no_changes": True}, True),
         (
             {
+                "history_rows": 0,
+                "current_rows": 5,
+                "github_pushed": True,
+                "transactions_initial_sync_completed": False,
+            },
+            False,
+        ),
+        (
+            {
+                "history_rows": 3,
+                "github_pushed": True,
+                "transactions_initial_sync_completed": False,
+            },
+            False,
+        ),
+        (
+            {
                 "deferred": True,
                 "github_pushed": False,
                 "github_no_changes": False,
@@ -306,7 +325,7 @@ def _ok_run_sync(extra=None):
         ),
     ],
 )
-def test_sync_one_marks_first_sync_only_after_durable_seed_write(
+def test_sync_one_marks_first_sync_only_after_completed_durable_history(
     monkeypatch, _patched_models, extra, should_mark,
 ):
     monkeypatch.setattr(
@@ -510,6 +529,28 @@ def test_parse_iso_datetime_handles_z_suffix_and_date_prefix():
     assert _snap._parse_iso_datetime(None) is None
     assert _snap._parse_iso_datetime("") is None
     assert _snap._parse_iso_datetime("not-a-date") is None
+
+
+def test_transactions_initial_sync_completed_uses_authoritative_status():
+    summary = {
+        "sync_status": {
+            "transactions": {"initial_sync_completed": True},
+        },
+    }
+    assert _snap._transactions_initial_sync_completed(summary) is True
+    assert _snap._transactions_initial_sync_completed({
+        "sync_status": {
+            "transactions": {"initial_sync_completed": "true"},
+        },
+    }) is True
+
+
+def test_transactions_initial_sync_completed_is_false_when_not_ready():
+    assert _snap._transactions_initial_sync_completed(None) is False
+    assert _snap._transactions_initial_sync_completed({}) is False
+    assert _snap._transactions_initial_sync_completed({
+        "sync_status": {"transactions": {"initial_sync_completed": False}},
+    }) is False
 
 
 def test_holdings_last_successful_sync_extracts_nested_timestamp():

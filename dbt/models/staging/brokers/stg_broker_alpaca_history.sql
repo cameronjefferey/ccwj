@@ -89,7 +89,13 @@ flagged as (
         coalesce(regexp_contains(upper(Symbol), r'\d{6}[CP]\d{8}'), false)
             as _is_option,
         -- Buy vs Sell verb (preserved even when open/close is mislabeled).
-        if(starts_with(Action, 'Buy'), 'buy', 'sell') as _opt_side
+        -- Lifecycle rows must stay NULL: treating every non-Buy action as
+        -- ``sell`` makes Expired/Assigned rows masquerade as orders aggregates
+        -- and can drop a genuine same-day activities SELL fill (notably 0DTE).
+        case
+            when starts_with(Action, 'Buy') then 'buy'
+            when starts_with(Action, 'Sell') then 'sell'
+        end as _opt_side
     from alpaca_rows
 ),
 
@@ -102,7 +108,14 @@ grouped as (
         -- Option: does an authoritative orders aggregate exist for this
         -- (contract, date, side) group? Do NOT include quantity/price: the
         -- aggregate quantity equals the sum of activities executions.
-        countif(_is_option and not _is_partial_fill) over (
+        countif(
+            _is_option
+            and not _is_partial_fill
+            and (
+                starts_with(Action, 'Buy')
+                or starts_with(Action, 'Sell')
+            )
+        ) over (
             partition by
                 tenant_id, Date, Symbol, _opt_side
         ) as _opt_n_aggregate

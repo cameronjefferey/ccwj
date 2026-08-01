@@ -40,10 +40,20 @@ def _frames(name, uid, tenant, *, skip_history=False):
     }
 
 
-def _ok(name, uid, tenant, *, hist=3, cur=5, skip_history=False):
+def _ok(
+    name,
+    uid,
+    tenant,
+    *,
+    hist=3,
+    cur=5,
+    skip_history=False,
+    transactions_ready=True,
+):
     return {
         "ok": True, "error": None,
         "history_rows": hist, "current_rows": cur,
+        "transactions_initial_sync_completed": transactions_ready,
         "deferred": True,
         "frames": _frames(name, uid, tenant, skip_history=skip_history),
     }
@@ -318,6 +328,32 @@ def test_intraday_first_sync_fetches_full_data_and_marks_after_batch(_wire, monk
     assert cli.main() == 0
     assert seen == [(3650, True, False, False)]
     assert _wire["first_sync_marked"] == [(14, "new-account")]
+
+
+@pytest.mark.parametrize(("hist", "skip_history"), [(0, True), (3, False)])
+def test_incomplete_transaction_sync_stays_pending_after_batch(
+    _wire, monkeypatch, hist, skip_history,
+):
+    """Neither a snapshot nor recent orders prove the archive is complete."""
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"],
+            user_id,
+            "snaptrade:new",
+            hist=hist,
+            cur=5,
+            skip_history=skip_history,
+            transactions_ready=False,
+        ),
+    )
+
+    assert cli.main() == 0
+    assert len(_wire["batch"]) == 1
+    assert _wire["first_sync_marked"] == []
 
 
 def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
