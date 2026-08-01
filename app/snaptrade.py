@@ -1206,6 +1206,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         "github_seed_push_skipped": False,
         "github_skip_reason": None,
         "github_no_changes": False,
+        "transactions_initial_sync_completed": False,
         "error": None,
     }
 
@@ -1252,18 +1253,20 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             skip_activities=skip_activities,
             history_only=history_only,
         )
-        # A successful SnapTrade read is not yet a completed first sync: at
-        # least one history row must actually reach the seed branch. SnapTrade
-        # commonly returns positions before its T+1 activities archive has
-        # finished indexing. Marking that positions-only write complete would
-        # switch the next run to the short routine lookback and permanently
-        # omit older history once the archive becomes available.
+        # A successful SnapTrade read is not yet a completed first sync:
+        # SnapTrade's authoritative transaction-status flag must confirm that
+        # its historical archive is fully indexed, and the resulting seed write
+        # must be durable. Positions and recent orders can arrive before that
+        # flag, so neither a snapshot nor non-empty combined history proves the
+        # multi-year activities archive is ready.
         # Deferred cron pushes are marked by the batch caller only after its
         # single commit succeeds.
         seed_write_confirmed = bool(
             result.get("github_pushed") or result.get("github_no_changes")
         )
-        history_ready = int(result.get("history_rows", 0) or 0) > 0
+        history_ready = bool(
+            result.get("transactions_initial_sync_completed")
+        )
         if (
             not result.get("deferred")
             and seed_write_confirmed
@@ -1299,6 +1302,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
             "github_skip_reason": result.get("github_skip_reason"),
             "github_no_changes": bool(result.get("github_no_changes")),
+            "transactions_initial_sync_completed": history_ready,
         })
         # Deferred-push mode: carry the normalized frames back so the batch
         # caller (nightly cron) can merge every account into ONE commit. The
@@ -1838,6 +1842,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "github_seed_push_skipped": False,
             "github_skip_reason": None,
             "github_no_changes": False,
+            "transactions_initial_sync_completed":
+                _transactions_initial_sync_completed(account_summary),
             "holdings_last_successful_sync": _holdings_last_successful_sync_dt(account_summary),
         }
 
@@ -1915,6 +1921,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         "github_seed_push_skipped": not ok_cfg,
         "github_skip_reason": github_skip_reason,
         "github_no_changes": bool(github_no_changes),
+        "transactions_initial_sync_completed":
+            _transactions_initial_sync_completed(account_summary),
         # Honest "broker data as of" — SnapTrade's OWN holdings sync timestamp
         # (NOT when our cron read the cache). We already fetched account_summary
         # for the staleness backstop above; surface it here so the caller can
@@ -2254,6 +2262,28 @@ def _parse_iso_datetime(value):
         except ValueError:
             return None
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
+def _transactions_initial_sync_completed(account_summary) -> bool:
+    """Whether SnapTrade has finished the account's historical import.
+
+    ``sync_status.transactions.initial_sync_completed`` is the authoritative
+    signal documented by SnapTrade for this purpose. Missing or malformed
+    status is deliberately false: keeping the full-history lookback is cheaper
+    than permanently truncating a newly connected account's archive.
+    """
+    if not isinstance(account_summary, dict):
+        return False
+    sync_status = account_summary.get("sync_status")
+    if not isinstance(sync_status, dict):
+        return False
+    transactions = sync_status.get("transactions")
+    if not isinstance(transactions, dict):
+        return False
+    value = transactions.get("initial_sync_completed")
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() == "true"
 
 
 def _holdings_last_successful_sync_dt(account_summary):

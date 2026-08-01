@@ -313,14 +313,15 @@ def main():
                 or frames.get("history_df") is not None
             ):
                 batch_entries.append(frames)
-                # Positions often arrive before SnapTrade finishes indexing
-                # activities on a new connection. Keep that account on the
-                # full-history window until at least one history row is in the
-                # durable batch; otherwise older trades can be truncated when
-                # the next run switches to the routine lookback.
+                # Positions and recent orders often arrive before SnapTrade
+                # finishes indexing activities on a new connection. Keep that
+                # account on the full-history window until SnapTrade's own
+                # transaction-status flag confirms the archive is complete.
                 if (
                     not first_done
-                    and int(res.get("history_rows") or 0) > 0
+                    and bool(
+                        res.get("transactions_initial_sync_completed")
+                    )
                 ):
                     pending_first_sync_marks.append(
                         (user_id, snaptrade_account_id)
@@ -371,9 +372,9 @@ def main():
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
             if ok:
-                # Deferred history rows are not durable until this one batch
-                # operation succeeds. A byte-identical no-op also proves those
-                # non-empty first-sync rows are already on the seed branch.
+                # The completed historical import is not durable until this
+                # batch succeeds. A byte-identical no-op also proves its rows
+                # are already on the seed branch.
                 for pending_user_id, pending_account_id in pending_first_sync_marks:
                     try:
                         mark_snaptrade_first_sync_completed(
