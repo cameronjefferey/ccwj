@@ -56,10 +56,17 @@ alpaca_history_dropped as (
                 over (partition by cast(tenant_id as string), cast(Date as string),
                                    cast(Symbol as string), cast(Action as string)) as n_aggregate,
             countif(coalesce(regexp_contains(upper(cast(Symbol as string)), r'\d{6}[CP]\d{8}'), false)
-                    and not coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false))
+                    and not coalesce(regexp_contains(cast(Description as string), r'(?i) (PARTIAL_)?FILL at '), false)
+                    and (
+                        starts_with(cast(Action as string), 'Buy')
+                        or starts_with(cast(Action as string), 'Sell')
+                    ))
                 over (partition by cast(tenant_id as string), cast(Date as string),
                                    cast(Symbol as string),
-                                   if(starts_with(cast(Action as string), 'Buy'), 'buy', 'sell')) as n_opt_aggregate
+                                   case
+                                       when starts_with(cast(Action as string), 'Buy') then 'buy'
+                                       when starts_with(cast(Action as string), 'Sell') then 'sell'
+                                   end) as n_opt_aggregate
         from {{ ref('trade_history') }}
         where {{ broker_row_filter('Account', 'alpaca') }}
     )
