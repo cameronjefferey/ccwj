@@ -3034,17 +3034,6 @@ Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,07/09/2026,Sell 
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/25/2026,Cash Dividend,QTUM,DEFIANCE QUANTUM ETF,,,,52.91
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/16/2026,Credit Interest,SCHFDX0,BANK INT 051626-061526 SCHWAB BANK,,,,0.21
 Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,06/12/2026,Buy,KLAC,KLA CORP,100.0,249.56,,-24956.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/31/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
@@ -6445,3 +6434,14 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,OKE,"ONEOK, Inc.",46.0,87.92,,4044.32
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,MSFT  260814C00485000,MSFT  260814C00485000,1.0,12.55,,-1255.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,MSFT  260814C00500000,MSFT  260814C00500000,1.0,5.65,,565.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/31/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/24/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/17/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/10/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/03/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/26/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/19/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/12/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,06/05/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
