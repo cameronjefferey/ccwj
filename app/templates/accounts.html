@@ -148,7 +148,20 @@
 <div class="row mb-4">
     <div class="col-12">
         <div class="chart-wrapper">
-            <h6 class="fw-bold mb-3">Cumulative P&amp;L Over Time</h6>
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                <div>
+                    <h6 class="fw-bold mb-0">Cumulative P&amp;L Over Time</h6>
+                    <div id="periodReturn" class="text-muted small mt-1"></div>
+                </div>
+                <div class="btn-group btn-group-sm timeframe-group" role="group" aria-label="Time frame">
+                    <button type="button" class="btn btn-outline-secondary" data-range="1M">1M</button>
+                    <button type="button" class="btn btn-outline-secondary" data-range="3M">3M</button>
+                    <button type="button" class="btn btn-outline-secondary" data-range="6M">6M</button>
+                    <button type="button" class="btn btn-outline-secondary" data-range="YTD">YTD</button>
+                    <button type="button" class="btn btn-outline-secondary" data-range="1Y">1Y</button>
+                    <button type="button" class="btn btn-outline-secondary active" data-range="ALL">All</button>
+                </div>
+            </div>
             <div style="height: 320px;">
                 <canvas id="summaryChart"></canvas>
             </div>
@@ -160,7 +173,8 @@
 <div class="row mb-4">
     <div class="col-12">
         <div class="chart-wrapper">
-            <h6 class="fw-bold mb-3">P&amp;L by Strategy Over Time</h6>
+            <h6 class="fw-bold mb-0">P&amp;L by Strategy Over Time</h6>
+            <div class="text-muted small mt-1 mb-3">Follows the time frame selected above.</div>
             <div style="height: 320px;">
                 <canvas id="strategyTimeChart"></canvas>
             </div>
@@ -507,42 +521,126 @@
         'Other Option':     '#6c757d'
     };
 
-    /* ── Chart 1: Cumulative P&L (Summary) ────────────────────── */
+    /* ── Time-frame filter (shared by both time-series charts) ──────
+       Both charts plot CUMULATIVE P&L over `dates`. Filtering by time frame
+       slices to the window AND re-bases each series to $0 at the window start,
+       so the chart shows P&L EARNED DURING the period (e.g. "3M" = the last 3
+       months of gains/losses), not the since-inception running total. "All"
+       keeps the true cumulative curve (no re-base). Pure client-side on the
+       already-shipped series — no extra query, no reload. */
     var summaryData = {{ summary_chart_json | safe }};
+    var stratData   = {{ strategy_chart_json | safe }};
+    var summaryChart = null, strategyChart = null;
+
+    var RANGE_DAYS   = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+    var RANGE_LABELS = { '1M':'last month', '3M':'last 3 months', '6M':'last 6 months',
+                         'YTD':'year to date', '1Y':'last year', 'ALL':'all time' };
+
+    function parseDate(s) { return new Date(s + 'T00:00:00'); }
+
+    function startIndexFor(dates, key) {
+        if (!dates || !dates.length || key === 'ALL') return 0;
+        var last = parseDate(dates[dates.length - 1]);
+        var cutoff;
+        if (key === 'YTD') {
+            cutoff = new Date(last.getFullYear(), 0, 1);
+        } else {
+            var days = RANGE_DAYS[key] || 0;
+            cutoff = new Date(last); cutoff.setDate(cutoff.getDate() - days);
+        }
+        for (var i = 0; i < dates.length; i++) {
+            if (parseDate(dates[i]) >= cutoff) return i;
+        }
+        return Math.max(0, dates.length - 1);
+    }
+
+    /* Slice from startIdx; re-base to $0 at the window start unless ALL. */
+    function sliceSeries(arr, startIdx, rebase) {
+        if (!arr || !arr.length) return [];
+        var base = rebase ? (arr[startIdx] || 0) : 0;
+        var out = [];
+        for (var i = startIdx; i < arr.length; i++) {
+            out.push(Math.round((arr[i] - base) * 100) / 100);
+        }
+        return out;
+    }
+
+    function money(v) {
+        return (v < 0 ? '-' : '+') + '$' +
+            Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
+    function applyRange(key) {
+        var rebase = (key !== 'ALL');
+
+        if (summaryChart && summaryData && summaryData.dates && summaryData.dates.length) {
+            var sIdx = startIndexFor(summaryData.dates, key);
+            summaryChart.data.labels = summaryData.dates.slice(sIdx);
+            summaryChart.data.datasets.forEach(function (ds) {
+                ds.data = sliceSeries(summaryData[ds._key], sIdx, rebase);
+            });
+            summaryChart.update();
+
+            var totalArr = sliceSeries(summaryData.total, sIdx, rebase);
+            var net = totalArr.length ? totalArr[totalArr.length - 1] : 0;
+            var readout = document.getElementById('periodReturn');
+            if (readout) {
+                var cls = net >= 0 ? 'text-positive' : 'text-negative';
+                readout.innerHTML = 'P&amp;L ' + RANGE_LABELS[key] + ': ' +
+                    '<strong class="' + cls + '">' + money(net) + '</strong>' +
+                    (rebase ? ' <span class="text-muted">(re-based to $0 on ' + summaryData.dates[sIdx] + ')</span>' : '');
+            }
+        }
+
+        if (strategyChart && stratData && stratData.dates && stratData.dates.length) {
+            var s2 = startIndexFor(stratData.dates, key);
+            strategyChart.data.labels = stratData.dates.slice(s2);
+            strategyChart.data.datasets.forEach(function (ds) {
+                ds.data = sliceSeries((stratData.series || {})[ds._skey], s2, rebase);
+            });
+            strategyChart.update();
+        }
+
+        document.querySelectorAll('.timeframe-group button').forEach(function (b) {
+            b.classList.toggle('active', b.dataset.range === key);
+        });
+    }
+
+    /* ── Chart 1: Cumulative P&L (Summary) ────────────────────── */
     if (summaryData && summaryData.dates && summaryData.dates.length) {
-        var hasData = function (arr) { return arr.some(function (v) { return v !== 0; }); };
+        var hasData = function (arr) { return arr && arr.some(function (v) { return v !== 0; }); };
         var datasets = [];
 
         if (hasData(summaryData.equity)) {
             datasets.push({
-                label: 'Equity', data: summaryData.equity,
+                label: 'Equity', _key: 'equity', data: summaryData.equity.slice(),
                 borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.08)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }
         if (hasData(summaryData.options)) {
             datasets.push({
-                label: 'Options', data: summaryData.options,
+                label: 'Options', _key: 'options', data: summaryData.options.slice(),
                 borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,.08)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }
         if (hasData(summaryData.dividends)) {
             datasets.push({
-                label: 'Dividends', data: summaryData.dividends,
+                label: 'Dividends', _key: 'dividends', data: summaryData.dividends.slice(),
                 borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }
         datasets.push({
-            label: 'Total', data: summaryData.total,
+            label: 'Total', _key: 'total', data: summaryData.total.slice(),
             borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
             fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
         });
 
-        new Chart(document.getElementById('summaryChart'), {
+        summaryChart = new Chart(document.getElementById('summaryChart'), {
             type: 'line',
-            data: { labels: summaryData.dates, datasets: datasets },
+            data: { labels: summaryData.dates.slice(), datasets: datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
@@ -562,22 +660,21 @@
     }
 
     /* ── Chart 2: Strategy P&L Over Time ──────────────────────── */
-    var stratData = {{ strategy_chart_json | safe }};
     if (stratData && stratData.dates && stratData.dates.length && stratData.series) {
         var stratDatasets = [];
         var strategies = Object.keys(stratData.series).sort();
         strategies.forEach(function (strat) {
             var color = stratColors[strat] || '#6c757d';
             stratDatasets.push({
-                label: strat, data: stratData.series[strat],
+                label: strat, _skey: strat, data: stratData.series[strat].slice(),
                 borderColor: color, backgroundColor: color + '15',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         });
 
-        new Chart(document.getElementById('strategyTimeChart'), {
+        strategyChart = new Chart(document.getElementById('strategyTimeChart'), {
             type: 'line',
-            data: { labels: stratData.dates, datasets: stratDatasets },
+            data: { labels: stratData.dates.slice(), datasets: stratDatasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
@@ -595,6 +692,12 @@
             }
         });
     }
+
+    /* ── Wire the time-frame buttons + set the initial (All) state ── */
+    document.querySelectorAll('.timeframe-group button').forEach(function (b) {
+        b.addEventListener('click', function () { applyRange(b.dataset.range); });
+    });
+    applyRange('ALL');
 
     /* ── Table Sorting ─────────────────────────────────────────── */
     document.querySelectorAll('.sortable').forEach(function (th) {

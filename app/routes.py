@@ -5839,6 +5839,61 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     }
 
 
+def _finish_symbol_chart(sym_chart_df, sym_current, positions_only,
+                         closed_options_pnl, options_open_pnl):
+    """Build ONE symbol's cumulative-P&L chart payload (heavy) and rebase it.
+
+    This wraps the expensive stateful ``_build_chart_from_daily_pnl`` walk —
+    the /symbols cold-load hotspot. It is the SINGLE builder for a symbol's
+    chart: the page calls it only for the active symbol, and every other
+    symbol re-enters the same ``/symbols`` handler via the navigate-mode tab
+    strip (``?symbol=``), so an eager build and an on-demand build are always
+    byte-identical (no second code path to drift).
+
+    ``sym_chart_df`` must already be sliced to the (account, symbol) and, for
+    ``positions_only``, clipped to the open-session start — exactly as the
+    per-symbol loop prepares it.
+    """
+    with timed("symbol_charts"):
+        chart = cached_payload(
+            ("sym_chart", str(date.today()), frame_fingerprint(sym_chart_df, sym_current)),
+            lambda sdf=sym_chart_df, scur=sym_current: _build_chart_from_daily_pnl(sdf, scur),
+        )
+
+    # When viewing "this position only", rebase chart so it starts at 0
+    # (first point = start of position, not cumulative from prior history)
+    if positions_only and chart.get("dates") and len(chart["dates"]) > 0:
+        base_equity = chart["equity"][0] if chart["equity"] else 0
+        base_options = chart["options"][0] if chart["options"] else 0
+        base_dividends = chart["dividends"][0] if chart["dividends"] else 0
+        base_total = chart["total"][0] if chart["total"] else 0
+        chart["equity"] = [round(x - base_equity, 2) for x in chart["equity"]]
+        chart["options"] = [round(x - base_options, 2) for x in chart["options"]]
+        chart["dividends"] = [round(x - base_dividends, 2) for x in chart["dividends"]]
+        chart["total"] = [round(x - base_total, 2) for x in chart["total"]]
+        # If this position has no open equity (options-only), strip equity from the
+        # chart so we don't show phantom spikes from past equity trades in the mart.
+        has_open_equity = not sym_current.empty and (
+            (sym_current["instrument_type"] == "Equity").any()
+        )
+        if not has_open_equity:
+            n = len(chart["dates"])
+            for i in range(n):
+                chart["total"][i] = round(chart["total"][i] - chart["equity"][i], 2)
+                chart["equity"][i] = 0
+        # Anchor the last options point to closed OPTION legs + current open
+        # option unrealized only.  Equity realized P&L (shares sold/called away)
+        # is already captured by the natural avg-cost equity calculation and must
+        # not be added to the options series — doing so double-counts it and
+        # causes a spurious drop to -$3k on the final data point.
+        chart["options"][-1] = round(closed_options_pnl + options_open_pnl, 2)
+        chart["total"][-1] = round(
+            chart["equity"][-1] + chart["options"][-1] + chart["dividends"][-1], 2
+        )
+
+    return chart
+
+
 @app.route("/symbols")
 @login_required
 def symbols_detail():
@@ -6149,44 +6204,15 @@ def symbols_detail():
                     min(group["trade_date"].max(), sym_chart_df["date"].min())
                 )
 
-        with timed("symbol_charts"):
-            chart = cached_payload(
-                ("sym_chart", str(date.today()), frame_fingerprint(sym_chart_df, sym_current)),
-                lambda sdf=sym_chart_df, scur=sym_current: _build_chart_from_daily_pnl(sdf, scur),
-            )
-
-        # When viewing "this position only", rebase chart so it starts at 0
-        # (first point = start of position, not cumulative from prior history)
-        if positions_only and chart.get("dates") and len(chart["dates"]) > 0:
-            base_equity = chart["equity"][0] if chart["equity"] else 0
-            base_options = chart["options"][0] if chart["options"] else 0
-            base_dividends = chart["dividends"][0] if chart["dividends"] else 0
-            base_total = chart["total"][0] if chart["total"] else 0
-            chart["equity"] = [round(x - base_equity, 2) for x in chart["equity"]]
-            chart["options"] = [round(x - base_options, 2) for x in chart["options"]]
-            chart["dividends"] = [round(x - base_dividends, 2) for x in chart["dividends"]]
-            chart["total"] = [round(x - base_total, 2) for x in chart["total"]]
-            # If this position has no open equity (options-only), strip equity from the
-            # chart so we don't show phantom spikes from past equity trades in the mart.
-            has_open_equity = not sym_current.empty and (
-                (sym_current["instrument_type"] == "Equity").any()
-            )
-            if not has_open_equity:
-                n = len(chart["dates"])
-                for i in range(n):
-                    chart["total"][i] = round(chart["total"][i] - chart["equity"][i], 2)
-                    chart["equity"][i] = 0
-            # Anchor the last options point to closed OPTION legs + current open
-            # option unrealized only.  Equity realized P&L (shares sold/called away)
-            # is already captured by the natural avg-cost equity calculation and must
-            # not be added to the options series — doing so double-counts it and
-            # causes a spurious drop to -$3k on the final data point.
-            chart["options"][-1] = round(closed_options_pnl + options_open_pnl, 2)
-            chart["total"][-1] = round(
-                chart["equity"][-1] + chart["options"][-1] + chart["dividends"][-1], 2
-            )
-
-        chart_data_list.append(chart)
+        # PERF: defer the heavy chart build. Stash the (already sliced +
+        # positions_only-clipped) inputs and build ONLY the active symbol's
+        # chart after the loop (see below). The navigate-mode tab strip loads
+        # every other symbol's chart by re-entering this handler with
+        # ?symbol=<sym>, so ``_build_chart_from_daily_pnl`` runs once per
+        # VIEWED symbol instead of once per symbol on every page load.
+        chart_data_list.append(
+            (sym_chart_df, sym_current, closed_options_pnl, options_open_pnl)
+        )
 
         # Trade table rows (convert dates to str for Jinja)
         trades_table = group.copy()
@@ -6330,11 +6356,8 @@ def symbols_detail():
             "_chart_idx": len(chart_data_list) - 1,
         })
 
-    # Sort by total return descending; rebuild chart list in matching order
+    # Sort by total return descending.
     symbol_data.sort(key=lambda x: x["total_return"], reverse=True)
-    sorted_charts = [chart_data_list[item["_chart_idx"]] for item in symbol_data]
-    for item in symbol_data:
-        del item["_chart_idx"]
 
     # Resolve the active symbol for the tab strip. Honor ?symbol= when it
     # matches a tab (cheap defense against stale bookmarks); otherwise fall
@@ -6347,6 +6370,36 @@ def symbols_detail():
         else (symbol_data[0]["symbol"] if symbol_data else "")
     )
 
+    # PERF: build ONLY the active symbol's chart. Non-active panes ship a null
+    # placeholder; the navigate-mode tab strip reloads with ?symbol=<sym>,
+    # re-entering this handler to build THAT symbol's chart on demand. This
+    # turns "build every symbol's chart on every load" (the ~5s cold-load
+    # hotspot for heavy accounts) into one build per viewed symbol. Same
+    # single builder (_finish_symbol_chart) for eager + on-demand, so the
+    # chart can never differ between the two paths.
+    charts = [None] * len(symbol_data)
+    for i, item in enumerate(symbol_data):
+        if str(item.get("symbol") or "").upper() == active_symbol:
+            sci = chart_data_list[item["_chart_idx"]]
+            charts[i] = _finish_symbol_chart(
+                sci[0], sci[1], positions_only, sci[2], sci[3]
+            )
+            break
+    for item in symbol_data:
+        del item["_chart_idx"]
+
+    # Navigate-mode tab strip: tabs are real <a> links back to this handler
+    # with the symbol + current filters preserved. hrefs are built as
+    # ``{base}{symbol}{suffix}`` by _symbol_tabstrip.html.
+    tab_href_suffix = ""
+    if selected_account:
+        tab_href_suffix += "&account=" + quote_plus(selected_account)
+    if open_only:
+        tab_href_suffix += "&open_only=1"
+    if positions_only:
+        tab_href_suffix += "&positions_only=1"
+    tab_href_base = url_for("symbols_detail") + "?symbol="
+
     return render_template(
         "symbols.html",
         title="Daily P&L",
@@ -6355,8 +6408,10 @@ def symbols_detail():
         # {symbol, account, total_return, num_trades, story_open_legs, strategies}
         tabs=symbol_data,
         active_symbol=active_symbol,
-        mode="swap",
-        chart_data_json=json.dumps(sorted_charts),
+        mode="navigate",
+        tab_href_base=tab_href_base,
+        tab_href_suffix=tab_href_suffix,
+        chart_data_json=json.dumps(charts),
         accounts=accounts,
         selected_account=selected_account,
         open_only=open_only,
@@ -6580,6 +6635,32 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
             else:
                 continue
 
+        # ── Skip non-trading days (weekends / market holidays) ──────────
+        # mart_daily_pnl's EQUITY price spine is trading-days-only —
+        # yfinance publishes no weekend/holiday close, so an equity symbol
+        # simply has no row on those dates (verified: SPY jumps Fri→Mon).
+        # OPTION contracts, though, carry a CALENDAR-dense per-contract
+        # spine (generate_date_array in int_option_contract_daily_pnl), so
+        # a weekend/holiday still emits a date-group — but one containing
+        # ONLY the option-bearing symbols. This loop re-marks equity from
+        # just the symbols present that day, so every absent equity's
+        # unrealized MTM silently drops out, collapsing the equity line to
+        # realized-only and drawing a weekend/holiday SAWTOOTH (dip on the
+        # non-trading day, recovery the next session). Emit only on real
+        # trading days: skip weekends outright, and skip any day that is
+        # missing a currently-held equity symbol (holiday / sync gap). All
+        # running state (eq_state, cum_div/other, options realized) is
+        # already updated above, so the next trading day's point is exact.
+        _present_keys = {_eq_key(r) for r in day_records}
+        _held_keys = {
+            k for k, s in eq_state.items()
+            if abs(s["shares"]) > 1e-9 or abs(s["short_shares"]) > 1e-9
+        }
+        _is_weekend = pd.Timestamp(d).weekday() >= 5
+        _equity_incomplete = bool(_held_keys) and not _held_keys.issubset(_present_keys)
+        if _is_weekend or _equity_incomplete:
+            continue
+
         dates_out.append(str(d)[:10])
         equity_s.append(round(eq_total, 2))
         options_s.append(round(cum_opt, 2))
@@ -6588,7 +6669,13 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
 
     today = date.today()
     today_str = str(today)
-    if not current_df.empty and dates_out and dates_out[-1] != today_str:
+    # Only synthesize a "today" point on a trading day — on a weekend the
+    # last real market data is Friday's close (int_enriched_current is
+    # close-based), so a weekend "today" row would just draw a flat lone
+    # point past the exchange's last session. See the weekend/holiday skip
+    # in the loop above.
+    if (not current_df.empty and dates_out and dates_out[-1] != today_str
+            and today.weekday() < 5):
         # Synthetic today row when the mart hasn't been built yet for
         # today (sync ran but dbt hasn't refreshed yet).
         #
