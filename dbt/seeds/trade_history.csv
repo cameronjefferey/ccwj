@@ -3972,6 +3972,8 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/23/2026,Sell 
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/22/2026,Sell to Close,PLTR  270115C00120000,CALL PALANTIR TECHNOLOGI$120 EXP 01/15/27,2.0,21.65,1.42,4328.58
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/11/2026,Buy,INTC,INTEL CORP,10.0,117.855,,-1178.55
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,06/08/2026,Buy,MU,MICRON TECHNOLOGY INC,10.0,950.2399,,-9502.4
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,ASTS,"AST SpaceMobile, Inc.",200.0,63.72,,-12744.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Sell to Open,ASTS  260814C00076000,ASTS  260814C00076000,2.0,2.17,,434.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,BP,BP p.l.c. Sponsored ADR,500.0,44.55,,-22275.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Sell to Open,BP    260807C00046000,BP    260807C00046000,5.0,0.38,,190.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL AST SPACEMOBILE INC$102 EXP 06/05/26,3.0,0.76,2.0,226.0
