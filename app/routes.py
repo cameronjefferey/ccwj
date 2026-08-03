@@ -7917,6 +7917,68 @@ ACCOUNTS_RANGE_DAYS = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365}
 ACCOUNTS_VALID_RANGES = {"1M", "3M", "6M", "YTD", "1Y", "ALL"}
 
 
+def _build_account_breakdowns(attribution_df, strat_class_df, range_start):
+    """Build the four windowed breakdown tables (position / strategy / sector /
+    subsector) + totals from the attribution frame. Shared by the /accounts
+    page and the /accounts/breakdown fragment endpoint (the latter powers the
+    instant client-side time-frame switch — see accounts.html). ``range_start``
+    windows _build_position_breakdown to open + closed-in-window positions;
+    None = lifetime."""
+    from app.weekly_review import (
+        _build_position_breakdown,
+        _aggregate_breakdown_by,
+        _build_breakdown_totals,
+        _strategy_for_symbol,
+    )
+    out = {
+        "position_breakdown": [],
+        "position_breakdown_totals": None,
+        "strategy_breakdown": [],
+        "strategy_breakdown_totals": None,
+        "sector_breakdown": [],
+        "subsector_breakdown": [],
+    }
+    try:
+        # strategy_by_symbol: largest abs-P&L strategy label per symbol
+        # (matches the "primary strategy" lens on /positions).
+        strategy_by_symbol = {}
+        if strat_class_df is not None and not strat_class_df.empty:
+            sb = (
+                strat_class_df.groupby(["symbol", "strategy"], dropna=False)["total_pnl"]
+                .sum()
+                .reset_index()
+            )
+            lookup = {}
+            for _, r in sb.iterrows():
+                sym = str(r.get("symbol") or "")
+                lookup.setdefault(sym, []).append(
+                    {"strategy": r.get("strategy"), "total_pnl": r.get("total_pnl")}
+                )
+            for sym, classes in lookup.items():
+                strategy_by_symbol[sym] = _strategy_for_symbol(sym, {sym: classes})
+
+        pb = _build_position_breakdown(
+            attribution_df, strategy_by_symbol, week_start=range_start,
+        )
+        out["position_breakdown"] = pb
+        out["position_breakdown_totals"] = _build_breakdown_totals(pb)
+        out["strategy_breakdown"] = _aggregate_breakdown_by(
+            pb, "strategy", label_name="strategy"
+        )
+        out["strategy_breakdown_totals"] = _build_breakdown_totals(
+            out["strategy_breakdown"]
+        )
+        out["sector_breakdown"] = _aggregate_breakdown_by(
+            pb, "sector", label_name="sector"
+        )
+        out["subsector_breakdown"] = _aggregate_breakdown_by(
+            pb, "subsector", label_name="subsector"
+        )
+    except Exception as exc:
+        app.logger.warning("Account breakdown tables failed: %s", exc)
+    return out
+
+
 def _accounts_range_start(range_key, today=None):
     """Cutoff date for the /accounts time filter (None for ALL). Mirrors the
     client-side ``RANGE_DAYS`` / YTD logic in accounts.html so the server-side
@@ -7953,16 +8015,13 @@ def accounts():
         range_start.isoformat() if range_start else None  # set below
     )
 
-    # Attribution query + breakdown builders live in app.weekly_review.
-    # Deferred import: weekly_review imports from app.routes at module
-    # load, so a top-level import here would be circular.
+    # Attribution query lives in app.weekly_review. Deferred import:
+    # weekly_review imports from app.routes at module load, so a top-level
+    # import here would be circular. The breakdown builders are invoked via
+    # _build_account_breakdowns (shared with the fragment endpoint).
     from app.weekly_review import (
         POSITION_ATTRIBUTION_QUERY,
         ATTRIBUTION_LIFETIME_SENTINEL,
-        _build_position_breakdown,
-        _aggregate_breakdown_by,
-        _build_breakdown_totals,
-        _strategy_for_symbol,
     )
     if attribution_week_start is None:
         attribution_week_start = ATTRIBUTION_LIFETIME_SENTINEL
@@ -7999,6 +8058,7 @@ def accounts():
             kpis={},
             summary_chart_json="{}",
             strategy_chart_json="{}",
+            realized_events_json="[]",
             strategy_rows=[],
             position_breakdown=[],
             position_breakdown_totals=None,
@@ -8208,81 +8268,113 @@ def accounts():
     # Detailed breakdown tables (the per-symbol / strategy / sector /
     # subsector "CC Trading Summary" the Daily Review account scorecard
     # drills into). Same Stock | Options | Dividend | Net | % | Annualized
-    # shape, lifetime scope (week_start=None here + the SENTINEL passed to
-    # the SQL above, so every closed group counts — this is the full account
-    # view). All four pull from POSITION_ATTRIBUTION_QUERY so the totals
-    # reconcile with the scorecard row on /daily-review (which scopes to the
-    # current week instead).
+    # shape, windowed to the selected time frame (range_start; ALL = None =
+    # the SENTINEL passed to the SQL above, so every closed group counts).
+    # All four pull from POSITION_ATTRIBUTION_QUERY. On a time-frame switch
+    # the browser re-fetches these four tables from /accounts/breakdown
+    # (accounts_breakdown_fragment) via the same _build_account_breakdowns
+    # helper — no full page reload.
     # ------------------------------------------------------------------
-    position_breakdown = []
-    position_breakdown_totals = None
-    strategy_breakdown = []
-    strategy_breakdown_totals = None
-    sector_breakdown = []
-    subsector_breakdown = []
     tag_breakdown = []
     # Tag Breakdown (leg-grained): match the user's Postgres leg tags to the
     # scoped legs by date-containment. Scoped to in-scope tenant_ids so a
     # narrowed account view only rolls up that account's tagged legs.
+    # (Lifetime — not windowed by the time filter; it stays fixed while the
+    # four windowed breakdown tables swap via the fragment endpoint.)
     try:
         from app.models import get_all_leg_tags_for_user as _get_all_leg_tags_for_user
         _tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
         tag_breakdown = _build_tag_breakdown(legs_df, _tag_rows)
     except Exception as exc:
         app.logger.warning("Account tag breakdown failed: %s", exc)
-    try:
-        # strategy_by_symbol: largest abs-P&L strategy label per symbol
-        # (matches the "primary strategy" lens on /positions).
-        strategy_by_symbol = {}
-        if strat_class_df is not None and not strat_class_df.empty:
-            sb = (
-                strat_class_df.groupby(["symbol", "strategy"], dropna=False)["total_pnl"]
-                .sum()
-                .reset_index()
-            )
-            lookup = {}
-            for _, r in sb.iterrows():
-                sym = str(r.get("symbol") or "")
-                lookup.setdefault(sym, []).append(
-                    {"strategy": r.get("strategy"), "total_pnl": r.get("total_pnl")}
-                )
-            for sym, classes in lookup.items():
-                strategy_by_symbol[sym] = _strategy_for_symbol(sym, {sym: classes})
 
-        position_breakdown = _build_position_breakdown(
-            attribution_df, strategy_by_symbol, week_start=range_start,
-        )
-        position_breakdown_totals = _build_breakdown_totals(position_breakdown)
-        strategy_breakdown = _aggregate_breakdown_by(
-            position_breakdown, "strategy", label_name="strategy"
-        )
-        strategy_breakdown_totals = _build_breakdown_totals(strategy_breakdown)
-        sector_breakdown = _aggregate_breakdown_by(
-            position_breakdown, "sector", label_name="sector"
-        )
-        subsector_breakdown = _aggregate_breakdown_by(
-            position_breakdown, "subsector", label_name="subsector"
-        )
-    except Exception as exc:
-        app.logger.warning("Account breakdown tables failed: %s", exc)
+    breakdowns = _build_account_breakdowns(attribution_df, strat_class_df, range_start)
+
+    # Closed-group (close_date, total_pnl) pairs so the browser can recompute
+    # "Realized (period)" instantly on a time-frame switch without a round trip
+    # (see accounts.html realizedInWindow()).
+    realized_events = []
+    if (not strat_class_df.empty and "close_date" in strat_class_df.columns
+            and "total_pnl" in strat_class_df.columns):
+        _cd = pd.to_datetime(strat_class_df["close_date"], errors="coerce").dt.date
+        _closed = strat_class_df[(strat_class_df.get("status") == "Closed") & _cd.notna()]
+        _cd2 = pd.to_datetime(_closed["close_date"], errors="coerce").dt.date
+        for d_, p_ in zip(_cd2, _closed["total_pnl"]):
+            realized_events.append([d_.isoformat(), float(p_ or 0)])
 
     return render_template(
         "accounts.html",
         kpis=kpis,
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),
+        realized_events_json=json.dumps(realized_events),
         strategy_rows=strategy_rows,
-        position_breakdown=position_breakdown,
-        position_breakdown_totals=position_breakdown_totals,
-        strategy_breakdown=strategy_breakdown,
-        strategy_breakdown_totals=strategy_breakdown_totals,
-        sector_breakdown=sector_breakdown,
-        subsector_breakdown=subsector_breakdown,
+        position_breakdown=breakdowns["position_breakdown"],
+        position_breakdown_totals=breakdowns["position_breakdown_totals"],
+        strategy_breakdown=breakdowns["strategy_breakdown"],
+        strategy_breakdown_totals=breakdowns["strategy_breakdown_totals"],
+        sector_breakdown=breakdowns["sector_breakdown"],
+        subsector_breakdown=breakdowns["subsector_breakdown"],
         tag_breakdown=tag_breakdown,
         accounts=all_accounts,
         selected_account=selected_account,
         selected_range=selected_range,
         period_kpis=period_kpis,
+    )
+
+
+# ----------------------------------------------------------------------
+# /accounts/breakdown — HTML fragment for the 4 windowed breakdown tables.
+# Powers the INSTANT client-side time-frame switch on /accounts: the buttons
+# slice the charts + recompute the KPI cards in the browser (no round trip)
+# and fetch just this fragment to refresh the tables, instead of reloading the
+# whole page (which re-ran the full BQ wave + re-initialized both charts).
+# Tenant-scoped exactly like /accounts; renders only the tables partial.
+# ----------------------------------------------------------------------
+@app.route("/accounts/breakdown")
+@login_required
+def accounts_breakdown_fragment():
+    client = get_bigquery_client()
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+
+    selected_range = (request.args.get("range", "ALL") or "ALL").upper()
+    if selected_range not in ACCOUNTS_VALID_RANGES:
+        selected_range = "ALL"
+    range_start = _accounts_range_start(selected_range)
+
+    from app.weekly_review import (
+        POSITION_ATTRIBUTION_QUERY,
+        ATTRIBUTION_LIFETIME_SENTINEL,
+    )
+    attribution_week_start = (
+        range_start.isoformat() if range_start else ATTRIBUTION_LIFETIME_SENTINEL
+    )
+    try:
+        dfs = _bq_parallel(client, {
+            "attribution": POSITION_ATTRIBUTION_QUERY.format(
+                tenant_filter=tenant_filter, week_start=attribution_week_start),
+            "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
+        })
+        attribution_df = dfs["attribution"]
+        strat_class_df = dfs["strat_class"]
+    except Exception as exc:
+        app.logger.warning("Account breakdown fragment query failed: %s", exc)
+        # Empty frames render an empty (but valid) fragment.
+        import pandas as _pd
+        attribution_df = _pd.DataFrame()
+        strat_class_df = _pd.DataFrame()
+
+    breakdowns = _build_account_breakdowns(attribution_df, strat_class_df, range_start)
+    return render_template(
+        "_accounts_breakdowns.html",
+        position_breakdown=breakdowns["position_breakdown"],
+        position_breakdown_totals=breakdowns["position_breakdown_totals"],
+        strategy_breakdown=breakdowns["strategy_breakdown"],
+        strategy_breakdown_totals=breakdowns["strategy_breakdown_totals"],
+        sector_breakdown=breakdowns["sector_breakdown"],
+        subsector_breakdown=breakdowns["subsector_breakdown"],
     )
 
 

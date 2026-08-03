@@ -82,22 +82,27 @@
 </form>
 {% endif %}
 
-{# ── Time frame (whole-page filter) ───────────────────────────────── #}
+{# ── Time frame (whole-page filter) ───────────────────────────────────
+   Buttons are <a> links (bookmarkable + no-JS fallback) but JS intercepts the
+   click: it slices the charts, recomputes the KPI cards, and swaps ONLY the
+   four breakdown tables via /accounts/breakdown — no full page reload. ── #}
 {% if kpis %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <span class="text-muted small fw-semibold me-1">Time frame</span>
     <div class="btn-group btn-group-sm timeframe-group" role="group" aria-label="Time frame">
         {% for key, lbl in [('1M','1M'),('3M','3M'),('6M','6M'),('YTD','YTD'),('1Y','1Y'),('ALL','All')] %}
-        <a class="btn btn-outline-secondary {{ 'active' if (selected_range or 'ALL') == key }}"
+        <a class="btn btn-outline-secondary js-range-btn {{ 'active' if (selected_range or 'ALL') == key }}"
+           data-range="{{ key }}"
            href="{{ url_for('accounts', account=selected_account, range=key) if selected_account else url_for('accounts', range=key) }}">{{ lbl }}</a>
         {% endfor %}
     </div>
-    {% if (selected_range or 'ALL') != 'ALL' %}
-    <span class="text-muted small">
+    <span class="spinner-border spinner-border-sm text-secondary" id="rangeSpinner"
+          role="status" aria-hidden="true" style="display:none;"></span>
+    <span id="rangeHelp" class="text-muted small"
+          style="{{ '' if (selected_range or 'ALL') != 'ALL' else 'display:none;' }}">
         Realized, dividends, the charts and the breakdown tables reflect this window.
         Account value, cash, invested &amp; current unrealized are always &ldquo;as of now.&rdquo;
     </span>
-    {% endif %}
 </div>
 {% endif %}
 
@@ -122,19 +127,14 @@
             <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
         </div>
     </div>
+    {# Realized / Dividends / Net cards update INSTANTLY client-side when the
+       time frame changes (see updateCards() in the scripts block). #}
     <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            {% if period_kpis %}
-            <div class="kpi-label">Realized (period)</div>
-            <div class="kpi-value {{ 'text-positive' if period_kpis.realized >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.realized) }}
+        <div class="card kpi-card p-3 text-center" id="kpiRealized">
+            <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
+            <div class="kpi-value {{ 'text-positive' if (period_kpis.realized if period_kpis else kpis.realized_pnl) >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(period_kpis.realized if period_kpis else kpis.realized_pnl) }}
             </div>
-            {% else %}
-            <div class="kpi-label">Realized P&amp;L</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.realized_pnl) }}
-            </div>
-            {% endif %}
         </div>
     </div>
     <div class="col">
@@ -147,40 +147,23 @@
     </div>
     {# Dividends KPI surfaces the missing reconciliation piece so a reader
        can verify realized + unrealized + dividends = total return at a
-       glance. Hidden when zero to avoid clutter for users who don't hold
-       dividend payers. #}
-    {% if period_kpis %}
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Dividends (period)</div>
-            <div class="kpi-value {{ 'text-positive' if period_kpis.dividends >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.dividends) }}
+       glance. Hidden when lifetime dividends are zero AND no window is
+       selected, to avoid clutter for users who don't hold dividend payers. #}
+    <div class="col" id="kpiDividendsCol"
+         style="{{ '' if (period_kpis or kpis.dividend_income) else 'display:none;' }}">
+        <div class="card kpi-card p-3 text-center" id="kpiDividends">
+            <div class="kpi-label">{{ 'Dividends (period)' if period_kpis else 'Dividends' }}</div>
+            <div class="kpi-value {{ 'text-positive' if (period_kpis.dividends if period_kpis else (kpis.dividend_income or 0)) >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(period_kpis.dividends if period_kpis else (kpis.dividend_income or 0)) }}
             </div>
         </div>
     </div>
-    {% elif kpis.dividend_income %}
     <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Dividends</div>
-            <div class="kpi-value text-positive">
-                ${{ "{:,.0f}".format(kpis.dividend_income) }}
+        <div class="card kpi-card p-3 text-center" id="kpiNet">
+            <div class="kpi-label">{{ 'Net P&L this period' if period_kpis else 'Total Return' }}</div>
+            <div class="kpi-value {{ 'text-positive' if (period_kpis.net if period_kpis else kpis.total_return) >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(period_kpis.net if period_kpis else kpis.total_return) }}
             </div>
-        </div>
-    </div>
-    {% endif %}
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            {% if period_kpis %}
-            <div class="kpi-label">Net P&amp;L this period</div>
-            <div class="kpi-value {{ 'text-positive' if period_kpis.net >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.net) }}
-            </div>
-            {% else %}
-            <div class="kpi-label">Total Return</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.total_return) }}
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -306,7 +289,11 @@
 
 {# ── Detailed breakdown tables (Stock | Options | Dividend | Net | % |
       Annualized) — the per-position / strategy / sector drill-down behind
-      the Daily Review account scorecard. Lifetime scope. ──────────────── #}
+      the Daily Review account scorecard. Windowed to the selected time frame.
+      Swapped in place by the time-frame buttons via /accounts/breakdown so a
+      range change doesn't reload the whole page. The macros below stay in the
+      page too so the lifetime Tag Breakdown (which does NOT window) can use
+      them. ──────────────────────────────────────────────────────────────── #}
 {% macro money_cell(val) %}
 <td class="text-end {% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}" data-val="{{ val }}">
     {% if val == 0 %}<span class="text-muted">$0</span>
@@ -320,132 +307,12 @@
 </td>
 {% endmacro %}
 
-{% if position_breakdown %}
-<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
-    <div class="card-body p-3">
-        <h6 class="fw-bold mb-1">Position Breakdown</h6>
-        <p class="text-muted small mb-3">
-            Lifetime per symbol: equity P&amp;L vs option P&amp;L vs dividends, net total,
-            % return on capital deployed, and a holding-period annualized estimate
-            (30-day minimum window, $200 capital floor so tiny/new lots don&rsquo;t
-            extrapolate to absurd rates).
-        </p>
-        <div class="table-responsive">
-            <table class="table table-hover table-sm align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Symbol</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Capital</th>
-                        <th class="text-end">Days</th>
-                        <th class="text-end">% Return</th>
-                        <th class="text-end">Annualized</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in position_breakdown %}
-                    <tr>
-                        <td>
-                            <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
-                            {% if r.strategy %}<div class="text-muted" style="font-size:.72rem;">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
-                        </td>
-                        {{ money_cell(r.equity_pnl) }}
-                        {{ money_cell(r.option_pnl) }}
-                        {{ money_cell(r.dividend_income) }}
-                        {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
-                        <td class="text-end">{{ r.days_held }}</td>
-                        {{ pct_cell(r.pct_return) }}
-                        {{ pct_cell(r.annualized_pct) }}
-                        <td><span class="badge {{ 'bg-success-subtle text-success' if r.status == 'Open' else 'bg-secondary-subtle text-secondary' }}">{{ r.status }}</span></td>
-                    </tr>
-                    {% endfor %}
-                    {% if position_breakdown_totals %}
-                    {% set t = position_breakdown_totals %}
-                    <tr class="fw-bold border-top">
-                        <td>Total &middot; {{ t.num_symbols }} symbol{{ 's' if t.num_symbols != 1 }}</td>
-                        {{ money_cell(t.equity_pnl) }}
-                        {{ money_cell(t.option_pnl) }}
-                        {{ money_cell(t.dividend_income) }}
-                        {{ money_cell(t.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
-                        <td></td>
-                        {{ pct_cell(t.pct_return) }}
-                        <td></td>
-                        <td></td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div id="breakdownTables">
+{% include "_accounts_breakdowns.html" %}
 </div>
-{% endif %}
 
-{% if strategy_breakdown %}
-<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
-    <div class="card-body p-3">
-        <h6 class="fw-bold mb-3">Strategy Breakdown</h6>
-        <div class="table-responsive">
-            <table class="table table-hover table-sm align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Strategy</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Capital</th>
-                        <th class="text-end">Max Days</th>
-                        <th class="text-end">% Return</th>
-                        <th class="text-end">Annualized</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in strategy_breakdown %}
-                    <tr>
-                        <td>
-                            <span class="fw-semibold">{{ r.strategy }}</span>
-                            <div class="text-muted" style="font-size:.72rem;">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
-                        </td>
-                        <td class="text-end">{{ r.num_symbols }}</td>
-                        {{ money_cell(r.equity_pnl) }}
-                        {{ money_cell(r.option_pnl) }}
-                        {{ money_cell(r.dividend_income) }}
-                        {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
-                        <td class="text-end">{{ r.max_days_held }}</td>
-                        {{ pct_cell(r.pct_return) }}
-                        {{ pct_cell(r.annualized_pct) }}
-                    </tr>
-                    {% endfor %}
-                    {% if strategy_breakdown_totals %}
-                    {% set t = strategy_breakdown_totals %}
-                    <tr class="fw-bold border-top">
-                        <td>Total &middot; {{ t.num_symbols }} bucket{{ 's' if t.num_symbols != 1 }}</td>
-                        <td></td>
-                        {{ money_cell(t.equity_pnl) }}
-                        {{ money_cell(t.option_pnl) }}
-                        {{ money_cell(t.dividend_income) }}
-                        {{ money_cell(t.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(t.capital_at_risk) }}</td>
-                        <td></td>
-                        {{ pct_cell(t.pct_return) }}
-                        <td></td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% endif %}
-
+{# Tag Breakdown (lifetime — NOT windowed by the time filter; stays fixed while
+   the four tables above swap via /accounts/breakdown). Uses the macros above. #}
 {% if tag_breakdown %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
     <div class="card-body p-3">
@@ -453,7 +320,7 @@
         <p class="text-muted small mb-3">
             Your own leg tags (add them on any position's detail page). Each row
             rolls up only the legs you tagged, so mixed tagged/untagged legs of a
-            symbol don&rsquo;t overstate.
+            symbol don&rsquo;t overstate. Lifetime scope.
         </p>
         <div class="table-responsive">
             <table class="table table-hover table-sm align-middle mb-0">
@@ -481,93 +348,6 @@
                         {{ money_cell(r.option_pnl) }}
                         {{ money_cell(r.net_pnl) }}
                         <td class="text-end">{{ "{:.0f}".format(r.win_rate) }}%</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-{% if sector_breakdown %}
-<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
-    <div class="card-body p-3">
-        <h6 class="fw-bold mb-1">Sector Breakdown</h6>
-        <p class="text-muted small mb-3">
-            Sectors come from yfinance symbol metadata. &ldquo;Unknown&rdquo; means
-            yfinance has no sector for the symbol (often crypto, unclassified ETFs,
-            or freshly listed names).
-        </p>
-        <div class="table-responsive">
-            <table class="table table-hover table-sm align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Sector</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Current Value</th>
-                        <th class="text-end">% Return</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in sector_breakdown %}
-                    <tr>
-                        <td>
-                            <span class="fw-semibold">{{ r.sector }}</span>
-                            <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
-                        </td>
-                        <td class="text-end">{{ r.num_symbols }}</td>
-                        {{ money_cell(r.equity_pnl) }}
-                        {{ money_cell(r.option_pnl) }}
-                        {{ money_cell(r.dividend_income) }}
-                        {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
-                        {{ pct_cell(r.pct_return) }}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-{% if subsector_breakdown and subsector_breakdown|length > 1 %}
-<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
-    <div class="card-body p-3">
-        <h6 class="fw-bold mb-3">Industry Breakdown</h6>
-        <div class="table-responsive">
-            <table class="table table-hover table-sm align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Industry</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Current Value</th>
-                        <th class="text-end">% Return</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in subsector_breakdown %}
-                    <tr>
-                        <td>
-                            <span class="fw-semibold">{{ r.subsector }}</span>
-                            <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
-                        </td>
-                        <td class="text-end">{{ r.num_symbols }}</td>
-                        {{ money_cell(r.equity_pnl) }}
-                        {{ money_cell(r.option_pnl) }}
-                        {{ money_cell(r.dividend_income) }}
-                        {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
-                        {{ pct_cell(r.pct_return) }}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -609,7 +389,18 @@
     var summaryData = {{ summary_chart_json | safe }};
     var stratData   = {{ strategy_chart_json | safe }};
     var SELECTED_RANGE = {{ (selected_range or 'ALL') | tojson }};
+    var SELECTED_ACCOUNT = {{ (selected_account or '') | tojson }};
     var summaryChart = null, strategyChart = null;
+
+    /* Closed-group (close_date, total_pnl) pairs so "Realized (period)" can be
+       recomputed in the browser without a round trip, matching the server's
+       windowed sum (close_date >= cutoff). */
+    var REALIZED_EVENTS = {{ realized_events_json | safe }};
+    var KPI_LIFETIME = {
+        realized:     {{ (kpis.realized_pnl or 0) | tojson }},
+        dividends:    {{ (kpis.dividend_income or 0) | tojson }},
+        total_return: {{ (kpis.total_return or 0) | tojson }}
+    };
 
     var RANGE_DAYS   = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
     var RANGE_LABELS = { '1M':'last month', '3M':'last 3 months', '6M':'last 6 months',
@@ -680,10 +471,131 @@
             strategyChart.update();
         }
 
-        document.querySelectorAll('.timeframe-group button').forEach(function (b) {
+        document.querySelectorAll('.timeframe-group .js-range-btn').forEach(function (b) {
             b.classList.toggle('active', b.dataset.range === key);
         });
     }
+
+    /* ── KPI cards (client-side windowing) ─────────────────────────────
+       Realized / Dividends / Net swap between lifetime and period values
+       instantly on a range change. Account Value / Cash / Invested /
+       Unrealized are "as of now" and never change. */
+    function windowCutoff(key) {
+        if (!summaryData.dates || !summaryData.dates.length) return null;
+        var last = parseDate(summaryData.dates[summaryData.dates.length - 1]);
+        if (key === 'YTD') return new Date(last.getFullYear(), 0, 1);
+        var days = RANGE_DAYS[key] || 0;
+        var c = new Date(last); c.setDate(c.getDate() - days);
+        return c;
+    }
+
+    function realizedInWindow(key) {
+        var cutoff = windowCutoff(key);
+        if (!cutoff) return 0;
+        var sum = 0;
+        for (var i = 0; i < REALIZED_EVENTS.length; i++) {
+            if (parseDate(REALIZED_EVENTS[i][0]) >= cutoff) sum += REALIZED_EVENTS[i][1];
+        }
+        return sum;
+    }
+
+    function seriesDelta(arr, key) {
+        if (!arr || !arr.length) return 0;
+        var sIdx = startIndexFor(summaryData.dates, key);
+        return arr[arr.length - 1] - (arr[sIdx] || 0);
+    }
+
+    function setCard(cardId, label, value) {
+        var card = document.getElementById(cardId);
+        if (!card) return;
+        var lab = card.querySelector('.kpi-label');
+        var val = card.querySelector('.kpi-value');
+        if (lab) lab.textContent = label;
+        if (val) {
+            val.textContent = '$' + Math.round(value).toLocaleString();
+            val.classList.toggle('text-positive', value >= 0);
+            val.classList.toggle('text-negative', value < 0);
+        }
+    }
+
+    function updateCards(key) {
+        var isAll = (key === 'ALL');
+        if (isAll) {
+            setCard('kpiRealized', 'Realized P\u0026L', KPI_LIFETIME.realized);
+            setCard('kpiNet',      'Total Return',      KPI_LIFETIME.total_return);
+        } else {
+            setCard('kpiRealized', 'Realized (period)',   realizedInWindow(key));
+            setCard('kpiNet',      'Net P\u0026L this period', seriesDelta(summaryData.total, key));
+        }
+        var divCol = document.getElementById('kpiDividendsCol');
+        if (isAll) {
+            if (KPI_LIFETIME.dividends) {
+                if (divCol) divCol.style.display = '';
+                setCard('kpiDividends', 'Dividends', KPI_LIFETIME.dividends);
+            } else if (divCol) {
+                divCol.style.display = 'none';
+            }
+        } else {
+            if (divCol) divCol.style.display = '';
+            setCard('kpiDividends', 'Dividends (period)', seriesDelta(summaryData.dividends, key));
+        }
+    }
+
+    /* ── Range switch (no full page reload) ────────────────────────────
+       Charts + cards update instantly; only the four breakdown tables need
+       fresh windowed data, fetched as an HTML fragment and swapped in. */
+    var _fragAbort = null;
+    function fetchBreakdown(key) {
+        var host = document.getElementById('breakdownTables');
+        var spinner = document.getElementById('rangeSpinner');
+        if (!host) return;
+        if (spinner) spinner.style.display = '';
+        host.style.opacity = '0.45';
+        if (_fragAbort) { try { _fragAbort.abort(); } catch (e) {} }
+        _fragAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var qs = 'range=' + encodeURIComponent(key) +
+                 (SELECTED_ACCOUNT ? '&account=' + encodeURIComponent(SELECTED_ACCOUNT) : '');
+        fetch('{{ url_for("accounts_breakdown_fragment") }}?' + qs, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: _fragAbort ? _fragAbort.signal : undefined
+        })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function (html) { host.innerHTML = html; })
+        .catch(function (err) {
+            if (err && err.name === 'AbortError') return;
+            /* Fall back to a full navigation so the tables are never stale. */
+            window.location = '{{ url_for("accounts") }}?' + qs;
+        })
+        .finally(function () {
+            if (spinner) spinner.style.display = 'none';
+            host.style.opacity = '';
+        });
+    }
+
+    function switchRange(key, push) {
+        applyRange(key);
+        updateCards(key);
+        fetchBreakdown(key);
+        document.getElementById('rangeHelp').style.display = (key === 'ALL') ? 'none' : '';
+        if (push) {
+            var url = '{{ url_for("accounts") }}?' +
+                (SELECTED_ACCOUNT ? 'account=' + encodeURIComponent(SELECTED_ACCOUNT) + '&' : '') +
+                'range=' + encodeURIComponent(key);
+            history.pushState({ range: key }, '', url);
+        }
+    }
+
+    document.querySelectorAll('.js-range-btn').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+            e.preventDefault();
+            switchRange(a.dataset.range, true);
+        });
+    });
+
+    window.addEventListener('popstate', function (e) {
+        var key = (e.state && e.state.range) || 'ALL';
+        switchRange(key, false);
+    });
 
     /* ── Chart 1: Cumulative P&L (Summary) ────────────────────── */
     if (summaryData && summaryData.dates && summaryData.dates.length) {
@@ -772,12 +684,13 @@
         });
     }
 
-    /* ── Slice the charts to the server-selected window ───────────────
-       The time-frame control is a set of page-reload links (so the KPI
-       cards + breakdown tables window too), so the buttons drive the whole
-       page server-side. Here we just slice/rebase the already-shipped chart
-       series to match the active range. */
+    /* ── Slice the charts to the server-selected window on load ───────
+       The server already rendered the KPI cards + breakdown tables for
+       SELECTED_RANGE, so on first paint we only slice/rebase the charts.
+       Later range changes are handled entirely client-side by switchRange()
+       (charts + cards instant, tables via a background fragment fetch). */
     applyRange(SELECTED_RANGE || 'ALL');
+    history.replaceState({ range: SELECTED_RANGE || 'ALL' }, '');
 
     /* ── Table Sorting ─────────────────────────────────────────── */
     document.querySelectorAll('.sortable').forEach(function (th) {
