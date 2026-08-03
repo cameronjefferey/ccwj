@@ -483,6 +483,34 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_snaptrade_sync_obs_account_recent
         ON snaptrade_sync_observations (snaptrade_account_id, cron_run_at DESC)
         """,
+        # User-defined tags on position LEGS (a "chapter" of trading activity
+        # for a (tenant_id, symbol) from int_position_legs). Freeform, reusable,
+        # multiple tags per leg. Purely user-input metadata → lives in Postgres,
+        # never in the BigQuery warehouse (which is rebuilt from seeds).
+        #
+        # Anchor: (user_id, tenant_id, symbol, leg_open_date). ``leg_open_date``
+        # is the leg's open_date at tag time. Everywhere we match a stored tag
+        # back to a CURRENT leg by date-containment — the tag belongs to the leg
+        # whose [open_date, last_activity_date] contains this anchor date — so a
+        # tag survives dbt re-chaptering / leg_id renumbering / leg merges.
+        # (tenant_id, symbol, open_date) is unique per leg by construction
+        # (chapters never overlap). Isolation is always on user_id.
+        """
+        CREATE TABLE IF NOT EXISTS position_leg_tags (
+            id            SERIAL PRIMARY KEY,
+            user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tenant_id     TEXT NOT NULL,
+            symbol        TEXT NOT NULL,
+            leg_open_date DATE NOT NULL,
+            tag           TEXT NOT NULL,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, tenant_id, symbol, leg_open_date, tag)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_position_leg_tags_user
+        ON position_leg_tags (user_id)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -2605,6 +2633,134 @@ def unpublish_community_trade(user_id, fingerprint):
     except Exception as exc:
         _log.warning("unpublish_community_trade failed: %s", exc)
         return False
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Position leg tags — user-defined labels on a position leg (chapter of
+# trading activity). Freeform, reusable, multiple per leg. Isolation is
+# ALWAYS on user_id; the leg is anchored on (tenant_id, symbol, leg_open_date)
+# and matched back to a current leg by date-containment downstream. See the
+# CREATE TABLE comment in init_db().
+# ──────────────────────────────────────────────────────────────────────────
+
+# Cap tag length so a runaway paste can't bloat the row / UI.
+_MAX_LEG_TAG_LEN = 40
+
+
+def _normalize_leg_tag(tag):
+    """Trim, collapse internal whitespace, lowercase, and length-cap a tag so
+    "EF" / "ef" / " ef " dedupe to one label. Returns "" for empty input."""
+    if tag is None:
+        return ""
+    cleaned = " ".join(str(tag).split()).lower()
+    return cleaned[:_MAX_LEG_TAG_LEN]
+
+
+def add_position_leg_tag(user_id, tenant_id, symbol, leg_open_date, tag):
+    """Attach a tag to a leg. Idempotent (ON CONFLICT DO NOTHING). Returns the
+    normalized tag on success, or None if the input was empty/invalid."""
+    norm = _normalize_leg_tag(tag)
+    if user_id is None or not tenant_id or not symbol or not leg_open_date or not norm:
+        return None
+    try:
+        execute(
+            """INSERT INTO position_leg_tags
+               (user_id, tenant_id, symbol, leg_open_date, tag)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (user_id, tenant_id, symbol, leg_open_date, tag)
+               DO NOTHING""",
+            (int(user_id), str(tenant_id), str(symbol).strip().upper(),
+             str(leg_open_date)[:10], norm),
+        )
+        return norm
+    except Exception as exc:
+        _log.warning("add_position_leg_tag failed: %s", exc)
+        return None
+
+
+def remove_position_leg_tag(user_id, tenant_id, symbol, leg_open_date, tag):
+    """Remove one tag from one leg. Scoped by user_id so a user can only touch
+    their own tags."""
+    norm = _normalize_leg_tag(tag)
+    if user_id is None or not norm:
+        return False
+    try:
+        execute(
+            """DELETE FROM position_leg_tags
+               WHERE user_id = %s AND tenant_id = %s AND symbol = %s
+                 AND leg_open_date = %s AND tag = %s""",
+            (int(user_id), str(tenant_id), str(symbol).strip().upper(),
+             str(leg_open_date)[:10], norm),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("remove_position_leg_tag failed: %s", exc)
+        return False
+
+
+def get_leg_tags_for_symbol(user_id, symbol, tenant_ids=None):
+    """Tag rows for one symbol (Position Detail page). Optionally restrict to a
+    set of tenant_ids (the in-scope accounts). Returns list of dict rows with
+    tenant_id, leg_open_date, tag."""
+    if user_id is None or not symbol:
+        return []
+    params = [int(user_id), str(symbol).strip().upper()]
+    sql = (
+        "SELECT tenant_id, leg_open_date, tag "
+        "FROM position_leg_tags WHERE user_id = %s AND symbol = %s"
+    )
+    if tenant_ids is not None:
+        ids = [str(t) for t in tenant_ids if t]
+        if not ids:
+            return []
+        sql += " AND tenant_id = ANY(%s)"
+        params.append(ids)
+    sql += " ORDER BY leg_open_date, tag"
+    try:
+        return fetch_all(sql, tuple(params))
+    except Exception as exc:
+        _log.warning("get_leg_tags_for_symbol failed: %s", exc)
+        return []
+
+
+def get_all_leg_tags_for_user(user_id, tenant_ids=None):
+    """All of a user's leg tag rows (for reporting joins). Optionally restrict
+    to a set of tenant_ids."""
+    if user_id is None:
+        return []
+    params = [int(user_id)]
+    sql = (
+        "SELECT tenant_id, symbol, leg_open_date, tag "
+        "FROM position_leg_tags WHERE user_id = %s"
+    )
+    if tenant_ids is not None:
+        ids = [str(t) for t in tenant_ids if t]
+        if not ids:
+            return []
+        sql += " AND tenant_id = ANY(%s)"
+        params.append(ids)
+    sql += " ORDER BY symbol, leg_open_date, tag"
+    try:
+        return fetch_all(sql, tuple(params))
+    except Exception as exc:
+        _log.warning("get_all_leg_tags_for_user failed: %s", exc)
+        return []
+
+
+def get_distinct_tags_for_user(user_id):
+    """Sorted distinct tag labels for a user (autocomplete + filter dropdown)."""
+    if user_id is None:
+        return []
+    try:
+        rows = fetch_all(
+            "SELECT DISTINCT tag FROM position_leg_tags WHERE user_id = %s "
+            "ORDER BY tag",
+            (int(user_id),),
+        )
+        return [r["tag"] for r in rows]
+    except Exception as exc:
+        _log.warning("get_distinct_tags_for_user failed: %s", exc)
+        return []
 
 
 def community_feed_for_follower(viewer_id, limit=50):

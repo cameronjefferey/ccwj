@@ -280,6 +280,18 @@
         </select>
     </div>
     {% endif %}
+    {% if tags %}
+    <div>
+        <label class="lblh">Tag</label>
+        <select name="tag" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+            <option value="">All Tags</option>
+            {% for t in tags %}
+            <option value="{{ t }}" {{ 'selected' if t == selected_tag }}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
     {# Status as a pill toggle. The previous dropdown supported any
        arbitrary subset (e.g. Open + Mixed) but in practice users only
        ever flipped between All / Open only / Closed only — so the pill
@@ -290,11 +302,11 @@
         <label class="lblh">Status</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _all_statuses }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
         </div>
         {# Mirror the chosen status into the form so a Symbol/Strategy
            change preserves it. Multi-status (rare path) still works
@@ -309,11 +321,11 @@
         <label class="lblh">Dates</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _is_alltime }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses) }}">All time</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses) }}">All time</a>
             <a class="{{ 'active' if _is_30d }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
             <a class="{{ 'active' if _is_ytd }}"
-               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+               href="{{ url_for('positions', account=selected_account, strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
         </div>
         {# No hidden date inputs needed — the visible date inputs below
            are part of this form and carry the current values, so when
@@ -330,7 +342,7 @@
                    value="{{ selected_end_date }}" onchange="this.form.submit()" style="min-width: 8.5rem;">
         </div>
     </div>
-    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_statuses or selected_start_date or selected_end_date %}
+    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date %}
     <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
     {% endif %}
 </form>
@@ -466,7 +478,7 @@
                     <tr>
                         <td>{{ row.account_display or (row.account | account_label) }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
                                 {{ row.symbol }}
                             </a>
                         </td>
@@ -655,11 +667,11 @@
             <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page-1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ url_for('positions', page=page+1, account=selected_account, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>

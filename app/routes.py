@@ -1273,6 +1273,61 @@ def _legs_df_to_sessions_list(legs_df):
     return out
 
 
+def _norm_tag_date(v):
+    """Coerce a date/datetime/str/Timestamp to a plain ``date`` (or None).
+
+    Used by the position-leg tag matcher — Postgres hands back ``leg_open_date``
+    as a ``datetime.date``, while the warehouse leg dates arrive as
+    ``YYYY-MM-DD`` strings.
+    """
+    if v is None or v == "":
+        return None
+    try:
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, date):
+            return v
+        ts = pd.to_datetime(v, errors="coerce")
+        if ts is None or pd.isna(ts):
+            return None
+        return ts.date()
+    except Exception:
+        return None
+
+
+def _tags_for_leg_range(tag_rows, tenant_id, open_date, last_date):
+    """Sorted distinct tags whose stored ``leg_open_date`` falls within a leg's
+    ``[open_date, last_date]`` for the SAME tenant.
+
+    Date-containment (not leg_id equality) is deliberate: a stored tag is
+    anchored on the leg's open_date at tag time, and matches back to whatever
+    current leg now spans that date. This survives dbt re-chaptering,
+    ``display_leg_num`` renumbering, and leg merges (a merged leg's range still
+    contains the old open_date). Chapters never overlap, so an anchor date lands
+    in at most one leg.
+    """
+    if not tag_rows:
+        return []
+    lo = _norm_tag_date(open_date)
+    hi = _norm_tag_date(last_date) or lo
+    tid = str(tenant_id or "")
+    out = set()
+    for r in tag_rows:
+        if str(r.get("tenant_id") or "") != tid:
+            continue
+        anchor = _norm_tag_date(r.get("leg_open_date"))
+        if anchor is None:
+            continue
+        if lo is not None and anchor < lo:
+            continue
+        if hi is not None and anchor > hi:
+            continue
+        t = r.get("tag")
+        if t:
+            out.add(t)
+    return sorted(out)
+
+
 def _resolve_position_leg_filter(sessions_list, leg_param):
     """Resolve legacy ``?leg=`` ids without mixing account-local leg numbers.
 
@@ -1553,6 +1608,7 @@ ERROR_DEFAULTS = dict(
     symbols=[],
     subsectors=[],
     sectors=[],
+    tags=[],
     user_accounts=[],
     status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
     selected_account="",
@@ -1561,6 +1617,7 @@ ERROR_DEFAULTS = dict(
     selected_symbol="",
     selected_subsector="",
     selected_sector="",
+    selected_tag="",
     selected_start_date="",
     selected_end_date="",
     date_filtered=False,
@@ -2075,6 +2132,8 @@ def positions():
     selected_sector = request.args.get("sector", "")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
+    # User-defined leg tag filter (Postgres). Normalized to match stored tags.
+    selected_tag = (request.args.get("tag", "") or "").strip().lower()
     page = max(1, int(request.args.get("page", 1)))
 
     start_date = _parse_date(selected_start_date)
@@ -2151,6 +2210,12 @@ def positions():
         sorted(df["sector"].dropna().unique())
         if "sector" in df.columns else []
     )
+    # User-defined leg tags (Postgres) for the filter dropdown.
+    from app.models import (
+        get_distinct_tags_for_user as _get_distinct_tags_for_user,
+        get_all_leg_tags_for_user as _get_all_leg_tags_for_user,
+    )
+    tags = _get_distinct_tags_for_user(current_user.id)
 
     filtered = df.copy()
     # NOTE: no secondary ``account == selected_account`` narrowing here.
@@ -2171,6 +2236,31 @@ def positions():
         filtered = filtered[filtered["subsector"] == selected_subsector]
     if selected_sector and "sector" in filtered.columns:
         filtered = filtered[filtered["sector"] == selected_sector]
+    if selected_tag:
+        # "Positions that contain a leg tagged X." Tags live in Postgres,
+        # scoped to the viewer's in-scope tenants; a tag anchors a leg, so a
+        # (tenant_id, symbol) qualifies if ANY of its legs carries the tag.
+        _tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
+        _tagged_keys = {
+            (str(r.get("tenant_id") or ""), str(r.get("symbol") or "").upper())
+            for r in _tag_rows
+            if str(r.get("tag") or "") == selected_tag
+        }
+        _tagged_symbols = {sym for _tid, sym in _tagged_keys}
+        if "tenant_id" in filtered.columns:
+            filtered = filtered[
+                filtered.apply(
+                    lambda r: (
+                        str(r.get("tenant_id") or ""),
+                        str(r.get("symbol") or "").upper(),
+                    ) in _tagged_keys,
+                    axis=1,
+                )
+            ] if not filtered.empty else filtered
+        else:
+            filtered = filtered[
+                filtered["symbol"].astype(str).str.upper().isin(_tagged_symbols)
+            ]
 
     # Status counts for hero chips. Must read from `filtered`, NOT `df`,
     # so the chips agree with the body. Reading from `df` was a long-
@@ -2349,6 +2439,7 @@ def positions():
         symbols=symbols,
         subsectors=subsectors,
         sectors=sectors,
+        tags=tags,
         # `user_accounts` is the auth list (every account the user has
         # linked), used by the hero to decide between "you haven't
         # connected anything yet" and "your filter just returned nothing".
@@ -2363,6 +2454,7 @@ def positions():
         selected_symbol=selected_symbol,
         selected_subsector=selected_subsector,
         selected_sector=selected_sector,
+        selected_tag=selected_tag,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
         date_filtered=date_filtered,
@@ -3677,6 +3769,24 @@ def position_detail(symbol):
 
     sessions_list = _legs_df_to_sessions_list(legs_df)
 
+    # ── Attach user-defined leg tags (Postgres, isolated by user_id) ──
+    # Match each stored tag to the current leg by date-containment (see
+    # _tags_for_leg_range). tenant_scope restricts the read to in-scope
+    # accounts; a distinct-tag list feeds the "+ tag" autocomplete datalist.
+    from app.models import (
+        get_leg_tags_for_symbol as _get_leg_tags_for_symbol,
+        get_distinct_tags_for_user as _get_distinct_tags_for_user,
+    )
+    _leg_tag_rows = _get_leg_tags_for_symbol(
+        getattr(current_user, "id", None), symbol, tenant_scope
+    )
+    for s in sessions_list:
+        s["tags"] = _tags_for_leg_range(
+            _leg_tag_rows, s.get("tenant_id"), s.get("open_date"),
+            s.get("last_trade_date"),
+        )
+    all_user_tags = _get_distinct_tags_for_user(getattr(current_user, "id", None))
+
     # ── Group legs by account ──
     # When a symbol is traded across several accounts, leg_id / display_leg
     # restart per tenant (so two accounts can both show "Leg 1"). Attach a
@@ -4741,6 +4851,7 @@ def position_detail(symbol):
         option_matrices=option_matrices,
         sessions=sessions_list,
         legs_by_account=legs_by_account,
+        all_user_tags=all_user_tags,
         account_toggles=account_toggles,
         tenants_param=tenants_param,
         selected_legs=selected_legs,
@@ -4762,6 +4873,73 @@ def position_detail(symbol):
         tab_href_suffix=tab_qs,
         mode="navigate",
     )
+
+
+def _position_redirect_back(symbol):
+    """Bounce back to the position page after a tag write, preserving the leg /
+    account / tenant query string the user was looking at."""
+    nxt = (request.form.get("next") or "").strip()
+    # Only honor same-origin relative paths (avoid open-redirect).
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
+    ref = request.referrer or ""
+    if ref:
+        return redirect(ref)
+    return redirect(url_for("position_detail", symbol=symbol))
+
+
+@app.route("/position/<symbol>/tags", methods=["POST"])
+@login_required
+@limiter.limit("30 per minute; 300 per hour")
+def add_position_tag(symbol):
+    """Attach a user-defined tag to one leg of a position.
+
+    Isolation: the write is rejected unless ``tenant_id`` is owned by the
+    current user (``get_tenant_ids_for_user``). Tags are user metadata in
+    Postgres, keyed on user_id — they never enter the warehouse.
+    """
+    from app.models import add_position_leg_tag
+
+    tenant_id = (request.form.get("tenant_id") or "").strip()
+    leg_open_date = (request.form.get("leg_open_date") or "").strip()
+    tag = (request.form.get("tag") or "").strip()
+
+    owned = set(get_tenant_ids_for_user(current_user.id) or [])
+    if not tenant_id or tenant_id not in owned:
+        flash("You can only tag your own positions.", "warning")
+        return _position_redirect_back(symbol)
+    if not leg_open_date or not tag:
+        flash("Pick a tag to add.", "warning")
+        return _position_redirect_back(symbol)
+
+    result = add_position_leg_tag(
+        current_user.id, tenant_id, symbol, leg_open_date, tag
+    )
+    if result:
+        flash(f"Tagged this leg “{result}”.", "success")
+    else:
+        flash("We couldn't save that tag just now.", "danger")
+    return _position_redirect_back(symbol)
+
+
+@app.route("/position/<symbol>/tags/delete", methods=["POST"])
+@login_required
+@limiter.limit("30 per minute; 300 per hour")
+def remove_position_tag(symbol):
+    """Remove a user-defined tag from one leg of a position."""
+    from app.models import remove_position_leg_tag
+
+    tenant_id = (request.form.get("tenant_id") or "").strip()
+    leg_open_date = (request.form.get("leg_open_date") or "").strip()
+    tag = (request.form.get("tag") or "").strip()
+
+    owned = set(get_tenant_ids_for_user(current_user.id) or [])
+    if not tenant_id or tenant_id not in owned:
+        # Silent no-op on an unowned tenant — nothing to remove anyway.
+        return _position_redirect_back(symbol)
+
+    remove_position_leg_tag(current_user.id, tenant_id, symbol, leg_open_date, tag)
+    return _position_redirect_back(symbol)
 
 
 # ======================================================================
@@ -6457,6 +6635,84 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
     ORDER BY account, strategy
 """
 
+# Per-leg rollup powering the /accounts Tag Breakdown. Leg grain (chapter of a
+# (tenant_id, symbol)) so mixed tagged/untagged legs of one symbol don't
+# overstate — the breakdown sums combined_pnl of ONLY the tagged legs, matched
+# to stored tags by date-containment in Python (_build_tag_breakdown).
+ACCOUNT_LEGS_QUERY = """
+    SELECT tenant_id, symbol, open_date, last_activity_date,
+           equity_pnl, closed_options_pnl, open_options_pnl,
+           combined_pnl, status
+    FROM `ccwj-dbt.analytics.int_position_legs`
+    WHERE 1=1 {tenant_filter}
+"""
+
+
+def _build_tag_breakdown(legs_df, tags_rows):
+    """Roll up leg-level P&L by user-defined tag for the /accounts page.
+
+    Leg grain: each ``int_position_legs`` row is matched to stored tags by
+    (tenant_id) + date-containment (``_tags_for_leg_range``). A leg carrying N
+    tags contributes to N buckets; net_pnl sums ONLY the tagged legs'
+    ``combined_pnl`` so mixed tagged/untagged legs of one symbol don't
+    overstate. Returns rows sorted by net_pnl desc.
+    """
+    if legs_df is None or legs_df.empty or not tags_rows:
+        return []
+
+    df = legs_df.copy()
+    for col in ("equity_pnl", "closed_options_pnl", "open_options_pnl", "combined_pnl"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        else:
+            df[col] = 0.0
+
+    buckets = {}
+    for _, r in df.iterrows():
+        tenant_id = str(r.get("tenant_id") or "")
+        symbol = str(r.get("symbol") or "").upper()
+        matched = _tags_for_leg_range(
+            tags_rows, tenant_id, r.get("open_date"), r.get("last_activity_date")
+        )
+        if not matched:
+            continue
+        equity = float(r.get("equity_pnl") or 0)
+        option = float(r.get("closed_options_pnl") or 0) + float(r.get("open_options_pnl") or 0)
+        combined = float(r.get("combined_pnl") or (equity + option))
+        for tag in matched:
+            b = buckets.setdefault(tag, {
+                "tag": tag, "num_legs": 0, "symbols": set(),
+                "equity_pnl": 0.0, "option_pnl": 0.0, "net_pnl": 0.0,
+                "wins": 0, "losses": 0,
+            })
+            b["num_legs"] += 1
+            if symbol:
+                b["symbols"].add(symbol)
+            b["equity_pnl"] += equity
+            b["option_pnl"] += option
+            b["net_pnl"] += combined
+            if combined > 0:
+                b["wins"] += 1
+            elif combined < 0:
+                b["losses"] += 1
+
+    out = []
+    for b in buckets.values():
+        decided = b["wins"] + b["losses"]
+        out.append({
+            "tag": b["tag"],
+            "num_legs": b["num_legs"],
+            "num_symbols": len(b["symbols"]),
+            "equity_pnl": round(b["equity_pnl"], 2),
+            "option_pnl": round(b["option_pnl"], 2),
+            "net_pnl": round(b["net_pnl"], 2),
+            "wins": b["wins"],
+            "losses": b["losses"],
+            "win_rate": round(100.0 * b["wins"] / decided, 1) if decided else 0.0,
+        })
+    out.sort(key=lambda x: x["net_pnl"], reverse=True)
+    return out
+
 
 def _build_account_chart_from_daily_pnl(daily_df, current_df):
     """
@@ -6484,6 +6740,16 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         return (r["account"], r["symbol"])
 
     eq_state = {}
+    # Last-known close per equity key, carried forward across days on which a
+    # symbol has NO mart row. mart_daily_pnl's equity spine is sparse for
+    # thinly-priced / crypto holdings (e.g. USDC has ~50 rows, VRT ~34), so
+    # on most days at least one currently-held symbol is absent. The prior
+    # "skip the whole day unless EVERY held symbol is present" rule then
+    # dropped ~9 months of trading days for a multi-symbol portfolio,
+    # collapsing all that P&L into the lone synthetic "today" point (the
+    # giant end-of-chart spike). Carrying the last close forward marks every
+    # held lot on every trading day regardless of which symbols reported.
+    last_close = {}
     cum_div = cum_oth = 0.0
     dates_out, equity_s, options_s, dividends_s, total_s = [], [], [], [], []
 
@@ -6604,11 +6870,15 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
                     s["shares"] += remaining_buy
                     s["cost"] += remaining_cost
 
-        eq_total = sum(s["realized"] for s in eq_state.values())
+        # Record today's closes, then mark EVERY held lot at its last-known
+        # close (carry forward for symbols absent from today's group).
         for row in day_records:
-            key = _eq_key(row)
-            s = eq_state[key]
             close = float(row.get("close_price") or 0)
+            if close > 0:
+                last_close[_eq_key(row)] = close
+        eq_total = sum(s["realized"] for s in eq_state.values())
+        for key, s in eq_state.items():
+            close = last_close.get(key, 0.0)
             if close > 0:
                 if s["shares"] > 0:
                     eq_total += s["shares"] * close - s["cost"]
@@ -6635,30 +6905,32 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
             else:
                 continue
 
-        # ── Skip non-trading days (weekends / market holidays) ──────────
-        # mart_daily_pnl's EQUITY price spine is trading-days-only —
-        # yfinance publishes no weekend/holiday close, so an equity symbol
-        # simply has no row on those dates (verified: SPY jumps Fri→Mon).
-        # OPTION contracts, though, carry a CALENDAR-dense per-contract
-        # spine (generate_date_array in int_option_contract_daily_pnl), so
-        # a weekend/holiday still emits a date-group — but one containing
-        # ONLY the option-bearing symbols. This loop re-marks equity from
-        # just the symbols present that day, so every absent equity's
-        # unrealized MTM silently drops out, collapsing the equity line to
-        # realized-only and drawing a weekend/holiday SAWTOOTH (dip on the
-        # non-trading day, recovery the next session). Emit only on real
-        # trading days: skip weekends outright, and skip any day that is
-        # missing a currently-held equity symbol (holiday / sync gap). All
-        # running state (eq_state, cum_div/other, options realized) is
-        # already updated above, so the next trading day's point is exact.
-        _present_keys = {_eq_key(r) for r in day_records}
+        # ── Skip genuine non-trading days (weekends / market holidays) ──
+        # yfinance publishes no weekend/holiday equity close, so an equity
+        # symbol has no row on those dates (SPY jumps Fri→Mon). OPTION
+        # contracts carry a CALENDAR-dense spine, so a weekend/holiday still
+        # emits a date-group containing ONLY option-bearing symbols. Because
+        # equity is now marked from ``last_close`` (carried forward), a
+        # missing symbol no longer drops its MTM — so the only reason to skip
+        # is cosmetic: don't plot flat weekend/holiday points (the user asked
+        # to exclude them). Skip weekends, and skip any WEEKDAY on which no
+        # currently-held equity symbol reported a close (a market holiday /
+        # pure option-only group). A day where at least one held equity is
+        # priced is a real trading session → emit. All running state is
+        # already updated above, so the next emitted point is exact.
         _held_keys = {
             k for k, s in eq_state.items()
             if abs(s["shares"]) > 1e-9 or abs(s["short_shares"]) > 1e-9
         }
+        _priced_today = any(
+            float(r.get("close_price") or 0) > 0 and _eq_key(r) in _held_keys
+            for r in day_records
+        )
         _is_weekend = pd.Timestamp(d).weekday() >= 5
-        _equity_incomplete = bool(_held_keys) and not _held_keys.issubset(_present_keys)
-        if _is_weekend or _equity_incomplete:
+        # Skip weekends always; skip weekdays only when we hold equity yet
+        # none of it printed a close today (holiday). If we hold no equity at
+        # all (options/cash only), emit so those series still render.
+        if _is_weekend or (bool(_held_keys) and not _priced_today):
             continue
 
         dates_out.append(str(d)[:10])
@@ -6669,38 +6941,52 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
 
     today = date.today()
     today_str = str(today)
-    # Only synthesize a "today" point on a trading day — on a weekend the
-    # last real market data is Friday's close (int_enriched_current is
-    # close-based), so a weekend "today" row would just draw a flat lone
-    # point past the exchange's last session. See the weekend/holiday skip
-    # in the loop above.
+    # Synthesize a "today" point ONLY when the mart is genuinely STALE (its
+    # last emitted trading day is several days behind today). Rationale: this
+    # is a close-based end-of-day report and the mart is rebuilt nightly, so
+    # in the normal case its last row IS the latest trading session (e.g. on
+    # a Monday the last row is Friday's close). Appending a live snapshot
+    # point in that case only introduces a discontinuity, because the live
+    # snapshot (int_enriched_current) prices open EQUITY off the broker's
+    # cost basis while this chart's terminal is the average-cost walk over
+    # stg_history buys — the two disagree for transferred-in lots that never
+    # had a buy row (a Schwab portfolio can carry $40k+ of such open
+    # unrealized invisible to the walk), so the final point would SPIKE. Only
+    # when the mart is actually behind (sync/dbt lagged for days) is filling
+    # "today" from the live snapshot worth the basis mismatch. Normal weekend
+    # gap (Fri->Mon = 3 days, or +1 for a Monday holiday) does NOT append.
+    _last_emitted = date.fromisoformat(dates_out[-1]) if dates_out else None
+    _mart_is_stale = (
+        _last_emitted is not None and (today - _last_emitted).days > 4
+    )
     if (not current_df.empty and dates_out and dates_out[-1] != today_str
-            and today.weekday() < 5):
+            and today.weekday() < 5 and _mart_is_stale):
         # Synthetic today row when the mart hasn't been built yet for
         # today (sync ran but dbt hasn't refreshed yet).
         #
-        # Equity: keep the legacy behavior of adding today's snapshot
-        # unrealized to the last mart-day equity value. There's a
-        # well-known dimensional issue here (equity_s[-1] already
-        # includes mark-to-market at the mart's close price for that
-        # day, so adding today's unrealized double-counts when the
-        # mart is fresh as of yesterday). Pre-existing; out of scope
-        # for the option-attribution rewrite.
+        # Equity: the value is REALIZED-to-date + today's OPEN unrealized
+        # (a REPLACEMENT of the last mart day's open mark-to-market, NOT an
+        # addition on top of it). ``equity_s[-1]`` already equals
+        # ``realized + open-MTM-at-the-last-mart-close``; the previous code
+        # did ``equity_s[-1] + eq_unreal`` which double-counted the ENTIRE
+        # open-equity unrealized, drawing a giant spike at the final point
+        # (Schwab-heavy "All Accounts": a ~+$95k jump that made the chart
+        # terminal disagree with the Total Return KPI; Alpaca: a phantom
+        # -$6.6k drop). Rebuilding from realized + live unrealized removes
+        # the spike and reconciles the terminal with the account hero.
         #
         # CLOSE-BASED REPORTING (June 2026): ``current_df`` comes from
-        # ``int_enriched_current``, whose equity unrealized is now priced
-        # at the official close once published (broker live mark only
-        # intraday). So this synthetic today row snaps to the close too,
-        # matching mart_account_equity_daily / the account hero. See
-        # AGENTS.md "Pricing Precedence".
+        # ``int_enriched_current``, whose equity unrealized is priced at the
+        # official close once published (broker live mark only intraday), so
+        # this synthetic row snaps to the close too. See AGENTS.md
+        # "Pricing Precedence".
         #
-        # Options: under realize-on-close, the right value is
+        # Options: same realize-on-close replacement —
         #   today_options = (last realized cumulative across symbols)
         #                 + (LIVE open MTM from current_df today)
-        # This is a REPLACEMENT not an addition: the last loop
-        # iteration's options_s value already had open MTM for the
-        # mart's last day, and we want today's broker MTM instead.
+        eq_realized_total = sum(s["realized"] for s in eq_state.values())
         eq_unreal = float(current_df.loc[current_df["instrument_type"] == "Equity", "unrealized_pnl"].sum())
+        today_equity = round(eq_realized_total + eq_unreal, 2)
         # Filter to genuinely-open option contracts (calendar beats
         # stale snapshot — see _build_chart_from_daily_pnl for the
         # same rationale).
@@ -6718,12 +7004,12 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         )
         last_realized_total = sum(options_per_symbol_realized.values())
         today_options = round(last_realized_total + opt_unreal_today, 2)
-        if eq_unreal != 0 or today_options != options_s[-1]:
+        if today_equity != equity_s[-1] or today_options != options_s[-1]:
             dates_out.append(today_str)
-            equity_s.append(round(equity_s[-1] + eq_unreal, 2))
+            equity_s.append(today_equity)
             options_s.append(today_options)
             dividends_s.append(dividends_s[-1])
-            total_s.append(round(equity_s[-1] + today_options + dividends_s[-1] + cum_oth, 2))
+            total_s.append(round(today_equity + today_options + dividends_s[-1] + cum_oth, 2))
 
     return {
         "dates": dates_out,
@@ -7627,6 +7913,22 @@ def _validate_accounts_financial_frames(dfs, *, needs_trade_accounts=False):
         )
 
 
+ACCOUNTS_RANGE_DAYS = {"1M": 30, "3M": 90, "6M": 180, "1Y": 365}
+ACCOUNTS_VALID_RANGES = {"1M", "3M", "6M", "YTD", "1Y", "ALL"}
+
+
+def _accounts_range_start(range_key, today=None):
+    """Cutoff date for the /accounts time filter (None for ALL). Mirrors the
+    client-side ``RANGE_DAYS`` / YTD logic in accounts.html so the server-side
+    windowed KPIs + breakdown tables agree with the client-sliced charts."""
+    today = today or date.today()
+    rk = (range_key or "ALL").upper()
+    if rk == "YTD":
+        return date(today.year, 1, 1)
+    days = ACCOUNTS_RANGE_DAYS.get(rk)
+    return (today - timedelta(days=days)) if days else None
+
+
 @app.route("/accounts")
 @login_required
 def accounts():
@@ -7635,6 +7937,21 @@ def accounts():
     selected_account = request.args.get("account", "")
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
+
+    # Time frame filter (applies to the whole page). The P&L-earned KPI cards
+    # and the four breakdown tables are windowed server-side to this range;
+    # the point-in-time cards (Account Value / Cash / Invested / current
+    # Unrealized) always reflect "now". ALL = lifetime (default).
+    selected_range = (request.args.get("range", "ALL") or "ALL").upper()
+    if selected_range not in ACCOUNTS_VALID_RANGES:
+        selected_range = "ALL"
+    range_start = _accounts_range_start(selected_range)
+    # Window the attribution breakdowns by feeding the range cutoff as the
+    # attribution ``week_start`` (open positions + groups closed on/after the
+    # cutoff). ALL passes the far-past sentinel = lifetime.
+    attribution_week_start = (
+        range_start.isoformat() if range_start else None  # set below
+    )
 
     # Attribution query + breakdown builders live in app.weekly_review.
     # Deferred import: weekly_review imports from app.routes at module
@@ -7647,6 +7964,8 @@ def accounts():
         _build_breakdown_totals,
         _strategy_for_symbol,
     )
+    if attribution_week_start is None:
+        attribution_week_start = ATTRIBUTION_LIFETIME_SENTINEL
 
     try:
         dfs = _bq_parallel(client, {
@@ -7655,11 +7974,13 @@ def accounts():
             "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
             "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
-            # Lifetime view: pass the far-past sentinel so the per-asset-class
-            # P&L sums include every closed group (the /accounts page is the
-            # full lifetime breakdown; the week scoping is the Daily Review's).
+            # Windowed by the selected time frame (ALL = far-past sentinel so
+            # every closed group counts; a range cutoff scopes each
+            # per-asset-class P&L column to open + closed-in-window groups).
             "attribution": POSITION_ATTRIBUTION_QUERY.format(
-                tenant_filter=tenant_filter, week_start=ATTRIBUTION_LIFETIME_SENTINEL),
+                tenant_filter=tenant_filter, week_start=attribution_week_start),
+            # Per-leg rollup for the Tag Breakdown card (leg grain).
+            "legs": ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter),
         })
         _validate_accounts_financial_frames(
             dfs, needs_trade_accounts=not bool(user_accounts)
@@ -7670,6 +7991,7 @@ def accounts():
         strat_class_df = dfs["strat_class"]
         strat_summary_df = dfs["strat_summary"]
         attribution_df = dfs["attribution"]
+        legs_df = dfs["legs"]
     except Exception as exc:
         return render_template(
             "accounts.html",
@@ -7684,8 +8006,11 @@ def accounts():
             strategy_breakdown_totals=None,
             sector_breakdown=[],
             subsector_breakdown=[],
+            tag_breakdown=[],
             accounts=[],
             selected_account="",
+            selected_range="ALL",
+            period_kpis=None,
         )
 
     # ------------------------------------------------------------------
@@ -7728,6 +8053,7 @@ def accounts():
     strat_class_df = _filter_df_by_tenant_ids(strat_class_df, tenant_ids)
     strat_summary_df = _filter_df_by_tenant_ids(strat_summary_df, tenant_ids)
     attribution_df = _filter_df_by_tenant_ids(attribution_df, tenant_ids)
+    legs_df = _filter_df_by_tenant_ids(legs_df, tenant_ids)
 
     # Picker lists the full disambiguated account set (non-admin) so every
     # physical account is selectable after tenant scope narrows the data.
@@ -7816,6 +8142,51 @@ def accounts():
         summary_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
 
     # ------------------------------------------------------------------
+    # Windowed P&L cards (only when a time frame other than ALL is active).
+    # These REPLACE the lifetime Realized / Dividends / Total Return cards
+    # with their "this period" equivalents so the KPI row agrees with the
+    # windowed charts + breakdown tables. The point-in-time cards
+    # (Account Value / Cash / Invested / current Unrealized) always stay
+    # "as of now". Net P&L this period and Dividends this period are the
+    # windowed deltas of the cumulative chart series (so the top-line card
+    # equals the chart's terminal for the same window); Realized this period
+    # is summed straight from groups CLOSED within the window.
+    # ------------------------------------------------------------------
+    period_kpis = None
+    if range_start is not None and summary_chart.get("dates"):
+        dts = summary_chart["dates"]
+        # Anchor the window on the LAST chart date (not today) so the card
+        # deltas match the client-side chart rebase exactly — accounts.html
+        # computes its cutoff from ``dates[dates.length-1]``. On a weekend
+        # this differs from a today-anchored cutoff by a couple of days.
+        card_cutoff = _accounts_range_start(
+            selected_range, date.fromisoformat(dts[-1])
+        ) or range_start
+        cutoff_iso = card_cutoff.isoformat()
+        start_idx = next((i for i, d in enumerate(dts) if d >= cutoff_iso),
+                         max(0, len(dts) - 1))
+        tot = summary_chart.get("total") or []
+        divs = summary_chart.get("dividends") or []
+        net_period = round(tot[-1] - tot[start_idx], 2) if tot else 0.0
+        div_period = round(divs[-1] - divs[start_idx], 2) if divs else 0.0
+        realized_period = 0.0
+        if (not strat_class_df.empty and "close_date" in strat_class_df.columns
+                and "total_pnl" in strat_class_df.columns):
+            cd = pd.to_datetime(strat_class_df["close_date"], errors="coerce").dt.date
+            mask = (
+                (strat_class_df.get("status") == "Closed")
+                & cd.notna()
+                & (cd >= card_cutoff)
+            )
+            realized_period = float(strat_class_df.loc[mask, "total_pnl"].sum())
+        period_kpis = {
+            "net": net_period,
+            "dividends": div_period,
+            "realized": round(realized_period, 2),
+            "start": dts[start_idx] if dts else None,
+        }
+
+    # ------------------------------------------------------------------
     # Chart 2: Strategy P&L over time
     # ------------------------------------------------------------------
     strategy_chart = _build_strategy_time_chart(strat_class_df)
@@ -7849,6 +8220,16 @@ def accounts():
     strategy_breakdown_totals = None
     sector_breakdown = []
     subsector_breakdown = []
+    tag_breakdown = []
+    # Tag Breakdown (leg-grained): match the user's Postgres leg tags to the
+    # scoped legs by date-containment. Scoped to in-scope tenant_ids so a
+    # narrowed account view only rolls up that account's tagged legs.
+    try:
+        from app.models import get_all_leg_tags_for_user as _get_all_leg_tags_for_user
+        _tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
+        tag_breakdown = _build_tag_breakdown(legs_df, _tag_rows)
+    except Exception as exc:
+        app.logger.warning("Account tag breakdown failed: %s", exc)
     try:
         # strategy_by_symbol: largest abs-P&L strategy label per symbol
         # (matches the "primary strategy" lens on /positions).
@@ -7869,7 +8250,7 @@ def accounts():
                 strategy_by_symbol[sym] = _strategy_for_symbol(sym, {sym: classes})
 
         position_breakdown = _build_position_breakdown(
-            attribution_df, strategy_by_symbol, week_start=None,
+            attribution_df, strategy_by_symbol, week_start=range_start,
         )
         position_breakdown_totals = _build_breakdown_totals(position_breakdown)
         strategy_breakdown = _aggregate_breakdown_by(
@@ -7897,8 +8278,11 @@ def accounts():
         strategy_breakdown_totals=strategy_breakdown_totals,
         sector_breakdown=sector_breakdown,
         subsector_breakdown=subsector_breakdown,
+        tag_breakdown=tag_breakdown,
         accounts=all_accounts,
         selected_account=selected_account,
+        selected_range=selected_range,
+        period_kpis=period_kpis,
     )
 
 

@@ -477,6 +477,68 @@
 </script>
 {% endif %}
 
+{# ── Leg Tags (user-defined labels per leg, stored in Postgres) ── #}
+{% if sessions %}
+<style>
+  .leg-tag-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
+      font-size:.72rem; font-weight:600; border-radius:999px;
+      background:rgba(99,102,241,.12); color:#4f46e5; }
+  .leg-tag-x { border:none; background:none; color:#4f46e5; cursor:pointer;
+      font-size:.9rem; line-height:1; padding:0; }
+  .leg-tag-x:hover { color:#dc2626; }
+  .leg-tag-input { max-width:150px; height:30px; font-size:.78rem; }
+  .leg-tag-row:last-child { border-bottom:none !important; }
+</style>
+<datalist id="userTags">
+    {% for t in all_user_tags %}<option value="{{ t }}">{% endfor %}
+</datalist>
+<div class="card stat-card p-3 mb-4">
+    <h6 class="fw-bold mb-1">Leg Tags</h6>
+    <p class="text-muted small mb-3">
+        Tag a leg (e.g. <code>earningsfollower</code>) to track how a group of trades
+        performs. Tags are private to you and roll up on the Accounts and Positions pages.
+    </p>
+    {% for grp in legs_by_account %}
+    <div class="mb-2">
+        {% if legs_by_account|length > 1 %}
+        <div class="text-muted small fw-bold mb-1">{{ grp.label }}</div>
+        {% endif %}
+        {% for s in grp.sessions %}
+        <div class="leg-tag-row d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
+            <span class="small fw-bold" style="min-width:56px;">Leg {{ s.display_leg }}</span>
+            <span class="text-muted small">{{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}</span>
+            <span class="d-flex flex-wrap gap-1 align-items-center">
+                {% for tg in s.tags %}
+                <span class="leg-tag-chip">{{ tg }}
+                    <form method="POST" action="{{ url_for('remove_position_tag', symbol=symbol) }}" class="d-inline m-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                        <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
+                        <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
+                        <input type="hidden" name="tag" value="{{ tg }}">
+                        <button type="submit" class="leg-tag-x" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button>
+                    </form>
+                </span>
+                {% endfor %}
+            </span>
+            {% if s.open_date %}
+            <form method="POST" action="{{ url_for('add_position_tag', symbol=symbol) }}" class="d-inline-flex align-items-center gap-1 m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
+                <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
+                <input type="text" name="tag" list="userTags" maxlength="40" placeholder="+ tag"
+                       class="form-control form-control-sm leg-tag-input" autocomplete="off">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 {# ── Cumulative P&L Chart ── #}
 <div class="chart-wrapper mb-4">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">

@@ -1217,7 +1217,14 @@
                         <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
-                    <td class="left">{{ r.strategy }}</td>
+                    <td class="left">
+                        {{ r.strategy }}
+                        {% if r.tags %}
+                        <div class="row-meta">
+                            {% for tg in r.tags %}<span class="tw-tag-chip" style="display:inline-block; padding:1px 7px; margin:1px 2px 0 0; font-size:.68rem; font-weight:600; border-radius:999px; background:rgba(99,102,241,.12); color:#4f46e5;">{{ tg }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
                     <td>{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
                     <td class="left">
                         {% if r.is_closed %}

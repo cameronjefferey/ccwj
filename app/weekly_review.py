@@ -3080,7 +3080,8 @@ def _format_trade_contract(trade_symbol, symbol):
     return compact
 
 
-def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
+def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
+                            tag_rows=None):
     """Build ONE unified list of trade groups touched this week for the
     Daily Review "Trades this week" section.
 
@@ -3138,6 +3139,18 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
             return pd.to_datetime(v).date()
         except Exception:
             return None
+
+    # Index stored leg tags by (tenant_id, SYMBOL) → list of (anchor_date, tag)
+    # so each trade row can attach the tags whose anchor falls within the range
+    # of the legs active this week.
+    tag_index = {}
+    for tr in (tag_rows or []):
+        tid = str(tr.get("tenant_id") or "")
+        sym = str(tr.get("symbol") or "").upper()
+        anchor = _as_date(tr.get("leg_open_date"))
+        if anchor is None:
+            continue
+        tag_index.setdefault((tid, sym), []).append((anchor, tr.get("tag")))
 
     # Aggregate every qualifying leg (option contract or equity session
     # that opened or closed this week) into one bucket per (tenant, symbol).
@@ -3222,6 +3235,22 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
             result_kind = "net"
         else:
             result_kind = "unrealized"
+        # Attach user leg tags: any tag for this (tenant_id, symbol) whose
+        # anchor date falls within the range of legs active this week
+        # ([earliest open this week .. latest close this week or week_end]).
+        row_tags = []
+        _cand = tag_index.get((g["tenant_id"], str(g["symbol"]).upper()))
+        if _cand:
+            _lo = min(g["open_dates"]) if g["open_dates"] else None
+            _hi = max(g["close_dates"]) if g["close_dates"] else week_end
+            for _anchor, _tag in _cand:
+                if _lo is not None and _anchor < _lo:
+                    continue
+                if _hi is not None and _anchor > _hi:
+                    continue
+                if _tag:
+                    row_tags.append(_tag)
+            row_tags = sorted(set(row_tags))
         trades.append({
             "symbol": g["symbol"],
             "tenant_id": g["tenant_id"],
@@ -3241,6 +3270,7 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None):
             "unrealized_pnl": unrealized,
             "result_pnl": round(realized + unrealized, 2),
             "result_kind": result_kind,
+            "tags": row_tags,
         })
 
     realized_pnl = sum(r["realized_pnl"] for r in trades)
@@ -3797,8 +3827,17 @@ def weekly_review():
         try:
             wt_df = batch.get("weekly_trades", pd.DataFrame())
             label_map = _tenant_label_map_for_user(current_user.id)
+            # User-defined leg tags (Postgres), scoped to in-scope tenants.
+            # Attached to each (tenant_id, symbol) row by date-containment
+            # against the legs active this week (see _build_trades_this_week).
+            try:
+                from app.models import get_all_leg_tags_for_user as _get_all_leg_tags_for_user
+                _wk_tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
+            except Exception:
+                _wk_tag_rows = []
             context["trades_this_week"] = _build_trades_this_week(
                 wt_df, this_week, week_end, label_map=label_map,
+                tag_rows=_wk_tag_rows,
             )
         except Exception as e:
             if app.debug:
