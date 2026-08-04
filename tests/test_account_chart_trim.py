@@ -48,15 +48,25 @@ def test_leading_zero_days_before_first_trade_are_trimmed():
     ]
     out = _build_account_chart_from_daily_pnl(pd.DataFrame(rows), pd.DataFrame())
 
-    # The three leading zero days are dropped; series starts at the first trade.
+    # The weeks-long leading zero prefix is dropped, but the series is anchored
+    # at a single $0 point the day BEFORE the first trade so every chart
+    # (including the un-rebased All-time view) starts at zero.
     assert out["dates"], "chart should not be empty"
-    assert out["dates"][0] == "2026-07-15", (
-        f"leading pre-trade zero days not trimmed: {out['dates']}"
+    assert out["dates"][0] == "2026-07-14", (
+        f"series should be anchored at $0 the day before the first trade: {out['dates']}"
     )
+    assert out["dates"][1] == "2026-07-15", (
+        f"first real trading day should follow the $0 anchor: {out['dates']}"
+    )
+    assert out["equity"][0] == 0.0 and out["total"][0] == 0.0, (
+        "anchor point must be $0 across every series"
+    )
+    # The stale weeks-of-flat prefix is still trimmed — only the single
+    # day-before anchor is (re)introduced, not the mid-May / June spine days.
     assert "2026-05-14" not in out["dates"]
     assert "2026-06-01" not in out["dates"]
-    # First rendered equity point is the first trade day's mark (26 * 162.13 - 4215.32).
-    assert out["equity"][0] == round(26.0 * 162.13 - 4215.32, 2)
+    # First REAL rendered equity point is the first trade day's mark (26 * 162.13 - 4215.32).
+    assert out["equity"][1] == round(26.0 * 162.13 - 4215.32, 2)
 
 
 def test_chart_empty_when_no_activity_at_all():
@@ -90,7 +100,11 @@ def test_short_sale_marked_to_market_not_booked_as_full_proceeds():
     ]
     out = _build_account_chart_from_daily_pnl(pd.DataFrame(rows), pd.DataFrame())
 
-    assert out["equity"] == [0.0, 500.0, -1000.0], (
+    # Leading element is the $0 anchor (day before the first trade); the real
+    # trading days follow. Short P&L is marked to market — NOT booked as the
+    # full proceeds (the +$46,937 phantom-equity bug would show ~5000 here).
+    assert out["equity"][0] == 0.0, "series must be anchored at $0"
+    assert out["equity"][1:] == [0.0, 500.0, -1000.0], (
         f"short position not marked to market: {out['equity']} "
         f"(full-proceeds bug would show ~5000)"
     )

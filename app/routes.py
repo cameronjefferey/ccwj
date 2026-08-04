@@ -6939,6 +6939,26 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         dividends_s.append(round(cum_div, 2))
         total_s.append(round(eq_total + cum_opt + cum_div + cum_oth, 2))
 
+    # Anchor the whole series at $0 the day BEFORE the first trading day so
+    # every chart provably STARTS at zero. The account had no P&L before it
+    # began trading, but the first EMITTED point is already the first day's
+    # cumulative P&L (a day-trader can bank realized gains on day one), so the
+    # un-rebased "All time" view opened mid-air — real report: cameronbot's
+    # Alpaca all-time curve started well above $0. A single baseline point is
+    # NOT the weeks-of-flat-$0 prefix the account_started trim above removes;
+    # it's the zero the curve climbs from. The terminal (lifetime total) is
+    # untouched so the chart still reconciles with the Total Return KPI, and
+    # windowed ranges rebase client-side against their own window start — the
+    # anchor is the earliest date, so it only ever precedes the ALL curve (and
+    # if a window reaches all the way back, it rebases against this 0 anyway).
+    if dates_out:
+        _anchor = (date.fromisoformat(dates_out[0]) - timedelta(days=1)).isoformat()
+        dates_out.insert(0, _anchor)
+        equity_s.insert(0, 0.0)
+        options_s.insert(0, 0.0)
+        dividends_s.insert(0, 0.0)
+        total_s.insert(0, 0.0)
+
     today = date.today()
     today_str = str(today)
     # Synthesize a "today" point ONLY when the mart is genuinely STALE (its
@@ -7053,8 +7073,19 @@ def _build_strategy_time_chart(strat_df):
             vals.append(round(cum, 2))
         series[strat] = vals
 
+    dates_out = [str(d) for d in all_dates]
+
+    # Anchor every strategy line at $0 the day before the first event so the
+    # un-rebased All-time view starts at zero (mirrors the summary chart's
+    # anchor in _build_account_chart_from_daily_pnl). Terminals are untouched.
+    if dates_out:
+        anchor = (all_dates[0] - timedelta(days=1)).isoformat()
+        dates_out.insert(0, anchor)
+        for strat in series:
+            series[strat].insert(0, 0.0)
+
     return {
-        "dates": [str(d) for d in all_dates],
+        "dates": dates_out,
         "series": series,
     }
 

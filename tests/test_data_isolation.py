@@ -611,9 +611,11 @@ class TestDailyPnlChartDedup:
         # 5 dups WITHOUT dedup would give: shares=500, cost=250000
         # → per-row unrealized = 500*1000 - 250000 = 250_000
         # → loop runs 5 times → 5*250_000 = 1_250_000 (25x).
-        assert out["equity"] == [50_000.0], (
+        # Leading 0.0 is the $0 baseline anchor (day before first activity);
+        # the real trading day carries the deduped value.
+        assert out["equity"] == [0.0, 50_000.0], (
             f"Equity P&L was amplified by duplicate business keys: "
-            f"got {out['equity']}, expected [50000.0]. The dedup at "
+            f"got {out['equity']}, expected [0.0, 50000.0]. The dedup at "
             f"the top of _build_account_chart_from_daily_pnl is the "
             f"only thing preventing N**2 inflation when "
             f"_filter_df_by_user keeps NULL user_id legacy rows."
@@ -671,9 +673,10 @@ class TestDailyPnlChartDedup:
 
         daily_df = pd.DataFrame([null_row, populated])
         out = _build_account_chart_from_daily_pnl(daily_df, pd.DataFrame())
+        # Leading 0.0 is the $0 baseline anchor; the real day follows.
         # If dedup picked the populated row: 100*1000 - 50000 = 50_000.
         # If dedup picked the NULL row: 999*1000 - 999000 = 0.
-        assert out["equity"] == [50_000.0]
+        assert out["equity"] == [0.0, 50_000.0]
 
 
 class TestStrategyFitQueryTenancy:
