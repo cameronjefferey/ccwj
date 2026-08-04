@@ -47,14 +47,13 @@
 
     EQUITY / OPTION SPLIT: ``option_value`` comes from the LIVE
     ``stg_current`` snapshot, which carries ``tenant_id`` so the per-tenant
-    split is correct for the most recent day. The options snapshot wrapper
-    (``snapshot_options_market_values_daily``) predates ``tenant_id`` and
-    keys on (account, user_id) — which collides for users with several
-    "Schwab Account" tenants — so it is intentionally NOT used here (a
-    join on (account, user_id) would fan the combined option MV onto every
-    colliding tenant row, per AGENTS.md re-grain rule). On historical days
-    there is therefore no option row to match and options fold into
-    ``equity_value`` (``option_value = 0``). ``account_value`` /
+    split is correct for the most recent day. The historical options snapshot
+    (``snapshot_options_market_values_daily``) now carries ``tenant_id`` and
+    keys on ``tenant_grain`` (2026-08 re-grain fix), but is still NOT joined
+    here: wiring historical per-day option MV into this mart is a separate
+    enhancement (would need a dense date spine + carry-forward), out of scope.
+    On historical days there is therefore no option row to match and options
+    fold into ``equity_value`` (``option_value = 0``). ``account_value`` /
     ``cash_value`` — the numbers the comparisons / calendar / wealth deltas
     depend on — are fully historical and tenant-correct regardless.
 */
