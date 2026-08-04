@@ -1295,9 +1295,9 @@ def _norm_tag_date(v):
         return None
 
 
-def _tags_for_leg_range(tag_rows, tenant_id, open_date, last_date):
+def _tags_for_leg_range(tag_rows, tenant_id, open_date, last_date, symbol=None):
     """Sorted distinct tags whose stored ``leg_open_date`` falls within a leg's
-    ``[open_date, last_date]`` for the SAME tenant.
+    ``[open_date, last_date]`` for the SAME tenant (and symbol, when given).
 
     Date-containment (not leg_id equality) is deliberate: a stored tag is
     anchored on the leg's open_date at tag time, and matches back to whatever
@@ -1305,15 +1305,27 @@ def _tags_for_leg_range(tag_rows, tenant_id, open_date, last_date):
     ``display_leg_num`` renumbering, and leg merges (a merged leg's range still
     contains the old open_date). Chapters never overlap, so an anchor date lands
     in at most one leg.
+
+    ``symbol`` MUST be passed whenever ``tag_rows`` can span multiple symbols
+    (e.g. ``get_all_leg_tags_for_user``). A tag is stored as
+    (tenant_id, symbol, leg_open_date); matching on tenant + date alone lets a
+    DIFFERENT symbol's leg whose window happens to contain the anchor date
+    steal the tag (real case: an open BP Covered Call spanning 2026-08-03
+    cross-matched an ASTS tag anchored on 2026-08-03, so the /positions tag
+    filter and /accounts Tag Breakdown attributed BP's P&L to the ASTS tag).
+    Position Detail passes already-symbol-scoped rows so it may omit it.
     """
     if not tag_rows:
         return []
     lo = _norm_tag_date(open_date)
     hi = _norm_tag_date(last_date) or lo
     tid = str(tenant_id or "")
+    sym = str(symbol or "").upper() if symbol is not None else None
     out = set()
     for r in tag_rows:
         if str(r.get("tenant_id") or "") != tid:
+            continue
+        if sym is not None and str(r.get("symbol") or "").upper() != sym:
             continue
         anchor = _norm_tag_date(r.get("leg_open_date"))
         if anchor is None:
@@ -2104,6 +2116,174 @@ def ping():
     return "Flask app is alive"
 
 
+# Trade-group grain (one row per equity session / option contract) used to
+# rebuild the positions frame scoped to ONLY a tagged leg. Mirrors the columns
+# positions_summary aggregates so the tag-scoped rollup lands on the same grain.
+POSITIONS_TAG_STRAT_QUERY = """
+    SELECT
+        tenant_id, account, user_id, symbol, strategy, status,
+        open_date, close_date, days_in_trade,
+        total_pnl, realized_pnl, unrealized_pnl,
+        num_trades, premium_received, premium_paid, is_winner
+    FROM `ccwj-dbt.analytics.int_strategy_classification`
+    WHERE 1=1 {tenant_filter}
+"""
+
+
+def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
+                             selected_tag, base_df,
+                             start_date=None, end_date=None):
+    """Rebuild the positions_summary-shaped frame scoped to ONLY the legs that
+    carry ``selected_tag``.
+
+    A user tag anchors a single LEG (one chapter of a (tenant, symbol)), but
+    ``positions_summary`` is per (tenant, account, symbol, strategy) — it rolls
+    up EVERY leg of the symbol. Filtering the mart by "this symbol has a tagged
+    leg" therefore reported the WHOLE symbol's P&L (all 8 ASTS legs) when only
+    one leg (Leg 8) was tagged — realized $5,624 shown for an earningsfollower
+    tag that only owns the +$905 open leg. This re-aggregates
+    ``int_strategy_classification`` trade groups, keeping only those whose
+    ``open_date`` falls inside a tagged leg's ``[open_date, last_activity_date]``
+    window (the same date-containment ``_tags_for_leg_range`` and the Position
+    Detail leg scoping use), then rolls them up to the mart's grain so the KPI
+    hero and both tables read the tagged-leg P&L only.
+
+    Dividends / premium-collected are attributed per symbol in the mart and
+    can't be leg-scoped, so ``total_dividend_income`` is 0 here and
+    ``total_return`` == trade P&L — consistent with the /accounts Tag Breakdown,
+    which also sums combined leg P&L without dividends.
+    """
+    empty = base_df.iloc[0:0].copy()
+    if not selected_tag or not tag_rows:
+        return empty
+
+    # 1) Tagged leg date windows per (tenant, symbol).
+    try:
+        legs_df = cached_query_df(
+            client, ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter)
+        )
+    except Exception:
+        return empty
+    legs_df = _filter_df_by_tenant_ids(legs_df, tenant_ids)
+    ranges_by_key = {}  # (tenant_id, symbol_upper) -> [(lo_date, hi_date), ...]
+    if not legs_df.empty:
+        for _, lr in legs_df.iterrows():
+            matched = _tags_for_leg_range(
+                tag_rows, lr.get("tenant_id"),
+                lr.get("open_date"), lr.get("last_activity_date"),
+                symbol=lr.get("symbol"),
+            )
+            if selected_tag not in matched:
+                continue
+            tid = str(lr.get("tenant_id") or "")
+            sym = str(lr.get("symbol") or "").upper()
+            lo = _norm_tag_date(lr.get("open_date"))
+            hi = _norm_tag_date(lr.get("last_activity_date")) or lo
+            ranges_by_key.setdefault((tid, sym), []).append((lo, hi))
+    if not ranges_by_key:
+        return empty
+
+    # 2) Trade groups for the in-scope tenants.
+    try:
+        sc = cached_query_df(
+            client, POSITIONS_TAG_STRAT_QUERY.format(tenant_filter=tenant_filter)
+        )
+    except Exception:
+        return empty
+    sc = _filter_df_by_tenant_ids(sc, tenant_ids)
+    if sc.empty:
+        return empty
+
+    # 3) Keep trade groups whose open_date lands inside a tagged leg window for
+    #    the SAME (tenant, symbol). An optional date-filter window narrows
+    #    further so tag + time-range combine sanely.
+    def _in_tag(row):
+        key = (str(row.get("tenant_id") or ""),
+               str(row.get("symbol") or "").upper())
+        wins = ranges_by_key.get(key)
+        if not wins:
+            return False
+        od = _norm_tag_date(row.get("open_date"))
+        if od is None:
+            return False
+        if start_date is not None and od < start_date:
+            return False
+        if end_date is not None and od > end_date:
+            return False
+        for lo, hi in wins:
+            if (lo is None or od >= lo) and (hi is None or od <= hi):
+                return True
+        return False
+
+    sc = sc[sc.apply(_in_tag, axis=1)]
+    if sc.empty:
+        return empty
+
+    # 4) Coerce + roll up to the positions_summary grain
+    #    (tenant, account, user_id, symbol, strategy).
+    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
+              "premium_received", "premium_paid", "num_trades", "days_in_trade"]:
+        if c in sc.columns:
+            sc[c] = pd.to_numeric(sc[c], errors="coerce").fillna(0)
+    sc["is_winner"] = sc["is_winner"].astype(bool)
+    _closed = sc["status"].astype(str).eq("Closed")
+    sc["_win_closed"] = (sc["is_winner"] & _closed).astype(int)
+    sc["_los_closed"] = (~sc["is_winner"] & _closed).astype(int)
+    sc["_open_cnt"] = (~_closed).astype(int)
+    sc["_closed_pnl"] = sc["total_pnl"].where(_closed, 0.0)
+    sc["_premium_paid_abs"] = sc["premium_paid"].abs()
+
+    grouped = (
+        sc.groupby(["tenant_id", "account", "user_id", "symbol", "strategy"],
+                   dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            total_premium_received=("premium_received", "sum"),
+            total_premium_paid=("_premium_paid_abs", "sum"),
+            num_trade_groups=("total_pnl", "size"),
+            num_individual_trades=("num_trades", "sum"),
+            num_winners=("_win_closed", "sum"),
+            num_losers=("_los_closed", "sum"),
+            _closed_pnl=("_closed_pnl", "sum"),
+            _open_cnt=("_open_cnt", "sum"),
+            avg_days_in_trade=("days_in_trade", "mean"),
+        )
+        .reset_index()
+    )
+
+    _n_closed = grouped["num_winners"] + grouped["num_losers"]
+    _denom = _n_closed.where(_n_closed > 0, 1)
+    grouped["status"] = grouped["_open_cnt"].gt(0).map({True: "Open", False: "Closed"})
+    grouped["win_rate"] = (grouped["num_winners"] / _denom).where(_n_closed > 0, 0.0)
+    grouped["avg_pnl_per_trade"] = (
+        (grouped["_closed_pnl"] / _denom).where(_n_closed > 0, 0.0).round(2)
+    )
+    grouped["total_dividend_income"] = 0.0
+    grouped["dividend_count"] = 0
+    grouped["total_return"] = grouped["total_pnl"].round(2)
+    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
+              "total_premium_received", "total_premium_paid", "avg_days_in_trade"]:
+        grouped[c] = grouped[c].round(2)
+    grouped = grouped.drop(columns=["_closed_pnl", "_open_cnt"])
+
+    # 5) Attach sector/subsector from the mart frame (per tenant + symbol).
+    meta_cols = [c for c in ["sector", "subsector"]
+                 if not base_df.empty and c in base_df.columns]
+    if meta_cols and {"tenant_id", "symbol"}.issubset(base_df.columns):
+        meta = (
+            base_df[["tenant_id", "symbol"] + meta_cols]
+            .drop_duplicates(["tenant_id", "symbol"])
+        )
+        grouped = grouped.merge(meta, on=["tenant_id", "symbol"], how="left")
+    for c in ["sector", "subsector"]:
+        if c in grouped.columns:
+            grouped[c] = grouped[c].fillna("Unknown")
+
+    return grouped
+
+
 @app.route("/positions")
 @login_required
 def positions():
@@ -2237,30 +2417,28 @@ def positions():
     if selected_sector and "sector" in filtered.columns:
         filtered = filtered[filtered["sector"] == selected_sector]
     if selected_tag:
-        # "Positions that contain a leg tagged X." Tags live in Postgres,
-        # scoped to the viewer's in-scope tenants; a tag anchors a leg, so a
-        # (tenant_id, symbol) qualifies if ANY of its legs carries the tag.
+        # Tags anchor a single LEG, but positions_summary is per symbol/strategy
+        # (it rolls up EVERY leg). Filtering the mart by "symbol has a tagged
+        # leg" reported the whole symbol's P&L — all 8 ASTS legs / $5,624
+        # realized — for a tag that only owns one +$905 open leg. Rebuild the
+        # frame scoped to ONLY the tagged legs' trade groups so the hero + both
+        # tables read the tagged-leg P&L. This REPLACES `filtered` wholesale, so
+        # the other active filters (applied above) are re-applied below.
         _tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
-        _tagged_keys = {
-            (str(r.get("tenant_id") or ""), str(r.get("symbol") or "").upper())
-            for r in _tag_rows
-            if str(r.get("tag") or "") == selected_tag
-        }
-        _tagged_symbols = {sym for _tid, sym in _tagged_keys}
-        if "tenant_id" in filtered.columns:
-            filtered = filtered[
-                filtered.apply(
-                    lambda r: (
-                        str(r.get("tenant_id") or ""),
-                        str(r.get("symbol") or "").upper(),
-                    ) in _tagged_keys,
-                    axis=1,
-                )
-            ] if not filtered.empty else filtered
-        else:
-            filtered = filtered[
-                filtered["symbol"].astype(str).str.upper().isin(_tagged_symbols)
-            ]
+        filtered = _tag_scoped_positions_df(
+            client, tenant_ids, tenant_filter, _tag_rows, selected_tag, df,
+            start_date=start_date, end_date=end_date,
+        )
+        if selected_strategy and "strategy" in filtered.columns:
+            filtered = filtered[filtered["strategy"] == selected_strategy]
+        if selected_statuses and "status" in filtered.columns:
+            filtered = filtered[filtered["status"].isin(selected_statuses)]
+        if selected_symbol and "symbol" in filtered.columns:
+            filtered = filtered[filtered["symbol"] == selected_symbol]
+        if selected_subsector and "subsector" in filtered.columns:
+            filtered = filtered[filtered["subsector"] == selected_subsector]
+        if selected_sector and "sector" in filtered.columns:
+            filtered = filtered[filtered["sector"] == selected_sector]
 
     # Status counts for hero chips. Must read from `filtered`, NOT `df`,
     # so the chips agree with the body. Reading from `df` was a long-
@@ -2545,7 +2723,12 @@ POSITION_CURRENT_QUERY = """
         -- and the OTM-at-expiry inference in int_option_contracts.
         option_expiry,
         option_strike,
-        option_type
+        option_type,
+        -- Realized wedge of a partially-closed OPEN option contract (0 for
+        -- equity rows and fully-open options). Added to the Breakdown-by-Type
+        -- options-realized so a partial close's booked P&L reconciles with the
+        -- chart / Strategy Breakdown instead of tripping the invariant card.
+        option_realized_pnl
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE UPPER(TRIM(COALESCE(underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
     {tenant_filter}
@@ -3333,6 +3516,20 @@ def _compute_breakdown_by_type(
             )
             opt_count += len(opt_open)
             opt_open_count += len(opt_open)
+            # Partial-close realized wedge: a contract that's still Open
+            # (some sold, some held) has already-booked realized P&L that
+            # lives on int_enriched_current.option_realized_pnl — NOT in
+            # closed_legs_df (status='Closed' only) nor in unrealized_pnl
+            # (the open remainder's MTM). Add it so the Options row totals
+            # realized_on_closed + unrealized_on_open and the breakdown
+            # reconciles with the chart / Strategy Breakdown (CRWV Aug 2026:
+            # +$10,736 realized on 10 sold + $20,465 unrealized on 15 held).
+            if "option_realized_pnl" in opt_open.columns:
+                opt_realized += float(
+                    pd.to_numeric(opt_open["option_realized_pnl"], errors="coerce")
+                    .fillna(0)
+                    .sum()
+                )
 
     div_total = 0.0
     div_count = 0
@@ -6672,7 +6869,8 @@ def _build_tag_breakdown(legs_df, tags_rows):
         tenant_id = str(r.get("tenant_id") or "")
         symbol = str(r.get("symbol") or "").upper()
         matched = _tags_for_leg_range(
-            tags_rows, tenant_id, r.get("open_date"), r.get("last_activity_date")
+            tags_rows, tenant_id, r.get("open_date"), r.get("last_activity_date"),
+            symbol=symbol,
         )
         if not matched:
             continue

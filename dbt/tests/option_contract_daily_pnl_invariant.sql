@@ -9,12 +9,14 @@
         MTM row on its own close_date. The realized branch owns
         close_date; if an MTM row also exists, the chart will
         double-count net_cash_flow + MTM on close_date.
-    (3) REALIZED MATCHES TOTAL_PNL: the realized credit emitted on
-        close_date for a closed contract equals net_cash_flow,
-        which (after the int_option_contracts fix) equals
-        total_pnl for closed contracts. This is the "the chart
-        on close_date credits exactly what int_option_contracts
-        says" guarantee.
+    (3) REALIZED MATCHES REALIZED_PNL: the realized credit emitted on
+        the realization date equals int_option_contracts.realized_pnl.
+        For a fully-closed contract realized_pnl == net_cash_flow ==
+        total_pnl (unchanged guarantee: "the chart on close_date credits
+        exactly what int_option_contracts says"). For a PARTIAL close it
+        equals the realized wedge of the sold portion (net_cash_flow +
+        market_value − unrealized_pnl), attributed on the closing-fill
+        date while the open remainder marks to market separately.
 
     Returns offending rows (test fails if non-zero).
 #}
@@ -67,7 +69,7 @@ mtm_on_close_day as (
       and d.is_realized_close = false
 ),
 
--- (3) Realized credit on close_date == net_cash_flow.
+-- (3) Realized credit on the realization date == realized_pnl.
 realized_mismatch as (
     select
         d.tenant_id,
@@ -77,7 +79,7 @@ realized_mismatch as (
         d.date,
         cast(true as bool) as is_realized_close,
         cast(null as int64) as n,
-        'realized_neq_net_cash_flow' as failure_kind
+        'realized_neq_realized_pnl' as failure_kind
     from daily d
     join contracts c
         on d.account = c.account
@@ -85,7 +87,7 @@ realized_mismatch as (
         and (d.tenant_id is not distinct from c.tenant_id)
         and d.trade_symbol = c.trade_symbol
     where d.is_realized_close = true
-      and abs(d.pnl_today - c.net_cash_flow) > 0.01
+      and abs(d.pnl_today - c.realized_pnl) > 0.01
 )
 
 select * from double_emission

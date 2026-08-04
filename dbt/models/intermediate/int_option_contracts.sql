@@ -382,61 +382,127 @@ otm_at_expiry as (
     left join expiry_close_lookup e
         on c.underlying_symbol = e.underlying_symbol
         and c.option_expiry     = e.expiry_date
+),
+
+-- Join the live snapshot + OTM-at-expiry inference once, then derive the
+-- status / P&L flags in a single place so the partial-close logic stays
+-- readable (this used to be one giant final SELECT).
+joined as (
+    select
+        c.*,
+        iotm.inferred_otm_today,
+        cur.trade_symbol   as cur_trade_symbol,
+        cur.market_value   as cur_market_value,
+        cur.unrealized_pnl as cur_unrealized_pnl
+    from all_contracts c
+    left join otm_at_expiry iotm
+        on c.account = iotm.account
+        and (c.user_id is not distinct from iotm.user_id)
+        and (c.tenant_id is not distinct from iotm.tenant_id)
+        and c.trade_symbol = iotm.trade_symbol
+    left join {{ ref('stg_current') }} cur
+        on c.account = cur.account
+        and (c.user_id is not distinct from cur.user_id)
+        and (c.tenant_id is not distinct from cur.tenant_id)
+        and c.trade_symbol = cur.trade_symbol
+        and cur.instrument_type in ('Call', 'Put')
+),
+
+flagged as (
+    select
+        *,
+        -- Contracts still open = everything opened minus everything closed
+        -- (BTC/STC/expired/assigned/exercised). > 0 means a live remainder.
+        (coalesce(contracts_sold_to_open, 0)
+         + coalesce(contracts_bought_to_open, 0)
+         - coalesce(contracts_closed, 0)) as remaining_open_qty,
+        -- Effective realization date for the CLOSED portion (unchanged
+        -- precedence from the old final SELECT): history closing-action date
+        -- (capped at expiry for late-booked settlements) → past-expiry
+        -- calendar → OTM-at-expiry inference. NULL only when nothing has
+        -- closed and the contract has not expired.
+        coalesce(
+            case when cur_trade_symbol is null then _activity_flat_close_date end,
+            close_date,
+            case when inferred_otm_today then option_expiry end
+        ) as eff_close_date
+    from joined
+),
+
+flagged2 as (
+    select
+        *,
+        -- PARTIAL CLOSE: some contracts were closed (BTC/STC/etc.) but the
+        -- broker snapshot still carries a live remainder AND the contract
+        -- has not expired / gone worthless. This is a genuinely OPEN
+        -- position that must NOT be flipped to 'Closed' just because a
+        -- closing fill exists. Real case CRWV 260814C00074000 (Aug 2026):
+        -- bought 25, sold 10, 15 still held — pre-fix rendered as fully
+        -- Closed with total_pnl = net_cash_flow (-$523.62) instead of the
+        -- true +$10,736 realized on the 10 sold plus +$20,465 unrealized on
+        -- the 15 held. remaining_open_qty > 0 is the from-history signal;
+        -- cur_trade_symbol is not null confirms the broker still holds it.
+        (cur_trade_symbol is not null
+         and remaining_open_qty > 1e-6
+         and coalesce(contracts_closed, 0) > 1e-6
+         and coalesce(option_expiry >= current_date(), true)
+         and not coalesce(inferred_otm_today, false)) as is_partial_open
+    from flagged
 )
 
 select
-    c.account,
-    c.user_id,
+    account,
+    user_id,
     -- v2 tenant_id carried natively from staging through the contract grain.
-    c.tenant_id,
-    c.trade_symbol,
-    c.underlying_symbol,
-    c.option_expiry,
-    c.option_strike,
-    c.option_type,
-    c.direction,
-    c.open_date,
+    tenant_id,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    option_strike,
+    option_type,
+    direction,
+    open_date,
 
-    -- Effective close_date: original (history closing-action OR past-
-    -- expiry calendar branch) is the strongest signal. When neither
-    -- has fired yet but the same-day OTM inference is true, fall
-    -- back to the option_expiry date so downstream
-    -- (int_option_contract_daily_pnl realized_close branch) emits
-    -- the realized credit on the right calendar day.
-    coalesce(
-        case
-            when cur.trade_symbol is null then c._activity_flat_close_date
-        end,
-        c.close_date,
-        case when iotm.inferred_otm_today then c.option_expiry end
-    ) as close_date,
+    -- Output close_date: NULL for a partial close (the position is still
+    -- open, so days_in_trade and the int_option_contract_daily_pnl lifetime
+    -- spine treat it as ongoing and keep marking the remainder to market).
+    -- The realized credit for the CLOSED portion attributes on
+    -- realized_close_date instead. For fully-closed contracts this is the
+    -- same effective close_date as before.
+    case when is_partial_open then null else eff_close_date end as close_date,
 
-    c.contracts_sold_to_open,
-    c.contracts_bought_to_open,
-    c.contracts_closed,
-    c.premium_received,
-    c.premium_paid,
-    c.cost_to_close,
-    c.proceeds_from_close,
-    c.net_cash_flow,
-    c.total_fees,
+    -- Date to attribute the realized P&L of the closed portion. Equals the
+    -- effective close date for fully-closed contracts and the last closing
+    -- fill date for partial closes; NULL when nothing has closed. Read by
+    -- int_option_contract_daily_pnl's realized branch.
+    eff_close_date as realized_close_date,
+
+    contracts_sold_to_open,
+    contracts_bought_to_open,
+    contracts_closed,
+    premium_received,
+    premium_paid,
+    cost_to_close,
+    proceeds_from_close,
+    net_cash_flow,
+    total_fees,
 
     -- close_type: preserve broker-confirmed values when present.
     -- ``ExpiredOTM`` is reserved for the inferred-from-yfinance branch
     -- so admin debugging can distinguish "we deduced this" from
     -- "broker confirmed this." When the Monday sync ships an explicit
-    -- ``option_expired`` event, ``c.close_type`` becomes 'Expired'
+    -- ``option_expired`` event, ``close_type`` becomes 'Expired'
     -- and overrides this value in the next build (same realized
     -- credit either way — net_cash_flow doesn't change).
     case
-        when c.close_type is not null then c.close_type
-        when c._activity_flat_close_date is not null
-             and cur.trade_symbol is null then 'Closed'
-        when iotm.inferred_otm_today  then 'ExpiredOTM'
-        else c.close_type
+        when close_type is not null then close_type
+        when _activity_flat_close_date is not null
+             and cur_trade_symbol is null then 'Closed'
+        when inferred_otm_today  then 'ExpiredOTM'
+        else close_type
     end as close_type,
 
-    c.num_trades,
+    num_trades,
 
     -- Status
     --
@@ -453,116 +519,97 @@ select
     --
     -- close_type from history (Assigned / Exercised / Expired explicit
     -- event) still wins above the calendar fallback because it's the
-    -- highest-precision signal we have.
+    -- highest-precision signal we have — EXCEPT when only PART of the
+    -- opened quantity was closed (is_partial_open). A partial close keeps
+    -- the contract Open; the realized portion is credited separately.
     --
     -- The ``inferred_otm_today`` branch handles expiry day itself:
     -- when the underlying closed strictly OTM, realize before the
     -- broker confirms on Monday. See ``otm_at_expiry`` CTE header.
     case
-        when c.close_type is not null         then 'Closed'
-        when c._activity_flat_close_date is not null
-             and cur.trade_symbol is null     then 'Closed'
-        when c.option_expiry < current_date() then 'Closed'
-        when iotm.inferred_otm_today          then 'Closed'
-        when cur.trade_symbol is not null     then 'Open'
+        when close_type is not null and not is_partial_open then 'Closed'
+        when _activity_flat_close_date is not null
+             and cur_trade_symbol is null     then 'Closed'
+        when option_expiry < current_date()   then 'Closed'
+        when inferred_otm_today               then 'Closed'
+        when cur_trade_symbol is not null      then 'Open'
         else 'Open'
     end as status,
 
     -- Current market data for open contracts
-    coalesce(cur.market_value, 0)    as current_market_value,
-    coalesce(cur.unrealized_pnl, 0)  as current_unrealized_pnl,
+    coalesce(cur_market_value, 0)    as current_market_value,
+    coalesce(cur_unrealized_pnl, 0)  as current_unrealized_pnl,
 
-    -- Total P&L for open vs closed contracts.
+    -- Total P&L = realized (closed portion) + unrealized (open portion).
     --
-    -- Calendar truth wins over snapshot presence: a contract whose
-    -- ``status`` says Closed (because ``close_type`` is set OR
-    -- ``option_expiry`` is past OR ``inferred_otm_today`` fired) MUST
-    -- realize via ``net_cash_flow`` regardless of whether Schwab's
-    -- stale snapshot still carries it. Pre-fix the case branch keyed
-    -- off ``cur.trade_symbol is not null`` and silently used
-    -- ``cur.unrealized_pnl`` for expired-but-still-snapshotted
-    -- contracts (real example May 2026: NVDA 6/5 230C closed via
-    -- assignment 4/24, snapshot stale at mv=-1375 → total_pnl
-    -- rendered as -$546 instead of the true realized +$838). This
-    -- made the Strategy Breakdown / chart / positions_summary
-    -- disagree with int_option_contract_daily_pnl (which correctly
-    -- emits realized at close_date).
+    -- Calendar truth wins over snapshot presence: a fully-closed contract
+    -- (close_type set / past-expiry / OTM-inferred, and no live remainder)
+    -- realizes via ``net_cash_flow`` regardless of whether Schwab's stale
+    -- snapshot still carries it (real example May 2026: NVDA 6/5 230C closed
+    -- via assignment 4/24, snapshot stale at mv=-1375 → would render -$546
+    -- instead of the true realized +$838).
     --
-    -- CLOSED: ``c.net_cash_flow`` is the only truth (sum of all
-    -- fills from stg_history). The matching status logic at the
-    -- top of this SELECT already reserved 'Closed' for these.
+    -- FULLY CLOSED: ``net_cash_flow`` is the only truth (sum of all fills).
     --
-    -- OPEN:   trust the broker snapshot's full-precision
-    -- ``unrealized_pnl`` directly. The naive
-    -- ``net_cash_flow + market_value`` combines rounded $0.01 fill
-    -- prices from stg_history with full-precision snapshot
-    -- market_value, accumulating ~$1-2 of rounding drift per
-    -- contract (Sara/BE 290C 5/8 STO at fill price $15.01305 →
-    -- seed amount $3,004 vs snapshot cost_basis $3,002.61 → $1.39
-    -- drift, trips the page-level reconciliation invariant).
+    -- PARTIAL CLOSE (still open): ``net_cash_flow + current_market_value``.
+    -- The identity ``net_cash_flow + market_value == realized_on_closed +
+    -- unrealized_on_open`` holds for both longs and shorts (market_value
+    -- carries the sign). Using market_value — not unrealized_pnl — is what
+    -- folds the closing proceeds back in. CRWV: -523.62 + 31,725 = +31,201.
     --
-    -- OPEN + NEVER SNAPSHOTTED: contribute $0, NOT net_cash_flow.
-    -- A contract opened via the real-time ORDERS feed (intraday poll)
-    -- has a fill in stg_history but no stg_current snapshot yet — the
-    -- broker holdings snapshot lags (intraday sync is history-only by
-    -- design; see broker-sync-safety skill 2026-07-10). Booking
-    -- ``net_cash_flow`` here credits the raw premium on the open date:
-    -- a freshly BOUGHT call reads as a full -premium LOSS (real case
-    -- 2026-07-13: SEI 260821C00070000, net_cash_flow -$9,200 rendered
-    -- as -$9,200 unrealized when the call is worth ~what was paid), and
-    -- a freshly SOLD call reads as a full +premium phantom GAIN. Both
-    -- violate the realize-on-close rule (AGENTS "Option P&L Attribution"
-    -- #3: "$0 contribution while open if the contract has NEVER been
-    -- snapshotted — defer the credit to close_date"). ``$0`` also keeps
-    -- this column reconciled with ``int_option_contract_daily_pnl``,
-    -- whose lifetime spine for a never-snapshotted open contract is just
-    -- [open_date] with mtm=0 → chart terminal $0. The real mark-to-
-    -- market lands once the daily holdings sync writes a stg_current row.
+    -- FULLY OPEN: trust the snapshot's full-precision ``unrealized_pnl``
+    -- (the naive net_cash_flow + market_value accumulates ~$1-2 of rounded-
+    -- fill drift and trips the page reconciliation invariant).
+    --
+    -- FULLY OPEN + NEVER SNAPSHOTTED: contribute $0, not net_cash_flow —
+    -- defer the credit to close (AGENTS "Option P&L Attribution" #3).
     case
-        when c.close_type is not null         then c.net_cash_flow
-        when c._activity_flat_close_date is not null
-             and cur.trade_symbol is null     then c.net_cash_flow
-        when c.option_expiry < current_date() then c.net_cash_flow
-        when iotm.inferred_otm_today          then c.net_cash_flow
-        when cur.trade_symbol is not null
-             and cur.unrealized_pnl is not null
-        then cur.unrealized_pnl
-        when cur.trade_symbol is not null
-        then c.net_cash_flow + coalesce(cur.market_value, 0)
+        when close_type is not null and not is_partial_open then net_cash_flow
+        when _activity_flat_close_date is not null
+             and cur_trade_symbol is null     then net_cash_flow
+        when option_expiry < current_date()   then net_cash_flow
+        when inferred_otm_today               then net_cash_flow
+        when is_partial_open
+            then net_cash_flow + coalesce(cur_market_value, 0)
+        when cur_trade_symbol is not null
+             and cur_unrealized_pnl is not null then cur_unrealized_pnl
+        when cur_trade_symbol is not null
+            then net_cash_flow + coalesce(cur_market_value, 0)
         else 0.0
     end as total_pnl,
 
-    -- Duration
-    --
-    -- For closed contracts (close_date set) use the close_date even if
-    -- the broker's stale snapshot still carries the contract — calendar
-    -- truth wins, same precedence as the ``status`` column above. The
-    -- coalesce mirrors the effective close_date above so the duration
-    -- of an inferred-OTM contract reflects open → expiry, not
-    -- open → today.
+    -- Realized P&L on the CLOSED portion only (0 while fully open). For a
+    -- partial close this is total − unrealized = (net_cash_flow +
+    -- market_value) − unrealized_pnl = net_cash_flow + the sign-adjusted
+    -- remaining cost basis. Downstream reads this so the realized wedge of
+    -- a partial close lands consistently in int_option_contract_daily_pnl
+    -- (realized branch), int_position_legs (closed-options P&L) and
+    -- int_strategy_classification (realized/unrealized split). For a fully-
+    -- closed contract it equals net_cash_flow (== total_pnl), so those
+    -- consumers are byte-for-byte unchanged for the non-partial case.
+    case
+        when close_type is not null and not is_partial_open then net_cash_flow
+        when _activity_flat_close_date is not null
+             and cur_trade_symbol is null     then net_cash_flow
+        when option_expiry < current_date()   then net_cash_flow
+        when inferred_otm_today               then net_cash_flow
+        when is_partial_open
+            then net_cash_flow
+                 + coalesce(cur_market_value, 0)
+                 - coalesce(cur_unrealized_pnl, 0)
+        else 0.0
+    end as realized_pnl,
+
+    -- Duration. A partial close uses the output close_date (NULL) → today,
+    -- so days_in_trade reflects the still-open position; fully-closed keeps
+    -- the effective close date; open contracts run open → today.
     date_diff(
         coalesce(
-            case
-                when cur.trade_symbol is null
-                then c._activity_flat_close_date
-            end,
-            c.close_date,
-            case when iotm.inferred_otm_today then c.option_expiry end,
+            case when is_partial_open then null else eff_close_date end,
             current_date()
         ),
-        c.open_date,
+        open_date,
         day
     ) as days_in_trade
 
-from all_contracts c
-left join otm_at_expiry iotm
-    on c.account = iotm.account
-    and (c.user_id is not distinct from iotm.user_id)
-    and (c.tenant_id is not distinct from iotm.tenant_id)
-    and c.trade_symbol = iotm.trade_symbol
-left join {{ ref('stg_current') }} cur
-    on c.account = cur.account
-    and (c.user_id is not distinct from cur.user_id)
-    and (c.tenant_id is not distinct from cur.tenant_id)
-    and c.trade_symbol = cur.trade_symbol
-    and cur.instrument_type in ('Call', 'Put')
+from flagged2

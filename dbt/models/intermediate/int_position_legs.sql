@@ -90,8 +90,12 @@ option_intervals as (
         cast('option' as string) as source,
         case when status = 'Open' then true else false end as is_open,
         cast(0 as float64)                              as equity_pnl,
-        case when status = 'Closed' then coalesce(total_pnl, 0) else 0 end
-                                                        as option_total_pnl,
+        -- Realized (closed-portion) P&L. ``realized_pnl`` is 0 for a fully-
+        -- open contract, net_cash_flow for a fully-closed one, and the
+        -- realized wedge of a PARTIAL close (still Open) — so a partially
+        -- sold contract contributes both its realized wedge here AND its
+        -- open-remainder MTM below, and the leg's combined_pnl is whole.
+        coalesce(realized_pnl, 0)                       as option_total_pnl,
         case when status = 'Open'   then coalesce(current_unrealized_pnl, 0) else 0 end
                                                         as option_unrealized_pnl,
         cast(1 as int64)                                as option_count,

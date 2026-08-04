@@ -68,7 +68,15 @@ with contracts as (
         open_date,
         close_date,
         status,
-        net_cash_flow
+        net_cash_flow,
+        -- Realized P&L of the CLOSED portion + the date to attribute it.
+        -- For a fully-closed contract realized_pnl == net_cash_flow and
+        -- realized_close_date == close_date (unchanged behavior). For a
+        -- PARTIAL close (still Open, close_date NULL) these carry the
+        -- realized wedge of the sold portion on the closing-fill date while
+        -- the open remainder keeps marking to market via the spine below.
+        realized_pnl,
+        realized_close_date
     from {{ ref('int_option_contracts') }}
     where open_date is not null
 ),
@@ -352,18 +360,21 @@ open_mtm as (
     from contract_daily_mtm
 ),
 
--- Realized credit: one row per closed contract on close_date.
+-- Realized credit: one row per contract with a realized close, on the
+-- realization date.
 --
--- Uses net_cash_flow (sum of all explicit fills). For OTM expiries
--- this equals the premium received (no closing fill). For BTC closes
--- this equals premium - cost_to_close. For assignments and exercises,
--- the option's net_cash_flow excludes the underlying stock
--- transaction (which lives on the equity P&L line) — consistent with
--- the existing total_pnl semantics in int_option_contracts.
+-- Uses ``realized_pnl`` (from int_option_contracts). For a fully-closed
+-- contract this equals net_cash_flow (OTM expiry → premium; BTC → premium
+-- − cost-to-close; assignment/exercise → option cash flows only, the
+-- underlying stock lives on the equity P&L line) attributed on close_date
+-- — identical to the pre-partial-close behavior. For a PARTIAL close the
+-- credit is the realized wedge of the sold portion, attributed on the
+-- closing-fill date (realized_close_date) even though the contract stays
+-- Open; the open remainder is marked to market by the spine above, so the
+-- two never overlap in meaning.
 --
--- For OPEN contracts (close_date null), no row is emitted here — the
--- chart shows MTM only, and once they close in a future build, the
--- realized credit lands on close_date.
+-- For fully-OPEN contracts (never closed anything) realized_close_date is
+-- NULL, so no row is emitted — MTM only, deferring any credit to close.
 realized_close as (
     select
         c.tenant_id,
@@ -371,12 +382,11 @@ realized_close as (
         c.user_id,
         c.symbol,
         c.trade_symbol,
-        c.close_date as date,
-        c.net_cash_flow as pnl_today,
+        c.realized_close_date as date,
+        c.realized_pnl as pnl_today,
         true as is_realized_close
     from contracts c
-    where c.close_date is not null
-      and c.status = 'Closed'
+    where c.realized_close_date is not null
 ),
 
 -- v2 tenant_id is carried natively from staging through the contract grain.

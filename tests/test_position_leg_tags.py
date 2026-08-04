@@ -20,7 +20,12 @@ import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 
 from app import models  # noqa: E402
-from app.routes import _tags_for_leg_range, _build_tag_breakdown  # noqa: E402
+from app import routes  # noqa: E402
+from app.routes import (  # noqa: E402
+    _tags_for_leg_range,
+    _build_tag_breakdown,
+    _tag_scoped_positions_df,
+)
 from app.weekly_review import _build_trades_this_week  # noqa: E402
 
 
@@ -203,6 +208,27 @@ class TestTagsForLegRange:
         ]
         assert _tags_for_leg_range(rows, self.T, "2026-01-01", "2026-06-01") == ["alpha", "zeta"]
 
+    def test_symbol_filter_excludes_cross_symbol_anchor(self):
+        # The reported bug: a tag is stored (tenant, symbol, leg_open_date). A
+        # DIFFERENT symbol's leg whose window happens to CONTAIN the anchor date
+        # must NOT inherit the tag. Real case: an open BP Covered Call spanning
+        # 2026-08-03 cross-matched an ASTS tag anchored on 2026-08-03.
+        rows = [_tag(self.T, "ASTS", date(2026, 8, 3), "earningsfollower")]
+        # BP leg window contains the anchor date, but symbol differs.
+        assert _tags_for_leg_range(
+            rows, self.T, "2026-07-01", "2026-09-01", symbol="BP"
+        ) == []
+        # Same window, correct symbol → matches.
+        assert _tags_for_leg_range(
+            rows, self.T, "2026-07-01", "2026-09-01", symbol="ASTS"
+        ) == ["earningsfollower"]
+
+    def test_symbol_none_preserves_legacy_tenant_only_match(self):
+        # When symbol is omitted (Position Detail passes already-symbol-scoped
+        # rows) the matcher stays tenant + date only.
+        rows = [_tag(self.T, "ASTS", date(2026, 3, 1), "ef")]
+        assert _tags_for_leg_range(rows, self.T, "2026-01-01", "2026-06-01") == ["ef"]
+
 
 class TestBuildTagBreakdown:
     T = "snaptrade:aaaa"
@@ -261,6 +287,130 @@ class TestBuildTagBreakdown:
         assert _build_tag_breakdown(pd.DataFrame(), []) == []
         legs = pd.DataFrame([self._leg("AAPL", date(2026, 1, 1), date(2026, 2, 1))])
         assert _build_tag_breakdown(legs, []) == []
+
+    def test_cross_symbol_leg_not_credited(self):
+        # A tag on AAPL must not pull in a TSLA leg whose window merely contains
+        # the AAPL tag's anchor date (same tenant). Pre-fix the tenant+date-only
+        # matcher credited BOTH legs to the tag.
+        legs = pd.DataFrame([
+            self._leg("AAPL", date(2026, 1, 1), date(2026, 2, 1), equity=100.0),
+            self._leg("TSLA", date(2025, 12, 1), date(2026, 3, 1), equity=999.0),
+        ])
+        tags = [_tag(self.T, "AAPL", date(2026, 1, 1), "ef")]
+        out = _build_tag_breakdown(legs, tags)
+        assert len(out) == 1
+        assert out[0]["num_legs"] == 1
+        assert out[0]["num_symbols"] == 1
+        assert out[0]["net_pnl"] == 100.0  # TSLA's 999 excluded
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 2b. /positions tag filter — leg-scoped P&L rebuild
+# ──────────────────────────────────────────────────────────────────────────
+class TestTagScopedPositionsDf:
+    """The reported bug: filtering /positions by a tag showed the WHOLE
+    symbol's P&L (all 8 ASTS legs, $5,624 realized) when only one leg (the
+    +$905 open Leg 8) carried the tag. The rebuild must report ONLY the tagged
+    leg's trade groups, and never leak a different symbol's leg (BP) whose
+    window merely contains the tag's anchor date.
+    """
+    T = "snaptrade:aaaa"
+
+    def _base_df(self):
+        # positions_summary-shaped frame (only the columns the rebuild reads for
+        # sector/subsector metadata + the empty-frame column contract).
+        return pd.DataFrame([
+            {"tenant_id": self.T, "account": "Schwab Account", "user_id": 9,
+             "symbol": "ASTS", "strategy": "Covered Call", "status": "Closed",
+             "total_pnl": 5624.5, "realized_pnl": 5624.5, "unrealized_pnl": 0.0,
+             "total_return": 6530.15, "total_dividend_income": 0.0,
+             "total_premium_received": 0.0, "num_individual_trades": 40,
+             "num_winners": 12, "num_losers": 5,
+             "sector": "Technology", "subsector": "Communication Equipment"},
+            {"tenant_id": self.T, "account": "Schwab Account", "user_id": 9,
+             "symbol": "BP", "strategy": "Covered Call", "status": "Closed",
+             "total_pnl": -856.45, "realized_pnl": -856.45, "unrealized_pnl": 0.0,
+             "total_return": -856.45, "total_dividend_income": 0.0,
+             "total_premium_received": 0.0, "num_individual_trades": 4,
+             "num_winners": 1, "num_losers": 1,
+             "sector": "Energy", "subsector": "Oil & Gas Integrated"},
+        ])
+
+    def _legs_df(self):
+        return pd.DataFrame([
+            # ASTS tagged open leg (Leg 8) — anchor 2026-08-03 falls here.
+            {"tenant_id": self.T, "symbol": "ASTS",
+             "open_date": date(2026, 8, 3), "last_activity_date": date(2026, 8, 4),
+             "equity_pnl": 1318.0, "closed_options_pnl": 0.0,
+             "open_options_pnl": -412.35, "combined_pnl": 905.65, "status": "Open"},
+            # ASTS older closed leg — NOT tagged, must be excluded.
+            {"tenant_id": self.T, "symbol": "ASTS",
+             "open_date": date(2024, 8, 5), "last_activity_date": date(2024, 9, 19),
+             "equity_pnl": 0.0, "closed_options_pnl": 5288.08,
+             "open_options_pnl": 0.0, "combined_pnl": 5288.08, "status": "Closed"},
+            # BP leg whose window CONTAINS 2026-08-03 — cross-symbol trap.
+            {"tenant_id": self.T, "symbol": "BP",
+             "open_date": date(2026, 7, 1), "last_activity_date": date(2026, 9, 1),
+             "equity_pnl": -856.45, "closed_options_pnl": 0.0,
+             "open_options_pnl": 0.0, "combined_pnl": -856.45, "status": "Closed"},
+        ])
+
+    def _strat_df(self):
+        def g(symbol, strat, status, od, total, real, unreal, win, ntr=1, cd=None):
+            return {"tenant_id": self.T, "account": "Schwab Account", "user_id": 9,
+                    "symbol": symbol, "strategy": strat, "status": status,
+                    "open_date": od, "close_date": cd, "days_in_trade": 1,
+                    "total_pnl": total, "realized_pnl": real, "unrealized_pnl": unreal,
+                    "num_trades": ntr, "premium_received": 0.0, "premium_paid": 0.0,
+                    "is_winner": win}
+        return pd.DataFrame([
+            # ASTS in Leg 8 window (Open) — the two groups that make up +905.65.
+            g("ASTS", "Covered Call", "Open", date(2026, 8, 3), -412.35, 0.0, -412.35, False),
+            g("ASTS", "Covered Call", "Open", date(2026, 8, 3), 1318.0, 0.0, 1318.0, True),
+            # ASTS closed group OUTSIDE the tagged window — excluded.
+            g("ASTS", "Long Call", "Closed", date(2024, 8, 5), 5288.08, 5288.08, 0.0, True, cd=date(2024, 9, 19)),
+            # BP group inside the same calendar window — excluded (wrong symbol).
+            g("BP", "Covered Call", "Closed", date(2026, 8, 3), -856.45, -856.45, 0.0, False, cd=date(2026, 8, 10)),
+        ])
+
+    def _patched(self, monkeypatch):
+        legs, strat = self._legs_df(), self._strat_df()
+
+        def fake_cached_query_df(client, sql, **kw):
+            if "int_position_legs" in sql:
+                return legs.copy()
+            if "int_strategy_classification" in sql:
+                return strat.copy()
+            raise AssertionError(f"unexpected query: {sql[:80]}")
+
+        monkeypatch.setattr(routes, "cached_query_df", fake_cached_query_df)
+
+    def test_only_tagged_leg_pnl(self, monkeypatch):
+        self._patched(monkeypatch)
+        tags = [_tag(self.T, "ASTS", date(2026, 8, 3), "earningsfollower")]
+        out = _tag_scoped_positions_df(
+            None, [self.T], "", tags, "earningsfollower", self._base_df()
+        )
+        assert list(out["symbol"]) == ["ASTS"], "cross-symbol BP leaked into the tag"
+        assert round(out["total_return"].sum(), 2) == 905.65
+        assert round(out["realized_pnl"].sum(), 2) == 0.0
+        assert round(out["unrealized_pnl"].sum(), 2) == 905.65
+        # Open leg → no closed winners/losers, dividends not leg-scoped.
+        assert int(out["num_winners"].sum()) == 0
+        assert int(out["num_losers"].sum()) == 0
+        assert float(out["total_dividend_income"].sum()) == 0.0
+        # Metadata carried from the base mart frame.
+        assert out.iloc[0]["subsector"] == "Communication Equipment"
+
+    def test_unknown_tag_returns_empty(self, monkeypatch):
+        self._patched(monkeypatch)
+        tags = [_tag(self.T, "ASTS", date(2026, 8, 3), "earningsfollower")]
+        out = _tag_scoped_positions_df(
+            None, [self.T], "", tags, "does-not-exist", self._base_df()
+        )
+        assert out.empty
+        # Empty frame keeps the base columns so downstream KPI sums don't KeyError.
+        assert "num_winners" in out.columns and "total_return" in out.columns
 
 
 # ──────────────────────────────────────────────────────────────────────────

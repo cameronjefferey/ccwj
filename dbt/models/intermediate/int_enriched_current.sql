@@ -91,7 +91,16 @@ option_contract_status as (
         account,
         user_id,
         trade_symbol,
-        status
+        status,
+        -- Realized wedge of a PARTIAL close (0 for a fully-open contract).
+        -- Surfaced on the open option row so the Flask Breakdown-by-Type /
+        -- Hero total can add the already-realized portion of a partially
+        -- sold contract to the open remainder's mark-to-market and still
+        -- reconcile with the chart / Strategy Breakdown. See CRWV
+        -- 260814C00074000 (Aug 2026): 25 bought, 10 sold, 15 held →
+        -- realized_pnl +$10,736 sits here while unrealized_pnl carries the
+        -- +$20,465 on the 15 held.
+        realized_pnl
     from {{ ref('int_option_contracts') }}
 ),
 
@@ -304,7 +313,13 @@ select
     -- Sector / subsector from yfinance (Unknown when missing)
     coalesce(sm.sector, 'Unknown')      as sector,
     coalesce(sm.subsector, 'Unknown')   as subsector,
-    sm.long_name                         as company_name
+    sm.long_name                         as company_name,
+
+    -- Realized wedge of a partial option close (0 for equity rows and
+    -- fully-open option contracts). Lets the Flask breakdown fold the
+    -- already-booked realized of a partially-sold OPEN contract in with
+    -- its open-remainder mark-to-market. See option_contract_status CTE.
+    coalesce(oc.realized_pnl, 0)        as option_realized_pnl
 
 from priced p
 left join symbol_meta sm

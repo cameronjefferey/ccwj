@@ -270,11 +270,13 @@ options_classified as (
         oc.days_in_trade,
         oc.net_cash_flow,
         oc.total_pnl,
-        -- Realized vs unrealized for options:
-        --   Closed contracts: all P&L is realized
-        --   Open contracts:   total_pnl is mark-to-market unrealized
-        case when oc.status = 'Closed' then oc.total_pnl else 0 end as realized_pnl,
-        case when oc.status = 'Open'   then oc.total_pnl else 0 end as unrealized_pnl,
+        -- Realized vs unrealized for options — driven by the contract's own
+        -- realized_pnl so a PARTIAL close splits correctly (closed portion
+        -- realized, open remainder unrealized). For a fully-closed contract
+        -- realized_pnl == total_pnl (unrealized 0); for a fully-open one
+        -- realized_pnl == 0 (all mark-to-market unrealized).
+        coalesce(oc.realized_pnl, 0)                          as realized_pnl,
+        oc.total_pnl - coalesce(oc.realized_pnl, 0)           as unrealized_pnl,
         oc.num_trades,
         oc.close_type,
         oc.premium_received,

@@ -1174,14 +1174,16 @@
 {% if trades_this_week and trades_this_week.has_any %}
 {% set tw = trades_this_week %}
 <style>
+  .tw-tag-cell { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+  .tw-tag-chips { display:flex; flex-wrap:wrap; gap:3px; }
   .tw-tag-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 7px;
-      margin:1px 2px 0 0; font-size:.68rem; font-weight:600; border-radius:999px;
+      font-size:.68rem; font-weight:600; border-radius:999px;
       background:rgba(99,102,241,.12); color:#4f46e5; }
   .tw-tag-x { border:none; background:none; color:#4f46e5; cursor:pointer;
       font-size:.8rem; line-height:1; padding:0; }
   .tw-tag-x:hover { color:#dc2626; }
-  .tw-tag-add { display:inline-flex; align-items:center; gap:4px; margin-top:3px; }
-  .tw-tag-input { width:118px; height:26px; font-size:.72rem; padding:2px 6px; }
+  .tw-tag-add { display:inline-flex; align-items:center; gap:4px; }
+  .tw-tag-input { width:112px; height:26px; font-size:.72rem; padding:2px 6px; }
   .tw-tag-btn { height:26px; padding:0 8px; font-size:.72rem; line-height:1; }
 </style>
 <datalist id="userTags">
@@ -1223,6 +1225,7 @@
                     <th>Opened</th>
                     <th class="left">Status</th>
                     <th>Result</th>
+                    <th class="left">Tags</th>
                 </tr>
             </thead>
             <tbody>
@@ -1233,38 +1236,7 @@
                         <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
-                    <td class="left">
-                        {{ r.strategy }}
-                        {% if r.tags %}
-                        <div class="row-meta">
-                            {% for tg in r.tags %}
-                            <span class="tw-tag-chip">{{ tg }}
-                                {% if r.open_date %}
-                                <form method="POST" action="{{ url_for('remove_position_tag', symbol=r.symbol) }}" class="d-inline m-0">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="next" value="{{ request.full_path }}">
-                                    <input type="hidden" name="tenant_id" value="{{ r.tenant_id }}">
-                                    <input type="hidden" name="leg_open_date" value="{{ r.open_date.strftime('%Y-%m-%d') }}">
-                                    <input type="hidden" name="tag" value="{{ tg }}">
-                                    <button type="submit" class="tw-tag-x" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button>
-                                </form>
-                                {% endif %}
-                            </span>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                        {% if r.open_date %}
-                        <form method="POST" action="{{ url_for('add_position_tag', symbol=r.symbol) }}" class="tw-tag-add">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="next" value="{{ request.full_path }}">
-                            <input type="hidden" name="tenant_id" value="{{ r.tenant_id }}">
-                            <input type="hidden" name="leg_open_date" value="{{ r.open_date.strftime('%Y-%m-%d') }}">
-                            <input type="text" name="tag" list="userTags" maxlength="40" placeholder="+ tag"
-                                   class="form-control form-control-sm tw-tag-input" autocomplete="off">
-                            <button type="submit" class="btn btn-outline-primary btn-sm tw-tag-btn">Add</button>
-                        </form>
-                        {% endif %}
-                    </td>
+                    <td class="left">{{ r.strategy }}</td>
                     <td>{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
                     <td class="left">
                         {% if r.is_closed %}
@@ -1277,6 +1249,39 @@
                         {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>
                         {% else %}{{ "+" if r.result_pnl > 0 else "-" }}${{ "{:,.0f}".format(r.result_pnl|abs) }}{% endif %}
                         <div class="row-meta">{{ r.result_kind }}</div>
+                    </td>
+                    <td class="left">
+                        <div class="tw-tag-cell">
+                            {% if r.tags %}
+                            <div class="tw-tag-chips">
+                                {% for tg in r.tags %}
+                                <span class="tw-tag-chip">{{ tg }}
+                                    {% if r.open_date %}
+                                    <form method="POST" action="{{ url_for('remove_position_tag', symbol=r.symbol) }}" class="d-inline m-0">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                                        <input type="hidden" name="tenant_id" value="{{ r.tenant_id }}">
+                                        <input type="hidden" name="leg_open_date" value="{{ r.open_date.strftime('%Y-%m-%d') }}">
+                                        <input type="hidden" name="tag" value="{{ tg }}">
+                                        <button type="submit" class="tw-tag-x" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button>
+                                    </form>
+                                    {% endif %}
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if r.open_date %}
+                            <form method="POST" action="{{ url_for('add_position_tag', symbol=r.symbol) }}" class="tw-tag-add">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <input type="hidden" name="tenant_id" value="{{ r.tenant_id }}">
+                                <input type="hidden" name="leg_open_date" value="{{ r.open_date.strftime('%Y-%m-%d') }}">
+                                <input type="text" name="tag" list="userTags" maxlength="40" placeholder="+ tag"
+                                       class="form-control form-control-sm tw-tag-input" autocomplete="off">
+                                <button type="submit" class="btn btn-outline-primary btn-sm tw-tag-btn">Add</button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
