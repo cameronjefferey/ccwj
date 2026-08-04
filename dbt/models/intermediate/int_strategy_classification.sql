@@ -483,8 +483,24 @@ equity_classified as (
             -- conventional equity (covers closed crypto with no current
             -- snapshot). An equity the broker calls a stock/ETF is never
             -- Crypto even if its ticker collides. See broker_security_signal.
+            --
+            -- Closed-collision guard (2026-08-04): the whitelist-only fallback
+            -- also fires for a whitelisted-ticker equity ONCE IT CLOSES — a
+            -- closed session has no stg_current row, so broker_says_equity
+            -- flips to 0 and a genuine equity (Solaris Energy) gets mislabeled
+            -- Crypto. But crypto has NO listed options, so a lot with any
+            -- overlapping option contract on the same (tenant, account) is
+            -- definitionally the equity, not the token. Yield the whitelist
+            -- fallback to the option-overlap signal (num_option_contracts > 0)
+            -- so the price-tracker fold below can claim it. Broker-EXPLICIT
+            -- crypto (broker_says_crypto = 1) stays authoritative regardless.
+            -- Real case: SEI, user 9, 1 tracking share + long call, closed
+            -- 2026-07-30 → read as 'Crypto' instead of folding into Long Call
+            -- (regression test tracker_lot_folds_into_option_strategy).
             when coalesce(bss.broker_says_crypto, 0) = 1
-                 or (cs.symbol is not null and coalesce(bss.broker_says_equity, 0) = 0)
+                 or (cs.symbol is not null
+                     and coalesce(bss.broker_says_equity, 0) = 0
+                     and coalesce(eos.num_option_contracts, 0) = 0)
                 then 'Crypto'
             when efa.session_id is not null and eos.num_sold_calls > 0
                 then 'Wheel'
