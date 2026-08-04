@@ -6452,6 +6452,18 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,OKE,"ONEOK, Inc.",46.0,87.92,,4044.32
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,MSFT  260814C00485000,MSFT  260814C00485000,1.0,12.55,,-1255.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,MSFT  260814C00500000,MSFT  260814C00500000,1.0,5.65,,565.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,AMZN  260814C00285000,AMZN  260814C00285000,3.0,7.05,,-2115.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,AMZN  260814C00295000,AMZN  260814C00295000,3.0,3.05,,915.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,AXON,"Axon Enterprise, Inc.",7.0,571.44,,4000.08
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,AXON,"Axon Enterprise, Inc.",8.0,596.55,,-4772.4
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,CVS,CVS Health Corporation,40.0,104.24,,-4169.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,SHOP,Shopify Inc.,36.0,118.611111,,4269.999996
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,PSX,Phillips 66,20.0,204.44,,-4088.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,SUN,Sunoco L.P.,56.0,75.04,,4202.24
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,TPG,TPG Inc.,100.0,48.06,,-4806.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy to Open,ASTS  260821C00068000,ASTS  260821C00068000,4.0,7.35,,-2940.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell to Open,ASTS  260821C00075000,ASTS  260821C00075000,4.0,4.45,,1780.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,SYRE,"Spyre Therapeutics, Inc.",41.0,98.14,,4023.74
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RGLD,Royal Gold Inc.,21.0,205.578571,,4317.149991
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,BALL,Ball Corp.,65.0,61.983846,,-4028.94999
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CGNX,Cognex Corporation,63.0,70.022381,,4411.410003
@@ -6469,6 +6481,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,AMD,"Advanced Micro Devices, Inc.",8.0,485.16,,3881.28
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,SYM,Symbotic Inc. Class A,96.0,44.995,,4319.52
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,STRL,"Sterling Infrastructure, Inc.",7.0,599.34,,4195.38
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,AMZN  260814C00285000,AMZN  260814C00285000,3.0,7.05,,-2115.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,AMZN  260814C00295000,AMZN  260814C00295000,3.0,3.05,,915.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,AXON,"Axon Enterprise, Inc.",7.0,571.44,,4000.08
