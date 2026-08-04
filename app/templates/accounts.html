@@ -82,10 +82,11 @@
 </form>
 {% endif %}
 
-{# ── Time frame (whole-page filter) ───────────────────────────────────
+{# ── Time frame ────────────────────────────────────────────────────────
    Buttons are <a> links (bookmarkable + no-JS fallback) but JS intercepts the
    click: it slices the charts, recomputes the KPI cards, and swaps ONLY the
-   four breakdown tables via /accounts/breakdown — no full page reload. ── #}
+   active-position breakdown rows via /accounts/breakdown — no full page
+   reload. Breakdown dollar figures remain coherent lifetime totals. ── #}
 {% if kpis %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <span class="text-muted small fw-semibold me-1">Time frame</span>
@@ -100,7 +101,8 @@
           role="status" aria-hidden="true" style="display:none;"></span>
     <span id="rangeHelp" class="text-muted small"
           style="{{ '' if (selected_range or 'ALL') != 'ALL' else 'display:none;' }}">
-        Realized, dividends, the charts and the breakdown tables reflect this window.
+        Realized, dividends and the charts reflect this window. Breakdown tables
+        show lifetime results for positions active in the window.
         Account value, cash, invested &amp; current unrealized are always &ldquo;as of now.&rdquo;
     </span>
 </div>
@@ -289,11 +291,10 @@
 
 {# ── Detailed breakdown tables (Stock | Options | Dividend | Net | % |
       Annualized) — the per-position / strategy / sector drill-down behind
-      the Daily Review account scorecard. Windowed to the selected time frame.
-      Swapped in place by the time-frame buttons via /accounts/breakdown so a
-      range change doesn't reload the whole page. The macros below stay in the
-      page too so the lifetime Tag Breakdown (which does NOT window) can use
-      them. ──────────────────────────────────────────────────────────────── #}
+      the Daily Review account scorecard. The time frame scopes active rows;
+      amounts are lifetime. Swapped in place by the time-frame buttons via
+      /accounts/breakdown so a range change doesn't reload the whole page. The
+      macros below stay in the page too so Tag Breakdown can use them. ───── #}
 {% macro money_cell(val) %}
 <td class="text-end {% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}" data-val="{{ val }}">
     {% if val == 0 %}<span class="text-muted">$0</span>
@@ -542,8 +543,9 @@
     }
 
     /* ── Range switch (no full page reload) ────────────────────────────
-       Charts + cards update instantly; only the four breakdown tables need
-       fresh windowed data, fetched as an HTML fragment and swapped in. */
+       Charts + cards update instantly; the four breakdown tables fetch the
+       positions active in the same chart-anchored window. Their amounts stay
+       lifetime totals so Stock/Option/Dividend/Capital share one grain. */
     var _fragAbort = null;
     function fetchBreakdown(key) {
         var host = document.getElementById('breakdownTables');
@@ -553,9 +555,12 @@
         host.style.opacity = '0.45';
         if (_fragAbort) { try { _fragAbort.abort(); } catch (e) {} }
         _fragAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var qs = 'range=' + encodeURIComponent(key) +
-                 (SELECTED_ACCOUNT ? '&account=' + encodeURIComponent(SELECTED_ACCOUNT) : '');
-        fetch('{{ url_for("accounts_breakdown_fragment") }}?' + qs, {
+        var pageQs = 'range=' + encodeURIComponent(key) +
+                     (SELECTED_ACCOUNT ? '&account=' + encodeURIComponent(SELECTED_ACCOUNT) : '');
+        var anchor = (summaryData.dates && summaryData.dates.length)
+            ? summaryData.dates[summaryData.dates.length - 1] : '';
+        var fragmentQs = pageQs + (anchor ? '&anchor=' + encodeURIComponent(anchor) : '');
+        fetch('{{ url_for("accounts_breakdown_fragment") }}?' + fragmentQs, {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             signal: _fragAbort ? _fragAbort.signal : undefined
         })
@@ -564,7 +569,7 @@
         .catch(function (err) {
             if (err && err.name === 'AbortError') return;
             /* Fall back to a full navigation so the tables are never stale. */
-            window.location = '{{ url_for("accounts") }}?' + qs;
+            window.location = '{{ url_for("accounts") }}?' + pageQs;
         })
         .finally(function () {
             if (spinner) spinner.style.display = 'none';

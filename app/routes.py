@@ -6611,7 +6611,7 @@ ACCOUNT_BALANCES_QUERY = """
 """
 
 STRATEGY_CLASSIFICATION_QUERY = """
-    SELECT account, symbol, strategy, status, open_date, close_date,
+    SELECT tenant_id, account, symbol, strategy, status, open_date, close_date,
            total_pnl, num_trades
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE 1=1 {tenant_filter}
@@ -7918,12 +7918,13 @@ ACCOUNTS_VALID_RANGES = {"1M", "3M", "6M", "YTD", "1Y", "ALL"}
 
 
 def _build_account_breakdowns(attribution_df, strat_class_df, range_start):
-    """Build the four windowed breakdown tables (position / strategy / sector /
-    subsector) + totals from the attribution frame. Shared by the /accounts
-    page and the /accounts/breakdown fragment endpoint (the latter powers the
-    instant client-side time-frame switch — see accounts.html). ``range_start``
-    windows _build_position_breakdown to open + closed-in-window positions;
-    None = lifetime."""
+    """Build breakdowns for positions active in the selected window.
+
+    The attribution frame contains coherent lifetime P&L, dividend, and capital
+    totals. ``range_start`` controls only which symbols are included (currently
+    open or closed in-window); it must not change the financial fields to the
+    Daily Review's mixed "open + recently closed groups" lens.
+    """
     from app.weekly_review import (
         _build_position_breakdown,
         _aggregate_breakdown_by,
@@ -7991,6 +7992,27 @@ def _accounts_range_start(range_key, today=None):
     return (today - timedelta(days=days)) if days else None
 
 
+def _accounts_attribution_query(tenant_filter):
+    """Build the accounts breakdown query with coherent lifetime amounts.
+
+    ``POSITION_ATTRIBUTION_QUERY`` was designed for Daily Review: with a real
+    ``week_start`` it includes full-to-date P&L for every open trade group plus
+    full P&L for groups closed after the cutoff, while dividends and capital
+    remain lifetime. That mixed grain is not period P&L. The accounts page uses
+    the selected range only to choose active symbols, so all displayed dollar
+    fields must come from the query's lifetime mode.
+    """
+    from app.weekly_review import (
+        POSITION_ATTRIBUTION_QUERY,
+        ATTRIBUTION_LIFETIME_SENTINEL,
+    )
+
+    return POSITION_ATTRIBUTION_QUERY.format(
+        tenant_filter=tenant_filter,
+        week_start=ATTRIBUTION_LIFETIME_SENTINEL,
+    )
+
+
 @app.route("/accounts")
 @login_required
 def accounts():
@@ -8000,31 +8022,18 @@ def accounts():
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
 
-    # Time frame filter (applies to the whole page). The P&L-earned KPI cards
-    # and the four breakdown tables are windowed server-side to this range;
-    # the point-in-time cards (Account Value / Cash / Invested / current
-    # Unrealized) always reflect "now". ALL = lifetime (default).
+    # Time frame filter. P&L-earned KPI cards are period deltas; breakdown
+    # tables use the range to choose active positions but show coherent
+    # lifetime financial totals. Point-in-time cards (Account Value / Cash /
+    # Invested / current Unrealized) always reflect "now". ALL is the default.
     selected_range = (request.args.get("range", "ALL") or "ALL").upper()
     if selected_range not in ACCOUNTS_VALID_RANGES:
         selected_range = "ALL"
     range_start = _accounts_range_start(selected_range)
-    # Window the attribution breakdowns by feeding the range cutoff as the
-    # attribution ``week_start`` (open positions + groups closed on/after the
-    # cutoff). ALL passes the far-past sentinel = lifetime.
-    attribution_week_start = (
-        range_start.isoformat() if range_start else None  # set below
-    )
-
     # Attribution query lives in app.weekly_review. Deferred import:
     # weekly_review imports from app.routes at module load, so a top-level
     # import here would be circular. The breakdown builders are invoked via
     # _build_account_breakdowns (shared with the fragment endpoint).
-    from app.weekly_review import (
-        POSITION_ATTRIBUTION_QUERY,
-        ATTRIBUTION_LIFETIME_SENTINEL,
-    )
-    if attribution_week_start is None:
-        attribution_week_start = ATTRIBUTION_LIFETIME_SENTINEL
 
     try:
         dfs = _bq_parallel(client, {
@@ -8033,11 +8042,9 @@ def accounts():
             "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
             "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
-            # Windowed by the selected time frame (ALL = far-past sentinel so
-            # every closed group counts; a range cutoff scopes each
-            # per-asset-class P&L column to open + closed-in-window groups).
-            "attribution": POSITION_ATTRIBUTION_QUERY.format(
-                tenant_filter=tenant_filter, week_start=attribution_week_start),
+            # Lifetime financial amounts; the selected range is applied only
+            # to symbol inclusion after the chart establishes its last date.
+            "attribution": _accounts_attribution_query(tenant_filter),
             # Per-leg rollup for the Tag Breakdown card (leg grain).
             "legs": ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter),
         })
@@ -8213,6 +8220,7 @@ def accounts():
     # is summed straight from groups CLOSED within the window.
     # ------------------------------------------------------------------
     period_kpis = None
+    breakdown_range_start = range_start
     if range_start is not None and summary_chart.get("dates"):
         dts = summary_chart["dates"]
         # Anchor the window on the LAST chart date (not today) so the card
@@ -8222,6 +8230,10 @@ def accounts():
         card_cutoff = _accounts_range_start(
             selected_range, date.fromisoformat(dts[-1])
         ) or range_start
+        # Use the same chart-date anchor for active-position inclusion. Using
+        # date.today() here made the cards/charts and tables select different
+        # windows whenever the mart lagged or the market was closed.
+        breakdown_range_start = card_cutoff
         cutoff_iso = card_cutoff.isoformat()
         start_idx = next((i for i, d in enumerate(dts) if d >= cutoff_iso),
                          max(0, len(dts) - 1))
@@ -8268,9 +8280,9 @@ def accounts():
     # Detailed breakdown tables (the per-symbol / strategy / sector /
     # subsector "CC Trading Summary" the Daily Review account scorecard
     # drills into). Same Stock | Options | Dividend | Net | % | Annualized
-    # shape, windowed to the selected time frame (range_start; ALL = None =
-    # the SENTINEL passed to the SQL above, so every closed group counts).
-    # All four pull from POSITION_ATTRIBUTION_QUERY. On a time-frame switch
+    # shape. The selected range controls which positions are listed; financial
+    # amounts are coherent lifetime totals for those positions. All four pull
+    # from POSITION_ATTRIBUTION_QUERY's lifetime mode. On a time-frame switch
     # the browser re-fetches these four tables from /accounts/breakdown
     # (accounts_breakdown_fragment) via the same _build_account_breakdowns
     # helper — no full page reload.
@@ -8279,8 +8291,8 @@ def accounts():
     # Tag Breakdown (leg-grained): match the user's Postgres leg tags to the
     # scoped legs by date-containment. Scoped to in-scope tenant_ids so a
     # narrowed account view only rolls up that account's tagged legs.
-    # (Lifetime — not windowed by the time filter; it stays fixed while the
-    # four windowed breakdown tables swap via the fragment endpoint.)
+    # (Lifetime — not narrowed to active positions by the time filter; it stays
+    # fixed while the four active-position breakdowns swap via the fragment.)
     try:
         from app.models import get_all_leg_tags_for_user as _get_all_leg_tags_for_user
         _tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
@@ -8288,7 +8300,9 @@ def accounts():
     except Exception as exc:
         app.logger.warning("Account tag breakdown failed: %s", exc)
 
-    breakdowns = _build_account_breakdowns(attribution_df, strat_class_df, range_start)
+    breakdowns = _build_account_breakdowns(
+        attribution_df, strat_class_df, breakdown_range_start
+    )
 
     # Closed-group (close_date, total_pnl) pairs so the browser can recompute
     # "Realized (period)" instantly on a time-frame switch without a round trip
@@ -8324,7 +8338,7 @@ def accounts():
 
 
 # ----------------------------------------------------------------------
-# /accounts/breakdown — HTML fragment for the 4 windowed breakdown tables.
+# /accounts/breakdown — HTML fragment for the 4 active-position breakdowns.
 # Powers the INSTANT client-side time-frame switch on /accounts: the buttons
 # slice the charts + recompute the KPI cards in the browser (no round trip)
 # and fetch just this fragment to refresh the tables, instead of reloading the
@@ -8342,23 +8356,18 @@ def accounts_breakdown_fragment():
     selected_range = (request.args.get("range", "ALL") or "ALL").upper()
     if selected_range not in ACCOUNTS_VALID_RANGES:
         selected_range = "ALL"
-    range_start = _accounts_range_start(selected_range)
+    anchor = _parse_date(request.args.get("anchor", ""))
+    if anchor is None or anchor > date.today():
+        anchor = date.today()
+    range_start = _accounts_range_start(selected_range, anchor)
 
-    from app.weekly_review import (
-        POSITION_ATTRIBUTION_QUERY,
-        ATTRIBUTION_LIFETIME_SENTINEL,
-    )
-    attribution_week_start = (
-        range_start.isoformat() if range_start else ATTRIBUTION_LIFETIME_SENTINEL
-    )
     try:
         dfs = _bq_parallel(client, {
-            "attribution": POSITION_ATTRIBUTION_QUERY.format(
-                tenant_filter=tenant_filter, week_start=attribution_week_start),
+            "attribution": _accounts_attribution_query(tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
         })
-        attribution_df = dfs["attribution"]
-        strat_class_df = dfs["strat_class"]
+        attribution_df = _filter_df_by_tenant_ids(dfs["attribution"], tenant_ids)
+        strat_class_df = _filter_df_by_tenant_ids(dfs["strat_class"], tenant_ids)
     except Exception as exc:
         app.logger.warning("Account breakdown fragment query failed: %s", exc)
         # Empty frames render an empty (but valid) fragment.
