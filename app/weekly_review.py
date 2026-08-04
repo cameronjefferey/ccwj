@@ -3401,6 +3401,8 @@ def weekly_review():
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
                              "closed_count": 0, "realized_pnl": 0.0,
                              "unrealized_pnl": 0.0, "has_any": False},
+        # Distinct user tags for the "Trades this week" tag autocomplete.
+        "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
         "benchmark_snapshot": [],
         "community_profile_visibility": "private",
@@ -3831,10 +3833,18 @@ def weekly_review():
             # Attached to each (tenant_id, symbol) row by date-containment
             # against the legs active this week (see _build_trades_this_week).
             try:
-                from app.models import get_all_leg_tags_for_user as _get_all_leg_tags_for_user
+                from app.models import (
+                    get_all_leg_tags_for_user as _get_all_leg_tags_for_user,
+                    get_distinct_tags_for_user as _get_distinct_tags_for_user,
+                )
                 _wk_tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
+                # Distinct tags power the "+ tag" autocomplete datalist so the
+                # user reuses existing labels (e.g. earningsfollower) instead of
+                # coining near-duplicates that wouldn't roll up together.
+                context["all_user_tags"] = _get_distinct_tags_for_user(current_user.id)
             except Exception:
                 _wk_tag_rows = []
+                context["all_user_tags"] = []
             context["trades_this_week"] = _build_trades_this_week(
                 wt_df, this_week, week_end, label_map=label_map,
                 tag_rows=_wk_tag_rows,
