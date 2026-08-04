@@ -5554,6 +5554,8 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/03/2026,Sell
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/03/2026,Sell,DXCM,"DexCom, Inc.",300.0,78.0,,23400.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/03/2026,Sell,DXCM,"DexCom, Inc.",300.0,76.0,,22800.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/03/2026,Sell,DXCM,"DexCom, Inc.",300.0,80.0,,24000.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Buy to Close,BE    260807C00235000,BE    260807C00235000,2.0,12.46,,-2492.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Sell to Open,BE    260814C00250000,BE    260814C00250000,2.0,14.36,,2872.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Sell to Open,IYW   260821C00260000,IYW   260821C00260000,20.0,2.15,,4300.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Buy to Close,IYW   260821C00250000,IYW   260821C00250000,20.0,6.45,,-12900.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Sell to Open,AVGO  260805C00412500,AVGO  260805C00412500,1.0,4.82,,482.0
@@ -6472,6 +6474,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy,WTS,Watts Water Technologies Inc.,11.0,349.77,,-3847.47
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell,AMD,"Advanced Micro Devices, Inc.",8.0,485.16,,3881.28
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy,WDC,Western Digital Corporation,7.0,517.52,,-3622.64
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,AIZ,Assurant Inc.,15.0,281.88,,-4228.2
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,WTS,Watts Water Technologies Inc.,11.0,357.57,,3933.27
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,CG,The Carlyle Group Inc.,89.0,50.267528,,-4473.809992
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JHX,James Hardie Industries plc,156.0,28.09,,4382.04
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,ONON,On Holding AG,113.0,37.86,,-4278.18
