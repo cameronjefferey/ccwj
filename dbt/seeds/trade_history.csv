@@ -6615,6 +6615,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,BALL,Ball Corp.,65.0,63.645846,,4136.97999
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,MCHP,Microchip Technology Incorporated,56.0,79.08,,4428.48
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,ONON,On Holding AG,113.0,37.86,,-4278.18
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,CG,The Carlyle Group Inc.,89.0,50.267528,,-4473.809992
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JHX,James Hardie Industries plc,156.0,28.09,,4382.04
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Close,ARM   260821C00277500,ARM   260821C00277500,1.0,19.95,,1995.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Close,ARM   260821C00295000,ARM   260821C00295000,1.0,13.95,,-1395.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,NU,Nu Holdings Ltd.,295.0,14.5,,4277.5
@@ -6651,7 +6653,5 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RDW,Redwire Corporation,447.0,10.49,,4689.03
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,AIZ,Assurant Inc.,15.0,281.88,,-4228.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,WTS,Watts Water Technologies Inc.,11.0,357.57,,3933.27
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,CG,The Carlyle Group Inc.,89.0,50.267528,,-4473.809992
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JHX,James Hardie Industries plc,156.0,28.09,,4382.04
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell to Close,ASTS  260821C00068000,ASTS  260821C00068000,4.0,8.15,,3260.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy to Close,ASTS  260821C00075000,ASTS  260821C00075000,4.0,5.5,,-2200.0
