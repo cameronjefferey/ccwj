@@ -6577,6 +6577,11 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy,W,W BUY PARTIAL_FILL at 88.14,13.0,88.14,,-1145.82
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,MSFT  260814C00500000,MSFT260814C00500000 SELL_SHORT FILL at 5.65,1.0,5.65,,5.65
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,MSFT  260814C00485000,MSFT260814C00485000 BUY FILL at 12.55,1.0,12.55,,-12.55
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,EMR,Emerson Electric Co.,27.0,153.83,,4153.41
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Open,PLTR  260821C00165000,PLTR  260821C00165000,6.0,8.4,,-5040.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Open,PLTR  260821C00170000,PLTR  260821C00170000,6.0,6.05,,3630.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,WTRG,Essential Utilities Inc.,102.0,39.36,,4014.72
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,BP,BP p.l.c. Sponsored ADR,90.0,42.62,,3835.8
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RDW,Redwire Corporation,447.0,10.49,,4689.03
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,AIZ,Assurant Inc.,15.0,281.88,,-4228.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,WTS,Watts Water Technologies Inc.,11.0,357.57,,3933.27
@@ -6602,7 +6607,6 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RGLD,Royal Gold Inc.,21.0,205.578571,,4317.149991
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,BALL,Ball Corp.,65.0,61.983846,,-4028.94999
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CGNX,Cognex Corporation,63.0,70.022381,,4411.410003
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,EMR,Emerson Electric Co.,27.0,153.83,,4153.41
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,W,Wayfair Inc.,48.0,110.836666,,5320.159968
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CNA,CNA Financial Corporation,78.0,52.38,,4085.64
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,VNOM,Viper Energy Inc. Class A Common Stock,97.0,42.634433,,-4135.540001
