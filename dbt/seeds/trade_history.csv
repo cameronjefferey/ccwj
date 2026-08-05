@@ -3969,6 +3969,18 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Sell 
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,ASTS,AST SPACEMOBILE INC CLASS A,200.0,63.72,,-12744.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,BP,BP P L C FSPONSORED ADR 1 ADR REPS 6 ORD SHS,500.0,44.55,,-22275.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/04/2026,Buy,RH,RH,30.0,189.695,,-5690.85
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL AST SPACEMOBILE INC$102 EXP 06/05/26,3.0,0.76,2.0,226.0
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL INTUITIVE MACHS INC$32 EXP 06/05/26,12.0,0.25,7.99,292.01
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell,,CALL D-WAVE QUANTUM INC $26 EXP 06/05/26,8.0,0.18,5.33,138.67
@@ -4318,6 +4330,11 @@ Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,06/05/2026,Sell 
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/04/2026,Sell to Close,CRWV  260814C00074000,CALL COREWEAVE INC $74 EXP 08/14/26,10.0,18.25,7.04,18242.96
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/03/2026,Sell to Open,DOCN  260807C00130000,CALL DIGITALOCEAN HLDGS $130 EXP 08/07/26,2.0,8.99,1.38,1796.62
 Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/03/2026,Expired,BE    260731C00260000,CALL BLOOM ENERGY CORP $260 EXP 07/31/26,1.0,,,0.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/05/2026,Sell,DOCN,DigitalOcean Holdings Inc.,200.0,122.93,,24586.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/05/2026,Buy to Close,DOCN  260807C00130000,DOCN  260807C00130000,2.0,3.6,,-720.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/05/2026,Sell to Close,CRWV  260814C00074000,CRWV  260814C00074000,15.0,18.15,,27225.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/05/2026,Sell to Open,AAOI  260807C00140000,AAOI  260807C00140000,2.0,8.25,,1650.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/05/2026,Buy,AAOI,"Applied Optoelectronics, Inc.",225.0,131.960622,,-29691.13995
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/06/2026,Cash Dividend,JEPI,JPMORGAN EQUITY PREMIUM INCOME ETF,,,,841.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Sell to Open,BE    260410C00145000,CALL BLOOM ENERGY CORP $145 EXP 04/10/26,10.0,3.35,4.15,3345.85
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,04/02/2026,Buy to Close,BE    260402C00140000,CALL BLOOM ENERGY CORP $140 EXP 04/02/26,10.0,0.04,0.12,-40.12
@@ -5565,18 +5582,10 @@ Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/03/2026,Sell
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Buy,AVGO,Broadcom Inc.,200.0,407.78,,-81556.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Sell,AVGO,Broadcom Inc.,100.0,387.5,,38750.0
 Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/04/2026,Sell,AVGO,Broadcom Inc.,100.0,390.0,,39000.0
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/05/2026,Buy to Close,AVGO  260805C00407500,AVGO  260805C00407500,1.0,16.93,,-1693.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/05/2026,Sell to Open,AVGO  260814C00420000,AVGO  260814C00420000,1.0,16.83,,1683.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/05/2026,Buy to Close,AVGO  260805C00412500,AVGO  260805C00412500,1.0,12.3,,-1230.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/05/2026,Sell to Open,AVGO  260814C00425000,AVGO  260814C00425000,1.0,14.35,,1435.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Sell to Close,PENG  260821C00085000,PENG  260821C00085000,5.0,16.3,,8150.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/09/2026,Buy to Close,PENG  260821C00090000,PENG  260821C00090000,5.0,15.6,,-7800.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,07/10/2026,Buy to Close,DAL   260710P00087000,DAL   260710P00087000,12.0,0.11,,-132.0
@@ -6578,10 +6587,30 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Sell to Open,MSFT  260814C00500000,MSFT260814C00500000 SELL_SHORT FILL at 5.65,1.0,5.65,,5.65
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,Buy to Open,MSFT  260814C00485000,MSFT260814C00485000 BUY FILL at 12.55,1.0,12.55,,-12.55
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,EMR,Emerson Electric Co.,27.0,153.83,,4153.41
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RGLD,Royal Gold Inc.,21.0,205.578571,,4317.149991
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,BALL,Ball Corp.,65.0,61.983846,,-4028.94999
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CGNX,Cognex Corporation,63.0,70.022381,,4411.410003
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,W,Wayfair Inc.,48.0,110.836666,,5320.159968
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CNA,CNA Financial Corporation,78.0,52.38,,4085.64
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,VNOM,Viper Energy Inc. Class A Common Stock,97.0,42.634433,,-4135.540001
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JAZZ,Jazz Pharmaceuticals plc,16.0,248.28,,3972.48
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,OKE,"ONEOK, Inc.",46.0,85.238261,,-3920.960006
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy,ALB,Albemarle Corporation,35.0,122.27,,-4279.45
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Open,PLTR  260821C00165000,PLTR  260821C00165000,6.0,8.4,,-5040.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Open,PLTR  260821C00170000,PLTR  260821C00170000,6.0,6.05,,3630.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,AIZ,Assurant Inc.,15.0,293.86,,4407.9
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,TPG,TPG Inc.,100.0,48.9457,,4894.57
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,CVS,CVS Health Corporation,40.0,95.29,,3811.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy,SHOP,Shopify Inc.,36.0,148.676111,,-5352.339996
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,PSX,Phillips 66,20.0,208.916,,4178.32
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy,SUN,Sunoco L.P.,56.0,75.41,,-4222.96
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,BKNG,Booking Holdings Inc.,20.0,208.773,,4175.46
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,CPAY,"Corpay, Inc.",10.0,400.3,,4003.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,WTRG,Essential Utilities Inc.,102.0,39.36,,4014.72
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,BP,BP p.l.c. Sponsored ADR,90.0,42.62,,3835.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,EQH,"Equitable Holdings, Inc.",84.0,49.06,,4121.04
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,NWS,News Corporation Class B Common Stock,128.0,32.44578,,4153.05984
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell,LLY,Eli Lilly and Company,3.0,1193.803333,,3581.409999
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RDW,Redwire Corporation,447.0,10.49,,4689.03
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,AIZ,Assurant Inc.,15.0,281.88,,-4228.2
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,WTS,Watts Water Technologies Inc.,11.0,357.57,,3933.27
@@ -6604,11 +6633,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy to Open,ASTS  260821C00068000,ASTS  260821C00068000,4.0,7.35,,-2940.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell to Open,ASTS  260821C00075000,ASTS  260821C00075000,4.0,4.45,,1780.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,SYRE,"Spyre Therapeutics, Inc.",41.0,98.14,,4023.74
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,RGLD,Royal Gold Inc.,21.0,205.578571,,4317.149991
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,BALL,Ball Corp.,65.0,61.983846,,-4028.94999
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CGNX,Cognex Corporation,63.0,70.022381,,4411.410003
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,W,Wayfair Inc.,48.0,110.836666,,5320.159968
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,CNA,CNA Financial Corporation,78.0,52.38,,4085.64
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,VNOM,Viper Energy Inc. Class A Common Stock,97.0,42.634433,,-4135.540001
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JAZZ,Jazz Pharmaceuticals plc,16.0,248.28,,3972.48
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,OKE,"ONEOK, Inc.",46.0,85.238261,,-3920.960006
