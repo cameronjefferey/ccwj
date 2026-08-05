@@ -469,6 +469,41 @@ def _canonicalize_seed_cell(value):
     return out
 
 
+# Cross-source Price precision. SnapTrade's two feeds report a fill's Price at
+# DIFFERENT precision: the ``recent_orders`` feed derives it at full float
+# precision (e.g. 131.960622, 0.486667, 351.43513) while ``activities`` carries
+# the broker's already-rounded 4-decimal Price (131.9606, 0.4867, 351.4351).
+# The 6-decimal canonical form (``_canonicalize_seed_cell``) preserves that
+# 5th/6th-digit drift, so the same fill keys DIFFERENTLY across sources and the
+# cross-source dedup keeps both → doubled shares / phantom cost basis (AAOI,
+# Aug 2026: 225 shares reported twice → +$29.7k phantom equity, -$29.8k phantom
+# unrealized). Rounding the cross-source key's Price to 4dp absorbs the orders
+# feed's extra precision (it always rounds to the activities 4dp value) while
+# staying fine enough to keep genuinely distinct fills — including sub-penny
+# option prices like 0.4867 — apart. This is the exact parallel of why Amount
+# is omitted from the cross-source key. (Known boundary: a broker whose
+# activities feed reported Price at <4dp would need this coarsened further.)
+_CROSS_SOURCE_PRICE_DP = 4
+
+
+def _canonicalize_cross_source_price(value):
+    """Canonicalize a Price cell for the cross-source dedup key: same as
+    :func:`_canonicalize_seed_cell` but rounded to 4dp so orders-vs-activities
+    float-precision drift on Price collapses to one key. Non-numeric cells fall
+    through to the standard canonicalizer."""
+    base = _canonicalize_seed_cell(value)
+    if base == "":
+        return ""
+    try:
+        f = round(float(base), _CROSS_SOURCE_PRICE_DP)
+    except (TypeError, ValueError):
+        return base
+    out = f"{f:.{_CROSS_SOURCE_PRICE_DP}f}".rstrip("0").rstrip(".")
+    if out in ("", "-", "-0"):
+        return "0"
+    return out
+
+
 def _dedup_history_rows(df, seed_columns):
     """Collapse byte-different but value-identical history rows.
 
@@ -579,7 +614,12 @@ def _dedup_history_rows(df, seed_columns):
 
     canon2 = df[cross_key_cols].copy()
     for c in cross_key_cols:
-        canon2[c] = canon2[c].map(_canonicalize_seed_cell)
+        if c == price_col:
+            # Price drifts across sources by trailing precision (orders 6dp vs
+            # activities 4dp) — round it in the key so the same fill collides.
+            canon2[c] = canon2[c].map(_canonicalize_cross_source_price)
+        else:
+            canon2[c] = canon2[c].map(_canonicalize_seed_cell)
     desc_lens = df["Description"].fillna("").astype(str).str.len()
     # Visit longer-description rows first so the richer one wins its group.
     order = (-desc_lens.to_numpy()).argsort(kind="stable")

@@ -967,6 +967,48 @@ def test_dedup_collapses_orders_vs_activities_under_float_precision_drift():
     assert str(out.iloc[0]["Description"]) == "Bought 98 NVDA at market"
 
 
+def test_dedup_collapses_orders_vs_activities_under_price_precision_drift():
+    """AAOI, Aug 2026. Price ITSELF drifts across sources: the orders feed
+    derives it at full float precision (131.960622) while activities carries
+    the broker's 4-decimal Price (131.9606). Because Price is IN the
+    cross-source key and ``_canonicalize_seed_cell`` keeps 6 decimals, the two
+    rows keyed differently and BOTH survived → 450 shares reported for a
+    225-share fill (+$29.7k phantom equity, -$29.8k phantom unrealized on the
+    position page). The cross-source key now rounds Price to 4dp so the same
+    fill collides regardless of which feed delivered it."""
+    df = pd.DataFrame([
+        _row("Schwab Account", 9, "8/5/2026", "Buy", "AAOI",
+             225, 131.960622, -29691.13995,
+             desc="Applied Optoelectronics, Inc."),   # orders (full precision)
+        _row("Schwab Account", 9, "8/5/2026", "Buy", "AAOI",
+             225, 131.9606, -29691.14,
+             desc="APPLIED OPTOELECTRONICS"),          # activities (4dp)
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, "Price FP drift across sources must not defeat dedup"
+    # Longer Description wins the tie-break.
+    assert str(out.iloc[0]["Description"]) == "Applied Optoelectronics, Inc."
+
+
+def test_dedup_keeps_distinct_option_fills_priced_sub_penny():
+    """Guard against the 4dp Price rounding over-collapsing. Two GENUINELY
+    distinct option fills (same day/action/symbol/qty) priced a few tenths of
+    a cent apart — 0.4867 vs 0.4900 — must stay TWO rows. 4dp is coarse enough
+    to absorb orders-vs-activities precision drift but fine enough to keep
+    real sub-penny option prices apart (rounding to 2dp would have fused
+    these)."""
+    df = pd.DataFrame([
+        _row("Schwab Account", 18, "8/3/2026", "Sell to Open",
+             "DXCM  260807C00091000", 3, 0.4867, 144.75,
+             desc="fill A"),
+        _row("Schwab Account", 18, "8/3/2026", "Sell to Open",
+             "DXCM  260807C00091000", 3, 0.4900, 145.75,
+             desc="fill B"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2, "distinct sub-penny option prices must not collapse"
+
+
 def test_dedup_collapses_when_price_has_trailing_zero_drift():
     """Same trade, but orders-source string-parses Price as
     ``234.0264290000`` (10 chars from the broker) while activities
