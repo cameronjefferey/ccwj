@@ -45,30 +45,37 @@ class TestEarningsFollowerUrl:
     def test_no_args_returns_base(self):
         from app.utils import earnings_follower_url
         url = earnings_follower_url()
-        assert url == "https://earningsfollower-web.onrender.com"
+        assert url == "https://www.earningsfollower.com"
         assert "?" not in url
 
-    def test_symbol_is_uppercased(self):
+    def test_symbol_targets_company_page(self):
         from app.utils import earnings_follower_url
         assert earnings_follower_url(symbol="nvda") == \
-            "https://earningsfollower-web.onrender.com?symbol=NVDA"
+            "https://www.earningsfollower.com/company/NVDA"
 
-    def test_theme_derived_from_subsector(self):
+    def test_symbol_deeplink_ignores_theme(self):
+        # A per-symbol link goes straight to the clean company page — no
+        # ?theme / ?tab query string tacked on.
         from app.utils import earnings_follower_url
         url = earnings_follower_url(symbol="AMD", subsector="Semiconductors")
-        assert "symbol=AMD" in url
-        assert "theme=semis" in url
+        assert url == "https://www.earningsfollower.com/company/AMD"
+        assert "?" not in url
+
+    def test_theme_derived_from_subsector_on_calendar_link(self):
+        from app.utils import earnings_follower_url
+        url = earnings_follower_url(subsector="Semiconductors")
+        assert url == "https://www.earningsfollower.com?theme=semis"
 
     def test_explicit_theme_overrides_derivation(self):
         from app.utils import earnings_follower_url
-        url = earnings_follower_url(symbol="AMD", theme="ai", subsector="Semiconductors")
+        url = earnings_follower_url(theme="ai", subsector="Semiconductors")
         assert "theme=ai" in url
         assert "theme=semis" not in url
 
     def test_tab_param(self):
         from app.utils import earnings_follower_url
         assert earnings_follower_url(tab="this-week") == \
-            "https://earningsfollower-web.onrender.com?tab=this-week"
+            "https://www.earningsfollower.com?tab=this-week"
 
     def test_uses_config_base_url_in_app_context(self):
         from app import app
@@ -78,7 +85,7 @@ class TestEarningsFollowerUrl:
         try:
             with app.test_request_context():
                 assert earnings_follower_url(symbol="TSLA") == \
-                    "https://ef.example.test?symbol=TSLA"
+                    "https://ef.example.test/company/TSLA"
         finally:
             app.config["EARNINGS_FOLLOWER_URL"] = prev
 
@@ -164,7 +171,7 @@ def test_earnings_watch_renders_upcoming_and_movers(earnings_client):
     # Same-sector peer (not held) renders in movers.
     assert "MSFT" in html
     # Deep-links out to EarningsFollower are present.
-    assert "earningsfollower-web.onrender.com" in html
+    assert "earningsfollower.com" in html
 
 
 def test_earnings_watch_movers_grouped_by_holdings(earnings_client):

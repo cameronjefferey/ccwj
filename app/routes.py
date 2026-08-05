@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, Response, flash, abort
+from flask import render_template, request, redirect, url_for, Response, flash, abort, jsonify
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import login_required, current_user
 from app import app
@@ -5085,35 +5085,68 @@ def _position_redirect_back(symbol):
     return redirect(url_for("position_detail", symbol=symbol))
 
 
+def _tag_request_wants_json():
+    """True when the tag write came from the inline (fetch) UI rather than a
+    plain <form> submit — so we answer with JSON and skip the page reload."""
+    if (request.headers.get("X-Requested-With") or "") == "XMLHttpRequest":
+        return True
+    accept = request.headers.get("Accept") or ""
+    return "application/json" in accept
+
+
 @app.route("/position/<symbol>/tags", methods=["POST"])
 @login_required
-@limiter.limit("30 per minute; 300 per hour")
+@limiter.limit("60 per minute; 600 per hour")
 def add_position_tag(symbol):
-    """Attach a user-defined tag to one leg of a position.
+    """Attach one or more user-defined tags to one leg of a position.
+
+    The ``tag`` field may carry several comma- (or newline-) separated tags so
+    the inline UI can add a batch in one round-trip. XHR callers get JSON back
+    (the normalized tags actually added + the user's full tag vocabulary for
+    autocomplete); plain form posts fall back to a flash + redirect.
 
     Isolation: the write is rejected unless ``tenant_id`` is owned by the
     current user (``get_tenant_ids_for_user``). Tags are user metadata in
     Postgres, keyed on user_id — they never enter the warehouse.
     """
-    from app.models import add_position_leg_tag
+    from app.models import add_position_leg_tag, get_distinct_tags_for_user
 
     tenant_id = (request.form.get("tenant_id") or "").strip()
     leg_open_date = (request.form.get("leg_open_date") or "").strip()
-    tag = (request.form.get("tag") or "").strip()
+    raw = (request.form.get("tag") or "").strip()
+    # Split on commas / newlines so "earningsfollower, swing" adds both.
+    candidates = [t.strip() for t in re.split(r"[,\n]+", raw) if t.strip()]
+    wants_json = _tag_request_wants_json()
 
     owned = set(get_tenant_ids_for_user(current_user.id) or [])
     if not tenant_id or tenant_id not in owned:
+        if wants_json:
+            return jsonify(ok=False,
+                           error="You can only tag your own positions."), 403
         flash("You can only tag your own positions.", "warning")
         return _position_redirect_back(symbol)
-    if not leg_open_date or not tag:
+    if not leg_open_date or not candidates:
+        if wants_json:
+            return jsonify(ok=False, error="Pick a tag to add."), 400
         flash("Pick a tag to add.", "warning")
         return _position_redirect_back(symbol)
 
-    result = add_position_leg_tag(
-        current_user.id, tenant_id, symbol, leg_open_date, tag
-    )
-    if result:
-        flash(f"Tagged this leg “{result}”.", "success")
+    added = []
+    for cand in candidates:
+        result = add_position_leg_tag(
+            current_user.id, tenant_id, symbol, leg_open_date, cand
+        )
+        if result and result not in added:
+            added.append(result)
+
+    if wants_json:
+        return jsonify(
+            ok=bool(added),
+            tags=added,
+            all_tags=get_distinct_tags_for_user(current_user.id),
+        )
+    if added:
+        flash("Tagged this leg “{}”.".format(", ".join(added)), "success")
     else:
         flash("We couldn't save that tag just now.", "danger")
     return _position_redirect_back(symbol)
@@ -5121,7 +5154,7 @@ def add_position_tag(symbol):
 
 @app.route("/position/<symbol>/tags/delete", methods=["POST"])
 @login_required
-@limiter.limit("30 per minute; 300 per hour")
+@limiter.limit("60 per minute; 600 per hour")
 def remove_position_tag(symbol):
     """Remove a user-defined tag from one leg of a position."""
     from app.models import remove_position_leg_tag
@@ -5129,13 +5162,18 @@ def remove_position_tag(symbol):
     tenant_id = (request.form.get("tenant_id") or "").strip()
     leg_open_date = (request.form.get("leg_open_date") or "").strip()
     tag = (request.form.get("tag") or "").strip()
+    wants_json = _tag_request_wants_json()
 
     owned = set(get_tenant_ids_for_user(current_user.id) or [])
     if not tenant_id or tenant_id not in owned:
         # Silent no-op on an unowned tenant — nothing to remove anyway.
+        if wants_json:
+            return jsonify(ok=False), 403
         return _position_redirect_back(symbol)
 
     remove_position_leg_tag(current_user.id, tenant_id, symbol, leg_open_date, tag)
+    if wants_json:
+        return jsonify(ok=True, tag=tag)
     return _position_redirect_back(symbol)
 
 
@@ -5872,6 +5910,60 @@ def _build_chart_from_daily_pnl(daily_df, current_df):
     return _merge_position_pnl_chart_payloads(parts)
 
 
+def _walk_equity_terminal(daily_df):
+    """Dry-run of the average-cost equity walk — returns the terminal
+    ``(shares_held, total_cost, short_shares, short_cost_basis)`` WITHOUT
+    building the chart series.
+
+    Used only by the incomplete-history snapshot-lot gate in
+    ``_build_chart_from_daily_pnl_partition`` to decide whether the normal
+    walk's terminal unrealized materially diverges from the broker snapshot
+    (a real spike) before deciding to take over. Mirrors the buy/sell/short
+    logic in the main loop exactly so the comparison is apples-to-apples."""
+    shares_held = 0.0
+    total_cost = 0.0
+    short_shares = 0.0
+    short_cost_basis = 0.0
+    if daily_df is None or daily_df.empty:
+        return shares_held, total_cost, short_shares, short_cost_basis
+    for _, row in daily_df.sort_values("date").iterrows():
+        buy_qty = float(row.get("equity_buy_qty") or 0)
+        buy_cost = float(row.get("equity_buy_cost") or 0)
+        sell_qty = float(row.get("equity_sell_qty") or 0)
+        sell_proceeds = float(row.get("equity_sell_proceeds") or 0)
+        if sell_qty > 0:
+            remaining_sell = sell_qty
+            remaining_proceeds = sell_proceeds
+            if shares_held > 0:
+                sold_long = min(remaining_sell, shares_held)
+                avg = total_cost / shares_held if shares_held > 0 else 0
+                frac = sold_long / sell_qty if sell_qty > 0 else 1
+                sold_long_proceeds = sell_proceeds * frac
+                total_cost = max(0, total_cost - avg * sold_long)
+                shares_held = max(0, shares_held - sold_long)
+                remaining_sell -= sold_long
+                remaining_proceeds -= sold_long_proceeds
+            if remaining_sell > 0:
+                short_shares += remaining_sell
+                short_cost_basis += remaining_proceeds
+        if buy_qty > 0:
+            remaining_buy = buy_qty
+            remaining_cost = buy_cost
+            if short_shares > 0:
+                covered = min(remaining_buy, short_shares)
+                frac = covered / buy_qty if buy_qty > 0 else 1
+                cover_cost = buy_cost * frac
+                avg_short = short_cost_basis / short_shares if short_shares > 0 else 0
+                short_cost_basis = max(0, short_cost_basis - avg_short * covered)
+                short_shares = max(0, short_shares - covered)
+                remaining_buy -= covered
+                remaining_cost -= cover_cost
+            if remaining_buy > 0:
+                shares_held += remaining_buy
+                total_cost += remaining_cost
+    return shares_held, total_cost, short_shares, short_cost_basis
+
+
 def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     """
     Build cumulative P&L chart from pre-aggregated mart_daily_pnl data.
@@ -5896,6 +5988,128 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     short_cost_basis = 0.0
     position_is_closed = current_df.empty
     last_trade_date = None
+
+    # ── INCOMPLETE-HISTORY SNAPSHOT-LOT MODE ──
+    # SnapTrade / Schwab return only a short window of transactions, so a
+    # long-held equity lot (often years old, frequently pre-split) never has
+    # its opening buys in stg_history. The visible fills then show MORE sells
+    # than buys and the average-cost walk reconstructs a nonsensical (often
+    # negative) equity curve, which the LIVE TODAY override snaps to the
+    # broker's true unrealized — the vertical "spike" at the right edge.
+    #
+    # ``int_equity_sessions`` already handles this: when the visible equity
+    # trades net to <= 0 still-open shares (they never form a positive
+    # session → dropped as orphans) while the broker snapshot holds shares,
+    # it emits a ``snapshot_equity_sessions`` row for the held lot with
+    # realized = 0 and unrealized = mv − cb (see that model's snapshot gate
+    # + total_pnl clamp). We mirror that here so the chart reconciles with
+    # the hero KPI instead of crediting phantom realized:
+    #   • seed the broker lot (qty @ broker avg cost) as the opening holding,
+    #   • SKIP the orphan equity buy/sell fills (do not touch shares/realized),
+    #   • let realized stay 0 — the whole gain rides in daily mark-to-market.
+    # Real case DXCM (user 18): visible history 1,000 bought / 1,900 sold, but
+    # the broker holds 1,100 @ $22.63 (pre-4:1-split basis) → mart realized $0,
+    # unrealized $70,742. Pre-fix the chart drifted to −$32k then jumped to
+    # +$47k on the last day.
+    #
+    # Gate mirrors the mart exactly (net trade-open <= 0 AND broker holds a
+    # LONG lot). A clean, reconciling history (net open > 0) keeps the normal
+    # average-cost walk untouched; a short book is left alone.
+    snapshot_lot_mode = False
+    if (not current_df.empty
+            and {"equity_buy_qty", "equity_sell_qty"}.issubset(daily_df.columns)):
+        _eq_seed = _equity_slice_for_live_chart(current_df)
+        if not _eq_seed.empty and "quantity" in _eq_seed.columns:
+            _broker_qty = float(
+                pd.to_numeric(_eq_seed["quantity"], errors="coerce").fillna(0).sum()
+            )
+            _broker_cb = 0.0
+            for _cbn in ("cost_basis", "cost_bases"):
+                if _cbn in _eq_seed.columns:
+                    _broker_cb = float(
+                        pd.to_numeric(_eq_seed[_cbn], errors="coerce").fillna(0).sum()
+                    )
+                    break
+            _sell_qty_hist = float(
+                pd.to_numeric(daily_df["equity_sell_qty"], errors="coerce").fillna(0).sum()
+            )
+            _buy_qty_hist = float(
+                pd.to_numeric(daily_df["equity_buy_qty"], errors="coerce").fillna(0).sum()
+            )
+            _net_trade_open = _buy_qty_hist - _sell_qty_hist
+            _unaccounted = _broker_qty - _net_trade_open
+            # Only mirror the mart when it is EXACT to do so — i.e. the visible
+            # history yields NO realizable equity P&L, so we can't drop a real
+            # number by seeding the missing lot at realized 0:
+            #   • net_trade_open <= 0  → sells net >= buys; the trades never
+            #     form a positive session (dropped as orphans) and the mart
+            #     clamps realized to 0 (DXCM: 1,000 bought / 1,900 sold,
+            #     holds 1,100).
+            #   • total sells == 0     → buy-only holding; no sells means
+            #     realized is provably 0 (JEPQ: 4,825 bought but 5,826 held —
+            #     1,000 transferred in before the window).
+            #
+            # The remaining class — history has BOTH real sells (genuine
+            # realized) AND unaccounted extra shares (e.g. IYW 489cb2: nets
+            # 2,200, holds 3,300, $83k realized) — is deliberately NOT handled
+            # here: skipping the trades would drop that realized, and the
+            # walk's average-cost realized can't match the mart's clamped
+            # realized on incomplete history. Those still need the mart's
+            # realized driven into the chart (tracked as follow-up).
+            _no_realizable = (_net_trade_open <= 1e-6) or (_sell_qty_hist <= 1e-6)
+            if (_broker_qty > 1e-6 and _no_realizable
+                    and _unaccounted > max(1.0, 0.02 * _broker_qty)):
+                # POST-WALK RECONCILIATION GATE. Do NOT take over just because
+                # the broker holds a few more (fractional / dividend-reinvested)
+                # shares than history — those positions already reconcile and
+                # the average-cost walk is correct. Only act when the normal
+                # walk's terminal unrealized MATERIALLY diverges from the
+                # broker's (a real spike). A cheap dry-run of the average-cost
+                # engine gives the walk's terminal state without the series.
+                _bh, _bc, _sh, _sc = _walk_equity_terminal(daily_df)
+                _last_close = 0.0
+                for _cp in reversed(daily_df["close_price"].tolist()
+                                    if "close_price" in daily_df.columns else []):
+                    _cpv = float(_cp) if _cp is not None and pd.notna(_cp) else 0.0
+                    if _cpv > 0:
+                        _last_close = _cpv
+                        break
+                _walk_unreal = 0.0
+                if _last_close > 0:
+                    if _bh > 0:
+                        _walk_unreal += _bh * _last_close - _bc
+                    if _sh > 0:
+                        _walk_unreal -= (_sh * _last_close - _sc)
+                _broker_unreal = 0.0
+                if "unrealized_pnl" in _eq_seed.columns:
+                    _broker_unreal = float(
+                        pd.to_numeric(_eq_seed["unrealized_pnl"], errors="coerce").fillna(0).sum()
+                    )
+                if abs(_broker_unreal - _walk_unreal) > 2000.0:
+                    if _net_trade_open <= 1e-6:
+                        # ORPHAN: sells outrun buys → the walk would go
+                        # spuriously short and book phantom realized. Skip ALL
+                        # equity fills and seed the whole broker lot; realized
+                        # stays 0 exactly as the mart clamps it. (DXCM, BKH)
+                        snapshot_lot_mode = True
+                        shares_held = _broker_qty
+                        total_cost = _broker_cb
+                    else:
+                        # BUY-ONLY + TRANSFER: the visible buys are REAL and
+                        # must mark-to-market from their own trade dates — only
+                        # the (broker_qty − net_bought) shares transferred in
+                        # BEFORE the window are missing. Seed just that
+                        # held-before sleeve at its residual cost basis
+                        # (broker_cb − walked buy cost) from the spine start;
+                        # the real buys then accumulate on top so the walk ends
+                        # at exactly (broker_qty @ broker_cb). This avoids the
+                        # fabrication of showing the FULL current lot before it
+                        # was actually held — JEPQ pre-fix opened at −$99k in
+                        # 2024 for shares mostly bought in 2025. Realized stays
+                        # 0 (no sells).
+                        shares_held = _unaccounted
+                        total_cost = max(0.0, _broker_cb - _bc)
+
     # mart_daily_pnl's dense spine starts at the account's earliest trade
     # date ACROSS ALL SYMBOLS, so a per-symbol slice can carry a long
     # flat-$0 prefix before this symbol's first fill (e.g. BE's chart
@@ -5965,8 +6179,11 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             else:
                 continue
 
-        # Process sells first (may create short position)
-        if sell_qty > 0:
+        # Process sells first (may create short position). Skipped in
+        # snapshot-lot mode: the visible fills are orphans the mart discarded,
+        # so touching the seeded broker lot with them would re-introduce the
+        # phantom realized / spike we are mirroring the mart to avoid.
+        if not snapshot_lot_mode and sell_qty > 0:
             remaining_sell = sell_qty
             remaining_proceeds = sell_proceeds
             if shares_held > 0:
@@ -5983,8 +6200,9 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
                 short_shares += remaining_sell
                 short_cost_basis += remaining_proceeds
 
-        # Process buys (may cover short position)
-        if buy_qty > 0:
+        # Process buys (may cover short position). Skipped in snapshot-lot mode
+        # for the same reason as sells above.
+        if not snapshot_lot_mode and buy_qty > 0:
             remaining_buy = buy_qty
             remaining_cost = buy_cost
             if short_shares > 0:

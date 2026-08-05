@@ -92,7 +92,7 @@ class Config:
     # product moves off its current Render hostname. rstrip so we never emit
     # a double slash when appending query strings.
     EARNINGS_FOLLOWER_URL = (
-        os.environ.get("EARNINGS_FOLLOWER_URL", "https://earningsfollower-web.onrender.com")
+        os.environ.get("EARNINGS_FOLLOWER_URL", "https://www.earningsfollower.com")
         or ""
     ).rstrip("/")
 

@@ -1,6 +1,6 @@
 # app/utils.py
 import os
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, quote
 
 from flask import abort, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
@@ -43,12 +43,11 @@ def read_sql_file(filename: str) -> str:
 #
 # EarningsFollower is a separate, already-deployed product (a themed earnings
 # calendar). We connect to it with URL deep-links only — no API calls, no
-# changes on the EarningsFollower side. It's a client-side SPA that serves the
-# same shell at "/" and 404s on path routes, so the only server-guaranteed
-# target is the home URL. We append query params (?symbol / ?theme / ?tab) as a
-# BEST-EFFORT: if/when the SPA learns to read them it filters; until then the
-# user still lands on a useful calendar. The base URL comes from config
-# (EARNINGS_FOLLOWER_URL) so it can move off its current Render hostname.
+# changes on the EarningsFollower side. The SPA now serves a per-symbol company
+# page at ``/company/<SYMBOL>`` (e.g. https://www.earningsfollower.com/company/ASTS),
+# so a symbol deep-link points straight at it. Calendar-level links (no symbol)
+# still land on the home URL with best-effort ?theme / ?tab query params. The
+# base URL comes from config (EARNINGS_FOLLOWER_URL) so it can move hostnames.
 
 # Curated subsector/sector -> EarningsFollower theme map. EarningsFollower
 # organizes its calendar by theme (AI / space / quantum / semis), which is a
@@ -77,24 +76,28 @@ def earnings_follower_theme_for(sector=None, subsector=None):
 def earnings_follower_url(symbol=None, theme=None, tab=None, sector=None, subsector=None):
     """Build a deep-link into the EarningsFollower web app.
 
-    Returns the configured base (home) URL with best-effort query params
-    appended. With no arguments you get the bare home URL. ``theme`` may be
-    passed explicitly, or derived from ``sector``/``subsector`` via
-    :func:`earnings_follower_theme_for`. Falls back to the public hostname if
+    When ``symbol`` is given the link targets the per-symbol company page
+    (``{base}/company/<SYMBOL>``). Otherwise it returns the home URL with
+    best-effort ?theme / ?tab query params (``theme`` may be passed explicitly
+    or derived from ``sector``/``subsector`` via
+    :func:`earnings_follower_theme_for`). Falls back to the public hostname if
     config isn't available (e.g. outside an app context in a unit test)."""
     try:
         base = (current_app.config.get("EARNINGS_FOLLOWER_URL") or "").rstrip("/")
     except RuntimeError:
         base = ""
     if not base:
-        base = "https://earningsfollower-web.onrender.com"
+        base = "https://www.earningsfollower.com"
+
+    if symbol:
+        # Per-symbol company page. quote() keeps the path safe for exotic
+        # tickers (e.g. "BRK.B" -> "BRK.B" stays, "^VIX" gets encoded).
+        return f"{base}/company/{quote(str(symbol).strip().upper())}"
 
     if theme is None:
         theme = earnings_follower_theme_for(sector=sector, subsector=subsector)
 
     params = {}
-    if symbol:
-        params["symbol"] = str(symbol).strip().upper()
     if theme:
         params["theme"] = str(theme).strip()
     if tab:

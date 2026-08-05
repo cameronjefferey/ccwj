@@ -562,3 +562,141 @@ def test_chart_data_terminal_reads_last_total_bucket():
     assert _chart_data_terminal({"total": []}) == 0.0
     assert _chart_data_terminal({}) == 0.0
     assert _chart_data_terminal(None) == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Incomplete-history equity spike (snapshot-lot mode). SnapTrade/Schwab
+# return only a short window of transactions, so a long-held equity lot's
+# opening buys never reach stg_history. The average-cost walk then can't
+# reconstruct the current holding and the LIVE-today override snaps the
+# terminal to the broker's true unrealized — a vertical spike at the right
+# edge. _build_chart_from_daily_pnl_partition mirrors int_equity_sessions
+# (which clamps realized to 0 and holds the lot at broker basis) whenever
+# the visible history yields provably-zero realized. See DXCM (user 18).
+# ─────────────────────────────────────────────────────────────────────────
+
+def _equity_current_df(qty, cost_basis, unrealized_pnl, current_price):
+    return pd.DataFrame([{
+        "instrument_type": "Equity",
+        "quantity": qty,
+        "cost_basis": cost_basis,
+        "market_value": qty * current_price,
+        "unrealized_pnl": unrealized_pnl,
+        "current_price": current_price,
+    }])
+
+
+def test_orphan_history_no_end_spike_and_reconciles():
+    """DXCM-shape: history sells (1,900) outrun buys (1,000) so the trades
+    never form a positive session (mart drops them as orphans, realized
+    clamped to 0), but the broker holds 1,100 shares at a low pre-window
+    basis. The walk must NOT drift negative then cliff up to the broker
+    unrealized on the last day. Snapshot-lot mode seeds the whole lot,
+    keeps realized 0, and the terminal equals the broker unrealized."""
+
+    class _PatchDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 8, 5)
+
+    # broker holds 1,100 @ $24,891 → +$70,742 unrealized at $86.94
+    cur = _equity_current_df(1100.0, 24891.74, 70742.26, 86.94)
+    df = pd.DataFrame([
+        _daily_row("2026-05-06", equity_sell_qty=1000, equity_sell_proceeds=60010.0,
+                   close_price=60.0, has_trade=True),
+        _daily_row("2026-07-31", equity_buy_qty=1000, equity_buy_cost=83940.0,
+                   close_price=83.94, has_trade=True),
+        _daily_row("2026-08-03", equity_sell_qty=900, equity_sell_proceeds=70200.0,
+                   close_price=87.31, has_trade=True),
+        _daily_row("2026-08-04", close_price=86.94),
+    ])
+    with patch("app.routes.date", _PatchDate):
+        out = _build_chart_from_daily_pnl(df, cur)
+
+    eq = out["equity"]
+    # No vertical last-day cliff (pre-fix jumped ~ -$32k -> +$47k = $79k).
+    assert abs(eq[-1] - eq[-2]) < 6000, (
+        f"orphan-history equity still spikes on the last day: {eq[-2:]}"
+    )
+    # Terminal equity == broker unrealized (realized clamped to 0), matching
+    # the mart / hero KPI.
+    assert eq[-1] == pytest.approx(70742.26, abs=1.0), (
+        f"terminal equity {eq[-1]} must equal broker unrealized (realized 0)"
+    )
+    # No phantom negative excursion from the spurious short the raw walk builds.
+    assert min(eq) > -1000, f"equity should not go sharply negative: min={min(eq)}"
+
+
+def test_buy_only_transfer_does_not_fabricate_pre_holding():
+    """JEPQ-shape: buy-only history (1,000 bought in-window) but the broker
+    holds 1,600 — the extra 600 were transferred in BEFORE the window.
+    Seeding the FULL current lot from the spine start would show the whole
+    position (at today's cost basis) months before it was held, opening the
+    chart at a large fabricated value. Only the 600 held-before shares
+    should be seeded early; the 1,000 real buys mark-to-market from their
+    own trade date. Realized stays 0 (no sells)."""
+
+    class _PatchDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 8, 5)
+
+    # broker holds 1,600 @ $80,000 ($50 avg) → +$16,000 unrealized at $60
+    cur = _equity_current_df(1600.0, 80000.0, 16000.0, 60.0)
+    df = pd.DataFrame([
+        # early rendered day (e.g. an option leg opened) — only the
+        # transferred-in equity sleeve is held here, no equity fill yet.
+        _daily_row("2026-01-02", close_price=40.0, has_trade=True),
+        # first real equity buy lands mid-window
+        _daily_row("2026-06-01", equity_buy_qty=1000, equity_buy_cost=55000.0,
+                   close_price=55.0, has_trade=True),
+        _daily_row("2026-08-04", close_price=60.0),
+    ])
+    with patch("app.routes.date", _PatchDate):
+        out = _build_chart_from_daily_pnl(df, cur)
+
+    eq = out["equity"]
+    # Early point reflects only the 600 transferred shares (residual basis
+    # 80000 - 55000 = 25000 → $41.67/sh) MTM at $40 ≈ 600*40 - 25000 = -1000,
+    # NOT the full 1,600-share lot (which would be 1600*40 - 80000 = -16000).
+    early = eq[out["dates"].index("2026-01-02")]
+    assert -3000 < early < 3000, (
+        f"early equity should reflect ONLY the held-before sleeve, not the "
+        f"full current lot (fabrication). Got {early}"
+    )
+    # Terminal reconciles to broker unrealized (realized 0).
+    assert eq[-1] == pytest.approx(16000.0, abs=1.0)
+    # No end-of-series cliff.
+    assert abs(eq[-1] - eq[-2]) < 4000, f"unexpected last-day jump: {eq[-2:]}"
+
+
+def test_clean_reconciling_history_untouched_by_snapshot_mode():
+    """A fully-reconciling position (buys explain the exact broker holding
+    at the broker basis) must NOT trigger snapshot-lot mode — the ordinary
+    average-cost walk is correct and the terminal already matches. Guards
+    against the gate firing on clean positions and rewriting their numbers."""
+
+    class _PatchDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 8, 5)
+
+    # Bought 100 @ $5,000; broker holds exactly 100 @ $5,000; price $60 →
+    # unrealized +$1,000. Walk already reconciles.
+    cur = _equity_current_df(100.0, 5000.0, 1000.0, 60.0)
+    df = pd.DataFrame([
+        _daily_row("2026-07-01", equity_buy_qty=100, equity_buy_cost=5000.0,
+                   close_price=50.0, has_trade=True),
+        _daily_row("2026-08-04", close_price=60.0),
+    ])
+    with patch("app.routes.date", _PatchDate):
+        out = _build_chart_from_daily_pnl(df, cur)
+
+    # First rendered day is the actual buy day (not the spine start seeded
+    # early) — i.e. snapshot mode did NOT take over.
+    assert out["dates"][0] == "2026-07-01", (
+        f"clean position should render from its buy day, not a seeded "
+        f"pre-window anchor: {out['dates'][:2]}"
+    )
+    # Terminal equity == broker unrealized either way.
+    assert out["equity"][-1] == pytest.approx(1000.0, abs=1.0)
