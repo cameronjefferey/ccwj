@@ -1149,18 +1149,6 @@ Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/05/2026,Expired,NVDA  260605C00230000,Expired NVDA 05JUN26 230 C,1.0,,,0.0
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:ABCOPRANP FOR JUN 2026,,,,-4.5
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,06/02/2026,ADR Mgmt Fee,,S******54:SNAPSHOTVALUENONPRO FOR JUN 2026,,,,-10.0
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
-Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
 Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/22/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,05/29/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
 Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,07/31/2026,Buy,USDC,Buy 100 USDC at 1.00,100.0,1.0,,-100.0
@@ -6608,3 +6596,15 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,VNOM,Viper Energy Inc. Class A Common Stock,97.0,42.634433,,-4135.540001
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Sell,JAZZ,Jazz Pharmaceuticals plc,16.0,248.28,,3972.48
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/04/2026,Buy,OKE,"ONEOK, Inc.",46.0,85.238261,,-3920.960006
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFC,dividend,13.274,,,128.23
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,04/30/2026,Cash Dividend,OQFB,dividend,62.14,,,62.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFB,dividend,63.99,,,63.99
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,05/29/2026,Cash Dividend,OQFC,dividend,13.692,,,132.26
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/10/2026,Cash Dividend,2328,dividend,2.906,,,765.14
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFB,fees,2.48,,,-2.48
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OVBQ,fees,0.346,,,-7.86
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,2328,fees,0.128,,,-33.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,07/02/2026,ADR Mgmt Fee,OQFC,fees,0.47,,,-4.53
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFC,dividend,13.52,,,130.47
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/30/2026,Cash Dividend,OQFB,dividend,62.46,,,62.46
+Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,06/18/2026,Cash Dividend,OVBQ,dividend,15.438,,,358.93
