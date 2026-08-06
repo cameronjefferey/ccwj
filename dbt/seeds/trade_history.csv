@@ -6735,6 +6735,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy,IBP,Installed Building Products Inc.,17.0,243.26,,-4135.42
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Open,ARM   260821C00277500,ARM   260821C00277500,1.0,21.7,,-2170.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Open,ARM   260821C00295000,ARM   260821C00295000,1.0,14.35,,1435.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Close,ARM   260821C00277500,ARM   260821C00277500,1.0,19.95,,1995.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Close,ARM   260821C00295000,ARM   260821C00295000,1.0,13.95,,-1395.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy,TEO,Telecom Argentina S.A. - SP ADR,302.0,13.86,,-4185.72
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy,EMBJ,Embraer S.A. Sponsored American Depositary Receipt,57.0,72.9,,-4155.3
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell,AXSM,"Axsome Therapeutics, Inc.",19.0,214.72,,4079.68
@@ -6767,5 +6769,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy to Close,MSFT  260814C00500000,MSFT  260814C00500000,1.0,7.2,,-720.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell to Close,AMZN  260814C00285000,AMZN  260814C00285000,3.0,1.99,,597.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy to Close,AMZN  260814C00295000,AMZN  260814C00295000,3.0,0.72,,-216.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Sell to Close,ARM   260821C00277500,ARM   260821C00277500,1.0,19.95,,1995.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/05/2026,Buy to Close,ARM   260821C00295000,ARM   260821C00295000,1.0,13.95,,-1395.0
