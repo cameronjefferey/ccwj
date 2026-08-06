@@ -13,31 +13,31 @@ Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,cash
 Fidelity ••••6342,14,snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661,account_total,414804.35,,,,
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,cash,-3748.7596,,,,-3.752299
 Interactive Brokers ••••7930,15,snaptrade:90f9b1b6-124f-4d2a-9623-c394a1871914,account_total,99905.67117635,,,,
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,cash,79397.93,,,,83.42923
-Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,account_total,95168.0,,,,
-Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,cash,70.48,,,,0.252496
-Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,account_total,27913.29,,,,
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,cash,1146.55,,,,0.079963
-Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,account_total,1433849.53,,,,
-Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,cash,168.29,,,,0.56635
-Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,account_total,29714.83,,,,
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,cash,113.93,,,,0.658662
-Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,account_total,17297.19,,,,
-Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,cash,1283240.25,,,,41.719529
-Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,account_total,3075874.23,,,,
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,cash,1071.21,,,,0.606273
-Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,account_total,176687.66,,,,
-Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,cash,1865.01,,,,3.676536
-Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,account_total,50727.37,,,,
-Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,cash,28.13,,,,0.180402
-Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,account_total,15592.92,,,,
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,cash,6.4,,,,0.705164
-Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,account_total,907.59,,,,
-Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,cash,-27073.81,,,,-4.033628
-Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,account_total,671202.38,,,,
-Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,cash,-3679.29,,,,-11.012637
-Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,account_total,33409.71,,,,
+Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,cash,1865.01,,,,3.677693
+Schwab Account,9,snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87,account_total,50711.41,,,,
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,cash,1071.21,,,,0.606009
+Schwab Account,9,snaptrade:67f0cab0-ba0e-4e54-8027-1314eeddd423,account_total,176764.83,,,,
+Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,cash,28.13,,,,0.179801
+Schwab Account,9,snaptrade:8c597f1a-f8de-4a14-a3cc-cce4e3697470,account_total,15645.05,,,,
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,cash,-3679.29,,,,-11.781377
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,account_total,31229.71,,,,
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,cash,-27073.81,,,,-4.048976
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,account_total,668658.19,,,,
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,cash,6.4,,,,0.700894
+Schwab Account,9,snaptrade:49688dee-70cf-4f25-bbe8-3ec5929247ec,account_total,913.12,,,,
 Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,cash,0.0,,,,0.0
-Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,account_total,33881.56098283896,,,,
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,cash,1052.55,,,,1.271367
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,account_total,82788.82,,,,
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,account_total,33692.1515239541,,,,
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,cash,79397.93,,,,83.492055
+Alpaca Paper Account,15,snaptrade:7a2692ed-13c8-4eb1-b401-cd992dcb2007,account_total,95096.39,,,,
+Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,cash,70.48,,,,0.252633
+Schwab Account,18,snaptrade:9d194a6b-8573-445c-9d94-a426b44eadaf,account_total,27898.15,,,,
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,cash,113.93,,,,0.657026
+Schwab Account,18,snaptrade:32123aff-d6d8-4336-9ad9-4c8e664981ac,account_total,17340.26,,,,
+Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,cash,168.29,,,,0.566775
+Schwab Account,18,snaptrade:2e3918d1-db80-4e95-9edb-429e99279ae5,account_total,29692.57,,,,
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,cash,1146.55,,,,0.079956
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,account_total,1433968.9,,,,
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,cash,1283240.25,,,,41.748195
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,account_total,3073762.25,,,,
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,cash,1052.55,,,,1.278589
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,account_total,82321.23,,,,
