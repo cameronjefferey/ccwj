@@ -119,16 +119,17 @@ your consumer key))`, where the canonical body is
 On a verified `ACCOUNT_HOLDINGS_UPDATED`, the handler maps the SnapTrade `userId`
 back to a HappyTrader user and runs `_sync_one_connection(..., force_refresh=False)`
 in a background thread serialized by a cluster-wide Postgres advisory lock (a
-burst of per-account webhooks must push the shared seed CSVs one-at-a-time). If
+burst of per-account webhooks must rewrite the shared raw seed tables
+one-at-a-time). If
 `SNAPTRADE_CONSUMER_KEY` is unset the endpoint logs a warning and skips
 verification — acceptable for local dev only.
 
 ## Architecture notes
 
-- **No new seed CSVs.** SnapTrade writes to the same `trade_history.csv`,
-  `current_positions.csv`, and `account_balances.csv` files Schwab and
-  manual upload write to. The convergence point is
-  `app.upload.merge_and_push_seeds`.
+- **No new seed surfaces.** SnapTrade writes to the same raw seed tables
+  (`trade_history`, `current_positions`, `account_balances` in BigQuery
+  `ccwj-dbt.analytics_raw` — see `app/seed_store.py`) manual upload
+  writes to. The convergence point is `app.upload.merge_and_push_seeds`.
 - **Tenant scoping.** Every SnapTrade-emitted DataFrame stamps
   `account_name` and `user_id` on every row, exactly like Schwab. The
   broker-sync-safety invariants (dedup, monotonic merge, canonical
@@ -142,13 +143,14 @@ verification — acceptable for local dev only.
   webhook (Step 5) — event-driven, fires when SnapTrade detects a
   holdings change (so the data it reads is fresh), debounced per account
   under the real-time plan. Two manually-managed Render crons back it up
-  (each runs `app/snaptrade_sync_cli.py`, pushes **one batched seed commit**
-  via `merge_and_push_seeds_batch` = a single dbt build):
+  (each runs `app/snaptrade_sync_cli.py`, pushes **one batched seed write**
+  via `merge_and_push_seeds_batch` — a single atomic rewrite of the raw
+  tables + one rebuild dispatch = a single dbt build):
     - **`happytrader-snaptrade-intraday` — real-time orders poll, every
       ~15 min during market hours** (`--intraday`; suggested
       `*/15 13-21 * * 1-5` UTC). Reads the real-time `recent_orders` feed
       (skipping the T+1 `activities` feed) and pushes a **history-only**
-      diff — only NEW trade fills hit `trade_history.csv`; the
+      diff — only NEW trade fills hit `trade_history`; the
       positions/balances **snapshots are NOT rewritten** (they drift on
       every read, so pushing them every 15 min would rebuild the whole
       warehouse each run). Snapshot freshness stays with the webhook syncs
@@ -156,7 +158,8 @@ verification — acceptable for local dev only.
       Surfaces same-day trades for brokers whose holdings webhook lags
       (Schwab is ~once/day evening even on the real-time plan) — because
       `recent_orders` IS real-time on read. No billed refresh; a poll with
-      no new fills is a true no-op (no commit → no build).
+      no new fills is a true no-op (no write → no rebuild dispatch → no
+      build).
     - **`happytrader-snaptrade-sync` — plain backstop, 23:00 UTC weekdays**
       (`force_refresh=False`, unbilled, reads activities + orders). Safety
       net for missed webhooks AND lands the authoritative T+1 `activities`
@@ -179,16 +182,15 @@ verification — acceptable for local dev only.
 
 ## Keeping deploy / CI churn down
 
-Every SnapTrade sync that finds a change pushes a seed commit to `master`. Two
-guards keep that from redeploying the app and rebuilding the warehouse for no
-reason:
+Since the seed-store migration (2026-08), seed data lives in BigQuery raw
+tables and a changed sync dispatches `bigquery_update.yml` directly — there
+are **no seed commits to `master` anymore**, so data changes can never
+redeploy the app. The remaining churn guards:
 
-- **Render build filter on the `ccwj` web service (REQUIRED).** The Flask app
-  does NOT read `dbt/seeds/*.csv` at runtime (it reads BigQuery). Without a
-  build filter, every seed push auto-redeploys the whole web service — dozens
-  of pointless redeploys a day (a Fri-evening/weekend burst was ~25+, most
-  instantly cancelled). Set **Render → `ccwj` → Settings → Build & Deploy →
-  Build Filters → Ignored Paths** to:
+- **Render build filter on the `ccwj` web service (still recommended).** Keeps
+  docs/tests/dbt-code-only commits from redeploying the Flask app. Set
+  **Render → `ccwj` → Settings → Build & Deploy → Build Filters → Ignored
+  Paths** to:
 
   ```
   dbt/**
@@ -200,17 +202,21 @@ reason:
   **/*.md
   ```
 
-  A seed-only commit then skips the deploy; a commit touching `app/**` or
-  `requirements.txt` still deploys. (Not settable via the Render API — it's a
-  dashboard toggle. It does NOT affect the GitHub Actions dbt build, which
-  SHOULD run on seed changes.)
+  A commit touching `app/**` or `requirements.txt` still deploys. (Not
+  settable via the Render API — it's a dashboard toggle.)
+
+- **No-op syncs never dispatch a rebuild.** The byte-exact no-op check in
+  `app/upload.py` skips both the raw-table write and the `workflow_dispatch`
+  when the merged output is unchanged; the workflow's concurrency group
+  (`cancel-in-progress`) collapses rapid back-to-back dispatches into a
+  single build.
 
 - **Weekend auto-syncs are HISTORY-ONLY.** Broker positions/balances snapshots
   carry live marks that drift on every read. On weekends (ET) the webhook
   auto-sync (`_run_snaptrade_holdings_sync`) still READS activities — so
   Friday's T+1 fills that post Saturday are ingested — but pushes a
   history-only seed diff: it does NOT rewrite the snapshots. So a quiet weekend
-  produces no seed change → no commit → no dbt build, instead of a full
+  produces no seed change → no write → no dbt build, instead of a full
   warehouse rebuild per snapshot-mark wobble. First syncs are exempt (a new
   account needs its initial snapshot); weekday behavior is unchanged (fresh
   snapshots still feed intraday value + after-hours movers). Gate:

@@ -203,9 +203,10 @@
                 <input type="checkbox" name="purge_bq" value="1" id="au-purge-bq">
                 <span>
                     <strong>Also wipe their data from BigQuery.</strong>
-                    Commits a cleaned <code>dbt/seeds/*.csv</code> set (rows where
-                    <code>user_id={{ '{id}' }}</code>) to GitHub. The next CI
-                    <code>dbt build</code> rebuilds the warehouse without those rows.
+                    Rewrites the raw seed tables (removing rows where
+                    <code>user_id={{ '{id}' }}</code>) and dispatches a warehouse
+                    rebuild, so the next <code>dbt build</code> drops those rows
+                    from every mart.
                     Rows with empty <code>user_id</code> (legacy) are left alone.
                 </span>
             </label>

@@ -938,11 +938,12 @@ def delete_user(user_id):
       * ``login_attempts`` has no FK (keyed by ``username_lc``); rows persist
         as audit trail but become unreachable from any user lookup.
 
-    This does NOT touch BigQuery. The warehouse is rebuilt from
-    ``dbt/seeds/*.csv`` on every CI run, so a BQ ``DELETE`` would be
-    undone the next dbt build. Use
-    ``app.upload.purge_user_id_from_seeds`` first when you want the
-    warehouse cleaned alongside the Postgres delete.
+    This does NOT touch BigQuery. The warehouse marts are rebuilt from the
+    raw seed tables (``ccwj-dbt.analytics_raw``, see ``app/seed_store.py``)
+    on every dbt build, so a BQ ``DELETE`` against a mart would be undone
+    the next build. Use ``app.upload.purge_user_id_from_seeds`` first when
+    you want the warehouse cleaned alongside the Postgres delete (it
+    rewrites the raw tables and dispatches a rebuild).
 
     Returns True on success, False if the DELETE raised.
     """

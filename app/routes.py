@@ -3046,7 +3046,7 @@ def _supplement_summary_with_rolled(
     """Return summary_df with rows from rolled_df whose (account, strategy) are
     missing. Keeps the mart as source of truth when it has the pair; fills gaps
     from int_strategy_classification so closed history shows up even when the
-    mart lags (common right after a Schwab/CSV seed commit, before dbt rebuilds).
+    mart lags (common right after a sync/CSV seed write, before dbt rebuilds).
 
     **Equity slot (Buy and Hold / Dividend):** ``positions_summary`` renames a
     top dividend-ranking ``Buy and Hold`` row to strategy label ``Dividend``
@@ -4158,7 +4158,7 @@ def position_detail(symbol):
     #
     #  • No leg filter (whole symbol) — positions_summary is the source of
     #    truth, supplemented from int_strategy_classification when the mart
-    #    lags by a dbt run (common right after a Schwab/CSV seed commit).
+    #    lags by a dbt run (common right after a sync/CSV seed write).
     #
     #  • Leg-filtered — positions_summary CANNOT be used. It aggregates per
     #    (account, symbol, strategy) across the entire symbol history, so its

@@ -17,20 +17,36 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 ### Marts (tables)
 - `positions_summary` — One row per (account, symbol, strategy) with total P&L, win rate, avg return, duration, premium, dividends, and total return.
 
-## Seeds
+## Raw tenant data (dbt SOURCE, not seeds)
+
+Tenant trade data lives in the **BigQuery raw dataset**
+`ccwj-dbt.analytics_raw` (dbt source `raw_broker`), written directly by
+the app's sync/upload writers via `app/seed_store.py` (Aug 2026
+migration — the old `dbt/seeds/*.csv` git-as-database flow is retired;
+git history of those CSVs is the archive):
+
+| Table | Description |
+|-------|-------------|
+| `trade_history` | All historical/closed trades — manual upload **and** broker sync merge here (per-tenant append + dedupe) |
+| `current_positions` | Current open positions snapshot — writers replace per tenant |
+| `account_balances` | Cash + account_total rows for equity snapshots. Written by any broker connector; no equivalent from manual uploads. |
+
+All columns are STRING; the extra `_row_seq` INT64 column preserves the
+app's write order (never selected by staging). Local dev builds read
+`analytics_raw_dev` via `DBT_RAW_DATASET` (set by `scripts/dev-refresh.sh`).
+
+## Seeds (static/demo data only)
 
 | File | Description |
 |------|-------------|
-| `trade_history.csv` | All historical/closed trades — manual upload **and** Schwab sync merge here (per-account append + dedupe) |
-| `current_positions.csv` | Current open positions snapshot — manual upload **and** Schwab sync replace per account |
 | `demo_history.csv` | Demo user history |
 | `demo_current.csv` | Demo user current positions |
 | `cflt_prices.csv` | Optional price seed |
-| `account_balances.csv` | Cash + account_total rows for equity snapshots. Written by any broker connector (Schwab native, SnapTrade); no equivalent from manual uploads. |
+| `crypto_symbols.csv` | Curated crypto symbol whitelist |
 
 ## Usage
 
 ```bash
-dbt seed    # Load CSVs
+dbt seed    # Load static CSVs
 dbt build   # Build all models
 ```

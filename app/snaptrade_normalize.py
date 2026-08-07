@@ -517,7 +517,7 @@ def activities_to_history_df(
         # Direction matrix — explicit so we never trust the broker's
         # signed amount (different brokers via SnapTrade have shipped
         # contradictory conventions; stg_history will re-sign anyway,
-        # but emitting the canonical sign keeps the seed CSV readable
+        # but emitting the canonical sign keeps the seed data readable
         # and prevents dedup drift from sign-flips between syncs).
         cash_out_actions = {
             "Buy", "Buy to Open", "Buy to Close",

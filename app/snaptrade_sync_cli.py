@@ -47,13 +47,15 @@ calls. Do NOT wire a cron to it. When set, the flow fires a
 (``SNAPTRADE_CRON_FORCE_REFRESH_SETTLE_SECONDS``, default 90s), then reads each
 with the normal ``defer_push=True`` path and one batched push.
 
-Each account is synced with ``defer_push=True`` (fetch + normalize, no commit);
-after the loop we push ONE batched seed commit via ``merge_and_push_seeds_batch``.
-This replaced the old per-account push that fanned this cron out into ~14 GitHub
-commits a night → ~14 ``Update Daily Position Performance`` runs (most instantly
-cancelled by ``concurrency: cancel-in-progress``). One commit = one dbt build;
-monotonic-merge semantics are preserved because the batch folds accounts in the
-same order the sequential pushes used. Manual local invocation:
+Each account is synced with ``defer_push=True`` (fetch + normalize, no write);
+after the loop we push ONE batched seed write via ``merge_and_push_seeds_batch``
+(a single atomic rewrite of the BigQuery raw seed tables + one rebuild
+dispatch). This replaced the old per-account push that fanned this cron out
+into ~14 GitHub commits a night → ~14 ``Update Daily Position Performance``
+runs (most instantly cancelled by ``concurrency: cancel-in-progress``). One
+write = one dbt build; monotonic-merge semantics are preserved because the
+batch folds accounts in the same order the sequential pushes used. Manual
+local invocation:
   cd /path/to/ccwj && .venv/bin/python -m app.snaptrade_sync_cli [--intraday|--force-refresh]
 
 Requires: SNAPTRADE_CLIENT_ID, SNAPTRADE_CONSUMER_KEY in env. The

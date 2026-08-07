@@ -22,21 +22,21 @@
 with combined as (
     select
         'trade_history' as src, tenant_id, count(*) as n
-    from {{ ref('trade_history') }}
+    from {{ source('raw_broker', 'trade_history') }}
     group by tenant_id
 
     union all
 
     select
         'current_positions' as src, tenant_id, count(*) as n
-    from {{ ref('current_positions') }}
+    from {{ source('raw_broker', 'current_positions') }}
     group by tenant_id
 
     union all
 
     select
         'account_balances' as src, tenant_id, count(*) as n
-    from {{ ref('account_balances') }}
+    from {{ source('raw_broker', 'account_balances') }}
     group by tenant_id
 )
 

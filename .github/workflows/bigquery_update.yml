@@ -1,23 +1,25 @@
 name: Update Daily Position Performance
 
-# Runs dbt (seeds + models) and daily prices so BigQuery matches repo seeds.
-# Triggered on every push to the default branch — including Schwab/CSV seed commits
-# from the app (GITHUB_PAT + GITHUB_REPO). Keep GITHUB_BRANCH in Render aligned
-# with branches listed here (master or main).
+# Runs dbt (seeds + models) and daily prices so BigQuery marts match the
+# raw seed tables (ccwj-dbt.analytics_raw, written directly by the app —
+# see app/seed_store.py).
 #
-# The previous daily `schedule:` cron was removed: the Render cron service
-# `happytrader-schwab-sync` now runs at 21:30 UTC weekdays, pushes updated
-# seed CSVs, and that push triggers this workflow automatically. Manual
-# rebuilds without a seed change can still use workflow_dispatch.
+# Triggers:
+#   - workflow_dispatch: fired by the app after every CHANGED seed write
+#     (webhook sync, nightly cron batch, manual sync, CSV upload, admin
+#     purge) via _dispatch_warehouse_rebuild in app/upload.py. This is the
+#     primary data-driven trigger — tenant seed data no longer lives in
+#     git, so there are no seed commits to react to.
+#   - push to master/main: code-driven rebuilds when dbt models/macros/
+#     seeds (demo + crypto only now) or the warehouse loaders change.
 on:
   push:
     branches: [master, main]
     # Only rebuild the warehouse for commits that can actually change its
-    # output. This job reads dbt seeds/models + a few root/scripts loaders and
-    # rebuilds BigQuery; it never imports `app/`, so app-code, template, docs,
-    # test, and rule commits (e.g. a Daily-Review template tweak) do NOT affect
-    # warehouse output and shouldn't trigger a 5-7 min rebuild. Seed pushes from
-    # the SnapTrade sync only touch `dbt/seeds/*.csv`, so they still always run.
+    # output. This job reads dbt models/macros/static seeds + a few
+    # root/scripts loaders and rebuilds BigQuery; it never imports `app/`,
+    # so app-code, template, docs, test, and rule commits do NOT affect
+    # warehouse output and shouldn't trigger a 5-7 min rebuild.
     # paths-ignore skips a push ONLY when EVERY changed file matches — a mixed
     # commit (e.g. a dbt model + an app file) still runs. The workflow file
     # itself is intentionally NOT ignored so changes to it re-run.
@@ -28,23 +30,28 @@ on:
       - '.cursor/**'
       - '**/*.md'
   workflow_dispatch:
+  schedule:
+    # Nightly backstop: catches a missed app dispatch (PAT hiccup, GitHub
+    # API outage) and keeps date-driven marts + accumulating snapshots
+    # advancing daily even on days with zero seed changes. Runs after the
+    # 23:00 UTC sync cron and the evening prices refresh.
+    - cron: '30 4 * * *'
 
-# Schwab sync (especially the multi-account "Sync all" button) and the
-# nightly Render cron can each push several seed commits within a few
-# seconds. Without this, every commit kicks off its own full dbt build
-# even though only the last one's BigQuery output matters. Cancelling
-# the in-flight run when a newer commit lands collapses N back-to-back
-# rebuilds into a single build of the latest seeds — which is what we
-# want, since `merge_and_push_seeds` is monotonic: each push already
-# carries every prior account's data merged in.
+# The sync (especially the multi-account "Sync all" button) can dispatch
+# several rebuilds within a few seconds. Without this, every dispatch kicks
+# off its own full dbt build even though only the last one's BigQuery output
+# matters. Cancelling the in-flight run when a newer dispatch lands collapses
+# N back-to-back rebuilds into a single build of the latest raw tables —
+# which is what we want, since `merge_and_push_seeds` is monotonic: each
+# write already carries every prior account's data merged in.
 #
 # Keep this a SINGLE group (not split by event/actor): every run does a
 # `dbt build` against the SHARED BigQuery dataset, and two concurrent builds
 # would race on the same tables. One group + cancel-in-progress serializes to
-# exactly one live build of the latest ref (which always checks out both the
-# newest code AND seeds, so a cancelled build loses nothing). The nightly cron
-# now also pushes ONE batched commit for all accounts (see
-# app/snaptrade_sync_cli.py), so the old ~14-runs-a-night fan-out is gone.
+# exactly one live build (each build reads the newest code AND the current
+# raw tables, so a cancelled build loses nothing). The nightly cron also
+# writes ONE batch for all accounts (see app/snaptrade_sync_cli.py), so
+# there is no per-account fan-out.
 concurrency:
   group: bq-update-${{ github.ref }}
   cancel-in-progress: true

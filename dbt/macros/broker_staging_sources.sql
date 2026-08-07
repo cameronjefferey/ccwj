@@ -24,7 +24,7 @@
 --------------------------------------------------------------------- -#}
 {% macro broker_history_rows(broker_slug, is_catch_all=false) %}
 {% if execute %}
-    {%- set _cols = adapter.get_columns_in_relation(ref('trade_history')) | map(attribute='name') | list -%}
+    {%- set _cols = adapter.get_columns_in_relation(source('raw_broker', 'trade_history')) | map(attribute='name') | list -%}
 {% else %}
     {%- set _cols = [] -%}
 {% endif %}
@@ -42,7 +42,7 @@
         cast(Price as string) as Price,
         cast(fees_and_comm as string) as fees_and_comm,
         cast(Amount as string) as Amount
-    from {{ ref('trade_history') }}
+    from {{ source('raw_broker', 'trade_history') }}
     where {{ broker_row_filter('Account', broker_slug, is_catch_all) }}
 {% endmacro %}
 
@@ -53,7 +53,7 @@
 --------------------------------------------------------------------- -#}
 {% macro broker_current_rows(broker_slug, is_catch_all=false) %}
 {% if execute %}
-    {%- set _cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
+    {%- set _cols = adapter.get_columns_in_relation(source('raw_broker', 'current_positions')) | map(attribute='name') | list -%}
 {% else %}
     {%- set _cols = [] -%}
 {% endif %}
@@ -93,7 +93,7 @@
         cast(in_the_money as string) as in_the_money,
         cast(security_type as string) as security_type,
         cast(margin_requirement as string) as margin_requirement
-    from {{ ref('current_positions') }}
+    from {{ source('raw_broker', 'current_positions') }}
     where {{ broker_row_filter('Account', broker_slug, is_catch_all) }}
 {% endmacro %}
 
@@ -110,8 +110,8 @@
 --------------------------------------------------------------------- -#}
 {% macro broker_balances_rows(broker_slug, is_catch_all=false) %}
 {% if execute %}
-    {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
-    {%- set _bal_cols  = adapter.get_columns_in_relation(ref('account_balances')) | map(attribute='name') | list -%}
+    {%- set _curr_cols = adapter.get_columns_in_relation(source('raw_broker', 'current_positions')) | map(attribute='name') | list -%}
+    {%- set _bal_cols  = adapter.get_columns_in_relation(source('raw_broker', 'account_balances')) | map(attribute='name') | list -%}
 {% else %}
     {%- set _curr_cols = [] -%}
     {%- set _bal_cols  = [] -%}
@@ -136,7 +136,7 @@
         safe_cast(trim(replace(replace(replace(cast(unrealized_pnl_pct as string), '%', ''), ',', ''), ' ', '')) as float64) as unrealized_pnl_pct,
         safe_cast(trim(replace(replace(cast(percent_of_account as string), '%', ''), ',', '')) as float64) as percent_of_account,
         1 as src_priority
-    from {{ ref('account_balances') }}
+    from {{ source('raw_broker', 'account_balances') }}
     where trim(coalesce(cast(account as string), '')) != ''
       and lower(trim(coalesce(cast(row_type as string), ''))) in ('cash', 'account_total')
       and {{ broker_row_filter('account', broker_slug, is_catch_all) }}
@@ -155,7 +155,7 @@
         cast(null as float64) as unrealized_pnl_pct,
         safe_cast(trim(replace(cast(percent_of_account as string), '%', '')) as float64) as percent_of_account,
         2 as src_priority
-    from {{ ref('current_positions') }}
+    from {{ source('raw_broker', 'current_positions') }}
     where lower(trim(coalesce(cast(security_type as string), ''))) = 'cash and money market'
       and {{ broker_row_filter('Account', broker_slug, is_catch_all) }}
 
@@ -173,7 +173,7 @@
         safe_cast(trim(replace(cast(gain_or_loss_percent as string), '%', '')) as float64) as unrealized_pnl_pct,
         cast(null as float64) as percent_of_account,
         2 as src_priority
-    from {{ ref('current_positions') }}
+    from {{ source('raw_broker', 'current_positions') }}
     where lower(trim(coalesce(cast(symbol as string), ''))) in ('account total', 'positions total')
       and {{ broker_row_filter('Account', broker_slug, is_catch_all) }}
 {% endmacro %}

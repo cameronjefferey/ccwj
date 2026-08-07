@@ -403,7 +403,7 @@ def admin_delete_user(user_id):
 
     if purge_bq:
         from app.upload import purge_user_id_from_seeds
-        ok, err, rows_removed, commit_sha = purge_user_id_from_seeds(
+        ok, err, rows_removed, build_marker = purge_user_id_from_seeds(
             target.id,
             commit_message=(
                 f"admin: purge BigQuery seed rows for deleted user "
@@ -412,8 +412,8 @@ def admin_delete_user(user_id):
         )
         if not ok:
             flash(
-                f"Could not push cleaned seed CSVs to GitHub: {err}. "
-                "User NOT deleted — fix the GitHub config and retry, "
+                f"Could not rewrite the raw seed tables in BigQuery: {err}. "
+                "User NOT deleted — fix the issue and retry, "
                 "or untick the BigQuery purge box and delete just the "
                 "Postgres user.",
                 "danger",
@@ -426,23 +426,26 @@ def admin_delete_user(user_id):
                 for path, n in rows_removed.items()
                 if n
             )
-            sha_tag = f" (commit {commit_sha[:7]})" if commit_sha else ""
+            rebuild_tag = (
+                " A warehouse rebuild was dispatched." if build_marker else ""
+            )
             bq_summary = (
-                f" Stripped {total} seed rows ({per_file}) from GitHub{sha_tag}. "
-                "The next CI dbt build will rebuild BigQuery without them."
+                f" Stripped {total} rows ({per_file}) from the raw seed "
+                f"tables.{rebuild_tag} The next dbt build rebuilds BigQuery "
+                "without them."
             )
         else:
             bq_summary = (
-                " No matching user_id rows in seed CSVs (nothing to strip). "
-                "Legacy rows with empty user_id were left in place."
+                " No matching user_id rows in the raw seed tables (nothing "
+                "to strip). Legacy rows with empty user_id were left in place."
             )
 
     from app.models import delete_user
     if not delete_user(target.id):
         flash(
             "Postgres delete failed (see Render logs). "
-            + ("Note: the seed-CSV cleanup commit was already pushed to GitHub "
-               "and will take effect on the next dbt build."
+            + ("Note: the raw seed tables in BigQuery were already rewritten "
+               "and the cleanup takes effect on the next dbt build."
                if purge_bq else "No changes were made."),
             "danger",
         )

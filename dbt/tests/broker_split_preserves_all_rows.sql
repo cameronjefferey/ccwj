@@ -67,7 +67,7 @@ alpaca_history_dropped as (
                                        when starts_with(cast(Action as string), 'Buy') then 'buy'
                                        when starts_with(cast(Action as string), 'Sell') then 'sell'
                                    end) as n_opt_aggregate
-        from {{ ref('trade_history') }}
+        from {{ source('raw_broker', 'trade_history') }}
         where {{ broker_row_filter('Account', 'alpaca') }}
     )
     where (is_equity and is_partial_fill and n_aggregate >= 1)
@@ -75,7 +75,7 @@ alpaca_history_dropped as (
 ),
 history_source as (
     select
-        (select count(*) from {{ ref('trade_history') }})
+        (select count(*) from {{ source('raw_broker', 'trade_history') }})
         - (select n from alpaca_history_dropped) as n
 ),
 
@@ -89,7 +89,7 @@ current_split as (
     )
 ),
 current_source as (
-    select count(*) as n from {{ ref('current_positions') }}
+    select count(*) as n from {{ source('raw_broker', 'current_positions') }}
 ),
 
 balances_split as (
@@ -104,16 +104,16 @@ balances_split as (
 balances_source as (
     select
         (
-            select count(*) from {{ ref('account_balances') }}
+            select count(*) from {{ source('raw_broker', 'account_balances') }}
             where trim(coalesce(cast(account as string), '')) != ''
               and lower(trim(coalesce(cast(row_type as string), ''))) in ('cash', 'account_total')
         )
         + (
-            select count(*) from {{ ref('current_positions') }}
+            select count(*) from {{ source('raw_broker', 'current_positions') }}
             where lower(trim(coalesce(cast(security_type as string), ''))) = 'cash and money market'
         )
         + (
-            select count(*) from {{ ref('current_positions') }}
+            select count(*) from {{ source('raw_broker', 'current_positions') }}
             where lower(trim(coalesce(cast(symbol as string), ''))) in ('account total', 'positions total')
         ) as n
 )

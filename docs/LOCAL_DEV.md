@@ -29,8 +29,10 @@ flask reset-password --username <your-prod-username>   # set a known local pw
 
 Then every day after: just `./scripts/dev.sh`.
 
-`dev.sh` refuses to start unless `BQ_DATASET=analytics_dev`, so you can never
-accidentally run the local app against the prod warehouse.
+`dev.sh` refuses to start unless `BQ_DATASET=analytics_dev` **and**
+`BQ_RAW_DATASET=analytics_raw_dev`, so you can never accidentally run the
+local app against the prod warehouse or write local syncs into the prod
+raw seed tables.
 
 ## Under the hood
 
@@ -46,19 +48,20 @@ in `.env` enforce the split:
 | Knob | Local value | Effect |
 | --- | --- | --- |
 | `BQ_DATASET` | `analytics_dev` | Every app query's hardcoded `ccwj-dbt.analytics.` ref is rewritten to `analytics_dev` at the `get_bigquery_client()` chokepoint. Local reads never touch prod's warehouse. |
-| `GITHUB_BRANCH` | `dev-seeds` | Seed CSV reads/writes go to the `dev-seeds` branch. CI builds prod from master/main only, so local syncs never rebuild prod. |
+| `BQ_RAW_DATASET` | `analytics_raw_dev` | The app's seed writers (sync/upload/purge, `app/seed_store.py`) WRITE_TRUNCATE the raw seed tables in this dataset. Prod writes go to `analytics_raw`; dev writes never touch it, and non-prod writes never dispatch a CI rebuild. |
 
 Production leaves **both unset**.
 
 ## The data is already mirrored — `scripts/dev-refresh.sh`
 
-`analytics_dev` is a **full mirror** for testing: it builds from
-`origin/master` seeds (every prod tenant, including yours) **merged** with your
-local environment's own syncs from `origin/dev-seeds`
-(`scripts/merge_dev_seeds.py`; local tenants win), using **your working tree's
-dbt code**. So after one run, your prod trade history — and every other prod
-user's — is sitting in `analytics_dev`, and your model changes are testable
-against it before they ship.
+`analytics_dev` is a **full mirror** for testing: `scripts/dev_refresh_raw.py`
+rebuilds `analytics_raw_dev` from prod's `analytics_raw` (every prod tenant,
+including yours) **merged** with your local environment's own syncs (local
+tenants registered in local Postgres win), then dbt builds `analytics_dev`
+from it using **your working tree's dbt code** (`DBT_RAW_DATASET=analytics_raw_dev`
+points the `raw_broker` source at the dev copy). So after one run, your prod
+trade history — and every other prod user's — is sitting in `analytics_dev`,
+and your model changes are testable against it before they ship.
 
 `dev-refresh.sh` targets `analytics_dev` only. Plain `dbt build` from `dbt/`
 and `refresh.sh` target **prod** `analytics` — use those only for intentional
@@ -116,11 +119,12 @@ python scripts/dev-link-prod-tenants.py \
 ```
 
 After linking, the warehouse rows for those tenant_ids are typically already in
-`analytics_dev` (they come from prod's `origin/master` seeds). Run
+`analytics_dev` (they come from prod's `analytics_raw`). Run
 `./scripts/dev-refresh.sh` if you want to (re)build the mirror. Note:
-`scripts/merge_dev_seeds.py` keeps a mirrored prod tenant's master data on
-refresh — it only replaces master rows for local tenants that have a fresher
-copy on the `dev-seeds` branch — so refreshing won't blank your mirrored view.
+`scripts/dev_refresh_raw.py` keeps a mirrored prod tenant's prod data on
+refresh — it only replaces prod rows for local tenants that have a fresher
+local copy in `analytics_raw_dev` — so refreshing won't blank your mirrored
+view.
 
 ## Impersonation
 

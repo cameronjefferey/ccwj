@@ -6,8 +6,9 @@ goes through SnapTrade** — there is no parallel native Schwab module.
 
 We use SnapTrade's hosted Connection Portal and pull activities +
 positions + balances via SnapTrade's REST API, then normalize to the same
-seed CSVs (``trade_history.csv`` / ``current_positions.csv`` /
-``account_balances.csv``) as manual upload. Convergence happens at
+raw seed tables (``trade_history`` / ``current_positions`` /
+``account_balances`` in BigQuery ``analytics_raw``, via
+``app/seed_store.py``) as manual upload. Convergence happens at
 ``app.upload.merge_and_push_seeds`` so all the broker-sync-safety
 invariants apply automatically.
 

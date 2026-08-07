@@ -17,14 +17,15 @@
 #
 # TWO manually-managed Render crons (created in the dashboard, NOT declared in
 # this Blueprint) run app/snaptrade_sync_cli.py. Each syncs every account then
-# pushes ONE batched seed commit (merge_and_push_seeds_batch) → a single dbt
-# build, instead of the old ~14-commits-a-night fan-out.
+# pushes ONE batched seed write (merge_and_push_seeds_batch → BigQuery raw
+# tables + one rebuild dispatch) → a single dbt build, instead of the old
+# ~14-commits-a-night fan-out.
 #
 #   1. happytrader-snaptrade-intraday — REAL-TIME ORDERS POLL, every ~15 min
 #      during market hours (`--intraday`; suggested schedule `*/15 13-21 * * 1-5`
 #      UTC, covering 9:30am–4pm ET year-round + a post-close buffer, DST-agnostic).
 #      Reads the real-time recent_orders feed (skipping the T+1 activities feed)
-#      and pushes a HISTORY-ONLY diff: only NEW trade fills hit trade_history.csv;
+#      and pushes a HISTORY-ONLY diff: only NEW trade fills hit trade_history;
 #      the positions/balances SNAPSHOTS are NOT rewritten (they drift on every
 #      read as marks move — pushing them every 15 min rebuilt the whole warehouse
 #      each run). Snapshot freshness stays with the webhook syncs + 23:00
@@ -35,7 +36,7 @@
 #      ~19h stale on holdings still returned the just-closed contracts). So the
 #      poll surfaces same-day trades without waiting on the daily Schwab webhook,
 #      with NO billed refresh. A poll with no new fills is a true no-op (no
-#      commit → no build).
+#      write → no rebuild dispatch → no build).
 #   2. happytrader-snaptrade-sync — PLAIN BACKSTOP at 23:00 UTC weekdays
 #      (force_refresh=False, reads activities + orders): re-reads SnapTrade's
 #      cache as a safety net for missed webhooks AND lands the authoritative T+1

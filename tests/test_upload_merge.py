@@ -1255,14 +1255,15 @@ def test_seed_contents_unchanged_false_when_file_missing(monkeypatch):
 
 
 def test_commit_git_paths_skips_commit_when_unchanged(monkeypatch):
-    """Identical content → no_changes=True, head_sha=None, and NO GitHub
-    write call is made (single-file path)."""
+    """Identical content → no_changes=True, marker=None, and NO seed-store
+    write (and no rebuild dispatch) is made."""
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: "same\n")
 
-    def _boom(*a, **k):  # would be the actual GitHub write
-        raise AssertionError("must not commit when nothing changed")
+    def _boom(*a, **k):  # would be the actual seed-store write
+        raise AssertionError("must not write when nothing changed")
 
-    monkeypatch.setattr(_upload, "_commit_file", _boom)
+    monkeypatch.setattr(_upload, "_seed_store_write", _boom)
+    monkeypatch.setattr(_upload, "_dispatch_warehouse_rebuild", _boom)
     ok, err, sha, no_changes = _upload._commit_git_paths(
         [("dbt/seeds/x.csv", "same\n")], "msg",
     )
@@ -1270,20 +1271,43 @@ def test_commit_git_paths_skips_commit_when_unchanged(monkeypatch):
 
 
 def test_commit_git_paths_commits_when_changed(monkeypatch):
-    """Different content → falls through to the real commit and no_changes=False."""
+    """Different content → falls through to the real seed-store write,
+    dispatches a rebuild, and returns the dispatch marker."""
     monkeypatch.setattr(_upload, "_get_file_content", lambda path: "old\n")
     calls = {}
 
-    def _fake_commit_file(path, content, message):
-        calls["path"] = path
-        return True, None, "abc123"
+    def _fake_store_write(path_contents):
+        calls["paths"] = [p for p, _c in path_contents]
 
-    monkeypatch.setattr(_upload, "_commit_file", _fake_commit_file)
+    monkeypatch.setattr(_upload, "_seed_store_write", _fake_store_write)
+    monkeypatch.setattr(
+        _upload, "_dispatch_warehouse_rebuild", lambda reason: "dispatch:1700000000"
+    )
     ok, err, sha, no_changes = _upload._commit_git_paths(
         [("dbt/seeds/x.csv", "new\n")], "msg",
     )
-    assert ok is True and sha == "abc123" and no_changes is False
-    assert calls["path"] == "dbt/seeds/x.csv"
+    assert ok is True and sha == "dispatch:1700000000" and no_changes is False
+    assert calls["paths"] == ["dbt/seeds/x.csv"]
+
+
+def test_commit_git_paths_write_failure_fails_closed(monkeypatch):
+    """A seed-store write failure must surface as ok=False (sync aborts
+    loudly) and must NOT dispatch a rebuild."""
+    monkeypatch.setattr(_upload, "_get_file_content", lambda path: "old\n")
+
+    def _fail_write(path_contents):
+        raise _upload.SeedStoreError("load job failed")
+
+    def _no_dispatch(reason):
+        raise AssertionError("must not dispatch after a failed write")
+
+    monkeypatch.setattr(_upload, "_seed_store_write", _fail_write)
+    monkeypatch.setattr(_upload, "_dispatch_warehouse_rebuild", _no_dispatch)
+    ok, err, sha, no_changes = _upload._commit_git_paths(
+        [("dbt/seeds/x.csv", "new\n")], "msg",
+    )
+    assert ok is False and "load job failed" in err
+    assert sha is None and no_changes is False
 
 
 # ---------------------------------------------------------------------------

@@ -20,9 +20,9 @@
 -- on a broker-stable ``tenant_id`` instead of a Postgres SERIAL.
 
 {% if execute %}
-    {%- set _hist_cols = adapter.get_columns_in_relation(ref('trade_history')) | map(attribute='name') | list -%}
-    {%- set _curr_cols = adapter.get_columns_in_relation(ref('current_positions')) | map(attribute='name') | list -%}
-    {%- set _bal_cols  = adapter.get_columns_in_relation(ref('account_balances')) | map(attribute='name') | list -%}
+    {%- set _hist_cols = adapter.get_columns_in_relation(source('raw_broker', 'trade_history')) | map(attribute='name') | list -%}
+    {%- set _curr_cols = adapter.get_columns_in_relation(source('raw_broker', 'current_positions')) | map(attribute='name') | list -%}
+    {%- set _bal_cols  = adapter.get_columns_in_relation(source('raw_broker', 'account_balances')) | map(attribute='name') | list -%}
 {% else %}
     {%- set _hist_cols = [] -%}
     {%- set _curr_cols = [] -%}
@@ -41,7 +41,7 @@ with raw_tenants as (
         {{ _hist_tenant_expr }} as tenant_id,
         {{ _hist_user_id_expr }} as user_id,
         cast(Account as string) as account_name
-    from {{ ref('trade_history') }}
+    from {{ source('raw_broker', 'trade_history') }}
 
     union all
 
@@ -49,7 +49,7 @@ with raw_tenants as (
         {{ _curr_tenant_expr }} as tenant_id,
         {{ _curr_user_id_expr }} as user_id,
         cast(Account as string) as account_name
-    from {{ ref('current_positions') }}
+    from {{ source('raw_broker', 'current_positions') }}
 
     union all
 
@@ -57,7 +57,7 @@ with raw_tenants as (
         {{ _bal_tenant_expr }} as tenant_id,
         {{ _bal_user_id_expr }} as user_id,
         cast(account as string) as account_name
-    from {{ ref('account_balances') }}
+    from {{ source('raw_broker', 'account_balances') }}
 ),
 
 cleaned as (

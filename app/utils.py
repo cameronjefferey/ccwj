@@ -117,7 +117,7 @@ def earnings_follower_url(symbol=None, theme=None, tab=None, sector=None, subsec
 # pages (every visitor sees the same canned weekly review, mirror score,
 # strategies, insights) but every write would let one stranger overwrite
 # what the next stranger sees: rename the demo profile, publish or delete
-# community trades, regenerate insights, replace the seed CSVs by uploading
+# community trades, regenerate insights, replace the seed data by uploading
 # a different broker's export, etc.
 #
 # To keep the demo a faithful, predictable showcase we block writes server-

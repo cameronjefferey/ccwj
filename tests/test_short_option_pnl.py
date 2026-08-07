@@ -19,6 +19,8 @@ formula and verifies the live seed surfaces it.
 """
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import pytest
 
@@ -99,17 +101,28 @@ def test_short_aware_unrealized_pnl_handles_every_option_quadrant(
 
 
 # ---------------------------------------------------------------------------
-# Live-seed assertions: walk the actual current_positions.csv and verify
-# every short option row would render correctly. Network-free; reads the
-# seed CSV directly. Pins the PLTR row from the screenshot specifically
-# so any future change that breaks Cameron Investment's display lights
-# this test up first.
+# Live-seed assertions: walk the current-positions seed and verify every
+# short option row would render correctly. Network-free; reads the seed
+# CSV from disk WHEN PRESENT. Since the Aug 2026 seed-store migration the
+# tenant seeds live in BigQuery (ccwj-dbt.analytics_raw), not the repo —
+# these tests skip when the CSV is absent (normal now). The unit tests
+# above still pin the formula; the structural invariant lives in
+# dbt/tests/int_enriched_current_equity_price_consistent.sql and the
+# stg_current override itself is pinned by
+# test_stg_current_still_overrides_short_option_pnl.
 # ---------------------------------------------------------------------------
+
+_CURRENT_POSITIONS_CSV = "dbt/seeds/current_positions.csv"
 
 
 def _load_current_positions():
+    if not os.path.exists(_CURRENT_POSITIONS_CSV):
+        pytest.skip(
+            "current_positions.csv not on disk (seed data lives in the "
+            "BigQuery seed store since Aug 2026)"
+        )
     df = pd.read_csv(
-        "dbt/seeds/current_positions.csv",
+        _CURRENT_POSITIONS_CSV,
         dtype=str,
         keep_default_na=False,
         low_memory=False,

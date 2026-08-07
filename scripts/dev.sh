@@ -14,8 +14,9 @@
 # --link is a one-time step to "become" your prod self (see docs/LOCAL_DEV.md).
 #
 # Environment separation is enforced by .env (BQ_DATASET=analytics_dev,
-# GITHUB_BRANCH=dev-seeds); this script refuses to start if .env is pointed
-# at prod, so you can never accidentally run the local app against analytics.
+# BQ_RAW_DATASET=analytics_raw_dev); this script refuses to start if .env is
+# pointed at prod, so you can never accidentally run the local app against
+# the prod warehouse or write local syncs into the prod raw seed tables.
 
 set -euo pipefail
 
@@ -56,6 +57,7 @@ env_val() {
 }
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
   : "${BQ_DATASET:=$(env_val BQ_DATASET)}"
+  : "${BQ_RAW_DATASET:=$(env_val BQ_RAW_DATASET)}"
   : "${PROD_DATABASE_URL:=$(env_val PROD_DATABASE_URL)}"
   : "${DEV_PROD_USERNAME:=$(env_val DEV_PROD_USERNAME)}"
 fi
@@ -66,6 +68,14 @@ fi
 if [[ "${BQ_DATASET:-analytics}" != "analytics_dev" ]]; then
   echo "REFUSING TO START: BQ_DATASET='${BQ_DATASET:-<unset>}' is not 'analytics_dev'." >&2
   echo "  Local dev must read the dev mirror. Set BQ_DATASET=analytics_dev in .env." >&2
+  exit 1
+fi
+
+# Same discipline for the raw seed store: an unset BQ_RAW_DATASET means the
+# app's sync/upload writers would WRITE_TRUNCATE the PROD raw seed tables.
+if [[ "${BQ_RAW_DATASET:-analytics_raw}" != "analytics_raw_dev" ]]; then
+  echo "REFUSING TO START: BQ_RAW_DATASET='${BQ_RAW_DATASET:-<unset>}' is not 'analytics_raw_dev'." >&2
+  echo "  Local seed writes must target the dev raw dataset. Set BQ_RAW_DATASET=analytics_raw_dev in .env." >&2
   exit 1
 fi
 

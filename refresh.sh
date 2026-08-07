@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Full local refresh pipeline — mirrors what GitHub Actions does after an upload.
+# Full local refresh pipeline — mirrors what GitHub Actions does after a sync.
+#
+# Tenant seed data lives in BigQuery raw tables (ccwj-dbt.analytics_raw),
+# written directly by the app (app/seed_store.py) — no git pull needed for
+# data. git pull just keeps local dbt code current.
 #
 # Order:
-#   1. git pull       — bring down seed CSVs committed by the web app upload
-#   2. dbt build      — rebuild everything downstream of trade_history + current_positions
+#   1. git pull       — bring down latest dbt models/macros
+#   2. dbt build      — rebuild everything downstream of the raw seed tables
 #   3. python prices  — fetch end-of-day stock prices via yfinance → BigQuery
 #   4. dbt build      — rebuild only models downstream of stg_daily_prices
 #
@@ -21,7 +25,7 @@ DBT_DIR="$SCRIPT_DIR/dbt"
 source "$DBT_DIR/.venv/bin/activate"
 
 if [[ "${1:-}" != "--prices" ]]; then
-  echo "==> Step 1: git pull (fetch latest uploaded seed CSVs)"
+  echo "==> Step 1: git pull (fetch latest dbt code)"
   cd "$SCRIPT_DIR"
   git pull
 

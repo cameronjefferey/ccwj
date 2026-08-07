@@ -1,6 +1,5 @@
 import os
 import re
-import base64
 import threading
 from contextlib import contextmanager
 from functools import wraps
@@ -18,12 +17,18 @@ from app.models import (
     get_or_create_broker_tenant, MANUAL_BROKER_SLUG,
 )
 from app.utils import demo_block_writes
+from app.seed_store import (
+    SeedStoreError,
+    is_production_store,
+    read_seed_csv as _seed_store_read,
+    write_seed_csvs as _seed_store_write,
+)
 
 
-# Every seed writer performs a read/merge/commit against the same three files.
-# Hold one cluster-wide lock across that entire operation so a webhook, cron,
-# manual sync, or CSV upload cannot build content from a stale branch snapshot
-# and overwrite another writer's rows.
+# Every seed writer performs a read/merge/write against the same three raw
+# tables (see app/seed_store.py). Hold one cluster-wide lock across that
+# entire operation so a webhook, cron, manual sync, or CSV upload cannot
+# build content from a stale read and overwrite another writer's rows.
 SEED_WRITE_LOCK_KEY = 8274013
 _seed_write_lock_state = threading.local()
 
@@ -213,7 +218,8 @@ def _github_repo() -> str:
 
 
 def _github_branch() -> str:
-    """Branch to read/write seed files (override with GITHUB_BRANCH)."""
+    """Git ref the dispatched rebuild workflow runs on (override with
+    GITHUB_BRANCH; seed DATA no longer flows through git)."""
     return os.environ.get("GITHUB_BRANCH", "master").strip()
 
 
@@ -326,65 +332,37 @@ def _validate_csv(file_storage, required_cols, label, col_renames=None,
     return df, None
 
 
-def _get_file_sha(path):
-    """Get the current SHA of a file in the repo (needed to update it)."""
-    repo = _github_repo()
-    branch = _github_branch()
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    resp = requests.get(
-        url, headers=_github_headers(), params={"ref": branch}, timeout=15
-    )
-    if resp.status_code == 200:
-        return resp.json().get("sha")
-    return None  # File doesn't exist yet
-
-
 class SeedFetchError(RuntimeError):
-    """Raised when reading the existing seed from GitHub fails for any reason
-    other than the file genuinely not existing (HTTP 404).
+    """Raised when reading the existing seed from the store fails for any
+    reason other than the table genuinely not existing yet (first write).
 
     A merge that proceeds on a transient fetch failure would silently
     treat the seed as empty and overwrite every other tenant's history
     with just the syncing user's new rows. That actually happened in
     production once (see commit ``3f4aecb`` — Sara Investment sync wiped
     10,446 rows belonging to four other accounts and three other users).
-    The merge MUST refuse to run unless we can distinguish "file does
-    not yet exist" from "GitHub call blipped".
+    The merge MUST refuse to run unless we can distinguish "seed does
+    not yet exist" from "the read blipped".
     """
 
 
 def _get_file_content(path):
     """
-    Fetch the raw content of a file from the repo.
-    Returns decoded string on 200, or ``None`` only when the file truly
-    does not exist (HTTP 404). Raises ``SeedFetchError`` on any other
-    failure (timeout, 5xx, 403 rate-limit, auth) so callers cannot
-    accidentally treat a transient blip as "no existing data". See
-    ``_merge_seed_with_existing`` and the Bug A note in the
-    SeedFetchError docstring.
+    Fetch the current seed content (CSV text) from the BigQuery seed
+    store. Returns the CSV string, or ``None`` only when the raw table
+    truly does not exist yet (first-ever write — the analogue of the old
+    GitHub 404). Raises ``SeedFetchError`` on any other failure (network,
+    auth, quota) so callers cannot accidentally treat a transient blip as
+    "no existing data". See ``_merge_seed_with_existing`` and the Bug A
+    note in the SeedFetchError docstring.
+
+    Name kept from the GitHub-storage era — it is the read half of the
+    storage seam that every merge test stubs.
     """
-    repo = _github_repo()
-    branch = _github_branch()
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
     try:
-        resp = requests.get(
-            url, headers=_github_headers(), params={"ref": branch}, timeout=15
-        )
-    except requests.RequestException as exc:
-        raise SeedFetchError(
-            f"GitHub fetch for {path} failed: {exc}"
-        ) from exc
-    if resp.status_code == 404:
-        return None
-    if resp.status_code != 200:
-        raise SeedFetchError(
-            f"GitHub fetch for {path} returned HTTP {resp.status_code}: "
-            f"{resp.text[:200]}"
-        )
-    data = resp.json()
-    if data.get("encoding") == "base64":
-        return base64.b64decode(data["content"]).decode("utf-8")
-    return data.get("content", "")
+        return _seed_store_read(path)
+    except SeedStoreError as exc:
+        raise SeedFetchError(str(exc)) from exc
 
 
 def _normalize_uid(value) -> str:
@@ -848,47 +826,16 @@ def _merge_seed_with_existing(
     return merged[seed_columns].to_csv(index=False)
 
 
-def _commit_file(path, content, message):
-    """
-    Create or update a file in the GitHub repo via the Contents API.
-    Returns (success, error_message, head_commit_sha or None).
-    """
-    repo = _github_repo()
-    branch = _github_branch()
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
-
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": branch,
-    }
-
-    # If file exists, include its SHA (required for updates)
-    fsha = _get_file_sha(path)
-    if fsha:
-        payload["sha"] = fsha
-
-    resp = requests.put(url, json=payload, headers=_github_headers(), timeout=30)
-    if resp.status_code in (200, 201):
-        try:
-            csha = (resp.json().get("commit") or {}).get("sha")
-        except Exception:
-            csha = None
-        return True, None, csha
-    else:
-        return False, f"GitHub API error (HTTP {resp.status_code}): {resp.text[:300]}", None
-
-
 def _seed_contents_unchanged(path_contents):
-    """True iff every ``(path, content)`` already equals the file currently on
-    the branch.
+    """True iff every ``(path, content)`` already equals the seed currently
+    in the store.
 
-    Used to skip no-op commits: one commit = one push = one dbt build, and
-    rebuilding the entire warehouse for zero data change is wasted CI +
-    BigQuery cost ("I don't need to run dbt if no new data is going in"). A
-    missing file (HTTP 404 → ``None``) counts as a change so first-ever
-    creation still commits. Byte-exact comparison — if a future pandas version
-    reformats output, this errs toward committing (safe), never toward
+    Used to skip no-op writes: one changed write = one workflow dispatch =
+    one dbt build, and rebuilding the entire warehouse for zero data change
+    is wasted CI + BigQuery cost ("I don't need to run dbt if no new data is
+    going in"). A missing table (``None``) counts as a change so first-ever
+    creation still writes. Byte-exact comparison — if a future pandas version
+    reformats output, this errs toward writing (safe), never toward
     silently dropping a real change.
     """
     for path, content in path_contents:
@@ -898,104 +845,101 @@ def _seed_contents_unchanged(path_contents):
     return True
 
 
+_WORKFLOW_FILE = "bigquery_update.yml"
+
+# Build markers replace commit SHAs in the post-sync "processing" UI: a
+# changed seed write returns ``dispatch:<unix_ts>`` and the workflow-status
+# poller resolves it to the first bigquery_update.yml run created at/after
+# that timestamp. (workflow_dispatch runs aren't tied to a commit the app
+# knows about, so SHA-based lookup no longer works.)
+_DISPATCH_MARKER_PREFIX = "dispatch:"
+
+
+def _dispatch_warehouse_rebuild(reason):
+    """POST a ``workflow_dispatch`` for the warehouse rebuild workflow.
+
+    Returns a ``dispatch:<unix_ts>`` marker string on success, ``None`` on
+    failure. Log-don't-crash: the seed write already landed, so a dispatch
+    failure must never fail the sync — the next changed sync (or a manual
+    workflow run) rebuilds. Skipped entirely outside the production store
+    (local dev builds via scripts/dev-refresh.sh, never via CI).
+    """
+    import time as _time
+
+    if not is_production_store():
+        app.logger.info(
+            "Seed write landed in non-production raw dataset; skipping "
+            "CI rebuild dispatch (%s).", reason,
+        )
+        return None
+    if not os.environ.get("GITHUB_PAT", "").strip():
+        app.logger.warning(
+            "Seed write landed but GITHUB_PAT is not set — cannot dispatch "
+            "the warehouse rebuild (%s). Trigger %s manually.",
+            reason, _WORKFLOW_FILE,
+        )
+        return None
+    repo = _github_repo()
+    url = (
+        f"https://api.github.com/repos/{repo}/actions/workflows/"
+        f"{_WORKFLOW_FILE}/dispatches"
+    )
+    dispatched_at = int(_time.time())
+    try:
+        resp = requests.post(
+            url,
+            headers=_github_headers(),
+            json={"ref": _github_branch()},
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        app.logger.error(
+            "Warehouse rebuild dispatch failed (%s): %s", reason, exc
+        )
+        return None
+    if resp.status_code != 204:
+        app.logger.error(
+            "Warehouse rebuild dispatch failed (%s): HTTP %s %s",
+            reason, resp.status_code, resp.text[:200],
+        )
+        return None
+    app.logger.info("Dispatched warehouse rebuild (%s).", reason)
+    return f"{_DISPATCH_MARKER_PREFIX}{dispatched_at}"
+
+
 def _commit_git_paths(path_contents, message):
     """
-    Create a single commit updating one or more files (Git Data API).
-    path_contents: list of (repo_path, utf-8 content).
-    One commit = one push event = one workflow run.
-    Returns (success, error_message, head_commit_sha or None, no_changes).
-    ``no_changes=True`` means every file already matched the branch, so NO
-    commit was created (and therefore no dbt build will run).
+    Atomically replace the raw seed tables in the BigQuery store, then
+    dispatch a warehouse rebuild.
+    path_contents: list of (seed_path, CSV text).
+    Returns (success, error_message, build_marker or None, no_changes).
+    ``no_changes=True`` means every seed already matched the store, so NO
+    write happened (and therefore no dbt build will run). ``build_marker``
+    is a ``dispatch:<unix_ts>`` string the processing UI can poll (the
+    slot that used to carry the GitHub commit SHA).
+
+    Name kept from the GitHub-storage era — it is the write half of the
+    storage seam that the merge tests stub.
     """
     if not path_contents:
         return True, None, None, False
 
-    # No-op guard — skip the commit (and the dbt build it would trigger) when
-    # nothing actually changed. Never let this optimization block a real push:
-    # any error in the check falls through to the normal commit path.
+    # No-op guard — skip the write (and the dbt build it would trigger) when
+    # nothing actually changed. Never let this optimization block a real
+    # write: any error in the check falls through to the normal write path.
     try:
         if _seed_contents_unchanged(path_contents):
             return True, None, None, True
     except Exception:
         pass
 
-    if len(path_contents) == 1:
-        p, c = path_contents[0]
-        ok, err, sha = _commit_file(p, c, message)
-        return ok, err, sha, False
-
-    repo_full = _github_repo()
-    branch = _github_branch()
-    parts = repo_full.split("/", 1)
-    if len(parts) != 2:
-        return False, "Invalid GITHUB_REPO (expected owner/repo)", None, False
-    owner, repo = parts
-    base = f"https://api.github.com/repos/{owner}/{repo}/git"
-
-    headers = _github_headers()
-
-    ref_resp = requests.get(
-        f"{base}/refs/heads/{branch}", headers=headers, timeout=15
-    )
-    if ref_resp.status_code != 200:
-        return False, f"Failed to get ref (HTTP {ref_resp.status_code})", None, False
-    commit_sha = ref_resp.json()["object"]["sha"]
-
-    commit_resp = requests.get(f"{base}/commits/{commit_sha}", headers=headers, timeout=15)
-    if commit_resp.status_code != 200:
-        return False, f"Failed to get commit (HTTP {commit_resp.status_code})", None, False
-    tree_sha = commit_resp.json()["tree"]["sha"]
-
-    def create_blob(content):
-        blob_resp = requests.post(
-            f"{base}/blobs",
-            headers=headers,
-            json={"content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "encoding": "base64"},
-            timeout=30,
-        )
-        if blob_resp.status_code != 201:
-            raise RuntimeError(f"Blob create failed: {blob_resp.status_code}")
-        return blob_resp.json()["sha"]
-
     try:
-        tree_entries = []
-        for path, content in path_contents:
-            sha = create_blob(content)
-            tree_entries.append({"path": path, "mode": "100644", "type": "blob", "sha": sha})
-    except RuntimeError as e:
-        return False, str(e), None, False
+        _seed_store_write(path_contents)
+    except SeedStoreError as exc:
+        return False, str(exc), None, False
 
-    tree_payload = {"base_tree": tree_sha, "tree": tree_entries}
-    tree_resp = requests.post(f"{base}/trees", headers=headers, json=tree_payload, timeout=30)
-    if tree_resp.status_code != 201:
-        return (
-            False,
-            f"Failed to create tree (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}",
-            None,
-            False,
-        )
-    new_tree_sha = tree_resp.json()["sha"]
-
-    commit_payload = {"tree": new_tree_sha, "parents": [commit_sha], "message": message}
-    commit_resp = requests.post(f"{base}/commits", headers=headers, json=commit_payload, timeout=30)
-    if commit_resp.status_code != 201:
-        return (
-            False,
-            f"Failed to create commit (HTTP {commit_resp.status_code}): {commit_resp.text[:200]}",
-            None,
-            False,
-        )
-    new_commit_sha = commit_resp.json()["sha"]
-
-    patch_resp = requests.patch(
-        f"{base}/refs/heads/{branch}",
-        headers=headers,
-        json={"sha": new_commit_sha},
-        timeout=15,
-    )
-    if patch_resp.status_code != 200:
-        return False, f"Failed to update ref (HTTP {patch_resp.status_code})", None, False
-    return True, None, new_commit_sha, False
+    marker = _dispatch_warehouse_rebuild(message)
+    return True, None, marker, False
 
 
 EXISTING_ACCOUNTS_QUERY = """
@@ -1017,13 +961,18 @@ def _get_existing_accounts():
 
 
 def _upload_github_config_ok():
-    """Return (ok, error_message). PAT + owner/repo shape."""
-    pat = os.environ.get("GITHUB_PAT", "").strip()
-    if not pat:
-        return False, "GITHUB_PAT is not set. Manual upload is disabled."
-    repo = _github_repo()
-    if not repo or repo.count("/") != 1 or ".." in repo or repo.startswith("/"):
-        return False, "GITHUB_REPO must be set to owner/repo (e.g. myorg/ccwj)."
+    """Return (ok, error_message) — whether seed writes are enabled.
+
+    Seed data now lands directly in the BigQuery seed store
+    (``app/seed_store.py``), so no GitHub credentials are required to
+    WRITE. ``GITHUB_PAT`` is still used opportunistically to dispatch the
+    CI rebuild after a changed write (log-don't-crash if absent).
+    ``SEED_WRITES_DISABLED=1`` is an explicit operator kill switch.
+
+    Name kept for import compatibility across the sync callers/tests.
+    """
+    if os.environ.get("SEED_WRITES_DISABLED", "").strip() == "1":
+        return False, "Seed writes are disabled in this environment (SEED_WRITES_DISABLED=1)."
     return True, None
 
 
@@ -1156,9 +1105,9 @@ def merge_and_push_seeds(
     balances_df=None,
 ):
     """
-    Normalize DataFrames, merge into the GitHub seed files, and commit.
-    Both manual uploads and SnapTrade sync call this so trade_history.csv +
-    current_positions.csv stay the single pair of seeds that feed dbt.
+    Normalize DataFrames, merge into the BigQuery seed store, and write.
+    Both manual uploads and SnapTrade sync call this so trade_history +
+    current_positions stay the single pair of raw tables that feed dbt.
 
     Args:
         history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
@@ -1173,14 +1122,16 @@ def merge_and_push_seeds(
             upload) derives this via ``get_or_create_broker_tenant`` or
             accepts it from the caller. See ``docs/V2_TENANT_KEY_DESIGN.md``.
         balances_df: optional cash + account_total rows shaped for
-            BALANCE_SEED_COLUMNS. Committed atomically with the others.
+            BALANCE_SEED_COLUMNS. Written in the same batch as the others.
             Any broker connector writes here.
-        skip_history: when True, commit positions only (and balances if given).
+        skip_history: when True, write positions only (and balances if given).
 
     Returns:
-        (ok, err_message, history_rows, current_rows, head_commit_sha or None,
-         no_changes). ``no_changes=True`` means the merged seed was identical
-        to what's already on the branch, so NO commit/push/dbt-build happened.
+        (ok, err_message, history_rows, current_rows, build_marker or None,
+         no_changes). ``build_marker`` is a ``dispatch:<ts>`` string for the
+        processing UI (the slot that used to carry the commit SHA).
+        ``no_changes=True`` means the merged seed was identical to what's
+        already in the store, so NO write/dispatch/dbt-build happened.
 
     Caller must verify _upload_github_config_ok() first.
     """
@@ -1213,7 +1164,7 @@ def merge_and_push_seeds(
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
         if not ok:
-            return False, err or "GitHub commit failed.", history_rows, current_rows, None, False
+            return False, err or "Seed store write failed.", history_rows, current_rows, None, False
     except Exception as exc:
         return False, str(exc), history_rows, current_rows, None, False
 
@@ -1225,16 +1176,16 @@ def merge_and_push_seeds(
 
 @_serialized_seed_write
 def merge_and_push_seeds_batch(entries, *, commit_message):
-    """Merge SEVERAL accounts' frames into the seed CSVs and commit them in a
-    SINGLE push (one push = one dbt build).
+    """Merge SEVERAL accounts' frames into the seed store and write them in a
+    SINGLE batch (one changed write = one dispatch = one dbt build).
 
     The nightly backstop cron syncs every account; doing a per-account
-    ``merge_and_push_seeds`` fanned out into one GitHub commit — and therefore
+    ``merge_and_push_seeds`` fanned out into one write — and therefore
     one full ``Update Daily Position Performance`` workflow run — PER ACCOUNT
     (~14 near-simultaneous runs a night, most immediately cancelled by
     ``concurrency: cancel-in-progress``). This folds every account onto the
     prior account's merged CSV in-memory (via ``_merge_seed_with_existing``'s
-    ``existing_content`` hand-off) and commits once, so the same monotonic
+    ``existing_content`` hand-off) and writes once, so the same monotonic
     merge semantics collapse to a single build.
 
     ``entries`` — list of dicts, each:
@@ -1248,7 +1199,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     Order matters and must match the per-account push order it replaces:
     each entry folds onto the previous, exactly as sequential pushes did.
 
-    Returns ``(ok, err_message, head_commit_sha or None, no_changes,
+    Returns ``(ok, err_message, build_marker or None, no_changes,
     pushed_entry_count)``. Caller must verify ``_upload_github_config_ok()``
     first (same contract as ``merge_and_push_seeds``).
     """
@@ -1290,7 +1241,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
             )
 
     # Fold each path once, in the canonical seed order (history, current,
-    # balances), fetching the branch file a single time and threading the
+    # balances), fetching the stored seed a single time and threading the
     # running merged CSV through each account.
     path_contents = []
     for path in (HISTORY_PATH, CURRENT_PATH, BALANCE_SEED_PATH):
@@ -1308,7 +1259,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
         if not ok:
-            return False, err or "GitHub commit failed.", None, False, 0
+            return False, err or "Seed store write failed.", None, False, 0
     except Exception as exc:
         return False, str(exc), None, False, 0
 
@@ -1322,15 +1273,18 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
 
 @_serialized_seed_write
 def purge_user_id_from_seeds(user_id, *, commit_message):
-    """Strip every seed-CSV row whose ``user_id`` matches and commit a
-    cleaned version to GitHub in a single atomic commit.
+    """Strip every raw-seed row whose ``user_id`` matches and write the
+    cleaned tables back to the seed store (a tenant-scoped delete
+    implemented as read → filter → atomic ``WRITE_TRUNCATE`` rewrite, so
+    it shares the exact storage path and locking every other writer uses).
 
-    Why this exists: BigQuery is rebuilt from ``dbt/seeds/*.csv`` on
-    every CI run (``.github/workflows/bigquery_update.yml``). Issuing a
+    Why this exists: the marts are rebuilt from the raw seed tables on
+    every dbt build (``.github/workflows/bigquery_update.yml``). Issuing a
     BQ ``DELETE FROM analytics.stg_history WHERE user_id = N`` is reversed
-    the next time ``dbt build`` runs because the seed CSVs in GitHub
-    still hold those rows. Permanently purging a user from the warehouse
-    therefore requires editing the seed CSVs themselves.
+    the next time ``dbt build`` runs because the RAW tables still hold
+    those rows. Permanently purging a user from the warehouse therefore
+    requires rewriting the raw seed tables themselves (the rebuild
+    dispatched after the write then flushes the derived marts).
 
     Filter is strict per the tenancy rule: only rows whose ``user_id``
     column equals the target are removed. Rows with empty/NULL
@@ -1339,10 +1293,10 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     prove they belong to this tenant, and a per-user delete must never
     accidentally take another tenant's history with it.
 
-    Returns ``(ok, error_message, rows_removed_dict, head_commit_sha or None)``
+    Returns ``(ok, error_message, rows_removed_dict, build_marker or None)``
     where ``rows_removed_dict`` maps each seed path to how many rows were
-    dropped. ``ok=True`` with empty ``rows_removed`` and ``head_commit_sha=None``
-    means no matching rows existed (no commit was created).
+    dropped. ``ok=True`` with empty ``rows_removed`` and marker ``None``
+    means no matching rows existed (no write happened).
     """
     ok, err = _upload_github_config_ok()
     if not ok:
@@ -1396,9 +1350,9 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
             rows_removed[path] = 0
             continue
 
-        # Re-align to the canonical seed column shape so the commit
+        # Re-align to the canonical seed column shape so the write
         # doesn't drift column order or drop unrelated columns the
-        # CSV happens to be missing.
+        # stored seed happens to be missing.
         for col in columns:
             if col not in cleaned.columns:
                 cleaned[col] = ""
@@ -1414,7 +1368,7 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     except Exception as exc:
         return False, str(exc), rows_removed, None
     if not ok:
-        return False, err or "GitHub commit failed.", rows_removed, None
+        return False, err or "Seed store write failed.", rows_removed, None
     return True, None, rows_removed, head_sha
 
 
@@ -1422,7 +1376,7 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
 @login_required
 @limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
 def upload():
-    pat_configured = bool(os.environ.get("GITHUB_PAT", "").strip())
+    seed_writes_enabled, _cfg_err = _upload_github_config_ok()
 
     if request.method == "POST":
         # Demo is read-only. Without this, any visitor could replace the seed
@@ -1445,7 +1399,7 @@ def upload():
             "upload.html", title="Upload Data",
             accounts=accounts,
             recent_uploads=recent_uploads,
-            github_upload_enabled=pat_configured,
+            github_upload_enabled=seed_writes_enabled,
         )
 
     # ------------------------------------------------------------------
@@ -1591,22 +1545,42 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
     """
     Return dict with keys: state, github_status, conclusion, html_url, error.
     state is pending | running | success | failure | error
+
+    Accepts either a legacy commit SHA or a ``dispatch:<unix_ts>`` build
+    marker (what seed writes return since the BQ seed store migration —
+    the rebuild is a ``workflow_dispatch`` run, not a push-triggered one,
+    so it's resolved as "the first bigquery_update run created at/after
+    the dispatch timestamp").
     """
     if not head_sha or len(head_sha) < 7:
         return {"state": "error", "error": "invalid_sha"}
-    ok, _e = _upload_github_config_ok()
-    if not ok:
+    if not os.environ.get("GITHUB_PAT", "").strip():
         return {"state": "error", "error": "github_not_configured"}
     parts = _github_repo().split("/", 1)
     if len(parts) != 2:
         return {"state": "error", "error": "bad_repo"}
     owner, repo = parts
-    url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
+
+    dispatched_at = None
+    if head_sha.startswith(_DISPATCH_MARKER_PREFIX):
+        try:
+            dispatched_at = int(head_sha[len(_DISPATCH_MARKER_PREFIX):])
+        except ValueError:
+            return {"state": "error", "error": "invalid_sha"}
+        url = (
+            f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/"
+            f"{_WORKFLOW_FILE}/runs"
+        )
+        params = {"event": "workflow_dispatch", "per_page": 10}
+    else:
+        url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
+        params = {"head_sha": head_sha.strip(), "per_page": 5}
+
     try:
         resp = requests.get(
             url,
             headers=_github_headers(),
-            params={"head_sha": head_sha.strip(), "per_page": 5},
+            params=params,
             timeout=20,
         )
     except OSError as e:
@@ -1624,6 +1598,21 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
         }
     data = resp.json() or {}
     runs = data.get("workflow_runs") or []
+    if dispatched_at is not None:
+        # Only runs created at/after the dispatch (small clock-skew grace)
+        # can be "our" build; the API returns newest-first, so take the
+        # OLDEST match — the run the dispatch actually started.
+        from datetime import datetime, timezone as _tz
+
+        def _created_ts(r):
+            try:
+                return datetime.strptime(
+                    r.get("created_at") or "", "%Y-%m-%dT%H:%M:%SZ"
+                ).replace(tzinfo=_tz.utc).timestamp()
+            except ValueError:
+                return 0
+        matches = [r for r in runs if _created_ts(r) >= dispatched_at - 120]
+        runs = matches[-1:] if matches else []
     if not runs:
         return {
             "state": "pending",

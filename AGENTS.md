@@ -25,13 +25,15 @@ This document describes how AI agents are used in this repository and how to wor
 
 **The SAME brokerage account legitimately belongs to MULTIPLE users — this is an intended product feature, NOT a duplication/orphan bug. Never "dedupe", "merge", or "reconcile" an account across different `user_id`s, and never purge one user's tenant because another user holds "the same" account.** The product is built for shared visibility: e.g. a parent links their own accounts **and** their daughter's and sees them all in one view, while the daughter is a separate user who links (or is granted) only her own account and sees just that. Two users, one underlying brokerage account — by design. Mechanically each user connects through their **own** SnapTrade registration, so the same physical account surfaces under a **distinct `tenant_id` per user** (different SnapTrade UUIDs), synced independently. The two copies' balances can legitimately **drift** (different sync timestamps / one connection healthy, the other disabled) — that is expected, not corruption. Isolation and view-scoping are always `user → the set of tenant_ids that user owns` (Postgres `broker_tenants`); the warehouse may hold many users' tenants for the same broker account. **Contrast with the orphan/stale-uid tenancy BUG** (`.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`): that is the SAME user's single position split across `user_id = NULL` / stale-uid / canonical-uid partitions and must be backfilled. Cross-**USER** sharing of an account is intentional; same-**USER** split across uid partitions is the bug. The two are not the same thing — do not "fix" the former.
 
-**Local dev and production are environment-separated (June 2026).** Local dev reads/writes its own warehouse and seed branch so dev-environment writes never mix with production (numeric user ids collide across the two Postgres databases; an admin purge by `user_id=10` once deleted the other environment's rows). The knobs: `.env` sets `BQ_DATASET=analytics_dev` (every app query's hardcoded `ccwj-dbt.analytics.` ref is rewritten at the `get_bigquery_client()` chokepoint — `_apply_dataset_override` in `app/bigquery_client.py`) and `GITHUB_BRANCH=dev-seeds` (seed CSV reads/writes target the `dev-seeds` branch; CI builds prod from master/main only). Production leaves both env vars unset.
+**Seed data lives in BigQuery, not git (Aug 2026 seed-store migration).** Tenant trade data (trade history / current positions / account balances) is stored in the raw dataset **`ccwj-dbt.analytics_raw`** (dbt source `raw_broker`), written directly by the app via **`app/seed_store.py`** — atomic per-table `WRITE_TRUNCATE` loads under the existing cluster-wide seed advisory lock, all-STRING columns plus a hidden `_row_seq` INT64 that preserves write order. The old flow (seed CSVs committed to GitHub, push-triggered CI rebuild) is retired; git history of `dbt/seeds/*.csv` is the archive. The battle-tested pandas merge/dedup layer in `app/upload.py` (`_merge_seed_with_existing`, `_dedup_history_rows`) is UNCHANGED — only the storage I/O under it moved (the read/write seam is still `_get_file_content` / `_commit_git_paths`, names kept for the 50+ merge tests). Reads FAIL CLOSED (`SeedStoreError` → abort sync; only a genuinely missing table reads as empty), and the byte-exact no-op skip still prevents pointless rebuilds. After a CHANGED write the app POSTs a `workflow_dispatch` for `bigquery_update.yml` (`_dispatch_warehouse_rebuild`; log-don't-crash — a scheduled nightly run backstops missed dispatches); the post-sync processing UI polls a `dispatch:<unix_ts>` build marker instead of a commit SHA. Recovery: BigQuery time travel (`FOR SYSTEM_TIME AS OF`) gives 7-day point-in-time restore on every raw table.
 
-The dev dataset is a **full mirror for testing**: `scripts/dev-refresh.sh` builds `analytics_dev` from latest prod seeds (origin/master) MERGED with the local environment's own syncs (origin/dev-seeds; merge logic in `scripts/merge_dev_seeds.py`, local tenants from the local `broker_tenants` win) — using the **working tree's dbt code**, so model changes are testable against real data before they ship. `refresh.sh` / plain `dbt build` from `dbt/` still target prod `analytics` (the repo's `dbt/profiles.yml` takes precedence over `~/.dbt` — dev builds MUST pass `--profiles-dir ~/.dbt --target dev`). dbt snapshots use `target_schema=target.schema` (never hardcode `'analytics'`, or dev builds MERGE into the prod snapshot tables). Raw market-data sources (`sources.yml`, prices/splits/earnings) intentionally stay shared on `analytics` — they're not tenant data and the loaders only run once. Never purge shared-warehouse rows by numeric `user_id` — only by `tenant_id`.
+**Local dev and production are environment-separated (June 2026; re-keyed Aug 2026).** Local dev reads/writes its own warehouse and raw dataset so dev-environment writes never mix with production (numeric user ids collide across the two Postgres databases; an admin purge by `user_id=10` once deleted the other environment's rows). The knobs: `.env` sets `BQ_DATASET=analytics_dev` (every app query's hardcoded `ccwj-dbt.analytics.` ref is rewritten at the `get_bigquery_client()` chokepoint — `_apply_dataset_override` in `app/bigquery_client.py`) and `BQ_RAW_DATASET=analytics_raw_dev` (the app's seed writers target the dev raw dataset; non-prod raw datasets never dispatch a CI rebuild). Production leaves both env vars unset.
+
+The dev dataset is a **full mirror for testing**: `scripts/dev-refresh.sh` rebuilds `analytics_raw_dev` from prod `analytics_raw` MERGED with the local environment's own syncs (merge logic in `scripts/dev_refresh_raw.py`, local tenants from the local `broker_tenants` win), then dbt-builds `analytics_dev` from it — using the **working tree's dbt code** with `DBT_RAW_DATASET=analytics_raw_dev` pointing the `raw_broker` source at the dev copy — so model changes are testable against real data before they ship. `refresh.sh` / plain `dbt build` from `dbt/` still target prod `analytics` (the repo's `dbt/profiles.yml` takes precedence over `~/.dbt` — dev builds MUST pass `--profiles-dir ~/.dbt --target dev`). dbt snapshots use `target_schema=target.schema` (never hardcode `'analytics'`, or dev builds MERGE into the prod snapshot tables). Raw market-data sources (`sources.yml` `external`, prices/splits/earnings) intentionally stay shared on `analytics` — they're not tenant data and the loaders only run once. Never purge shared-warehouse rows by numeric `user_id` — only by `tenant_id`.
 
 **Per-broker staging layer (June 2026).** The three base staging models (`stg_history`, `stg_current`, `stg_account_balances`) no longer read the seeds directly — each is now a UNION of thin per-broker adapter models in `dbt/models/staging/brokers/` (`stg_broker_{schwab,alpaca,fidelity,interactive}_*`, plus an `stg_broker_other_*` catch-all) followed by the unchanged heavy parse. (`interactive` = IBKR; slug is the lowercased first token of the account label "Interactive Brokers …".) Each broker has its own model so broker-specific quirks (date formats, sign conventions, duplicate-fill patterns) stay isolated and independently queryable/testable instead of being special-cased in the shared parse. Broker identity is DISPLAY-derived (not a tenancy boundary): `tenant_id` is the literal `snaptrade:<uuid>` for EVERY broker, so the only broker signal in the warehouse is the account-label prefix — `dbt/macros/broker_slug_from_account.sql` maps it to a slug (`"Schwab Account"`→`schwab`, `"Alpaca Paper Account"`→`alpaca`). Tenant isolation stays on `tenant_id`; never scope a user-facing read by `broker_slug`. The catch-all is mutually-exclusive+exhaustive with the named brokers so no row is ever dropped; the `dbt/tests/broker_split_preserves_all_rows.sql` test enforces union-count parity. **To add a brokerage:** (1) add its slug to `known_brokers()`, (2) add `stg_broker_<slug>_{history,current,balances}` (one-line `broker_*_rows('<slug>')` calls), (3) add those three models to the UNION in the matching base staging model, (4) add them to the per-surface unions in `dbt/tests/broker_split_preserves_all_rows.sql`. `dim_broker_tenants.broker_slug` now shows the real brokerage (was the always-`snaptrade` aggregator slug, kept as `aggregator_slug`).
 
-**Brokerage sync is the most failure-prone surface in the product** — SnapTrade aggregator (Schwab, Fidelity, Vanguard, Robinhood, IBKR, etc.). Before editing `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/snaptrade_sync_cli.py`, the `dbt/seeds/*.csv` shape, `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/snaptrade/accounts`, or any column on `broker_tenants` / `snaptrade_users` (`connection_broken_at`, `first_sync_completed`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
+**Brokerage sync is the most failure-prone surface in the product** — SnapTrade aggregator (Schwab, Fidelity, Vanguard, Robinhood, IBKR, etc.). Before editing `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/seed_store.py`, `app/snaptrade_sync_cli.py`, the raw seed table shape (`analytics_raw`, source `raw_broker`), `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/snaptrade/accounts`, or any column on `broker_tenants` / `snaptrade_users` (`connection_broken_at`, `first_sync_completed`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
 
 ---
 
@@ -112,10 +114,11 @@ What's working (May 2026 rebuild):
  evening (the window it's most useful). The gate is STRICT and never softened
  to "just render something": showing a stale/intraday mark as after-hours drift
  erodes trust in the whole page, so if there is no genuine post-close sync the
- section stays hidden. DEV NOTE: local dev is built from committed seed CSVs
- (no live syncs) so sync timestamps are NULL and the section will not appear in
- dev — that is expected, not a bug; it renders in prod once a real post-close
- sync lands and today's close is published.
+ section stays hidden. DEV NOTE: local dev is built from mirrored raw seed
+ tables (no live syncs of its own for prod tenants) so sync timestamps are
+ NULL and the section will not appear in dev — that is expected, not a bug;
+ it renders in prod once a real post-close sync lands and today's close is
+ published.
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
@@ -679,7 +682,7 @@ Use `--prices` flag to skip git pull and first dbt pass (prices only).
 
 ### CI/CD
 - **Pytest** (`.github/workflows/ci.yml`): runs on every PR and on pushes that touch `app/` / `tests/` / `dbt/` / `scripts/`. Uses a Postgres service so DB-backed tests run; BigQuery integration tests stay opt-in via `RUN_BQ_TESTS=1`.
-- **Warehouse rebuild** (`.github/workflows/bigquery_update.yml`): push to master/main (seed/model paths), manual dispatch.
+- **Warehouse rebuild** (`.github/workflows/bigquery_update.yml`): `workflow_dispatch` fired by the app after every CHANGED seed write (`_dispatch_warehouse_rebuild` in `app/upload.py`), push to master/main (dbt model/loader paths), nightly scheduled backstop, manual dispatch.
   ```
   checkout → dbt build (full) → python current_position_stock_price.py → dbt build (full)
   ```
@@ -688,18 +691,21 @@ Use `--prices` flag to skip git pull and first dbt pass (prices only).
 
 Note: the warehouse workflow runs two full `dbt build`s vs local targeted selects. These could be aligned.
 
-**Deploy/CI churn guards (July 2026).** Every SnapTrade sync that finds a change
-pushes a seed commit to `master`. Two guards stop that from redeploying the app
-and rebuilding the warehouse pointlessly: (1) the **`ccwj` Render web service has
-a Build Filter** (Ignored Paths: `dbt/**`, `docs/**`, `tests/**`, `scripts/**`,
-`.github/**`, `.cursor/**`, `**/*.md`) so a data-only commit doesn't auto-redeploy
-the Flask app — it doesn't read the seeds at runtime; **this is a dashboard toggle,
-not in `render.yaml`** — see `docs/SNAPTRADE_SETUP.md`; (2) **weekend webhook
-auto-syncs are history-only** (`history_only` in `_run_sync`/`_sync_one_connection`,
-gated by `_market_closed_all_day`): they still read activities to catch Friday's
-T+1 fills but never rewrite the drifting positions/balances snapshots, so a quiet
-weekend produces no commit → no build. The intraday poll (`--intraday`) is
-history-only for the same reason every run.
+**Deploy/CI churn guards (July 2026; simplified Aug 2026).** Since the seed-store
+migration, syncs write BigQuery directly — there are no data commits to `master`
+at all, so a data change can never redeploy the Flask app. (The **`ccwj` Render
+web service Build Filter** — Ignored Paths: `dbt/**`, `docs/**`, `tests/**`,
+`scripts/**`, `.github/**`, `.cursor/**`, `**/*.md` — remains as a guard for
+non-app CODE commits; **it's a dashboard toggle, not in `render.yaml`** — see
+`docs/SNAPTRADE_SETUP.md`.) Rebuild churn is bounded by: (1) the byte-exact
+no-op skip in `_commit_git_paths` (no change → no write → no dispatch); (2)
+**weekend webhook auto-syncs are history-only** (`history_only` in
+`_run_sync`/`_sync_one_connection`, gated by `_market_closed_all_day`): they
+still read activities to catch Friday's T+1 fills but never rewrite the
+drifting positions/balances snapshots, so a quiet weekend produces no write →
+no build (the intraday poll `--intraday` is history-only for the same reason
+every run); (3) the workflow's single concurrency group with
+cancel-in-progress collapsing rapid dispatches into one build.
 
 ---
 

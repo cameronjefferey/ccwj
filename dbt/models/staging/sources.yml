@@ -1,6 +1,33 @@
 version: 2
 
 sources:
+  # Tenant seed data — written directly by the app's sync/upload writers
+  # (app/seed_store.py, WRITE_TRUNCATE per table under the cluster-wide
+  # seed lock). This replaced the git-as-database flow where the same
+  # three tables were dbt seeds committed to GitHub as CSVs (retired
+  # Aug 2026; git history of dbt/seeds/*.csv is the archive).
+  #
+  # All data columns are STRING (staging safe_casts downstream, exactly
+  # as it did for the STRING-pinned seeds). The extra `_row_seq` INT64
+  # column preserves CSV row order for the app's byte-exact no-op check —
+  # staging models never select it.
+  #
+  # The dataset is env-switchable so local dev builds read the dev raw
+  # dataset (scripts/dev-refresh.sh sets DBT_RAW_DATASET=analytics_raw_dev);
+  # CI/prod builds leave it unset -> analytics_raw.
+  - name: raw_broker
+    database: ccwj-dbt
+    schema: "{{ env_var('DBT_RAW_DATASET', 'analytics_raw') }}"
+    description: >
+      Raw tenant seed tables written by the app (SnapTrade sync, manual
+      CSV upload, admin purge) via app/seed_store.py. One row per broker
+      fill / open position / balance line, all columns STRING, ordered
+      by _row_seq.
+    tables:
+      - name: trade_history
+      - name: current_positions
+      - name: account_balances
+
   - name: external
     database: ccwj-dbt
     schema: analytics
