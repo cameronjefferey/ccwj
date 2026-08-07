@@ -364,6 +364,14 @@ if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") != "1":
     ensure_demo_user()
 
 from app import routes
+from app import marketing  # noqa: F401  registers marketing/static/health routes
+from app import position_detail  # noqa: F401  registers /position/<symbol> + tag routes
+from app import positions_page  # noqa: F401  registers /positions (also imported by routes facade)
+from app import symbols_page  # noqa: F401  registers /symbols (also imported by routes facade)
+from app import sectors_page  # noqa: F401  registers /sectors + /industries
+from app import strategy_fit  # noqa: F401  registers /strategy-fit
+from app import accounts_page  # noqa: F401  registers /accounts + /accounts/breakdown
+from app import earnings_page  # noqa: F401  registers /earnings
 from app import auth
 from app import upload
 from app import insights

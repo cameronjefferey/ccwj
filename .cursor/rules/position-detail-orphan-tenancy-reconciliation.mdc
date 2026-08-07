@@ -57,7 +57,7 @@ Regression tests:
 - **`dbt/tests/no_stale_user_id_in_history.sql`** — no `stg_history` row's `user_id` may disagree with the unambiguous canonical uid from `stg_current` ∪ `stg_account_balances` (covers B).
 - **`tests/test_orphan_tenant_iyw.py`** — symbol-anchored regression for IYW Emmory: must render exactly 2 sessions (1 Closed + 1 Open) and exactly 1 strategy row (covers B + C).
 
-Related chart/mart drift fixes (dense spine UTC "tomorrow", live‑today patch, **`cost_basis` vs `cost_bases`**) live in `app/routes.py` **`_build_chart_from_daily_pnl`** and `int_equity_sessions` / `int_option_contract_daily_pnl`.
+Related chart/mart drift fixes (dense spine UTC "tomorrow", live‑today patch, **`cost_basis` vs `cost_bases`**) live in `app/pnl_charts.py` **`_build_chart_from_daily_pnl`** (extracted from routes.py, Aug 2026) and `int_equity_sessions` / `int_option_contract_daily_pnl`.
 
 ## Verification before declaring Position Detail / chart / attribution work done
 

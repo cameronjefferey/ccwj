@@ -156,7 +156,7 @@ def routed_app(fixture_book):
     that returns the fixture book. Auth is mocked to a single user with
     both Cameron and Sara accounts."""
     from app import app
-    import app.routes as routes
+    import app.positions_page as routes  # positions() lives here now
 
     user = _stub_user(user_id=42)
     accounts = ["Cameron Investment", "Sara Investment"]
@@ -299,7 +299,7 @@ def _render_with_book(book, accounts):
     """Drive /positions with the given fixture book and auth account
     list. Returns the rendered HTML."""
     from app import app
-    import app.routes as routes
+    import app.positions_page as routes  # positions() lives here now
 
     user = _stub_user(user_id=99)
 

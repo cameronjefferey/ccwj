@@ -211,8 +211,10 @@ Known issues:
 - `_build_option_matrices` uses nested loops over DTE/strike buckets in Flask.
 - Pre-snapshot option P&L shows only cash flows (no mark-to-market). This means a dip
   when a LEAP is purchased that recovers once snapshots begin. Acceptable tradeoff.
-- `routes.py` is still long. Position detail used to be ~1,650 lines; the
-  legs teardown removed ~150 of stateful Python.
+- Position detail now lives in its own module `app/position_detail.py`
+  (~2,600 lines incl. the tag routes) with the chart machinery in
+  `app/pnl_charts.py` — see "Code Organization" below for the Aug 2026
+  routes.py split.
 
 ### Dashboard / Home (`/`, `/index`, `/dashboard`)
 **Status: Working. Summary landing page.**
@@ -247,7 +249,7 @@ Architecture:
 - Dividend attribution rules live in
   `dbt/macros/attribute_dividends_to_strategy.sql` (single source of
   truth). `dbt/models/marts/positions_summary.sql` calls the macro.
-  The runtime DATE_FILTERED_QUERY in `app/routes.py` mirrors the macro
+  The runtime DATE_FILTERED_QUERY in `app/positions_page.py` mirrors the macro
   output in inlined SQL (it has to — start/end dates come from the URL
   at request time, after dbt has finished building). `ATTRIBUTION_INVARIANT`
   comments in both files cross-reference; integration test
@@ -255,7 +257,7 @@ Architecture:
   pins them together.
 
 Known issues:
-- DATE_FILTERED_QUERY is still ~150 lines of inlined SQL in routes.py.
+- DATE_FILTERED_QUERY is still ~150 lines of inlined SQL in app/positions_page.py.
   Can't be a pure dbt mart because of the runtime parameterization, but
   the dividend-attribution complexity now lives in dbt.
 
@@ -363,12 +365,12 @@ Heavy logic belongs in dbt.
 - Never perform heavy aggregation
 
 **Current violations (known debt):**
-- `_build_chart_from_daily_pnl` in `routes.py`: stateful equity P&L simulation via
+- `_build_chart_from_daily_pnl` in `app/pnl_charts.py`: stateful equity P&L simulation via
   row iteration. Hard to move to dbt because of running average-cost logic, but heavy.
-- `_build_option_matrices`: nested groupby + loops in Flask.
+- `_build_option_matrices` (also `app/pnl_charts.py`): nested groupby + loops in Flask.
 - Mirror Score rolling-window comparison done in Flask instead of dbt.
-- Symbols page has extensive pandas groupby/iterrows.
-- `DATE_FILTERED_QUERY` in `routes.py`: runtime-parameterized analytical SQL (not a
+- Symbols page (`app/symbols_page.py`) has extensive pandas groupby/iterrows.
+- `DATE_FILTERED_QUERY` in `app/positions_page.py`: runtime-parameterized analytical SQL (not a
   static mart) — documented rationale exists but still violates the principle.
 
 If logic is found in Flask that belongs in dbt: flag it, move it, document it.
@@ -475,14 +477,14 @@ movers), never in the core numbers.
 **Enforcement.** `dbt/tests/int_enriched_current_equity_price_consistent.sql`
 is the structural invariant — for every Equity row in `int_enriched_current`,
 `abs(qty * current_price - market_value) <= $0.01`. The Position Detail page
-also computes a runtime invariant (`invariant_warning` in `app/routes.py`)
+also computes a runtime invariant (`invariant_warning` in `app/position_detail.py`)
 that compares **Hero total return**, **Breakdown by Type total**, and **chart
 terminal** (`> $1` gap → admin-only card). Σ labeled strategy rows are not
 included; attribution partitions equity across strategies and may diverge from
 ledger rollups while the three checks above still agree.
 
 **Anti-pattern to avoid.** `_align_position_pnl_chart_with_kpi` in
-`app/routes.py` used to silently rescale the chart series when the
+`app/pnl_charts.py` used to silently rescale the chart series when the
 chart's terminal disagreed with the KPI. That hid a structural bug for
 months. The function is now restricted to sub-$1 rounding noise; larger
 gaps log loudly and trip the invariant card. Do not weaken this guard.
@@ -581,8 +583,8 @@ disagreement; `scripts/audit/reconcile.py` CHECK 9 enforces this in CI.
 **Where this rule lives:**
 - Per-contract grain: `dbt/models/intermediate/int_option_contract_daily_pnl.sql`
 - Mart: `dbt/models/marts/mart_daily_pnl.sql`
-- Position chart: `_build_chart_from_daily_pnl` in `app/routes.py`
-- Account chart: `_build_account_chart_from_daily_pnl` in `app/routes.py`
+- Position chart: `_build_chart_from_daily_pnl` in `app/pnl_charts.py`
+- Account chart: `_build_account_chart_from_daily_pnl` in `app/pnl_charts.py`
 - Tests: `tests/test_chart_options_pnl.py`
 
 ---
@@ -711,20 +713,47 @@ cancel-in-progress collapsing rapid dispatches into one build.
 
 ## Error Handling (Known Debt)
 
-Multiple `except: pass` blocks in `routes.py` silently swallow errors:
+Several `except: pass` blocks in the page modules silently swallow errors:
 - Dashboard: portfolio chart, mirror score history, trader profile
-- Position detail: entire chart/query block
-- Get-started: has-data check
+- Position detail (`app/position_detail.py`): entire chart/query block
+- Get-started (`app/marketing.py`): has-data check
 
 These make debugging difficult. Errors should at minimum be logged.
 
 ---
 
-## Code Organization (Known Debt)
+## Code Organization
 
-- `routes.py` is a ~2700-line monolith handling dashboard, positions list, position detail,
-  symbols, accounts, and marketing pages. Position detail alone is ~500 lines.
-- `mirror_score.py` and `benchmark.py` import helpers from `routes.py` — unusual coupling.
+**routes.py was split into per-page modules (Aug 2026 refactor).** The old
+~8,900-line monolith is now:
+
+- `app/routes.py` (~1,000 lines) — SHARED page plumbing only: tenant scoping
+  (`_tenants_for_scope`, `_user_account_list`, `_user_tenant_list`), account
+  label mapping/disambiguation, `_bq_parallel`, leg/session/tag helpers —
+  plus a re-export facade so `from app.routes import X` keeps working for
+  older callers and tests. The facade imports at the BOTTOM of routes.py are
+  load-bearing (page modules import helpers from app.routes at import time);
+  don't move them up.
+- `app/pnl_charts.py` — all cumulative-P&L chart machinery shared by
+  Position Detail / Symbols / Accounts (`_build_chart_from_daily_pnl`,
+  `_build_account_chart_from_daily_pnl`, partition hygiene, KPI alignment,
+  `_build_option_matrices`, CHART_DATA[_ALL]_QUERY).
+- Page modules, one per surface, endpoint names unchanged:
+  `app/marketing.py` (landing/pricing/FAQ/health/onboarding),
+  `app/positions_page.py` (/positions), `app/position_detail.py`
+  (/position/<symbol> + tag routes), `app/symbols_page.py` (/symbols),
+  `app/sectors_page.py` (/sectors), `app/strategy_fit.py` (/strategy-fit),
+  `app/accounts_page.py` (/accounts), `app/earnings_page.py` (/earnings).
+- Routes register via `@app.route` on import (same pattern as admin.py /
+  snaptrade.py); `app/__init__.py` imports every page module. No blueprints —
+  endpoint names and every `url_for()` caller are unchanged.
+- When a test monkeypatches a helper a page uses (e.g. `get_bigquery_client`,
+  `_tenants_for_scope`), it must patch the PAGE module's namespace (where the
+  name is resolved at call time), not `app.routes`.
+
+Remaining debt:
+- `mirror_score.py` and `benchmark.py` import helpers from `routes.py` — unusual coupling
+  (now at least the helpers-only routes.py makes that coupling explicit).
 - Auth/account fetching is inconsistent: some modules use `app.auth`, others use `app.models`.
 - BigQuery project/dataset (`ccwj-dbt.analytics`) is hardcoded in query strings across files.
 

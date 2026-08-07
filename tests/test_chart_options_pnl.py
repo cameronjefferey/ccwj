@@ -266,7 +266,7 @@ def test_buy_hold_equity_live_patch_matches_broker_unreal_when_walker_flat():
     must use the same broker unrealized, otherwise the terminal stays at
     realized-only (e.g. -$1,957 vs about -$1,607 invariant gap).
 
-    Patches ``app.routes.date`` so spine last day hits the REPLACE branch."""
+    Patches ``app.pnl_charts.date`` so spine last day hits the REPLACE branch."""
 
     class _PatchDate(date):
         @classmethod
@@ -296,7 +296,7 @@ def test_buy_hold_equity_live_patch_matches_broker_unreal_when_walker_flat():
         "unrealized_pnl": 349.9,
         "current_price": 236.97,
     }])
-    with patch("app.routes.date", _PatchDate):
+    with patch("app.pnl_charts.date", _PatchDate):
         out = _build_chart_from_daily_pnl(df, cur)
     assert out["dates"][-1] == "2026-05-11"
     # Walker terminal: full lot sold for $0 proceeds -> about -$2,019.8 realized;
@@ -610,7 +610,7 @@ def test_orphan_history_no_end_spike_and_reconciles():
                    close_price=87.31, has_trade=True),
         _daily_row("2026-08-04", close_price=86.94),
     ])
-    with patch("app.routes.date", _PatchDate):
+    with patch("app.pnl_charts.date", _PatchDate):
         out = _build_chart_from_daily_pnl(df, cur)
 
     eq = out["equity"]
@@ -652,7 +652,7 @@ def test_buy_only_transfer_does_not_fabricate_pre_holding():
                    close_price=55.0, has_trade=True),
         _daily_row("2026-08-04", close_price=60.0),
     ])
-    with patch("app.routes.date", _PatchDate):
+    with patch("app.pnl_charts.date", _PatchDate):
         out = _build_chart_from_daily_pnl(df, cur)
 
     eq = out["equity"]
@@ -689,7 +689,7 @@ def test_clean_reconciling_history_untouched_by_snapshot_mode():
                    close_price=50.0, has_trade=True),
         _daily_row("2026-08-04", close_price=60.0),
     ])
-    with patch("app.routes.date", _PatchDate):
+    with patch("app.pnl_charts.date", _PatchDate):
         out = _build_chart_from_daily_pnl(df, cur)
 
     # First rendered day is the actual buy day (not the spine start seeded

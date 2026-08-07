@@ -383,7 +383,10 @@ class TestTagScopedPositionsDf:
                 return strat.copy()
             raise AssertionError(f"unexpected query: {sql[:80]}")
 
-        monkeypatch.setattr(routes, "cached_query_df", fake_cached_query_df)
+        # _tag_scoped_positions_df lives in app.positions_page now — patch the
+        # module where the name is resolved at call time.
+        from app import positions_page
+        monkeypatch.setattr(positions_page, "cached_query_df", fake_cached_query_df)
 
     def test_only_tagged_leg_pnl(self, monkeypatch):
         self._patched(monkeypatch)

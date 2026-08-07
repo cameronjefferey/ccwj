@@ -148,7 +148,7 @@ def _mock_tenants_for_scope(selected_account=None):
 @pytest.fixture
 def earnings_client():
     from app import app
-    import app.routes as routes
+    import app.earnings_page as routes  # earnings_watch() lives here now
 
     user = _stub_user()
     with patch.object(routes, "current_user", user), \
