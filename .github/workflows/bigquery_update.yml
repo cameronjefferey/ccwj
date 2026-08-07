@@ -85,6 +85,17 @@ jobs:
           cp dbt/profiles.yml ~/.dbt/profiles.yml
           echo '${{ secrets.DBT_KEYFILE_JSON }}' > ~/.dbt/keyfile.json
 
+      # Snapshot backup: the SCD2 snapshot tables are the only tables in the
+      # warehouse that cannot be rebuilt from source (they are accumulated
+      # daily observations). On 2026-08-07 the balances snapshot was silently
+      # deleted by a leftover 60-day dataset default table expiration and the
+      # next build recreated it empty — months of "vs yesterday/week/month"
+      # history gone. Copy them aside before every build; the backup dataset
+      # self-expires entries after 14 days. See scripts/snapshot_guard.py.
+      - name: Back up snapshot tables
+        run: python scripts/snapshot_guard.py backup
+        continue-on-error: true
+
       # Sector / subsector: refresh BEFORE the first dbt build so
       # stg_symbol_metadata (and downstream marts that join it) have a real
       # source table to read from. Uses the previous run's stg_history for
@@ -123,6 +134,12 @@ jobs:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+
+      # Fail the build LOUDLY if a snapshot table lost pre-today history
+      # versus this morning's backup (expiry / accidental recreate / clobber).
+      # A red build beats weeks of silently rendering "—" on Daily Review.
+      - name: Verify snapshot history intact
+        run: python scripts/snapshot_guard.py verify
 
       - name: Retrain BQML behavior model
         # Uses the same DBT_KEYFILE_JSON credential as the dbt steps above
