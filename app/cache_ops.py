@@ -36,6 +36,7 @@ now be a day instead of 10 minutes.
 import hmac
 import logging
 import os
+import sys
 import threading
 import time
 
@@ -45,7 +46,18 @@ from app import app
 from app.extensions import csrf, limiter
 from app import query_cache
 
-_log = logging.getLogger(__name__)
+# Same pattern as the REQUEST_TIMING logger in app/__init__.py: module
+# loggers have no stdout handler in prod (root logger only surfaces
+# WARNING+ to stderr), so CACHE_FLUSH / CACHE_WARM lines would be
+# invisible in Render logs without an explicit handler. These lines are
+# the only evidence the rebuild->flush->warm chain is alive.
+_log = logging.getLogger("happytrader.cache")
+if not _log.handlers:
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    _log.addHandler(_h)
+    _log.setLevel(logging.INFO)
+    _log.propagate = False
 
 # Only one warm pass at a time; a second flush while warming just flushes.
 _warm_lock = threading.Lock()
