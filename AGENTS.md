@@ -394,6 +394,26 @@ Page speed matters.
 - Optimize for weekly read performance
 - Market data comes from `stg_daily_prices` in BigQuery (not live yfinance calls)
 
+**Query-cache lifecycle (Aug 2026).** Every user-facing BQ read goes through
+`cached_query_df` (`app/query_cache.py`): per-worker L1 TTLCache (10 min) +
+shared Redis L2 (`ccwj-query-cache` on Render, `QUERY_CACHE_REDIS_URL`, TTL
+24h). The long L2 TTL is safe ONLY because the cache is explicitly flushed
+when the data actually changes: `bigquery_update.yml` and
+`prices_refresh.yml` end with a `curl POST /internal/cache/flush`
+(`X-Cache-Flush-Token` = `CACHE_FLUSH_TOKEN` secret, set both as a GitHub
+secret and a Render env var). The endpoint (`app/cache_ops.py`) clears the
+cache and warms the hottest per-user query sets in a background thread —
+the Daily Review core batch (`build_daily_review_batch` in
+`app/weekly_review.py`, shared with the view so warmed keys are EXACTLY the
+keys a request looks up) plus the positions-list default query, per user
+with linked tenants plus one unscoped (admin) pass. If you change any of
+those queries' SQL construction, keep the view and the warmer reading the
+same builder or warming silently stops matching. New page queries should
+use `cached_query_df` (or `_bq_parallel`, which wraps it) — a direct
+`client.query().to_dataframe()` in a request handler bypasses the whole
+cache and re-pays 1-5s per load. The BigQuery client itself is memoized
+process-wide (`get_bigquery_client`) — do not construct per-request clients.
+
 ### 5. Pricing Precedence (CLOSE-BASED for equities; broker for cash/options/intraday)
 
 The product reads "what is this symbol worth right now" from two

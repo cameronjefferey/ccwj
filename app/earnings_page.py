@@ -16,9 +16,11 @@ from google.cloud import bigquery
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.query_cache import cached_query_df
 from app.tenant_scope import tenant_sql_and as _tenant_sql_and
 from app.utils import earnings_follower_url
 from app.routes import (
+    _bq_parallel,
     _redirect_if_no_accounts,
     _tenants_for_scope,
     _user_account_list,
@@ -138,9 +140,14 @@ def earnings_watch():
     try:
         client = get_bigquery_client()
 
-        held_df = client.query(
-            EARNINGS_WATCH_HELD_QUERY.format(tenant_filter=tenant_filter)
-        ).to_dataframe()
+        # "held" and "upcoming" are independent — run them in one parallel
+        # wave through the query cache (this page used to run 3 serial
+        # uncached queries and clocked 7-14s in production).
+        batch = _bq_parallel(client, {
+            "earnings_held": EARNINGS_WATCH_HELD_QUERY.format(tenant_filter=tenant_filter),
+            "earnings_upcoming": EARNINGS_WATCH_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
+        })
+        held_df = batch.get("earnings_held", pd.DataFrame())
         # Held symbols are scoped in SQL; the symbol set drives the rest.
         held_symbols = set()
         held_sectors = set()
@@ -156,9 +163,7 @@ def earnings_watch():
 
         # ── Upcoming earnings (held positions) ────────────────────────
         try:
-            earn_df = client.query(
-                EARNINGS_WATCH_UPCOMING_QUERY.format(tenant_filter=tenant_filter)
-            ).to_dataframe()
+            earn_df = batch.get("earnings_upcoming", pd.DataFrame())
             for _, row in earn_df.iterrows():
                 ed = row.get("next_earnings_date")
                 if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
@@ -196,7 +201,10 @@ def earnings_watch():
                     bigquery.ArrayQueryParameter("sectors", "STRING", sorted(held_sectors)),
                     bigquery.ScalarQueryParameter("min_abs_move", "FLOAT64", 0.05),
                 ])
-                mov_df = client.query(EARNINGS_WATCH_MOVERS_QUERY, job_config=cfg).to_dataframe()
+                mov_df = cached_query_df(
+                    client, EARNINGS_WATCH_MOVERS_QUERY, job_config=cfg,
+                    label="earnings_movers",
+                )
 
                 # Held symbols per sector (the group headers).
                 held_by_sector = {}

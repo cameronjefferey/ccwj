@@ -130,3 +130,18 @@ jobs:
         # is exported into the runner env).  No new secrets needed.
         run: python scripts/train_bqml.py
 
+      # Reporting is close-based: warehouse data only changes when THIS
+      # workflow (or prices_refresh.yml) finishes. Telling the app "the data
+      # just changed" lets its query cache hold results for hours instead of
+      # minutes — the flush clears stale entries and kicks a background warm
+      # of the hottest per-user query sets so even the first post-rebuild
+      # visit is fast. if: always() because a partially failed build may
+      # still have mutated tables (dbt is not transactional across models) —
+      # serving a coherent-but-stale cache over changed tables is worse.
+      # `|| true` so a flush hiccup can never fail the build.
+      - name: Flush + warm app query cache
+        if: always()
+        run: |
+          curl -fsS -m 20 -X POST "https://ccwj.onrender.com/internal/cache/flush" \
+            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}" || true
+

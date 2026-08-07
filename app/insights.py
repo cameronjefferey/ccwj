@@ -9,6 +9,7 @@ from google.cloud import bigquery as bq
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.extensions import limiter
+from app.query_cache import cached_query_df
 from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
@@ -456,11 +457,35 @@ def _build_coaching_brief(client, tenant_ids):
     disco_cards = []
     disco_txt = ""
 
+    # All four brief queries are independent — one parallel cached wave
+    # instead of four serial round trips (/insights clocked 15-17s in
+    # production; most of it was this serial fan-out plus the LLM call).
+    from datetime import date, timedelta
+    from app.routes import _bq_parallel
+
+    since = date.today() - timedelta(days=90)
+    exits_cfg = bq.QueryJobConfig(query_parameters=[
+        bq.ScalarQueryParameter("since_date", "DATE", since),
+    ])
+    e_and = _tenant_sql_and(tenant_ids, col="e.tenant_id")
+    s_and = _tenant_sql_and(tenant_ids, col="s.tenant_id")
+    batch_specs = {
+        "coach_signals": COACHING_SIGNALS_QUERY.format(where=where),
+        "coach_exits": (RECENT_EXITS_QUERY.format(tenant_filter=tenant_and), exits_cfg),
+        "coach_discovery": _DISCOVERY_SQL.format(
+            tenant_clause=e_and if e_and else "",
+            sequence_clause=s_and if s_and else "",
+        ),
+    }
+    if app.config.get("BEHAVIOR_INSIGHTS_ENABLED", True):
+        batch_specs["coach_behavior"] = BEHAVIOR_OBSERVATIONS_QUERY.format(
+            tenant_filter=tenant_and
+        )
+    batch = _bq_parallel(client, batch_specs)
+
     # 1. Coaching signals per strategy
     try:
-        signals_df = client.query(
-            COACHING_SIGNALS_QUERY.format(where=where)
-        ).to_dataframe()
+        signals_df = batch.get("coach_signals", pd.DataFrame())
         if not signals_df.empty:
             coaching_data["has_data"] = True
             for col in ["avg_giveback_pct", "avg_pnl_given_back", "avg_days_held_past_peak",
@@ -543,15 +568,7 @@ def _build_coaching_brief(client, tenant_ids):
 
     # 2. Recent exits (last 90 days, for weekly context)
     try:
-        from datetime import date, timedelta
-        since = date.today() - timedelta(days=90)
-        cfg = bq.QueryJobConfig(query_parameters=[
-            bq.ScalarQueryParameter("since_date", "DATE", since),
-        ])
-        exits_df = client.query(
-            RECENT_EXITS_QUERY.format(tenant_filter=tenant_and),
-            job_config=cfg,
-        ).to_dataframe()
+        exits_df = batch.get("coach_exits", pd.DataFrame())
         if not exits_df.empty:
             recent_lines = []
             for _, r in exits_df.head(10).iterrows():
@@ -585,14 +602,7 @@ def _build_coaching_brief(client, tenant_ids):
         pass
 
     try:
-        e_and = _tenant_sql_and(tenant_ids, col="e.tenant_id")
-        s_and = _tenant_sql_and(tenant_ids, col="s.tenant_id")
-        dq = client.query(
-            _DISCOVERY_SQL.format(
-                tenant_clause=e_and if e_and else "",
-                sequence_clause=s_and if s_and else "",
-            )
-        ).to_dataframe()
+        dq = batch.get("coach_discovery", pd.DataFrame())
         if not dq.empty:
             disco_cards, disco_txt = _discovery_cards_from_series(dq.iloc[0])
             coaching_data["discoveries"] = disco_cards
@@ -610,9 +620,7 @@ def _build_coaching_brief(client, tenant_ids):
     #    so Flask does no phrasing — we just quote it verbatim.
     if app.config.get("BEHAVIOR_INSIGHTS_ENABLED", True):
         try:
-            obs_df = client.query(
-                BEHAVIOR_OBSERVATIONS_QUERY.format(tenant_filter=tenant_and)
-            ).to_dataframe()
+            obs_df = batch.get("coach_behavior", pd.DataFrame())
             # Belt-and-suspenders tenant scoping: also filter client-side.
             obs_df = _filter_df_by_tenant_ids(obs_df, tenant_ids)
             if not obs_df.empty:
@@ -1026,7 +1034,10 @@ def generate_insights():
         # Fallback to portfolio summary if no coaching data
         if not coaching_text:
             where = _tenant_sql_filter(tenant_ids)
-            df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
+            df = cached_query_df(
+                client, INSIGHTS_DATA_QUERY.format(where=where),
+                label="insights_data",
+            )
             if df.empty:
                 flash("No portfolio data found. Upload your trading data first.", "warning")
                 return redirect(redir)
@@ -1105,13 +1116,19 @@ def insights_ask():
 
         # Portfolio fallback
         where = _tenant_sql_filter(tenant_ids)
-        df = client.query(INSIGHTS_DATA_QUERY.format(where=where)).to_dataframe()
+        df = cached_query_df(
+            client, INSIGHTS_DATA_QUERY.format(where=where),
+            label="insights_data",
+        )
         portfolio_text = _build_prompt_data(df) if not df.empty else None
 
         # Weekly context
         weekly_text = None
         try:
-            wdf = client.query(WEEKLY_QA_QUERY.format(where=where)).to_dataframe()
+            wdf = cached_query_df(
+                client, WEEKLY_QA_QUERY.format(where=where),
+                label="insights_weekly_qa",
+            )
             if not wdf.empty:
                 row = wdf.iloc[0]
                 tc = int(row.get("trades_closed", 0) or 0)

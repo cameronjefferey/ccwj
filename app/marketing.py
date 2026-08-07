@@ -434,7 +434,8 @@ def get_started():
             client = get_bigquery_client()
             where = _tenant_sql_filter(tenant_ids)
             check_q = f"SELECT COUNT(*) AS cnt FROM `ccwj-dbt.analytics.positions_summary` {where}"
-            result = client.query(check_q).to_dataframe()
+            from app.query_cache import cached_query_df
+            result = cached_query_df(client, check_q, label="get_started_has_data")
             has_data = int(result.iloc[0]["cnt"]) > 0 if not result.empty else False
         except Exception as exc:
             app.logger.warning(

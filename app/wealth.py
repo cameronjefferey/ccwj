@@ -336,7 +336,8 @@ def wealth():
                     bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
                 ]
             )
-            df = client.query(sql, job_config=job_config).to_dataframe()
+            from app.query_cache import cached_query_df
+            df = cached_query_df(client, sql, job_config=job_config, label="wealth_daily")
             # Defense-in-depth tenant filter on the DataFrame — even if a
             # SQL change ever drops the account_filter, this strips any
             # row whose ``user_id`` doesn't match the signed-in user.

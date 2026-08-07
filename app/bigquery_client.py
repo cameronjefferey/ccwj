@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import logging
+import threading
 import time
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -152,15 +153,34 @@ def _emit_bq_cost_event(*, kind, duration_ms, **fields):
     )
 
 
-def get_bigquery_client():
-    """Create a BigQuery client using the best available credentials.
+_client_lock = threading.Lock()
+_client_singleton = None
 
-    Credential resolution order:
+
+def get_bigquery_client():
+    """Return the process-wide BigQuery client (created on first use).
+
+    The client is MEMOIZED: building one costs ~0.5-0.7s (credential parse +
+    auth session), and the app used to pay that on every request in every
+    view. ``bigquery.Client`` is thread-safe for queries, and google-auth
+    refreshes expired tokens automatically, so one client per process is
+    safe for the life of a Gunicorn worker.
+
+    Credential resolution order (first build only):
       1. GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64  (Render / CI)
       2. GOOGLE_APPLICATION_CREDENTIALS file path    (explicit service-account)
       3. Application Default Credentials             (gcloud auth / GCE / Cloud Run)
     """
+    global _client_singleton
+    if _client_singleton is not None:
+        return _client_singleton
+    with _client_lock:
+        if _client_singleton is None:
+            _client_singleton = _build_bigquery_client()
+    return _client_singleton
 
+
+def _build_bigquery_client():
     # 1. Render / CI: base64-encoded service-account JSON
     b64_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64")
     if b64_creds:

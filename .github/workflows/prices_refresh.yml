@@ -73,3 +73,12 @@ jobs:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}
           DBT_DATAPROC_REGION: ${{ secrets.DBT_DATAPROC_REGION }}
+
+      # Same hook as bigquery_update.yml: prices just changed, so the app's
+      # query cache must be flushed (and re-warmed) or evening pages would
+      # keep serving pre-close numbers until the cache TTL expires.
+      - name: Flush + warm app query cache
+        if: always()
+        run: |
+          curl -fsS -m 20 -X POST "https://ccwj.onrender.com/internal/cache/flush" \
+            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}" || true

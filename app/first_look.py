@@ -98,12 +98,25 @@ def _safe_int(val, default=0):
         return default
 
 
-def _build_profile(client, where, acct_and):
+def _build_profile(client, where, tenant_and):
     """Build the trader profile dict from BigQuery data."""
+    from app.routes import _bq_parallel
+
     profile = {}
 
+    # All five stats queries are independent — one parallel cached wave
+    # instead of five serial round trips (this page clocked up to 5.9s in
+    # production on the serial path).
+    batch = _bq_parallel(client, {
+        "fl_profile": PROFILE_QUERY.format(where=where),
+        "fl_strategies": STRATEGY_QUERY.format(where=where),
+        "fl_symbols": SYMBOL_QUERY.format(where=where),
+        "fl_win_loss": WIN_LOSS_QUERY.format(where=where),
+        "fl_busiest_month": BUSIEST_MONTH_QUERY.format(tenant_filter=tenant_and),
+    })
+
     # Overall stats
-    df = client.query(PROFILE_QUERY.format(where=where)).to_dataframe()
+    df = batch.get("fl_profile", pd.DataFrame())
     if df.empty:
         return None
     r = df.iloc[0]
@@ -138,7 +151,7 @@ def _build_profile(client, where, acct_and):
         profile["months_active"] = 0
 
     # Strategies
-    strat_df = client.query(STRATEGY_QUERY.format(where=where)).to_dataframe()
+    strat_df = batch.get("fl_strategies", pd.DataFrame())
     strategies = []
     if not strat_df.empty:
         for col in ["total_return", "winners", "losers", "num_symbols", "total_trades", "avg_days"]:
@@ -158,7 +171,7 @@ def _build_profile(client, where, acct_and):
         profile["top_strategy"] = strategies[0]
 
     # Symbols — best and worst
-    sym_df = client.query(SYMBOL_QUERY.format(where=where)).to_dataframe()
+    sym_df = batch.get("fl_symbols", pd.DataFrame())
     if not sym_df.empty:
         sym_df["total_return"] = pd.to_numeric(sym_df["total_return"], errors="coerce").fillna(0)
         best = sym_df.iloc[0]
@@ -189,7 +202,7 @@ def _build_profile(client, where, acct_and):
         profile["top3_symbols"] = []
 
     # Win/loss asymmetry — the core insight
-    wl_df = client.query(WIN_LOSS_QUERY.format(where=where)).to_dataframe()
+    wl_df = batch.get("fl_win_loss", pd.DataFrame())
     if not wl_df.empty:
         avg_win = _safe_float(wl_df.iloc[0].get("avg_win"))
         avg_loss = _safe_float(wl_df.iloc[0].get("avg_loss"))
@@ -207,9 +220,7 @@ def _build_profile(client, where, acct_and):
 
     # Busiest month
     try:
-        bm_df = client.query(
-            BUSIEST_MONTH_QUERY.format(tenant_filter=tenant_and)
-        ).to_dataframe()
+        bm_df = batch.get("fl_busiest_month", pd.DataFrame())
         if not bm_df.empty:
             profile["busiest_month"] = str(bm_df.iloc[0]["month"])
             profile["busiest_month_trades"] = int(bm_df.iloc[0]["trades_opened"])

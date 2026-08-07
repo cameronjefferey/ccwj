@@ -82,9 +82,11 @@ def sectors():
     tenant_filter = _tenant_sql_and(tenant_ids)
 
     try:
-        df = client.query(
-            SECTORS_QUERY.format(tenant_filter=tenant_filter)
-        ).to_dataframe()
+        from app.query_cache import cached_query_df
+        df = cached_query_df(
+            client, SECTORS_QUERY.format(tenant_filter=tenant_filter),
+            label="sectors",
+        )
     except Exception as exc:
         return render_template(
             "sectors.html",

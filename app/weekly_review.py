@@ -1157,10 +1157,12 @@ def _detect_patterns(client, tenant_filter, week_start, week_end):
             bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
             bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
         ])
-        combined_df = client.query(
+        combined_df = cached_query_df(
+            client,
             PATTERNS_COMBINED_QUERY.format(tenant_filter=tenant_filter),
             job_config=cfg,
-        ).to_dataframe()
+            label="patterns_combined",
+        )
 
         if combined_df.empty:
             return patterns
@@ -3319,6 +3321,52 @@ def _today_headline(today_pulse, today_movers, equity_snapshot):
     return f"Today: {sign}${abs(delta):,.0f}{pct_str}"
 
 
+def build_daily_review_batch(tenant_filter, today, this_week):
+    """The tenant-scoped core of the Daily Review parallel batch.
+
+    Shared by the ``weekly_review`` view and the post-rebuild cache warmer
+    (``app/cache_ops.py``). The warmer replays EXACTLY these SQL strings and
+    job configs so the cache keys it populates are the ones a real page
+    load will look up — any drift between the two and warming silently
+    stops helping. The view adds the conditional ``after_hours`` query on
+    top (session/state-dependent, deliberately not warmed).
+    """
+    cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
+    cal_end = this_week + timedelta(days=4)
+
+    cal_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("start_date", "DATE", cal_start),
+        bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
+    ])
+
+    week_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
+    ])
+
+    # SPY/QQQ week/YTD context. Independent of the batch results (only
+    # needs the calendar dates), so fold it into the parallel wave rather
+    # than paying a serial ~1-2s round trip after the batch.
+    market_perf_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
+        bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
+    ])
+
+    return {
+        "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
+        "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
+        "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+        "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
+        "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
+        "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
+        "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
+        "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
+        "attribution": POSITION_ATTRIBUTION_QUERY.format(
+            tenant_filter=tenant_filter, week_start=this_week.isoformat()),
+        "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
+        "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
+    }
+
+
 # Decorator order is intentional: ``/daily-review`` is the inner (applied
 # first) so Flask registers it first in the url_map, and ``url_for(
 # 'weekly_review')`` returns ``/daily-review``. ``/weekly-review`` stays
@@ -3417,44 +3465,11 @@ def weekly_review():
     try:
         client = get_bigquery_client()
 
-        cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
-        cal_end = this_week + timedelta(days=4)
-
-        cal_cfg = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("start_date", "DATE", cal_start),
-            bigquery.ScalarQueryParameter("end_date", "DATE", cal_end),
-        ])
-
-        week_cfg = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
-        ])
-
-        # SPY/QQQ week/YTD context. Independent of the batch results (only
-        # needs the calendar dates), so fold it into the parallel wave rather
-        # than paying a serial ~1-2s round trip after the batch.
-        market_perf_cfg = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
-            bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
-        ])
-
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
 
-        batch_queries = {
-            "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
-            "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
-            "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
-            "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
-            "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
-            "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
-            "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
-            "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
-            "attribution": POSITION_ATTRIBUTION_QUERY.format(
-                tenant_filter=tenant_filter, week_start=this_week.isoformat()),
-            "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
-            "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
-        }
+        batch_queries = build_daily_review_batch(tenant_filter, today, this_week)
         # After-hours drift compares the broker mark to today's *official*
         # close. Two conditions must hold or the reading is noise/wrong:
         #   1) the bell has rung (state == after_hours) so the close exists;

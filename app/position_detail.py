@@ -573,7 +573,7 @@ def _fetch_int_strategy_classification_by_symbol(
     {acct}
     """
     try:
-        df = client.query(sql).to_dataframe()
+        df = cached_query_df(client, sql, label="strategy_classification_fallback")
     except Exception as exc:
         app.logger.exception(
             "int_strategy_classification by symbol failed for %s: %s", safe_symbol, exc
@@ -621,7 +621,7 @@ def _fetch_closed_option_legs_from_classification(
     {acct}
     """
     try:
-        df = client.query(sql).to_dataframe()
+        df = cached_query_df(client, sql, label="closed_option_legs_fallback")
     except Exception as exc:
         app.logger.exception(
             "closed option legs fallback (classification) failed for %s: %s",

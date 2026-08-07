@@ -384,3 +384,4 @@ from app import first_look
 from app import strategies
 from app import profile_community
 from app import webhooks  # noqa: F401  registers /webhooks/* routes
+from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
