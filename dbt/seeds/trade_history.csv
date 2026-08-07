@@ -1,0 +1,58 @@
+Account,user_id,tenant_id,Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Open,SMCI  260821C00035000,SMCI  260821C00035000,10.0,1.13,,1130.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Buy,SMCI,Super Micro Computer Inc,1000.0,30.365,,-30365.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Close,RKLB  260814C00076000,RKLB  260814C00076000,10.0,7.7,,7700.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Buy,SPCE,Virgin Galactic Holdings Inc.,1.0,3.07,,-3.07
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Close,LITE  260814C00900000,LITE  260814C00900000,4.0,60.0,,24000.0
+Schwab Account,9,snaptrade:48086b12-66c3-4cb1-a8a4-259becd58387,08/07/2026,Sell to Close,COHR  260814C00350000,COHR  260814C00350000,10.0,42.28,,42280.0
+Coinbase Account,9,snaptrade:f56c7df3-5f4f-401a-adb6-f38e56cf4dc9,08/07/2026,Buy,USDC,USDC,100.0,1.0,,-100.0
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/07/2026,Buy,JEPQ,JPMorgan Nasdaq Equity Premium Income ETF,900.0,59.5844,,-53625.96
+Schwab Account,18,snaptrade:89fabc0a-4c93-4b95-bdc2-7bfbfb839bc1,08/07/2026,Sell,JEPI,JPMorgan Equity Premium Income Fund,1000.0,57.64,,57640.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,BE    260807C00240000,BE    260807C00240000,3.0,0.033333,,-9.9999
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Open,BE    260814C00240000,BE    260814C00240000,3.0,4.263333,,1278.9999
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,JPM   260807P00355000,JPM   260807P00355000,5.0,0.03,,-15.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,VRT   260807C00290000,VRT   260807C00290000,2.0,0.06,,-12.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Open,VRT   260814C00290000,VRT   260814C00290000,2.0,4.79,,958.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,AVGO  260814C00425000,AVGO  260814C00425000,1.0,10.15,,-1015.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Open,AVGO  260821C00430000,AVGO  260821C00430000,1.0,12.22,,1222.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Open,AVGO  260810P00415000,AVGO  260810P00415000,2.0,1.275,,255.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Open,AVGO  260810P00405000,AVGO  260810P00405000,2.0,0.34,,-68.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,AVGO  260807P00410000,AVGO  260807P00410000,1.0,0.02,,-2.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Close,AVGO  260807P00400000,AVGO  260807P00400000,1.0,0.01,,1.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Sell to Open,AVGO  260821C00425000,AVGO  260821C00425000,1.0,15.46,,1546.0
+Schwab Account,18,snaptrade:016576b8-dd40-40f8-8966-b6d908489cb2,08/07/2026,Buy to Close,AVGO  260814C00420000,AVGO  260814C00420000,1.0,13.73,,-1373.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,CSCO,"Cisco Systems, Inc.",34.0,120.99,,-4113.66
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,CAH,Cardinal Health Inc.,17.0,239.63,,-4073.71
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,ACMR,Acm Research Inc.,51.0,82.6,,4212.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,RDNT,RadNet Inc.,62.0,69.43,,4304.66
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,GLNG,Golar LNG Ltd.,80.0,50.21,,4016.8
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,GLBE,Global-E Online Ltd.,99.0,42.33,,-4190.67
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,SPCE,Virgin Galactic Holdings Inc.,1397.0,3.06,,-4274.82
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,MSGS,Madison Square Garden Sports Corp.,10.0,394.56,,-3945.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,COHR,Coherent Corp.,12.0,372.161667,,4465.940004
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,MIDD,The Middleby Corporation,30.0,135.22,,-4056.6
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,RGTI,Rigetti Computing Inc,247.0,16.95,,4186.65
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,CRC,California Resources Corp,77.0,51.81,,3989.37
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,ORKA,"Oruka Therapeutics, Inc.",42.0,99.61,,-4183.62
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,SPG,"Simon Property Group, Inc.",18.0,222.25,,-4000.5
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,ACMR,Acm Research Inc.,51.0,79.89,,-4074.39
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,VST,Vistra Corp,29.0,136.35,,-3954.15
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,IBP,Installed Building Products Inc.,17.0,241.325294,,4102.529998
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,CIB,Bancolombia S.A.,46.0,89.47,,4115.62
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,LNG,Cheniere Energy Inc.,16.0,263.865,,-4221.84
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,CNQ,Canadian Natural Resources Limited,91.0,45.02,,4096.82
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,CTRE,CareTrust REIT Inc.,97.0,40.854845,,3962.919965
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,LAMR,Lamar Advertising Company,25.0,156.52,,3913.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,XENE,Xenon Pharmaceuticals Inc.,64.0,64.71,,-4141.44
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,SEZL,Sezzle Inc.,23.0,123.973044,,2851.380012
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,FWONK,Liberty Media Corporation Series C Formula One Group Common Stock,41.0,100.824878,,4133.819998
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,CWST,Casella Waste Systems Inc.,46.0,86.35,,3972.1
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,FWONA,Liberty Media Corporation,45.0,92.085111,,4143.829995
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,CEG,Constellation Energy Corporation,15.0,263.6,,-3954.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,GEN,Gen Digital Inc.,148.0,28.415473,,4205.490004
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,SONY,Sony Group Corporation - Sponsored American Depositary Receipt,183.0,23.407322,,4283.539926
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,MNST,Monster Beverage Corporation,42.0,93.129048,,3911.420016
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,PBR.A,Petróleo Brasileiro S.A. Petrobras Pref ADR,255.0,16.627647,,-4240.049985
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,HWM,Howmet Aerospace Inc.,14.0,289.1,,4047.4
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Sell,AHR,"American Healthcare REIT, Inc.",73.0,56.29,,4109.17
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/07/2026,Buy,QBTS,D-Wave Quantum Inc.,194.0,20.07,,-3893.58
