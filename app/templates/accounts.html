@@ -93,7 +93,7 @@
         {% for key, lbl in [('1M','1M'),('3M','3M'),('6M','6M'),('YTD','YTD'),('1Y','1Y'),('ALL','All')] %}
         <a class="btn btn-outline-secondary js-range-btn {{ 'active' if (selected_range or 'ALL') == key }}"
            data-range="{{ key }}"
-           href="{{ url_for('accounts', account=selected_account, range=key) if selected_account else url_for('accounts', range=key) }}">{{ lbl }}</a>
+           href="{{ url_for('accounts', range=key) }}{{ ('&' ~ account_scope_query) if account_scope_query else '' }}">{{ lbl }}</a>
         {% endfor %}
     </div>
     <span class="spinner-border spinner-border-sm text-secondary" id="rangeSpinner"
@@ -389,7 +389,7 @@
     var summaryData = {{ summary_chart_json | safe }};
     var stratData   = {{ strategy_chart_json | safe }};
     var SELECTED_RANGE = {{ (selected_range or 'ALL') | tojson }};
-    var SELECTED_ACCOUNT = {{ (selected_account or '') | tojson }};
+    var ACCOUNT_SCOPE_QUERY = {{ (account_scope_query or '') | tojson }};
     var summaryChart = null, strategyChart = null;
 
     /* Closed-group (close_date, total_pnl) pairs so "Realized (period)" can be
@@ -545,6 +545,11 @@
        Charts + cards update instantly; only the four breakdown tables need
        fresh windowed data, fetched as an HTML fragment and swapped in. */
     var _fragAbort = null;
+    function queryForRange(key) {
+        return 'range=' + encodeURIComponent(key) +
+               (ACCOUNT_SCOPE_QUERY ? '&' + ACCOUNT_SCOPE_QUERY : '');
+    }
+
     function fetchBreakdown(key) {
         var host = document.getElementById('breakdownTables');
         var spinner = document.getElementById('rangeSpinner');
@@ -553,8 +558,7 @@
         host.style.opacity = '0.45';
         if (_fragAbort) { try { _fragAbort.abort(); } catch (e) {} }
         _fragAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var qs = 'range=' + encodeURIComponent(key) +
-                 (SELECTED_ACCOUNT ? '&account=' + encodeURIComponent(SELECTED_ACCOUNT) : '');
+        var qs = queryForRange(key);
         fetch('{{ url_for("accounts_breakdown_fragment") }}?' + qs, {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             signal: _fragAbort ? _fragAbort.signal : undefined
@@ -578,9 +582,7 @@
         fetchBreakdown(key);
         document.getElementById('rangeHelp').style.display = (key === 'ALL') ? 'none' : '';
         if (push) {
-            var url = '{{ url_for("accounts") }}?' +
-                (SELECTED_ACCOUNT ? 'account=' + encodeURIComponent(SELECTED_ACCOUNT) + '&' : '') +
-                'range=' + encodeURIComponent(key);
+            var url = '{{ url_for("accounts") }}?' + queryForRange(key);
             history.pushState({ range: key }, '', url);
         }
     }
