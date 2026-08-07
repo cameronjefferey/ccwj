@@ -3391,6 +3391,8 @@ Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Sell 
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,ASTS,AST SPACEMOBILE INC CLASS A,200.0,63.72,,-12744.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/03/2026,Buy,BP,BP P L C FSPONSORED ADR 1 ADR REPS 6 ORD SHS,500.0,44.55,,-22275.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/06/2026,Sell,AAOI,"Applied Optoelectronics, Inc.",200.0,128.37,,25674.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Open,SMCI  260821C00035000,SMCI  260821C00035000,10.0,1.13,,1130.0
+Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Buy,SMCI,Super Micro Computer Inc,1000.0,30.365,,-30365.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Close,RKLB  260814C00076000,RKLB  260814C00076000,10.0,7.7,,7700.0
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Buy,SPCE,Virgin Galactic Holdings Inc.,1.0,3.07,,-3.07
 Schwab Account,9,snaptrade:4eaa913f-24bf-480b-a32f-ba1bdf9ce9db,08/07/2026,Sell to Close,LITE  260814C00900000,LITE  260814C00900000,4.0,60.0,,24000.0
