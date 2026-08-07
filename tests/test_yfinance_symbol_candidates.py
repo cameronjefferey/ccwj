@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import pytest
 
-from current_position_stock_price import _yahoo_symbol_candidates
+from current_position_stock_price import (
+    _load_crypto_symbols,
+    _yahoo_symbol_candidates,
+)
 
 
 class TestPreferredFallback:
@@ -64,6 +67,52 @@ class TestNonPreferred:
         # two-letter suffix isn't ambiguous (e.g. crypto/forex shapes)
         # so we don't add a fallback.
         assert _yahoo_symbol_candidates("FOO-BB") == ["FOO-BB"]
+
+
+class TestCryptoMapping:
+    """Crypto tickers map to ``<SYM>-USD`` EXCLUSIVELY.
+
+    The bare ticker collides with an unrelated equity — ``yf.Ticker("LINK")``
+    resolves to Interlink Electronics (~$4.55), not Chainlink
+    (``LINK-USD`` ≈ $8.20). Because that bare fetch SUCCEEDS with the wrong
+    asset's prices, the candidate list must never include the bare ticker
+    for a crypto symbol, or the "first non-empty wins" loop would silently
+    record the equity's series.
+    """
+
+    _CRYPTO = frozenset({"LINK", "BTC", "ETH"})
+
+    def test_crypto_maps_to_usd_pair_exclusively(self):
+        assert _yahoo_symbol_candidates("LINK", self._CRYPTO) == ["LINK-USD"]
+        assert _yahoo_symbol_candidates("BTC", self._CRYPTO) == ["BTC-USD"]
+
+    def test_crypto_never_includes_bare_ticker(self):
+        cands = _yahoo_symbol_candidates("LINK", self._CRYPTO)
+        assert "LINK" not in cands, (
+            "bare crypto ticker collides with an equity and must not be a "
+            "candidate — Yahoo's LINK is Interlink Electronics, not Chainlink"
+        )
+
+    def test_crypto_match_is_case_insensitive(self):
+        assert _yahoo_symbol_candidates("link", self._CRYPTO) == ["link-USD"]
+
+    def test_non_crypto_symbol_with_crypto_set_is_unaffected(self):
+        assert _yahoo_symbol_candidates("AAPL", self._CRYPTO) == ["AAPL"]
+        # Preferred-share fallback still applies for non-crypto symbols.
+        cands = _yahoo_symbol_candidates("GLOP-C", self._CRYPTO)
+        assert cands[0] == "GLOP-C"
+        assert "GLOP-PC" in cands
+
+    def test_default_crypto_set_loaded_from_seed(self):
+        # With no explicit set, the whitelist is read from the dbt seed
+        # (dbt/seeds/crypto_symbols.csv). LINK/BTC/ETH are canonical members.
+        seed = _load_crypto_symbols()
+        assert {"LINK", "BTC", "ETH"}.issubset(seed)
+        assert _yahoo_symbol_candidates("LINK") == ["LINK-USD"]
+
+    def test_load_crypto_symbols_missing_file_returns_empty(self, tmp_path):
+        missing = tmp_path / "does_not_exist.csv"
+        assert _load_crypto_symbols(str(missing)) == frozenset()
 
 
 class TestEdgeCases:
@@ -175,3 +224,35 @@ class TestFetchHistoryForSymbol:
         assert hist is None
         assert ticker is None
         assert yahoo_sym is None
+
+    def test_crypto_fetches_usd_pair_and_never_bare_ticker(self, monkeypatch):
+        # The regression this guards: the bare "LINK" fetch SUCCEEDS (Yahoo
+        # returns Interlink Electronics), so the loader must query "LINK-USD"
+        # and must never fall through to the bare ticker.
+        import pandas as pd
+
+        from current_position_stock_price import _fetch_history_for_symbol
+
+        chainlink = pd.DataFrame(
+            {"Close": [8.1, 8.2], "Dividends": [0.0, 0.0]},
+            index=pd.to_datetime(["2026-08-04", "2026-08-05"]),
+        )
+
+        calls = []
+
+        def fake_ticker(sym):
+            calls.append(sym)
+            if sym == "LINK-USD":
+                return _FakeTicker(chainlink)
+            # A bare "LINK" would (wrongly) return the equity — assert we
+            # never reach it.
+            raise AssertionError(f"crypto loader queried non-USD symbol {sym!r}")
+
+        monkeypatch.setattr("current_position_stock_price.yf.Ticker", fake_ticker)
+
+        hist, _, yahoo_sym = _fetch_history_for_symbol(
+            "LINK", "2026-05-14", "2026-08-06", frozenset({"LINK"})
+        )
+        assert yahoo_sym == "LINK-USD"
+        assert calls == ["LINK-USD"], "must query only the crypto USD pair"
+        assert hist is not None and not hist.empty

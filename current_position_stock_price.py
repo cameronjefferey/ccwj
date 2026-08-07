@@ -1,3 +1,5 @@
+import csv
+import os
 import re
 import pandas as pd
 import yfinance as yf
@@ -37,18 +39,81 @@ from google.cloud import bigquery
 _PREFERRED_CANDIDATE_RE = re.compile(r"^([A-Z][A-Z0-9.]{0,5})-([A-Z])$")
 
 
-def _yahoo_symbol_candidates(broker_sym):
+# ---------------------------------------------------------------------------
+# Crypto symbol mapping
+# ---------------------------------------------------------------------------
+# Crypto holdings (LINK, BTC, ETH, …) must be fetched from Yahoo as the
+# ``<SYM>-USD`` spot pair. The BARE ticker collides with an unrelated
+# equity — ``yf.Ticker("LINK")`` resolves to Interlink Electronics (a
+# ~$4.55 NASDAQ stock), NOT Chainlink (``LINK-USD`` ≈ $8.20, which is what
+# the broker actually marks). The collision is silent: the bare fetch
+# SUCCEEDS with the wrong asset's prices, so we can't rely on the usual
+# "first non-empty candidate wins" fallback — we must map crypto to
+# ``<SYM>-USD`` EXCLUSIVELY and never try the bare ticker.
+#
+# Source of truth is the dbt seed ``dbt/seeds/crypto_symbols.csv`` (the
+# same list ``app.upload.CRYPTO_SYMBOLS`` mirrors). We read the seed
+# directly instead of ``from app.upload import ...`` because ``app/upload``
+# does ``from app import app`` and would spin up the whole Flask app inside
+# this cron loader.
+_CRYPTO_SYMBOLS_CACHE = None
+
+
+def _crypto_symbols_seed_path():
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "dbt", "seeds", "crypto_symbols.csv",
+    )
+
+
+def _load_crypto_symbols(path=None):
+    """Load the curated crypto whitelist (upper-cased) from the dbt seed.
+
+    Returns an empty frozenset (crypto ``-USD`` mapping disabled) if the
+    seed can't be read, so a missing file degrades to the pre-existing
+    behaviour rather than crashing the price loader.
+    """
+    p = path or _crypto_symbols_seed_path()
+    out = set()
+    try:
+        with open(p, newline="") as f:
+            for row in csv.DictReader(f):
+                sym = (row.get("symbol") or "").strip().upper()
+                if sym:
+                    out.add(sym)
+    except FileNotFoundError:
+        print(f"crypto_symbols seed not found at {p}; crypto -USD mapping disabled.")
+    return frozenset(out)
+
+
+def _get_crypto_symbols():
+    global _CRYPTO_SYMBOLS_CACHE
+    if _CRYPTO_SYMBOLS_CACHE is None:
+        _CRYPTO_SYMBOLS_CACHE = _load_crypto_symbols()
+    return _CRYPTO_SYMBOLS_CACHE
+
+
+def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     """Return ordered list of Yahoo-symbol candidates to try for one broker symbol.
 
     The first non-empty history wins; the loader writes rows back under
     the original ``broker_sym`` so downstream joins on
     ``underlying_symbol`` keep working unchanged.
+
+    ``crypto_symbols`` is the curated crypto whitelist; when omitted it is
+    loaded (and cached) from the dbt seed. A whitelisted crypto ticker maps
+    to ``<SYM>-USD`` EXCLUSIVELY (see the module comment above) — never the
+    bare ticker, which resolves to a colliding equity.
     """
     if not isinstance(broker_sym, str):
         return []
     sym = broker_sym.strip()
     if not sym:
         return []
+    if crypto_symbols is None:
+        crypto_symbols = _get_crypto_symbols()
+    if sym.upper() in crypto_symbols:
+        return [f"{sym}-USD"]
     candidates = [sym]
     m = _PREFERRED_CANDIDATE_RE.match(sym)
     if m and not sym.startswith(m.group(1) + "-P"):
@@ -56,7 +121,7 @@ def _yahoo_symbol_candidates(broker_sym):
     return candidates
 
 
-def _fetch_history_for_symbol(broker_sym, start_iso, end_iso):
+def _fetch_history_for_symbol(broker_sym, start_iso, end_iso, crypto_symbols=None):
     """Fetch ``(history_df, ticker_used, yahoo_symbol_used)`` for one symbol.
 
     Returns ``(None, None, None)`` when no candidate yields any rows.
@@ -64,7 +129,7 @@ def _fetch_history_for_symbol(broker_sym, start_iso, end_iso):
     write-back into ``daily_position_performance`` under ``broker_sym``.
     """
     last_err = None
-    for cand in _yahoo_symbol_candidates(broker_sym):
+    for cand in _yahoo_symbol_candidates(broker_sym, crypto_symbols):
         try:
             t = yf.Ticker(cand)
             h = t.history(start=start_iso, end=end_iso)
@@ -143,6 +208,10 @@ def _main():
     end_date = (today + timedelta(days=1)).isoformat()
     all_data = []
 
+    # Crypto whitelist (once) so each held symbol that is crypto is fetched
+    # from Yahoo as "<SYM>-USD" rather than a colliding bare ticker.
+    crypto_symbols = _load_crypto_symbols()
+
     # Stock-split ledger. Per-symbol (de-duplicated below) so a single split
     # event is not written N times when the same symbol appears across many
     # (account, user_id) pairs. Schema: (symbol, split_date, split_ratio).
@@ -178,7 +247,7 @@ def _main():
             # (``stg_history.underlying_symbol`` → ``stg_daily_prices.symbol``)
             # don't need to know about the Yahoo translation.
             hist, ticker, yahoo_sym = _fetch_history_for_symbol(
-                symbol, start_date, end_date
+                symbol, start_date, end_date, crypto_symbols
             )
             if hist is None or hist.empty:
                 print(
