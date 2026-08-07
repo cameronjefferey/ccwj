@@ -12,6 +12,7 @@
 CREATE OR REPLACE VIEW `ccwj-dbt.ml_models.account_trade_insights` AS
 SELECT
     m.account,
+    m.tenant_id,
     m.trade_symbol,
     m.underlying_symbol,
     m.strategy,

@@ -48,6 +48,7 @@ from app.routes import (
 TRADES_QUERY = """
     SELECT
         account,
+        tenant_id,
         underlying_symbol AS symbol,
         trade_date,
         action,
@@ -69,18 +70,20 @@ TRADES_QUERY = """
 OPEN_SESSION_START_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         MIN(open_date) AS open_start
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE status = 'Open'
       {tenant_filter}
-    GROUP BY account, symbol
+    GROUP BY account, tenant_id, symbol
 """
 
 
 CLOSED_LEGS_QUERY = """
     SELECT
         sc.account,
+        sc.tenant_id,
         sc.symbol,
         sc.strategy,
         sc.trade_symbol,
@@ -110,6 +113,7 @@ CLOSED_LEGS_QUERY = """
 CLOSED_EQUITY_LEGS_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         trade_symbol,
         open_date,
@@ -127,6 +131,7 @@ CLOSED_EQUITY_LEGS_QUERY = """
 CURRENT_POSITIONS_QUERY = """
     SELECT
         account,
+        tenant_id,
         underlying_symbol AS symbol,
         instrument_type,
         trade_symbol,
@@ -142,13 +147,13 @@ CURRENT_POSITIONS_QUERY = """
 """
 
 STRATEGIES_MAP_QUERY = """
-    SELECT account, symbol, strategy
+    SELECT account, tenant_id, symbol, strategy
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1 {tenant_filter}
 """
 
 SYMBOLS_PNL_QUERY = """
-    SELECT account, symbol, status, realized_pnl, unrealized_pnl
+    SELECT account, tenant_id, symbol, status, realized_pnl, unrealized_pnl
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1 {tenant_filter}
 """
@@ -285,12 +290,17 @@ def symbols_detail():
         .to_dict()
     )
 
-    # Open session start map: (account, symbol) → open_start date
+    # Open session start map: (account, symbol) → open_start date.
+    # The query is tenant-grained (colliding display labels can yield two
+    # rows for one (account, symbol) key) — keep the EARLIEST start, matching
+    # the old account-grained MIN semantics.
     open_start_map = {}
     if "open_start_df" in locals() and not open_start_df.empty:
         for _, row in open_start_df.iterrows():
             key = (str(row["account"]), str(row["symbol"]))
-            open_start_map[key] = row["open_start"]
+            prev = open_start_map.get(key)
+            if prev is None or (row["open_start"] and row["open_start"] < prev):
+                open_start_map[key] = row["open_start"]
 
     # Normalize closed_legs_df for date filtering
     if "closed_legs_df" in locals() and not closed_legs_df.empty:

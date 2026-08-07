@@ -36,21 +36,21 @@ from app.routes import (
 # ======================================================================
 
 ACCOUNT_BALANCES_QUERY = """
-    SELECT account, row_type, market_value, cost_basis,
+    SELECT account, tenant_id, row_type, market_value, cost_basis,
            unrealized_pnl, unrealized_pnl_pct, percent_of_account
     FROM `ccwj-dbt.analytics.stg_account_balances`
     WHERE 1=1 {tenant_filter}
 """
 
 STRATEGY_CLASSIFICATION_QUERY = """
-    SELECT account, symbol, strategy, status, open_date, close_date,
+    SELECT account, tenant_id, symbol, strategy, status, open_date, close_date,
            total_pnl, num_trades
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE 1=1 {tenant_filter}
 """
 
 ACCOUNT_POSITIONS_SUMMARY_QUERY = """
-    SELECT account, strategy,
+    SELECT account, tenant_id, strategy,
            SUM(total_pnl) AS total_pnl,
            SUM(realized_pnl) AS realized_pnl,
            SUM(unrealized_pnl) AS unrealized_pnl,
@@ -63,7 +63,7 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
            SUM(total_return) AS total_return
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1 {tenant_filter}
-    GROUP BY account, strategy
+    GROUP BY account, tenant_id, strategy
     ORDER BY account, strategy
 """
 
@@ -597,7 +597,15 @@ def accounts():
     # ------------------------------------------------------------------
     # Strategy summary table
     # ------------------------------------------------------------------
+    # The SQL is tenant-grained (so the tenant filter above can apply);
+    # collapse back to the (account, strategy) display grain here so a user
+    # with colliding account labels doesn't see duplicate strategy rows.
     if not strat_summary_df.empty:
+        _sum_cols = [c for c in num_cols if c in strat_summary_df.columns]
+        strat_summary_df = (
+            strat_summary_df.groupby(["account", "strategy"], as_index=False)[_sum_cols]
+            .sum()
+        )
         strat_summary_df["win_rate"] = strat_summary_df.apply(
             lambda r: r["num_winners"] / (r["num_winners"] + r["num_losers"])
             if (r["num_winners"] + r["num_losers"]) > 0 else 0,

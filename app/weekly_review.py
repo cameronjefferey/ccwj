@@ -918,6 +918,7 @@ WITH latest_prices AS (
 )
 SELECT
     e.account,
+    e.tenant_id,
     e.underlying_symbol AS symbol,
     e.instrument_type,
     e.trade_symbol,

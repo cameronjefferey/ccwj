@@ -40,6 +40,7 @@ from app.utils import demo_block_writes
 STRATEGY_FIT_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         strategy,
         status,

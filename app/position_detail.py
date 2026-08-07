@@ -167,6 +167,7 @@ POSITION_CURRENT_QUERY = """
 POSITION_CLOSED_LEGS_QUERY = """
     SELECT
         sc.account,
+        sc.tenant_id,
         sc.symbol,
         sc.strategy,
         sc.trade_symbol,
@@ -197,6 +198,7 @@ POSITION_CLOSED_LEGS_QUERY = """
 POSITION_CLOSED_EQUITY_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         trade_symbol,
         session_id,
@@ -266,6 +268,7 @@ POSITION_ACCOUNTS_QUERY = """
 SYMBOL_TABS_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         SUM(COALESCE(total_return, 0)) AS total_return,
         SUM(COALESCE(num_individual_trades, 0)) AS num_trades,
@@ -274,7 +277,7 @@ SYMBOL_TABS_QUERY = """
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE symbol IS NOT NULL
       {tenant_filter}
-    GROUP BY account, symbol
+    GROUP BY account, tenant_id, symbol
 """
 
 # Win/Loss matrix cells are PRE-BUCKETED in dbt (mart_option_win_matrix).
@@ -566,8 +569,9 @@ def _fetch_int_strategy_classification_by_symbol(
     acct = _tenant_sql_and(tenant_ids)
     sql = f"""
     SELECT
-        account, symbol, strategy, status, total_pnl, num_trades, is_winner,
-        premium_received, premium_paid, days_in_trade, open_date, close_date
+        account, tenant_id, symbol, strategy, status, total_pnl, num_trades,
+        is_winner, premium_received, premium_paid, days_in_trade,
+        open_date, close_date
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
     {acct}
@@ -599,6 +603,7 @@ def _fetch_closed_option_legs_from_classification(
     sql = f"""
     SELECT
         sc.account,
+        sc.tenant_id,
         sc.symbol,
         sc.strategy,
         sc.trade_symbol,
@@ -1124,7 +1129,7 @@ def _premium_totals_from_closed_options(closed_legs_df: pd.DataFrame) -> tuple:
 # trip serially after the batch. _compute_breakdown_by_type still owns the
 # tenant + leg filtering of the returned frame.
 POSITION_DIVIDENDS_QUERY = """
-    SELECT account, user_id, symbol, trade_date, amount
+    SELECT account, tenant_id, user_id, symbol, trade_date, amount
     FROM `ccwj-dbt.analytics.int_dividend_events`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
     {tenant_filter}
@@ -1317,12 +1322,13 @@ def position_detail(symbol):
     matrix_df = _filter_df_by_tenant_ids(matrix_df, tenant_scope)
     # Tab strip data has the same tenancy boundary as everything else above.
     tabs_df = _filter_df_by_tenant_ids(tabs_df, tenant_scope)
-    # earnings_df is symbol-grain public market data (no account / user_id
-    # columns) so this call is a no-op today — keep it for parity with the
-    # rest of the batch and future-proofing if the table ever gains tenancy
-    # columns. Per .cursor/rules/bigquery-tenant-isolation.mdc: "no exceptions
-    # for 'this query is just for one symbol.'"
-    earnings_df = _filter_df_by_tenant_ids(earnings_df, tenant_scope)
+    # earnings_df is symbol-grain PUBLIC market data (stg_earnings_calendar
+    # has no tenant/account/user column at all — it cannot leak tenant rows).
+    # It must NOT go through _filter_df_by_tenant_ids: the filter fails
+    # CLOSED on a missing tenant_id column, which silently blanked the
+    # earnings hero pill for every non-admin user (Aug 2026 regression when
+    # the fail-closed behavior shipped). The tenant-isolation rule governs
+    # tenant data; this frame carries none.
 
     # Joined closed legs are empty: int_option_contracts can fail to match while
     # int_strategy_classification still has closed option P&L — use classification only.

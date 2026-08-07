@@ -84,6 +84,7 @@ ORDER BY account, symbol, strategy
 BEHAVIOR_OBSERVATIONS_QUERY = """
 SELECT
     account,
+    tenant_id,
     trade_symbol,
     underlying_symbol,
     strategy,

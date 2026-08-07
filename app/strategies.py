@@ -55,6 +55,7 @@ ORDER BY total_return DESC
 STRATEGY_TREND_QUERY = """
 SELECT
   account,
+  tenant_id,
   strategy,
   month_start,
   trades_closed,
@@ -101,6 +102,7 @@ ORDER BY total_return DESC
 
 DTE_MONEYNESS_QUERY = """
 SELECT
+  tenant_id,
   dte_bucket,
   moneyness_at_open,
   outcome,
@@ -116,6 +118,7 @@ ORDER BY dte_bucket, moneyness_at_open
 
 STRATEGY_TYPE_BREAKDOWN_QUERY = """
 SELECT
+  tenant_id,
   trade_group_type,
   ROUND(SUM(realized_pnl), 2) AS realized_sum,
   ROUND(SUM(unrealized_pnl), 2) AS unrealized_sum,
@@ -124,7 +127,7 @@ SELECT
 FROM `ccwj-dbt.analytics.int_strategy_classification`
 WHERE strategy = @strategy
   {tenant_filter}
-GROUP BY 1
+GROUP BY 1, 2
 """
 
 STRATEGY_DIVIDEND_ROLLUP_QUERY = """

@@ -41,6 +41,7 @@ from app.routes import (
 STRATEGY_FIT_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         strategy,
         status,
@@ -67,6 +68,7 @@ STRATEGY_FIT_QUERY = """
 STRATEGY_FIT_OPTIONS_QUERY = """
     SELECT
         account,
+        tenant_id,
         UPPER(TRIM(underlying_symbol)) AS symbol,
         COALESCE(strategy, 'Other Option') AS strategy,
         status,

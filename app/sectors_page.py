@@ -40,6 +40,7 @@ from app.routes import (
 SECTORS_QUERY = """
     SELECT
         account,
+        tenant_id,
         symbol,
         strategy,
         status,

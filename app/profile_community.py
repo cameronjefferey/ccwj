@@ -593,7 +593,7 @@ def _community_my_trades_impl():
     # ---- Legs (individual trade groups) --------------------------------
     legs_sql = f"""
         SELECT
-          account, symbol, strategy, trade_symbol,
+          account, tenant_id, symbol, strategy, trade_symbol,
           open_date, close_date, status,
           total_pnl, current_unrealized_pnl, num_trades
         FROM `ccwj-dbt.analytics.mart_weekly_trades`
@@ -607,7 +607,7 @@ def _community_my_trades_impl():
     # ---- Strategies (rollup across legs) -------------------------------
     strategies_sql = f"""
         SELECT
-          account, symbol, strategy,
+          account, tenant_id, symbol, strategy,
           MIN(open_date) AS first_open,
           MAX(COALESCE(close_date, open_date)) AS last_activity,
           SUM(CASE WHEN status = 'Closed' THEN COALESCE(total_pnl, 0) ELSE 0 END)
@@ -623,7 +623,7 @@ def _community_my_trades_impl():
           AND strategy IS NOT NULL
           AND (open_date IS NOT NULL OR close_date IS NOT NULL)
           {tenant_sql}
-        GROUP BY account, symbol, strategy
+        GROUP BY account, tenant_id, symbol, strategy
         ORDER BY last_activity DESC NULLS LAST
         LIMIT 80
     """
@@ -631,7 +631,7 @@ def _community_my_trades_impl():
     # ---- Transactions (stg_history rows) -------------------------------
     txn_sql = f"""
         SELECT
-          account, trade_date, action, action_raw,
+          account, tenant_id, trade_date, action, action_raw,
           underlying_symbol, trade_symbol, instrument_type,
           quantity, price, amount
         FROM `ccwj-dbt.analytics.stg_history`
