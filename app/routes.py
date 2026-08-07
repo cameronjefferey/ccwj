@@ -8438,12 +8438,27 @@ def _accounts_range_start(range_key, today=None):
     return (today - timedelta(days=days)) if days else None
 
 
+def _accounts_scope_query(args):
+    """Encode the effective /accounts scope for range-switch URLs.
+
+    Keep the same precedence as ``_tenants_for_scope``.  In particular, a
+    direct ``?tenant=`` deep-link identifies one physical account even when
+    several accounts share the same display label.
+    """
+    for key in ("tenant", "tenants", "account"):
+        value = (args.get(key) or "").strip()
+        if value:
+            return f"{key}={quote_plus(value)}"
+    return ""
+
+
 @app.route("/accounts")
 @login_required
 def accounts():
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     selected_account = request.args.get("account", "")
+    account_scope_query = _accounts_scope_query(request.args)
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
 
@@ -8516,6 +8531,7 @@ def accounts():
             tag_breakdown=[],
             accounts=[],
             selected_account="",
+            account_scope_query=account_scope_query,
             selected_range="ALL",
             period_kpis=None,
         )
@@ -8765,6 +8781,7 @@ def accounts():
         tag_breakdown=tag_breakdown,
         accounts=all_accounts,
         selected_account=selected_account,
+        account_scope_query=account_scope_query,
         selected_range=selected_range,
         period_kpis=period_kpis,
     )
