@@ -180,19 +180,41 @@ def get_bigquery_client():
     return _client_singleton
 
 
+def _widen_http_pool(client):
+    """Raise the client's HTTPS connection pool above urllib3's default 10.
+
+    Pages fan out 11-15 queries in one parallel wave through this shared
+    client; with the default pool size the extra submits/polls queue on
+    (and churn) connections — urllib3 logs "Connection pool is full,
+    discarding connection". Best-effort: transport internals are not a
+    stable API, so failure just means default pooling.
+    """
+    try:
+        import requests.adapters
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=32, pool_maxsize=32
+        )
+        client._http.mount("https://", adapter)
+    except Exception as exc:  # pragma: no cover (defensive)
+        _log.info("bigquery client: could not widen HTTP pool: %s", exc)
+    return client
+
+
 def _build_bigquery_client():
     # 1. Render / CI: base64-encoded service-account JSON
     b64_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64")
     if b64_creds:
         creds_dict = json.loads(base64.b64decode(b64_creds).decode())
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
-        return _CostTrackingBigQueryClient(credentials=credentials, project=credentials.project_id)
+        return _widen_http_pool(_CostTrackingBigQueryClient(
+            credentials=credentials, project=credentials.project_id))
 
     # 2. Explicit service-account key file
     sa_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if sa_path and os.path.exists(sa_path):
         credentials = service_account.Credentials.from_service_account_file(sa_path)
-        return _CostTrackingBigQueryClient(credentials=credentials, project=credentials.project_id)
+        return _widen_http_pool(_CostTrackingBigQueryClient(
+            credentials=credentials, project=credentials.project_id))
 
     # 3. Application Default Credentials (gcloud auth application-default login)
-    return _CostTrackingBigQueryClient(project="ccwj-dbt")
+    return _widen_http_pool(_CostTrackingBigQueryClient(project="ccwj-dbt"))
