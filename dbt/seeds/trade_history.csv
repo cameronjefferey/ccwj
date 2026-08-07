@@ -6799,6 +6799,8 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,ADR Mgmt Fee,,ORF fee for proceed of 8 contracts on 2026-08-03 by PA3HS6VB43PX,,,,-0.12
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,ADR Mgmt Fee,,OCC Clearing Fee,,,,-0.08
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/03/2026,ADR Mgmt Fee,,OPT TAF fee for proceed of 4 contracts (2 trades) on 2026-08-03 by PA3HS6VB43PX,,,,-0.02
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell to Close,AMZN  260814C00285000,AMZN  260814C00285000,3.0,1.99,,597.0
+Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy to Close,AMZN  260814C00295000,AMZN  260814C00295000,3.0,0.72,,-216.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy,BRK.B,Berkshire Hathaway Inc. Class B,7.0,522.49,,-3657.43
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy,NU,Nu Holdings Ltd.,295.0,14.12,,-4165.4
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy,TEO,Telecom Argentina S.A. - SP ADR,302.0,13.86,,-4185.72
@@ -6831,5 +6833,3 @@ Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/202
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell,KHC,The Kraft Heinz Company,158.0,25.64,,4051.12
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell to Close,MSFT  260814C00485000,MSFT  260814C00485000,1.0,14.65,,1465.0
 Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy to Close,MSFT  260814C00500000,MSFT  260814C00500000,1.0,7.2,,-720.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Sell to Close,AMZN  260814C00285000,AMZN  260814C00285000,3.0,1.99,,597.0
-Alpaca Paper Account,20,snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd,08/06/2026,Buy to Close,AMZN  260814C00295000,AMZN  260814C00295000,3.0,0.72,,-216.0
