@@ -248,10 +248,10 @@
         <table class="aa-table">
             <thead>
                 <tr>
-                    <th>Strategy</th><th>Trade symbol</th><th>Type</th><th>Direction</th>
-                    <th>Open</th><th>Close</th><th>Status</th>
-                    <th class="num">Days</th><th class="num"># txns</th>
-                    <th class="num">Net cash</th><th class="num">Total P&amp;L</th>
+                    <th class="sortable" data-sort="str">Strategy</th><th class="sortable" data-sort="str">Trade symbol</th><th class="sortable" data-sort="str">Type</th><th class="sortable" data-sort="str">Direction</th>
+                    <th class="sortable" data-sort="str">Open</th><th class="sortable" data-sort="str">Close</th><th class="sortable" data-sort="str">Status</th>
+                    <th class="sortable num" data-sort="num">Days</th><th class="sortable num" data-sort="num"># txns</th>
+                    <th class="sortable num" data-sort="num">Net cash</th><th class="sortable num" data-sort="num">Total P&amp;L</th>
                 </tr>
             </thead>
             <tbody>
@@ -261,13 +261,13 @@
                     <td>{{ r.trade_symbol or '—' }}</td>
                     <td class="muted">{{ r.trade_group_type or '—' }}</td>
                     <td>{{ r.direction or '—' }}</td>
-                    <td>{{ r.open_date or '—' }}</td>
-                    <td>{{ r.close_date or '—' }}</td>
+                    <td data-val="{{ r.open_date or '' }}">{{ r.open_date or '—' }}</td>
+                    <td data-val="{{ r.close_date or '' }}">{{ r.close_date or '—' }}</td>
                     <td>{{ r.status or '—' }}{% if r.close_type %} <span class="muted">({{ r.close_type }})</span>{% endif %}</td>
-                    <td class="num">{{ r.days_in_trade if r.days_in_trade is not none else '—' }}</td>
-                    <td class="num">{{ r.num_trades if r.num_trades is not none else '—' }}</td>
-                    <td class="num {% if (r.net_cash_flow or 0) < 0 %}aa-neg{% elif (r.net_cash_flow or 0) > 0 %}aa-pos{% endif %}">{{ money(r.net_cash_flow) }}</td>
-                    <td class="num {% if (r.total_pnl or 0) < 0 %}aa-neg{% elif (r.total_pnl or 0) > 0 %}aa-pos{% endif %}">{{ money(r.total_pnl) }}</td>
+                    <td class="num" data-val="{{ r.days_in_trade if r.days_in_trade is not none else '' }}">{{ r.days_in_trade if r.days_in_trade is not none else '—' }}</td>
+                    <td class="num" data-val="{{ r.num_trades if r.num_trades is not none else '' }}">{{ r.num_trades if r.num_trades is not none else '—' }}</td>
+                    <td class="num {% if (r.net_cash_flow or 0) < 0 %}aa-neg{% elif (r.net_cash_flow or 0) > 0 %}aa-pos{% endif %}" data-val="{{ r.net_cash_flow or 0 }}">{{ money(r.net_cash_flow) }}</td>
+                    <td class="num {% if (r.total_pnl or 0) < 0 %}aa-neg{% elif (r.total_pnl or 0) > 0 %}aa-pos{% endif %}" data-val="{{ r.total_pnl or 0 }}">{{ money(r.total_pnl) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -291,23 +291,23 @@
         <table class="aa-table">
             <thead>
                 <tr>
-                    <th>Date</th><th>Action</th><th>Trade symbol</th><th>Type</th>
-                    <th class="num">Qty</th><th class="num">Price</th>
-                    <th class="num">Fees</th><th class="num">Amount</th>
-                    <th>Action raw</th>
+                    <th class="sortable" data-sort="str">Date</th><th class="sortable" data-sort="str">Action</th><th class="sortable" data-sort="str">Trade symbol</th><th class="sortable" data-sort="str">Type</th>
+                    <th class="sortable num" data-sort="num">Qty</th><th class="sortable num" data-sort="num">Price</th>
+                    <th class="sortable num" data-sort="num">Fees</th><th class="sortable num" data-sort="num">Amount</th>
+                    <th class="sortable" data-sort="str">Action raw</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in transactions %}
                 <tr>
-                    <td>{{ r.trade_date }}</td>
+                    <td data-val="{{ r.trade_date }}">{{ r.trade_date }}</td>
                     <td><strong>{{ r.action or '—' }}</strong></td>
                     <td>{{ r.trade_symbol or r.underlying_symbol or '—' }}</td>
                     <td class="muted">{{ r.instrument_type or '—' }}</td>
-                    <td class="num">{{ "{:,.0f}".format(r.quantity) if r.quantity is not none else '—' }}</td>
-                    <td class="num">{{ money(r.price) }}</td>
-                    <td class="num">{{ money(r.fees) }}</td>
-                    <td class="num {% if (r.amount or 0) < 0 %}aa-neg{% elif (r.amount or 0) > 0 %}aa-pos{% endif %}">{{ money(r.amount) }}</td>
+                    <td class="num" data-val="{{ r.quantity if r.quantity is not none else '' }}">{{ "{:,.0f}".format(r.quantity) if r.quantity is not none else '—' }}</td>
+                    <td class="num" data-val="{{ r.price or 0 }}">{{ money(r.price) }}</td>
+                    <td class="num" data-val="{{ r.fees or 0 }}">{{ money(r.fees) }}</td>
+                    <td class="num {% if (r.amount or 0) < 0 %}aa-neg{% elif (r.amount or 0) > 0 %}aa-pos{% endif %}" data-val="{{ r.amount or 0 }}">{{ money(r.amount) }}</td>
                     <td class="muted" style="font-size:.75rem;">{{ r.action_raw or '' }}</td>
                 </tr>
                 {% endfor %}

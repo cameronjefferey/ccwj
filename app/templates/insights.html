@@ -280,30 +280,30 @@
                 <table class="table table-hover align-middle mb-0 exit-table">
                     <thead class="table-light">
                         <tr>
-                            <th>Symbol</th>
-                            <th>Strategy</th>
-                            <th>Closed</th>
-                            <th class="text-end">Actual</th>
-                            <th class="text-end">Peak</th>
-                            <th class="text-end">Given Back</th>
-                            <th class="text-center">Days Late</th>
+                            <th class="sortable" data-sort="str">Symbol</th>
+                            <th class="sortable" data-sort="str">Strategy</th>
+                            <th class="sortable" data-sort="str">Closed</th>
+                            <th class="sortable text-end" data-sort="num">Actual</th>
+                            <th class="sortable text-end" data-sort="num">Peak</th>
+                            <th class="sortable text-end" data-sort="num">Given Back</th>
+                            <th class="sortable text-center" data-sort="num">Days Late</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for e in coaching.recent_exits %}
                         {% if e.given_back > 10 %}
-                        <tr>
-                            <td>
+                        <tr data-href="{{ url_for('position_detail', symbol=e.symbol) }}">
+                            <td data-val="{{ e.symbol }}">
                                 <a href="{{ url_for('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
                             </td>
-                            <td class="text-muted">{{ e.strategy }}</td>
-                            <td class="small">{{ e.close_date }}</td>
-                            <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            <td class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
+                            <td class="small" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
+                            <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
                                 {{ "+" if e.actual_pnl >= 0 else "" }}${{ "{:,.0f}".format(e.actual_pnl) }}
                             </td>
-                            <td class="text-end text-positive">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
-                            <td class="text-end text-warning fw-semibold">${{ "{:,.0f}".format(e.given_back) }}</td>
-                            <td class="text-center">{{ e.days_past_peak }}d</td>
+                            <td class="text-end text-positive" data-val="{{ e.peak_pnl }}">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
+                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">${{ "{:,.0f}".format(e.given_back) }}</td>
+                            <td class="text-center" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}d</td>
                         </tr>
                         {% endif %}
                         {% endfor %}

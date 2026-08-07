@@ -239,14 +239,21 @@
     }
     .watch-block { background: #f8fafc; border-radius: 12px; padding: 1rem 1.1rem; }
     .watch-block .wb-title {
-        font-size: .7rem; text-transform: uppercase; letter-spacing: .6px;
+        font-size: .78rem; text-transform: uppercase; letter-spacing: .6px;
         color: #64748b; font-weight: 700; margin-bottom: .65rem;
         display: flex; justify-content: space-between; align-items: center;
     }
-    .watch-block .wb-empty { font-size: .8rem; color: #94a3b8; font-style: italic; }
+    .watch-block .wb-empty { font-size: .9rem; color: #94a3b8; font-style: italic; }
+    /* Scroll the item list once it exceeds a comfortable height so a long
+       radar (many earnings / expiries / ex-divs) doesn't stretch the page.
+       The block title and footer link stay put outside this container. */
+    .watch-list { max-height: 21rem; overflow-y: auto; }
+    .watch-list::-webkit-scrollbar { width: 8px; }
+    .watch-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+    .watch-list { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
     .watch-item {
-        display: grid; grid-template-columns: 3.2rem 1fr auto;
-        gap: .65rem; padding: .55rem .15rem;
+        display: grid; grid-template-columns: 3.4rem 1fr auto;
+        gap: .65rem; padding: .6rem .15rem;
         border-bottom: 1px solid #eef2f7;
         text-decoration: none; color: inherit;
         align-items: center;
@@ -254,20 +261,20 @@
     .watch-item:last-child { border-bottom: none; }
     .watch-item:hover { background: #fff; color: inherit; text-decoration: none; border-radius: 8px; padding-left: .5rem; padding-right: .5rem; }
     .watch-days {
-        font-weight: 700; font-size: 1.15rem;
+        font-weight: 700; font-size: 1.3rem;
         text-align: center; line-height: 1;
         font-variant-numeric: tabular-nums;
     }
     .watch-days-label {
-        font-size: .55rem; text-transform: uppercase; letter-spacing: .5px;
+        font-size: .62rem; text-transform: uppercase; letter-spacing: .5px;
         color: #94a3b8; text-align: center; margin-top: .15rem;
     }
-    .watch-sym { font-weight: 700; font-size: .9rem; color: #0f172a; }
-    .watch-meta { font-size: .72rem; color: #64748b; margin-top: .1rem; }
-    .watch-aux { text-align: right; font-size: .72rem; color: #64748b; font-variant-numeric: tabular-nums; }
+    .watch-sym { font-weight: 700; font-size: 1rem; color: #0f172a; }
+    .watch-meta { font-size: .82rem; color: #64748b; margin-top: .12rem; }
+    .watch-aux { text-align: right; font-size: .82rem; color: #64748b; font-variant-numeric: tabular-nums; }
     .watch-badge {
         display: inline-block; padding: .12rem .45rem; border-radius: 10px;
-        font-size: .65rem; font-weight: 700; margin-left: .3rem;
+        font-size: .7rem; font-weight: 700; margin-left: .3rem;
         background: #e2e8f0; color: #475569;
     }
     .watch-badge.itm { background: rgba(220,53,69,.1); color: #b91c1c; }
@@ -277,8 +284,8 @@
        under the report date; a real, visible affordance — not fine print. */
     .watch-ef {
         display: inline-block; margin-top: .3rem;
-        padding: .18rem .55rem; border-radius: 999px;
-        font-size: .66rem; font-weight: 700; white-space: nowrap;
+        padding: .2rem .6rem; border-radius: 999px;
+        font-size: .72rem; font-weight: 700; white-space: nowrap;
         background: #1e3a8a; color: #fff !important; text-decoration: none;
     }
     .watch-ef:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
@@ -881,6 +888,7 @@
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ _all_earnings|length }} held</span>
             </div>
             {% if _all_earnings %}
+            <div class="watch-list">
             {% for e in _all_earnings[:10] %}
             <div class="watch-item">
                 {# display:contents lets the anchor's two cells participate in
@@ -905,6 +913,7 @@
                 </div>
             </div>
             {% endfor %}
+            </div>
             {% else %}
             <div class="wb-empty">Nothing in the next 14 days.</div>
             {% endif %}
@@ -920,6 +929,7 @@
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ expiring_options|length }} contract{{ 's' if expiring_options|length != 1 }}</span>
             </div>
             {% if expiring_options %}
+            <div class="watch-list">
             {% for opt in expiring_options[:10] %}
             <a href="{{ url_for('position_detail', symbol=opt.symbol) }}" class="watch-item">
                 <div>
@@ -946,6 +956,7 @@
                 </div>
             </a>
             {% endfor %}
+            </div>
             {% else %}
             <div class="wb-empty">Nothing expiring soon.</div>
             {% endif %}
@@ -957,6 +968,7 @@
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">next 30d</span>
             </div>
             {% if upcoming_ex_dividends %}
+            <div class="watch-list">
             {% for d in upcoming_ex_dividends[:10] %}
             <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="watch-item">
                 <div>
@@ -966,13 +978,14 @@
                 <div>
                     <div class="watch-sym">{{ d.symbol }}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
                     <div class="watch-meta">
-                        ${{ "%.4f"|format(d.last_amount_per_share) }} last
+                        ${{ "%.2f"|format(d.last_amount_per_share) }} last
                         {% if d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
                     </div>
                 </div>
                 <div class="watch-aux">{{ d.projected_date }}</div>
             </a>
             {% endfor %}
+            </div>
             {% else %}
             <div class="wb-empty">No projected ex-dividends in the next 30 days.</div>
             {% endif %}
@@ -1070,13 +1083,13 @@
    for the full per-symbol / strategy / sector breakdown.
    ════════════════════════════════════ #}
 {% macro acct_pct_cell(val) %}
-<td class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
+<td data-val="{{ val if val is not none else '' }}" class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
     {% if val is none %}<span class="text-muted">&mdash;</span>
     {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
 </td>
 {% endmacro %}
 {% macro acct_money_cell(val) %}
-<td class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
+<td data-val="{{ val }}" class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
     {% if val == 0 %}<span class="text-muted">$0</span>
     {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
 </td>
@@ -1098,19 +1111,19 @@
         <table class="breakdown-table">
             <thead>
                 <tr>
-                    <th class="left">Account</th>
-                    <th>Stock</th>
-                    <th>Options</th>
-                    <th>Dividend</th>
-                    <th>Total</th>
-                    <th>G/L %</th>
-                    <th>Annualized</th>
+                    <th class="left sortable" data-sort="str">Account</th>
+                    <th class="sortable" data-sort="num">Stock</th>
+                    <th class="sortable" data-sort="num">Options</th>
+                    <th class="sortable" data-sort="num">Dividend</th>
+                    <th class="sortable" data-sort="num">Total</th>
+                    <th class="sortable" data-sort="num">G/L %</th>
+                    <th class="sortable" data-sort="num">Annualized</th>
                 </tr>
             </thead>
             <tbody>
                 {% for a in account_breakdown.rows %}
-                <tr>
-                    <td class="left">
+                <tr data-href="{{ url_for('accounts', tenant=a.tenant_id) }}">
+                    <td class="left" data-val="{{ a.account_display }}">
                         <a href="{{ url_for('accounts', tenant=a.tenant_id) }}" class="row-symbol">{{ a.account_display }}</a>
                     </td>
                     {{ acct_money_cell(a.equity_pnl) }}
@@ -1123,7 +1136,7 @@
                 {% endfor %}
                 {% if account_breakdown.totals %}
                 {% set t = account_breakdown.totals %}
-                <tr class="totals-row">
+                <tr class="totals-row" data-no-sort data-no-row-nav>
                     <td class="left">All accounts</td>
                     {{ acct_money_cell(t.equity_pnl) }}
                     {{ acct_money_cell(t.option_pnl) }}
@@ -1134,7 +1147,7 @@
                 </tr>
                 {% endif %}
                 {% for b in account_breakdown.benchmarks or [] %}
-                <tr class="benchmark-row">
+                <tr class="benchmark-row" data-no-sort data-no-row-nav>
                     <td class="left">
                         {{ b.label }}
                         <div class="row-meta">same capital, same period</div>
@@ -1223,38 +1236,38 @@
         <table class="breakdown-table">
             <thead>
                 <tr>
-                    <th class="left">Account</th>
-                    <th class="left">Trade</th>
-                    <th class="left">Strategy</th>
-                    <th>Opened</th>
-                    <th class="left">Status</th>
-                    <th>Result</th>
+                    <th class="left sortable" data-sort="str">Account</th>
+                    <th class="left sortable" data-sort="str">Trade</th>
+                    <th class="left sortable" data-sort="str">Strategy</th>
+                    <th class="sortable" data-sort="str">Opened</th>
+                    <th class="left sortable" data-sort="str">Status</th>
+                    <th class="sortable" data-sort="num">Result</th>
                     <th class="left">Tags</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in tw.trades %}
-                <tr>
-                    <td class="left">{{ r.account_display }}</td>
-                    <td class="left">
+                <tr data-href="{{ url_for('position_detail', symbol=r.symbol) }}">
+                    <td class="left" data-val="{{ r.account_display }}">{{ r.account_display }}</td>
+                    <td class="left" data-val="{{ r.symbol }}">
                         <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
-                    <td class="left">{{ r.strategy }}</td>
-                    <td>{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
-                    <td class="left">
+                    <td class="left" data-val="{{ r.strategy }}">{{ r.strategy }}</td>
+                    <td data-val="{{ r.open_date.strftime('%Y-%m-%d') if r.open_date else '' }}">{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
+                    <td class="left" data-val="{{ 'Closed' if r.is_closed else 'Open' }}">
                         {% if r.is_closed %}
                         <span class="pill-status closed">Closed {{ r.close_date.strftime('%b %-d') if r.close_date else '' }}</span>
                         {% else %}
                         <span class="pill-status open">Open</span>
                         {% endif %}
                     </td>
-                    <td class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
+                    <td data-val="{{ r.result_pnl }}" class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
                         {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>
                         {% else %}{{ "+" if r.result_pnl > 0 else "-" }}${{ "{:,.0f}".format(r.result_pnl|abs) }}{% endif %}
                         <div class="row-meta">{{ r.result_kind }}</div>
                     </td>
-                    <td class="left">
+                    <td class="left" data-no-row-nav>
                         {% if r.open_date %}
                         <div class="tw-tag-cell"
                              data-tag-cell

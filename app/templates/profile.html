@@ -687,15 +687,15 @@
                     {% if my_published_trades %}
                     <div class="table-responsive mt-3">
                         <table class="table align-middle">
-                            <thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th class="text-end">P&amp;L shown</th><th></th></tr></thead>
+                            <thead><tr><th class="sortable" data-sort="str">Symbol</th><th class="sortable" data-sort="str">Strategy</th><th class="sortable" data-sort="str">Status</th><th class="sortable text-end" data-sort="num">P&amp;L shown</th><th></th></tr></thead>
                             <tbody>
                                 {% for p in my_published_trades %}
-                                <tr>
-                                    <td class="fw-bold">{{ p.symbol }}</td>
-                                    <td class="small text-muted">{{ p.strategy }}</td>
-                                    <td><span class="badge rounded-pill text-bg-light">{{ p.status }}</span></td>
-                                    <td class="text-end small">{% if p.display_pnl is not none %}{{ "+" if p.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.display_pnl) }}{% else %}—{% endif %}</td>
-                                    <td class="text-end">
+                                <tr data-href="{{ url_for('position_detail', symbol=p.symbol) }}">
+                                    <td class="fw-bold" data-val="{{ p.symbol }}">{{ p.symbol }}</td>
+                                    <td class="small text-muted" data-val="{{ p.strategy }}">{{ p.strategy }}</td>
+                                    <td data-val="{{ p.status }}"><span class="badge rounded-pill text-bg-light">{{ p.status }}</span></td>
+                                    <td class="text-end small" data-val="{{ p.display_pnl if p.display_pnl is not none else '' }}">{% if p.display_pnl is not none %}{{ "+" if p.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.display_pnl) }}{% else %}—{% endif %}</td>
+                                    <td class="text-end" data-no-row-nav>
                                         <form method="POST" action="{{ url_for('community_publish_trade_route') }}" class="d-inline" onsubmit="return confirm('Remove this shared trade?');">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <input type="hidden" name="action" value="unpublish">

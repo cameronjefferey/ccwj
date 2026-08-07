@@ -46,11 +46,7 @@
     /* Table */
     #positionsTable th { white-space: nowrap; }
     #positionsTable td { white-space: nowrap; }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: #e9ecef; }
-    .sortable::after { content: ' \2195'; opacity: .3; font-size: .75em; }
-    .sortable.asc::after  { content: ' \25B2'; opacity: .7; }
-    .sortable.desc::after { content: ' \25BC'; opacity: .7; }
+    /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
     /* Mobile horizontal-scroll affordance */
     @media (max-width: 768px) {
@@ -475,7 +471,7 @@
                 </thead>
                 <tbody>
                     {% for row in symbol_rows %}
-                    <tr>
+                    <tr data-href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
                         <td>{{ row.account_display or (row.account | account_label) }}</td>
                         <td class="fw-semibold">
                             <a href="{{ url_for('position_detail', symbol=row.symbol, account=selected_account, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
@@ -594,7 +590,7 @@
                     } %}
 
                     {% for row in rows %}
-                    <tr>
+                    <tr data-href="{{ url_for('strategies', account=row.account, strategy=row.strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}">
                         <td>{{ row.account_display or (row.account | account_label) }}</td>
                         <td>
                             <a href="{{ url_for('strategies',
@@ -653,7 +649,7 @@
                             class="{{ 'text-positive' if row.avg_pnl_per_trade >= 0 else 'text-negative' }}">
                             ${{ "{:,.2f}".format(row.avg_pnl_per_trade) }}
                         </td>
-                        <td data-val="{{ row.avg_days_in_trade }}">{{ row.avg_days_in_trade }}</td>
+                        <td data-val="{{ row.avg_days_in_trade }}">{{ "{:,.0f}".format(row.avg_days_in_trade) if row.avg_days_in_trade is not none else '—' }}</td>
                         <td data-val="{{ row.total_premium_received }}" class="text-positive">
                             ${{ "{:,.2f}".format(row.total_premium_received) }}
                         </td>
@@ -757,33 +753,8 @@
     bindSearch('symbolSearch', 'symbolTable');
     bindSearch('tableSearch', 'positionsTable');
 
-    /* ── Table Sorting ─────────────────────────────────────────── */
-    document.querySelectorAll('.sortable').forEach(function (th) {
-        th.addEventListener('click', function () {
-            var table = th.closest('table');
-            var tbody = table.querySelector('tbody');
-            var rows  = Array.from(tbody.querySelectorAll('tr'));
-            var idx   = th.cellIndex;
-            var isNum = th.dataset.sort === 'num';
-
-            var asc = !th.classList.contains('asc');
-            table.querySelectorAll('.sortable').forEach(function (h) {
-                h.classList.remove('asc', 'desc');
-            });
-            th.classList.add(asc ? 'asc' : 'desc');
-
-            rows.sort(function (a, b) {
-                var va = a.cells[idx].dataset.val || a.cells[idx].textContent.trim();
-                var vb = b.cells[idx].dataset.val || b.cells[idx].textContent.trim();
-                if (isNum) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
-                if (va < vb) return asc ? -1 : 1;
-                if (va > vb) return asc ?  1 : -1;
-                return 0;
-            });
-
-            rows.forEach(function (r) { tbody.appendChild(r); });
-        });
-    });
+    /* Table sorting is handled globally by static/js/tables.js
+       (th.sortable + td[data-val]). */
 
     // Status dropdown label update
     var statusDropdown = document.getElementById('statusDropdown');

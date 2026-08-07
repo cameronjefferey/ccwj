@@ -30,39 +30,39 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Symbol</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Capital</th>
-                        <th class="text-end">Days</th>
-                        <th class="text-end">% Return</th>
-                        <th class="text-end">Annualized</th>
-                        <th>Status</th>
+                        <th class="sortable" data-sort="str">Symbol</th>
+                        <th class="sortable text-end" data-sort="num">G/L Stock</th>
+                        <th class="sortable text-end" data-sort="num">G/L Option</th>
+                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num">Net</th>
+                        <th class="sortable text-end" data-sort="num">Capital</th>
+                        <th class="sortable text-end" data-sort="num">Days</th>
+                        <th class="sortable text-end" data-sort="num">% Return</th>
+                        <th class="sortable text-end" data-sort="num">Annualized</th>
+                        <th class="sortable" data-sort="str">Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in position_breakdown %}
-                    <tr>
-                        <td>
-                            <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
+                    <tr data-href="{{ url_for('position_detail', symbol=r.symbol, account=(selected_account|default('')) or none) }}">
+                        <td data-val="{{ r.symbol }}">
+                            <a href="{{ url_for('position_detail', symbol=r.symbol, account=(selected_account|default('')) or none) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
                             {% if r.strategy %}<div class="text-muted" style="font-size:.72rem;">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
                         </td>
                         {{ money_cell(r.equity_pnl) }}
                         {{ money_cell(r.option_pnl) }}
                         {{ money_cell(r.dividend_income) }}
                         {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                        <td class="text-end" data-val="{{ r.capital_at_risk }}">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
                         <td class="text-end">{{ r.days_held }}</td>
                         {{ pct_cell(r.pct_return) }}
                         {{ pct_cell(r.annualized_pct) }}
-                        <td><span class="badge {{ 'bg-success-subtle text-success' if r.status == 'Open' else 'bg-secondary-subtle text-secondary' }}">{{ r.status }}</span></td>
+                        <td data-val="{{ r.status }}"><span class="badge {{ 'bg-success-subtle text-success' if r.status == 'Open' else 'bg-secondary-subtle text-secondary' }}">{{ r.status }}</span></td>
                     </tr>
                     {% endfor %}
                     {% if position_breakdown_totals %}
                     {% set t = position_breakdown_totals %}
-                    <tr class="fw-bold border-top">
+                    <tr class="fw-bold border-top" data-no-sort data-no-row-nav>
                         <td>Total &middot; {{ t.num_symbols }} symbol{{ 's' if t.num_symbols != 1 }}</td>
                         {{ money_cell(t.equity_pnl) }}
                         {{ money_cell(t.option_pnl) }}
@@ -90,22 +90,22 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Strategy</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Capital</th>
-                        <th class="text-end">Max Days</th>
-                        <th class="text-end">% Return</th>
-                        <th class="text-end">Annualized</th>
+                        <th class="sortable" data-sort="str">Strategy</th>
+                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num">G/L Stock</th>
+                        <th class="sortable text-end" data-sort="num">G/L Option</th>
+                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num">Net</th>
+                        <th class="sortable text-end" data-sort="num">Capital</th>
+                        <th class="sortable text-end" data-sort="num">Max Days</th>
+                        <th class="sortable text-end" data-sort="num">% Return</th>
+                        <th class="sortable text-end" data-sort="num">Annualized</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in strategy_breakdown %}
-                    <tr>
-                        <td>
+                    <tr data-href="{{ url_for('strategies', strategy=r.strategy, account=(selected_account|default('')) or none) }}">
+                        <td data-val="{{ r.strategy }}">
                             <span class="fw-semibold">{{ r.strategy }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
                         </td>
@@ -114,7 +114,7 @@
                         {{ money_cell(r.option_pnl) }}
                         {{ money_cell(r.dividend_income) }}
                         {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
+                        <td class="text-end" data-val="{{ r.capital_at_risk }}">${{ "{:,.0f}".format(r.capital_at_risk) }}</td>
                         <td class="text-end">{{ r.max_days_held }}</td>
                         {{ pct_cell(r.pct_return) }}
                         {{ pct_cell(r.annualized_pct) }}
@@ -122,7 +122,7 @@
                     {% endfor %}
                     {% if strategy_breakdown_totals %}
                     {% set t = strategy_breakdown_totals %}
-                    <tr class="fw-bold border-top">
+                    <tr class="fw-bold border-top" data-no-sort data-no-row-nav>
                         <td>Total &middot; {{ t.num_symbols }} bucket{{ 's' if t.num_symbols != 1 }}</td>
                         <td></td>
                         {{ money_cell(t.equity_pnl) }}
@@ -155,20 +155,20 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Sector</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Current Value</th>
-                        <th class="text-end">% Return</th>
+                        <th class="sortable" data-sort="str">Sector</th>
+                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num">G/L Stock</th>
+                        <th class="sortable text-end" data-sort="num">G/L Option</th>
+                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num">Net</th>
+                        <th class="sortable text-end" data-sort="num">Current Value</th>
+                        <th class="sortable text-end" data-sort="num">% Return</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in sector_breakdown %}
-                    <tr>
-                        <td>
+                    <tr data-href="{{ url_for('positions', sector=r.sector, account=(selected_account|default('')) or none) }}">
+                        <td data-val="{{ r.sector }}">
                             <span class="fw-semibold">{{ r.sector }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
                         </td>
@@ -177,7 +177,7 @@
                         {{ money_cell(r.option_pnl) }}
                         {{ money_cell(r.dividend_income) }}
                         {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
+                        <td class="text-end" data-val="{{ r.current_value }}">${{ "{:,.0f}".format(r.current_value) }}</td>
                         {{ pct_cell(r.pct_return) }}
                     </tr>
                     {% endfor %}
@@ -196,20 +196,20 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Industry</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Dividend</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Current Value</th>
-                        <th class="text-end">% Return</th>
+                        <th class="sortable" data-sort="str">Industry</th>
+                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num">G/L Stock</th>
+                        <th class="sortable text-end" data-sort="num">G/L Option</th>
+                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num">Net</th>
+                        <th class="sortable text-end" data-sort="num">Current Value</th>
+                        <th class="sortable text-end" data-sort="num">% Return</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in subsector_breakdown %}
-                    <tr>
-                        <td>
+                    <tr data-href="{{ url_for('positions', subsector=r.subsector, account=(selected_account|default('')) or none) }}">
+                        <td data-val="{{ r.subsector }}">
                             <span class="fw-semibold">{{ r.subsector }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
                         </td>
@@ -218,7 +218,7 @@
                         {{ money_cell(r.option_pnl) }}
                         {{ money_cell(r.dividend_income) }}
                         {{ money_cell(r.net_pnl) }}
-                        <td class="text-end">${{ "{:,.0f}".format(r.current_value) }}</td>
+                        <td class="text-end" data-val="{{ r.current_value }}">${{ "{:,.0f}".format(r.current_value) }}</td>
                         {{ pct_cell(r.pct_return) }}
                     </tr>
                     {% endfor %}

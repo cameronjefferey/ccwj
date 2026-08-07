@@ -639,62 +639,62 @@
         <table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Account</th>
-                    <th>Strategy</th>
-                    <th>Status</th>
-                    <th title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total P&amp;L</th>
-                    <th>Realized</th>
-                    <th>Unrealized</th>
-                    <th title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
-                    <th>Win Rate</th>
-                    <th>Trades</th>
-                    <th>Avg P&amp;L</th>
-                    <th>Avg Days</th>
-                    <th>Premium</th>
+                    <th class="sortable" data-sort="str">Account</th>
+                    <th class="sortable" data-sort="str">Strategy</th>
+                    <th class="sortable" data-sort="str">Status</th>
+                    <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total P&amp;L</th>
+                    <th class="sortable" data-sort="num">Realized</th>
+                    <th class="sortable" data-sort="num">Unrealized</th>
+                    <th class="sortable" data-sort="num" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
+                    <th class="sortable" data-sort="num">Win Rate</th>
+                    <th class="sortable" data-sort="num">Trades</th>
+                    <th class="sortable" data-sort="num">Avg P&amp;L</th>
+                    <th class="sortable" data-sort="num">Avg Days</th>
+                    <th class="sortable" data-sort="num">Premium</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in strategy_rows %}
-                <tr>
-                    <td>{{ r.account_display or (r.account | account_label) }}</td>
-                    <td>
+                <tr data-href="{{ url_for('strategies', account=r.account, strategy=r.strategy) }}">
+                    <td data-val="{{ r.account_display or r.account }}">{{ r.account_display or (r.account | account_label) }}</td>
+                    <td data-val="{{ r.strategy }}">
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
                             {{ r.strategy }}
                         </span>
                     </td>
-                    <td>
+                    <td data-val="{{ r.status }}">
                         {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
                         {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
                     </td>
-                    <td class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-bold">
+                    <td data-val="{{ r.total_pnl }}" class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-bold">
                         ${{ "{:,.2f}".format(r.total_pnl) }}
                     </td>
-                    <td class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
+                    <td data-val="{{ r.realized_pnl }}" class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(r.realized_pnl) }}
                     </td>
-                    <td class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
+                    <td data-val="{{ r.unrealized_pnl }}" class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(r.unrealized_pnl) }}
                     </td>
-                    <td class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                    <td data-val="{{ r.total_dividend_income or 0 }}" class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
                         {% if (r.total_dividend_income or 0) != 0 %}
                         ${{ "{:,.2f}".format(r.total_dividend_income) }}
                         {% else %}
                         &mdash;
                         {% endif %}
                     </td>
-                    <td>{{ "{:.0%}".format(r.win_rate) }}</td>
-                    <td>
+                    <td data-val="{{ r.win_rate }}">{{ "{:.0%}".format(r.win_rate) }}</td>
+                    <td data-val="{{ r.num_individual_trades or 0 }}">
                         {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
                         <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
                         {% else %}
                         {{ r.num_individual_trades | int }}
                         {% endif %}
                     </td>
-                    <td class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
+                    <td data-val="{{ r.avg_pnl_per_trade }}" class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
                         ${{ "{:,.2f}".format(r.avg_pnl_per_trade) }}
                     </td>
-                    <td>{{ r.avg_days_in_trade }}</td>
-                    <td class="text-positive">${{ "{:,.2f}".format(r.total_premium_received) }}</td>
+                    <td data-val="{{ r.avg_days_in_trade }}">{{ "{:,.0f}".format(r.avg_days_in_trade) if r.avg_days_in_trade is not none else '—' }}</td>
+                    <td data-val="{{ r.total_premium_received }}" class="text-positive">${{ "{:,.2f}".format(r.total_premium_received) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -987,23 +987,23 @@
                 <table class="table table-sm table-hover align-middle mb-0" style="font-size:.75rem;" id="tradeTable">
                     <thead class="table-light" style="position: sticky; top: 0;">
                         <tr>
-                            <th>Date</th>
-                            <th>Account</th>
-                            <th>Action</th>
-                            <th>Instrument</th>
-                            <th>Description</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Fees</th>
-                            <th>Amount</th>
+                            <th class="sortable" data-sort="str">Date</th>
+                            <th class="sortable" data-sort="str">Account</th>
+                            <th class="sortable" data-sort="str">Action</th>
+                            <th class="sortable" data-sort="str">Instrument</th>
+                            <th class="sortable" data-sort="str">Description</th>
+                            <th class="sortable" data-sort="num">Qty</th>
+                            <th class="sortable" data-sort="num">Price</th>
+                            <th class="sortable" data-sort="num">Fees</th>
+                            <th class="sortable" data-sort="num">Amount</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for t in trades %}
                         <tr>
-                            <td class="text-nowrap">{{ t.trade_date }}</td>
+                            <td class="text-nowrap" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
                             <td>{{ t.account_display or (t.account | account_label) }}</td>
-                            <td>
+                            <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">
                                 {% if t.is_dividend_reinvestment %}
                                 <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>
                                 {% else %}
@@ -1012,16 +1012,16 @@
                             </td>
                             <td>{{ t.instrument_type }}</td>
                             <td class="small">{{ t.description }}</td>
-                            <td>
+                            <td data-val="{{ t.quantity }}">
                                 {% if t.quantity is number and (t.quantity % 1) != 0 %}
                                 {{ "{:,.4f}".format(t.quantity) }}
                                 {% else %}
                                 {{ "{:,.0f}".format(t.quantity) }}
                                 {% endif %}
                             </td>
-                            <td>${{ "{:,.2f}".format(t.price) }}</td>
-                            <td>${{ "{:,.2f}".format(t.fees) }}</td>
-                            <td class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
+                            <td data-val="{{ t.price }}">${{ "{:,.2f}".format(t.price) }}</td>
+                            <td data-val="{{ t.fees }}">${{ "{:,.2f}".format(t.fees) }}</td>
+                            <td data-val="{{ t.amount }}" class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
                                 ${{ "{:,.2f}".format(t.amount) }}
                             </td>
                         </tr>

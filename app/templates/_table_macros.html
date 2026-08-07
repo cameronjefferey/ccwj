@@ -1,0 +1,14 @@
+{# Shared table markup helpers. Behavior lives in static/js/tables.js.
+
+   Usage:
+     {% import "_table_macros.html" as tbl %}
+     <th ...>Account</th>
+     {{ tbl.sortable_th("Total P&L") }}          {# numeric column (default) #}
+     {{ tbl.sortable_th("Strategy", "str") }}      {# text column #}
+
+   The JS reads `th.sortable` + `data-sort` and sorts on each row's
+   `td[data-val]` (falling back to cell text). Row-click navigation is opt-in
+   via `<tr data-href="...">` on the row itself (no macro needed). #}
+{% macro sortable_th(label, kind="num", cls="", scope="col") -%}
+<th class="sortable {{ cls }}" data-sort="{{ kind }}" scope="{{ scope }}">{{ label }}</th>
+{%- endmacro %}

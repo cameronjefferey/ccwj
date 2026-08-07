@@ -351,39 +351,39 @@
         <table class="table table-hover align-middle mb-0 sym-table">
             <thead class="table-light">
                 <tr>
-                    <th>Symbol</th>
-                    <th>Status</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-end">Trades</th>
-                    <th class="text-end">Win %</th>
-                    <th class="text-end">Avg P&amp;L</th>
-                    <th class="text-end">Avg Days</th>
+                    <th class="sortable" data-sort="str">Symbol</th>
+                    <th class="sortable" data-sort="str">Status</th>
+                    <th class="sortable text-end" data-sort="num">Total</th>
+                    <th class="sortable text-end" data-sort="num">Trades</th>
+                    <th class="sortable text-end" data-sort="num">Win %</th>
+                    <th class="sortable text-end" data-sort="num">Avg P&amp;L</th>
+                    <th class="sortable text-end" data-sort="num">Avg Days</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in focus_symbols %}
-                <tr>
-                    <td>
+                <tr data-href="{{ url_for('position_detail', symbol=r.symbol, account=selected_account or none) }}">
+                    <td data-val="{{ r.symbol }}">
                         <a href="{{ url_for('position_detail', symbol=r.symbol, account=selected_account or none) }}" class="sym-link">{{ r.symbol }}</a>
                     </td>
-                    <td>
+                    <td data-val="{{ r.status }}">
                         {% if r.status == 'Open' %}
                         <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:.7rem">Open</span>
                         {% else %}
                         <span class="badge bg-light text-muted" style="font-size:.7rem">Closed</span>
                         {% endif %}
                     </td>
-                    <td class="text-end fw-semibold {{ 'text-positive' if r.total_return >= 0 else 'text-negative' }}">
+                    <td class="text-end fw-semibold {{ 'text-positive' if r.total_return >= 0 else 'text-negative' }}" data-val="{{ r.total_return }}">
                         {{ "+" if r.total_return >= 0 else "" }}${{ "{:,.2f}".format(r.total_return) }}
                     </td>
-                    <td class="text-end text-muted">{{ r.num_trades }}</td>
-                    <td class="text-end">
+                    <td class="text-end text-muted" data-val="{{ r.num_trades }}">{{ r.num_trades }}</td>
+                    <td class="text-end" data-val="{{ r.win_rate if r.win_rate is not none else '' }}">
                         {% if r.win_rate is not none and r.win_rate > 0 %}{{ "{:.0%}".format(r.win_rate) }}{% else %}&mdash;{% endif %}
                     </td>
-                    <td class="text-end text-muted">
+                    <td class="text-end text-muted" data-val="{{ r.avg_pnl }}">
                         {% if r.avg_pnl != 0 %}{{ "+" if r.avg_pnl >= 0 else "" }}${{ "{:,.2f}".format(r.avg_pnl) }}{% else %}&mdash;{% endif %}
                     </td>
-                    <td class="text-end text-muted">{{ "%.0f"|format(r.avg_days) if r.avg_days else "&mdash;"|safe }}</td>
+                    <td class="text-end text-muted" data-val="{{ r.avg_days or 0 }}">{{ "%.0f"|format(r.avg_days) if r.avg_days else "&mdash;"|safe }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -399,19 +399,19 @@
     <table class="table table-sm align-middle mb-0 sym-table">
         <thead>
             <tr>
-                <th>Account</th>
-                <th class="text-end">Trades</th>
-                <th class="text-end">Win Rate</th>
-                <th class="text-end">Total Return</th>
+                <th class="sortable" data-sort="str">Account</th>
+                <th class="sortable text-end" data-sort="num">Trades</th>
+                <th class="sortable text-end" data-sort="num">Win Rate</th>
+                <th class="sortable text-end" data-sort="num">Total Return</th>
             </tr>
         </thead>
         <tbody>
             {% for a in focus_accounts %}
-            <tr>
-                <td class="fw-semibold">{{ a.account | account_label }}</td>
-                <td class="text-end text-muted">{{ a.num_trades }}</td>
-                <td class="text-end">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
-                <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}">
+            <tr data-href="{{ url_for('strategies', strategy=focus_strategy.strategy, account=a.account) }}">
+                <td class="fw-semibold" data-val="{{ a.account }}">{{ a.account | account_label }}</td>
+                <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
+                <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
+                <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">
                     {{ "+" if a.total_return >= 0 else "" }}${{ "{:,.2f}".format(a.total_return) }}
                 </td>
             </tr>

@@ -310,23 +310,23 @@
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Status</th>
-                        <th>Symbol</th>
-                        <th>Description</th>
-                        <th>Open Date</th>
-                        <th>Close Date</th>
-                        <th>Qty</th>
-                        <th>Price</th>
-                        <th>Value / Proceeds</th>
-                        <th>Cost Basis</th>
-                        <th>P&amp;L</th>
-                        <th>Return %</th>
+                        <th class="sortable" data-sort="str">Status</th>
+                        <th class="sortable" data-sort="str">Symbol</th>
+                        <th class="sortable" data-sort="str">Description</th>
+                        <th class="sortable" data-sort="str">Open Date</th>
+                        <th class="sortable" data-sort="str">Close Date</th>
+                        <th class="sortable" data-sort="num">Qty</th>
+                        <th class="sortable" data-sort="num">Price</th>
+                        <th class="sortable" data-sort="num">Value / Proceeds</th>
+                        <th class="sortable" data-sort="num">Cost Basis</th>
+                        <th class="sortable" data-sort="num">P&amp;L</th>
+                        <th class="sortable" data-sort="num">Return %</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for pos in sym.current_positions %}
-                    <tr>
-                        <td>
+                    <tr data-href="{{ url_for('position_detail', symbol=sym.symbol, account=(selected_account|default('')) or none) }}">
+                        <td data-val="{{ pos.status }}">
                             {% if pos.status == 'Open' %}
                             <span class="badge bg-success bg-opacity-25 text-success" style="font-size:.65rem;">Open</span>
                             {% elif pos.status == 'Closed' %}
@@ -337,34 +337,34 @@
                         </td>
                         <td class="fw-semibold small" {% if pos.trade_symbol %}title="{{ pos.trade_symbol }}"{% endif %}>{{ pos.trade_symbol|option_symbol }}</td>
                         <td class="text-muted small">{{ pos.description }}</td>
-                        <td class="text-nowrap">
+                        <td class="text-nowrap" data-val="{{ pos.open_date if pos.open_date is defined and pos.open_date else '' }}">
                             {{ pos.open_date if pos.open_date is defined and pos.open_date }}
                         </td>
-                        <td class="text-nowrap">
+                        <td class="text-nowrap" data-val="{{ pos.close_date if pos.close_date is defined and pos.close_date else '' }}">
                             {{ pos.close_date if pos.close_date is defined and pos.close_date }}
                         </td>
-                        <td>{{ pos.quantity if pos.quantity is not none else '' }}</td>
-                        <td>
+                        <td data-val="{{ pos.quantity if pos.quantity is not none else '' }}">{{ pos.quantity if pos.quantity is not none else '' }}</td>
+                        <td data-val="{{ pos.current_price if pos.current_price is not none else '' }}">
                             {% if pos.current_price is not none %}
                             ${{ "{:,.2f}".format(pos.current_price) }}
                             {% endif %}
                         </td>
-                        <td>
+                        <td data-val="{{ pos.market_value if pos.market_value is not none else '' }}">
                             {% if pos.market_value is not none %}
                             ${{ "{:,.2f}".format(pos.market_value) }}
                             {% endif %}
                         </td>
-                        <td>
+                        <td data-val="{{ pos.cost_basis if pos.cost_basis is not none else '' }}">
                             {% if pos.cost_basis is not none %}
                             ${{ "{:,.2f}".format(pos.cost_basis) }}
                             {% endif %}
                         </td>
-                        <td class="{% if pos.unrealized_pnl is not none %}{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold{% endif %}">
+                        <td data-val="{{ pos.unrealized_pnl if pos.unrealized_pnl is not none else '' }}" class="{% if pos.unrealized_pnl is not none %}{{ 'text-positive' if pos.unrealized_pnl >= 0 else 'text-negative' }} fw-semibold{% endif %}">
                             {% if pos.unrealized_pnl is not none %}
                             ${{ "{:,.2f}".format(pos.unrealized_pnl) }}
                             {% endif %}
                         </td>
-                        <td class="{% if pos.unrealized_pnl_pct is not none %}{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}{% endif %}">
+                        <td data-val="{{ pos.unrealized_pnl_pct if pos.unrealized_pnl_pct is not none else '' }}" class="{% if pos.unrealized_pnl_pct is not none %}{{ 'text-positive' if pos.unrealized_pnl_pct >= 0 else 'text-negative' }}{% endif %}">
                             {% if pos.unrealized_pnl_pct is not none %}
                             {{ "{:.2f}".format(pos.unrealized_pnl_pct) }}%
                             {% endif %}

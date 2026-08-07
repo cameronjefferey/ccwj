@@ -8,11 +8,6 @@
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
     }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: #e9ecef; }
-    .sortable::after { content: ' \2195'; opacity: .3; font-size: .75em; }
-    .sortable.asc::after  { content: ' \25B2'; opacity: .7; }
-    .sortable.desc::after { content: ' \25BC'; opacity: .7; }
     .badge-strategy {
         font-size: .7rem;
         font-weight: 600;
@@ -239,13 +234,16 @@
                 </thead>
                 <tbody>
                     {% for row in strategy_rows %}
-                    <tr>
+                    {% set strat_href = url_for('strategies', strategy=row.strategy, account=row.account or none) %}
+                    <tr class="strat-row" data-href="{{ strat_href }}" style="cursor:pointer;">
                         <td>{{ row.account | account_label }}</td>
                         <td>
-                            <span class="badge badge-strategy"
-                                  style="background:{{ colors.get(row.strategy, '#6c757d') }}">
-                                {{ row.strategy }}
-                            </span>
+                            <a href="{{ strat_href }}" class="text-decoration-none">
+                                <span class="badge badge-strategy"
+                                      style="background:{{ colors.get(row.strategy, '#6c757d') }}">
+                                    {{ row.strategy }}
+                                </span>
+                            </a>
                         </td>
                         <td data-val="{{ row.total_pnl }}"
                             class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
@@ -326,19 +324,19 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Tag</th>
-                        <th class="text-end">Legs</th>
-                        <th class="text-end">Symbols</th>
-                        <th class="text-end">G/L Stock</th>
-                        <th class="text-end">G/L Option</th>
-                        <th class="text-end">Net</th>
-                        <th class="text-end">Win rate</th>
+                        <th class="sortable" data-sort="str">Tag</th>
+                        <th class="sortable text-end" data-sort="num">Legs</th>
+                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num">G/L Stock</th>
+                        <th class="sortable text-end" data-sort="num">G/L Option</th>
+                        <th class="sortable text-end" data-sort="num">Net</th>
+                        <th class="sortable text-end" data-sort="num">Win rate</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in tag_breakdown %}
-                    <tr>
-                        <td>
+                    <tr data-href="{{ url_for('positions', tag=r.tag, account=selected_account or none) }}">
+                        <td data-val="{{ r.tag }}">
                             <span class="fw-semibold">{{ r.tag }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.wins }}W / {{ r.losses }}L</div>
                         </td>
@@ -694,30 +692,8 @@
     applyRange(SELECTED_RANGE || 'ALL');
     history.replaceState({ range: SELECTED_RANGE || 'ALL' }, '');
 
-    /* ── Table Sorting ─────────────────────────────────────────── */
-    document.querySelectorAll('.sortable').forEach(function (th) {
-        th.addEventListener('click', function () {
-            var table = th.closest('table');
-            var tbody = table.querySelector('tbody');
-            var rows  = Array.from(tbody.querySelectorAll('tr'));
-            var idx   = th.cellIndex;
-            var isNum = th.dataset.sort === 'num';
-
-            var asc = !th.classList.contains('asc');
-            table.querySelectorAll('.sortable').forEach(function (h) { h.classList.remove('asc', 'desc'); });
-            th.classList.add(asc ? 'asc' : 'desc');
-
-            rows.sort(function (a, b) {
-                var va = a.cells[idx].dataset.val || a.cells[idx].textContent.trim();
-                var vb = b.cells[idx].dataset.val || b.cells[idx].textContent.trim();
-                if (isNum) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
-                if (va < vb) return asc ? -1 : 1;
-                if (va > vb) return asc ?  1 : -1;
-                return 0;
-            });
-            rows.forEach(function (r) { tbody.appendChild(r); });
-        });
-    });
+    /* Table sorting + Strategy Summary row-click nav are handled globally
+       by static/js/tables.js (th.sortable + tr[data-href]). */
 })();
 </script>
 {% endblock %}
