@@ -13,15 +13,25 @@ from app.models import (
     get_tenant_ids_for_user,
     is_admin,
 )
+from app.tenant_scope import (
+    filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
+    resolve_filter_tenant_ids as _resolve_filter_tenant_ids,
+    sanitize_tenant_id as _sanitize_tenant_id,
+    tenant_sql_and as _tenant_sql_and,
+    tenant_sql_filter as _tenant_sql_filter,
+)
 from google.cloud import bigquery
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor
+import logging
 import math
 import os
 import re
 import pandas as pd
 import json
 from urllib.parse import quote_plus
+
+_log = logging.getLogger(__name__)
 
 
 def _bq_parallel(client, queries):
@@ -74,7 +84,7 @@ def _bq_parallel(client, queries):
                         "_bq_parallel: query %r failed: %s", name, exc,
                     )
                 except Exception:
-                    pass
+                    _log.error("_bq_parallel: query %r failed: %s", name, exc)
 
     return results
 
@@ -260,8 +270,8 @@ def _apply_account_labels(target, user_id, col: str = "account"):
     try:
         if hasattr(target, "columns") and col in target.columns and not target.empty:
             target[col] = target[col].map(lambda x: label_map.get(x, x))
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("apply_account_labels failed for col=%r: %s", col, exc)
     return target
 
 
@@ -396,265 +406,9 @@ def _user_account_list():
     return names
 
 
-def _resolve_filter_user_id():
-    """Return the ``user_id`` to scope BigQuery reads by for the current
-    request, or ``None`` for admin / unauthenticated paths (no scoping).
-
-    The legacy ``_account_sql_*`` and ``_filter_df_by_accounts`` helpers
-    use this to automatically add a ``user_id`` predicate to every read
-    they shape, so two users sharing an ``account_name`` cannot see each
-    other's rows. See ``docs/USER_ID_TENANCY.md`` for the full story.
-    """
-    try:
-        from flask_login import current_user
-        if not getattr(current_user, "is_authenticated", False):
-            return None
-        if is_admin(current_user.username):
-            return None
-        return int(current_user.id)
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Stage 3 — broker_account_id filter helpers (see docs/BROKER_ACCOUNT_ID_MIGRATION.md)
-#
-# These helpers add a SECOND tenant predicate alongside the legacy
-# `(account, user_id)` filter — defense in depth. The legacy filter
-# stays in place through Stage 3; both predicates must agree.
-#
-# Stage 4 will (a) drop the legacy filter and the `OR user_id IS NULL`
-# leniency, (b) make these the primary tenancy boundary.
-#
-# Until Stage 2 propagates `broker_account_id` through every mart, only
-# specific routes opt into defense-in-depth via these helpers. The
-# orphan rows in the seed (~7,200 with NULL broker_account_id; see
-# the Stage 1 broker-sync-safety SKILL entry) become invisible to any
-# query that uses this filter — that's the security upgrade.
-# ---------------------------------------------------------------------------
-
-
-def _resolve_filter_broker_account_ids():
-    """Return the list of ``broker_accounts.id`` the current request is
-    allowed to read. Admin returns ``None`` (no filter).
-
-    Mirrors ``_resolve_filter_user_id``'s admin bypass semantics so the
-    two filters can be composed without one accidentally narrowing
-    admin reads.
-    """
-    try:
-        from flask_login import current_user
-        from app.auth import is_admin
-        from app.models import get_broker_account_ids_for_user
-        if not getattr(current_user, "is_authenticated", False):
-            return []
-        if is_admin(getattr(current_user, "username", None)):
-            return None
-        return get_broker_account_ids_for_user(int(current_user.id))
-    except Exception:
-        return []
-
-
-def _broker_account_sql_and(broker_account_ids, col="broker_account_id"):
-    """``AND``-shaped predicate that scopes a BQ read to a set of
-    ``broker_account_id`` values. Returns ``""`` for admin
-    (``broker_account_ids is None``) so the helper composes safely.
-
-    Empty list intentionally produces ``AND 1 = 0`` — an authenticated
-    user with no broker_accounts should see no rows, not all rows.
-
-    Usage::
-
-        sql = QUERY.format(
-            tenant_filter=_tenant_sql_and(tenant_ids),
-            broker_tenant_filter=_broker_tenant_sql_and(
-                _resolve_filter_broker_account_ids()
-            ),
-        )
-    """
-    if broker_account_ids is None:
-        return ""
-    if not broker_account_ids:
-        return "AND 1 = 0"
-    ids = ", ".join(str(int(i)) for i in broker_account_ids)
-    return f"AND {col} IN ({ids})"
-
-
-def _broker_account_sql_filter(broker_account_ids, col="broker_account_id"):
-    """``WHERE``-prefixed sibling for queries that don't already have a
-    ``WHERE`` clause. Returns ``""`` for admin.
-    """
-    if broker_account_ids is None:
-        return ""
-    if not broker_account_ids:
-        return "WHERE 1 = 0"
-    ids = ", ".join(str(int(i)) for i in broker_account_ids)
-    return f"WHERE {col} IN ({ids})"
-
-
-def _filter_df_by_broker_account_ids(df, broker_account_ids, col="broker_account_id"):
-    """DataFrame analogue of ``_broker_account_sql_and``.
-
-    Drops rows whose ``col`` is a populated id not in
-    ``broker_account_ids``. Rows with ``col`` NULL are dropped UNLESS
-    the caller is admin (``broker_account_ids is None``) — orphan rows
-    with NULL ``broker_account_id`` are by design invisible to every
-    signed-in user (see ``docs/BROKER_ACCOUNT_ID_MIGRATION.md``).
-
-    Admin (``broker_account_ids is None``) bypasses the filter.
-    """
-    if df is None or df.empty:
-        return df
-    if broker_account_ids is None:
-        return df
-    if col not in df.columns:
-        # Stage 2 deploy gap: a mart that hasn't propagated the column
-        # yet. Don't fail-closed — return the df unchanged and let the
-        # legacy `(account, user_id)` filter carry the security boundary
-        # for this surface until the mart is migrated.
-        return df
-    if not broker_account_ids:
-        return df.iloc[0:0]  # empty same-shape frame
-    target = {int(i) for i in broker_account_ids}
-    series = pd.to_numeric(df[col], errors="coerce")
-    keep = series.isin(target)
-    return df.loc[keep].reset_index(drop=True)
-
-
-# ---------------------------------------------------------------------------
-# v2 — tenant_id filter helpers (see docs/V2_TENANT_KEY_DESIGN.md)
-#
-# These replace _account_sql_and / _filter_df_by_accounts and the short-lived
-# Stage 3A broker_account_id helpers above. Wired into routes in Phase 5;
-# additive in Phase 2 (this commit) so the legacy helpers continue to work
-# until the per-route migration is complete.
-#
-# tenant_id format: "<broker_slug>:<broker_uuid>" — broker-stable, never
-# minted by us, collision-proof across Postgres / dataset resets. The
-# structural property that retires the orphan-tenancy and SERIAL-collision
-# bug classes entirely.
-# ---------------------------------------------------------------------------
-
-
-_TENANT_ID_VALID_CHAR_RE = re.compile(r"^[A-Za-z0-9_:.-]+$")
-
-
-def _resolve_filter_tenant_ids(requested=None):
-    """Return the list of ``tenant_id`` strings the current request is
-    allowed to read, or ``None`` for admin bypass (no filter).
-
-    Admin / unauthenticated returns ``None`` — same semantics as
-    ``_resolve_filter_user_id``. The intent is: composable with other
-    filters without accidentally narrowing admin reads.
-
-    Signed-in users return the intersection of
-    ``get_tenant_ids_for_user(current_user.id)`` and the optional
-    ``requested`` list (which would typically come from a URL
-    ``?tenant=`` param). If ``requested`` includes a tenant_id the
-    user doesn't own, it's silently dropped — never allow a URL
-    parameter to widen tenancy.
-
-    Empty list → fail-closed at the SQL boundary (``AND 1 = 0``).
-    """
-    try:
-        from flask_login import current_user
-        from app.auth import is_admin
-        from app.models import get_tenant_ids_for_user
-        if not getattr(current_user, "is_authenticated", False):
-            return []
-        if is_admin(getattr(current_user, "username", None)):
-            return None
-        owned = set(get_tenant_ids_for_user(int(current_user.id)) or [])
-        if requested is None:
-            return sorted(owned)
-        requested_set = {str(t).strip() for t in requested if t}
-        return sorted(owned & requested_set)
-    except Exception:
-        return []
-
-
-def _sanitize_tenant_id(tenant_id):
-    """Defensive escape: only allow ``A-Z a-z 0-9 _ : . -`` characters.
-
-    tenant_ids are well-formed by construction (broker_slug + ':' +
-    broker UUID), so this is belt-and-suspenders. Anything else is
-    dropped on the floor.
-    """
-    if not tenant_id:
-        return None
-    t = str(tenant_id).strip()
-    if not t or not _TENANT_ID_VALID_CHAR_RE.match(t):
-        return None
-    return t
-
-
-def _tenant_sql_and(tenant_ids, col="tenant_id"):
-    """``AND``-shaped predicate scoping a BigQuery read to a set of
-    ``tenant_id`` values. Returns ``""`` for admin (``tenant_ids is None``).
-
-    Empty list returns ``AND 1 = 0`` (fail-closed): an authenticated
-    user with no broker connections sees no rows, not all rows.
-    """
-    if tenant_ids is None:
-        return ""
-    if not tenant_ids:
-        return "AND 1 = 0"
-    safe = [_sanitize_tenant_id(t) for t in tenant_ids]
-    safe = [t for t in safe if t]
-    if not safe:
-        return "AND 1 = 0"
-    safe_col = re.sub(r"[^A-Za-z0-9_.]", "", str(col))
-    quoted = ", ".join(f"'{t}'" for t in safe)
-    return f"AND {safe_col} IN ({quoted})"
-
-
-def _tenant_sql_filter(tenant_ids, col="tenant_id"):
-    """``WHERE``-prefixed sibling for queries that don't already have a
-    ``WHERE`` clause. Returns ``""`` for admin.
-    """
-    if tenant_ids is None:
-        return ""
-    if not tenant_ids:
-        return "WHERE 1 = 0"
-    safe = [_sanitize_tenant_id(t) for t in tenant_ids]
-    safe = [t for t in safe if t]
-    if not safe:
-        return "WHERE 1 = 0"
-    safe_col = re.sub(r"[^A-Za-z0-9_.]", "", str(col))
-    quoted = ", ".join(f"'{t}'" for t in safe)
-    return f"WHERE {safe_col} IN ({quoted})"
-
-
-def _filter_df_by_tenant_ids(df, tenant_ids, col="tenant_id"):
-    """DataFrame-side belt-and-suspenders filter.
-
-    Admin (``tenant_ids is None``) bypasses the filter.
-    Empty list returns an empty same-shape frame.
-    Rows with NULL/missing ``tenant_id`` are DROPPED for non-admin
-    callers — under v2 every legitimate row carries a tenant_id, so
-    NULL is either pre-cutover legacy data or an ingestion bug, both
-    of which are non-tenant data and must not leak to a signed-in user.
-
-    If the column doesn't exist on the frame (deploy-gap: a mart that
-    hasn't propagated tenant_id yet), the helper returns the frame
-    unchanged — the route-level legacy filter is still the active
-    security boundary during the migration window.
-    """
-    if df is None or df.empty:
-        return df
-    if tenant_ids is None:
-        return df
-    if col not in df.columns:
-        return df
-    if not tenant_ids:
-        return df.iloc[0:0]
-    safe = {_sanitize_tenant_id(t) for t in tenant_ids}
-    safe.discard(None)
-    if not safe:
-        return df.iloc[0:0]
-    series = df[col].astype(str)
-    keep = series.isin(safe)
-    return df.loc[keep].reset_index(drop=True)
+# v2 tenant helpers are imported from ``app.tenant_scope`` (top of file).
+# Legacy ``_account_sql_*`` / Stage 3 ``broker_account_id`` helpers were
+# removed — see docs/archive/BROKER_ACCOUNT_ID_MIGRATION.md.
 
 
 def _dedupe_enriched_current_positions(df: pd.DataFrame) -> pd.DataFrame:
@@ -4133,8 +3887,15 @@ def position_detail(symbol):
                 selected_account or "ALL",
                 safe_symbol,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.info(
+                "position_detail: stripped %d phantom writeoff row(s) for %s/%s "
+                "(logger unavailable: %s)",
+                pre_strip_n - len(closed_equity_df),
+                selected_account or "ALL",
+                safe_symbol,
+                exc,
+            )
         # ``positions_summary`` aggregates the same phantom row into a
         # Closed strategy rollup. Reverse it so Strategy Breakdown
         # agrees with Position Legs + Breakdown by Type until dbt
@@ -5556,7 +5317,13 @@ def _snap_position_chart_terminal_to_breakdown(
             tail,
         )
     except Exception:
-        pass
+        _log.info(
+            "snap chart terminal to breakdown ledger: Δ=%.2f ledger=%.2f "
+            "was_tail=%.2f",
+            delta,
+            ledger,
+            tail,
+        )
     totals[-1] = round(float(totals[-1] or 0) + delta, 2)
     eq = chart_data.get("equity")
     if eq is not None and len(eq) == n:
@@ -5640,7 +5407,11 @@ def _align_position_pnl_chart_with_kpi(chart_data, kpis):
                 gap, CHART_KPI_ALIGN_TOLERANCE_DOLLARS, t_end, k,
             )
         except Exception:
-            pass
+            _log.warning(
+                "_align_position_pnl_chart_with_kpi: refusing rescale "
+                "gap=$%.2f chart=$%.2f kpi=$%.2f",
+                gap, t_end, k,
+            )
         return
 
     # Sub-dollar gap: real rounding noise. Apply the legacy rescale logic
@@ -8661,7 +8432,11 @@ def accounts():
                 ("acct_chart", str(date.today()), frame_fingerprint(chart_df, current_df)),
                 lambda: _build_account_chart_from_daily_pnl(chart_df, current_df),
             )
-    except Exception:
+    except Exception as exc:
+        app.logger.exception(
+            "accounts chart query or build failed for account=%r: %s",
+            selected_account, exc,
+        )
         summary_chart = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
 
     # ------------------------------------------------------------------
@@ -8839,6 +8614,9 @@ def accounts_breakdown_fragment():
         strategy_breakdown_totals=breakdowns["strategy_breakdown_totals"],
         sector_breakdown=breakdowns["sector_breakdown"],
         subsector_breakdown=breakdowns["subsector_breakdown"],
+        # So row-click drill-downs in the fragment carry the account scope
+        # (the inline include on /accounts inherits this from the page).
+        selected_account=selected_account,
     )
 
 

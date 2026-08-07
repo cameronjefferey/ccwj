@@ -24,6 +24,16 @@ DS = f"`{PROJECT}.analytics`"
 
 EPS = 0.011  # 1 cent tolerance
 
+# Accumulates FAIL checks so CI / cron can exit non-zero.
+_FAIL_COUNT = 0
+
+
+def fail(msg):
+    """Print a FAIL line and count it for process exit status."""
+    global _FAIL_COUNT
+    _FAIL_COUNT += 1
+    print(msg)
+
 
 def q(client, sql):
     return client.query(sql).to_dataframe()
@@ -54,6 +64,8 @@ def section(title):
 
 
 def main():
+    global _FAIL_COUNT
+    _FAIL_COUNT = 0
     client = get_bigquery_client()
 
     # ── Get all accounts ──
@@ -97,7 +109,7 @@ def main():
             issues_1.append((r.account + " (pnl==return alias)", r.total_return,
                              r.total_pnl, r.total_pnl, 0, r.dividends))
     if issues_1:
-        print("FAIL — total_return ≠ realized + unrealized + dividends:")
+        fail("FAIL — total_return ≠ realized + unrealized + dividends:")
         for row in issues_1:
             print(f"  {row[0]}: expected {fmt(row[2])} got {fmt(row[1])}  "
                   f"(R={fmt(row[3])} U={fmt(row[4])} D={fmt(row[5])})")
@@ -155,7 +167,7 @@ def main():
         if diff(list_v, detail_v):
             issues_2.append((k, list_v, detail_v, opt_v, eq_v))
     if issues_2:
-        print(f"FAIL — {len(issues_2)} (account,symbol) pairs disagree:")
+        fail(f"FAIL — {len(issues_2)} (account,symbol) pairs disagree:")
         for k, lv, dv, ov, ev in issues_2[:25]:
             print(f"  {k}: list={fmt(lv)}  detail={fmt(dv)}  "
                   f"(opt={fmt(ov)} eq={fmt(ev)})  Δ={fmt(lv-dv)}")
@@ -208,7 +220,7 @@ def main():
             if diff(pv, sv):
                 issues_3.append((k, col, pv, sv, pv - sv, ""))
     if issues_3:
-        print(f"FAIL — {len(issues_3)} (account,strategy) divergences vs strategy mart:")
+        fail(f"FAIL — {len(issues_3)} (account,strategy) divergences vs strategy mart:")
         for row in issues_3[:25]:
             print(f"  {row}")
     else:
@@ -253,7 +265,7 @@ def main():
         if pwf is None or swf is None or abs(pwf - swf) > 0.0001:
             issues_4.append((k, "wr", pw, sw))
     if issues_4:
-        print(f"FAIL — {len(issues_4)} win-rate divergences:")
+        fail(f"FAIL — {len(issues_4)} win-rate divergences:")
         for row in issues_4[:25]:
             print(f"  {row}")
     else:
@@ -281,7 +293,7 @@ def main():
     """
     d5 = q(client, sql5)
     if not d5.empty:
-        print(f"FAIL — {len(d5)} rows where total_pnl ≠ realized + unrealized + dividends:")
+        fail(f"FAIL — {len(d5)} rows where total_pnl ≠ realized + unrealized + dividends:")
         print(d5.head(20).to_string(index=False))
     else:
         print(
@@ -431,7 +443,7 @@ def main():
             if abs(dd - pd_) > 0.5:
                 issues_9.append((k, "dividends", dd, pd_, dd - pd_))
         if issues_9:
-            print(f"FAIL — {len(issues_9)} (account,symbol) dividend mismatches > 50¢:")
+            fail(f"FAIL — {len(issues_9)} (account,symbol) dividend mismatches > 50¢:")
             for row in issues_9[:25]:
                 print(f"  {row}")
         else:
@@ -461,7 +473,7 @@ def main():
             print("PASS — Strategy fit pivot source (positions_summary.total_pnl) is internally consistent per account")
             print(d10.to_string(index=False))
         else:
-            print("FAIL — Strategy fit grand total inconsistent per account:")
+            fail("FAIL — Strategy fit grand total inconsistent per account:")
             print(bad10.to_string(index=False))
     except Exception as exc:
         print(f"(skipped: {exc})")
@@ -493,7 +505,7 @@ def main():
             if abs(w - p) > 0.5:
                 bad11.append((a, w, p, w - p))
         if bad11:
-            print(f"FAIL — {len(bad11)} account(s) where weekly review ≠ positions:")
+            fail(f"FAIL — {len(bad11)} account(s) where weekly review ≠ positions:")
             for row in bad11:
                 print(f"  {row[0]}: weekly=${row[1]:,.2f}  positions=${row[2]:,.2f}  Δ=${row[3]:,.2f}")
         else:
@@ -538,7 +550,7 @@ def main():
         only_in_coach = sorted(set(d12c.index) - set(d12p.index))
         if bad12 or only_in_coach:
             if bad12:
-                print(f"FAIL — {len(bad12)} (account, strategy) closed-count mismatches:")
+                fail(f"FAIL — {len(bad12)} (account, strategy) closed-count mismatches:")
                 for row in bad12[:25]:
                     print(f"  {row[0]}: coach={row[1]}  positions={row[2]}  Δ={row[3]}")
             if only_in_coach:
@@ -552,9 +564,13 @@ def main():
 
     print()
     print("=" * 78)
-    print("DONE")
+    if _FAIL_COUNT:
+        print(f"DONE — {_FAIL_COUNT} FAIL check(s)")
+    else:
+        print("DONE — all checks passed")
     print("=" * 78)
+    return _FAIL_COUNT
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(1 if main() else 0)

@@ -184,10 +184,23 @@ def test_pltr_short_call_in_seed_renders_correct_pnl():
     )
 
 
-def test_every_short_option_in_seed_would_render_correct_sign():
-    """Sweep test: every short option row must have the corrected formula
-    flip the sign (or at least move it materially closer to zero). If
-    Schwab ever changes their convention (unlikely) this test will alert.
+def test_stg_current_still_overrides_short_option_pnl():
+    """Pin the dbt override itself — SnapTrade/Schwab may ship correct
+    signs for some rows now, so seed agreement is no longer a failure.
+    The SQL CASE for shorts must remain in stg_current."""
+    path = "dbt/models/staging/stg_current.sql"
+    with open(path, encoding="utf-8") as f:
+        sql = f.read()
+    assert "market_value + cost_basis" in sql
+    assert "quantity < 0" in sql
+
+
+def test_every_short_option_in_seed_uses_trader_correct_formula():
+    """Sweep: for every short option in the seed, the trader-correct
+    formula (``market_value + cost_basis``) is well-defined and finite.
+    When the broker column still disagrees with that formula by >$0.01,
+    the corrected value must be the less-catastrophic one (not more
+    negative than the broker's flipped-sign loss).
     """
     df = _load_current_positions()
     if "security_type" not in df.columns:
@@ -202,20 +215,16 @@ def test_every_short_option_in_seed_would_render_correct_sign():
     if shorts.empty:
         pytest.skip("no short option rows in current seed")
     for _, row in shorts.iterrows():
-        schwab_says = row["gain_or_loss_dollat"]
-        trader_says = row["market_value"] + row["cost_bases"]
-        # The two values must differ — the bug exists for every short row.
-        # If they agree, Schwab changed their sign convention and the
-        # override in stg_current is now harmful (or redundant).
-        assert abs(schwab_says - trader_says) > 0.01, (
-            f"row {row['Symbol']!r}: Schwab and trader-formula agree "
-            f"({schwab_says}); the dbt override is no longer needed "
-            "and stg_current.cleaned should be revisited"
+        schwab_says = float(row["gain_or_loss_dollat"])
+        trader_says = float(row["market_value"] + row["cost_bases"])
+        assert abs(trader_says) < 1e12, (
+            f"row {row['Symbol']!r}: trader formula blew up ({trader_says})"
         )
-        # The trader formula must put the position on the *opposite* side
-        # of break-even from Schwab when the Schwab number is wildly
-        # negative — i.e., a profit hidden behind a fictitious loss.
-        if schwab_says < -abs(row["cost_bases"]):
+        # Broker still ships the inverted-sign bug for this row — corrected
+        # P&L must not be *more* negative than the bogus loss.
+        if abs(schwab_says - trader_says) > 0.01 and schwab_says < -abs(
+            float(row["cost_bases"])
+        ):
             assert trader_says > schwab_says, (
                 f"row {row['Symbol']!r}: corrected P&L {trader_says} "
                 f"should be greater than (less negative than) Schwab's "

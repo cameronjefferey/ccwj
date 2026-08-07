@@ -87,7 +87,10 @@ def _bq_parallel(client, queries):
                         "_bq_parallel: query %r failed: %s", name, exc,
                     )
                 except Exception:
-                    pass
+                    import logging
+                    logging.getLogger(__name__).error(
+                        "_bq_parallel: query %r failed: %s", name, exc,
+                    )
 
     return results
 
@@ -1261,8 +1264,8 @@ def _detect_patterns(client, tenant_filter, week_start, week_end):
                             })
                             break
 
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.warning("daily-review pattern extraction failed: %s", exc)
 
     return patterns
 

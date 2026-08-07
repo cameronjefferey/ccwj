@@ -677,12 +677,16 @@ git pull → dbt build (targeted: stg_history+ stg_current+ stg_account_balances
 ```
 Use `--prices` flag to skip git pull and first dbt pass (prices only).
 
-### CI/CD (`.github/workflows/bigquery_update.yml`)
-Triggers: push to master, daily cron (9 PM UTC / ~1 PM PST), manual dispatch.
-```
-checkout → dbt build (full) → python current_position_stock_price.py → dbt build (full)
-```
-Note: CI runs two full `dbt build`s vs local targeted selects. These could be aligned.
+### CI/CD
+- **Pytest** (`.github/workflows/ci.yml`): runs on every PR and on pushes that touch `app/` / `tests/` / `dbt/` / `scripts/`. Uses a Postgres service so DB-backed tests run; BigQuery integration tests stay opt-in via `RUN_BQ_TESTS=1`.
+- **Warehouse rebuild** (`.github/workflows/bigquery_update.yml`): push to master/main (seed/model paths), manual dispatch.
+  ```
+  checkout → dbt build (full) → python current_position_stock_price.py → dbt build (full)
+  ```
+- **Reconcile audit** (`.github/workflows/reconcile.yml`): nightly + manual; runs `scripts/audit/reconcile.py` and fails the job on any FAIL check.
+- **Evening prices** (`.github/workflows/prices_refresh.yml`): snaps equities to the official close after the bell.
+
+Note: the warehouse workflow runs two full `dbt build`s vs local targeted selects. These could be aligned.
 
 **Deploy/CI churn guards (July 2026).** Every SnapTrade sync that finds a change
 pushes a seed commit to `master`. Two guards stop that from redeploying the app

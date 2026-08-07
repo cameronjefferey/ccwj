@@ -2,14 +2,14 @@
 
 See ``docs/V2_TENANT_KEY_DESIGN.md``.
 
-Goals (mirrors the v1 broker_account_id test suite):
+Goals:
 - SQL helpers (``_tenant_sql_and``, ``_tenant_sql_filter``) emit
   well-formed predicates, fail-closed on empty list, bypass cleanly
   on admin (``tenant_ids is None``).
 - DataFrame helper (``_filter_df_by_tenant_ids``) drops rows whose
   ``tenant_id`` isn't in the user's allowlist, drops NULL rows
-  (the structural orphan-tenancy guarantee), tolerates missing
-  column gracefully for the deploy-gap case.
+  (the structural orphan-tenancy guarantee), and fails CLOSED when
+  the tenant_id column is missing (no deploy-gap passthrough).
 - Defensive sanitization rejects malformed tenant_ids that could
   inject SQL.
 """
@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.routes import (
-    _filter_df_by_tenant_ids,
-    _sanitize_tenant_id,
-    _tenant_sql_and,
-    _tenant_sql_filter,
+from app.tenant_scope import (
+    filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
+    sanitize_tenant_id as _sanitize_tenant_id,
+    tenant_sql_and as _tenant_sql_and,
+    tenant_sql_filter as _tenant_sql_filter,
 )
 
 
@@ -195,12 +195,20 @@ def test_filter_df_drops_null_tenant_id():
     assert list(out["x"]) == [1, 3]
 
 
-def test_filter_df_missing_column_returns_unchanged():
-    """Deploy-gap: a mart that hasn't propagated tenant_id yet returns
-    the frame unchanged (route-level legacy filter is the active
-    security boundary until the mart is migrated)."""
+def test_filter_df_missing_column_fails_closed():
+    """Missing tenant_id column must NOT pass rows through — that was
+    the deploy-gap fail-open that made defense-in-depth a no-op when
+    schema drifted. Empty same-shape frame for non-admin callers."""
     df = pd.DataFrame({"x": [1, 2, 3]})
     out = _filter_df_by_tenant_ids(df, ["snaptrade:a"])
+    assert out.empty
+    assert list(out.columns) == ["x"]
+
+
+def test_filter_df_missing_column_admin_still_bypasses():
+    """Admin (``tenant_ids is None``) bypasses even when column missing."""
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    out = _filter_df_by_tenant_ids(df, None)
     assert len(out) == 3
 
 

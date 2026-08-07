@@ -189,13 +189,13 @@ class TestDateFilteredQueryDividendInclusive:
         # We assert the alias is present.
         assert "AS total_return" in normalized
 
-    def test_query_partitions_dividend_rank_by_user_id(self):
-        # Tenancy hardening: dividend rank must be partitioned by user_id
-        # so two users with the same account label can't share a dividend
-        # ranking.
+    def test_query_partitions_dividend_rank_by_tenant_id(self):
+        # Tenancy hardening: dividend rank must be partitioned by tenant_id
+        # (plus account/user_id/symbol) so colliding account labels across
+        # physical accounts can't share a dividend ranking.
         sql = self._query()
         normalized = re.sub(r"\s+", " ", sql)
-        assert "PARTITION BY ss.account, ss.user_id, ss.symbol" in normalized
+        assert "PARTITION BY ss.tenant_id, ss.account, ss.user_id, ss.symbol" in normalized
 
     def test_query_joins_dividends_on_user_id(self):
         sql = self._query()

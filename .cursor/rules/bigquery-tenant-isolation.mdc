@@ -5,21 +5,22 @@ alwaysApply: true
 
 # BigQuery multi-tenant isolation (non-negotiable)
 
-The warehouse may hold many users’ `account` labels in one dataset. **A single unscoped `WHERE symbol = …` (or any query without the user’s accounts) is a security incident.** A prior bug in this repo **showed one user’s position page data from other users’ accounts**. That must never recur.
+The warehouse may hold many users’ `account` labels in one dataset. **A single unscoped `WHERE symbol = …` (or any query without the user’s tenants) is a security incident.** A prior bug in this repo **showed one user’s position page data from other users’ accounts**. That must never recur.
 
 ## Rules for any change touching BQ in `app/`
 
-1. **Default assumption:** every table read is multi-tenant. **Scoping by `current_user`’s accounts is required**, unless the code path is a documented admin-only read (and even then, prefer explicit scoping).
-2. **SQL first:** add ` {account_filter}` (or the correct `sc.account` / table alias) using `_account_sql_and(user_accounts, col="...")` or `_account_sql_filter` so the warehouse does not return other tenants’ rows. Match patterns already used in `/symbols` and `position_detail` after the fix.
-3. **Python always:** every DataFrame built from BQ (including **every** name in a `_bq_parallel({...})` dict) must pass through `_filter_df_by_accounts(..., user_accounts)` **before** merge, re-aggregation, strategy supplements, or template render — **no exceptions** for “we’ll filter later” or “this query is just for one symbol.”
-4. **Never** use symbol-only, date-only, or `WHERE 1=1` convenience queries for user-facing data without the account predicate in the same query or the filter immediately after `to_dataframe()`.
-5. **New route or new parallel query:** explicitly list in the PR which columns enforce tenancy (`account` / `sc.account` / etc.). If a frame has an `account` column visible to the user, the row set must be provably subset of `get_accounts_for_user` / `_user_account_list()`.
-6. **Regressions:** if you add a `LEFT JOIN` or subquery that widens rows, re-check that the driving filter is still on the current user’s accounts.
+1. **Default assumption:** every table read is multi-tenant. **Scoping by `current_user`’s `tenant_id`s is required**, unless the code path is a documented admin-only read (and even then, prefer explicit scoping).
+2. **SQL first:** add `{tenant_filter}` using `_tenant_sql_and(tenant_ids, col="...")` / `_tenant_sql_filter` from `app.tenant_scope` (re-exported on `app.routes`) so the warehouse does not return other tenants’ rows. Match patterns already used in `/symbols` and `position_detail`.
+3. **Python always:** every DataFrame built from BQ (including **every** name in a `_bq_parallel({...})` dict) must pass through `_filter_df_by_tenant_ids(..., tenant_ids)` **before** merge, re-aggregation, strategy supplements, or template render — **no exceptions** for “we’ll filter later” or “this query is just for one symbol.”
+4. **Fail closed on missing column:** if `tenant_id` is absent from a frame, `_filter_df_by_tenant_ids` returns an empty frame for non-admin callers. Do **not** reintroduce deploy-gap passthrough.
+5. **Never** use symbol-only, date-only, or `WHERE 1=1` convenience queries for user-facing data without the tenant predicate in the same query or the filter immediately after `to_dataframe()`.
+6. **New route or new parallel query:** explicitly list in the PR which columns enforce tenancy (`tenant_id` / `sc.tenant_id` / etc.). If a frame has an `account` column visible to the user, the row set must be provably subset of `get_tenant_ids_for_user` / `_tenants_for_scope()`.
+7. **Regressions:** if you add a `LEFT JOIN` or subquery that widens rows, re-check that the driving filter is still on the current user’s tenants.
 
 ## Before marking work complete
 
-- [ ] Grep the edited block for all `client.query(`, `POSITION_*`, `TRADES_`, `CHART_`, and `_bq_parallel` — each path has account scoping in SQL and/or `_filter_df_by_accounts` on the result.
-- [ ] Grep for `.format(` that passes `symbol=` but **no** `account_filter` / `sc_account_filter` / `account_filter=acct_filter` and verify intent.
-- [ ] If tests exist for isolation (`tests/test_data_isolation.py`), add or update coverage when adding a new data surface.
+- [ ] Grep the edited block for all `client.query(`, `POSITION_*`, `TRADES_`, `CHART_`, and `_bq_parallel` — each path has tenant scoping in SQL and/or `_filter_df_by_tenant_ids` on the result.
+- [ ] Grep for `.format(` that passes `symbol=` but **no** `tenant_filter` / `tenant_filter=` and verify intent.
+- [ ] If tests exist for isolation (`tests/test_data_isolation.py`, `tests/test_tenant_id_filter_helpers.py`), add or update coverage when adding a new data surface.
 
 **Failure mode to remember:** unscoped `closed_legs` / `matrix` / `closed_equity` + merge logic **enriched the UI with other users’ P&amp;L and account names.**
