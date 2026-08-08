@@ -46,12 +46,20 @@ strat as (
     where trade_group_type = 'option_contract'
 ),
 
--- Underlying price on open_date for moneyness. stg_daily_prices is market
--- data (no user_id) — the join key is (account, symbol, date), not
--- per-tenant. Same close_price regardless of which user owned the symbol.
+-- Underlying price on open_date for moneyness. The close for a symbol on a
+-- day is universal market data, but stg_daily_prices' physical grain is
+-- (account, user_id, symbol, date) — one stamped row per holder. Joining on
+-- the (account, ...) label fans out N× when several tenants share a display
+-- label ("Schwab Account"), which TRIPLED rows here and inflated every
+-- downstream count (int_option_exit_analysis, mart_coaching_signals,
+-- mart_option_trades_by_kind — caught by reconcile CHECK 12, 2026-08-08).
+-- Dedup to one row per (symbol, date) and join on symbol+date only — same
+-- pattern as expiry_close_lookup in int_option_contracts.
 prices as (
-    select account, symbol, date, close_price
+    select symbol, date, any_value(close_price) as close_price
     from {{ ref('stg_daily_prices') }}
+    where close_price is not null
+    group by 1, 2
 ),
 
 enriched as (
@@ -103,8 +111,7 @@ enriched as (
         and (oc.tenant_id is not distinct from s.tenant_id)
         and oc.trade_symbol = s.trade_symbol
     left join prices p
-        on oc.account = p.account
-        and oc.underlying_symbol = p.symbol
+        on oc.underlying_symbol = p.symbol
         and p.date = oc.open_date
 )
 

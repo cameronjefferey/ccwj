@@ -3,10 +3,17 @@
 For each account, recompute the same KPI three different ways (the way the
 positions page does it, the way position_detail does it, the way the SQL marts
 do it) and flag any account where they disagree by more than $0.01.
+
+GRAIN: every check keys on ``COALESCE(tenant_id, account)`` (aliased ``tkey``),
+NEVER on the bare ``account`` display label. SnapTrade returns the same label
+("Schwab Account") for multiple physical accounts, so label-grained GROUP BYs
+fuse distinct tenants and label-grained JOINs fan out N× — the first scheduled
+run of this audit reported dozens of exactly-2× "mismatches" and crashed on
+duplicate index keys for precisely this reason (2026-08-08). See AGENTS.md
+"tenant_id is also the analytics GRAIN".
 """
 from __future__ import annotations
 
-import os
 import sys
 import json
 from collections import defaultdict
@@ -15,12 +22,19 @@ from decimal import Decimal
 
 import pandas as pd
 
-# Make app importable
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-sys.path.insert(0, ROOT)
+# Standalone BigQuery client — deliberately NOT app.bigquery_client.
+# Importing anything under app/ runs app/__init__ → config.py, which
+# hard-fails without SECRET_KEY. This audit runs in a bare CI job
+# (reconcile.yml) with only GCP credentials, and it always audits the
+# prod `analytics` dataset, so the app's BQ_DATASET override machinery
+# doesn't apply anyway. First scheduled run failed on exactly this
+# (2026-08-08: RuntimeError SECRET_KEY must be set).
+from google.cloud import bigquery
 
-from app.bigquery_client import get_bigquery_client
+
+def get_bigquery_client():
+    return bigquery.Client(project=PROJECT)
+
 
 PROJECT = "ccwj-dbt"
 DS = f"`{PROJECT}.analytics`"
@@ -71,13 +85,14 @@ def main():
     _FAIL_COUNT = 0
     client = get_bigquery_client()
 
-    # ── Get all accounts ──
+    # ── Get all accounts (tenant-keyed; label kept for readability) ──
     accounts_df = q(client, f"""
-        SELECT DISTINCT account
+        SELECT COALESCE(tenant_id, account) AS tkey, ANY_VALUE(account) AS account
         FROM {DS}.positions_summary
-        ORDER BY account
+        GROUP BY tkey
+        ORDER BY tkey
     """)
-    accounts = accounts_df["account"].tolist()
+    accounts = accounts_df["tkey"].tolist()
     print(f"Found {len(accounts)} account(s): {accounts}")
 
     # ====================================================================
@@ -87,29 +102,29 @@ def main():
     section("CHECK 1: Total Return vs (Realized + Unrealized + Dividends), per account")
     sql1 = f"""
         SELECT
-          account,
+          COALESCE(tenant_id, account) AS tkey,
           ROUND(SUM(total_return), 2)        AS total_return,
           ROUND(SUM(realized_pnl), 2)        AS realized_pnl,
           ROUND(SUM(unrealized_pnl), 2)      AS unrealized_pnl,
           ROUND(SUM(total_dividend_income),2) AS dividends,
           ROUND(SUM(total_pnl), 2)           AS total_pnl
         FROM {DS}.positions_summary
-        GROUP BY account
-        ORDER BY account
+        GROUP BY tkey
+        ORDER BY tkey
     """
     d1 = q(client, sql1)
     issues_1 = []
     for _, r in d1.iterrows():
         derived = float(r.realized_pnl) + float(r.unrealized_pnl) + float(r.dividends)
         if diff(r.total_return, derived):
-            issues_1.append((r.account, r.total_return, derived,
+            issues_1.append((r.tkey, r.total_return, derived,
                              r.realized_pnl, r.unrealized_pnl, r.dividends))
         # After dividends-as-first-class, total_pnl already folds in
         # attributed dividends. total_return is now an alias of total_pnl,
         # so the two should match column-for-column per row (and therefore
         # per account when summed). If they drift, the alias has broken.
         if diff(r.total_return, r.total_pnl):
-            issues_1.append((r.account + " (pnl==return alias)", r.total_return,
+            issues_1.append((r.tkey + " (pnl==return alias)", r.total_return,
                              r.total_pnl, r.total_pnl, 0, r.dividends))
     if issues_1:
         fail("FAIL — total_return ≠ realized + unrealized + dividends:")
@@ -131,33 +146,36 @@ def main():
     section("CHECK 2: Per-symbol realized P&L — list vs detail page")
     sql2_list = f"""
         SELECT
-          account, symbol,
+          COALESCE(tenant_id, account) AS tkey, symbol,
           ROUND(SUM(realized_pnl), 2) AS realized_list
         FROM {DS}.positions_summary
-        GROUP BY account, symbol
+        GROUP BY tkey, symbol
     """
+    # JOIN on tenant_id, NOT the account label — label-grained joins fan
+    # out N× when several tenants share "Schwab Account".
     sql2_detail_opt = f"""
         SELECT
-          sc.account,
+          COALESCE(sc.tenant_id, sc.account) AS tkey,
           sc.symbol,
           ROUND(SUM(sc.total_pnl), 2) AS realized_opt
         FROM {DS}.int_strategy_classification sc
         JOIN {DS}.int_option_contracts oc
-          ON sc.account = oc.account AND sc.trade_symbol = oc.trade_symbol
+          ON COALESCE(sc.tenant_id, sc.account) = COALESCE(oc.tenant_id, oc.account)
+         AND sc.trade_symbol = oc.trade_symbol
         WHERE sc.status = 'Closed'
           AND sc.trade_group_type = 'option_contract'
-        GROUP BY sc.account, sc.symbol
+        GROUP BY tkey, sc.symbol
     """
     sql2_detail_eq = f"""
         SELECT
-          account, symbol,
+          COALESCE(tenant_id, account) AS tkey, symbol,
           ROUND(SUM(realized_pnl), 2) AS realized_eq
         FROM {DS}.int_closed_equity_legs
-        GROUP BY account, symbol
+        GROUP BY tkey, symbol
     """
-    list_df = q(client, sql2_list).set_index(["account", "symbol"])
-    opt_df = q(client, sql2_detail_opt).set_index(["account", "symbol"])
-    eq_df = q(client, sql2_detail_eq).set_index(["account", "symbol"])
+    list_df = q(client, sql2_list).set_index(["tkey", "symbol"])
+    opt_df = q(client, sql2_detail_opt).set_index(["tkey", "symbol"])
+    eq_df = q(client, sql2_detail_eq).set_index(["tkey", "symbol"])
 
     # Union of keys
     keys = set(list_df.index) | set(opt_df.index) | set(eq_df.index)
@@ -187,27 +205,28 @@ def main():
     section("CHECK 3: Strategies mart vs positions_summary — strategy totals reconcile")
     sql3_pos = f"""
         SELECT
-          account, strategy,
+          COALESCE(tenant_id, account) AS tkey, strategy,
           ROUND(SUM(total_pnl), 2)        AS pos_total_pnl,
           ROUND(SUM(realized_pnl), 2)     AS pos_realized,
           ROUND(SUM(unrealized_pnl), 2)   AS pos_unrealized,
           ROUND(SUM(total_return), 2)     AS pos_total_return,
           ROUND(SUM(total_dividend_income),2) AS pos_div
         FROM {DS}.positions_summary
-        GROUP BY account, strategy
+        GROUP BY tkey, strategy
     """
     sql3_strat = f"""
         SELECT
-          account, strategy,
-          ROUND(total_pnl, 2)      AS strat_total_pnl,
-          ROUND(realized_pnl, 2)   AS strat_realized,
-          ROUND(unrealized_pnl, 2) AS strat_unrealized,
-          ROUND(total_return, 2)   AS strat_total_return,
-          ROUND(dividend_income,2) AS strat_div
+          COALESCE(tenant_id, account) AS tkey, strategy,
+          ROUND(SUM(total_pnl), 2)      AS strat_total_pnl,
+          ROUND(SUM(realized_pnl), 2)   AS strat_realized,
+          ROUND(SUM(unrealized_pnl), 2) AS strat_unrealized,
+          ROUND(SUM(total_return), 2)   AS strat_total_return,
+          ROUND(SUM(dividend_income),2) AS strat_div
         FROM {DS}.mart_strategy_performance
+        GROUP BY tkey, strategy
     """
-    p3 = q(client, sql3_pos).set_index(["account", "strategy"])
-    s3 = q(client, sql3_strat).set_index(["account", "strategy"])
+    p3 = q(client, sql3_pos).set_index(["tkey", "strategy"])
+    s3 = q(client, sql3_strat).set_index(["tkey", "strategy"])
     keys3 = set(p3.index) | set(s3.index)
     issues_3 = []
     for k in sorted(keys3):
@@ -235,19 +254,26 @@ def main():
     section("CHECK 4: Win rate — strategies mart vs positions_summary aggregation")
     sql4_pos = f"""
         SELECT
-          account, strategy,
+          COALESCE(tenant_id, account) AS tkey, strategy,
           SUM(num_winners) AS w,
           SUM(num_losers)  AS l,
           SAFE_DIVIDE(SUM(num_winners), NULLIF(SUM(num_winners)+SUM(num_losers),0)) AS wr
         FROM {DS}.positions_summary
-        GROUP BY account, strategy
+        GROUP BY tkey, strategy
     """
+    # The mart is (tenant, strategy)-grained so the GROUP BY is 1:1;
+    # MAX(win_rate) still validates the mart's STORED win_rate column.
     sql4_strat = f"""
-        SELECT account, strategy, num_winners AS w, num_losers AS l, win_rate AS wr
+        SELECT
+          COALESCE(tenant_id, account) AS tkey, strategy,
+          SUM(num_winners) AS w,
+          SUM(num_losers)  AS l,
+          MAX(win_rate)    AS wr
         FROM {DS}.mart_strategy_performance
+        GROUP BY tkey, strategy
     """
-    p4 = q(client, sql4_pos).set_index(["account", "strategy"])
-    s4 = q(client, sql4_strat).set_index(["account", "strategy"])
+    p4 = q(client, sql4_pos).set_index(["tkey", "strategy"])
+    s4 = q(client, sql4_strat).set_index(["tkey", "strategy"])
     issues_4 = []
     for k in p4.index:
         if k not in s4.index:
@@ -283,7 +309,7 @@ def main():
     section("CHECK 5: total_pnl == realized_pnl + unrealized_pnl + total_dividend_income per row")
     sql5 = f"""
         SELECT
-          account, symbol, strategy,
+          COALESCE(tenant_id, account) AS tkey, symbol, strategy,
           total_pnl, realized_pnl, unrealized_pnl, total_dividend_income,
           ROUND(
             total_pnl - (realized_pnl + unrealized_pnl + COALESCE(total_dividend_income, 0)),
@@ -310,11 +336,12 @@ def main():
     section("CHECK 6: Sectors total P&L vs positions total return")
     sql6 = f"""
         SELECT
-          account,
+          COALESCE(tenant_id, account) AS tkey,
+          ANY_VALUE(account) AS account,
           ROUND(SUM(total_pnl), 2)    AS by_sector_pnl,
           ROUND(SUM(total_return), 2) AS by_sector_return
         FROM {DS}.positions_summary
-        GROUP BY account
+        GROUP BY tkey
     """
     d6 = q(client, sql6)
     print(d6.to_string(index=False))
@@ -327,22 +354,23 @@ def main():
     section("CHECK 7: Open positions in summary should reconcile with broker positions")
     sql7 = f"""
         WITH summary_open AS (
-            SELECT DISTINCT account, symbol
+            SELECT DISTINCT COALESCE(tenant_id, account) AS tkey, symbol
             FROM {DS}.positions_summary
             WHERE status = 'Open'
         ),
         broker_pos AS (
-            SELECT DISTINCT account, underlying_symbol AS symbol
+            SELECT DISTINCT COALESCE(tenant_id, account) AS tkey,
+                   underlying_symbol AS symbol
             FROM {DS}.int_enriched_current
         )
         SELECT
           (SELECT COUNT(*) FROM summary_open)            AS summary_open_count,
           (SELECT COUNT(*) FROM broker_pos)              AS broker_pos_count,
           (SELECT COUNT(*) FROM summary_open s
-             LEFT JOIN broker_pos b USING(account, symbol)
+             LEFT JOIN broker_pos b USING(tkey, symbol)
              WHERE b.symbol IS NULL)                     AS in_summary_not_broker,
           (SELECT COUNT(*) FROM broker_pos b
-             LEFT JOIN summary_open s USING(account, symbol)
+             LEFT JOIN summary_open s USING(tkey, symbol)
              WHERE s.symbol IS NULL)                     AS in_broker_not_summary
     """
     try:
@@ -352,24 +380,26 @@ def main():
         if int(d7.iloc[0]["in_summary_not_broker"]) > 0:
             print("\nIn summary but not broker (top 10):")
             print(q(client, f"""
-                SELECT s.account, s.symbol
-                FROM (SELECT DISTINCT account, symbol FROM {DS}.positions_summary
-                      WHERE status='Open') s
-                LEFT JOIN (SELECT DISTINCT account, underlying_symbol AS symbol
+                SELECT s.tkey, s.symbol
+                FROM (SELECT DISTINCT COALESCE(tenant_id, account) AS tkey, symbol
+                      FROM {DS}.positions_summary WHERE status='Open') s
+                LEFT JOIN (SELECT DISTINCT COALESCE(tenant_id, account) AS tkey,
+                                  underlying_symbol AS symbol
                            FROM {DS}.int_enriched_current) b
-                  USING(account, symbol)
+                  USING(tkey, symbol)
                 WHERE b.symbol IS NULL
                 LIMIT 10
             """).to_string(index=False))
         if int(d7.iloc[0]["in_broker_not_summary"]) > 0:
             print("\nIn broker but not summary (top 10):")
             print(q(client, f"""
-                SELECT b.account, b.symbol
-                FROM (SELECT DISTINCT account, underlying_symbol AS symbol
+                SELECT b.tkey, b.symbol
+                FROM (SELECT DISTINCT COALESCE(tenant_id, account) AS tkey,
+                             underlying_symbol AS symbol
                       FROM {DS}.int_enriched_current) b
-                LEFT JOIN (SELECT DISTINCT account, symbol FROM {DS}.positions_summary
-                           WHERE status='Open') s
-                  USING(account, symbol)
+                LEFT JOIN (SELECT DISTINCT COALESCE(tenant_id, account) AS tkey, symbol
+                           FROM {DS}.positions_summary WHERE status='Open') s
+                  USING(tkey, symbol)
                 WHERE s.symbol IS NULL
                 LIMIT 10
             """).to_string(index=False))
@@ -383,13 +413,14 @@ def main():
     # ====================================================================
     section("CHECK 8: Accounts page total_return vs Positions per-account total_return")
     sql8 = f"""
-        SELECT account,
+        SELECT COALESCE(tenant_id, account) AS tkey,
+               ANY_VALUE(account) AS account,
                ROUND(SUM(total_return), 2)   AS total_return,
                ROUND(SUM(realized_pnl), 2)   AS realized_pnl,
                ROUND(SUM(unrealized_pnl), 2) AS unrealized_pnl
         FROM {DS}.positions_summary
-        GROUP BY account
-        ORDER BY account
+        GROUP BY tkey
+        ORDER BY tkey
     """
     d8 = q(client, sql8)
     print(d8.to_string(index=False))
@@ -405,39 +436,46 @@ def main():
     section("CHECK 9: Daily P&L by symbol — latest cumulative options + dividends vs positions_summary")
     try:
         sql9_daily = f"""
-            WITH latest AS (
-                SELECT account, symbol, MAX(date) AS last_dt
+            WITH keyed AS (
+                SELECT COALESCE(tenant_id, account) AS tkey, symbol, date,
+                       cumulative_options_pnl, open_options_unrealized_pnl,
+                       cumulative_dividends_pnl
                 FROM {DS}.mart_daily_pnl
-                GROUP BY account, symbol
+            ),
+            latest AS (
+                SELECT tkey, symbol, MAX(date) AS last_dt
+                FROM keyed
+                GROUP BY tkey, symbol
             )
-            SELECT m.account, m.symbol,
+            SELECT m.tkey, m.symbol,
                    -- Total options P&L at the latest date = realized
                    -- cumulative + open MTM. Under the realize-on-close
                    -- attribution rule (AGENTS.md "Option P&L
                    -- Attribution") these are two separate columns;
                    -- both must be summed to compare against
                    -- positions_summary.total_pnl (realized + unrealized).
-                   ROUND(m.cumulative_options_pnl
-                         + COALESCE(m.open_options_unrealized_pnl, 0), 2) AS daily_options,
-                   ROUND(m.cumulative_dividends_pnl, 2)  AS daily_dividends
-            FROM {DS}.mart_daily_pnl m
+                   ROUND(SUM(m.cumulative_options_pnl
+                         + COALESCE(m.open_options_unrealized_pnl, 0)), 2) AS daily_options,
+                   ROUND(SUM(m.cumulative_dividends_pnl), 2)  AS daily_dividends
+            FROM keyed m
             JOIN latest l
-              ON m.account = l.account
+              ON m.tkey = l.tkey
              AND m.symbol  = l.symbol
              AND m.date    = l.last_dt
+            GROUP BY m.tkey, m.symbol
         """
         sql9_pos = f"""
-            SELECT account, symbol,
+            SELECT COALESCE(tenant_id, account) AS tkey, symbol,
                    ROUND(SUM(CASE WHEN strategy IN ('Long Call','Long Put','Short Call','Short Put',
                                                    'Cash Secured Put','Covered Call',
                                                    'Naked Call','Naked Put') THEN total_pnl
                                    ELSE 0 END), 2)            AS pos_options,
                    ROUND(SUM(total_dividend_income), 2)        AS pos_dividends
             FROM {DS}.positions_summary
-            GROUP BY account, symbol
+            GROUP BY tkey, symbol
         """
-        d9d = q(client, sql9_daily).set_index(["account", "symbol"])
-        d9p = q(client, sql9_pos).set_index(["account", "symbol"])
+        d9d = q(client, sql9_daily).set_index(["tkey", "symbol"])
+        d9p = q(client, sql9_pos).set_index(["tkey", "symbol"])
         keys9 = sorted(set(d9d.index) & set(d9p.index))
         issues_9 = []
         for k in keys9:
@@ -462,13 +500,14 @@ def main():
     section("CHECK 10: Strategy fit grand total vs positions total_pnl per account")
     try:
         sql10 = f"""
-            SELECT account,
-                   ROUND(SUM(total_pnl), 2) AS pos_total,
+            SELECT COALESCE(p.tenant_id, p.account) AS tkey,
+                   ROUND(SUM(p.total_pnl), 2) AS pos_total,
                    ROUND((SELECT SUM(p2.total_pnl)
                           FROM {DS}.positions_summary p2
-                          WHERE p2.account = p.account), 2) AS pos_total_check
+                          WHERE COALESCE(p2.tenant_id, p2.account)
+                                = COALESCE(p.tenant_id, p.account)), 2) AS pos_total_check
             FROM {DS}.positions_summary p
-            GROUP BY account
+            GROUP BY tkey, p.tenant_id, p.account
         """
         d10 = q(client, sql10)
         bad10 = d10[d10["pos_total"] != d10["pos_total_check"]]
@@ -486,20 +525,28 @@ def main():
     # vs positions_summary lifetime grand total per account.
     # Both descend from int_strategy_classification so they MUST match.
     # ====================================================================
-    section("CHECK 11: Weekly Review (mart_weekly_trades) lifetime sum vs Positions lifetime sum, per account")
+    section("CHECK 11: Weekly Review (mart_weekly_trades) lifetime sum vs Positions ex-dividend lifetime sum, per account")
     try:
         sql11_w = f"""
-            SELECT account, ROUND(SUM(total_pnl), 2) AS weekly_lifetime
+            SELECT COALESCE(tenant_id, account) AS tkey,
+                   ROUND(SUM(total_pnl), 2) AS weekly_lifetime
             FROM {DS}.mart_weekly_trades
-            GROUP BY account
+            GROUP BY tkey
         """
+        # mart_weekly_trades is TRADE-grained: it never carries dividend
+        # income, while positions_summary.total_pnl folds attributed
+        # dividends in (CHECK 5's invariant). Compare ex-dividend totals —
+        # verified 2026-08-08 that the raw gap is exactly Σ dividends to
+        # the penny for every tenant.
         sql11_p = f"""
-            SELECT account, ROUND(SUM(total_pnl), 2) AS positions_lifetime
+            SELECT COALESCE(tenant_id, account) AS tkey,
+                   ROUND(SUM(total_pnl) - SUM(COALESCE(total_dividend_income, 0)), 2)
+                       AS positions_lifetime
             FROM {DS}.positions_summary
-            GROUP BY account
+            GROUP BY tkey
         """
-        d11w = q(client, sql11_w).set_index("account")
-        d11p = q(client, sql11_p).set_index("account")
+        d11w = q(client, sql11_w).set_index("tkey")
+        d11p = q(client, sql11_p).set_index("tkey")
         keys11 = sorted(set(d11w.index) | set(d11p.index))
         bad11 = []
         for a in keys11:
@@ -525,9 +572,10 @@ def main():
     section("CHECK 12: AI Coach total_closed vs closed option contracts, per (account, strategy)")
     try:
         sql12_c = f"""
-            SELECT account, strategy, SUM(total_closed) AS closed_in_coach
+            SELECT COALESCE(tenant_id, account) AS tkey, strategy,
+                   SUM(total_closed) AS closed_in_coach
             FROM {DS}.mart_coaching_signals
-            GROUP BY account, strategy
+            GROUP BY tkey, strategy
         """
         # Coach only looks at option contracts (it analyzes exit timing on
         # premiums, not on the underlying equity sessions that get classified
@@ -535,14 +583,15 @@ def main():
         # int_strategy_classification, NOT the symbol+strategy combined count
         # in positions_summary.
         sql12_p = f"""
-            SELECT account, strategy, COUNT(*) AS closed_in_pos
+            SELECT COALESCE(tenant_id, account) AS tkey, strategy,
+                   COUNT(*) AS closed_in_pos
             FROM {DS}.int_strategy_classification
             WHERE trade_group_type = 'option_contract'
               AND status = 'Closed'
-            GROUP BY account, strategy
+            GROUP BY tkey, strategy
         """
-        d12c = q(client, sql12_c).set_index(["account", "strategy"])
-        d12p = q(client, sql12_p).set_index(["account", "strategy"])
+        d12c = q(client, sql12_c).set_index(["tkey", "strategy"])
+        d12p = q(client, sql12_p).set_index(["tkey", "strategy"])
         keys12 = sorted(set(d12c.index) & set(d12p.index))
         bad12 = []
         for k in keys12:

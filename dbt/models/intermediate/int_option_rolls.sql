@@ -154,9 +154,20 @@ select
     end as sold_short_itm_at_roll
 
 from candidates c
-left join {{ ref('stg_daily_prices') }} dp
-    on c.account = dp.account
-    and (c.user_id is not distinct from dp.user_id)
-    and c.underlying_symbol = dp.symbol
+-- DEDUP: the close for a symbol on a day is universal market data, but
+-- stg_daily_prices' physical grain is (account, user_id, symbol, date) —
+-- one stamped row per holder, and the SAME (account label, user_id) pair
+-- repeats across tenants that share a display label ("Schwab Account").
+-- Joining on the label fans each roll out N×. Collapse to one row per
+-- (symbol, date) and join on symbol+date only — same pattern as
+-- expiry_close_lookup in int_option_contracts (fixed 2026-08-08 alongside
+-- int_option_trade_kinds, caught by reconcile CHECK 12).
+left join (
+    select symbol, date, any_value(close_price) as close_price
+    from {{ ref('stg_daily_prices') }}
+    where close_price is not null
+    group by 1, 2
+) dp
+    on c.underlying_symbol = dp.symbol
     and c.old_close_date = dp.date
 where c.match_rank = 1
