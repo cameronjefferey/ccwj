@@ -650,6 +650,40 @@
                     </form>
                 </div>
             </div>
+
+            <div class="atlas-card" style="border-color:#fecaca;">
+                <div class="atlas-card-h" style="color:#b91c1c;">Danger zone</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint mb-3">
+                        Deleting your account is permanent. It removes your login, disconnects
+                        your brokers, and erases your trade history, positions and balances from
+                        our systems. There is no undo and no grace period.
+                    </p>
+                    <button type="button" class="btn btn-outline-danger fw-semibold"
+                            {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}
+                            onclick="document.getElementById('delete-account-form').classList.toggle('d-none')">
+                        Delete my account&hellip;
+                    </button>
+                    <form id="delete-account-form" class="d-none mt-3" method="POST"
+                          action="{{ url_for('delete_account') }}"
+                          onsubmit="return confirm('Really delete your account and ALL trading data? This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-3">
+                            <label class="form-label" for="del_pw">Your password</label>
+                            <input type="password" class="form-control" id="del_pw" name="password"
+                                   required autocomplete="current-password">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="del_confirm">Type <strong>DELETE</strong> to confirm</label>
+                            <input type="text" class="form-control" id="del_confirm" name="confirm_text"
+                                   required pattern="DELETE" placeholder="DELETE" autocomplete="off">
+                        </div>
+                        <button type="submit" class="btn btn-danger fw-semibold">
+                            Permanently delete my account and data
+                        </button>
+                    </form>
+                </div>
+            </div>
             {% endif %}
 
             {% if tab == 'community' %}
