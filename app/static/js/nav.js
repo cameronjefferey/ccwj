@@ -78,6 +78,14 @@
     { s: "Profile", href: "/profile", kind: "page" }
   ];
 
+  var trigger = document.getElementById("ht-palette-trigger");
+  var cacheScope = trigger && trigger.getAttribute("data-cache-scope");
+  var SYMBOL_CACHE_KEY = cacheScope ? "ht-nav-symbols:" + cacheScope : null;
+  // The first quick-switcher release used one unscoped key, so user B could
+  // see user A's symbols after an account switch in the same browser tab.
+  // Never read it again, and remove it as soon as authenticated nav loads.
+  try { sessionStorage.removeItem("ht-nav-symbols"); } catch (err) { /* unavailable */ }
+
   var overlay = null, input = null, list = null;
   var symbols = null; // [{s, open}]
   var results = [];
@@ -111,26 +119,30 @@
 
   function fetchSymbols() {
     if (symbols !== null) return Promise.resolve(symbols);
-    try {
-      var cached = sessionStorage.getItem("ht-nav-symbols");
-      if (cached) {
-        var parsed = JSON.parse(cached);
-        if (parsed && parsed.ts && Date.now() - parsed.ts < 10 * 60 * 1000) {
-          symbols = parsed.symbols || [];
-          return Promise.resolve(symbols);
+    if (SYMBOL_CACHE_KEY) {
+      try {
+        var cached = sessionStorage.getItem(SYMBOL_CACHE_KEY);
+        if (cached) {
+          var parsed = JSON.parse(cached);
+          if (parsed && parsed.ts && Date.now() - parsed.ts < 10 * 60 * 1000) {
+            symbols = parsed.symbols || [];
+            return Promise.resolve(symbols);
+          }
         }
-      }
-    } catch (err) { /* sessionStorage unavailable — fall through */ }
+      } catch (err) { /* sessionStorage unavailable — fall through */ }
+    }
     return fetch("/api/nav/symbols", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         symbols = (j && j.symbols) || [];
-        try {
-          sessionStorage.setItem(
-            "ht-nav-symbols",
-            JSON.stringify({ ts: Date.now(), symbols: symbols })
-          );
-        } catch (err) { /* quota — palette still works this page-load */ }
+        if (SYMBOL_CACHE_KEY) {
+          try {
+            sessionStorage.setItem(
+              SYMBOL_CACHE_KEY,
+              JSON.stringify({ ts: Date.now(), symbols: symbols })
+            );
+          } catch (err) { /* quota — palette still works this page-load */ }
+        }
         return symbols;
       })
       .catch(function () { symbols = []; return symbols; });
@@ -291,8 +303,8 @@
 
   // Navbar search buttons (desktop pill inside the collapse + phone icon
   // next to the hamburger — no keyboard shortcuts on mobile).
-  document.querySelectorAll(".ht-palette-open").forEach(function (trigger) {
-    trigger.addEventListener("click", function (e) {
+  document.querySelectorAll(".ht-palette-open").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
       e.preventDefault();
       openPalette();
     });
