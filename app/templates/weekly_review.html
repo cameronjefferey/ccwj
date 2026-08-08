@@ -526,6 +526,30 @@
 </div>
 
 {# ════════════════════════════════════
+   FIRST-WEEK FRAMING — new accounts see dashes structurally, not because
+   anything is broken. Say so before they conclude the product is empty.
+   ════════════════════════════════════ #}
+{% if building_history %}
+<div class="review-section" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:1rem 1.25rem;">
+    <div style="display:flex; gap:.75rem; align-items:flex-start;">
+        <div style="font-size:1.4rem; line-height:1;">&#128200;</div>
+        <div>
+            <div style="font-weight:700; color:#1e40af; font-size:.95rem;">
+                Building your history &mdash; day {{ building_history.day_number }}
+            </div>
+            <div style="color:#1e3a5f; font-size:.85rem; margin-top:.25rem;">
+                Your full trade history is already in &mdash; positions, P&amp;L and the breakdowns below
+                are complete from day one. What takes time are the <em>comparisons</em>: HappyTrader
+                snapshots your account value once a day, so &ldquo;vs yesterday&rdquo; unlocks tomorrow,
+                the weekly comparison after a week, and the daily G/L calendar fills in one square per
+                trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
    SINCE YOU LAST LOOKED — daily-pull diff
    ════════════════════════════════════ #}
 {% if since_last_looked %}
@@ -1110,7 +1134,12 @@
     {% endif %}
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
+        {% if building_history %}
+        Your calendar starts today &mdash; one square fills in per trading day as your
+        account snapshots accumulate. Check back tomorrow for your first daily G/L.
+        {% else %}
         Daily account snapshots haven&rsquo;t arrived yet. New syncs and uploads take a few minutes to show up.
+        {% endif %}
     </p>
     {% endif %}
 </div>

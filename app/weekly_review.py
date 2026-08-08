@@ -4091,6 +4091,29 @@ def weekly_review():
             context["daily_calendar_no_query_rows"] = True
             context["calendar_grid"] = _build_calendar_grid({}, today)
 
+        # ── First-week framing ─────────────────────────────────────────
+        # A brand-new user's Daily Review is structurally dash-heavy: the
+        # vs-yesterday / 1w / 1m comparisons and the Δ calendar all need
+        # accumulated daily snapshots, which only start the day they
+        # connect. Without framing that reads as "broken page" (the exact
+        # first impression we can't afford). ``snapshot_days`` counts the
+        # distinct snapshot dates in the calendar window; under 5 we show
+        # a "day N — comparisons unlock as history accumulates" banner and
+        # soften the calendar empty-state. Trade history itself backfills
+        # in full on the first sync, so positions/breakdowns are complete
+        # from day one — the banner says so explicitly.
+        try:
+            snapshot_days = len(daily_changes_map)
+            has_any_accounts = bool(user_accounts)
+            if has_any_accounts and snapshot_days < 5 and not context.get("error"):
+                context["building_history"] = {
+                    "days": snapshot_days,
+                    # day 0 = first snapshot lands tonight; render as day 1
+                    "day_number": max(snapshot_days, 0) + 1,
+                }
+        except Exception:
+            pass
+
     except Exception as e:
         context["error"] = str(e)
 
