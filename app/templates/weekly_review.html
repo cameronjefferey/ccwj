@@ -366,6 +366,9 @@
     .cal-day .cal-day-num { font-size: .68rem; color: inherit; opacity: .8; line-height: 1; }
     .cal-day .cal-day-pnl { font-size: .68rem; font-weight: 700; margin-top: .15rem; line-height: 1; }
     .cal-day.today { outline: 2px solid #2563eb; }
+    /* Time-machine: past cells are links to the day-detail page. */
+    a.cal-day-link { text-decoration: none; }
+    a.cal-day-link:hover { outline: 2px solid #94a3b8; cursor: pointer; }
     .cal-toggle-btn {
         background: transparent; border: 0; padding: .25rem 0;
         font-size: .68rem; font-weight: 600;
@@ -1135,12 +1138,25 @@
                 {% else %}
                     {% set bg = "#f3f4f6" %}{% set fg = "#d1d5db" %}
                 {% endif %}
+                {# Past days are time-machine links: click any cell to open
+                   the day-detail review for that date (day_detail route). #}
+                {% if not c.is_future and not c.is_today %}
+                <a class="cal-day cal-day-link{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};"
+                   href="{{ url_for('day_detail', day_str=c.date.isoformat(), account=selected_account or None) }}"
+                   title="What happened {{ c.month_short }} {{ c.day }}?">
+                    <div class="cal-day-num">{{ c.day }}</div>
+                    {% if c.has_data %}
+                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    {% endif %}
+                </a>
+                {% else %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
                     <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
                     {% endif %}
                 </div>
+                {% endif %}
             {% endfor %}
         {% endfor %}
     </div>

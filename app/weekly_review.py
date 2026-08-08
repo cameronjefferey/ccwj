@@ -24,7 +24,7 @@ merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from flask import render_template, request
+from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
@@ -4144,3 +4144,297 @@ def weekly_review():
     # every page — no per-page context needed here.
 
     return render_template("weekly_review.html", **context)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Time-machine: day detail (/daily-review/day/<YYYY-MM-DD>)
+#
+# The Daily Review answers "what happened TODAY". The heatmap already shows
+# the day-over-day account swing for the last 12 weeks — but a red Tuesday
+# three weeks ago was a dead pixel: no way to ask "what actually happened
+# that day?". Every heatmap cell now links here.
+#
+# Scope decision (documented for the operator): the day page reports what
+# the warehouse can answer PER-DAY with full fidelity —
+#   • per-account value + day delta (mart_account_snapshots_enriched —
+#     the same source as the heatmap cell, so the numbers always agree)
+#   • every fill executed that day (stg_history)
+#   • per-symbol OPTION P&L day moves (mart_daily_pnl delta, same
+#     realize-on-close + MTM-while-open attribution as the charts)
+#   • dividends paid that day (int_dividend_events)
+#   • SPY / QQQ context for that session (public market data)
+# It does NOT attempt per-symbol EQUITY $ impact for historical days: the
+# warehouse has no per-day running share count per symbol (documented gap
+# in mart_daily_pnl), and reconstructing FIFO holdings in a request
+# handler is exactly the class of Flask-side computation AGENTS.md bans.
+# The account-value delta already folds equity MTM into the total.
+# ═════════════════════════════════════════════════════════════════════════
+
+DAY_ACCOUNTS_QUERY = """
+SELECT
+    tenant_id, account, user_id, date,
+    account_value,
+    ROUND(COALESCE(delta_1d, 0), 2) AS delta_1d
+FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
+WHERE date = @day
+  {tenant_filter}
+"""
+
+DAY_TRADES_QUERY = """
+SELECT
+    tenant_id, account, user_id, trade_date, action, trade_symbol,
+    underlying_symbol, description, quantity, price, amount, instrument_type
+FROM `ccwj-dbt.analytics.stg_history`
+WHERE trade_date = @day
+  AND action != 'dividend'  -- dividends render from int_dividend_events
+  {tenant_filter}
+ORDER BY underlying_symbol, ABS(amount) DESC
+"""
+
+# Same shape as TODAY_OPTIONS_MOVES_QUERY but anchored on @day: option day
+# move = delta of (cumulative_options_pnl + open_options_unrealized_pnl)
+# between @day and the previous mart date. cur.date must equal @day exactly
+# so a stale last-row before a gap is never attributed to this day.
+# Symbol-grain aggregate: tenant-scoped in SQL, nothing leakable to merge.
+DAY_OPTIONS_MOVES_QUERY = """
+WITH opt AS (
+    SELECT
+        tenant_id, account, user_id, symbol, date,
+        COALESCE(cumulative_options_pnl, 0)
+          + COALESCE(open_options_unrealized_pnl, 0) AS opt_total,
+        COALESCE(open_options_unrealized_pnl, 0) AS open_mtm
+    FROM `ccwj-dbt.analytics.mart_daily_pnl`
+    WHERE date BETWEEN DATE_SUB(@day, INTERVAL 10 DAY) AND @day
+      {tenant_filter}
+),
+ranked AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY tenant_id, account, user_id, symbol
+            ORDER BY date DESC
+        ) AS rn
+    FROM opt
+),
+delta AS (
+    SELECT
+        cur.symbol,
+        cur.opt_total - COALESCE(prev.opt_total, 0) AS day_change,
+        cur.open_mtm,
+        COALESCE(prev.open_mtm, 0) AS prev_open_mtm
+    FROM ranked cur
+    LEFT JOIN ranked prev
+        ON (cur.tenant_id IS NOT DISTINCT FROM prev.tenant_id)
+        AND cur.account = prev.account
+        AND (cur.user_id IS NOT DISTINCT FROM prev.user_id)
+        AND cur.symbol = prev.symbol
+        AND prev.rn = 2
+    WHERE cur.rn = 1 AND cur.date = @day
+)
+SELECT
+    symbol,
+    ROUND(SUM(day_change), 2) AS dollar_impact
+FROM delta
+WHERE open_mtm != 0 OR prev_open_mtm != 0 OR day_change != 0
+GROUP BY symbol
+HAVING ABS(dollar_impact) >= 0.01
+ORDER BY dollar_impact DESC
+"""
+
+DAY_DIVIDENDS_QUERY = """
+SELECT
+    symbol,
+    ROUND(SUM(amount), 2) AS amount
+FROM `ccwj-dbt.analytics.int_dividend_events`
+WHERE trade_date = @day
+  {tenant_filter}
+GROUP BY symbol
+HAVING ABS(amount) >= 0.01
+ORDER BY amount DESC
+"""
+
+# Public market data (SPY/QQQ session context) — no tenant column exists and
+# none is needed; do NOT run this frame through the tenant filter (it would
+# fail closed to empty — see bigquery-tenant-isolation rule, point 4).
+DAY_MARKET_QUERY = """
+WITH px AS (
+    SELECT symbol, date, ANY_VALUE(close_price) AS close_price
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
+    WHERE symbol IN ('SPY', 'QQQ')
+      AND close_price IS NOT NULL AND close_price > 0
+      AND date BETWEEN DATE_SUB(@day, INTERVAL 10 DAY) AND @day
+    GROUP BY symbol, date
+),
+ranked AS (
+    SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+    FROM px
+)
+SELECT
+    cur.symbol,
+    cur.close_price,
+    prev.close_price AS prev_close,
+    ROUND(SAFE_DIVIDE(cur.close_price - prev.close_price, prev.close_price) * 100, 2) AS pct_change
+FROM ranked cur
+LEFT JOIN ranked prev ON cur.symbol = prev.symbol AND prev.rn = 2
+WHERE cur.rn = 1 AND cur.date = @day
+"""
+
+_DAY_ACTION_VERBS = {
+    "equity_buy": "Bought",
+    "equity_sell": "Sold",
+    "equity_sell_short": "Sold short",
+    "option_sell_to_open": "Sold to open",
+    "option_buy_to_open": "Bought to open",
+    "option_buy_to_close": "Bought to close",
+    "option_sell_to_close": "Sold to close",
+    "option_expired": "Expired",
+    "option_assigned": "Assigned",
+    "option_exercised": "Exercised",
+    "margin_interest": "Margin interest",
+    "credit_interest": "Interest",
+    "adr_fee": "ADR fee",
+    "cash_transfer": "Cash transfer",
+}
+
+_TRADE_ACTIONS = {
+    "equity_buy", "equity_sell", "equity_sell_short",
+    "option_sell_to_open", "option_buy_to_open",
+    "option_buy_to_close", "option_sell_to_close",
+    "option_expired", "option_assigned", "option_exercised",
+}
+
+
+def _adjacent_weekday(d, step):
+    """Next/previous Mon-Fri date from ``d`` (step = +1 / -1)."""
+    d = d + timedelta(days=step)
+    while d.weekday() >= 5:
+        d = d + timedelta(days=step)
+    return d
+
+
+@app.route("/daily-review/day/<day_str>")
+@login_required
+def day_detail(day_str):
+    """Time-machine drill-down: everything that happened on one past day."""
+    from app.routes import _redirect_if_no_accounts
+
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
+
+    try:
+        day = date.fromisoformat(day_str)
+    except ValueError:
+        abort(404)
+
+    prof = get_user_profile(current_user.id) or {}
+    user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
+    today = _date_in_user_tz(user_tz)
+    if day >= today:
+        # Today and the future belong to the live Daily Review.
+        return redirect(url_for("weekly_review", account=request.args.get("account") or None))
+
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+
+    client = get_bigquery_client()
+    cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("day", "DATE", day),
+    ])
+    batch = _bq_parallel(client, {
+        "accounts": (DAY_ACCOUNTS_QUERY.format(tenant_filter=tenant_filter), cfg),
+        "trades": (DAY_TRADES_QUERY.format(tenant_filter=tenant_filter), cfg),
+        "options": (DAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter), cfg),
+        "dividends": (DAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter), cfg),
+        "market": (DAY_MARKET_QUERY, cfg),
+    })
+
+    # ── Per-account value + delta ─────────────────────────────────────
+    accounts_df = _filter_df_by_tenant_ids(batch["accounts"], tenant_ids)
+    label_map = _tenant_label_map_for_user(current_user.id)
+    account_rows = []
+    total_value = 0.0
+    total_delta = 0.0
+    for _, r in accounts_df.sort_values("account_value", ascending=False).iterrows():
+        value = float(r.get("account_value") or 0)
+        delta = float(r.get("delta_1d") or 0)
+        prev_value = value - delta
+        account_rows.append({
+            "label": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "value": value,
+            "delta": delta,
+            "delta_pct": (delta / prev_value * 100) if prev_value else None,
+        })
+        total_value += value
+        total_delta += delta
+    prev_total = total_value - total_delta
+    total_delta_pct = (total_delta / prev_total * 100) if prev_total else None
+
+    # ── Fills that day ────────────────────────────────────────────────
+    trades_df = _filter_df_by_tenant_ids(batch["trades"], tenant_ids)
+    trade_rows, cash_rows = [], []
+    for _, r in trades_df.iterrows():
+        action = str(r.get("action") or "")
+        row = {
+            "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
+            "action": action,
+            "symbol": str(r.get("underlying_symbol") or "").strip(),
+            "trade_symbol": str(r.get("trade_symbol") or "").strip(),
+            "description": str(r.get("description") or "").strip(),
+            "quantity": float(r.get("quantity")) if pd.notna(r.get("quantity")) else None,
+            "price": float(r.get("price")) if pd.notna(r.get("price")) else None,
+            "amount": float(r.get("amount") or 0),
+            "account": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "is_option": action.startswith("option_"),
+        }
+        (trade_rows if action in _TRADE_ACTIONS else cash_rows).append(row)
+
+    # ── Option day moves / dividends (symbol-grain SQL aggregates) ────
+    options_df = batch["options"]
+    option_rows = [
+        {"symbol": str(r.get("symbol") or ""), "impact": float(r.get("dollar_impact") or 0)}
+        for _, r in options_df.iterrows()
+    ] if not options_df.empty else []
+
+    dividends_df = batch["dividends"]
+    dividend_rows = [
+        {"symbol": str(r.get("symbol") or ""), "amount": float(r.get("amount") or 0)}
+        for _, r in dividends_df.iterrows()
+    ] if not dividends_df.empty else []
+
+    market_rows = []
+    market_df = batch["market"]
+    if not market_df.empty:
+        for _, r in market_df.iterrows():
+            market_rows.append({
+                "symbol": str(r.get("symbol") or ""),
+                "close": float(r.get("close_price") or 0),
+                "pct": float(r.get("pct_change")) if pd.notna(r.get("pct_change")) else None,
+            })
+
+    prev_day = _adjacent_weekday(day, -1)
+    next_day = _adjacent_weekday(day, +1)
+    has_any = bool(account_rows or trade_rows or cash_rows or option_rows or dividend_rows)
+
+    return render_template(
+        "day_detail.html",
+        title=day.strftime("%A, %b %-d"),
+        day=day,
+        day_label=day.strftime("%A, %B %-d, %Y"),
+        is_weekend=day.weekday() >= 5,
+        prev_day=prev_day,
+        next_day=next_day if next_day < today else None,
+        selected_account=selected_account,
+        user_accounts=_user_account_list(),
+        account_rows=account_rows,
+        total_value=total_value,
+        total_delta=total_delta,
+        total_delta_pct=total_delta_pct,
+        trade_rows=trade_rows,
+        cash_rows=cash_rows,
+        option_rows=option_rows,
+        dividend_rows=dividend_rows,
+        market_rows=market_rows,
+        has_any=has_any,
+    )

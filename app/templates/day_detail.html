@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{# Time-machine day drill-down — linked from every Daily Review heatmap
+   cell. One past day: account swing, fills, option moves, dividends,
+   market context. See day_detail() in app/weekly_review.py. #}
+
+{% block content %}
+<style>
+    .dd-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 14px; color: #fff; padding: 1.5rem 1.75rem;
+    }
+    .dd-hero .dd-date { font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
+    .dd-hero .dd-delta { font-size: 2rem; font-weight: 800; }
+    .dd-hero .dd-delta.pos { color: #4ade80; }
+    .dd-hero .dd-delta.neg { color: #f87171; }
+    .dd-hero .dd-sub { color: #94a3b8; font-size: .9rem; }
+    .dd-nav a { color: #cbd5e1; text-decoration: none; font-size: .85rem; }
+    .dd-nav a:hover { color: #fff; }
+    .dd-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .dd-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; font-weight: 700; margin-bottom: .85rem; }
+    .dd-table { width: 100%; font-size: .9rem; }
+    .dd-table td { padding: .45rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .dd-table tr:last-child td { border-bottom: 0; }
+    .dd-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
+    .dd-money.pos { color: var(--color-positive); }
+    .dd-money.neg { color: var(--color-negative); }
+    .dd-muted { color: #94a3b8; font-size: .8rem; }
+    .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
+    .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
+    .dd-verb.sell { background: #fef2f2; color: #b91c1c; }
+    .dd-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
+    .dd-sym { font-weight: 700; }
+    .dd-empty { color: #94a3b8; font-size: .9rem; padding: .35rem 0; }
+    @media (max-width: 480px) {
+        .dd-hero { padding: 1.1rem 1rem; }
+        .dd-hero .dd-delta { font-size: 1.6rem; }
+        .dd-table { font-size: .84rem; }
+    }
+</style>
+
+<div class="dd-hero mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <div class="dd-date">Day review &middot; {{ day_label }}</div>
+            {% if account_rows %}
+            <div class="dd-delta {{ 'pos' if total_delta > 0 else 'neg' if total_delta < 0 else '' }}">
+                {{ "+" if total_delta > 0 else "" }}${{ "{:,.0f}".format(total_delta) }}
+                {% if total_delta_pct is not none %}
+                <span style="font-size:1rem; font-weight:600;">({{ "+" if total_delta_pct > 0 else "" }}{{ "%.2f"|format(total_delta_pct) }}%)</span>
+                {% endif %}
+            </div>
+            <div class="dd-sub">${{ "{:,.0f}".format(total_value) }} total account value at that close</div>
+            {% elif is_weekend %}
+            <div class="dd-delta">Weekend</div>
+            <div class="dd-sub">Markets were closed — any rows below are broker postings dated that day.</div>
+            {% else %}
+            <div class="dd-delta">&mdash;</div>
+            <div class="dd-sub">No account snapshot for this day (before daily balance capture began, or a market holiday).</div>
+            {% endif %}
+            {% if market_rows %}
+            <div class="dd-sub mt-2">
+                Market that day:
+                {% for m in market_rows %}
+                {{ m.symbol }} {{ "+" if m.pct and m.pct > 0 else "" }}{{ "%.1f"|format(m.pct) if m.pct is not none else "—" }}%{{ " · " if not loop.last }}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="dd-nav text-end">
+            <a href="{{ url_for('day_detail', day_str=prev_day.isoformat(), account=selected_account or None) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+            {% if next_day %}
+            <span class="mx-1" style="color:#475569;">|</span>
+            <a href="{{ url_for('day_detail', day_str=next_day.isoformat(), account=selected_account or None) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+            {% endif %}
+            <div class="mt-2">
+                <a href="{{ url_for('weekly_review', account=selected_account or None) }}">Back to Daily Review</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if account_rows and account_rows|length > 1 %}
+<div class="card dd-card mb-4">
+    <div class="card-body p-3 p-md-4">
+        <h2>By account</h2>
+        <table class="dd-table">
+            {% for a in account_rows %}
+            <tr>
+                <td>{{ a.label }}</td>
+                <td class="dd-money">${{ "{:,.0f}".format(a.value) }}</td>
+                <td class="dd-money {{ 'pos' if a.delta > 0 else 'neg' if a.delta < 0 else '' }}">
+                    {{ "+" if a.delta > 0 else "" }}${{ "{:,.0f}".format(a.delta) }}
+                    {% if a.delta_pct is not none %}<span class="dd-muted">({{ "+" if a.delta_pct > 0 else "" }}{{ "%.2f"|format(a.delta_pct) }}%)</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-12 col-lg-7">
+        <div class="card dd-card mb-4">
+            <div class="card-body p-3 p-md-4">
+                <h2>Trades that day</h2>
+                {% if trade_rows %}
+                <table class="dd-table">
+                    {% for t in trade_rows %}
+                    <tr>
+                        <td>
+                            <span class="dd-verb {{ 'lifecycle' if t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                        </td>
+                        <td>
+                            {% if t.symbol %}<a class="dd-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                            {% if t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
+                            <div class="dd-muted">{{ t.trade_symbol }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="dd-muted d-none d-sm-table-cell">
+                            {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
+                            {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
+                        </td>
+                        <td class="dd-money {{ 'pos' if t.amount > 0 else 'neg' if t.amount < 0 else '' }}">
+                            {% if t.amount %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <div class="dd-empty">No fills on this day.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+        <div class="card dd-card mb-4">
+            <div class="card-body p-3 p-md-4">
+                <h2>Option P&amp;L moves</h2>
+                {% if option_rows %}
+                <table class="dd-table">
+                    {% for o in option_rows %}
+                    <tr>
+                        <td><a class="dd-sym" href="{{ url_for('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
+                        <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ "+" if o.impact > 0 else "" }}${{ "{:,.2f}".format(o.impact) }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                <div class="dd-muted mt-2">Mark-to-market drift plus anything realized that day.</div>
+                {% else %}
+                <div class="dd-empty">No option P&amp;L movement recorded.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card dd-card mb-4">
+            <div class="card-body p-3 p-md-4">
+                <h2>Dividends paid</h2>
+                {% if dividend_rows %}
+                <table class="dd-table">
+                    {% for d in dividend_rows %}
+                    <tr>
+                        <td><a class="dd-sym" href="{{ url_for('position_detail', symbol=d.symbol) }}">{{ d.symbol }}</a></td>
+                        <td class="dd-money pos">+${{ "{:,.2f}".format(d.amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <div class="dd-empty">No dividends landed this day.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if cash_rows %}
+        <div class="card dd-card mb-4">
+            <div class="card-body p-3 p-md-4">
+                <h2>Cash &amp; fees</h2>
+                <table class="dd-table">
+                    {% for c in cash_rows %}
+                    <tr>
+                        <td>{{ c.verb }}{% if c.description %} <span class="dd-muted">{{ c.description|truncate(40) }}</span>{% endif %}</td>
+                        <td class="dd-money {{ 'pos' if c.amount > 0 else 'neg' if c.amount < 0 else '' }}">
+                            {{ "+" if c.amount > 0 else "" }}${{ "{:,.2f}".format(c.amount) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if not has_any and not is_weekend %}
+<div class="text-center dd-muted my-4">
+    Nothing recorded for this day — it may predate your broker connection.
+</div>
+{% endif %}
+{% endblock %}
