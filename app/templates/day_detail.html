@@ -31,11 +31,27 @@
     .dd-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
     .dd-sym { font-weight: 700; }
     .dd-empty { color: #94a3b8; font-size: .9rem; padding: .35rem 0; }
+    .dd-card .card-body { overflow-x: auto; }
     @media (max-width: 480px) {
         .dd-hero { padding: 1.1rem 1rem; }
         .dd-hero .dd-delta { font-size: 1.6rem; }
         .dd-table { font-size: .84rem; }
+        .dd-table td { padding: .4rem .3rem; }
+        /* Fixed layout is the only thing that reliably stops OCC option
+           symbols ("LITE 261120C01100000") pushing the money column
+           off-screen at phone widths — auto layout expands the table to
+           min-content regardless of word-break. */
+        .dd-table { table-layout: fixed; }
+        .dd-table td:first-child { width: 30%; }
+        .dd-table td:last-child { width: 37%; }
+        .dd-table .dd-muted { word-break: break-all; }
+        .dd-verb { white-space: normal; }
     }
+    [data-bs-theme="dark"] .dd-card { background: #111a2c; }
+    [data-bs-theme="dark"] .dd-table td { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .dd-verb.buy { background: #172554; color: #93c5fd; }
+    [data-bs-theme="dark"] .dd-verb.sell { background: #450a0a; color: #fca5a5; }
+    [data-bs-theme="dark"] .dd-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
 </style>
 
 <div class="dd-hero mb-4">
