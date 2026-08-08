@@ -242,12 +242,12 @@
     }
   });
 
-  // Navbar search button (mobile discoverability — no keyboard there).
-  var trigger = document.getElementById("ht-palette-trigger");
-  if (trigger) {
+  // Navbar search buttons (desktop pill inside the collapse + phone icon
+  // next to the hamburger — no keyboard shortcuts on mobile).
+  document.querySelectorAll(".ht-palette-open").forEach(function (trigger) {
     trigger.addEventListener("click", function (e) {
       e.preventDefault();
       openPalette();
     });
-  }
+  });
 })();

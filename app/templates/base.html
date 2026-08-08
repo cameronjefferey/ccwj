@@ -313,6 +313,19 @@
             position: sticky; top: 0; z-index: 5;
             background: #fff; box-shadow: 0 1px 0 #e5e7eb;
         }
+
+        /* ── Phone density pass (Aug 2026) ──────────────────────────
+           Financial tables + cards need every horizontal pixel on a
+           390px viewport. Pairs with the mobile column-priority system
+           in tables.js (<th data-m="hide">) that collapses low-priority
+           columns so the identity + headline-P&L columns fit unclipped. */
+        @media (max-width: 767px) {
+            .table-sm > :not(caption) > * > * { padding: .35rem .4rem; }
+            .table { font-size: .85rem; }
+            .card .card-body.p-3, .card .card-body.p-4 { padding: .85rem !important; }
+            h1 { font-size: 1.5rem; }
+            .navbar { margin-bottom: 1rem !important; }
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -337,11 +350,22 @@
                 HappyTrader
                 <small>your trading mirror</small>
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#navContent" aria-controls="navContent"
-                    aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
+            <div class="d-flex align-items-center gap-2">
+                {% if current_user.is_authenticated %}
+                {# Phone-only palette trigger OUTSIDE the collapse: on mobile
+                   the quick-switcher is the fastest way between symbols, so
+                   it must not hide behind the hamburger. #}
+                <button type="button" class="ht-search-btn d-lg-none ht-palette-open"
+                        aria-label="Quick switcher" title="Jump to a symbol or page">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
+                </button>
+                {% endif %}
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#navContent" aria-controls="navContent"
+                        aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+            </div>
             <div class="collapse navbar-collapse" id="navContent">
             {% if current_user.is_authenticated %}
             {% set ep = request.endpoint or '' %}
@@ -441,8 +465,8 @@
                 {% endif %}
             </ul>
             <ul class="navbar-nav align-items-center">
-                <li class="nav-item py-1 py-lg-0 me-lg-2">
-                    <button type="button" class="ht-search-btn" id="ht-palette-trigger"
+                <li class="nav-item py-1 py-lg-0 me-lg-2 d-none d-lg-block">
+                    <button type="button" class="ht-search-btn ht-palette-open" id="ht-palette-trigger"
                             aria-label="Quick switcher" title="Jump to a symbol or page">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
                         <span>Jump to&hellip;</span>
@@ -554,7 +578,7 @@
         {% endwith %}
     </div>
 
-    <div class="container-fluid px-4">
+    <div class="container-fluid px-2 px-md-4">
         {# Confirm-your-email nudge. Set by `_inject_email_verification_needed`
            in app/auth.py from users.email_verified_at. #}
         {% if email_unverified %}

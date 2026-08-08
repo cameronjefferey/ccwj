@@ -1,5 +1,6 @@
 /*
- * Shared table behavior: column sorting + row-click navigation.
+ * Shared table behavior: column sorting + row-click navigation + mobile
+ * column priority.
  *
  * Loaded once from base.html. Uses a single document-level click listener
  * (event delegation) so tables injected AFTER load — e.g. the /accounts
@@ -13,12 +14,68 @@
  *   Row navigation:
  *     <tr data-href="/position/AAPL"> ... </tr>
  *     <td data-no-row-nav> ... </td>            // clicks here never navigate
+ *   Mobile column priority:
+ *     <th data-m="hide">                        // hide this column on phones
+ *   Phones can't fit 8-12 column financial tables; without priorities the
+ *   columns that matter (P&L) end up clipped off the right edge and the
+ *   page reads as broken. Mark the low-priority columns and they collapse
+ *   under 768px, leaving identity + headline numbers visible. Rows whose
+ *   cell count differs from the header (colspan totals/footers) are left
+ *   untouched.
  *   Clicks on <a>/<button>/<input>/<select>/<textarea>/<label> and
  *   modifier/middle clicks are always left alone (so links open new tabs,
  *   inline editors and action buttons keep working).
  */
 (function () {
   "use strict";
+
+  /* ---- Mobile column priority ---------------------------------------- */
+  var mq = window.matchMedia("(max-width: 767px)");
+
+  function applyMobileColumns() {
+    var hide = mq.matches;
+    document.querySelectorAll("table").forEach(function (table) {
+      // table.tHead / table.rows scope to THIS table only — a nested table
+      // (e.g. raw trades inside an expanded leg row) is handled by its own
+      // pass and must not pollute the outer table's column indexes.
+      var thead = table.tHead;
+      if (!thead || !thead.rows.length) return;
+      var ths = thead.rows[0].cells;
+      var idxs = [];
+      for (var i = 0; i < ths.length; i++) {
+        if (ths[i].dataset.m === "hide") idxs.push(i);
+      }
+      if (!idxs.length) return;
+      var n = ths.length;
+      for (var r = 0; r < table.rows.length; r++) {
+        var row = table.rows[r];
+        if (row.cells.length !== n) continue; // colspan rows: leave alone
+        for (var k = 0; k < idxs.length; k++) {
+          row.cells[idxs[k]].style.display = hide ? "none" : "";
+        }
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", applyMobileColumns);
+  } else {
+    applyMobileColumns();
+  }
+  if (mq.addEventListener) mq.addEventListener("change", applyMobileColumns);
+
+  // Tables injected after load (accounts breakdown fragments) get the same
+  // treatment. Debounced so a burst of DOM writes costs one pass.
+  var moTimer = null;
+  new MutationObserver(function (muts) {
+    for (var i = 0; i < muts.length; i++) {
+      if (muts[i].addedNodes.length) {
+        clearTimeout(moTimer);
+        moTimer = setTimeout(applyMobileColumns, 50);
+        return;
+      }
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
   function sortTable(th) {
     var table = th.closest("table");

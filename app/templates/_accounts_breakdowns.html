@@ -30,16 +30,19 @@
             <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
+                        {# data-m="hide": collapsed on phones (tables.js) so
+                           Symbol | G/L Stock | G/L Option | Net | % Return
+                           fit a 390px viewport unclipped. #}
                         <th class="sortable" data-sort="str">Symbol</th>
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
-                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Dividend</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num">Capital</th>
-                        <th class="sortable text-end" data-sort="num">Days</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Capital</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Days</th>
                         <th class="sortable text-end" data-sort="num">% Return</th>
-                        <th class="sortable text-end" data-sort="num">Annualized</th>
-                        <th class="sortable" data-sort="str">Status</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Annualized</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -91,15 +94,15 @@
                 <thead class="table-light">
                     <tr>
                         <th class="sortable" data-sort="str">Strategy</th>
-                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Symbols</th>
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
-                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Dividend</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num">Capital</th>
-                        <th class="sortable text-end" data-sort="num">Max Days</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Capital</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Max Days</th>
                         <th class="sortable text-end" data-sort="num">% Return</th>
-                        <th class="sortable text-end" data-sort="num">Annualized</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Annualized</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -156,12 +159,12 @@
                 <thead class="table-light">
                     <tr>
                         <th class="sortable" data-sort="str">Sector</th>
-                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Symbols</th>
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
-                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Dividend</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num">Current Value</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Current Value</th>
                         <th class="sortable text-end" data-sort="num">% Return</th>
                     </tr>
                 </thead>
@@ -197,12 +200,12 @@
                 <thead class="table-light">
                     <tr>
                         <th class="sortable" data-sort="str">Industry</th>
-                        <th class="sortable text-end" data-sort="num">Symbols</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Symbols</th>
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
-                        <th class="sortable text-end" data-sort="num">Dividend</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Dividend</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num">Current Value</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">Current Value</th>
                         <th class="sortable text-end" data-sort="num">% Return</th>
                     </tr>
                 </thead>

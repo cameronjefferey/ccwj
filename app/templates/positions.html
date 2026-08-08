@@ -226,7 +226,19 @@
                  and selected_end_date == today.strftime('%Y-%m-%d') %}
 {% set _is_alltime = (not selected_start_date) and (not selected_end_date) %}
 
-<form method="get" class="filter-bar">
+{# On phones the six stacked filter groups push the actual content a full
+   screen down — collapse them behind a toggle (always expanded on lg+). #}
+{% set _active_filters = [selected_account, selected_symbol, selected_strategy,
+                          selected_subsector, selected_tag,
+                          (selected_statuses if not _all_statuses else None),
+                          (selected_start_date or selected_end_date)]
+                         | select | list | length %}
+<button class="btn btn-sm btn-outline-secondary d-lg-none mb-2" type="button"
+        data-bs-toggle="collapse" data-bs-target="#posFilters"
+        aria-expanded="false" aria-controls="posFilters">
+    Filters{% if _active_filters %} <span class="badge text-bg-dark ms-1">{{ _active_filters }}</span>{% endif %}
+</button>
+<form method="get" class="filter-bar collapse d-lg-flex" id="posFilters">
     {# Picker lists the user's full (disambiguated) account set so several
        physical accounts sharing a base label (e.g. multiple "Schwab
        Account"s) are each independently selectable. ``user_accounts`` is
@@ -451,22 +463,24 @@
         <div class="table-responsive ht-sticky">
             <table class="table table-hover table-sm align-middle mb-0" id="symbolTable">
                 <thead class="table-light">
+                    {# data-m="hide": collapsed on phones (tables.js) so
+                       Account | Symbol | Total P&L | Win Rate fit unclipped. #}
                     <tr>
                         <th class="sortable" data-sort="str">Account</th>
                         <th class="sortable" data-sort="str">Symbol</th>
-                        <th class="sortable" data-sort="str">Subsector</th>
-                        <th>Strategies</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Subsector</th>
+                        <th data-m="hide">Strategies</th>
                         <th class="sortable" data-sort="num"
                             title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
                             Total P&amp;L
                         </th>
-                        <th class="sortable" data-sort="num">Realized</th>
-                        <th class="sortable" data-sort="num">Unrealized</th>
-                        <th class="sortable" data-sort="num">Dividends</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
                         <th class="sortable" data-sort="num">Win Rate</th>
-                        <th class="sortable" data-sort="num">Trades</th>
-                        <th class="sortable" data-sort="num">W / L</th>
-                        <th class="sortable" data-sort="num">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Trades</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -550,25 +564,25 @@
             <table class="table table-hover table-sm align-middle mb-0" id="positionsTable">
                 <thead class="table-light">
                     <tr>
-                        <th class="sortable" data-sort="str">Account</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Account</th>
                         <th class="sortable" data-sort="str">Strategy</th>
-                        <th class="sortable" data-sort="str">Status</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Status</th>
                         <th class="sortable" data-sort="num"
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
                             Total P&amp;L
                         </th>
-                        <th class="sortable" data-sort="num">Realized</th>
-                        <th class="sortable" data-sort="num">Unrealized</th>
-                        <th class="sortable" data-sort="num"
+                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                        <th class="sortable" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
                             Dividends
                         </th>
-                        <th class="sortable" data-sort="num">Win Rate</th>
-                        <th class="sortable" data-sort="num">Trades</th>
-                        <th class="sortable" data-sort="num">W / L</th>
-                        <th class="sortable" data-sort="num">Avg P&amp;L</th>
-                        <th class="sortable" data-sort="num">Avg Days</th>
-                        <th class="sortable" data-sort="num">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Trades</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Avg P&amp;L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Avg Days</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
                     </tr>
                 </thead>
                 <tbody>

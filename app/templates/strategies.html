@@ -257,7 +257,7 @@
                     <th class="text-end">Total P&amp;L</th>
                     <th class="text-end">Realized</th>
                     <th class="text-end">Unrealized</th>
-                    <th>Detail</th>
+                    <th data-m="hide">Detail</th>
                 </tr>
             </thead>
             <tbody>
@@ -351,13 +351,14 @@
         <table class="table table-hover align-middle mb-0 sym-table">
             <thead class="table-light">
                 <tr>
+                    {# data-m="hide": collapsed on phones (tables.js). #}
                     <th class="sortable" data-sort="str">Symbol</th>
                     <th class="sortable" data-sort="str">Status</th>
                     <th class="sortable text-end" data-sort="num">Total</th>
-                    <th class="sortable text-end" data-sort="num">Trades</th>
+                    <th class="sortable text-end" data-sort="num" data-m="hide">Trades</th>
                     <th class="sortable text-end" data-sort="num">Win %</th>
-                    <th class="sortable text-end" data-sort="num">Avg P&amp;L</th>
-                    <th class="sortable text-end" data-sort="num">Avg Days</th>
+                    <th class="sortable text-end" data-sort="num" data-m="hide">Avg P&amp;L</th>
+                    <th class="sortable text-end" data-sort="num" data-m="hide">Avg Days</th>
                 </tr>
             </thead>
             <tbody>

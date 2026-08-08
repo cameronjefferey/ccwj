@@ -206,6 +206,17 @@
         .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, 1fr); }
         .snapshot-table .snap-col-month { display: none; }
     }
+    @media (max-width: 480px) {
+        /* Phone: every horizontal pixel counts — tighter gutters so the
+           value + vs-yesterday + vs-1w columns fit unclipped at 390px. */
+        .snapshot-section { padding: .9rem .75rem; }
+        .snapshot-table { grid-template-columns: minmax(88px, 1.1fr) repeat(3, minmax(0, 1fr)); }
+        .snapshot-table-head > div { padding-right: .35rem; font-size: .62rem; }
+        .snapshot-table-row > div { padding-right: .35rem; }
+        .snapshot-table .acct-name { font-size: .82rem; }
+        .snapshot-table .snap-cell-val { font-size: .88rem; }
+        .snapshot-table-row.total .snap-cell-val { font-size: .95rem; }
+    }
 
     /* ── Today's movers ── */
     .movers-grid {
@@ -289,6 +300,16 @@
         background: #1e3a8a; color: #fff !important; text-decoration: none;
     }
     .watch-ef:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
+    @media (max-width: 480px) {
+        /* Phone: the subsector chips ("Communication Equipment") were
+           pushing the date + EF pill off the card edge. Moneyness badges
+           (ITM/ATM/OTM) are a signal, not decoration — they stay. */
+        .watch-block { padding: .8rem .7rem; }
+        .watch-item { grid-template-columns: 2.6rem 1fr auto; gap: .5rem; }
+        .watch-sym .watch-badge:not(.itm):not(.atm):not(.otm) { display: none; }
+        .watch-ef { font-size: .66rem; padding: .18rem .45rem; }
+        .watch-aux { font-size: .76rem; }
+    }
 
     /* ── Today strip (open positions cards) ── */
     .today-strip {
@@ -375,6 +396,14 @@
         position: sticky; top: 0; z-index: 1;
     }
     .breakdown-table th.left, .breakdown-table td.left { text-align: left; }
+    @media (max-width: 480px) {
+        /* Phone: tighter gutters + wrappable identity column so the
+           Stock | Options | Total money columns fit unclipped
+           (low-priority columns are already hidden via data-m). */
+        .breakdown-table { font-size: .8rem; }
+        .breakdown-table th, .breakdown-table td { padding: .45rem .35rem; }
+        .breakdown-table th.left, .breakdown-table td.left { white-space: normal; }
+    }
     .breakdown-table tbody tr:hover { background: #fafbfc; }
     .breakdown-table .row-symbol {
         font-weight: 700; color: #0f172a; text-decoration: none;
@@ -1180,13 +1209,14 @@
         <table class="breakdown-table">
             <thead>
                 <tr>
+                    {# data-m="hide": collapsed on phones (tables.js). #}
                     <th class="left sortable" data-sort="str">Account</th>
                     <th class="sortable" data-sort="num">Stock</th>
                     <th class="sortable" data-sort="num">Options</th>
-                    <th class="sortable" data-sort="num">Dividend</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Dividend</th>
                     <th class="sortable" data-sort="num">Total</th>
-                    <th class="sortable" data-sort="num">G/L %</th>
-                    <th class="sortable" data-sort="num">Annualized</th>
+                    <th class="sortable" data-sort="num" data-m="hide">G/L %</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Annualized</th>
                 </tr>
             </thead>
             <tbody>
@@ -1305,13 +1335,14 @@
         <table class="breakdown-table">
             <thead>
                 <tr>
-                    <th class="left sortable" data-sort="str">Account</th>
+                    {# data-m="hide": collapsed on phones (tables.js). #}
+                    <th class="left sortable" data-sort="str" data-m="hide">Account</th>
                     <th class="left sortable" data-sort="str">Trade</th>
-                    <th class="left sortable" data-sort="str">Strategy</th>
-                    <th class="sortable" data-sort="str">Opened</th>
+                    <th class="left sortable" data-sort="str" data-m="hide">Strategy</th>
+                    <th class="sortable" data-sort="str" data-m="hide">Opened</th>
                     <th class="left sortable" data-sort="str">Status</th>
                     <th class="sortable" data-sort="num">Result</th>
-                    <th class="left">Tags</th>
+                    <th class="left" data-m="hide">Tags</th>
                 </tr>
             </thead>
             <tbody>

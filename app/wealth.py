@@ -308,7 +308,9 @@ def _build_summary(df, exclude_transfers=False):
     net_deposits_in_range = round(float(latest["net_dep"]) - float(first["net_dep"]), 2)
 
     return {
-        "as_of": today.isoformat() if hasattr(today, "isoformat") else str(today),
+        # Human date, not isoformat — pandas Timestamps carry a midnight
+        # time component that rendered as "2026-08-08T00:00:00" in the hero.
+        "as_of": today.strftime("%b %-d, %Y") if hasattr(today, "strftime") else str(today),
         "account_value": round(float(latest["account_value"]), 2),
         "cash_value": round(float(latest["cash_value"]), 2),
         "equity_value": round(float(latest["equity_value"]), 2),

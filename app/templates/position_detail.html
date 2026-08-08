@@ -576,7 +576,7 @@
                     <th title="Realized + unrealized for this type, scoped to the current leg filter.">Total P&amp;L</th>
                     <th title="Closed-out P&amp;L: equity sale proceeds vs cost, settled options, cash dividends received.">Realized</th>
                     <th title="Mark-to-market on what's still open. Dividends have no unrealized component.">Unrealized</th>
-                    <th>Count</th>
+                    <th data-m="hide">Count</th>
                 </tr>
             </thead>
             <tbody>
@@ -639,18 +639,19 @@
         <table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th class="sortable" data-sort="str">Account</th>
+                    {# data-m="hide": collapsed on phones (tables.js). #}
+                    <th class="sortable" data-sort="str" data-m="hide">Account</th>
                     <th class="sortable" data-sort="str">Strategy</th>
                     <th class="sortable" data-sort="str">Status</th>
                     <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total P&amp;L</th>
-                    <th class="sortable" data-sort="num">Realized</th>
-                    <th class="sortable" data-sort="num">Unrealized</th>
-                    <th class="sortable" data-sort="num" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
-                    <th class="sortable" data-sort="num">Win Rate</th>
-                    <th class="sortable" data-sort="num">Trades</th>
-                    <th class="sortable" data-sort="num">Avg P&amp;L</th>
-                    <th class="sortable" data-sort="num">Avg Days</th>
-                    <th class="sortable" data-sort="num">Premium</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Realized</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                    <th class="sortable" data-sort="num" data-m="hide" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Trades</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Avg P&amp;L</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Avg Days</th>
+                    <th class="sortable" data-sort="num" data-m="hide">Premium</th>
                 </tr>
             </thead>
             <tbody>
@@ -790,17 +791,19 @@
         <table class="table table-sm table-hover align-middle mb-0" style="font-size:.8rem;">
             <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                 <tr>
+                    {# data-m="hide": collapsed on phones (tables.js) — the
+                       expander + Contract + P&L + Return stay tappable. #}
                     <th></th>
-                    <th class="text-center" style="width:3rem;">Leg</th>
+                    <th class="text-center" style="width:3rem;" data-m="hide">Leg</th>
                     <th>Contract / Leg</th>
-                    <th>Strategy</th>
-                    <th>Account</th>
-                    <th class="text-end">Qty</th>
-                    <th>Opened</th>
-                    <th>Closed</th>
-                    <th class="text-end">Days</th>
-                    <th class="text-end">Cost</th>
-                    <th class="text-end">Value / Proceeds</th>
+                    <th data-m="hide">Strategy</th>
+                    <th data-m="hide">Account</th>
+                    <th class="text-end" data-m="hide">Qty</th>
+                    <th data-m="hide">Opened</th>
+                    <th data-m="hide">Closed</th>
+                    <th class="text-end" data-m="hide">Days</th>
+                    <th class="text-end" data-m="hide">Cost</th>
+                    <th class="text-end" data-m="hide">Value / Proceeds</th>
                     <th class="text-end">P&amp;L</th>
                     <th class="text-end">Return</th>
                 </tr>
@@ -906,8 +909,8 @@
                                     <th>Date</th>
                                     <th>Action</th>
                                     <th>Qty</th>
-                                    <th class="text-end">Price</th>
-                                    <th class="text-end">Fees</th>
+                                    <th class="text-end" data-m="hide">Price</th>
+                                    <th class="text-end" data-m="hide">Fees</th>
                                     <th class="text-end">Amount</th>
                                 </tr>
                             </thead>
@@ -987,14 +990,15 @@
                 <table class="table table-sm table-hover align-middle mb-0" style="font-size:.75rem;" id="tradeTable">
                     <thead class="table-light" style="position: sticky; top: 0;">
                         <tr>
+                            {# data-m="hide": collapsed on phones (tables.js). #}
                             <th class="sortable" data-sort="str">Date</th>
-                            <th class="sortable" data-sort="str">Account</th>
+                            <th class="sortable" data-sort="str" data-m="hide">Account</th>
                             <th class="sortable" data-sort="str">Action</th>
-                            <th class="sortable" data-sort="str">Instrument</th>
-                            <th class="sortable" data-sort="str">Description</th>
+                            <th class="sortable" data-sort="str" data-m="hide">Instrument</th>
+                            <th class="sortable" data-sort="str" data-m="hide">Description</th>
                             <th class="sortable" data-sort="num">Qty</th>
-                            <th class="sortable" data-sort="num">Price</th>
-                            <th class="sortable" data-sort="num">Fees</th>
+                            <th class="sortable" data-sort="num" data-m="hide">Price</th>
+                            <th class="sortable" data-sort="num" data-m="hide">Fees</th>
                             <th class="sortable" data-sort="num">Amount</th>
                         </tr>
                     </thead>
