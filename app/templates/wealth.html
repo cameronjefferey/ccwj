@@ -222,13 +222,32 @@
             {% endfor %}
         </select>
         <input type="hidden" name="range" value="{{ selected_range }}">
+        {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
     </form>
     {% endif %}
 
-    <div class="range-toggle ms-auto">
+    {# Deposits/withdrawals toggle — strips the trader's own money in/out
+       from the change numbers + headline line so the picture is trading +
+       income only. Submits via a tiny GET form that preserves account and
+       range. #}
+    <form method="get" class="d-inline-flex align-items-center mb-0 ms-auto">
+        <input type="hidden" name="account" value="{{ selected_account }}">
+        <input type="hidden" name="range" value="{{ selected_range }}">
+        <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" role="switch"
+                   id="excludeTransfers" name="exclude_transfers" value="1"
+                   onchange="this.form.submit()"
+                   {{ 'checked' if exclude_transfers }}>
+            <label class="form-check-label small text-muted" for="excludeTransfers">
+                Exclude deposits &amp; withdrawals
+            </label>
+        </div>
+    </form>
+
+    <div class="range-toggle">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
         {% for value, label in ranges %}
-        <a href="{{ url_for('wealth', account=selected_account, range=value) }}"
+        <a href="{{ url_for('wealth', account=selected_account, range=value, exclude_transfers='1' if exclude_transfers else none) }}"
            class="{{ 'active' if selected_range == value }}">{{ label }}</a>
         {% endfor %}
     </div>
@@ -263,7 +282,9 @@
 
     <div class="col-md-3 col-6">
         <div class="kpi-card h-100">
-            <div class="kpi-label">Change in range</div>
+            <div class="kpi-label">
+                Change in range{% if exclude_transfers %} · excl. transfers{% endif %}
+            </div>
             {% if summary.change_in_range %}
             <div class="kpi-value
                 {% if summary.change_in_range.abs > 0 %}kpi-delta-pos
@@ -275,11 +296,17 @@
                 {% if summary.change_in_range.pct is not none %}
                 {{ '+' if summary.change_in_range.pct > 0 }}{{ "{:.1f}".format(summary.change_in_range.pct) }}%
                 {% else %}—{% endif %}
-                from start of window
+                {% if exclude_transfers %}from market &amp; income{% else %}from start of window{% endif %}
             </div>
             {% else %}
             <div class="kpi-value kpi-delta-flat">—</div>
             <div class="kpi-meta">Not enough history</div>
+            {% endif %}
+            {% if summary.has_transfers %}
+            <div class="kpi-meta" style="margin-top:.25rem;">
+                Net {{ 'deposited' if summary.net_deposits_in_range >= 0 else 'withdrawn' }}
+                ${{ "{:,.0f}".format(summary.net_deposits_in_range|abs) }} this window
+            </div>
             {% endif %}
         </div>
     </div>
@@ -312,7 +339,13 @@
     <h2>Account value over time</h2>
     <p class="chart-sub">
         Stacked: cash, equity, options. The black line is total account value.
-        Hover for daily numbers.
+        {% if exclude_transfers %}
+        The dashed line removes your deposits &amp; withdrawals — the gap
+        between the two lines is money you moved in or out. Hover for daily numbers.
+        {% else %}
+        Toggle <em>Exclude deposits &amp; withdrawals</em> to see the balance
+        driven by the market and income only. Hover for daily numbers.
+        {% endif %}
     </p>
     <div style="position: relative; height: 360px;">
         <canvas id="wealthChart"></canvas>
@@ -328,11 +361,25 @@
         </h2>
         <p class="small text-muted mb-2">
             Cash flows recorded in your trade history during the selected range.
-            We don't currently tag deposits or withdrawals separately, so anything
-            that isn't a trade, dividend, interest, or fee just changes total
-            account value without showing up below.
+            Deposits &amp; withdrawals are the money you moved in or out yourself —
+            they change total account value but aren't trading gains, so use the
+            toggle above to net them out.
         </p>
     </div>
+
+    {% if income_panel.has_transfers %}
+    <div class="col-md-4 col-6">
+        <div class="income-card">
+            <div class="income-label">Net deposits / withdrawals</div>
+            <div class="income-value
+                {% if income_panel.net_deposits > 0 %}kpi-delta-pos
+                {% elif income_panel.net_deposits < 0 %}kpi-delta-neg{% endif %}">
+                {{ '+' if income_panel.net_deposits > 0 }}${{ "{:,.2f}".format(income_panel.net_deposits) }}
+            </div>
+            <div class="income-meta">Money you moved in (+) or out (−)</div>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="col-md-4 col-6">
         <div class="income-card">
@@ -389,60 +436,92 @@
 
     /* Stacked area: cash, equity, options. Plot total as a non-stacked
        line on top so the user can see the total clearly even when the
-       three components add up to it (which they should). */
+       three components add up to it (which they should). When excluding
+       deposits/withdrawals, the bold line becomes the deposit-adjusted
+       value and the raw account value is shown faint for reference. */
+    const excludeTransfers = !!data.exclude_transfers;
+    const datasets = [
+        {
+            label: 'Cash',
+            data: data.cash,
+            backgroundColor: 'rgba(148, 163, 184, .55)',
+            borderColor: '#94a3b8',
+            borderWidth: 1,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: 'origin',
+            stack: 'components'
+        },
+        {
+            label: 'Equity',
+            data: data.equity,
+            backgroundColor: 'rgba(15, 52, 96, .55)',
+            borderColor: '#0f3460',
+            borderWidth: 1,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: '-1',
+            stack: 'components'
+        },
+        {
+            label: 'Options',
+            data: data.options,
+            backgroundColor: 'rgba(245, 158, 11, .55)',
+            borderColor: '#f59e0b',
+            borderWidth: 1,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: '-1',
+            stack: 'components'
+        }
+    ];
+
+    if (excludeTransfers) {
+        datasets.push({
+            label: 'With deposits/withdrawals',
+            data: data.account_value,
+            borderColor: '#94a3b8',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: false
+        });
+        datasets.push({
+            label: 'Excl. deposits/withdrawals',
+            data: data.account_value_ex_transfers,
+            borderColor: '#0f172a',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: false
+        });
+    } else {
+        datasets.push({
+            label: 'Total',
+            data: data.account_value,
+            borderColor: '#0f172a',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            tension: 0.25,
+            fill: false
+        });
+    }
+
     new Chart(ctx, {
         type: 'line',
         data: {
             labels: data.dates,
-            datasets: [
-                {
-                    label: 'Cash',
-                    data: data.cash,
-                    backgroundColor: 'rgba(148, 163, 184, .55)',
-                    borderColor: '#94a3b8',
-                    borderWidth: 1,
-                    pointRadius: 0,
-                    pointHitRadius: 6,
-                    tension: 0.25,
-                    fill: 'origin',
-                    stack: 'components'
-                },
-                {
-                    label: 'Equity',
-                    data: data.equity,
-                    backgroundColor: 'rgba(15, 52, 96, .55)',
-                    borderColor: '#0f3460',
-                    borderWidth: 1,
-                    pointRadius: 0,
-                    pointHitRadius: 6,
-                    tension: 0.25,
-                    fill: '-1',
-                    stack: 'components'
-                },
-                {
-                    label: 'Options',
-                    data: data.options,
-                    backgroundColor: 'rgba(245, 158, 11, .55)',
-                    borderColor: '#f59e0b',
-                    borderWidth: 1,
-                    pointRadius: 0,
-                    pointHitRadius: 6,
-                    tension: 0.25,
-                    fill: '-1',
-                    stack: 'components'
-                },
-                {
-                    label: 'Total',
-                    data: data.account_value,
-                    borderColor: '#0f172a',
-                    backgroundColor: 'transparent',
-                    borderWidth: 2.5,
-                    pointRadius: 0,
-                    pointHitRadius: 6,
-                    tension: 0.25,
-                    fill: false
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,

@@ -159,13 +159,26 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     "INTEREST": "Credit Interest",
     "FEE": "ADR Mgmt Fee",
     "TAX": "ADR Mgmt Fee",  # Closest CSV-export bucket; refine later if needed.
-    # Cash movements — explicitly DROPPED. They're noise relative to the
-    # trading mirror and stg_history doesn't have a row type for them.
-    "DEPOSIT": None,
-    "WITHDRAWAL": None,
+    # External cash movements. These are NOT trades — they're the trader
+    # adding or removing their own money — but they DO move account value,
+    # which distorts "how am I doing" on balance-based surfaces (the /wealth
+    # curve, /accounts value, Daily Review deltas). We capture the
+    # unambiguous ones as a dedicated ``Cash Transfer`` action so those
+    # pages can offer an "exclude deposits & withdrawals" toggle. They map
+    # to stg_history ``action = 'cash_transfer'`` / ``instrument_type =
+    # 'Cash Event'`` and are inert in EVERY trade/P&L model (all of which
+    # filter to Equity/Call/Put/dividend). Sign convention below: DEPOSIT /
+    # CONTRIBUTION = cash IN (+), WITHDRAWAL = cash OUT (−).
+    "DEPOSIT": "Deposit",
+    "WITHDRAWAL": "Withdrawal",
+    "CONTRIBUTION": "Deposit",   # e.g. IRA / 401k contribution — cash in.
+    # Still DROPPED — ambiguous direction or asset kind, so mislabeling
+    # them as cash flow would corrupt the net-deposits number:
+    #   TRANSFER / JOURNAL  — often SHARE transfers between accounts, not cash.
+    #   DISTRIBUTION        — could be a fund/cap-gains distribution (income)
+    #                         OR a retirement account withdrawal (cash out).
     "TRANSFER": None,
     "JOURNAL": None,
-    "CONTRIBUTION": None,
     "DISTRIBUTION": None,
     # Stock splits handled out-of-band by current_position_stock_price.py
     # → stg_split_events; SnapTrade's SPLIT activity row would
@@ -522,10 +535,12 @@ def activities_to_history_df(
         cash_out_actions = {
             "Buy", "Buy to Open", "Buy to Close",
             "Margin Interest", "ADR Mgmt Fee",
+            "Withdrawal",
         }
         cash_in_actions = {
             "Sell", "Sell to Open", "Sell to Close",
             "Cash Dividend", "Qualified Dividend", "Credit Interest",
+            "Deposit",
         }
         if action_label in cash_out_actions:
             amount_signed = -abs(amount_f)

@@ -141,6 +141,16 @@ cleaned as (
             when 'margin interest'      then 'margin_interest'
             when 'credit interest'      then 'credit_interest'
             when 'adr mgmt fee'         then 'adr_fee'
+            -- External cash movements (the trader adding/removing their own
+            -- money). NOT a trade — folded into a single ``cash_transfer``
+            -- action so the /wealth + /accounts "exclude deposits &
+            -- withdrawals" toggle can net them out. Sign is preserved from
+            -- the seed (deposit +, withdrawal −) via the ``else`` branch in
+            -- amount_signed below. Inert in every P&L / session / dividend
+            -- model — they all filter to Equity/Call/Put/dividend.
+            when 'deposit'              then 'cash_transfer'
+            when 'withdrawal'           then 'cash_transfer'
+            when 'cash transfer'        then 'cash_transfer'
             else 'other'
         end as action,
 
@@ -190,7 +200,8 @@ cleaned as (
                 'special qual div', 'pr yr cash div'
             ) then 'Dividend'
             when lower(trim(action)) in (
-                'margin interest', 'credit interest', 'adr mgmt fee'
+                'margin interest', 'credit interest', 'adr mgmt fee',
+                'deposit', 'withdrawal', 'cash transfer'
             ) then 'Cash Event'
             else 'Equity'
         end as instrument_type,

@@ -2,7 +2,41 @@
 
 import pandas as pd
 
-from app.wealth import _build_chart_payload, _collapse_wealth_daily_duplicate_grain
+from app.wealth import (
+    _build_chart_payload,
+    _build_income_panel,
+    _build_summary,
+    _collapse_wealth_daily_duplicate_grain,
+)
+
+
+def _deposit_scenario():
+    """4-day single account: +100 market, then a $5,000 deposit, then +100
+    market. Raw value climbs $5,200; true trading/income gain is only $200.
+    """
+    rows = []
+    spec = [
+        ("2026-01-01", 1000.0, 0.0),
+        ("2026-01-02", 1100.0, 0.0),
+        ("2026-01-03", 6100.0, 5000.0),  # $5k deposit lands
+        ("2026-01-04", 6200.0, 5000.0),
+    ]
+    for d, av, cum_dep in spec:
+        rows.append({
+            "tenant_id": "snaptrade:abc",
+            "account": "A",
+            "user_id": 9,
+            "date": pd.Timestamp(d),
+            "account_value": av,
+            "cash_value": 0.0,
+            "equity_value": av,
+            "option_value": 0.0,
+            "cumulative_net_deposits": cum_dep,
+            "cumulative_dividends": 0.0,
+            "cumulative_interest_net": 0.0,
+            "cumulative_fees": 0.0,
+        })
+    return pd.DataFrame(rows)
 
 
 def test_collapse_keeps_populated_user_id_over_null_twins():
@@ -77,4 +111,57 @@ def test_build_chart_payload_sums_multiple_accounts_same_date_after_collapse():
     out = _build_chart_payload(_collapse_wealth_daily_duplicate_grain(df))
     assert str(out["dates"][0]).startswith("2026-05-07")
     assert out["account_value"] == [150.0]
+
+
+# ---------------------------------------------------------------------------
+# Deposit / withdrawal exclusion
+# ---------------------------------------------------------------------------
+
+def test_chart_payload_emits_deposit_adjusted_line():
+    out = _build_chart_payload(_deposit_scenario(), exclude_transfers=True)
+    # Raw account value climbs through the $5k deposit.
+    assert out["account_value"] == [1000.0, 1100.0, 6100.0, 6200.0]
+    # Deposit-adjusted line strips the $5k step (rebased to window start).
+    assert out["account_value_ex_transfers"] == [1000.0, 1100.0, 1100.0, 1200.0]
+    # Net deposits rebased to 0 on day one, jumping on the deposit day.
+    assert out["net_deposits"] == [0.0, 0.0, 5000.0, 5000.0]
+    assert out["has_transfers"] is True
+    assert out["exclude_transfers"] is True
+
+
+def test_chart_payload_no_transfer_column_is_graceful_noop():
+    df = _deposit_scenario().drop(columns=["cumulative_net_deposits"])
+    out = _build_chart_payload(df, exclude_transfers=True)
+    # Adjusted line == raw when there's no transfer data to remove.
+    assert out["account_value_ex_transfers"] == out["account_value"]
+    assert out["net_deposits"] == [0.0, 0.0, 0.0, 0.0]
+    assert out["has_transfers"] is False
+
+
+def test_summary_change_in_range_excludes_deposits_when_toggled():
+    df = _deposit_scenario()
+    raw = _build_summary(df, exclude_transfers=False)
+    adj = _build_summary(df, exclude_transfers=True)
+    # Raw picks up the whole $5,200 climb; adjusted isolates the $200 gain.
+    assert raw["change_in_range"]["abs"] == 5200.0
+    assert adj["change_in_range"]["abs"] == 200.0
+    # Point-in-time value is the real balance regardless of the toggle.
+    assert raw["account_value"] == adj["account_value"] == 6200.0
+    assert adj["net_deposits_in_range"] == 5000.0
+    assert adj["has_transfers"] is True
+
+
+def test_summary_no_transfer_column_matches_legacy_behavior():
+    df = _deposit_scenario().drop(columns=["cumulative_net_deposits"])
+    adj = _build_summary(df, exclude_transfers=True)
+    # Without transfer data, excluding does nothing: full $5,200 shows.
+    assert adj["change_in_range"]["abs"] == 5200.0
+    assert adj["net_deposits_in_range"] == 0.0
+    assert adj["has_transfers"] is False
+
+
+def test_income_panel_reports_net_deposits_in_window():
+    panel = _build_income_panel(_deposit_scenario())
+    assert panel["net_deposits"] == 5000.0
+    assert panel["has_transfers"] is True
 

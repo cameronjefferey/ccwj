@@ -67,6 +67,18 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
     ORDER BY account, strategy
 """
 
+# Per-day external cash flow (deposits +, withdrawals −) for the /accounts
+# "Net deposits" card. net_deposit_today already carries the signed amount.
+# Fetched in the same _bq_parallel wave as everything else; if the mart
+# predates transfer capture the query fails, the frame comes back
+# column-less, and the card simply hides itself.
+NET_DEPOSITS_QUERY = """
+    SELECT tenant_id, account, user_id, date, net_deposit_today
+    FROM `ccwj-dbt.analytics.mart_wealth_daily`
+    WHERE 1=1 {tenant_filter}
+    ORDER BY date
+"""
+
 # Per-leg rollup powering the /accounts Tag Breakdown. Leg grain (chapter of a
 # (tenant_id, symbol)) so mixed tagged/untagged legs of one symbol don't
 # overstate — the breakdown sums combined_pnl of ONLY the tagged legs, matched
@@ -378,6 +390,8 @@ def accounts():
                 tenant_filter=tenant_filter, week_start=attribution_week_start),
             # Per-leg rollup for the Tag Breakdown card (leg grain).
             "legs": ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter),
+            # External cash flow for the "Net deposits" KPI card.
+            "net_deposits": NET_DEPOSITS_QUERY.format(tenant_filter=tenant_filter),
         })
         _validate_accounts_financial_frames(
             dfs, needs_trade_accounts=not bool(user_accounts)
@@ -389,6 +403,7 @@ def accounts():
         strat_summary_df = dfs["strat_summary"]
         attribution_df = dfs["attribution"]
         legs_df = dfs["legs"]
+        net_deposits_df = dfs.get("net_deposits")
     except Exception as exc:
         return render_template(
             "accounts.html",
@@ -397,6 +412,7 @@ def accounts():
             summary_chart_json="{}",
             strategy_chart_json="{}",
             realized_events_json="[]",
+            net_deposit_events_json="[]",
             strategy_rows=[],
             position_breakdown=[],
             position_breakdown_totals=None,
@@ -510,6 +526,39 @@ def accounts():
         if "dividend_income" in strat_summary_df.columns else 0.0
     )
 
+    # ------------------------------------------------------------------
+    # Net deposits / withdrawals (external cash the trader moved in/out).
+    # The P&L cards + chart are already deposit-free (they read realized /
+    # unrealized trading P&L, not balance), but Account Value on its own
+    # can't tell "I'm up" from "I added money". Surfacing net deposits next
+    # to it — and shipping per-day events so the card re-windows client-side
+    # on a time-frame switch (mirrors REALIZED_EVENTS) — closes that gap.
+    # Defensive: mart_wealth_daily may predate transfer capture, so a
+    # missing column just yields 0 / [] and the card hides itself.
+    # ------------------------------------------------------------------
+    net_deposits_lifetime = 0.0
+    net_deposit_events = []
+    try:
+        nd_df = _filter_df_by_tenant_ids(net_deposits_df, tenant_ids)
+        if nd_df is not None and not nd_df.empty and "net_deposit_today" in nd_df.columns:
+            nd_df = nd_df.copy()
+            nd_df["net_deposit_today"] = pd.to_numeric(
+                nd_df["net_deposit_today"], errors="coerce"
+            ).fillna(0)
+            by_day = (
+                nd_df.groupby("date", as_index=False)["net_deposit_today"].sum()
+                .sort_values("date")
+            )
+            net_deposits_lifetime = float(by_day["net_deposit_today"].sum())
+            for d_, a_ in zip(by_day["date"], by_day["net_deposit_today"]):
+                amt = float(a_ or 0)
+                if abs(amt) < 0.005:
+                    continue
+                d_iso = d_.isoformat() if hasattr(d_, "isoformat") else str(d_)
+                net_deposit_events.append([d_iso, round(amt, 2)])
+    except Exception as exc:
+        app.logger.warning("Account net-deposits rollup failed: %s", exc)
+
     kpis = {
         "account_value": account_value,
         "cash_balance": cash_balance,
@@ -518,6 +567,8 @@ def accounts():
         "unrealized_pnl": acct_unrealized,
         "dividend_income": dividend_income,
         "total_return": total_return,
+        "net_deposits": round(net_deposits_lifetime, 2),
+        "has_transfers": abs(net_deposits_lifetime) > 0.005,
     }
 
     # ------------------------------------------------------------------
@@ -659,6 +710,7 @@ def accounts():
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),
         realized_events_json=json.dumps(realized_events),
+        net_deposit_events_json=json.dumps(net_deposit_events),
         strategy_rows=strategy_rows,
         position_breakdown=breakdowns["position_breakdown"],
         position_breakdown_totals=breakdowns["position_breakdown_totals"],
