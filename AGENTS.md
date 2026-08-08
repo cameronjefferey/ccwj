@@ -865,10 +865,26 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   (account swing vs prior day, fills, option P&L moves, dividends, SPY/QQQ
   context, prev/next weekday nav). All five queries are tenant-scoped and
   project `tenant_id`.
-- **Position story mode** (`_build_position_story` in
-  `app/position_detail.py`): chronological narrative timeline of a
-  position's fills/expiries/dividends grouped by day, plus scatter markers
-  overlaid on the cumulative-P&L chart (leg-filter aware).
+- **Position story mode** (`app/position_story.py`, called from
+  `app/position_detail.py`): plain-English narrative of the position,
+  not a transaction-log rehash. A per-account state machine detects and
+  names maneuvers — rolls (same-day close+open, strike/expiry
+  direction, net credit), wheels (CSP → assignment → covered calls →
+  called away, with cumulative premium), covered vs naked calls, kept
+  premium on OTM expiry, splits ("your 100 shares became 300", also
+  required to keep running-share state honest across pre/post-split
+  fill units), assignment/exercise voice (short vs long inferred from
+  tracked state or the same-day mechanical share fill at the strike,
+  which is swallowed rather than double-narrated). Between trade days
+  it narrates INTERLUDES from the daily-mark chart series — "13 quiet
+  weeks did the heavy lifting: +$3,434 without placing a trade" — the
+  data only HappyTrader has (per-day option marks), plus "flat and out
+  of the name" breaks for long gaps while closed. Two-way chart↔story
+  choreography in position_detail.html: hovering a chart dot highlights
+  + scrolls to its chapter, hovering a chapter pops the dot's tooltip,
+  clicking a dot jumps to the chapter. Leg-filter aware. Pinned by
+  `tests/test_position_story.py`. This narrative layer is the intended
+  basis for the future cross-position "trader novel".
 - **Dark mode**: navbar toggle → localStorage → inline head script sets
   `data-bs-theme` pre-paint. Bootstrap 5.3 handles its components; the
   app's hardcoded light surfaces are overridden in base.html's

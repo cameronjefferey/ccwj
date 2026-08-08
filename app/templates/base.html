@@ -414,6 +414,16 @@
         [data-bs-theme="dark"] .income-card .income-value { color: #f1f5f9; }
         [data-bs-theme="dark"] .narrative { color: #cbd5e1; }
         [data-bs-theme="dark"] .narrative strong { color: #f1f5f9; }
+        /* Bootstrap's .table-light thead stays literally light in dark mode
+           (it's a hardcoded variant, not theme-aware) — restyle it. */
+        [data-bs-theme="dark"] .table-light,
+        [data-bs-theme="dark"] .table-light > th,
+        [data-bs-theme="dark"] .table-light > tr > th {
+            --bs-table-bg: #1b2740;
+            --bs-table-color: #cbd5e1;
+            background-color: #1b2740;
+            color: #cbd5e1;
+        }
         /* Story badges: pastel chips -> translucent on dark. */
         [data-bs-theme="dark"] .story-buy { background: rgba(37,99,235,.2); color: #93c5fd; }
         [data-bs-theme="dark"] .story-sell { background: rgba(220,38,38,.2); color: #fca5a5; }

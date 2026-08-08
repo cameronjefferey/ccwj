@@ -565,64 +565,118 @@
     </div>
     {% if story_days %}
     <p class="text-muted small mb-0 mt-2">
-        Dots mark your trade days — hover one to see exactly what you did.
+        Dots mark your trade days &mdash; hover a dot and its story line lights up below (and vice versa). Click a dot to jump to that chapter.
     </p>
     {% endif %}
 </div>
 
-{# ── Position story: plain-English chronology of every event ── #}
+{# ── Position story: plain-English narrative of the position ── #}
 {% if story_days %}
-<div class="card stat-card p-4 mb-4">
-    <details {% if story_days|length <= 8 %}open{% endif %}>
+{% set _day_count = story_days | selectattr('type', 'equalto', 'day') | list | length %}
+<div class="card stat-card p-4 mb-4" id="storyCard">
+    <details id="storyDetails" open>
         <summary style="cursor:pointer; list-style:none;">
             <h6 class="fw-bold mb-1 d-inline">The story of this position</h6>
-            <span class="text-muted small ms-2">{{ story_days|length }} day{{ 's' if story_days|length != 1 }} of activity &middot; click to expand</span>
+            <span class="text-muted small ms-2">{{ _day_count }} chapter{{ 's' if _day_count != 1 }} &middot; hover the chart to follow along</span>
         </summary>
         <div class="story-scroll mt-3">
-            {% for day in story_days %}
-            <div class="story-day">
-                <div class="story-date">{{ day.label }}</div>
-                <div class="story-events">
-                    {% for e in day.events %}
-                    <div class="story-event">
-                        <span class="story-badge story-{{ e.kind }}">{{ e.verb }}</span>
-                        {% if e.detail %}<span class="story-detail">{{ e.detail }}</span>{% endif %}
-                        {% if e.amount %}
-                        <span class="story-amt {{ 'text-success' if e.amount > 0 else 'text-danger' }}">
-                            {{ "+" if e.amount > 0 else "" }}${{ "{:,.2f}".format(e.amount) }}
+            {% for item in story_days %}
+            {% if item.type == 'interlude' %}
+            <div class="story-interlude">
+                <span class="story-interlude-dots" aria-hidden="true">&#8942;</span>
+                <span>{{ item.text }}</span>
+            </div>
+            {% else %}
+            <div class="story-day" data-story-date="{{ item.date_iso }}">
+                <div class="story-date">{{ item.label }}</div>
+                <div class="story-body">
+                    {% for h in item.headlines %}
+                    <div class="story-headline">{{ h }}</div>
+                    {% endfor %}
+                    <div class="story-meta">
+                        {% if item.amount %}
+                        <span class="story-amt {{ 'text-success' if item.amount > 0 else 'text-danger' }}">
+                            {{ "+" if item.amount > 0 else "" }}${{ "{:,.2f}".format(item.amount) }} cash
                         </span>
                         {% endif %}
+                        {% if item.events %}
+                        <details class="story-fills">
+                            <summary>{{ item.events|length }} fill{{ 's' if item.events|length != 1 }}</summary>
+                            {% for e in item.events %}
+                            <div class="story-event">
+                                <span class="story-badge story-{{ e.kind }}">{{ e.verb }}</span>
+                                {% if e.detail %}<span class="story-detail">{{ e.detail }}</span>{% endif %}
+                                {% if e.amount %}
+                                <span class="story-evt-amt {{ 'text-success' if e.amount > 0 else 'text-danger' }}">
+                                    {{ "+" if e.amount > 0 else "" }}${{ "{:,.2f}".format(e.amount) }}
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </details>
+                        {% endif %}
                     </div>
-                    {% endfor %}
                 </div>
             </div>
+            {% endif %}
             {% endfor %}
         </div>
     </details>
 </div>
 <style>
-    .story-scroll { max-height: 430px; overflow-y: auto; padding-right: .25rem; }
+    .story-scroll { max-height: 480px; overflow-y: auto; padding-right: .25rem; }
     .story-day {
         display: grid; grid-template-columns: 110px 1fr; gap: .75rem;
-        padding: .55rem 0; border-bottom: 1px solid #f1f5f9;
+        padding: .6rem .5rem; border-bottom: 1px solid #f1f5f9;
+        border-radius: 8px; transition: background .15s ease;
+        scroll-margin: 90px;
     }
     .story-day:last-child { border-bottom: 0; }
+    .story-day.story-hot { background: #fef9c3; }
+    [data-bs-theme="dark"] .story-day.story-hot { background: #3f3a16; }
     .story-date { font-size: .78rem; font-weight: 700; color: #64748b; padding-top: .15rem; white-space: nowrap; }
-    .story-event { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; padding: .12rem 0; font-size: .87rem; }
+    .story-headline { font-size: .93rem; color: #1e293b; line-height: 1.5; padding: .06rem 0; }
+    [data-bs-theme="dark"] .story-headline { color: #e2e8f0; }
+    .story-meta { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-top: .15rem; }
+    .story-amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: .82rem; }
+    .story-fills > summary {
+        cursor: pointer; list-style: none; font-size: .75rem; color: #94a3b8;
+        text-decoration: underline dotted;
+    }
+    .story-fills > summary::-webkit-details-marker { display: none; }
+    .story-event { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; padding: .12rem 0; font-size: .82rem; }
     .story-badge {
-        font-size: .7rem; font-weight: 700; padding: .16rem .5rem;
+        font-size: .68rem; font-weight: 700; padding: .14rem .5rem;
         border-radius: 999px; white-space: nowrap;
     }
     .story-buy { background: #eff6ff; color: #1d4ed8; }
     .story-sell { background: #fef2f2; color: #b91c1c; }
     .story-lifecycle { background: #f5f3ff; color: #6d28d9; }
     .story-income { background: #ecfdf5; color: #047857; }
+    [data-bs-theme="dark"] .story-buy { background: #172554; color: #93c5fd; }
+    [data-bs-theme="dark"] .story-sell { background: #450a0a; color: #fca5a5; }
+    [data-bs-theme="dark"] .story-lifecycle { background: #2e1065; color: #c4b5fd; }
+    [data-bs-theme="dark"] .story-income { background: #052e2b; color: #6ee7b7; }
     .story-detail { color: #475569; }
-    .story-amt { font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+    [data-bs-theme="dark"] .story-detail { color: #94a3b8; }
+    .story-evt-amt { font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+    .story-interlude {
+        display: flex; gap: .6rem; align-items: baseline;
+        padding: .5rem .5rem .5rem 1.4rem; margin: .1rem 0;
+        font-size: .86rem; font-style: italic; color: #64748b;
+        border-left: 2px dotted #cbd5e1;
+    }
+    [data-bs-theme="dark"] .story-interlude { color: #94a3b8; border-left-color: #33415e; }
+    .story-interlude-dots { color: #cbd5e1; font-style: normal; }
     details > summary::-webkit-details-marker { display: none; }
+    @keyframes storyFlash {
+        0% { background: #fde68a; }
+        100% { background: transparent; }
+    }
+    .story-day.story-flash { animation: storyFlash 1.6s ease-out; }
     @media (max-width: 480px) {
         .story-day { grid-template-columns: 1fr; gap: .15rem; }
-        .story-amt { margin-left: 0; }
+        .story-evt-amt { margin-left: 0; }
     }
 </style>
 {% endif %}
@@ -1131,7 +1185,7 @@
         buy: '#1d4ed8', sell: '#b91c1c', lifecycle: '#6d28d9', income: '#047857'
     };
     var markerDataset = null;
-    var markerTexts = {};   // "x|y" -> [lines] for tooltip lookup
+    var markerIndexByDate = {};   // story date iso -> point index in the marker dataset
     if (storyMarkers.length && chartData.dates && chartData.dates.length) {
         var dateIdx = {};
         chartData.dates.forEach(function (d, i) { dateIdx[d] = i; });
@@ -1142,7 +1196,8 @@
             var y = null, j = i;
             while (j >= 0 && (y === null || y === undefined)) { y = chartData.total[j]; j--; }
             if (y === null || y === undefined) y = 0;
-            pts.push({ x: chartData.dates[i], y: y, _story: m.t });
+            markerIndexByDate[m.d] = pts.length;
+            pts.push({ x: chartData.dates[i], y: y, _story: m.t, _date: m.d });
             colors.push(MARKER_COLORS[m.k] || '#64748b');
         });
         if (pts.length) {
@@ -1158,6 +1213,46 @@
                 order: -1
             };
         }
+    }
+
+    // ── Story <-> chart choreography ──────────────────────────────────
+    // Hovering a chart dot lights up (and scrolls to) its story chapter;
+    // hovering a story chapter pops the dot + tooltip on the chart;
+    // clicking a dot jumps to the chapter and flashes it.
+    var markerDsIndex = null;   // set after the marker dataset is pushed
+    var hotRow = null;
+    function storyRowFor(dateIso) {
+        return document.querySelector('.story-day[data-story-date="' + dateIso + '"]');
+    }
+    function setHotRow(row, scroll) {
+        if (hotRow === row) return;
+        if (hotRow) hotRow.classList.remove('story-hot');
+        hotRow = row;
+        if (row) {
+            row.classList.add('story-hot');
+            if (scroll) {
+                var details = document.getElementById('storyDetails');
+                var card = document.getElementById('storyCard');
+                // Only chase the row when the story card is already on
+                // screen — otherwise hovering the chart would yank the
+                // page down to the card.
+                var visible = false;
+                if (card) {
+                    var r = card.getBoundingClientRect();
+                    visible = r.bottom > 0 && r.top < window.innerHeight;
+                }
+                if (details && details.open && visible) {
+                    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
+    }
+    function markerHit(elements) {
+        if (markerDsIndex === null) return null;
+        for (var i = 0; i < elements.length; i++) {
+            if (elements[i].datasetIndex === markerDsIndex) return elements[i];
+        }
+        return null;
     }
 
     if (chartData.dates && chartData.dates.length > 0) {
@@ -1242,6 +1337,31 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                onHover: function (evt, elements) {
+                    var hit = markerHit(elements);
+                    if (hit) {
+                        var pt = pnlChart.data.datasets[markerDsIndex].data[hit.index];
+                        setHotRow(storyRowFor(pt._date), true);
+                    } else {
+                        setHotRow(null);
+                    }
+                    if (evt.native && evt.native.target) {
+                        evt.native.target.style.cursor = hit ? 'pointer' : 'default';
+                    }
+                },
+                onClick: function (evt, elements) {
+                    var hit = markerHit(elements);
+                    if (!hit) return;
+                    var pt = pnlChart.data.datasets[markerDsIndex].data[hit.index];
+                    var row = storyRowFor(pt._date);
+                    if (!row) return;
+                    var details = document.getElementById('storyDetails');
+                    if (details && !details.open) details.open = true;
+                    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    row.classList.remove('story-flash');
+                    void row.offsetWidth;  // restart the CSS animation
+                    row.classList.add('story-flash');
+                },
                 plugins: {
                     tooltip: {
                         callbacks: {
@@ -1308,8 +1428,31 @@
         // Overlay the story markers on top of the drawn lines.
         if (markerDataset) {
             pnlChart.data.datasets.push(markerDataset);
+            markerDsIndex = pnlChart.data.datasets.length - 1;
             pnlChart.update();
         }
+
+        // Story chapter hover -> pop the matching dot + tooltip on the chart.
+        document.querySelectorAll('.story-day[data-story-date]').forEach(function (row) {
+            row.addEventListener('mouseenter', function () {
+                var i = markerIndexByDate[row.getAttribute('data-story-date')];
+                if (markerDsIndex === null || i === undefined) return;
+                row.classList.add('story-hot');
+                var el = pnlChart.getDatasetMeta(markerDsIndex).data[i];
+                if (!el) return;
+                pnlChart.setActiveElements([{ datasetIndex: markerDsIndex, index: i }]);
+                pnlChart.tooltip.setActiveElements(
+                    [{ datasetIndex: markerDsIndex, index: i }], { x: el.x, y: el.y });
+                pnlChart.update();
+            });
+            row.addEventListener('mouseleave', function () {
+                row.classList.remove('story-hot');
+                if (markerDsIndex === null) return;
+                pnlChart.setActiveElements([]);
+                pnlChart.tooltip.setActiveElements([], { x: 0, y: 0 });
+                pnlChart.update();
+            });
+        });
 
         // Stock price line show/hide toggle
         var priceToggle = document.getElementById('togglePriceLine');
