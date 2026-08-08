@@ -361,19 +361,19 @@
 {# ── Secondary stats (premium / positions count / trades) ────────── #}
 {% if kpis and accounts and accounts|length > 0 %}
 <div class="row g-3 mb-4">
-    <div class="col">
+    <div class="col-12 col-sm">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Premium Collected</div>
             <div class="kpi-value text-positive">${{ "{:,.0f}".format(kpis.premium_collected) }}</div>
         </div>
     </div>
-    <div class="col">
+    <div class="col-6 col-sm">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Positions</div>
             <div class="kpi-value">{{ kpis.num_positions }}</div>
         </div>
     </div>
-    <div class="col">
+    <div class="col-6 col-sm">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Trades</div>
             <div class="kpi-value">{{ "{:,}".format(kpis.total_trades) }}</div>
@@ -448,7 +448,7 @@
             'Other Option':     '#6c757d'
         } %}
 
-        <div class="table-responsive">
+        <div class="table-responsive ht-sticky">
             <table class="table table-hover table-sm align-middle mb-0" id="symbolTable">
                 <thead class="table-light">
                     <tr>

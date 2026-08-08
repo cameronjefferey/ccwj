@@ -826,6 +826,20 @@ These make debugging difficult. Errors should at minimum be logged.
   `_tenants_for_scope`), it must patch the PAGE module's namespace (where the
   name is resolved at call time), not `app.routes`.
 
+**Global nav UX (Aug 2026).** `app/static/js/nav.js` (loaded from base.html for
+authenticated users only) owns two cross-page behaviors: (1) the **Cmd+K / "/"
+quick-switcher** — palette listing the user's symbols (open positions first;
+`/api/nav/symbols` in `app/symbols_page.py`, tenant-scoped in SQL, response
+cached server-side via `cached_query_df` and client-side in sessionStorage for
+10 min) plus static page destinations; also opened by the navbar "Jump to…"
+button; and (2) the **navigation progress bar** (`#ht-progress`) that animates
+on internal link clicks / form submits so BigQuery-backed page loads don't feel
+frozen. Shared CSS (palette, progress bar, and the `.ht-sticky` sticky-`thead`
+wrapper class used on the longest tables — positions list, Daily Review
+position breakdown + trades-this-week) lives in base.html's style block.
+`scripts/dev_render_pages.py` renders any page as a logged-in dev user to
+/tmp/ht_pages for headless-Chrome screenshots (mobile QA).
+
 Remaining debt:
 - `mirror_score.py` and `benchmark.py` import helpers from `routes.py` — unusual coupling
   (now at least the helpers-only routes.py makes that coupling explicit).

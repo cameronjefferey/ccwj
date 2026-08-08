@@ -13,7 +13,7 @@ from datetime import date
 
 import json
 import pandas as pd
-from flask import render_template, request, redirect, url_for
+from flask import jsonify, render_template, request, redirect, url_for
 from flask_login import login_required, current_user
 from urllib.parse import quote_plus
 
@@ -744,5 +744,45 @@ def symbols_detail():
         linked_brokerage_accounts=(user_accounts or []),
         viewer_is_admin=is_admin(current_user.username),
     )
+
+
+# ── Quick-switcher (Cmd+K) symbol list ──────────────────────────────
+# Tenant-scoped in SQL only; the frame is a symbol-grain aggregate with
+# no account/tenant column, so there is nothing leakable to DataFrame-
+# filter (same documented pattern as the earnings query in weekly_review —
+# running it through filter_df_by_tenant_ids would fail closed to empty).
+NAV_SYMBOLS_QUERY = """
+SELECT
+    symbol,
+    MAX(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS has_open
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE symbol IS NOT NULL AND symbol != ''
+  {tenant_filter}
+GROUP BY symbol
+ORDER BY has_open DESC, symbol
+"""
+
+
+@app.route("/api/nav/symbols")
+@login_required
+def api_nav_symbols():
+    """Symbols the current user can open in Position Detail, for the
+    Cmd+K quick-switcher. Open positions first, then closed. Cached via
+    the shared query cache (10 min L1 / flushed-on-rebuild L2), so the
+    palette costs ~nothing after the first open."""
+    tenant_ids = _tenants_for_scope(request.args.get("account", ""))
+    tenant_filter = _tenant_sql_and(tenant_ids)
+    try:
+        client = get_bigquery_client()
+        df = cached_query_df(client, NAV_SYMBOLS_QUERY.format(tenant_filter=tenant_filter))
+    except Exception as exc:
+        app.logger.warning("nav symbols query failed: %s", exc)
+        return jsonify({"symbols": []})
+    out = []
+    for _, r in df.iterrows():
+        sym = str(r.get("symbol") or "").strip()
+        if sym:
+            out.append({"s": sym, "open": bool(int(r.get("has_open") or 0))})
+    return jsonify({"symbols": out})
 
 
