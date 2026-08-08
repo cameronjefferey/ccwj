@@ -1,0 +1,42 @@
+{
+    "name": "HappyTrader — Your Trading Mirror",
+    "short_name": "HappyTrader",
+    "description": "End-of-day review, positions, P&L attribution and behavioral patterns for active options traders.",
+    "id": "/",
+    "start_url": "/daily-review?source=pwa",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#1a1a2e",
+    "theme_color": "#1a1a2e",
+    "icons": [
+        {
+            "src": "/static/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/icons/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Daily Review",
+            "url": "/daily-review",
+            "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Positions",
+            "url": "/positions",
+            "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+        }
+    ]
+}

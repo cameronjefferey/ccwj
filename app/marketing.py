@@ -370,6 +370,23 @@ def sitemap():
     return Response(xml, mimetype="application/xml")
 
 
+@app.route("/sw.js")
+def service_worker():
+    """Serve the service worker from the ORIGIN ROOT so its scope covers the
+    whole app (a worker served under /static/ could only control /static/).
+    no-cache so a deploy's new worker version is picked up on next visit."""
+    resp = app.send_static_file("sw.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/offline")
+def offline():
+    """Offline fallback for the PWA — precached by the service worker at
+    install and served on navigation when the network is unreachable."""
+    return render_template("offline.html")
+
+
 @app.route("/robots.txt")
 def robots():
     """Basic robots.txt for crawlers."""

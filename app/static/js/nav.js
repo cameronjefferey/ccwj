@@ -242,6 +242,30 @@
     }
   });
 
+  /* ── 3. PWA install affordance ───────────────────────────────── */
+  // Chrome (Android/desktop) fires beforeinstallprompt when the app is
+  // installable; stash it and reveal "Install app" in the Account menu.
+  // iOS Safari never fires this — installs happen via Share → Add to
+  // Home Screen, which needs no affordance here.
+  var deferredInstall = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredInstall = e;
+    var item = document.getElementById("ht-install-item");
+    if (item) item.classList.remove("d-none");
+  });
+  var installLink = document.getElementById("ht-install-link");
+  if (installLink) {
+    installLink.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (!deferredInstall) return;
+      deferredInstall.prompt();
+      deferredInstall = null;
+      var item = document.getElementById("ht-install-item");
+      if (item) item.classList.add("d-none");
+    });
+  }
+
   // Navbar search buttons (desktop pill inside the collapse + phone icon
   // next to the hamburger — no keyboard shortcuts on mobile).
   document.querySelectorAll(".ht-palette-open").forEach(function (trigger) {
