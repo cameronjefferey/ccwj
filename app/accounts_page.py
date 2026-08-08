@@ -17,6 +17,7 @@ from urllib.parse import quote_plus
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df, cached_payload, frame_fingerprint, timed
+from app.skeleton import skeleton_page
 from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
@@ -342,6 +343,7 @@ def _accounts_scope_query(args):
 
 @app.route("/accounts")
 @login_required
+@skeleton_page
 def accounts():
     client = get_bigquery_client()
     user_accounts = _user_account_list()

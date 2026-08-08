@@ -29,6 +29,7 @@ from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
+from app.skeleton import skeleton_page
 from app.models import (
     is_admin,
     get_mirror_score_for_user, get_mirror_score_history,
@@ -3524,6 +3525,7 @@ def build_daily_review_batch(tenant_filter, today, this_week):
 @app.route("/weekly-review")
 @app.route("/daily-review")
 @login_required
+@skeleton_page
 def weekly_review():
     """Daily Review — end-of-day pulse: today, watch list, position /
     strategy / sector breakdowns. Single mode (the old friday / monday /

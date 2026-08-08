@@ -46,7 +46,9 @@ def main() -> None:
         sess["_fresh"] = True
 
     for path in args.paths:
-        resp = client.get(path, follow_redirects=True)
+        # X-HT-Full skips the instant-shell skeleton (app/skeleton.py) so we
+        # capture the real rendered page, not the shimmer placeholder.
+        resp = client.get(path, follow_redirects=True, headers={"X-HT-Full": "1"})
         name = path.strip("/").replace("/", "_") or "index"
         out = OUT_DIR / f"{name}.html"
         out.write_bytes(resp.data)

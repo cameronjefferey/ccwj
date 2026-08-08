@@ -20,6 +20,7 @@ from google.cloud import bigquery
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
+from app.skeleton import skeleton_page
 # is_admin is not called directly here, but the positions fixtures
 # patch.object(positions_page, "is_admin") — keep it importable.
 from app.models import is_admin  # noqa: F401
@@ -444,6 +445,7 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
 
 @app.route("/positions")
 @login_required
+@skeleton_page
 def positions():
     bounce = _redirect_if_no_accounts()
     if bounce:

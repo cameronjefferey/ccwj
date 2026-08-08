@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{# Instant shimmer shell for BigQuery-heavy pages — see app/skeleton.py.
+   Renders with zero warehouse work, then fetches the real page (same URL,
+   X-HT-Full header) and swaps the whole document in via document.write so
+   every inline script runs with natural load semantics. #}
+{% block title %}Loading…{% endblock %}
+
+{% block content %}
+<style>
+    .sk-shimmer {
+        position: relative; overflow: hidden;
+        background: #e9edf2; border-radius: 10px;
+    }
+    .sk-shimmer::after {
+        content: ""; position: absolute; inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent);
+        animation: sk-sweep 1.3s infinite;
+    }
+    @keyframes sk-sweep { 100% { transform: translateX(100%); } }
+    .sk-hero { height: 148px; border-radius: 14px; }
+    .sk-kpi { height: 92px; }
+    .sk-row { height: 16px; margin-bottom: 14px; }
+    .sk-row.short { width: 62%; }
+    .sk-hint {
+        text-align: center; color: #94a3b8; font-size: .82rem;
+        margin-top: 1.4rem;
+    }
+</style>
+
+<div class="sk-shimmer sk-hero mb-4" aria-hidden="true"></div>
+<div class="row g-3 mb-4" aria-hidden="true">
+    <div class="col-6 col-md-3"><div class="sk-shimmer sk-kpi"></div></div>
+    <div class="col-6 col-md-3"><div class="sk-shimmer sk-kpi"></div></div>
+    <div class="col-6 col-md-3"><div class="sk-shimmer sk-kpi"></div></div>
+    <div class="col-6 col-md-3"><div class="sk-shimmer sk-kpi"></div></div>
+</div>
+<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;" aria-hidden="true">
+    <div class="card-body p-4">
+        {% for _ in range(6) %}
+        <div class="sk-shimmer sk-row {{ 'short' if loop.index is even }}"></div>
+        {% endfor %}
+    </div>
+</div>
+<div class="card border-0 shadow-sm mb-4" style="border-radius:12px;" aria-hidden="true">
+    <div class="card-body p-4">
+        {% for _ in range(4) %}
+        <div class="sk-shimmer sk-row {{ 'short' if loop.index is even }}"></div>
+        {% endfor %}
+    </div>
+</div>
+<p class="sk-hint" role="status">Crunching your numbers&hellip;</p>
+
+<script>
+(function () {
+    "use strict";
+    fetch(window.location.href, {
+        credentials: "same-origin",
+        headers: { "X-HT-Full": "1" }
+    }).then(function (r) {
+        // Auth / no-accounts redirects: navigate there for real instead of
+        // writing the wrong page under this URL.
+        var dest = new URL(r.url, window.location.href);
+        if (dest.pathname !== window.location.pathname) {
+            window.location.replace(dest.toString());
+            return null;
+        }
+        if (!r.ok) { throw new Error("full render " + r.status); }
+        return r.text();
+    }).then(function (html) {
+        if (html == null) return;
+        document.open();
+        document.write(html);
+        document.close();
+    }).catch(function () {
+        // Fallback: hard navigation with the query-param escape hatch so
+        // the server never serves the shell again for this request.
+        var u = new URL(window.location.href);
+        u.searchParams.set("_full", "1");
+        window.location.replace(u.toString());
+    });
+})();
+</script>
+{% endblock %}

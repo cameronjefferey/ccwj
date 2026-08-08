@@ -26,6 +26,7 @@ from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df, cached_payload, frame_fingerprint, timed
+from app.skeleton import skeleton_page
 from app.models import get_tenant_ids_for_user, is_admin
 from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
@@ -1138,6 +1139,7 @@ POSITION_DIVIDENDS_QUERY = """
 
 @app.route("/position/<symbol>")
 @login_required
+@skeleton_page
 def position_detail(symbol):
     bounce = _redirect_if_no_accounts()
     if bounce:
