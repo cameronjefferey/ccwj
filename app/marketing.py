@@ -393,8 +393,20 @@ def index():
 def healthz():
     """Liveness probe — does NOT touch DB or BigQuery so it stays green even
     if Postgres is briefly unreachable. Render uses this to know the worker
-    process itself is alive."""
-    return ("ok", 200, {"Content-Type": "text/plain", "Cache-Control": "no-store"})
+    process itself is alive.
+
+    The body also reports whether Sentry is wired (a boolean, not the DSN)
+    so error-monitoring coverage is verifiable from the outside — Render's
+    MCP/API can't read env vars, and a missing SENTRY_DSN otherwise fails
+    silent (the init is env-gated in app/__init__.py).
+    """
+    import os as _os
+    sentry_on = "on" if (_os.environ.get("SENTRY_DSN", "").strip()) else "off"
+    return (
+        f"ok sentry={sentry_on}",
+        200,
+        {"Content-Type": "text/plain", "Cache-Control": "no-store"},
+    )
 
 
 @app.route("/healthz/db")

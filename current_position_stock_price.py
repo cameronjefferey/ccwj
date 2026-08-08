@@ -1,10 +1,30 @@
 import csv
 import os
 import re
+import sys
 import pandas as pd
 import yfinance as yf
 from datetime import date, timedelta
 from google.cloud import bigquery
+
+
+# ---------------------------------------------------------------------------
+# Fetch-coverage guard
+# ---------------------------------------------------------------------------
+# yfinance is an unofficial API and DOES break (rate limits, endpoint
+# changes, Yahoo layoffs breaking the page the lib scrapes). Every failure
+# used to be swallowed per-symbol with a print(), so a total outage looked
+# identical to a healthy run in CI — and the WRITE_TRUNCATE below would
+# happily replace a full price table with a nearly-empty one, silently
+# zeroing dividends, charts, and close-based pricing for every user.
+#
+# The guard: if fewer than MIN_COVERAGE of distinct symbols yield data, or
+# the SPY benchmark itself fails (SPY cannot be delisted — if IT fails the
+# feed is down), we SKIP the truncate-write (yesterday's table stays) and
+# exit non-zero so the GitHub Actions run goes red and the owner gets a
+# failure notification. A handful of genuinely delisted symbols failing is
+# normal and stays below the threshold.
+MIN_COVERAGE = 0.80
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +168,40 @@ def _fetch_history_for_symbol(broker_sym, start_iso, end_iso, crypto_symbols=Non
     return None, None, None
 
 
+def _coverage_guard(symbols_ok, symbols_failed, min_coverage=None):
+    """Decide whether the run's fetch coverage is too poor to publish.
+
+    Returns ``(tripped, message)``. Tripped when the distinct-symbol
+    success rate drops below ``MIN_COVERAGE`` or the SPY benchmark itself
+    failed (SPY can't be delisted; if it fails, the feed is down). A
+    symbol that succeeded for ANY tenant counts as ok.
+    """
+    if min_coverage is None:
+        min_coverage = MIN_COVERAGE
+    ok = set(symbols_ok)
+    failed = set(symbols_failed) - ok
+    total = len(ok) + len(failed)
+    coverage = (len(ok) / total) if total else 0.0
+    spy_down = "SPY" in failed
+    summary = (
+        f"PRICES_COVERAGE ok={len(ok)} failed={len(failed)} "
+        f"coverage={coverage:.1%} failed_symbols={sorted(failed)[:20]}"
+    )
+    if total and (coverage < min_coverage or spy_down):
+        reason = (
+            "SPY benchmark fetch failed (feed outage)."
+            if spy_down
+            else f"coverage {coverage:.1%} < {min_coverage:.0%}."
+        )
+        return True, (
+            summary
+            + f"\nPRICES_GUARD_TRIPPED: {reason} "
+            "Skipping WRITE_TRUNCATE so yesterday's price table survives; "
+            "exiting non-zero to fail the workflow."
+        )
+    return False, summary
+
+
 # ---------------------------------------------------------------------------
 # Main script body
 # ---------------------------------------------------------------------------
@@ -231,6 +285,10 @@ def _main():
     # which is where split-adjusted running quantities matter most.
     splits_seen = {}  # (symbol, split_date) -> split_ratio (last write wins)
 
+    # Coverage bookkeeping (distinct symbols, not per-tenant rows).
+    symbols_ok = set()
+    symbols_failed = set()
+
     for _, row in positions_df.iterrows():
         account = row["account"]
         user_id = row["user_id"] if "user_id" in row else None
@@ -254,7 +312,9 @@ def _main():
                     f"No yfinance data for {symbol} (start={start_date}, "
                     f"end={end_date}); skipping."
                 )
+                symbols_failed.add(symbol)
                 continue
+            symbols_ok.add(symbol)
 
             # Undo yfinance's split back-adjustment.
             #
@@ -332,6 +392,14 @@ def _main():
             all_data.append(hist)
         except Exception as e:
             print(f"Error fetching data for {symbol}: {e}")
+            symbols_failed.add(symbol)
+
+    # Step 3b: Coverage guard — refuse to replace a good table with a
+    # gutted one when the price feed is down (see module comment).
+    tripped, guard_msg = _coverage_guard(symbols_ok, symbols_failed)
+    print(guard_msg)
+    if tripped:
+        sys.exit(1)
 
     # Step 4: Upload results to BigQuery
     if all_data:

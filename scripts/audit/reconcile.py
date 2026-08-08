@@ -10,7 +10,10 @@ import os
 import sys
 import json
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
+
+import pandas as pd
 
 # Make app importable
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -561,6 +564,43 @@ def main():
             print(f"PASS — AI Coach closed counts match positions for all {len(keys12)} (account, strategy)")
     except Exception as exc:
         print(f"(skipped: {exc})")
+
+    # ====================================================================
+    # CHECK 13: Price-data freshness — stg_daily_prices must have a recent
+    # SPY close. yfinance (unofficial API) failing quietly is the single
+    # biggest data-quality risk in the product: every close-based surface
+    # (position charts, mart_daily_pnl today rows, dividends synthesis,
+    # benchmark) reads stg_daily_prices. The loader now refuses to gut the
+    # table (PRICES_COVERAGE guard), but a cron that stops RUNNING (secret
+    # expiry, workflow disabled) would still let prices rot silently —
+    # this nightly check catches that. Threshold is 5 calendar days: long
+    # weekend + one genuinely missed evening refresh stays green, anything
+    # longer means the pipeline is down.
+    # ====================================================================
+    section("CHECK 13: stg_daily_prices freshness (SPY close within 5 days)")
+    try:
+        sql13 = f"""
+            SELECT MAX(date) AS latest_spy_close
+            FROM {DS}.stg_daily_prices
+            WHERE UPPER(symbol) = 'SPY'
+        """
+        d13 = q(client, sql13)
+        latest = d13["latest_spy_close"].iloc[0] if not d13.empty else None
+        if latest is None or pd.isna(latest):
+            fail("FAIL — stg_daily_prices has NO SPY rows at all (price pipeline never ran?)")
+        else:
+            latest_date = pd.to_datetime(latest).date()
+            age_days = (date.today() - latest_date).days
+            if age_days > 5:
+                fail(
+                    f"FAIL — latest SPY close in stg_daily_prices is {latest_date} "
+                    f"({age_days} days old). The evening prices refresh is not landing; "
+                    "check .github/workflows/prices_refresh.yml runs and yfinance health."
+                )
+            else:
+                print(f"PASS — latest SPY close {latest_date} ({age_days} day(s) old)")
+    except Exception as exc:
+        fail(f"FAIL — freshness check errored: {exc}")
 
     print()
     print("=" * 78)
