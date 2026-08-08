@@ -154,8 +154,14 @@ Implementation notes:
   yfinance Calendar refresher script that ships real future ex-div dates.
 
 What could be better:
-- "Today's $ impact" right now only covers equity price-moves. Option MTM moves and
-  dividends paid today aren't yet in the today-net number.
+- ~~"Today's $ impact" only covers equity price-moves~~ — closed Aug 2026: the movers
+ card now folds in per-symbol option P&L day-moves (`TODAY_OPTIONS_MOVES_QUERY`, the
+ day delta of `cumulative_options_pnl + open_options_unrealized_pnl` from
+ `mart_daily_pnl` — captures MTM drift AND same-day realizations) and dividends paid
+ today (`TODAY_DIVIDENDS_QUERY` on `int_dividend_events`, anchored to the equity
+ movers' as-of date). Header shows combined "Today's $ impact" with a
+ stocks/options/dividends split. Both queries live inside `build_daily_review_batch`
+ so the cache warmer replays them automatically.
 - Position attribution capital is a proxy (sum of buy-cash). Doesn't account for cash
   released by closures or for variance margin on shorts.
 - No "what I expected vs what happened" framing — could use a 1-line summary that

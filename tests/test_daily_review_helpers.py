@@ -328,9 +328,61 @@ class TestBuildBreakdownTotals:
 class TestBuildTodayMovers:
     def test_empty_input(self):
         result = _build_today_movers(None)
-        assert result == {"winners": [], "losers": [], "total_impact": 0.0, "as_of": None}
+        assert result["winners"] == []
+        assert result["losers"] == []
+        assert result["total_impact"] == 0.0
+        assert result["as_of"] is None
+        assert result["options"] == []
+        assert result["dividends"] == []
+        assert result["combined_impact"] == 0.0
         result = _build_today_movers(pd.DataFrame())
         assert result["winners"] == []
+
+    def test_options_and_dividends_fold_into_combined_impact(self):
+        eq = pd.DataFrame([
+            {"symbol": "AAPL", "shares": 100, "current_value": 17000,
+             "today_close": 170, "prev_close": 167,
+             "price_change": 3.0, "price_change_pct": 1.8,
+             "dollar_impact": 300.0, "today_date": date(2026, 5, 18)},
+        ])
+        opt = pd.DataFrame([
+            {"symbol": "AAPL", "today_date": date(2026, 5, 18), "dollar_impact": -120.0},
+            {"symbol": "SPY", "today_date": date(2026, 5, 18), "dollar_impact": 45.0},
+        ])
+        # One dividend on the as-of day, one older (must be excluded).
+        div = pd.DataFrame([
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 18), "amount": 88.10},
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 15), "amount": 999.0},
+        ])
+        result = _build_today_movers(eq, options_moves_df=opt, dividends_df=div)
+        assert result["total_impact"] == 300.0
+        assert result["options_impact"] == -75.0
+        assert [o["symbol"] for o in result["options"]] == ["AAPL", "SPY"]
+        assert result["dividends"] == [{"symbol": "JEPI", "amount": 88.10}]
+        assert result["dividends_impact"] == 88.10
+        assert result["combined_impact"] == round(300.0 - 75.0 + 88.10, 2)
+
+    def test_options_only_scope_without_equity_rows(self):
+        # An options-only account has no equity price rows but still has a
+        # today story; the builder must not blank the section.
+        opt = pd.DataFrame([
+            {"symbol": "SPY", "today_date": date(2026, 5, 18), "dollar_impact": 210.0},
+        ])
+        result = _build_today_movers(None, options_moves_df=opt)
+        assert result["winners"] == []
+        assert result["options_impact"] == 210.0
+        assert result["combined_impact"] == 210.0
+
+    def test_dividend_anchor_falls_back_to_option_date(self):
+        opt = pd.DataFrame([
+            {"symbol": "SPY", "today_date": date(2026, 5, 18), "dollar_impact": 10.0},
+        ])
+        div = pd.DataFrame([
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 18), "amount": 50.0},
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 17), "amount": 42.0},
+        ])
+        result = _build_today_movers(None, options_moves_df=opt, dividends_df=div)
+        assert result["dividends_impact"] == 50.0
 
     def test_splits_winners_and_losers(self):
         df = pd.DataFrame([

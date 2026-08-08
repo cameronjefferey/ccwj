@@ -747,20 +747,24 @@
 {# ════════════════════════════════════
    TODAY'S MOVERS — biggest stock $ impact on holdings
    ════════════════════════════════════ #}
-{% if today_movers and (today_movers.winners or today_movers.losers) %}
+{% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
         <span>Today's Biggest Movers (your holdings)</span>
-        {% if today_movers.total_impact %}
-        {% set ti = today_movers.total_impact %}
+        {% if today_movers.combined_impact %}
+        {% set ti = today_movers.combined_impact %}
         <span style="font-size: .8rem; color: {% if ti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
-            Net price impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+            Today's $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+            <span class="text-muted" style="font-weight:400;">
+                (stocks {{ "+" if today_movers.total_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}{%
+                if today_movers.options %} · options {{ "+" if today_movers.options_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}{% endif %}{%
+                if today_movers.dividends %} · dividends +${{ "{:,.0f}".format(today_movers.dividends_impact) }}{% endif %})
+            </span>
         </span>
         {% endif %}
     </div>
     <p class="section-sub">
-        Stock-price moves today on currently-held shares, weighted by your share count.
-        Doesn't include options-MTM or realized closures (those are in the breakdown tables below).
+        Stock-price moves today on currently-held shares, weighted by your share count{% if today_movers.options or today_movers.dividends %} — plus option P&amp;L moves and dividends paid today below{% endif %}.
     </p>
     <div class="movers-grid">
         <div>
@@ -804,6 +808,42 @@
             </div>
         </div>
     </div>
+    {% if today_movers.options %}
+    <div style="margin-top:.9rem;">
+        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
+            Options P&amp;L today
+            {% set oi = today_movers.options_impact %}
+            <span style="color: {% if oi >= 0 %}#15803d{% else %}#b91c1c{% endif %};">{{ "+" if oi >= 0 else "-" }}${{ "{:,.0f}".format(oi|abs) }}</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
+            {% for o in today_movers.options %}
+            <a href="{{ url_for('position_detail', symbol=o.symbol) }}" class="badge rounded-pill text-decoration-none"
+               style="font-size:.75rem; padding:.45em .8em; background: {% if o.dollar_impact >= 0 %}#dcfce7; color:#15803d{% else %}#fee2e2; color:#b91c1c{% endif %};">
+                {{ o.symbol }} {{ "+" if o.dollar_impact >= 0 else "-" }}${{ "{:,.0f}".format(o.dollar_impact|abs) }}
+            </a>
+            {% endfor %}
+        </div>
+        <div class="text-muted" style="font-size:.72rem; margin-top:.3rem;">
+            Mark-to-market drift on open contracts plus P&amp;L realized today (closes, expiries).
+        </div>
+    </div>
+    {% endif %}
+    {% if today_movers.dividends %}
+    <div style="margin-top:.9rem;">
+        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
+            Dividends paid today
+            <span style="color:#15803d;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
+            {% for d in today_movers.dividends %}
+            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
+               style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
+                {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 

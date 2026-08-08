@@ -760,6 +760,81 @@ JOIN pair p USING (symbol)
 WHERE h.shares > 0
 """
 
+# Today's OPTION P&L move per held symbol. Complements TODAY_MOVES_QUERY
+# (which is equity-price-impact only — the long-documented gap in "today's
+# $ impact"). Per the option-attribution rule the option contribution at
+# any date is cumulative_options_pnl + open_options_unrealized_pnl and
+# NOTHING else; the day move is that sum's delta between the two most
+# recent mart dates per (tenant, account, user, symbol) partition. That
+# captures both open-contract MTM drift and P&L realized today (a BTC or
+# expiry shows up on its realization day, matching the chart shape).
+# Symbol-grain aggregate (like TODAY_MOVES_QUERY): tenant-scoped in SQL,
+# no account column → not DataFrame-filtered (nothing leakable to merge).
+TODAY_OPTIONS_MOVES_QUERY = """
+WITH opt AS (
+    SELECT
+        tenant_id, account, user_id, symbol, date,
+        COALESCE(cumulative_options_pnl, 0)
+          + COALESCE(open_options_unrealized_pnl, 0) AS opt_total,
+        COALESCE(open_options_unrealized_pnl, 0) AS open_mtm
+    FROM `ccwj-dbt.analytics.mart_daily_pnl`
+    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+      {tenant_filter}
+),
+ranked AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY tenant_id, account, user_id, symbol
+            ORDER BY date DESC
+        ) AS rn
+    FROM opt
+),
+delta AS (
+    SELECT
+        cur.symbol,
+        cur.date AS today_date,
+        cur.opt_total - COALESCE(prev.opt_total, 0) AS day_change,
+        cur.open_mtm,
+        COALESCE(prev.open_mtm, 0) AS prev_open_mtm
+    FROM ranked cur
+    LEFT JOIN ranked prev
+        ON (cur.tenant_id IS NOT DISTINCT FROM prev.tenant_id)
+        AND cur.account = prev.account
+        AND (cur.user_id IS NOT DISTINCT FROM prev.user_id)
+        AND cur.symbol = prev.symbol
+        AND prev.rn = 2
+    WHERE cur.rn = 1
+)
+SELECT
+    symbol,
+    MAX(today_date) AS today_date,
+    ROUND(SUM(day_change), 2) AS dollar_impact
+FROM delta
+-- Only symbols with a live option footprint: an open MTM on either day,
+-- or a realization today. Skips long-closed positions where both days
+-- carry the same frozen cumulative value (delta 0 rows are noise).
+WHERE open_mtm != 0 OR prev_open_mtm != 0 OR day_change != 0
+GROUP BY symbol
+HAVING ABS(SUM(day_change)) >= 0.01
+"""
+
+# Dividends actually PAID today (cash landing, not the projected ex-div
+# watch list). int_dividend_events is per-event; we take the last few
+# days and let the builder pick the rows matching the movers' as-of date.
+TODAY_DIVIDENDS_QUERY = """
+SELECT
+    symbol,
+    trade_date,
+    ROUND(SUM(amount), 2) AS amount
+FROM `ccwj-dbt.analytics.int_dividend_events`
+WHERE trade_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY)
+  {tenant_filter}
+GROUP BY symbol, trade_date
+-- alias resolves to the aggregate in BigQuery HAVING; SUM(amount) here
+-- would be an aggregation-of-aggregations error
+HAVING ABS(amount) >= 0.01
+"""
+
 # After-hours movers (CLOSE-BASED REPORTING, June 2026).
 #
 # Core reporting now anchors equities on the official close (see AGENTS.md
@@ -2921,13 +2996,33 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
     return {"rows": rows, "totals": totals, "basis": basis}
 
 
-def _build_today_movers(today_moves_df, account_total_value=None):
+def _build_today_movers(today_moves_df, account_total_value=None,
+                        options_moves_df=None, dividends_df=None):
     """Today's biggest stock moves on currently-held symbols.
 
     Returns at most 8 winners and 8 losers, sorted by absolute $ impact.
+
+    Also folds in (when provided) the two long-missing pieces of "today's
+    $ impact": per-symbol OPTION P&L day-moves (MTM drift + today's
+    realizations, from mart_daily_pnl) and DIVIDENDS actually paid today
+    (int_dividend_events). ``combined_impact`` = equity + options +
+    dividends; the equity-only ``total_impact`` is kept for the movers
+    list header so the winners/losers rows still reconcile to it.
     """
+    empty = {
+        "winners": [], "losers": [], "total_impact": 0.0, "as_of": None,
+        "options": [], "options_impact": 0.0,
+        "dividends": [], "dividends_impact": 0.0,
+        "combined_impact": 0.0,
+    }
     if today_moves_df is None or today_moves_df.empty:
-        return {"winners": [], "losers": [], "total_impact": 0.0, "as_of": None}
+        base = dict(empty)
+        # Options/dividends can still exist without equity price rows
+        # (options-only accounts) — build them off their own frames.
+        base.update(_today_options_and_divs(options_moves_df, dividends_df, None))
+        base["combined_impact"] = round(
+            base["options_impact"] + base["dividends_impact"], 2)
+        return base
     df = today_moves_df.copy()
     for col in ["shares", "today_close", "prev_close", "price_change",
                 "price_change_pct", "dollar_impact", "current_value"]:
@@ -2955,12 +3050,69 @@ def _build_today_movers(today_moves_df, account_total_value=None):
                      key=lambda x: x["dollar_impact"], reverse=True)[:8]
     losers = sorted([i for i in items if i["dollar_impact"] < 0],
                     key=lambda x: x["dollar_impact"])[:8]
-    return {
+    out = {
         "winners": winners,
         "losers": losers,
         "total_impact": round(total_impact, 2),
         "as_of": as_of,
     }
+    out.update(_today_options_and_divs(options_moves_df, dividends_df, as_of))
+    out["combined_impact"] = round(
+        out["total_impact"] + out["options_impact"] + out["dividends_impact"], 2)
+    return out
+
+
+def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
+    """Option day-moves + dividends-paid-today sub-blocks for the movers card.
+
+    ``equity_as_of`` (ISO date of the equity movers' close pair) anchors
+    which dividend events count as "today" — on a weekend page load the
+    equity movers show Friday's move, so Friday's dividends match. When
+    there is no equity as-of (options-only scope) we use the latest
+    option-mart date, falling back to the newest dividend date.
+    """
+    out = {
+        "options": [], "options_impact": 0.0,
+        "dividends": [], "dividends_impact": 0.0,
+    }
+
+    opt_as_of = None
+    if options_moves_df is not None and not options_moves_df.empty:
+        df = options_moves_df.copy()
+        df["dollar_impact"] = pd.to_numeric(df["dollar_impact"], errors="coerce").fillna(0)
+        opts = []
+        for _, r in df.iterrows():
+            td = r.get("today_date")
+            iso = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
+            if opt_as_of is None or iso > opt_as_of:
+                opt_as_of = iso
+            opts.append({
+                "symbol": str(r.get("symbol") or ""),
+                "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
+            })
+        opts.sort(key=lambda x: abs(x["dollar_impact"]), reverse=True)
+        out["options"] = opts[:8]
+        out["options_impact"] = round(sum(o["dollar_impact"] for o in opts), 2)
+
+    if dividends_df is not None and not dividends_df.empty:
+        anchor = equity_as_of or opt_as_of
+        df = dividends_df.copy()
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+        df["_iso"] = df["trade_date"].map(
+            lambda d: d.isoformat() if hasattr(d, "isoformat") else str(d)[:10])
+        if anchor is None:
+            anchor = df["_iso"].max()
+        todays = df[df["_iso"] == anchor]
+        divs = [
+            {"symbol": str(r.get("symbol") or ""),
+             "amount": round(float(r.get("amount") or 0), 2)}
+            for _, r in todays.iterrows()
+        ]
+        divs.sort(key=lambda x: abs(x["amount"]), reverse=True)
+        out["dividends"] = divs
+        out["dividends_impact"] = round(sum(d["amount"] for d in divs), 2)
+
+    return out
 
 
 def _build_after_hours_movers(ah_df):
@@ -3359,6 +3511,8 @@ def build_daily_review_batch(tenant_filter, today, this_week):
         "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
         "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
         "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
+        "today_options_moves": TODAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter),
+        "today_dividends": TODAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
@@ -3812,10 +3966,16 @@ def weekly_review():
                 app.logger.warning("Earnings processing failed: %s", e)
 
         # ── Today's stock movers (held symbols) ───────────────────────
+        # Now includes option P&L day-moves and dividends paid today, so
+        # "today's $ impact" is the whole story, not just equity closes.
         try:
             tm_df = batch.get("today_moves", pd.DataFrame())
-            context["today_movers"] = _build_today_movers(tm_df, account_total_value=
-                (context.get("equity_snapshot") or {}).get("account_value"))
+            context["today_movers"] = _build_today_movers(
+                tm_df,
+                account_total_value=(context.get("equity_snapshot") or {}).get("account_value"),
+                options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
+                dividends_df=batch.get("today_dividends", pd.DataFrame()),
+            )
         except Exception as e:
             if app.debug:
                 app.logger.warning("Today movers processing failed: %s", e)
