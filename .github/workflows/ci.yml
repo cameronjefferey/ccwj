@@ -42,7 +42,11 @@ jobs:
       SECRET_KEY: ci-test-secret-do-not-use-in-production
       TEST_DATABASE_URL: postgresql://happytrader:happytrader@localhost:5432/happytrader_test
       # BQ integration tests stay opt-in (need credentials + live warehouse).
-      RUN_BQ_TESTS: "0"
+      # NOTE: the tests gate on TRUTHINESS of the env var
+      # (`os.environ.get("RUN_BQ_TESTS")`), so it must be UNSET or "" to
+      # skip — the string "0" is truthy in Python and ENABLES them (broke
+      # CI on 2026-08-07 with DefaultCredentialsError at setup).
+      RUN_BQ_TESTS: ""
 
     steps:
       - name: Checkout code

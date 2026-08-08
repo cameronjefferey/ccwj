@@ -19,6 +19,19 @@
         — running totals from the start of each account's snapshot
         history. Lets the page render "where the growth came from"
         without a second BQ round-trip.
+      - net_deposit_today, cumulative_net_deposits — external cash the
+        trader moved IN (+) or OUT (−) of the account on/through this day
+        (``stg_history.action = 'cash_transfer'``: deposits +, withdrawals
+        −). These are NOT trading P&L; they move account_value without any
+        market activity. The /wealth + /accounts "exclude deposits &
+        withdrawals" toggle subtracts ``cumulative_net_deposits`` from
+        ``account_value`` so the curve reflects investment + income growth
+        only. FORWARD-ONLY: only cash transfers ingested since deposit
+        capture shipped are counted (SnapTrade activities are a short T+1
+        window and were previously dropped), so on accounts funded before
+        that the baseline balance is unchanged and only NEW transfers net
+        out. Both columns are 0 for every account with no captured
+        transfers, so the toggle is a graceful no-op there.
 
     The /wealth page can answer:
       - "How much do I have today and how is it allocated?" — top row
@@ -76,9 +89,12 @@ history_by_day as (
         sum(case when action = 'credit_interest' then amount else 0 end)
             + sum(case when action = 'margin_interest' then amount else 0 end)
             as interest_net_today,
-        sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today
+        sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today,
+        -- External cash flow: deposits (+) / withdrawals (−). The seed
+        -- already carries the signed amount, so a plain sum nets the day.
+        sum(case when action = 'cash_transfer'   then amount else 0 end) as net_deposit_today
     from {{ ref('stg_history') }}
-    where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee')
+    where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee', 'cash_transfer')
     group by 1, 2, 3, 4
 ),
 
@@ -94,7 +110,8 @@ joined as (
         e.option_value,
         coalesce(h.dividend_today, 0)      as dividend_today,
         coalesce(h.interest_net_today, 0)  as interest_net_today,
-        coalesce(h.fees_today, 0)          as fees_today
+        coalesce(h.fees_today, 0)          as fees_today,
+        coalesce(h.net_deposit_today, 0)   as net_deposit_today
     from equity e
     left join history_by_day h
       on h.account = e.account
@@ -124,6 +141,7 @@ select
     dividend_today,
     interest_net_today,
     fees_today,
+    net_deposit_today,
 
     -- Running totals scoped to (tenant_id, account, user_id) so two
     -- physical accounts sharing a display label never have their tallies
@@ -133,6 +151,16 @@ select
         order by date
         rows between unbounded preceding and current row
     ) as cumulative_dividends,
+
+    -- Cumulative net external cash flow (deposits − withdrawals) from the
+    -- start of each account's history through this day. The /wealth +
+    -- /accounts toggle subtracts this from account_value to strip out
+    -- money the trader added/removed.
+    sum(net_deposit_today) over (
+        partition by tenant_id, account, user_id
+        order by date
+        rows between unbounded preceding and current row
+    ) as cumulative_net_deposits,
 
     sum(interest_net_today) over (
         partition by tenant_id, account, user_id

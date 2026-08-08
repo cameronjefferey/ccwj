@@ -50,13 +50,17 @@ def _create_user(
     password: str = "testpass123",
     email: str | None = None,
 ) -> int:
-    """Create a user via the same Postgres connection the test fixture yields.
+    """Create a user via the Postgres connection the test fixture yields.
 
-    The ``db_conn`` fixture hands us a psycopg connection wrapped in
-    ``with conn:`` (auto-commits on clean exit), so we must use a cursor
-    rather than ``conn.execute`` (which does not exist on psycopg) and we
-    do not call ``conn.commit`` ourselves — the fixture's context handles
-    that when the test function returns.
+    COMMITS IMMEDIATELY. ``app/db.py`` deliberately opens a fresh
+    connection per ``get_conn()`` call (no pool), so anything the app does
+    mid-test (``add_account_for_user``, the /login route, token minting)
+    runs on a DIFFERENT connection and cannot see this fixture
+    connection's uncommitted rows. Leaving the commit to the fixture's
+    ``with conn:`` exit (the old behavior, from the pooled-connection era
+    when app + test shared a connection) makes every such call fail with
+    an FK violation on ``users`` — which is exactly how this suite broke
+    when it first ran in CI (2026-08-07).
     """
     from werkzeug.security import generate_password_hash
 
@@ -66,7 +70,26 @@ def _create_user(
             (username, generate_password_hash(password), email),
         )
         row = cur.fetchone()
+    conn.commit()
     return int(row["id"])
+
+
+def _link_tenant(user_id: int, account_name: str) -> str:
+    """Give a test user a real (v2) broker tenant.
+
+    Under v2 tenancy every gate reads ``broker_tenants``:
+    ``_redirect_if_no_accounts`` bounces tenant-less users to /get-started
+    before the page renders, and ``_user_account_list`` builds the picker
+    from tenant rows. The legacy ``add_account_for_user`` (user_accounts
+    table) no longer satisfies either, so page-level tests must link a
+    tenant or every GET comes back 302. Random uuid = distinct physical
+    account per call (matching how SnapTrade mints one per registration).
+    """
+    from app.models import get_or_create_broker_tenant
+
+    return get_or_create_broker_tenant(
+        user_id, "snaptrade", uuid.uuid4().hex, account_name
+    )
 
 
 def _login(client, username: str, password: str = "testpass123"):
@@ -97,6 +120,10 @@ class TestInsightDataIsolation:
 
         add_account_for_user(user_a_id, "AcctA")
         add_account_for_user(user_b_id, "AcctB")
+        # v2 tenancy: without a broker tenant the route 302s to /get-started
+        # before it could leak anything (see _redirect_if_no_accounts).
+        _link_tenant(user_a_id, "AcctA")
+        _link_tenant(user_b_id, "AcctB")
         save_insight(user_a_id, "User A secret summary", "User A full analysis content")
 
         _login(client, user_b)
@@ -108,31 +135,37 @@ class TestInsightDataIsolation:
 
 
 class TestMirrorScoreDataIsolation:
-    """Mirror scores must be scoped by user_id."""
+    """Mirror scores must be scoped by user_id.
 
-    def test_mirror_score_uses_current_user_only(self, client, db_conn):
-        """Mirror score route must use current_user.id, not any request parameter."""
-        user_a = _unique_username("ms_a")
-        user_b = _unique_username("ms_b")
-        user_a_id = _create_user(db_conn, user_a)
-        user_b_id = _create_user(db_conn, user_b)
+    The /mirror-score PAGE was removed from the product ("Simplify site"
+    commit f7f4e80 deleted app/mirror_score.py), but the mirror_scores
+    table and its model helpers survive (admin tooling +
+    compute_mirror_scores.py still write it), so the read helpers must
+    stay user_id-scoped."""
 
-        from app.models import add_account_for_user, save_mirror_score
+    def test_mirror_score_reads_are_user_scoped(self, db_conn):
+        user_a_id = _create_user(db_conn, _unique_username("ms_a"))
+        user_b_id = _create_user(db_conn, _unique_username("ms_b"))
 
-        add_account_for_user(user_a_id, "AcctA")
-        add_account_for_user(user_b_id, "AcctB")
+        from app.models import (
+            get_mirror_score_for_user,
+            get_mirror_score_history,
+            save_mirror_score,
+        )
+
         save_mirror_score(
             user_a_id, "2025-01-06", 90, 85, 88, 92, 89, "High",
             "User A mirror diagnostic",
         )
 
-        _login(client, user_b)
-        r = client.get("/mirror-score?week=2025-01-06")
+        # User B must see nothing, even asking for the exact week user A has.
+        assert get_mirror_score_for_user(user_b_id, "2025-01-06") is None
+        assert get_mirror_score_history(user_b_id) == []
 
-        # User B has no data; must NOT see User A's diagnostic sentence even
-        # though the URL has an explicit week parameter.
-        assert r.status_code == 200
-        assert b"User A mirror diagnostic" not in r.data
+        # Sanity: user A's own read returns the row.
+        row_a = get_mirror_score_for_user(user_a_id, "2025-01-06")
+        assert row_a is not None
+        assert "User A mirror diagnostic" in str(dict(row_a))
 
 
 class TestSharedAccountLabel:
@@ -193,9 +226,13 @@ class TestSharedAccountLabel:
     def test_user_account_list_returns_shared_label(self, app, db_conn):
         """``_user_account_list()`` is THE gate to multi-tenant data — it
         used to strip labels that collided across users. Now it returns
-        the user's labels as-is (the user_id-aware SQL/DataFrame
-        filters downstream are what keep the data separate)."""
-        from app.models import User, add_account_for_user
+        the user's labels as-is (the tenant-aware SQL/DataFrame filters
+        downstream are what keep the data separate). Under v2 the list is
+        built from ``broker_tenants`` — the same physical account shared
+        across users surfaces as a DISTINCT tenant per user (see
+        AGENTS.md "The SAME brokerage account legitimately belongs to
+        MULTIPLE users"), so labels may legitimately collide."""
+        from app.models import User
         from app.routes import _user_account_list
         from flask_login import login_user
 
@@ -204,9 +241,9 @@ class TestSharedAccountLabel:
         shared = f"Shared_{uuid.uuid4().hex[:6]}"
         solo = f"SoloLegit_{uuid.uuid4().hex[:6]}"
 
-        add_account_for_user(legit_id, solo)
-        add_account_for_user(legit_id, shared)
-        add_account_for_user(other_id, shared)  # collision is allowed now
+        _link_tenant(legit_id, solo)
+        _link_tenant(legit_id, shared)
+        _link_tenant(other_id, shared)  # cross-user collision is allowed
 
         with app.test_request_context("/positions"):
             login_user(User.get_by_id(legit_id))
