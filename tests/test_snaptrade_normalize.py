@@ -60,6 +60,8 @@ def test_action_map_covers_every_stg_history_label_we_emit():
         "Expired", "Assigned", "Exchange or Exercise",
         "Cash Dividend", "Qualified Dividend",
         "Credit Interest", "Margin Interest", "ADR Mgmt Fee",
+        # External cash movements folded to action='cash_transfer'.
+        "Deposit", "Withdrawal",
     }
     emitted = {v for v in SNAPTRADE_ACTIVITY_TO_ACTION.values() if v is not None}
     # Pull every option action the resolver can possibly produce.
@@ -70,14 +72,25 @@ def test_action_map_covers_every_stg_history_label_we_emit():
     assert not missing, f"action map missing labels: {missing}"
 
 
-def test_action_map_drops_cash_movement_explicitly():
-    """Deposit/withdrawal/transfer/journal/split must map to None —
-    not a silent KeyError, not "Other". stg_history would bucket them
-    as `other` and our P&L surfaces would show them as cash
-    adjustments that look like trades. Splits in particular are
-    handled out-of-band by current_position_stock_price.py +
-    stg_split_events; including them here would double-count."""
-    for cash_kind in ("DEPOSIT", "WITHDRAWAL", "TRANSFER", "JOURNAL", "SPLIT", "STOCKSPLIT"):
+def test_action_map_captures_unambiguous_cash_movements():
+    """DEPOSIT / WITHDRAWAL / CONTRIBUTION are the trader's own money in/out.
+    They aren't trades, but they DO move account value, so we capture them
+    as a dedicated ``Cash Transfer``-family label (stg_history folds them to
+    ``action = 'cash_transfer'``) to power the "exclude deposits &
+    withdrawals" toggle. Deposits/contributions read as cash IN, withdrawals
+    as cash OUT."""
+    assert SNAPTRADE_ACTIVITY_TO_ACTION["DEPOSIT"] == "Deposit"
+    assert SNAPTRADE_ACTIVITY_TO_ACTION["CONTRIBUTION"] == "Deposit"
+    assert SNAPTRADE_ACTIVITY_TO_ACTION["WITHDRAWAL"] == "Withdrawal"
+
+
+def test_action_map_still_drops_ambiguous_or_share_movements():
+    """TRANSFER / JOURNAL can be SHARE transfers (not cash), DISTRIBUTION is
+    ambiguous (fund distribution income vs. account withdrawal), and SPLIT is
+    handled out-of-band by current_position_stock_price.py + stg_split_events.
+    Mislabeling any of these as cash flow would corrupt the net-deposits
+    number, so they stay dropped (None)."""
+    for cash_kind in ("TRANSFER", "JOURNAL", "DISTRIBUTION", "SPLIT", "STOCKSPLIT"):
         assert SNAPTRADE_ACTIVITY_TO_ACTION[cash_kind] is None
 
 
@@ -256,18 +269,45 @@ def test_history_df_drops_unknown_activity_types():
     assert df.iloc[0]["Action"] == "Buy"
 
 
-def test_history_df_drops_deposit_withdrawal_journal_silently():
-    """Cash movements that explicitly map to None must NOT land in the
-    seed (they aren't trades). They produce zero rows — not "Unknown"
-    and not "Other"."""
+def test_history_df_captures_deposits_and_withdrawals_with_signed_amount():
+    """Deposits/withdrawals now land in the seed as Deposit/Withdrawal rows
+    (folded to ``cash_transfer`` in stg_history) with a sign-correct Amount:
+    deposits cash IN (+), withdrawals cash OUT (−). Share-movement/ambiguous
+    types (JOURNAL) still drop silently."""
     activities = [
         _buy_activity(),
         {"type": "DEPOSIT", "amount": 1000, "trade_date": "2026-05-11"},
-        {"type": "WITHDRAWAL", "amount": -500, "trade_date": "2026-05-11"},
+        {"type": "WITHDRAWAL", "amount": 500, "trade_date": "2026-05-11"},
         {"type": "JOURNAL", "amount": 0, "trade_date": "2026-05-11"},
     ]
     df = activities_to_history_df(activities, account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
-    assert len(df) == 1
+    # buy + deposit + withdrawal survive; journal is dropped.
+    assert len(df) == 3
+    dep = df[df["Action"] == "Deposit"]
+    wd = df[df["Action"] == "Withdrawal"]
+    assert len(dep) == 1 and len(wd) == 1
+    assert float(dep.iloc[0]["Amount"]) == 1000.0
+    # Withdrawal is cash OUT regardless of the broker-reported sign.
+    assert float(wd.iloc[0]["Amount"]) == -500.0
+
+
+def test_history_df_withdrawal_negative_even_if_broker_reports_positive():
+    """We never trust the broker's signed amount for direction — a
+    withdrawal reported as +500 must still be −500 (cash out)."""
+    df = activities_to_history_df(
+        [{"type": "WITHDRAWAL", "amount": 500, "trade_date": "2026-05-11"}],
+        account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert float(df.iloc[0]["Amount"]) == -500.0
+
+
+def test_history_df_contribution_maps_to_deposit_cash_in():
+    df = activities_to_history_df(
+        [{"type": "CONTRIBUTION", "amount": 250, "trade_date": "2026-05-11"}],
+        account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.iloc[0]["Action"] == "Deposit"
+    assert float(df.iloc[0]["Amount"]) == 250.0
 
 
 def test_history_df_emits_osi_for_options():

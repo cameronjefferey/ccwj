@@ -3703,6 +3703,15 @@ CHART_DATA_ALL_QUERY = """
     ORDER BY symbol, date
 """
 
+# Per-day external cash flow (deposits +, withdrawals −) for the /accounts
+# "Net deposits" card. net_deposit_today already carries the signed amount.
+NET_DEPOSITS_QUERY = """
+    SELECT tenant_id, account, user_id, date, net_deposit_today
+    FROM `ccwj-dbt.analytics.mart_wealth_daily`
+    WHERE 1=1 {tenant_filter}
+    ORDER BY date
+"""
+
 # Per-symbol dividend events for the Breakdown-by-Type card. Extracted to a
 # module constant (was inlined inside _compute_breakdown_by_type) so the
 # position_detail route can fetch it in the SAME parallel _bq_parallel wave
@@ -8506,6 +8515,7 @@ def accounts():
             summary_chart_json="{}",
             strategy_chart_json="{}",
             realized_events_json="[]",
+            net_deposit_events_json="[]",
             strategy_rows=[],
             position_breakdown=[],
             position_breakdown_totals=None,
@@ -8618,6 +8628,40 @@ def accounts():
         if "dividend_income" in strat_summary_df.columns else 0.0
     )
 
+    # ------------------------------------------------------------------
+    # Net deposits / withdrawals (external cash the trader moved in/out).
+    # The P&L cards + chart are already deposit-free (they read realized /
+    # unrealized trading P&L, not balance), but Account Value on its own
+    # can't tell "I'm up" from "I added money". Surfacing net deposits next
+    # to it — and shipping per-day events so the card re-windows client-side
+    # on a time-frame switch (mirrors REALIZED_EVENTS) — closes that gap.
+    # Defensive: mart_wealth_daily may predate transfer capture, so a
+    # missing column just yields 0 / [] and the card hides itself.
+    # ------------------------------------------------------------------
+    net_deposits_lifetime = 0.0
+    net_deposit_events = []
+    try:
+        nd_tenant_ids = _tenants_for_scope(selected_account)
+        nd_df = cached_query_df(
+            client,
+            NET_DEPOSITS_QUERY.format(tenant_filter=_tenant_sql_and(nd_tenant_ids)),
+        )
+        nd_df = _filter_df_by_tenant_ids(nd_df, nd_tenant_ids)
+        if not nd_df.empty and "net_deposit_today" in nd_df.columns:
+            by_day = (
+                nd_df.groupby("date", as_index=False)["net_deposit_today"].sum()
+                .sort_values("date")
+            )
+            net_deposits_lifetime = float(by_day["net_deposit_today"].sum())
+            for d_, a_ in zip(by_day["date"], by_day["net_deposit_today"]):
+                amt = float(a_ or 0)
+                if abs(amt) < 0.005:
+                    continue
+                d_iso = d_.isoformat() if hasattr(d_, "isoformat") else str(d_)
+                net_deposit_events.append([d_iso, round(amt, 2)])
+    except Exception as exc:
+        app.logger.warning("Account net-deposits query failed: %s", exc)
+
     kpis = {
         "account_value": account_value,
         "cash_balance": cash_balance,
@@ -8626,6 +8670,8 @@ def accounts():
         "unrealized_pnl": acct_unrealized,
         "dividend_income": dividend_income,
         "total_return": total_return,
+        "net_deposits": round(net_deposits_lifetime, 2),
+        "has_transfers": abs(net_deposits_lifetime) > 0.005,
     }
 
     # ------------------------------------------------------------------
@@ -8755,6 +8801,7 @@ def accounts():
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),
         realized_events_json=json.dumps(realized_events),
+        net_deposit_events_json=json.dumps(net_deposit_events),
         strategy_rows=strategy_rows,
         position_breakdown=breakdowns["position_breakdown"],
         position_breakdown_totals=breakdowns["position_breakdown_totals"],

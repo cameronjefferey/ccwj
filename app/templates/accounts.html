@@ -127,6 +127,20 @@
             <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
         </div>
     </div>
+    {# Net deposits / withdrawals — the trader's own money moved in/out. Not
+       trading P&L (the P&L cards + chart already exclude it), shown so
+       Account Value isn't misread as performance. Re-windows client-side
+       on a time-frame change (see updateCards()). Hidden when there are no
+       captured transfers. #}
+    <div class="col" id="kpiNetDepositsCol"
+         style="{{ '' if kpis.has_transfers else 'display:none;' }}">
+        <div class="card kpi-card p-3 text-center" id="kpiNetDeposits">
+            <div class="kpi-label">Net deposits</div>
+            <div class="kpi-value {{ 'text-positive' if (kpis.net_deposits or 0) >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.net_deposits or 0) }}
+            </div>
+        </div>
+    </div>
     {# Realized / Dividends / Net cards update INSTANTLY client-side when the
        time frame changes (see updateCards() in the scripts block). #}
     <div class="col">
@@ -396,10 +410,14 @@
        recomputed in the browser without a round trip, matching the server's
        windowed sum (close_date >= cutoff). */
     var REALIZED_EVENTS = {{ realized_events_json | safe }};
+    /* Per-day [date, signed amount] external cash flow so "Net deposits"
+       re-windows in the browser exactly like Realized. */
+    var NET_DEPOSIT_EVENTS = {{ net_deposit_events_json | default('[]') | safe }};
     var KPI_LIFETIME = {
         realized:     {{ (kpis.realized_pnl or 0) | tojson }},
         dividends:    {{ (kpis.dividend_income or 0) | tojson }},
-        total_return: {{ (kpis.total_return or 0) | tojson }}
+        total_return: {{ (kpis.total_return or 0) | tojson }},
+        net_deposits: {{ (kpis.net_deposits or 0) | tojson }}
     };
 
     var RANGE_DAYS   = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
@@ -499,6 +517,17 @@
         return sum;
     }
 
+    function netDepositsInWindow(key) {
+        if (key === 'ALL') return KPI_LIFETIME.net_deposits;
+        var cutoff = windowCutoff(key);
+        if (!cutoff) return 0;
+        var sum = 0;
+        for (var i = 0; i < NET_DEPOSIT_EVENTS.length; i++) {
+            if (parseDate(NET_DEPOSIT_EVENTS[i][0]) >= cutoff) sum += NET_DEPOSIT_EVENTS[i][1];
+        }
+        return sum;
+    }
+
     function seriesDelta(arr, key) {
         if (!arr || !arr.length) return 0;
         var sIdx = startIndexFor(summaryData.dates, key);
@@ -538,6 +567,20 @@
         } else {
             if (divCol) divCol.style.display = '';
             setCard('kpiDividends', 'Dividends (period)', seriesDelta(summaryData.dividends, key));
+        }
+
+        // Net deposits card: lifetime for ALL, else summed over the window.
+        var ndCol = document.getElementById('kpiNetDepositsCol');
+        if (ndCol) {
+            var hasEvents = NET_DEPOSIT_EVENTS && NET_DEPOSIT_EVENTS.length;
+            if (!hasEvents && !KPI_LIFETIME.net_deposits) {
+                ndCol.style.display = 'none';
+            } else {
+                ndCol.style.display = '';
+                setCard('kpiNetDeposits',
+                        isAll ? 'Net deposits' : 'Net deposits (period)',
+                        netDepositsInWindow(key));
+            }
         }
     }
 

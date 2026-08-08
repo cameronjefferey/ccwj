@@ -273,6 +273,45 @@ Tenant isolation: row-level query results go through `_filter_df_by_accounts(...
 Symbol links in the drill-down table preserve the selected account filter (`?account=`).
 
 **Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
+### Wealth (`/wealth`)
+**Status: Working. Daily account value over time + composition.**
+
+Reads `mart_wealth_daily` (account_value / cash / equity / options per day,
+plus cumulative dividends / interest / fees). Stacked-area chart of
+composition with a total line; hero shows allocation + change-over-time.
+
+**Deposits & withdrawals toggle (Aug 2026).** Deposits/withdrawals move
+account value without being trading gains, which distorts "how am I doing"
+on balance-based surfaces. External cash movements are now CAPTURED (they
+were previously dropped): SnapTrade `DEPOSIT` / `WITHDRAWAL` / `CONTRIBUTION`
+activities map to `action = 'cash_transfer'` / `instrument_type = 'Cash Event'`
+in `stg_history` (deposit +, withdrawal −; `TRANSFER` / `JOURNAL` /
+`DISTRIBUTION` stay dropped — they can be SHARE transfers or ambiguous
+income). `mart_wealth_daily` exposes `net_deposit_today` +
+`cumulative_net_deposits`. The `/wealth` page's **"Exclude deposits &
+withdrawals"** toggle (`?exclude_transfers=1`) subtracts net cash flow
+(rebased to the window start) from the account-value line and the
+change-over-time numbers, so the curve reflects market + income only; the
+gap between the raw and adjusted lines is the money moved in/out.
+`/accounts` adds a **Net deposits** KPI card (its P&L chart was already
+deposit-free by construction) that re-windows client-side like Realized.
+
+**FORWARD-ONLY.** Only transfers ingested since capture shipped are counted
+(SnapTrade activities are a short T+1 window and were dropped before), so
+accounts funded earlier keep their baseline and only NEW transfers net out.
+Both mart columns are 0 where no transfers were captured, so the toggle is a
+graceful no-op (and the Net deposits card hides itself). Local dev is built
+from committed seeds with no live syncs, so the section stays empty in dev —
+it populates in prod once real deposit/withdrawal activities sync.
+
+**Containment.** `cash_transfer` is INERT in every trade/session/option/
+dividend model (all filter to Equity/Call/Put/dividend). The one catch-all,
+`mart_daily_pnl.other_amount` (feeds the P&L charts), has an explicit
+`action <> 'cash_transfer'` guard. Regression:
+`dbt/tests/cash_transfer_is_inert_in_trading_pnl.sql` (a cash_transfer row
+must be a `Cash Event`); unit coverage in `tests/test_snaptrade_normalize.py`
+and `tests/test_wealth_chart.py`.
+
 ### Mirror Score (`/mirror-score`)
 **Status: Functional but definition is evolving.**
 

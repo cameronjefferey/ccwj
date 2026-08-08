@@ -113,6 +113,12 @@ with trade_daily as (
         and sf.trade_date = h.trade_date
     where h.trade_date is not null
       and h.underlying_symbol is not null
+      -- External cash movements (deposits/withdrawals) are NOT trading P&L.
+      -- Without this guard they'd fall into ``other_amount`` (the
+      -- instrument_type-not-in catch-all) and inflate the cumulative P&L
+      -- line on the /accounts + position charts. Net-deposits live on
+      -- mart_wealth_daily instead.
+      and h.action <> 'cash_transfer'
     group by 1, 2, 3, 4, 5
 ),
 

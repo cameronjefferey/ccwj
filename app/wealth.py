@@ -53,6 +53,37 @@ SELECT
     fees_today,
     cumulative_dividends,
     cumulative_interest_net,
+    cumulative_fees,
+    net_deposit_today,
+    cumulative_net_deposits
+FROM `ccwj-dbt.analytics.mart_wealth_daily`
+WHERE 1=1 {tenant_filter}
+  AND date >= @start_date
+  AND date <= @end_date
+ORDER BY date, account
+"""
+
+# Deploy-order fallback: the /wealth code and the mart_wealth_daily rebuild
+# don't necessarily land together (the app can redeploy before the BigQuery
+# CI rebuilds the mart). Selecting a not-yet-materialized column 400s the
+# whole page, so if the transfer columns are missing we retry without them
+# and treat net deposits as 0 (toggle becomes a graceful no-op).
+WEALTH_DAILY_QUERY_LEGACY = """
+SELECT
+    tenant_id,
+    account,
+    user_id,
+    date,
+    account_value,
+    cash_value,
+    equity_value,
+    option_value,
+    account_value_delta,
+    dividend_today,
+    interest_net_today,
+    fees_today,
+    cumulative_dividends,
+    cumulative_interest_net,
     cumulative_fees
 FROM `ccwj-dbt.analytics.mart_wealth_daily`
 WHERE 1=1 {tenant_filter}
@@ -137,15 +168,47 @@ def _resolve_range(arg_value, default_days):
     return end - timedelta(days=default_days), end
 
 
-def _build_chart_payload(df):
+def _net_deposits_by_date(df):
+    """Return a date-indexed Series of cumulative net deposits (summed
+    across accounts in scope), rebased so the FIRST day in the window is
+    0. Rebasing to the window start means a deposit that happened BEFORE
+    the window is a constant offset that cancels out (it doesn't distort
+    the shape), while a deposit INSIDE the window shows up as the step it
+    really is. Returns an all-zero Series when the mart predates transfer
+    capture (column missing) so callers degrade to a no-op.
+    """
+    if df is None or df.empty or "cumulative_net_deposits" not in df.columns:
+        return None
+    cum = (
+        df.groupby("date", as_index=False)
+        .agg(cumulative_net_deposits=("cumulative_net_deposits", "sum"))
+        .sort_values("date")
+    )
+    if cum.empty:
+        return None
+    base = float(cum["cumulative_net_deposits"].iloc[0])
+    cum["net_since_start"] = cum["cumulative_net_deposits"].astype(float) - base
+    return cum.set_index("date")["net_since_start"]
+
+
+def _build_chart_payload(df, exclude_transfers=False):
     """Aggregate per-account daily rows into the JSON the chart eats.
 
     Sums across accounts inside the selected scope so multi-account
-    users see a single combined wealth curve. The page also exposes
-    an account picker if they want to drill in.
+    users see a single combined wealth curve. Also emits a
+    deposit-adjusted line (``account_value_ex_transfers``) and the
+    cumulative net-deposit series so the page's "exclude deposits &
+    withdrawals" toggle can show the balance driven by market moves +
+    income only.
     """
+    empty = {
+        "dates": [], "cash": [], "equity": [], "options": [],
+        "account_value": [], "account_value_ex_transfers": [],
+        "net_deposits": [], "has_transfers": False,
+        "exclude_transfers": bool(exclude_transfers),
+    }
     if df is None or df.empty:
-        return {"dates": [], "cash": [], "equity": [], "options": [], "account_value": []}
+        return empty
 
     by_date = df.groupby("date", as_index=False).agg(
         account_value=("account_value", "sum"),
@@ -154,21 +217,41 @@ def _build_chart_payload(df):
         option_value=("option_value", "sum"),
     ).sort_values("date")
 
+    net_dep = _net_deposits_by_date(df)
+    if net_dep is not None:
+        net_series = [float(net_dep.get(d, 0.0) or 0.0) for d in by_date["date"]]
+    else:
+        net_series = [0.0] * len(by_date)
+    has_transfers = any(abs(v) > 0.005 for v in net_series)
+
+    account_value = [float(v) for v in by_date["account_value"]]
+    adjusted = [av - nd for av, nd in zip(account_value, net_series)]
+
     return {
         "dates": [d.isoformat() if hasattr(d, "isoformat") else str(d) for d in by_date["date"]],
         "cash": [round(float(v), 2) for v in by_date["cash_value"]],
         "equity": [round(float(v), 2) for v in by_date["equity_value"]],
         "options": [round(float(v), 2) for v in by_date["option_value"]],
-        "account_value": [round(float(v), 2) for v in by_date["account_value"]],
+        "account_value": [round(v, 2) for v in account_value],
+        "account_value_ex_transfers": [round(v, 2) for v in adjusted],
+        "net_deposits": [round(v, 2) for v in net_series],
+        "has_transfers": has_transfers,
+        "exclude_transfers": bool(exclude_transfers),
     }
 
 
-def _build_summary(df):
+def _build_summary(df, exclude_transfers=False):
     """Hero numbers for the top of the page.
 
     Latest row is "today" (or last snapshot day). Prior rows are used
     to compute change-over-time. Returns ``None`` when the frame is
     empty so the template can render an empty-state card.
+
+    When ``exclude_transfers`` is set, the change-over-time figures are
+    computed on a deposit-adjusted value (account_value minus net
+    external cash flow since the reference day) so a $10k deposit doesn't
+    read as a $10k "gain". The point-in-time allocation numbers
+    (account_value / cash / equity / option) are always the real balance.
     """
     if df is None or df.empty:
         return None
@@ -182,6 +265,15 @@ def _build_summary(df):
 
     if by_date.empty:
         return None
+
+    # Cumulative net deposits per day, rebased to the window start (0 on
+    # the first day). Merged onto by_date so each reference row carries the
+    # net cash moved between that day and the latest day.
+    net_dep = _net_deposits_by_date(df)
+    if net_dep is not None:
+        by_date["net_dep"] = [float(net_dep.get(d, 0.0) or 0.0) for d in by_date["date"]]
+    else:
+        by_date["net_dep"] = 0.0
 
     latest = by_date.iloc[-1]
     first = by_date.iloc[0]
@@ -201,11 +293,19 @@ def _build_summary(df):
             return None
         diff = float(latest["account_value"]) - float(row["account_value"])
         base = float(row["account_value"]) or 0.0
+        if exclude_transfers:
+            # Remove the external cash moved between the reference day and
+            # now, so the delta reflects market + income only.
+            diff -= float(latest["net_dep"]) - float(row["net_dep"])
         pct = (diff / base * 100) if base else None
         return {"abs": round(diff, 2), "pct": round(pct, 2) if pct is not None else None}
 
     one_month_ago = today - timedelta(days=30) if hasattr(today, "__sub__") else None
     three_months_ago = today - timedelta(days=90) if hasattr(today, "__sub__") else None
+
+    # Net external cash flow across the whole window (latest − first,
+    # both rebased so first = 0 → this is simply the latest value).
+    net_deposits_in_range = round(float(latest["net_dep"]) - float(first["net_dep"]), 2)
 
     return {
         "as_of": today.isoformat() if hasattr(today, "isoformat") else str(today),
@@ -216,6 +316,9 @@ def _build_summary(df):
         "change_in_range": _change(first),
         "change_30d": _change(_at_or_before(one_month_ago)) if one_month_ago else None,
         "change_90d": _change(_at_or_before(three_months_ago)) if three_months_ago else None,
+        "net_deposits_in_range": net_deposits_in_range,
+        "has_transfers": abs(net_deposits_in_range) > 0.005,
+        "exclude_transfers": bool(exclude_transfers),
     }
 
 
@@ -238,26 +341,37 @@ def _build_income_panel(df):
         keys = ["account", "user_id"]
     else:
         keys = ["account"]
+    have_transfers = "cumulative_net_deposits" in df.columns
+    agg_kwargs = dict(
+        first_div=("cumulative_dividends", "first"),
+        last_div=("cumulative_dividends", "last"),
+        first_int=("cumulative_interest_net", "first"),
+        last_int=("cumulative_interest_net", "last"),
+        first_fee=("cumulative_fees", "first"),
+        last_fee=("cumulative_fees", "last"),
+    )
+    if have_transfers:
+        agg_kwargs["first_dep"] = ("cumulative_net_deposits", "first")
+        agg_kwargs["last_dep"] = ("cumulative_net_deposits", "last")
     per_key = (
         df.sort_values("date")
         .groupby(keys, as_index=False)
-        .agg(
-            first_div=("cumulative_dividends", "first"),
-            last_div=("cumulative_dividends", "last"),
-            first_int=("cumulative_interest_net", "first"),
-            last_int=("cumulative_interest_net", "last"),
-            first_fee=("cumulative_fees", "first"),
-            last_fee=("cumulative_fees", "last"),
-        )
+        .agg(**agg_kwargs)
     )
     div = float((per_key["last_div"] - per_key["first_div"]).sum())
     interest = float((per_key["last_int"] - per_key["first_int"]).sum())
     fees = float((per_key["last_fee"] - per_key["first_fee"]).sum())
+    net_deposits = (
+        float((per_key["last_dep"] - per_key["first_dep"]).sum())
+        if have_transfers else 0.0
+    )
 
     return {
         "dividends": round(div, 2),
         "interest_net": round(interest, 2),
         "fees": round(fees, 2),
+        "net_deposits": round(net_deposits, 2),
+        "has_transfers": abs(net_deposits) > 0.005,
     }
 
 
@@ -284,6 +398,10 @@ def wealth():
     user_accounts = _user_account_list()
     selected_raw = (request.args.get("account") or "").strip()
     range_arg = request.args.get("range", "")
+    # Toggle: strip the trader's own deposits / withdrawals out of the
+    # change-over-time numbers and the chart's headline line so the page
+    # shows growth from the market + income, not from money moved in/out.
+    exclude_transfers = request.args.get("exclude_transfers") in ("1", "true", "on")
 
     selected_account = selected_raw
     if selected_raw and user_accounts is not None:
@@ -309,6 +427,7 @@ def wealth():
         "title": "Wealth",
         "selected_account": selected_account,
         "selected_range": (range_arg or "180").lower(),
+        "exclude_transfers": exclude_transfers,
         # Linked labels for the picker; admins also get names seen in BQ
         # once the query succeeds.
         "wealth_account_choices": picker_accounts,
@@ -317,7 +436,10 @@ def wealth():
         "summary": None,
         "income_panel": None,
         "chart_json": json.dumps({
-            "dates": [], "cash": [], "equity": [], "options": [], "account_value": []
+            "dates": [], "cash": [], "equity": [], "options": [],
+            "account_value": [], "account_value_ex_transfers": [],
+            "net_deposits": [], "has_transfers": False,
+            "exclude_transfers": exclude_transfers,
         }),
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
@@ -329,14 +451,25 @@ def wealth():
         if not wealth_no_match:
             from google.cloud import bigquery
             client = get_bigquery_client()
-            sql = WEALTH_DAILY_QUERY.format(tenant_filter=tenant_filter)
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
                     bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
                 ]
             )
-            df = client.query(sql, job_config=job_config).to_dataframe()
+            try:
+                sql = WEALTH_DAILY_QUERY.format(tenant_filter=tenant_filter)
+                df = client.query(sql, job_config=job_config).to_dataframe()
+            except Exception as col_exc:
+                # Deploy-order safety: the transfer columns may not be
+                # materialized yet. Fall back to the pre-transfer shape so
+                # the page still renders (net deposits = 0, toggle no-op).
+                app.logger.warning(
+                    "Wealth net-deposit columns unavailable, using legacy query: %s",
+                    col_exc,
+                )
+                sql = WEALTH_DAILY_QUERY_LEGACY.format(tenant_filter=tenant_filter)
+                df = client.query(sql, job_config=job_config).to_dataframe()
             # Defense-in-depth tenant filter on the DataFrame — even if a
             # SQL change ever drops the account_filter, this strips any
             # row whose ``user_id`` doesn't match the signed-in user.
@@ -358,9 +491,9 @@ def wealth():
             context["wealth_account_choices"] = admin_names
             context["accounts"] = admin_names
 
-        context["summary"] = _build_summary(df)
+        context["summary"] = _build_summary(df, exclude_transfers)
         context["income_panel"] = _build_income_panel(df)
-        context["chart_json"] = json.dumps(_build_chart_payload(df))
+        context["chart_json"] = json.dumps(_build_chart_payload(df, exclude_transfers))
     except Exception as exc:
         app.logger.exception("Wealth page query failed: %s", exc)
         context["error"] = "Couldn't load wealth data. Try again in a moment."
