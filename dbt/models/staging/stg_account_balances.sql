@@ -12,7 +12,9 @@
     rows). Under v2 the canonical-uid backfill is GONE — every row is
     tenant-stamped at sync time, so split-tenancy can't happen.
 
-    Demo seed union is preserved; demo rows have tenant_id = NULL.
+    Demo seed union is preserved; demo rows carry
+    tenant_id = 'demo:demo-account' (matches the demo user's
+    broker_tenants row from ensure_demo_user).
 */
 -- Real-broker balance rows now arrive via the per-broker staging adapters
 -- (dbt/models/staging/brokers/stg_broker_<slug>_balances), each of which
@@ -92,9 +94,9 @@ unioned as (
     select * from demo_account_total_rows
 ),
 
--- Dedupe on (tenant_id when present, account fallback for demo, row_type).
--- v2 dedups on tenant_id; demo rows (tenant_id = NULL) collapse on
--- (account, row_type) which is fine because demo accounts are unique.
+-- Dedupe on (tenant_id when present, account fallback, row_type).
+-- v2 dedups on tenant_id (demo rows carry 'demo:demo-account' since
+-- Aug 2026, so they dedupe on tenant_id like every other row).
 deduped as (
     select * except (src_priority)
     from unioned

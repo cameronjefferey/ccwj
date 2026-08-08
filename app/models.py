@@ -3157,6 +3157,14 @@ def ensure_demo_user():
         # Sharing labels across users is allowed (see
         # docs/USER_ID_TENANCY.md), so this just upserts.
         add_account_for_user(demo.id, DEMO_ACCOUNT)
+        # v2 tenancy: every warehouse read is scoped by broker_tenants
+        # tenant_ids (_tenants_for_scope), and tenant-less users bounce to
+        # /get-started. The legacy user_accounts row above satisfies
+        # neither, so without this tenant the public demo renders an
+        # EMPTY product (the worst possible landing-page CTA). The demo's
+        # warehouse rows are stamped tenant_id='demo:demo-account' in the
+        # raw seed tables to match (one-time backfill, Aug 2026).
+        get_or_create_broker_tenant(demo.id, "demo", "demo-account", DEMO_ACCOUNT)
         ensure_user_profile(demo.id)
         _ensure_demo_insight(demo.id)
         _seed_demo_mirror_scores(demo.id)

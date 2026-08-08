@@ -22,8 +22,10 @@
 -- NOT the join key.
 --
 -- The demo seed union is preserved so the demo user keeps working —
--- demo rows have tenant_id = NULL by convention and are filtered out
--- of every tenant-scoped read by ``_filter_df_by_tenant_ids``.
+-- demo rows carry tenant_id = 'demo:demo-account' (stamped in the seed
+-- CSVs, Aug 2026) matching the demo user's broker_tenants row created by
+-- ``ensure_demo_user``, so the public demo renders through the exact
+-- same tenant scoping as a real user.
 --
 -- Real-broker rows now arrive via the per-broker staging adapters
 -- (dbt/models/staging/brokers/stg_broker_<slug>_history) rather than a
