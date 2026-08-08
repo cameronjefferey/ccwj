@@ -830,8 +830,8 @@ These make debugging difficult. Errors should at minimum be logged.
 authenticated users only) owns two cross-page behaviors: (1) the **Cmd+K / "/"
 quick-switcher** — palette listing the user's symbols (open positions first;
 `/api/nav/symbols` in `app/symbols_page.py`, tenant-scoped in SQL, response
-cached server-side via `cached_query_df` and client-side in sessionStorage for
-10 min) plus static page destinations; also opened by the navbar "Jump to…"
+cached server-side via `cached_query_df` and client-side in per-user
+sessionStorage for 10 min) plus static page destinations; also opened by the navbar "Jump to…"
 button; and (2) the **navigation progress bar** (`#ht-progress`) that animates
 on internal link clicks / form submits so BigQuery-backed page loads don't feel
 frozen. Shared CSS (palette, progress bar, and the `.ht-sticky` sticky-`thead`
