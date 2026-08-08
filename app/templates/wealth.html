@@ -495,7 +495,7 @@
         datasets.push({
             label: 'Excl. deposits/withdrawals',
             data: data.account_value_ex_transfers,
-            borderColor: '#0f172a',
+            borderColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#e2e8f0' : '#0f172a',
             backgroundColor: 'transparent',
             borderWidth: 2.5,
             pointRadius: 0,
@@ -507,7 +507,7 @@
         datasets.push({
             label: 'Total',
             data: data.account_value,
-            borderColor: '#0f172a',
+            borderColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#e2e8f0' : '#0f172a',
             backgroundColor: 'transparent',
             borderWidth: 2.5,
             pointRadius: 0,

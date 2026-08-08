@@ -26,6 +26,11 @@
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
     }
+    .narrative-card {
+        background: #fff; border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0,0,0,.05);
+    }
+    [data-bs-theme="dark"] .narrative-card { background: #151e30; }
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
@@ -229,7 +234,7 @@
 {# ── Position Narrative (open = snapshot; history = all trades) ── #}
 {% if kpis %}
 {% set open_strats = strategy_rows | selectattr('status', 'equalto', 'Open') | list if strategy_rows else [] %}
-<div class="mb-4 p-4" style="background:#fff; border-radius:16px; box-shadow:0 2px 16px rgba(0,0,0,.05);">
+<div class="mb-4 p-4 narrative-card">
     {% if overall_status == 'Open' %}
     <p class="narrative mb-2" style="font-size:1.05rem; line-height:1.7;">
         <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">Open</span><br>
@@ -1175,8 +1180,10 @@
                     {
                         label: 'Total',
                         data: chartData.total,
-                        borderColor: '#1a1a2e',
-                        backgroundColor: 'rgba(26,26,46,.08)',
+                        // Near-black reads as invisible on the dark theme —
+                        // flip to a light stroke there.
+                        borderColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#e2e8f0' : '#1a1a2e',
+                        backgroundColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'rgba(226,232,240,.06)' : 'rgba(26,26,46,.08)',
                         fill: true,
                         tension: 0,
                         spanGaps: true,

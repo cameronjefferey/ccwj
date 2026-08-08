@@ -669,7 +669,7 @@
         }
         datasets.push({
             label: 'Total', _key: 'total', data: summaryData.total.slice(),
-            borderColor: '#1a1a2e', backgroundColor: 'rgba(26,26,46,.06)',
+            borderColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#e2e8f0' : '#1a1a2e', backgroundColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'rgba(226,232,240,.05)' : 'rgba(26,26,46,.06)',
             fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 3
         });
 

@@ -242,6 +242,29 @@
     }
   });
 
+  /* ── 3b. Dark mode toggle ────────────────────────────────────── */
+  // The <head> script already applied the stored theme pre-paint; this
+  // just wires the button. Reload after toggling so inline Chart.js
+  // charts (built with light/dark colors at render time) recolor.
+  var themeBtn = document.getElementById("ht-theme-toggle");
+  if (themeBtn) {
+    var syncThemeIcon = function () {
+      var dark = document.documentElement.getAttribute("data-bs-theme") === "dark";
+      var moon = themeBtn.querySelector(".ht-icon-moon");
+      var sun = themeBtn.querySelector(".ht-icon-sun");
+      if (moon) moon.style.display = dark ? "none" : "";
+      if (sun) sun.style.display = dark ? "" : "none";
+    };
+    syncThemeIcon();
+    themeBtn.addEventListener("click", function () {
+      var dark = document.documentElement.getAttribute("data-bs-theme") === "dark";
+      var next = dark ? "light" : "dark";
+      try { localStorage.setItem("ht-theme", next); } catch (err) { /* ignore */ }
+      document.documentElement.setAttribute("data-bs-theme", next);
+      window.location.reload();
+    });
+  }
+
   /* ── 3. PWA install affordance ───────────────────────────────── */
   // Chrome (Android/desktop) fires beforeinstallprompt when the app is
   // installable; stash it and reveal "Install app" in the Account menu.

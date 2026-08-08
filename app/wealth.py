@@ -228,7 +228,14 @@ def _build_chart_payload(df, exclude_transfers=False):
     adjusted = [av - nd for av, nd in zip(account_value, net_series)]
 
     return {
-        "dates": [d.isoformat() if hasattr(d, "isoformat") else str(d) for d in by_date["date"]],
+        # .date() first: pandas Timestamps isoformat to "2026-06-09T00:00:00",
+        # which rendered raw on the chart's x-axis. Plain date objects have
+        # no .date attribute and fall through to isoformat().
+        "dates": [
+            (d.date().isoformat() if hasattr(d, "date")
+             else d.isoformat() if hasattr(d, "isoformat") else str(d))
+            for d in by_date["date"]
+        ],
         "cash": [round(float(v), 2) for v in by_date["cash_value"]],
         "equity": [round(float(v), 2) for v in by_date["equity_value"]],
         "options": [round(float(v), 2) for v in by_date["option_value"]],

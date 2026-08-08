@@ -28,8 +28,33 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="HappyTrader">
 
+    {# Dark mode: apply the stored theme BEFORE first paint (no flash).
+       Opt-in via the navbar toggle; default stays light. Bootstrap 5.3's
+       data-bs-theme=dark restyles cards/tables/forms natively; the style
+       block below overrides the app's hardcoded light surfaces. #}
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem("ht-theme") === "dark") {
+                    document.documentElement.setAttribute("data-bs-theme", "dark");
+                }
+            } catch (e) { /* localStorage unavailable */ }
+        })();
+    </script>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Chart.js global theme defaults — must run after chart.js loads
+        // and before any page's inline chart script.
+        (function () {
+            if (window.Chart &&
+                document.documentElement.getAttribute("data-bs-theme") === "dark") {
+                Chart.defaults.color = "#94a3b8";
+                Chart.defaults.borderColor = "rgba(148,163,184,.16)";
+            }
+        })();
+    </script>
 
     <style>
         :root {
@@ -325,6 +350,84 @@
             background: #fff; box-shadow: 0 1px 0 #e5e7eb;
         }
 
+        /* ── Dark mode (Aug 2026) ───────────────────────────────────
+           Opt-in via the navbar toggle (localStorage "ht-theme").
+           Bootstrap's data-bs-theme=dark handles its own components;
+           these rules cover the app's hardcoded light surfaces. The
+           attribute+class selectors out-rank the page style blocks'
+           bare class rules, so order of <style> blocks doesn't matter. */
+        [data-bs-theme="dark"] body { background: #0b1220; color: #cbd5e1; }
+        [data-bs-theme="dark"] .card,
+        [data-bs-theme="dark"] .stat-card { background-color: #151e30; color: #cbd5e1; }
+        [data-bs-theme="dark"] .card { border-color: #1f2a3f; }
+        [data-bs-theme="dark"] .table { color: #cbd5e1; }
+        [data-bs-theme="dark"] .text-muted { color: #8fa0b5 !important; }
+        [data-bs-theme="dark"] .ht-sticky table thead th { background: #151e30; box-shadow: 0 1px 0 #283652; }
+        [data-bs-theme="dark"] .ht-palette-box { background: #151e30; }
+        [data-bs-theme="dark"] .ht-palette-input { background: #151e30; color: #e2e8f0; border-bottom-color: #283652; }
+        [data-bs-theme="dark"] .ht-palette-item.active { background: #1e2c47; }
+        [data-bs-theme="dark"] .ht-palette-name { color: #e2e8f0; }
+        [data-bs-theme="dark"] .ht-palette-hint { background: #10192b; border-top-color: #1f2a3f; }
+        [data-bs-theme="dark"] .sk-shimmer { background: #1c2942; }
+        [data-bs-theme="dark"] .sk-shimmer::after {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+        }
+        /* Daily Review / shared page surfaces (classes live in page style
+           blocks; attribute selector wins on specificity). */
+        [data-bs-theme="dark"] .snapshot-section,
+        [data-bs-theme="dark"] .review-section,
+        [data-bs-theme="dark"] .dd-card { background: #151e30 !important; color: #cbd5e1; }
+        [data-bs-theme="dark"] .watch-block,
+        [data-bs-theme="dark"] .strip-card { background: #10192b; border-color: #283652; }
+        [data-bs-theme="dark"] .watch-item:hover,
+        [data-bs-theme="dark"] .strip-card:hover { background: #1c2942; }
+        [data-bs-theme="dark"] .mover-row:hover { background: #1c2942; }
+        [data-bs-theme="dark"] .breakdown-table th { color: #8fa0b5; }
+        [data-bs-theme="dark"] .breakdown-table td,
+        [data-bs-theme="dark"] .dd-table td { border-bottom-color: #1f2a3f; }
+        /* Daily Review snapshot table (hardcoded light grays in its own
+           style block; these attribute rules out-rank them). */
+        [data-bs-theme="dark"] .snapshot-table .acct-name { color: #e2e8f0; }
+        [data-bs-theme="dark"] .snapshot-table-row > div { border-bottom-color: #1f2a3f; }
+        [data-bs-theme="dark"] .snapshot-table-row.total > div { background: #10192b; border-top-color: #33415e; }
+        [data-bs-theme="dark"] .snapshot-table-row.total .acct-name { color: #f1f5f9; }
+        [data-bs-theme="dark"] .snapshot-table-row.benchmark > div { background: #0e1626; }
+        [data-bs-theme="dark"] .snapshot-table .snap-cell-dash { color: #475569; }
+        /* Chart cards + Position Detail symbol tab strip. */
+        [data-bs-theme="dark"] .chart-wrapper { background: #151e30; }
+        [data-bs-theme="dark"] .sym-tabstrip { background: #0b1220; border-bottom-color: #1f2a3f; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input { background: #151e30; border-color: #33415e; color: #e2e8f0; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input:focus { background: #151e30; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort { background: #1c2942; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button { color: #8fa0b5; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button.active { background: #33415e; color: #f1f5f9; }
+        [data-bs-theme="dark"] .sym-tab { background: #151e30; border-color: #1f2a3f; color: #cbd5e1; }
+        [data-bs-theme="dark"] .sym-tab:hover { background: #1c2942; color: #f1f5f9; }
+        [data-bs-theme="dark"] .sym-tab.active { background: #1e2c47; color: #f1f5f9; border-color: #4f46e5; }
+        [data-bs-theme="dark"] .sym-tabstrip__nav button,
+        [data-bs-theme="dark"] .sym-tabstrip__mobile button { background: #1c2942; border-color: #33415e; color: #cbd5e1; }
+        [data-bs-theme="dark"] .sym-tabstrip__mobile select { background: #151e30; border-color: #33415e; color: #e2e8f0; }
+        /* Wealth page KPI / income cards + generic value text. */
+        [data-bs-theme="dark"] .kpi-card,
+        [data-bs-theme="dark"] .income-card { background: #151e30; border-color: #1f2a3f; }
+        [data-bs-theme="dark"] .kpi-value,
+        [data-bs-theme="dark"] .income-card .income-value { color: #f1f5f9; }
+        [data-bs-theme="dark"] .narrative { color: #cbd5e1; }
+        [data-bs-theme="dark"] .narrative strong { color: #f1f5f9; }
+        /* Story badges: pastel chips -> translucent on dark. */
+        [data-bs-theme="dark"] .story-buy { background: rgba(37,99,235,.2); color: #93c5fd; }
+        [data-bs-theme="dark"] .story-sell { background: rgba(220,38,38,.2); color: #fca5a5; }
+        [data-bs-theme="dark"] .story-lifecycle { background: rgba(124,58,237,.22); color: #c4b5fd; }
+        [data-bs-theme="dark"] .story-income { background: rgba(5,150,105,.2); color: #6ee7b7; }
+        [data-bs-theme="dark"] .story-detail { color: #94a3b8; }
+        [data-bs-theme="dark"] .story-day { border-bottom-color: #1f2a3f; }
+        .ht-theme-btn {
+            background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+            color: rgba(255,255,255,.75); border-radius: 8px;
+            padding: .3rem .55rem; line-height: 1; display: inline-flex; align-items: center;
+        }
+        .ht-theme-btn:hover { color: #fff; background: rgba(255,255,255,.14); }
+
         /* ── Phone density pass (Aug 2026) ──────────────────────────
            Financial tables + cards need every horizontal pixel on a
            390px viewport. Pairs with the mobile column-priority system
@@ -482,6 +585,15 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
                         <span>Jump to&hellip;</span>
                         <kbd class="d-none d-lg-inline">&#8984;K</kbd>
+                    </button>
+                </li>
+                <li class="nav-item py-1 py-lg-0 me-lg-2">
+                    {# Dark mode toggle (nav.js). Moon shows in light mode,
+                       sun in dark. Charts recolor via a one-time reload. #}
+                    <button type="button" class="ht-theme-btn" id="ht-theme-toggle"
+                            aria-label="Toggle dark mode" title="Toggle dark mode">
+                        <svg class="ht-icon-moon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/></svg>
+                        <svg class="ht-icon-sun" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="display:none;"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
                     </button>
                 </li>
                 <li class="nav-item dropdown">

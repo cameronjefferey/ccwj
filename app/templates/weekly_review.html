@@ -369,6 +369,22 @@
     /* Time-machine: past cells are links to the day-detail page. */
     a.cal-day-link { text-decoration: none; }
     a.cal-day-link:hover { outline: 2px solid #94a3b8; cursor: pointer; }
+    /* Cell colors are inline styles built in Jinja — routed through CSS
+       variables so dark mode can restyle the flat (no-data / zero /
+       future) cells without touching the green/red intensity ramp,
+       which reads fine on both themes. */
+    .cal-grid-rolling {
+        --cal-blank-bg: #f9fafb; --cal-blank-fg: #cbd5e1;
+        --cal-zero-bg: #f9fafb;  --cal-zero-fg: #6b7280;
+        --cal-nodata-bg: #f3f4f6; --cal-nodata-fg: #d1d5db;
+        --cal-pos-fg: #166534;   --cal-neg-fg: #991b1b;
+    }
+    [data-bs-theme="dark"] .cal-grid-rolling {
+        --cal-blank-bg: #10192b; --cal-blank-fg: #33415e;
+        --cal-zero-bg: #10192b;  --cal-zero-fg: #64748b;
+        --cal-nodata-bg: #0e1626; --cal-nodata-fg: #33415e;
+        --cal-pos-fg: #4ade80;   --cal-neg-fg: #f87171;
+    }
     .cal-toggle-btn {
         background: transparent; border: 0; padding: .25rem 0;
         font-size: .68rem; font-weight: 600;
@@ -1123,20 +1139,20 @@
             <div class="cal-rolling-week-label{{ extra_cls }}">{{ r.week_label }}</div>
             {% for c in r.cells %}
                 {% if c.is_future %}
-                    {% set bg = "#f9fafb" %}{% set fg = "#cbd5e1" %}
+                    {% set bg = "var(--cal-blank-bg)" %}{% set fg = "var(--cal-blank-fg)" %}
                 {% elif c.has_data %}
                     {% set intensity = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
                     {% if c.daily_change > 0 %}
                         {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
-                        {% set fg = "#166534" %}
+                        {% set fg = "var(--cal-pos-fg)" %}
                     {% elif c.daily_change < 0 %}
                         {% set bg = "rgba(220,53,69," ~ (0.08 + intensity * 0.007) ~ ")" %}
-                        {% set fg = "#991b1b" %}
+                        {% set fg = "var(--cal-neg-fg)" %}
                     {% else %}
-                        {% set bg = "#f9fafb" %}{% set fg = "#6b7280" %}
+                        {% set bg = "var(--cal-zero-bg)" %}{% set fg = "var(--cal-zero-fg)" %}
                     {% endif %}
                 {% else %}
-                    {% set bg = "#f3f4f6" %}{% set fg = "#d1d5db" %}
+                    {% set bg = "var(--cal-nodata-bg)" %}{% set fg = "var(--cal-nodata-fg)" %}
                 {% endif %}
                 {# Past days are time-machine links: click any cell to open
                    the day-detail review for that date (day_detail route). #}
