@@ -564,8 +564,8 @@ def _build_coaching_brief(client, tenant_ids):
             if dte_lines:
                 sections.append("DTE SWEET SPOTS\n" + "\n".join(dte_lines[:5]))
 
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.warning("insights: DTE sweet-spots section failed (prompt degrades): %s", exc)
 
     # 2. Recent exits (last 90 days, for weekly context)
     try:
@@ -599,8 +599,8 @@ def _build_coaching_brief(client, tenant_ids):
                     )
             if recent_lines:
                 sections.append("RECENT EXIT EXAMPLES (last 90 days)\n" + "\n".join(recent_lines))
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.warning("insights: recent-exits section failed (prompt degrades): %s", exc)
 
     try:
         dq = batch.get("coach_discovery", pd.DataFrame())
@@ -984,8 +984,8 @@ def insights():
     try:
         client = get_bigquery_client()
         _, coaching_data = _build_coaching_brief(client, tenant_ids)
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.warning("insights: coaching brief failed (page renders without coach data): %s", exc)
 
     return render_template(
         "insights.html",
@@ -1150,8 +1150,8 @@ def insights_ask():
                     f"WEEK {ws}: {tc} closed ({nw}W/{nl}L, {wr:.0%}), "
                     f"{to} opened, trade P&L ${tp:,.2f}{divs_part}"
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            app.logger.warning("insights: weekly-context section failed (coach answers without it): %s", exc)
 
         if not coaching_text and not portfolio_text:
             return jsonify({"error": "No data available to answer questions."}), 400

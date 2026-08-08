@@ -1578,9 +1578,19 @@ def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
                         set_snaptrade_brokerage_authorization_id(
                             user_id, snaptrade_account_id, auth_id,
                         )
-                    except Exception:
-                        pass
-        except Exception:
+                    except Exception as exc:
+                        # Cache write only — resolution still succeeded,
+                        # we just re-pay the lookup next run.
+                        _log.warning(
+                            "could not cache brokerage_authorization_id for "
+                            "account %s: %s", snaptrade_account_id, exc,
+                        )
+        except Exception as exc:
+            _log.warning(
+                "auth-id resolution failed for snaptrade account %s "
+                "(disabled-check skipped this run): %s",
+                snaptrade_account_id, exc,
+            )
             return None
     if not auth_id:
         return None

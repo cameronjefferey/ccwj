@@ -930,8 +930,11 @@ def _commit_git_paths(path_contents, message):
     try:
         if _seed_contents_unchanged(path_contents):
             return True, None, None, True
-    except Exception:
-        pass
+    except Exception as exc:
+        app.logger.warning(
+            "seed no-op check failed (%s) — falling through to a normal "
+            "write, which may trigger an avoidable rebuild.", exc,
+        )
 
     try:
         _seed_store_write(path_contents)

@@ -219,8 +219,7 @@ def _get_market_performance(week_start, today, prefetched_df=None):
                 out["qqq_week_pct"] = float(row["week_pct"]) if row["week_pct"] is not None else None
                 out["qqq_ytd_pct"] = float(row["ytd_pct"]) if row["ytd_pct"] is not None else None
     except Exception as e:
-        if app.debug:
-            app.logger.warning("Market performance query failed: %s", e)
+        app.logger.warning("Market performance query failed: %s", e)
         return None
     return out
 
@@ -277,8 +276,7 @@ def _get_benchmark_returns(start_date):
             sym = str(row["symbol"]).upper()
             out[sym] = float(row["return_pct"]) if row["return_pct"] is not None else None
     except Exception as e:
-        if app.debug:
-            app.logger.warning("Benchmark return query failed: %s", e)
+        app.logger.warning("Benchmark return query failed: %s", e)
         return {}
     return out
 
@@ -1547,8 +1545,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                 moves.sort(key=lambda m: abs(m["delta_pct"]), reverse=True)
                 moves = moves[:5]
             except Exception as exc:
-                if app.debug:
-                    app.logger.warning("Since-last-looked prior closes failed: %s", exc)
+                app.logger.warning("Since-last-looked prior closes failed: %s", exc)
 
         # Trades opened / closed since anchor — strictly account-scoped.
         opened = []
@@ -1579,8 +1576,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                     "open_date": od_s,
                 })
         except Exception as exc:
-            if app.debug:
-                app.logger.warning("Since-last-looked trades query failed: %s", exc)
+            app.logger.warning("Since-last-looked trades query failed: %s", exc)
 
         # Newly-near expirations: now in the 7-day window AND were further out
         # at anchor (expiry - anchor > 7 days). Uses already-computed list.
@@ -1653,8 +1649,7 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
             "newly_itm": newly_itm,
         }
     except Exception as exc:
-        if app.debug:
-            app.logger.warning("_since_last_looked failed: %s", exc)
+        app.logger.warning("_since_last_looked failed: %s", exc)
         return None
 
 
@@ -3659,8 +3654,7 @@ def weekly_review():
         try:
             batch = _bq_parallel(client, batch_queries)
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Daily review parallel batch failed: %s", e)
+            app.logger.warning("Daily review parallel batch failed: %s", e)
             batch = {}
 
         # Defense in depth: every BQ DataFrame goes through the tenant
@@ -3689,8 +3683,7 @@ def weekly_review():
                 batch.get("benchmark_snapshot", pd.DataFrame())
             )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Benchmark snapshot processing failed: %s", e)
+            app.logger.warning("Benchmark snapshot processing failed: %s", e)
 
         # ── Account value (cash / invested split) ─────────────────────
         # ``live_av_by_label`` is the per-account live total used as a
@@ -3728,8 +3721,7 @@ def weekly_review():
                     "pct_invested": pct_invested,
                 }
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Equity snapshot failed: %s", e)
+            app.logger.warning("Equity snapshot failed: %s", e)
 
         # ── Account snapshots per account (day / week / month deltas) ─
         try:
@@ -3846,8 +3838,7 @@ def weekly_review():
                     key=lambda s: acct_order.get(s["account"], 999)
                 )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Snapshots processing failed: %s", e)
+            app.logger.warning("Snapshots processing failed: %s", e)
 
         # ── Open positions: today strip + expiring options ────────────
         try:
@@ -3932,8 +3923,7 @@ def weekly_review():
                         key=lambda x: (x.get("days_to_exp") if x.get("days_to_exp") is not None else 999)
                     )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Open positions processing failed: %s", e)
+            app.logger.warning("Open positions processing failed: %s", e)
 
         # ── Upcoming earnings ─────────────────────────────────────────
         try:
@@ -3962,8 +3952,7 @@ def weekly_review():
                     else:
                         context["upcoming_earnings_next_week"].append(item)
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Earnings processing failed: %s", e)
+            app.logger.warning("Earnings processing failed: %s", e)
 
         # ── Today's stock movers (held symbols) ───────────────────────
         # Now includes option P&L day-moves and dividends paid today, so
@@ -3977,8 +3966,7 @@ def weekly_review():
                 dividends_df=batch.get("today_dividends", pd.DataFrame()),
             )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Today movers processing failed: %s", e)
+            app.logger.warning("Today movers processing failed: %s", e)
 
         # ── After-hours movers (broker mark vs official close) ─────────
         # Only built when after_hours_ready (bell has rung AND the broker mark
@@ -3993,16 +3981,14 @@ def weekly_review():
             else:
                 context["after_hours_movers"] = None
         except Exception as e:
-            if app.debug:
-                app.logger.warning("After-hours movers processing failed: %s", e)
+            app.logger.warning("After-hours movers processing failed: %s", e)
 
         # ── Projected ex-dividend dates ───────────────────────────────
         try:
             ud_df = batch.get("upcoming_divs", pd.DataFrame())
             context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df)
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Upcoming ex-div processing failed: %s", e)
+            app.logger.warning("Upcoming ex-div processing failed: %s", e)
 
         # ── Trades opened / closed this week ──────────────────────────
         try:
@@ -4029,8 +4015,7 @@ def weekly_review():
                 tag_rows=_wk_tag_rows,
             )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Trades-this-week processing failed: %s", e)
+            app.logger.warning("Trades-this-week processing failed: %s", e)
 
         # ── Performance by account (summarized scorecard) ─────────────
         try:
@@ -4052,8 +4037,7 @@ def weekly_review():
                 ab["benchmark_start"] = bench_start
             context["account_breakdown"] = ab
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Account breakdown processing failed: %s", e)
+            app.logger.warning("Account breakdown processing failed: %s", e)
 
         # ── Since you last looked (daily-pull diff) ───────────────────
         try:
@@ -4068,8 +4052,7 @@ def weekly_review():
                 force_show=from_upload or from_sync,
             )
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Since-last-looked failed: %s", e)
+            app.logger.warning("Since-last-looked failed: %s", e)
 
         # ── Daily account Δ calendar grid ─────────────────────────────
         try:
@@ -4086,8 +4069,7 @@ def weekly_review():
             context["daily_calendar_no_query_rows"] = cal_df.empty
             context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Calendar grid failed: %s", e)
+            app.logger.warning("Calendar grid failed: %s", e)
             context["daily_calendar_no_query_rows"] = True
             context["calendar_grid"] = _build_calendar_grid({}, today)
 

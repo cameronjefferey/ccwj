@@ -343,8 +343,24 @@ def set(key, value):  # noqa: A001 - deliberate cache-style API
         return
     try:
         client.setex(_redis_key(key), _REDIS_TTL, blob)
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn_redis_once("setex", exc)
+
+
+def _warn_redis_once(op, exc):
+    """Log a Redis failure once per process instead of never (the old
+    silent pass hid a dead REDIS_URL = every worker silently paying full
+    BQ latency) and instead of once per query (an outage would spam)."""
+    global _redis_warned
+    if not _redis_warned:
+        _redis_warned = True
+        _log.warning(
+            "query-cache Redis %s failed — shared L2 cache is degraded until "
+            "Redis recovers (per-worker L1 still active): %s", op, exc,
+        )
+
+
+_redis_warned = False
 
 
 def clear():
@@ -358,8 +374,8 @@ def clear():
     try:
         for k in client.scan_iter(match=_REDIS_PREFIX + "*", count=500):
             client.delete(k)
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("query-cache Redis clear failed (stale L2 entries expire via TTL): %s", exc)
 
 
 def _execute(client, sql, job_config):

@@ -187,8 +187,7 @@ def earnings_watch():
                     ),
                 })
         except Exception as e:
-            if app.debug:
-                app.logger.warning("Earnings Watch upcoming query failed: %s", e)
+            app.logger.warning("Earnings Watch upcoming query failed: %s", e)
 
         # ── Movers grouped by YOUR holdings ───────────────────────────
         # Shape: one group per held sector — "you hold MU, NVDA (Technology);
@@ -260,8 +259,7 @@ def earnings_watch():
                 groups.sort(key=lambda g: g["max_abs_move"], reverse=True)
                 context["mover_groups"] = groups
             except Exception as e:
-                if app.debug:
-                    app.logger.warning("Earnings Watch movers query failed: %s", e)
+                app.logger.warning("Earnings Watch movers query failed: %s", e)
     except Exception as e:
         if app.debug:
             raise
