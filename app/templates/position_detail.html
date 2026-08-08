@@ -558,7 +558,69 @@
     <div style="height: 460px;">
         <canvas id="pnlChart"></canvas>
     </div>
+    {% if story_days %}
+    <p class="text-muted small mb-0 mt-2">
+        Dots mark your trade days — hover one to see exactly what you did.
+    </p>
+    {% endif %}
 </div>
+
+{# ── Position story: plain-English chronology of every event ── #}
+{% if story_days %}
+<div class="card stat-card p-4 mb-4">
+    <details {% if story_days|length <= 8 %}open{% endif %}>
+        <summary style="cursor:pointer; list-style:none;">
+            <h6 class="fw-bold mb-1 d-inline">The story of this position</h6>
+            <span class="text-muted small ms-2">{{ story_days|length }} day{{ 's' if story_days|length != 1 }} of activity &middot; click to expand</span>
+        </summary>
+        <div class="story-scroll mt-3">
+            {% for day in story_days %}
+            <div class="story-day">
+                <div class="story-date">{{ day.label }}</div>
+                <div class="story-events">
+                    {% for e in day.events %}
+                    <div class="story-event">
+                        <span class="story-badge story-{{ e.kind }}">{{ e.verb }}</span>
+                        {% if e.detail %}<span class="story-detail">{{ e.detail }}</span>{% endif %}
+                        {% if e.amount %}
+                        <span class="story-amt {{ 'text-success' if e.amount > 0 else 'text-danger' }}">
+                            {{ "+" if e.amount > 0 else "" }}${{ "{:,.2f}".format(e.amount) }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+</div>
+<style>
+    .story-scroll { max-height: 430px; overflow-y: auto; padding-right: .25rem; }
+    .story-day {
+        display: grid; grid-template-columns: 110px 1fr; gap: .75rem;
+        padding: .55rem 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .story-day:last-child { border-bottom: 0; }
+    .story-date { font-size: .78rem; font-weight: 700; color: #64748b; padding-top: .15rem; white-space: nowrap; }
+    .story-event { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; padding: .12rem 0; font-size: .87rem; }
+    .story-badge {
+        font-size: .7rem; font-weight: 700; padding: .16rem .5rem;
+        border-radius: 999px; white-space: nowrap;
+    }
+    .story-buy { background: #eff6ff; color: #1d4ed8; }
+    .story-sell { background: #fef2f2; color: #b91c1c; }
+    .story-lifecycle { background: #f5f3ff; color: #6d28d9; }
+    .story-income { background: #ecfdf5; color: #047857; }
+    .story-detail { color: #475569; }
+    .story-amt { font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+    details > summary::-webkit-details-marker { display: none; }
+    @media (max-width: 480px) {
+        .story-day { grid-template-columns: 1fr; gap: .15rem; }
+        .story-amt { margin-left: 0; }
+    }
+</style>
+{% endif %}
 
 {# ── Breakdown by Type (equity / options / dividends) ── #}
 {% if breakdown_rows %}
@@ -1049,12 +1111,49 @@
 <script>
 (function () {
     var chartData = {{ chart_data_json | safe }};
+    var storyMarkers = {{ story_markers_json | default('[]') | safe }};
     var hasUnderlyingPrice = {{ 'true' if has_underlying_price else 'false' }};
     var PRICE_TOGGLE_KEY = 'positionDetail.showPriceLine';
     var showPriceLine = false;
     try {
         showPriceLine = localStorage.getItem(PRICE_TOGGLE_KEY) === '1';
     } catch (e) { /* localStorage unavailable */ }
+
+    // ── Story markers: one dot per trade day, riding the Total line ──
+    // Index chart dates once, then place each marker at its date's Total
+    // value (walking back to the last non-null Total for sparse spines).
+    var MARKER_COLORS = {
+        buy: '#1d4ed8', sell: '#b91c1c', lifecycle: '#6d28d9', income: '#047857'
+    };
+    var markerDataset = null;
+    var markerTexts = {};   // "x|y" -> [lines] for tooltip lookup
+    if (storyMarkers.length && chartData.dates && chartData.dates.length) {
+        var dateIdx = {};
+        chartData.dates.forEach(function (d, i) { dateIdx[d] = i; });
+        var pts = [], colors = [];
+        storyMarkers.forEach(function (m) {
+            var i = dateIdx[m.d];
+            if (i === undefined) return;
+            var y = null, j = i;
+            while (j >= 0 && (y === null || y === undefined)) { y = chartData.total[j]; j--; }
+            if (y === null || y === undefined) y = 0;
+            pts.push({ x: chartData.dates[i], y: y, _story: m.t });
+            colors.push(MARKER_COLORS[m.k] || '#64748b');
+        });
+        if (pts.length) {
+            markerDataset = {
+                label: 'Trade days',
+                type: 'scatter',
+                data: pts,
+                backgroundColor: colors,
+                borderColor: '#ffffff',
+                borderWidth: 1.5,
+                pointRadius: 4.5,
+                pointHoverRadius: 7,
+                order: -1
+            };
+        }
+    }
 
     if (chartData.dates && chartData.dates.length > 0) {
         var pnlChart = new Chart(document.getElementById('pnlChart'), {
@@ -1140,6 +1239,10 @@
                     tooltip: {
                         callbacks: {
                             label: function(ctx) {
+                                // Story markers: show the day's events verbatim.
+                                if (ctx.dataset.label === 'Trade days') {
+                                    return (ctx.raw && ctx.raw._story) || null;
+                                }
                                 var y = ctx.parsed.y;
                                 if (y == null) return null;
                                 return ctx.dataset.label + ': $' +
@@ -1194,6 +1297,12 @@
                 }
             }
         });
+
+        // Overlay the story markers on top of the drawn lines.
+        if (markerDataset) {
+            pnlChart.data.datasets.push(markerDataset);
+            pnlChart.update();
+        }
 
         // Stock price line show/hide toggle
         var priceToggle = document.getElementById('togglePriceLine');

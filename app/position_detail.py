@@ -1137,6 +1137,125 @@ POSITION_DIVIDENDS_QUERY = """
 """
 
 
+# ── Position story mode ──────────────────────────────────────────────────
+# Plain-English chronological narrative of the position ("Story" card) plus
+# event markers overlaid on the cumulative P&L chart. Built entirely from
+# frames the page already fetches — no extra queries.
+
+_STORY_VERBS = {
+    # action -> (verb, kind). kind drives badge/marker color:
+    #   buy / sell / lifecycle (expiry-assignment-exercise) / income.
+    "equity_buy": ("Bought", "buy"),
+    "equity_sell": ("Sold", "sell"),
+    "equity_sell_short": ("Sold short", "sell"),
+    "option_sell_to_open": ("Sold to open", "sell"),
+    "option_buy_to_open": ("Bought to open", "buy"),
+    "option_buy_to_close": ("Bought to close", "buy"),
+    "option_sell_to_close": ("Sold to close", "sell"),
+    "option_expired": ("Expired", "lifecycle"),
+    "option_assigned": ("Assigned", "lifecycle"),
+    "option_exercised": ("Exercised", "lifecycle"),
+    "dividend_reinvest": ("Dividend reinvested", "income"),
+}
+
+
+def _build_position_story(trades_df, div_df):
+    """Return ``(story_days, story_markers)``.
+
+    story_days — chronological (oldest first) day groups for the Story
+    card: ``[{date_iso, label, events: [{verb, kind, detail, amount}]}]``.
+
+    story_markers — one entry per day for the chart overlay:
+    ``[{d: date_iso, k: kind, t: [line, ...]}]`` where ``k`` is the
+    dominant event kind that day (used for marker color).
+
+    Cash dividends come from int_dividend_events (``div_df``) — NOT from
+    stg_history's ``dividend`` action — because the synthetic-dividend
+    pipeline covers positions where the broker never shipped explicit
+    dividend rows (JEPI-class; see data-pipeline-fixes rule). Interest,
+    fees and transfers are account noise, not position story: skipped.
+    """
+    by_day = {}
+
+    def _num(v):
+        try:
+            f = float(v)
+            return None if pd.isna(f) else f
+        except (TypeError, ValueError):
+            return None
+
+    if trades_df is not None and not trades_df.empty and "trade_date" in trades_df.columns:
+        for _, r in trades_df.iterrows():
+            action = str(r.get("action") or "").strip()
+            verb, kind = _STORY_VERBS.get(action, (None, None))
+            if verb is None:
+                continue
+            d = r.get("trade_date")
+            if d is None or pd.isna(d):
+                continue
+            is_opt = str(r.get("instrument_type") or "") in ("Call", "Put")
+            bits = []
+            q = _num(r.get("quantity"))
+            if q:
+                bits.append(f"{abs(q):,.0f}{'×' if is_opt else ' sh'}")
+            if is_opt:
+                tsym = str(r.get("trade_symbol") or "").strip()
+                if tsym:
+                    bits.append(tsym)
+            p = _num(r.get("price"))
+            if p:
+                bits.append(f"@ ${p:,.2f}")
+            by_day.setdefault(d, []).append({
+                "verb": verb,
+                "kind": kind,
+                "detail": " ".join(bits),
+                "amount": _num(r.get("amount")) or 0.0,
+            })
+
+    if div_df is not None and not div_df.empty and "trade_date" in div_df.columns:
+        for _, r in div_df.iterrows():
+            try:
+                d = pd.to_datetime(r.get("trade_date")).date()
+            except (TypeError, ValueError):
+                continue
+            amt = _num(r.get("amount")) or 0.0
+            if abs(amt) < 0.01:
+                continue
+            by_day.setdefault(d, []).append({
+                "verb": "Dividend",
+                "kind": "income",
+                "detail": "",
+                "amount": amt,
+            })
+
+    story_days, story_markers = [], []
+    for d in sorted(by_day):
+        events = by_day[d]
+        # Marker color: trades outrank income; sells outrank buys outrank
+        # lifecycle (arbitrary but stable).
+        kinds = {e["kind"] for e in events}
+        for k in ("sell", "buy", "lifecycle", "income"):
+            if k in kinds:
+                dominant = k
+                break
+        iso = d.isoformat()
+        story_days.append({
+            "date_iso": iso,
+            "label": d.strftime("%b %-d, %Y"),
+            "events": events,
+        })
+        story_markers.append({
+            "d": iso,
+            "k": dominant,
+            "t": [
+                (e["verb"] + (" " + e["detail"] if e["detail"] else "")
+                 + (f": {'+' if e['amount'] > 0 else ''}${e['amount']:,.2f}" if e["amount"] else ""))
+                for e in events
+            ],
+        })
+    return story_days, story_markers
+
+
 @app.route("/position/<symbol>")
 @login_required
 @skeleton_page
@@ -1270,6 +1389,8 @@ def position_detail(symbol):
             selected_legs=[],
             leg_param="",
             chart_data_json="{}",
+            story_days=[],
+            story_markers_json="[]",
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -2464,6 +2585,24 @@ def position_detail(symbol):
     if selected_account:
         tab_qs = "?account=" + quote_plus(selected_account)
 
+    # ── Story mode: narrative timeline + chart event markers ─────────
+    # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
+    # get the same tenant + leg treatment here (the raw batch frame is
+    # unfiltered — _compute_breakdown_by_type filters its own copy).
+    try:
+        _story_div_df = _filter_df_by_tenant_ids(
+            dividends_df if dividends_df is not None else pd.DataFrame(),
+            tenant_scope,
+        )
+        if leg_param and not _story_div_df.empty and "trade_date" in _story_div_df.columns:
+            _story_div_df = _story_div_df.copy()
+            _story_div_df["_d"] = pd.to_datetime(_story_div_df["trade_date"]).dt.date
+            _story_div_df = _story_div_df[_story_div_df["_d"].apply(_in_leg_range)]
+        story_days, story_markers = _build_position_story(trades_df, _story_div_df)
+    except Exception as exc:
+        app.logger.warning("position story build failed for %s: %s", symbol, exc)
+        story_days, story_markers = [], []
+
     return render_template(
         "position_detail.html",
         symbol=symbol,
@@ -2483,6 +2622,8 @@ def position_detail(symbol):
         selected_legs=selected_legs,
         leg_param=leg_param,
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
+        story_days=story_days,
+        story_markers_json=json.dumps(story_markers),
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
