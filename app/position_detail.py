@@ -1397,6 +1397,10 @@ def position_detail(symbol):
     # colliding labels) already filtered these frames by tenant_id.
     if not current_df.empty:
         current_df = _dedupe_enriched_current_positions(current_df)
+    # Full tenant-scoped history seeds the narrative state when strategy,
+    # date, or leg filters hide earlier fills. The story engine replays only
+    # rows before its first visible day, silently and split-aware.
+    story_seed_trades = trades_df.copy()
     if selected_strategy:
         if "strategy" in summary_df.columns:
             summary_df = summary_df[summary_df["strategy"] == selected_strategy]
@@ -2511,7 +2515,11 @@ def position_detail(symbol):
             _story_div_df["_d"] = pd.to_datetime(_story_div_df["trade_date"]).dt.date
             _story_div_df = _story_div_df[_story_div_df["_d"].apply(_in_leg_range)]
         story_days, story_markers, story_stats = build_position_story(
-            trades_df, _story_div_df, chart_data, splits_df=splits_df
+            trades_df,
+            _story_div_df,
+            chart_data,
+            splits_df=splits_df,
+            seed_trades_df=story_seed_trades,
         )
         # The mirror prologue: how this position was traded + where it
         # sits in the trader's book. Rank comes from the tab-strip rollup

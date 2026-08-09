@@ -248,6 +248,53 @@ def test_split_is_narrated_and_fixes_share_units():
     assert any(m["d"] == "2024-10-10" for m in markers)
 
 
+def test_filtered_post_split_story_replays_prior_state_silently():
+    full_history = _trades([
+        # Full context has the pre-split open; the filtered story does not.
+        (date(2024, 9, 2), "equity_buy", "Equity", "SCHD", 100, 82.38, -8238.0),
+        (date(2024, 10, 15), "equity_sell", "Equity", "SCHD", 300, 28.33, 8499.0),
+    ])
+    visible = full_history[full_history["trade_date"] >= date(2024, 10, 15)]
+    splits = pd.DataFrame([
+        {"symbol": "SCHD", "split_date": "2024-10-10", "split_ratio": 3.0},
+    ])
+
+    items, markers, stats = build_position_story(
+        visible,
+        None,
+        splits_df=splits,
+        seed_trades_df=full_history,
+    )
+    text = _headlines(items)
+
+    assert "Sold the last 300 shares" in text
+    assert "more than you held" not in text
+    # Prior buy + split establish state only; the filtered story stays one
+    # chapter and does not claim the hidden split as a visible maneuver.
+    assert stats["chapters"] == 1
+    assert stats["stock_opens"] == 0
+    assert stats["splits"] == 0
+    assert [m["d"] for m in markers] == ["2024-10-15"]
+
+
+def test_filtered_non_split_story_replays_prior_state_without_unit_change():
+    full_history = _trades([
+        (date(2024, 1, 2), "equity_buy", "Equity", "JEPI", 100, 55.0, -5500.0),
+        (date(2024, 2, 2), "equity_sell", "Equity", "JEPI", 100, 56.0, 5600.0),
+    ])
+    visible = full_history[full_history["trade_date"] >= date(2024, 2, 1)]
+
+    items, _, stats = build_position_story(
+        visible,
+        None,
+        seed_trades_df=full_history,
+    )
+
+    assert "Sold the last 100 shares" in _headlines(items)
+    assert stats["chapters"] == 1
+    assert stats["splits"] == 0
+
+
 def test_split_while_flat_is_silent():
     df = _trades([
         (date(2024, 9, 2), "equity_buy", "Equity", "X", 100, 10.0, -1000.0),

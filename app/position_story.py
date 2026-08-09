@@ -783,7 +783,13 @@ def _phrase_split(symbolless_ratio, before, after):
             f"overnight — same money, different denominator.")
 
 
-def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
+def build_position_story(
+    trades_df,
+    div_df,
+    chart_data=None,
+    splits_df=None,
+    seed_trades_df=None,
+):
     """Return ``(story_items, story_markers)``.
 
     story_items — chronological, oldest first. Event days:
@@ -801,8 +807,16 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
     for old fills), so without applying the ratio a later post-split sell
     reads as an oversell (see the stock-splits rule; SCHD 3-for-1 was the
     canonical miss).
+
+    ``seed_trades_df`` is optional full-history context for a filtered
+    story. Fills before the first visible day and intervening splits are
+    replayed silently into the per-tenant state machine. Without that seed,
+    a leg/date-filtered post-split sell starts from zero shares and invents
+    a phantom short even though the pre-split buy exists outside the view.
+    Seed activity never contributes chapters or behavioral stats.
     """
     fills = _normalize_fills(trades_df)
+    seed_fills = _normalize_fills(seed_trades_df)
 
     # Cash dividends (synthetic pipeline; see module docstring).
     div_by_day = {}
@@ -825,8 +839,9 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
         return [], [], stats
 
     first_day = min(set(fills_by_day) | set(div_by_day))
+    split_events = _normalize_splits(splits_df)
     splits_by_day = {}
-    for d, ratio in _normalize_splits(splits_df):
+    for d, ratio in split_events:
         if d >= first_day:
             splits_by_day.setdefault(d, []).append(ratio)
 
@@ -837,6 +852,29 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
     accounts = {f["state_key"] for f in fills if f["state_key"]}
     multi_account = len(accounts) > 1
 
+    state_by_account = {}
+
+    # Reconstruct state at the filtered window boundary in the historical
+    # share units that actually existed each day. Splits apply before that
+    # day's fills, matching the visible replay below. This is narrative-only
+    # state; dollars and warehouse P&L remain untouched.
+    seed_by_day = {}
+    for f in seed_fills:
+        if f["date"] < first_day:
+            seed_by_day.setdefault(f["date"], []).append(f)
+    seed_splits_by_day = {}
+    for d, ratio in split_events:
+        if d < first_day:
+            seed_splits_by_day.setdefault(d, []).append(ratio)
+    seed_stats = _new_stats()
+    for d in sorted(set(seed_by_day) | set(seed_splits_by_day)):
+        for ratio in seed_splits_by_day.get(d, []):
+            for st in state_by_account.values():
+                st.shares *= ratio
+        day_seed_fills = seed_by_day.get(d, [])
+        if day_seed_fills:
+            _day_headline(day_seed_fills, state_by_account, False, seed_stats)
+
     def _flat_everywhere():
         for st in state_by_account.values():
             if abs(st.shares) > 0.5:
@@ -846,7 +884,6 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
                     return False
         return True
 
-    state_by_account = {}
     story_items, story_markers = [], []
     prev_event_day = None
 
