@@ -865,10 +865,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   (account swing vs prior day, fills, option P&L moves, dividends, SPY/QQQ
   context, prev/next weekday nav). All five queries are tenant-scoped and
   project `tenant_id`.
-- **Position story mode** (`app/position_story.py`, called from
-  `app/position_detail.py`): plain-English narrative of the position,
-  not a transaction-log rehash. A per-account state machine detects and
-  names maneuvers — rolls (same-day close+open, strike/expiry
+- **Position review** (`app/position_story.py`, called from
+  `app/position_detail.py`; UI card titled "Position review", internal
+  names keep the `story` vocabulary): plain-English day-by-day review of
+  the position, not a transaction-log rehash. A per-account state machine
+  detects and names maneuvers — rolls (same-day close+open, strike/expiry
   direction, net credit), wheels (CSP → assignment → covered calls →
   called away, with cumulative premium), covered vs naked calls, kept
   premium on OTM expiry, splits ("your 100 shares became 300", also
@@ -876,48 +877,49 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   fill units), assignment/exercise voice (short vs long inferred from
   tracked state or the same-day mechanical share fill at the strike,
   which is swallowed rather than double-narrated). Between trade days
-  it narrates INTERLUDES from the daily-mark chart series — "13 quiet
-  weeks did the heavy lifting: +$3,434 without placing a trade" — the
-  data only HappyTrader has (per-day option marks), plus "flat and out
-  of the name" breaks for long gaps while closed. While narrating, the
-  engine accumulates a BEHAVIORAL FINGERPRINT (`_new_stats()`: rolls,
+  it narrates INTERLUDES from the daily-mark chart series — "A quiet 13
+  weeks: +$3,434 with no trades placed" — the data only HappyTrader has
+  (per-day option marks), plus "no activity / fully out of the position"
+  breaks for long gaps while closed. While narrating, the engine
+  accumulates a BEHAVIORAL FINGERPRINT (`_new_stats()`: rolls,
   premium collected, covered calls, kept-at-expiry, wheels completed,
   contract W/L, quiet-stretch P&L, adds/trims…) recorded by the same
   branches that write the sentences, so the mirror can never disagree
-  with the chapters. `compose_mirror()` turns that + the tab-strip book
-  rank into a 2-4 sentence MIRROR PROLOGUE ("Your RKLB story: 22
-  chapters across 20 months… you ran RKLB as an income engine… ranks
-  #4 of 94 symbols") rendered always-visible above the chapters, which
-  are COLLAPSED by default behind "Read the N chapters". Chart↔story
-  choreography is CLICK-driven (deliberate act, not hover strobe):
-  clicking a chart dot opens the story and scrolls/flashes its chapter;
-  clicking a chapter pops the dot's tooltip on the chart (click again
-  to put it away). Leg-filter aware. Pinned by
-  `tests/test_position_story.py`. The per-position fingerprints feed the
-  trader novel (next bullet) — the mirror concept woven into every
-  surface.
-- **Trader novel** (`/story`, `app/trader_story.py`, endpoint
-  `trader_story`, nav "Your Story"): runs the story engine across EVERY
-  symbol the user traded (one `stg_history` scan + `int_dividend_events`
-  + `positions_summary` rollup + public `stg_split_events`, all through
-  `_bq_parallel`; trades/divs/summary tenant-scoped in SQL AND
-  DataFrame-filtered, pinned in
+  with the review rows. `compose_mirror()` turns that + the tab-strip
+  book rank into a 2-4 sentence MIRROR SUMMARY ("RKLB: 22 trade days
+  across 20 months… you traded RKLB primarily for income… ranks #4 of
+  94 symbols") rendered always-visible above the day-by-day review,
+  which is COLLAPSED by default behind "Show the day-by-day review".
+  Chart↔review choreography is CLICK-driven (deliberate act, not hover
+  strobe): clicking a chart dot opens the review and scrolls/flashes its
+  day; clicking a review day pops the dot's tooltip on the chart (click
+  again to put it away). Leg-filter aware. Pinned by
+  `tests/test_position_story.py`. COPY REGISTER: all user-facing copy is
+  deliberately professional/buttoned-up (Aug 2026 revision) — no
+  book/story/chapter metaphors; "trade days", "positions", factual
+  sentences. Keep new sentences in that register.
+- **Trader profile** (`/story`, `app/trader_story.py`, endpoint
+  `trader_story`, nav "Trader Profile"): runs the review engine across
+  EVERY symbol the user traded (one `stg_history` scan +
+  `int_dividend_events` + `positions_summary` rollup + public
+  `stg_split_events`, all through `_bq_parallel`; trades/divs/summary
+  tenant-scoped in SQL AND DataFrame-filtered, pinned in
   `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
-  the per-symbol fingerprints into one book: an IDENTITY prologue
-  ("income engine vs betting book", signature move, contract record,
-  dividends, busiest day), stat chips, STANDOUT story cards (best
-  seller / toughest chapter / the saga / the marathon / the boomerang —
-  each linking to the position page whose chapters prove the claim),
-  a per-style scoreboard (income/directional/stock × stories, green
-  count, P&L), and per-year ERAS computed straight from fills.
-  CONSISTENCY INVARIANT: era premium sums STO credits from fills, so
-  the fingerprint's `premium_collected` must count a roll's open leg
-  too (recorded in the roll branch; pinned by
+  the per-symbol fingerprints into one profile: a PROFILE SUMMARY
+  (primary style income vs directional, signature adjustment, contract
+  record, dividends, busiest day), stat chips, NOTABLE POSITIONS cards
+  (Top performer / Largest loss / Most active / Longest held / Most
+  re-entered — each linking to the position page whose history proves
+  the claim), a per-style scoreboard (income/directional/stock ×
+  positions, profitable count, P&L), and YEAR-BY-YEAR rows computed
+  straight from fills. CONSISTENCY INVARIANT: yearly premium sums STO
+  credits from fills, so the fingerprint's `premium_collected` must
+  count a roll's open leg too (recorded in the roll branch; pinned by
   `test_roll_open_leg_counts_as_premium_collected`) — otherwise the
-  prologue and the eras disagree on the same page. Interlude
+  summary and the yearly rows disagree on the same page. Interlude
   (quiet-stretch) stats stay zero here: they need the per-day chart
   series, too heavy to build 90× per load; that voice remains a
-  Position Detail feature. No novel-specific mart — the page is
+  Position Detail feature. No profile-specific mart — the page is
   composed in pandas from cached queries (~all-symbol history for one
   user is thousands of rows, not millions). Skeleton-wrapped. Pinned by
   `tests/test_trader_story.py`.

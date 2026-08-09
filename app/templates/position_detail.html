@@ -549,7 +549,7 @@
     </div>
     {% if story_days %}
     <p class="text-muted small mb-0 mt-2">
-        Dots mark your trade days &mdash; click one to jump to its chapter in the story below. Click a chapter to light up its dot.
+        Dots mark your trade days &mdash; click one to jump to that day in the review below. Click a day in the review to highlight its dot here.
     </p>
     {% endif %}
 </div>
@@ -558,25 +558,25 @@
 {% if story_days %}
 {% set _day_count = story_days | selectattr('type', 'equalto', 'day') | list | length %}
 <div class="card stat-card p-4 mb-4" id="storyCard">
-    <h6 class="fw-bold mb-1">The story of this position</h6>
+    <h6 class="fw-bold mb-1">Position review</h6>
     {% if story_mirror %}
-    {# The mirror: behavior this position's chapters can prove, always
-       visible even while the chapters are collapsed. #}
+    {# The mirror: behavior the day-by-day review below can prove, always
+       visible even while the review is collapsed. #}
     <div class="story-mirror">
         {% for s in story_mirror %}
         <p class="mb-1">{{ s }}</p>
         {% endfor %}
         <p class="mb-0 mt-2 small">
             <a href="{{ url_for('trader_story') }}" style="color:#6366f1; font-weight:600; text-decoration:none;">
-                This is one story in your book — read the whole thing &rarr;
+                See your full trader profile &rarr;
             </a>
         </p>
     </div>
     {% endif %}
     <details id="storyDetails">
         <summary style="cursor:pointer; list-style:none;">
-            <span class="story-open-cta story-cta-closed">Read the {{ _day_count }} chapter{{ 's' if _day_count != 1 }} &#9662;</span>
-            <span class="story-open-cta story-cta-open">Put the story away &#9652;</span>
+            <span class="story-open-cta story-cta-closed">Show the day-by-day review ({{ _day_count }} trade day{{ 's' if _day_count != 1 }}) &#9662;</span>
+            <span class="story-open-cta story-cta-open">Hide the day-by-day review &#9652;</span>
         </summary>
         <div class="story-scroll mt-3">
             {% for item in story_days %}

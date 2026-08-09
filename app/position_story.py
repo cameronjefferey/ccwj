@@ -449,10 +449,10 @@ def _phrase_equity(f, st, stats=None):
         if st.shares <= 0.0001 and before > 0:
             if st.wheel_active:
                 st.wheel_active = False
-            return f"Sold the last {_shares(q)}{at} — flat on the stock again."
+            return f"Sold the last {_shares(q)}{at} — stock position closed."
         if before > 0:
             stats["trims"] += 1
-            return f"Trimmed {_shares(q)}{at} — {st.shares:,.0f} still working."
+            return f"Trimmed {_shares(q)}{at} — {st.shares:,.0f} remaining."
         return f"Sold {_shares(q)}{at}."
 
     return None
@@ -496,11 +496,9 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
                 wheel_lead = "Opened a wheel: "
             if st.wheel_active:
                 st.wheel_premium += max(amt, 0.0)
+            verb = f"{wheel_lead}sold" if wheel_lead else "Sold"
             return (
-                f"{wheel_lead}sold {_contracts(n)} of the {strike} put ({exp}) — "
-                f"{_money(amt)} collected to wait for a better entry."
-            ) if wheel_lead else (
-                f"Sold {_contracts(n)} of the {strike} put ({exp}), "
+                f"{verb} {_contracts(n)} of the {strike} put ({exp}), "
                 f"collecting {_money(amt)}."
             )
         # Short call: covered if the account holds enough shares.
@@ -512,7 +510,7 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
             stats["cc_rent"] += max(amt, 0.0)
             return (
                 f"Sold {_contracts(n)} of the {strike} covered call ({exp}) "
-                f"against your shares — {_money(amt)} of rent."
+                f"against your shares, collecting {_money(amt)}."
             )
         return (
             f"Sold {_contracts(n)} of the {strike} call ({exp}), "
@@ -524,10 +522,10 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
         rec["cash"] += amt
         stats["long_opens"] += 1
         stats["long_risk"] += abs(min(amt, 0.0))
-        stance = "a bullish bet" if otype == "call" else "downside protection" if st.shares > 0 else "a bearish bet"
+        stance = "bullish" if otype == "call" else "downside protection" if st.shares > 0 else "bearish"
         return (
             f"Bought {_contracts(n)} of the {strike} {otype} ({exp}) — "
-            f"{_money(amt)} on the line for {stance}."
+            f"{_money(amt)} at risk ({stance})."
         )
 
     if action == "option_buy_to_close":
@@ -544,7 +542,7 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
             else:
                 stats["contract_losses"] += 1
                 stats["contract_loss_total"] += abs(pnl)
-                outcome = f"giving back {_money(pnl)} more than it brought in"
+                outcome = f"a net {_money(pnl)} loss on the contract"
             return f"Bought back the {strike} {otype} ({exp}) for {_money(amt)} — {outcome}."
         return f"Bought back {_contracts(n)} of the {strike} {otype} ({exp}) for {_money(amt)}."
 
@@ -589,7 +587,7 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
             stats["contract_loss_total"] += abs(premium)
             return (
                 f"The {strike} {otype} expired worthless — "
-                f"the {_money(premium)} paid for it is gone."
+                f"the {_money(premium)} paid for it was lost."
             )
         return f"The {strike} {otype} expired."
 
@@ -601,8 +599,8 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
         if otype == "put":
             note = ""
             if st.wheel_active and premium > 0.005:
-                note = (f" The wheel turns — {_money(premium)} of premium already "
-                        f"collected lowers your real cost basis.")
+                note = (f" {_money(premium)} of premium already collected "
+                        f"lowers your effective cost basis.")
             return f"Assigned on the {strike} put: took delivery of the shares at {strike}.{note}"
         # Short call assignment = shares called away.
         note = ""
@@ -701,19 +699,17 @@ def _build_interlude(d1, d2, chart_data):
     options_led = abs(opt_delta) >= 0.6 * abs(delta) and abs(opt_delta) > 1
     if delta > 0:
         if options_led and opt_delta > 0:
-            text = (f"Then {span} of doing nothing — which was the trade. "
-                    f"Time decay ground out {_money(delta)} in your favor"
-                    f"{price_clause}.")
+            text = (f"Over the next {span}, time decay added {_money(delta)} "
+                    f"with no trades placed{price_clause}.")
         else:
-            text = (f"A quiet {span} did the heavy lifting: "
-                    f"+{_money(delta)} without placing a single trade"
+            text = (f"A quiet {span}: +{_money(delta)} with no trades placed"
                     f"{price_clause}.")
     else:
         if options_led and opt_delta < 0:
-            text = (f"The next {span} worked against you — the option marks "
-                    f"moved {_money(delta)} the wrong way{price_clause}.")
+            text = (f"The next {span} went against you — option marks moved "
+                    f"{_money(delta)}{price_clause}.")
         else:
-            text = (f"Then a rough {span}: the position gave back "
+            text = (f"Over the next {span} the position gave back "
                     f"{_money(delta)}{price_clause}.")
 
     return {
@@ -765,7 +761,7 @@ def _phrase_split(symbolless_ratio, before, after):
     else:
         rt = f"1-for-{1 / r:g} reverse split"
     return (f"A {rt}: your {before:,.0f} shares became {after:,.0f} "
-            f"overnight — same money, different denominator.")
+            f"(position value unchanged).")
 
 
 def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
@@ -854,8 +850,8 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
                     "type": "interlude",
                     "date_iso": prev_event_day.isoformat(),
                     "end_iso": d.isoformat(),
-                    "text": (f"Then nothing for {span} — flat and out of the "
-                             f"name. The next chapter opens "
+                    "text": (f"No activity for {span} — fully out of the "
+                             f"position. Trading resumed "
                              f"{d.strftime('%B %Y')}."),
                     "delta": 0.0,
                 })
@@ -884,7 +880,7 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
         if div_amt:
             stats["dividend_total"] += div_amt
             headlines = headlines + [
-                f"Collected {_money(div_amt, 2)} in dividends just for holding."
+                f"Collected {_money(div_amt, 2)} in dividends."
             ]
 
         events = [_raw_event(f) for f in day_fills]
@@ -943,7 +939,7 @@ def _behavior_candidates(stats, symbol):
     by the per-position mirror and the cross-position trader novel."""
     candidates = []
     if stats["premium_collected"] > 1:
-        clause = (f"You ran {symbol} as an income engine: "
+        clause = (f"You traded {symbol} primarily for income: "
                   f"{_money(stats['premium_collected'])} of option premium collected")
         bits = []
         if stats["covered_calls"]:
@@ -957,15 +953,15 @@ def _behavior_candidates(stats, symbol):
         candidates.append((stats["premium_collected"], clause + "."))
     if stats["long_opens"] and stats["long_risk"] > 1:
         w, l = stats["contract_wins"], stats["contract_losses"]
-        clause = (f"You put {_money(stats['long_risk'])} at risk on "
-                  f"{stats['long_opens']} long-option bet"
+        clause = (f"You put {_money(stats['long_risk'])} at risk across "
+                  f"{stats['long_opens']} long-option purchase"
                   f"{'s' if stats['long_opens'] != 1 else ''}")
         if w + l:
-            clause += f"; your closed contracts here went {w}W / {l}L overall"
+            clause += f"; closed contracts here went {w}W / {l}L"
         candidates.append((stats["long_risk"], clause + "."))
     if stats["rolls"]:
-        clause = (f"When a strike got crowded you rolled rather than closed — "
-                  f"{stats['rolls']} roll{'s' if stats['rolls'] != 1 else ''}")
+        clause = (f"You rolled rather than closed "
+                  f"{stats['rolls']} time{'s' if stats['rolls'] != 1 else ''}")
         if stats["roll_credit"] > 1:
             clause += f", collecting {_money(stats['roll_credit'])} while repositioning"
         elif stats["roll_credit"] < -1:
@@ -975,9 +971,10 @@ def _behavior_candidates(stats, symbol):
     if stats["expired_kept"]:
         candidates.append((
             stats["expired_premium"],
-            f"You let {stats['expired_kept']} contract"
-            f"{'s' if stats['expired_kept'] != 1 else ''} ride to worthless "
-            f"expiry and kept every dollar — {_money(stats['expired_premium'])}.",
+            f"{stats['expired_kept']} short contract"
+            f"{'s' if stats['expired_kept'] != 1 else ''} here expired "
+            f"worthless, keeping the full {_money(stats['expired_premium'])} "
+            f"of premium.",
         ))
     if stats["wheels_completed"]:
         candidates.append((
@@ -990,20 +987,20 @@ def _behavior_candidates(stats, symbol):
     if stats["quiet_gain"] > 1 and quiet_net > 0:
         candidates.append((
             stats["quiet_gain"],
-            f"The quiet stretches did real work: {_money(stats['quiet_gain'])} "
-            f"arrived while you weren't trading at all.",
+            f"{_money(stats['quiet_gain'])} of the gains accrued during "
+            f"stretches with no trades placed.",
         ))
     if stats["dividend_total"] > 1:
         candidates.append((
             stats["dividend_total"],
-            f"Meanwhile {symbol} paid you {_money(stats['dividend_total'], 2)} "
-            f"in dividends for holding on.",
+            f"{symbol} paid {_money(stats['dividend_total'], 2)} in dividends "
+            f"over the holding period.",
         ))
     if stats["adds"] >= 3 and stats["adds"] > 2 * max(stats["trims"], 1):
         candidates.append((
             300.0 * stats["adds"],
-            f"You built the stock position patiently — "
-            f"{stats['adds']} separate adds.",
+            f"You built the stock position incrementally — "
+            f"{stats['adds']} separate buys.",
         ))
 
     candidates.sort(key=lambda c: c[0], reverse=True)
@@ -1025,41 +1022,42 @@ def compose_mirror(stats, symbol, book_rank=None, book_size=None):
 
     sentences = []
 
-    # Shape of the story.
-    shape = f"{stats['chapters']} chapter{'s' if stats['chapters'] != 1 else ''}"
+    # Shape of the position's history.
+    shape = (f"{stats['chapters']} trade day"
+             f"{'s' if stats['chapters'] != 1 else ''}")
     if stats["span_days"] >= 14:
         shape += f" across {_span_text(stats['span_days'])}"
     if stats["away_breaks"]:
-        shape += (f", including {stats['away_breaks']} stretch"
-                  f"{'es' if stats['away_breaks'] != 1 else ''} where you "
-                  f"walked away completely")
-    sentences.append(f"Your {symbol} story: {shape}.")
+        shape += (f", including {stats['away_breaks']} period"
+                  f"{'s' if stats['away_breaks'] != 1 else ''} fully out of "
+                  f"the position")
+    sentences.append(f"{symbol}: {shape}.")
 
     # Keep only the two most load-bearing behaviors so the mirror stays a
     # reflection, not a report.
     sentences.extend(text for _, text in _behavior_candidates(stats, symbol)[:2])
 
-    # Where it sits in the book.
+    # Where it sits across the trader's full history.
     if book_rank and book_size and book_size >= 5:
         if book_rank == 1:
             sentences.append(
-                f"Across your whole book, {symbol} is your single best "
+                f"Across everything you've traded, {symbol} is your best "
                 f"position by total P&L ({book_size} symbols)."
             )
         elif book_rank <= max(3, round(book_size * 0.1)):
             sentences.append(
-                f"Across your whole book, {symbol} ranks #{book_rank} of "
-                f"{book_size} symbols by total P&L."
+                f"Across everything you've traded, {symbol} ranks "
+                f"#{book_rank} of {book_size} symbols by total P&L."
             )
         elif book_rank > book_size - max(3, round(book_size * 0.1)):
             sentences.append(
-                f"Across your whole book, {symbol} sits near the bottom — "
-                f"#{book_rank} of {book_size} symbols by total P&L."
+                f"Across everything you've traded, {symbol} ranks near the "
+                f"bottom — #{book_rank} of {book_size} symbols by total P&L."
             )
         else:
             sentences.append(
-                f"Across your whole book, {symbol} is #{book_rank} of "
-                f"{book_size} symbols by total P&L."
+                f"Across everything you've traded, {symbol} ranks "
+                f"#{book_rank} of {book_size} symbols by total P&L."
             )
 
     return sentences

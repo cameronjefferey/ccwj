@@ -182,8 +182,8 @@ def classify_style(stats):
 
 _STYLE_LABELS = {
     "income": "Income trades",
-    "directional": "Directional bets",
-    "stock": "Stock stories",
+    "directional": "Directional trades",
+    "stock": "Stock positions",
 }
 
 _STYLE_DESC = {
@@ -206,77 +206,81 @@ def _sum_stats(book):
 
 
 def _identity_sentences(book, totals, first_day, last_day):
-    """The prologue: who the fills say you are."""
+    """The profile summary: what the fills show."""
     n = len(book)
     chapters = totals.get("chapters", 0)
     sentences = []
 
     span = ""
     if first_day and last_day and (last_day - first_day).days >= 14:
-        span = f", told across {_span_text((last_day - first_day).days)}"
+        span = f" over {_span_text((last_day - first_day).days)}"
     started = f" since {first_day.strftime('%B %Y')}" if first_day else ""
     sentences.append(
-        f"You've been writing this book{started}: "
-        f"{n} stories, {chapters:,} chapters{span}."
+        f"You've traded {n} symbols across {chapters:,} trade days"
+        f"{span}{started}."
     )
 
     premium = totals.get("premium_collected", 0.0)
     risk = totals.get("long_risk", 0.0)
+    n_long = totals.get("long_opens", 0)
+    long_desc = f"{n_long} long-option purchase{'s' if n_long != 1 else ''}"
     short_bits = []
     if totals.get("covered_calls"):
-        short_bits.append(f"{totals['covered_calls']} covered calls")
+        short_bits.append(f"{totals['covered_calls']} covered call"
+                          f"{'s' if totals['covered_calls'] != 1 else ''}")
     if totals.get("puts_sold"):
-        short_bits.append(f"{totals['puts_sold']} short puts")
+        short_bits.append(f"{totals['puts_sold']} short put"
+                          f"{'s' if totals['puts_sold'] != 1 else ''}")
     if totals.get("rolls"):
-        short_bits.append(f"{totals['rolls']} rolls")
+        short_bits.append(f"{totals['rolls']} roll"
+                          f"{'s' if totals['rolls'] != 1 else ''}")
     short_desc = f" across {', '.join(short_bits)}" if short_bits else ""
 
     if premium > 1 and risk > 1 and max(premium, risk) < 2 * min(premium, risk):
         sentences.append(
-            f"You run two books at once: an income engine "
-            f"({_money(premium)} of premium collected{short_desc}) and a "
-            f"betting book ({_money(risk)} put at risk on "
-            f"{totals.get('long_opens', 0)} long-option buys)."
+            f"You trade two distinct styles in similar size: income "
+            f"({_money(premium)} of premium collected{short_desc}) and "
+            f"directional ({_money(risk)} at risk across {long_desc})."
         )
     elif premium > 1 and premium >= risk:
         sentences.append(
-            f"At heart you're an income trader: {_money(premium)} of option "
+            f"Your primary style is income: {_money(premium)} of option "
             f"premium collected{short_desc}."
         )
         if risk > 1:
             sentences.append(
-                f"The betting book is the side plot — {_money(risk)} at risk "
-                f"across {totals.get('long_opens', 0)} long-option buys."
+                f"Directional trades are the smaller book — {_money(risk)} "
+                f"at risk across {long_desc}."
             )
     elif risk > 1:
         sentences.append(
-            f"At heart you make directional bets: {_money(risk)} put at risk "
-            f"across {totals.get('long_opens', 0)} long-option buys."
+            f"Your primary style is directional: {_money(risk)} at risk "
+            f"across {long_desc}."
         )
         if premium > 1:
             sentences.append(
-                f"The income book is the side plot — {_money(premium)} of "
+                f"Income trades are the smaller book — {_money(premium)} of "
                 f"premium collected{short_desc}."
             )
     else:
         adds = totals.get("adds", 0) + totals.get("stock_opens", 0)
         sentences.append(
-            f"You're a builder: stock positions accumulated one buy at a "
-            f"time — {adds} of them, no options involved."
+            f"You build stock positions incrementally — {adds} separate "
+            f"buys, no options."
         )
 
-    # Signature move: the maneuver you reach for most.
+    # Signature adjustment: the maneuver that shows up most in the record.
     moves = [
         (totals.get("rolls", 0),
-         lambda: (f"Your signature move is the roll — {totals['rolls']} times "
-                  f"you repositioned a strike instead of closing it.")),
+         lambda: (f"Your most frequent adjustment is the roll — "
+                  f"{totals['rolls']} times you repositioned a strike "
+                  f"rather than closing it.")),
         (totals.get("expired_kept", 0),
-         lambda: (f"Your favorite way to win is patience: "
-                  f"{totals['expired_kept']} contracts ridden all the way to "
-                  f"worthless expiry, keeping "
-                  f"{_money(totals.get('expired_premium', 0.0))}.")),
+         lambda: (f"{totals['expired_kept']} short contracts were held to "
+                  f"worthless expiry, keeping the full "
+                  f"{_money(totals.get('expired_premium', 0.0))} of premium.")),
         (totals.get("wheels_completed", 0),
-         lambda: (f"You've turned {totals['wheels_completed']} full wheel "
+         lambda: (f"You've completed {totals['wheels_completed']} full wheel "
                   f"cycle{'s' if totals['wheels_completed'] != 1 else ''} — "
                   f"put premium, assignment, call premium, called away.")),
     ]
@@ -288,20 +292,20 @@ def _identity_sentences(book, totals, first_day, last_day):
     losses = totals.get("contract_losses", 0)
     if w + losses >= 5:
         sentences.append(
-            f"When contracts resolved, you went {w}W / {losses}L overall."
+            f"Across all closed contracts, your record is {w}W / {losses}L."
         )
     if totals.get("dividend_total", 0.0) > 100:
         sentences.append(
-            f"And underneath all of it, dividends quietly added "
-            f"{_money(totals['dividend_total'])} just for holding."
+            f"Dividends added {_money(totals['dividend_total'])} on top of "
+            f"trading P&L."
         )
     return sentences
 
 
 def _number_chips(book, totals, busiest):
     chips = [
-        {"label": "Stories", "value": f"{len(book)}"},
-        {"label": "Chapters", "value": f"{totals.get('chapters', 0):,}"},
+        {"label": "Symbols traded", "value": f"{len(book)}"},
+        {"label": "Trade days", "value": f"{totals.get('chapters', 0):,}"},
     ]
     if totals.get("premium_collected", 0.0) > 1:
         chips.append({"label": "Premium collected",
@@ -365,20 +369,20 @@ def _build_eras(trades_df):
     for y in years:
         p = per_year[y]
         if y == years[0]:
-            title = "Where it began"
+            title = "First year of activity"
         elif y == this_year:
-            title = "Still being written"
+            title = "Year to date"
         elif y == max_premium_year and p["premium"] > 1:
-            title = "The income year"
+            title = "Highest premium collected"
         elif y == max_new_year and p["new_symbols"] > 2:
-            title = "The year of new names"
+            title = "Most new symbols"
         elif y == max_fills_year:
-            title = "The busiest year"
+            title = "Most active year"
         else:
-            title = "A steady year"
+            title = "Steady activity"
         bits = [
             f"{p['fills']:,} fills over {p['trade_days']} trading days",
-            f"{p['new_symbols']} new name{'s' if p['new_symbols'] != 1 else ''}",
+            f"{p['new_symbols']} new symbol{'s' if p['new_symbols'] != 1 else ''}",
         ]
         if p["premium"] > 1:
             bits.append(f"{_money(p['premium'])} premium collected")
@@ -397,7 +401,7 @@ def _hook_for(sym, entry):
     if cands:
         return cands[0][1]
     s = entry["stats"]
-    shape = f"{s['chapters']} chapter{'s' if s['chapters'] != 1 else ''}"
+    shape = f"{s['chapters']} trade day{'s' if s['chapters'] != 1 else ''}"
     if s["span_days"] >= 14:
         shape += f" across {_span_text(s['span_days'])}"
     return shape + "."
@@ -431,23 +435,22 @@ def _build_standouts(book):
             "hook": note(best_entry) if note else _hook_for(best_sym, best_entry),
         })
 
-    _pick("The best seller", key=lambda e: e["pnl"],
+    _pick("Top performer", key=lambda e: e["pnl"],
           predicate=lambda e: e["pnl"] > 0)
-    _pick("The toughest chapter", key=lambda e: -e["pnl"],
+    _pick("Largest loss", key=lambda e: -e["pnl"],
           predicate=lambda e: e["pnl"] < 0)
-    _pick("The saga", key=lambda e: e["stats"]["chapters"],
+    _pick("Most active", key=lambda e: e["stats"]["chapters"],
           predicate=lambda e: e["stats"]["chapters"] >= 5)
-    _pick("The marathon", key=lambda e: e["stats"]["span_days"],
+    _pick("Longest held", key=lambda e: e["stats"]["span_days"],
           predicate=lambda e: e["stats"]["span_days"] >= 90,
-          note=lambda e: (f"{e['stats']['chapters']} chapters across "
+          note=lambda e: (f"{e['stats']['chapters']} trade days across "
                           f"{_span_text(e['stats']['span_days'])} — "
-                          f"your longest-running story."))
-    _pick("The one you keep coming back to",
+                          f"your longest-running position."))
+    _pick("Most re-entered",
           key=lambda e: e["stats"]["away_breaks"],
           predicate=lambda e: e["stats"]["away_breaks"] >= 2,
-          note=lambda e: (f"You've closed it out and walked away "
-                          f"{e['stats']['away_breaks']} times — and come "
-                          f"back every time."))
+          note=lambda e: (f"Fully closed and re-entered "
+                          f"{e['stats']['away_breaks']} times."))
     return cards
 
 
@@ -565,7 +568,7 @@ def trader_story():
     tenant_scope = _tenants_for_scope(selected_account)
 
     context = {
-        "title": "Your Story",
+        "title": "Trader Profile",
         "novel": None,
         "accounts": sorted(user_accounts) if user_accounts else [],
         "selected_account": selected_account,
@@ -589,6 +592,6 @@ def trader_story():
         if app.debug:
             raise
         app.logger.warning("trader story page failed: %s", e)
-        context["error"] = "Couldn't load your story right now."
+        context["error"] = "Couldn't load your trader profile right now."
 
     return render_template("trader_story.html", **context)

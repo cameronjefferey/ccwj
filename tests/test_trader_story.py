@@ -105,9 +105,9 @@ def test_scoreboard_groups_by_style_with_green_counts():
 def test_standouts_best_seller_and_toughest_link_distinct_symbols():
     cards = _build_standouts(_book())
     by_label = {c["label"]: c for c in cards}
-    assert by_label["The best seller"]["symbol"] == "AAA"
-    assert by_label["The best seller"]["pnl_text"].startswith("+")
-    assert by_label["The toughest chapter"]["symbol"] == "CCC"
+    assert by_label["Top performer"]["symbol"] == "AAA"
+    assert by_label["Top performer"]["pnl_text"].startswith("+")
+    assert by_label["Largest loss"]["symbol"] == "CCC"
     # No symbol appears on two cards.
     syms = [c["symbol"] for c in cards]
     assert len(syms) == len(set(syms))
@@ -116,11 +116,11 @@ def test_standouts_best_seller_and_toughest_link_distinct_symbols():
 def test_eras_one_row_per_year_with_new_names_and_premium():
     eras = _build_eras(_BOOK_TRADES)
     assert [e["year"] for e in eras] == [2024, 2025]
-    assert eras[0]["title"] == "Where it began"
-    assert "2 new names" in eras[0]["line"]
+    assert eras[0]["title"] == "First year of activity"
+    assert "2 new symbols" in eras[0]["line"]
     assert "$100 premium collected" in eras[0]["line"]
     assert "$500 placed on long options" in eras[0]["line"]
-    assert "1 new name" in eras[1]["line"]
+    assert "1 new symbol" in eras[1]["line"]
 
 
 def test_busiest_day_requires_a_real_cluster():
@@ -142,7 +142,7 @@ def test_compose_novel_shape():
     assert novel["hero_counts"]["open_stories"] == 2
     assert novel["hero_counts"]["since"] == "January 2024"
     text = " ".join(novel["identity"])
-    assert "3 stories" in text
+    assert "3 symbols" in text
     assert any(c["label"] == "Premium collected" for c in novel["chips"])
     assert len(novel["eras"]) == 2
     assert novel["scoreboard"]

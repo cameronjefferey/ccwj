@@ -1207,7 +1207,7 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   THE MIRROR TEASER — one-line weave to the trader novel (/story). Uses
+   THE MIRROR TEASER — one-line weave to the trader profile (/story). Uses
    only data this page already computed (today_strip length); zero extra
    queries on the hottest page.
    ════════════════════════════════════ #}
@@ -1220,9 +1220,8 @@
               padding:.8rem 1rem;">
         <span style="font-weight:700; color:#6366f1; font-size:.72rem; letter-spacing:.8px; text-transform:uppercase;">Your trading mirror</span>
         <div style="margin-top:.15rem; font-size:.95rem;">
-            {{ today_strip|length }} of your stories {{ 'are' if today_strip|length != 1 else 'is' }} still being written —
-            today's marks are tomorrow's paragraphs.
-            <span style="color:#6366f1; font-weight:600;">Read the book of how you trade &rarr;</span>
+            {{ today_strip|length }} open position{{ 's are' if today_strip|length != 1 else ' is' }} adding to your track record.
+            <span style="color:#6366f1; font-weight:600;">See your trader profile &rarr;</span>
         </div>
     </a>
 </div>

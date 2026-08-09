@@ -74,7 +74,7 @@ def test_wheel_full_cycle_narrated():
     items, _, _stats = build_position_story(df, None)
     text = _headlines(items)
     assert "Opened a wheel" in text
-    assert "wheel turns" in text
+    assert "lowers your effective cost basis" in text
     assert "$60 of premium already collected" in text
     assert "covered call" in text
     assert "called away at $13" in text
@@ -102,8 +102,8 @@ def test_long_option_expiry_loses_premium():
     ])
     items, _, _stats = build_position_story(df, None)
     text = _headlines(items)
-    assert "bullish bet" in text
-    assert "$80 paid for it is gone" in text
+    assert "$80 at risk (bullish)" in text
+    assert "$80 paid for it was lost" in text
 
 
 def test_equity_lifecycle_phrasing():
@@ -117,8 +117,8 @@ def test_equity_lifecycle_phrasing():
     text = _headlines(items)
     assert "Started the stock position: 100 shares at $10.37" in text
     assert "Added 50 shares at $11.00 — now holding 150" in text
-    assert "Trimmed 50 shares at $13.50 — 100 still working" in text
-    assert "Sold the last 100 shares at $14.00 — flat on the stock again" in text
+    assert "Trimmed 50 shares at $13.50 — 100 remaining" in text
+    assert "Sold the last 100 shares at $14.00 — stock position closed" in text
 
 
 def test_dividends_and_marker_alignment():
@@ -130,7 +130,7 @@ def test_dividends_and_marker_alignment():
     ])
     items, markers, stats = build_position_story(df, div)
     text = _headlines(items)
-    assert "Collected $54.12 in dividends just for holding" in text
+    assert "Collected $54.12 in dividends" in text
     days = [i for i in items if i["type"] == "day"]
     assert [d["date_iso"] for d in days] == ["2024-05-01", "2024-06-03"]
     assert [m["d"] for m in markers] == ["2024-05-01", "2024-06-03"]
@@ -151,9 +151,9 @@ def test_interlude_from_daily_marks():
     items, _, _stats = build_position_story(df, None, chart)
     interludes = [i for i in items if i["type"] == "interlude"]
     assert len(interludes) == 1
-    assert "Time decay" in interludes[0]["text"]
-    assert "in your favor" in interludes[0]["text"]
-    # Interlude sits between the two chapters.
+    assert "time decay added" in interludes[0]["text"]
+    assert "no trades placed" in interludes[0]["text"]
+    # Interlude sits between the two trade days.
     kinds = [i["type"] for i in items]
     assert kinds == ["day", "interlude", "day"]
 
@@ -190,7 +190,7 @@ def test_break_interlude_for_long_flat_gap():
     items, _, _stats = build_position_story(df, None)
     interludes = [i for i in items if i["type"] == "interlude"]
     assert len(interludes) == 1
-    assert "flat and out of the name" in interludes[0]["text"]
+    assert "fully out of the position" in interludes[0]["text"]
     assert "October 2024" in interludes[0]["text"]
 
 
@@ -291,8 +291,9 @@ def test_compose_mirror_reads_like_a_reflection():
     _, _, stats = build_position_story(df, None)
     mirror = compose_mirror(stats, "RKLB", book_rank=2, book_size=94)
     text = " ".join(mirror)
-    assert text.startswith("Your RKLB story:")
-    assert "income engine" in text
+    assert text.startswith("RKLB: ")
+    assert "trade day" in text
+    assert "primarily for income" in text
     assert "$1,073 of option premium" in text
     assert "#2 of 94 symbols" in text
     # Cognitive-noise cap: shape + at most 2 behaviors + book rank.

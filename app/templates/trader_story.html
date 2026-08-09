@@ -90,14 +90,14 @@
 <div class="ts-hero mb-4">
     <div class="ts-kicker">Your trading mirror</div>
     {% if novel %}
-    <h1>{{ novel.hero_counts.stories }} stories. {{ "{:,}".format(novel.hero_counts.chapters) }} chapters. One trader.</h1>
+    <h1>Trader Profile</h1>
     <div class="ts-sub">
-        The book you've been writing{% if novel.hero_counts.since %} since <strong>{{ novel.hero_counts.since }}</strong>{% endif %}
-        {% if novel.hero_counts.open_stories %} &middot; <strong>{{ novel.hero_counts.open_stories }}</strong> stor{{ 'ies' if novel.hero_counts.open_stories != 1 else 'y' }} still open{% endif %}
+        <strong>{{ novel.hero_counts.stories }}</strong> symbols across <strong>{{ "{:,}".format(novel.hero_counts.chapters) }}</strong> trade days{% if novel.hero_counts.since %} since <strong>{{ novel.hero_counts.since }}</strong>{% endif %}
+        {% if novel.hero_counts.open_stories %} &middot; <strong>{{ novel.hero_counts.open_stories }}</strong> position{{ 's' if novel.hero_counts.open_stories != 1 }} open{% endif %}
     </div>
     {% else %}
-    <h1>Your story starts with a trade.</h1>
-    <div class="ts-sub">Once your trade history syncs, this page becomes the book of how you trade.</div>
+    <h1>Trader Profile</h1>
+    <div class="ts-sub">Once your trade history syncs, this page builds a complete profile of how you trade.</div>
     {% endif %}
 </div>
 
@@ -108,7 +108,7 @@
 {% if novel %}
 
 <div class="card ts-card p-4 mb-4">
-    <h2>Prologue &middot; who the fills say you are</h2>
+    <h2>Profile summary</h2>
     <div class="ts-identity">
         {% for s in novel.identity %}
         <p>{{ s }}</p>
@@ -126,7 +126,7 @@
 
 {% if novel.standouts %}
 <div class="card ts-card p-4 mb-4">
-    <h2>The standout stories</h2>
+    <h2>Notable positions</h2>
     <div class="ts-standouts">
         {% for s in novel.standouts %}
         {# story=open makes the position page land with the chapters expanded
@@ -143,22 +143,22 @@
         </a>
         {% endfor %}
     </div>
-    <p class="text-muted small mb-0 mt-3">Each card opens the position's full story — the chapters that prove the claim.</p>
+    <p class="text-muted small mb-0 mt-3">Each card opens the position's full trade-by-trade history.</p>
 </div>
 {% endif %}
 
 {% if novel.scoreboard %}
 <div class="card ts-card p-4 mb-4">
-    <h2>How each style has paid</h2>
+    <h2>Performance by style</h2>
     <div style="overflow-x:auto;">
         <table class="ts-score">
             <thead>
                 <tr>
                     <th>Style</th>
-                    <th style="text-align:right;">Stories</th>
-                    <th style="text-align:right;">Ended green</th>
+                    <th style="text-align:right;">Positions</th>
+                    <th style="text-align:right;">Profitable</th>
                     <th style="text-align:right;">Total P&amp;L</th>
-                    <th style="text-align:right;">Best story</th>
+                    <th style="text-align:right;">Best position</th>
                 </tr>
             </thead>
             <tbody>
@@ -187,7 +187,7 @@
 
 {% if novel.eras %}
 <div class="card ts-card p-4 mb-4">
-    <h2>The eras</h2>
+    <h2>Year by year</h2>
     {% for e in novel.eras %}
     <div class="ts-era">
         <div class="ts-era-year">{{ e.year }}</div>
@@ -202,19 +202,19 @@
 
 <div class="ts-epilogue mb-4">
     {% if novel.open_stories %}
-    {{ novel.open_stories }} of your stories {{ 'are' if novel.open_stories != 1 else 'is' }} still being written — today's marks are tomorrow's paragraphs.
+    {{ novel.open_stories }} position{{ 's are' if novel.open_stories != 1 else ' is' }} currently open — this profile updates as they close.
     {% else %}
-    Every story in the book is closed. The next chapter starts with your next trade.
+    All positions are closed. The profile updates with your next trade.
     {% endif %}
     <div class="mt-2">
-        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('positions') }}">Browse the positions behind the book</a>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('positions') }}">View all positions</a>
     </div>
 </div>
 
 {% else %}
 {% if not error %}
 <div class="card ts-card p-4 mb-4 text-center text-muted">
-    No trade history yet — connect a broker or upload a CSV, and this page will write itself.
+    No trade history yet — connect a broker or upload a CSV, and your trading profile will build automatically.
 </div>
 {% endif %}
 {% endif %}
