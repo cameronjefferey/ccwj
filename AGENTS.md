@@ -928,6 +928,20 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   defaults + theme-aware `borderColor` ternaries in page templates. New
   templates with hardcoded light styling need a dark override added there.
 
+**Design refresh layer (Aug 2026).** base.html carries a global "Design
+refresh" style block that owns the app's look: slate page background
+(#eef1f6) so white cards read as bordered surfaces, Inter font, denser
+card padding (`body .card.p-4` beats the Bootstrap utility's !important
+via specificity — the same body-prefix trick lets the layer out-rank
+every page's own `<style>` block regardless of order), .95rem tables
+with uppercase column headers, darker section labels, and the
+`.ht-statbar` component (one bordered row of label-over-value stats —
+used on /positions and /position/<symbol>; prefer it over rows of
+single-number KPI cards). Two rules of the layer: (1) never set a
+heading `color` globally — headings must inherit so dark heroes and
+dark mode stay readable; (2) new-page KPI strips should reuse
+`.ht-statbar`, not invent another card grid.
+
 Remaining debt:
 - `mirror_score.py` and `benchmark.py` import helpers from `routes.py` — unusual coupling
   (now at least the helpers-only routes.py makes that coupling explicit).

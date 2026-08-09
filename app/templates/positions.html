@@ -372,24 +372,22 @@
 
 {# ── Secondary stats (premium / positions count / trades) ────────── #}
 {% if kpis and accounts and accounts|length > 0 %}
-<div class="row g-3 mb-4">
-    <div class="col-12 col-sm">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Premium Collected</div>
-            <div class="kpi-value text-positive">${{ "{:,.0f}".format(kpis.premium_collected) }}</div>
-        </div>
+<div class="ht-statbar mb-3">
+    <div class="ht-stat">
+        <span class="ht-stat-l">Premium Collected</span>
+        <span class="ht-stat-v text-positive">${{ "{:,.0f}".format(kpis.premium_collected) }}</span>
     </div>
-    <div class="col-6 col-sm">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Positions</div>
-            <div class="kpi-value">{{ kpis.num_positions }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Positions</span>
+        <span class="ht-stat-v">{{ kpis.num_positions }}</span>
     </div>
-    <div class="col-6 col-sm">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Trades</div>
-            <div class="kpi-value">{{ "{:,}".format(kpis.total_trades) }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Trades</span>
+        <span class="ht-stat-v">{{ "{:,}".format(kpis.total_trades) }}</span>
+    </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Winners / Losers</span>
+        <span class="ht-stat-v"><span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span> / <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span></span>
     </div>
 </div>
 {% endif %}

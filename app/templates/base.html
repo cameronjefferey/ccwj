@@ -43,6 +43,9 @@
     </script>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads
@@ -104,7 +107,7 @@
             border: none;
             height: 1px;
             background: linear-gradient(90deg, transparent, #dee2e6, transparent);
-            margin: 2.5rem 0;
+            margin: 1.5rem 0;
         }
 
         .kpi-card {
@@ -350,6 +353,86 @@
             background: #fff; box-shadow: 0 1px 0 #e5e7eb;
         }
 
+        /* ── Design refresh (Aug 2026 overhaul) ─────────────────────
+           One global layer that tightens the whole app: real page
+           background so cards read as surfaces, Inter for crisper
+           numbers, denser card padding, bigger table type (tables ARE
+           the content), and darker section labels. Every selector is
+           body-prefixed so it out-ranks the bare class rules that live
+           in each page's own <style> block regardless of order. The
+           dark-mode block below still out-ranks this layer via its
+           [data-bs-theme] attribute selectors. */
+        body {
+            background: #eef1f6;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            color: #1e293b;
+            -webkit-font-smoothing: antialiased;
+        }
+        /* No color here — headings must inherit (dark heroes, dark mode). */
+        body h1, body h2, body h3, body h4, body h5, body h6 {
+            font-weight: 700; letter-spacing: -.01em;
+        }
+        /* Cards become bordered surfaces instead of floating white-on-white. */
+        body .card,
+        body .review-section,
+        body .chart-wrapper,
+        body .narrative-card {
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+        }
+        /* Density: Bootstrap's p-4 (1.5rem all around) is the single
+           biggest source of "small text floating in a big box". A
+           two-class selector beats the utility's !important via
+           specificity. Same trick shrinks the mb-4 canyon between cards. */
+        body .card.p-4 { padding: 1.15rem 1.3rem !important; }
+        body .card.mb-4 { margin-bottom: 1rem !important; }
+        body .review-section { padding: 1.15rem 1.35rem; margin-bottom: 1rem; border-radius: 14px; }
+        /* Section headers: readable anchors, not whispers. */
+        body .section-label {
+            font-size: .74rem; font-weight: 800; letter-spacing: .9px;
+            color: #475569; margin-bottom: .65rem;
+        }
+        body .section-sub { font-size: .85rem; color: #55637a; }
+        /* KPI patterns: darker labels, slightly larger, tighter to value. */
+        body .kpi-label,
+        body .kpi-mini .label,
+        body .snap-label {
+            font-size: .7rem; font-weight: 700; color: #64748b;
+        }
+        /* Tables are the product — give the data real type size and
+           calm the headers into proper column labels. */
+        body .table { font-size: .95rem; font-variant-numeric: tabular-nums; }
+        body .table thead th {
+            font-size: .72rem; text-transform: uppercase; letter-spacing: .5px;
+            color: #64748b; font-weight: 700; vertical-align: bottom;
+        }
+        body .table:not(.table-sm) > :not(caption) > * > * { padding: .55rem .6rem; }
+        body tr[data-href]:hover > * { background: #f4f7fc; }
+        /* Muted text one step darker everywhere — #6c757d on white at
+           .8rem was below comfortable contrast. */
+        body .text-muted { color: #5b6779 !important; }
+        /* Compact stat strip: one bordered row of label-over-value stats,
+           replacing the old pattern of N huge cards each holding one
+           number. Wraps on phones. */
+        .ht-statbar {
+            display: flex; flex-wrap: wrap; gap: .25rem 2.25rem;
+            background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.05);
+            padding: .75rem 1.15rem;
+        }
+        .ht-statbar .ht-stat { display: flex; flex-direction: column; min-width: 0; }
+        .ht-statbar .ht-stat-l {
+            font-size: .68rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .6px; color: #64748b;
+        }
+        .ht-statbar .ht-stat-v {
+            font-size: 1.2rem; font-weight: 800;
+            font-variant-numeric: tabular-nums; line-height: 1.3;
+        }
+        [data-bs-theme="dark"] .ht-statbar { background: #151e30; border-color: #1f2a3f; }
+        [data-bs-theme="dark"] .ht-statbar .ht-stat-l { color: #8fa0b5; }
+        [data-bs-theme="dark"] .ht-statbar .ht-stat-v { color: #f1f5f9; }
+
         /* ── Dark mode (Aug 2026) ───────────────────────────────────
            Opt-in via the navbar toggle (localStorage "ht-theme").
            Bootstrap's data-bs-theme=dark handles its own components;
@@ -359,8 +442,28 @@
         [data-bs-theme="dark"] body { background: #0b1220; color: #cbd5e1; }
         [data-bs-theme="dark"] .card,
         [data-bs-theme="dark"] .stat-card { background-color: #151e30; color: #cbd5e1; }
-        [data-bs-theme="dark"] .card { border-color: #1f2a3f; }
+        [data-bs-theme="dark"] .card,
+        [data-bs-theme="dark"] .review-section,
+        [data-bs-theme="dark"] .chart-wrapper,
+        [data-bs-theme="dark"] .narrative-card { border-color: #1f2a3f; }
         [data-bs-theme="dark"] .table { color: #cbd5e1; }
+        [data-bs-theme="dark"] .table thead th { color: #8fa0b5; }
+        [data-bs-theme="dark"] .section-label { color: #8fa0b5; }
+        [data-bs-theme="dark"] .section-sub { color: #8fa0b5; }
+        [data-bs-theme="dark"] .kpi-label,
+        [data-bs-theme="dark"] .kpi-mini .label,
+        [data-bs-theme="dark"] .snap-label { color: #8fa0b5; }
+        [data-bs-theme="dark"] tr[data-href]:hover > * { background: #1c2942; }
+        /* Freshness strip + Position Detail leg pills stayed light-on-dark. */
+        [data-bs-theme="dark"] .data-freshness-strip { background: #10192b; border-bottom-color: #1f2a3f; color: #8fa0b5; }
+        [data-bs-theme="dark"] .data-freshness-strip strong { color: #e2e8f0; }
+        [data-bs-theme="dark"] .data-freshness-strip.is-stale { background: #2a2109; border-bottom-color: #4a3a10; color: #d4a72c; }
+        [data-bs-theme="dark"] .data-freshness-strip.is-stale strong { color: #f0c33c; }
+        [data-bs-theme="dark"] .session-pill { background: #151e30; border-color: #33415e; color: #cbd5e1; }
+        [data-bs-theme="dark"] .session-pill:hover { border-color: #8fa0b5; }
+        [data-bs-theme="dark"] .session-pill.active { background: #1e2c47; color: #e2e8f0; }
+        [data-bs-theme="dark"] .session-pill.active.session-open { background: rgba(25,135,84,.18); color: #6ee7b7; border-color: #198754; }
+        [data-bs-theme="dark"] .session-pill.active.session-closed { background: #1c2942; color: #cbd5e1; border-color: #33415e; }
         [data-bs-theme="dark"] .text-muted { color: #8fa0b5 !important; }
         [data-bs-theme="dark"] .ht-sticky table thead th { background: #151e30; box-shadow: 0 1px 0 #283652; }
         [data-bs-theme="dark"] .ht-palette-box { background: #151e30; }

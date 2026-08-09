@@ -313,46 +313,30 @@
 {% elif kpis %}
 
 {# ── KPI Row ── #}
-<div class="row g-3 mb-4">
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Realized P&amp;L</div>
-            <div class="value {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                ${{ "{:,.2f}".format(kpis.realized_pnl) }}
-            </div>
-        </div>
+<div class="ht-statbar mb-3">
+    <div class="ht-stat">
+        <span class="ht-stat-l">Realized P&amp;L</span>
+        <span class="ht-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.2f}".format(kpis.realized_pnl) }}</span>
     </div>
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Unrealized P&amp;L</div>
-            <div class="value {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                ${{ "{:,.2f}".format(kpis.unrealized_pnl) }}
-            </div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Unrealized P&amp;L</span>
+        <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</span>
     </div>
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Premium Collected</div>
-            <div class="value text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Premium Collected</span>
+        <span class="ht-stat-v text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</span>
     </div>
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Win Rate</div>
-            <div class="value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Win Rate</span>
+        <span class="ht-stat-v">{{ "{:.0%}".format(kpis.win_rate) }}</span>
     </div>
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Avg Days</div>
-            <div class="value">{{ "{:.0f}".format(kpis.avg_days) }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Avg Days</span>
+        <span class="ht-stat-v">{{ "{:.0f}".format(kpis.avg_days) }}</span>
     </div>
-    <div class="col">
-        <div class="card stat-card p-3 kpi-mini">
-            <div class="label">Dividends</div>
-            <div class="value text-positive">${{ "{:,.2f}".format(kpis.dividend_income) }}</div>
-        </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Dividends</span>
+        <span class="ht-stat-v text-positive">${{ "{:,.2f}".format(kpis.dividend_income) }}</span>
     </div>
 </div>
 

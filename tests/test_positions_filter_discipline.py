@@ -198,7 +198,7 @@ def _positions_kpi(html):
     the filtered DataFrame. Should always match sum(hero_chips)."""
     import re
     m = re.search(
-        r'<div class="kpi-label">Positions</div>\s*<div class="kpi-value">(\d+)</div>',
+        r'<span class="ht-stat-l">Positions</span>\s*<span class="ht-stat-v">(\d+)</span>',
         html,
     )
     return int(m.group(1)) if m else None
