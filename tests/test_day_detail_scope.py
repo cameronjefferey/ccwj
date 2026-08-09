@@ -27,6 +27,7 @@ def _queries_for_path(rendered, path):
 def test_heatmap_day_link_preserves_tenant_scope():
     today = date(2024, 1, 3)
     context = {
+        "current_user": SimpleNamespace(is_authenticated=False),
         "title": "Daily Review",
         "mode": "daily",
         "week_start": date(2024, 1, 1),
@@ -91,6 +92,7 @@ def test_day_navigation_and_back_link_preserve_tenant_scope():
         f"/daily-review/day/2024-01-03?tenant={TENANT}&tenants={TENANTS}"
     ):
         rendered = app.jinja_env.get_template("day_detail.html").render(
+            current_user=SimpleNamespace(is_authenticated=False),
             title="Day",
             day=date(2024, 1, 3),
             day_label="Wednesday, January 3, 2024",
