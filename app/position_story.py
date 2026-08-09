@@ -32,7 +32,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-__all__ = ["build_position_story", "parse_occ"]
+__all__ = ["build_position_story", "compose_mirror", "parse_occ"]
 
 
 # OCC option symbol: "RKLB 250117C00037000" -> expiry / type / strike.
@@ -173,6 +173,31 @@ def _raw_event(fill):
             "amount": fill["amount"]}
 
 
+def _new_stats():
+    """The behavioral fingerprint accumulated while narrating.
+
+    Every counter is recorded by the same branch that writes the story
+    sentence, so the mirror (compose_mirror) can never disagree with the
+    chapters. Dollars are magnitudes; wins/losses are realized contract
+    outcomes the engine could pair up (flat after close / expiry).
+    """
+    return {
+        "rolls": 0, "roll_credit": 0.0,
+        "covered_calls": 0, "cc_rent": 0.0,
+        "puts_sold": 0, "premium_collected": 0.0,
+        "long_opens": 0, "long_risk": 0.0,
+        "expired_kept": 0, "expired_premium": 0.0,
+        "expired_lost": 0, "expired_lost_premium": 0.0,
+        "contract_wins": 0, "contract_win_total": 0.0,
+        "contract_losses": 0, "contract_loss_total": 0.0,
+        "assignments": 0, "wheels_opened": 0, "wheels_completed": 0,
+        "stock_opens": 0, "adds": 0, "trims": 0,
+        "dividend_total": 0.0, "drip_shares": 0.0,
+        "quiet_gain": 0.0, "quiet_loss": 0.0, "away_breaks": 0,
+        "splits": 0, "chapters": 0, "span_days": 0,
+    }
+
+
 # ── The state machine ────────────────────────────────────────────────────
 
 class _AccountState:
@@ -190,11 +215,13 @@ class _AccountState:
         return self.options.setdefault(tsym, {"net": 0.0, "cash": 0.0})
 
 
-def _day_headline(day_fills, state_by_account, multi_account):
+def _day_headline(day_fills, state_by_account, multi_account, stats):
     """Compose the plain-English sentences for one day's fills.
 
-    Mutates per-account state as it consumes fills. Returns (sentences,
-    dominant_kind).
+    Mutates per-account state as it consumes fills and accumulates the
+    behavioral fingerprint into ``stats`` (the same detection that writes
+    a sentence records the maneuver — the mirror never disagrees with the
+    story). Returns (sentences, dominant_kind).
     """
     sentences = []
     kinds = []
@@ -229,6 +256,7 @@ def _day_headline(day_fills, state_by_account, multi_account):
                      if f["action"] == "dividend_reinvest")
         if drip_q > 0:
             st.shares += drip_q
+            stats["drip_shares"] += drip_q
             if drip_q >= 0.005:
                 qtxt = f"{drip_q:,.2f}".rstrip("0").rstrip(".")
                 sentences.append(_tag(
@@ -290,6 +318,8 @@ def _day_headline(day_fills, state_by_account, multi_account):
                     consumed.add(id(o))
                     sentences.append(_tag(_phrase_roll(c, o, short_side), account))
                     kinds.append("sell" if short_side else "buy")
+                    stats["rolls"] += 1
+                    stats["roll_credit"] += c["amount"] + o["amount"]
                     # State: apply both fills.
                     for f in (c, o):
                         rec = st.opt(f["trade_symbol"])
@@ -315,7 +345,7 @@ def _day_headline(day_fills, state_by_account, multi_account):
                 st.shares += q if f["action"] == "equity_buy" else -q
                 kinds.append("lifecycle")
                 continue
-            s = _phrase_equity(f, st)
+            s = _phrase_equity(f, st, stats)
             if s:
                 sentences.append(_tag(s, account))
                 kinds.append(_RAW_VERBS[f["action"]][1])
@@ -324,7 +354,7 @@ def _day_headline(day_fills, state_by_account, multi_account):
         for f in opt_fills:
             if id(f) in consumed:
                 continue
-            s = _phrase_option(f, st, day_ctx)
+            s = _phrase_option(f, st, day_ctx, stats)
             if s:
                 sentences.append(_tag(s, account))
                 kinds.append(_RAW_VERBS[f["action"]][1])
@@ -376,7 +406,8 @@ def _phrase_roll(close_fill, open_fill, short_side):
     )
 
 
-def _phrase_equity(f, st):
+def _phrase_equity(f, st, stats=None):
+    stats = stats if stats is not None else _new_stats()
     q = abs(f["quantity"])
     p = f["price"]
     at = f" at ${p:,.2f}" if p else ""
@@ -390,7 +421,9 @@ def _phrase_equity(f, st):
         before = st.shares
         st.shares += q
         if before <= 0.0001:
+            stats["stock_opens"] += 1
             return f"Started the stock position: {_shares(q)}{at} ({_money(f['amount'])})."
+        stats["adds"] += 1
         return f"Added {_shares(q)}{at} — now holding {st.shares:,.0f}."
 
     if action == "equity_sell":
@@ -405,14 +438,16 @@ def _phrase_equity(f, st):
                 st.wheel_active = False
             return f"Sold the last {_shares(q)}{at} — flat on the stock again."
         if before > 0:
+            stats["trims"] += 1
             return f"Trimmed {_shares(q)}{at} — {st.shares:,.0f} still working."
         return f"Sold {_shares(q)}{at}."
 
     return None
 
 
-def _phrase_option(f, st, day_ctx=None):
+def _phrase_option(f, st, day_ctx=None, stats=None):
     day_ctx = day_ctx or {"buy_prices": [], "sell_prices": []}
+    stats = stats if stats is not None else _new_stats()
 
     def _near(price_list, strike):
         return any(abs(p - strike) <= max(0.005 * strike, 0.01)
@@ -437,11 +472,14 @@ def _phrase_option(f, st, day_ctx=None):
     if action == "option_sell_to_open":
         rec["net"] -= n
         rec["cash"] += amt
+        stats["premium_collected"] += max(amt, 0.0)
         if otype == "put":
+            stats["puts_sold"] += 1
             wheel_lead = ""
             if not st.wheel_active and st.shares < 100:
                 st.wheel_active = True
                 st.wheel_premium = 0.0
+                stats["wheels_opened"] += 1
                 wheel_lead = "Opened a wheel: "
             if st.wheel_active:
                 st.wheel_premium += max(amt, 0.0)
@@ -457,6 +495,8 @@ def _phrase_option(f, st, day_ctx=None):
         if st.wheel_active:
             st.wheel_premium += max(amt, 0.0)
         if covered:
+            stats["covered_calls"] += 1
+            stats["cc_rent"] += max(amt, 0.0)
             return (
                 f"Sold {_contracts(n)} of the {strike} covered call ({exp}) "
                 f"against your shares — {_money(amt)} of rent."
@@ -469,6 +509,8 @@ def _phrase_option(f, st, day_ctx=None):
     if action == "option_buy_to_open":
         rec["net"] += n
         rec["cash"] += amt
+        stats["long_opens"] += 1
+        stats["long_risk"] += abs(min(amt, 0.0))
         stance = "a bullish bet" if otype == "call" else "downside protection" if st.shares > 0 else "a bearish bet"
         return (
             f"Bought {_contracts(n)} of the {strike} {otype} ({exp}) — "
@@ -482,8 +524,14 @@ def _phrase_option(f, st, day_ctx=None):
         if abs(rec["net"]) < 0.0001 and prior_cash > 0:
             pnl = rec["cash"]
             rec["cash"] = 0.0
-            outcome = (f"locking in {_money(pnl)} of the premium"
-                       if pnl > 0 else f"giving back {_money(pnl)} more than it brought in")
+            if pnl > 0:
+                stats["contract_wins"] += 1
+                stats["contract_win_total"] += pnl
+                outcome = f"locking in {_money(pnl)} of the premium"
+            else:
+                stats["contract_losses"] += 1
+                stats["contract_loss_total"] += abs(pnl)
+                outcome = f"giving back {_money(pnl)} more than it brought in"
             return f"Bought back the {strike} {otype} ({exp}) for {_money(amt)} — {outcome}."
         return f"Bought back {_contracts(n)} of the {strike} {otype} ({exp}) for {_money(amt)}."
 
@@ -494,8 +542,14 @@ def _phrase_option(f, st, day_ctx=None):
         if abs(rec["net"]) < 0.0001:
             pnl = rec["cash"]
             rec["cash"] = 0.0
-            outcome = (f"a {_money(pnl)} win on the contract"
-                       if pnl > 0 else f"taking the {_money(pnl)} loss")
+            if pnl > 0:
+                stats["contract_wins"] += 1
+                stats["contract_win_total"] += pnl
+                outcome = f"a {_money(pnl)} win on the contract"
+            else:
+                stats["contract_losses"] += 1
+                stats["contract_loss_total"] += abs(pnl)
+                outcome = f"taking the {_money(pnl)} loss"
             return f"Sold the {strike} {otype}s ({exp}) for {_money(amt)} — {outcome}."
         return f"Sold {_contracts(n)} of the {strike} {otype} ({exp}) for {_money(amt)}."
 
@@ -506,12 +560,20 @@ def _phrase_option(f, st, day_ctx=None):
         rec["cash"] = 0.0
         if was_short:
             if premium > 0.005:
+                stats["expired_kept"] += 1
+                stats["expired_premium"] += premium
+                stats["contract_wins"] += 1
+                stats["contract_win_total"] += premium
                 return (
                     f"The {strike} {otype} expired worthless — "
                     f"you kept the full {_money(premium)} premium."
                 )
             return f"The {strike} {otype} expired worthless — premium fully earned."
         if premium < -0.005:
+            stats["expired_lost"] += 1
+            stats["expired_lost_premium"] += abs(premium)
+            stats["contract_losses"] += 1
+            stats["contract_loss_total"] += abs(premium)
             return (
                 f"The {strike} {otype} expired worthless — "
                 f"the {_money(premium)} paid for it is gone."
@@ -522,6 +584,7 @@ def _phrase_option(f, st, day_ctx=None):
         premium = st.wheel_premium
         rec["net"] = 0.0
         rec["cash"] = 0.0
+        stats["assignments"] += 1
         if otype == "put":
             note = ""
             if st.wheel_active and premium > 0.005:
@@ -532,6 +595,7 @@ def _phrase_option(f, st, day_ctx=None):
         note = ""
         if st.wheel_active:
             st.wheel_active = False
+            stats["wheels_completed"] += 1
             if premium > 0.005:
                 note = f" Wheel complete: {_money(premium)} of premium collected over the cycle."
         return f"Shares called away at {strike} on the {otype}.{note}"
@@ -550,10 +614,12 @@ def _phrase_option(f, st, day_ctx=None):
             else:
                 was_short = _near(day_ctx["buy_prices"], occ["strike"])
         if was_short:
+            stats["assignments"] += 1
             if otype == "call":
                 note = ""
                 if st.wheel_active:
                     st.wheel_active = False
+                    stats["wheels_completed"] += 1
                     if st.wheel_premium > 0.005:
                         note = (f" Wheel complete: {_money(st.wheel_premium)} "
                                 f"of premium collected over the cycle.")
@@ -726,8 +792,9 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
     for f in fills:
         fills_by_day.setdefault(f["date"], []).append(f)
 
+    stats = _new_stats()
     if not fills_by_day and not div_by_day:
-        return [], []
+        return [], [], stats
 
     first_day = min(set(fills_by_day) | set(div_by_day))
     splits_by_day = {}
@@ -761,7 +828,12 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
                          if chart_data else None)
             if interlude:
                 story_items.append(interlude)
+                if interlude["delta"] > 0:
+                    stats["quiet_gain"] += interlude["delta"]
+                else:
+                    stats["quiet_loss"] += abs(interlude["delta"])
             elif gap >= _BREAK_MIN_DAYS and _flat_everywhere():
+                stats["away_breaks"] += 1
                 months = max(1, round(gap / 30))
                 span = (f"{months} month{'s' if months != 1 else ''}"
                         if months >= 2 else f"{gap} days")
@@ -784,11 +856,12 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
                 st.shares *= ratio
             after = sum(st.shares for st in state_by_account.values())
             if before > 0.5:
+                stats["splits"] += 1
                 split_headlines.append(_phrase_split(ratio, before, after))
 
         day_fills = fills_by_day.get(d, [])
         headlines, dominant = ([], "income") if not day_fills else _day_headline(
-            day_fills, state_by_account, multi_account)
+            day_fills, state_by_account, multi_account, stats)
         if split_headlines:
             headlines = split_headlines + headlines
             if not day_fills:
@@ -796,6 +869,7 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
 
         div_amt = div_by_day.get(d, 0.0)
         if div_amt:
+            stats["dividend_total"] += div_amt
             headlines = headlines + [
                 f"Collected {_money(div_amt, 2)} in dividends just for holding."
             ]
@@ -828,4 +902,145 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
         story_markers.append({"d": iso, "k": dominant, "t": tooltip_lines})
         prev_event_day = d
 
-    return story_items, story_markers
+    day_items = [i for i in story_items if i["type"] == "day"]
+    stats["chapters"] = len(day_items)
+    if len(day_items) >= 2:
+        stats["span_days"] = (
+            date.fromisoformat(day_items[-1]["date_iso"])
+            - date.fromisoformat(day_items[0]["date_iso"])
+        ).days
+
+    return story_items, story_markers, stats
+
+
+# ── The mirror: "here's you, in this position" ───────────────────────────
+
+def _span_text(days):
+    if days < 60:
+        return f"{days} days"
+    months = round(days / 30)
+    if months < 24:
+        return f"{months} months"
+    return f"{days / 365:.1f} years"
+
+
+def compose_mirror(stats, symbol, book_rank=None, book_size=None):
+    """2-4 evidence-only sentences reflecting HOW the trader traded this
+    position, plus where it sits in their book. This is the mirror: it
+    describes behavior the chapters below can prove, never intent (see
+    AGENTS.md pattern-detection rules — no psychological labeling).
+
+    ``book_rank``/``book_size``: 1-based P&L rank among the trader's
+    symbols (from the tab-strip rollup), included when the book is big
+    enough for rank to mean something.
+    """
+    if not stats or not stats["chapters"]:
+        return []
+
+    sentences = []
+
+    # Shape of the story.
+    shape = f"{stats['chapters']} chapter{'s' if stats['chapters'] != 1 else ''}"
+    if stats["span_days"] >= 14:
+        shape += f" across {_span_text(stats['span_days'])}"
+    if stats["away_breaks"]:
+        shape += (f", including {stats['away_breaks']} stretch"
+                  f"{'es' if stats['away_breaks'] != 1 else ''} where you "
+                  f"walked away completely")
+    sentences.append(f"Your {symbol} story: {shape}.")
+
+    # Candidate behavior reflections, scored by the dollars (or repetition)
+    # behind them — keep only the two most load-bearing so the mirror stays
+    # a reflection, not a report.
+    candidates = []
+    if stats["premium_collected"] > 1:
+        clause = (f"You ran {symbol} as an income engine: "
+                  f"{_money(stats['premium_collected'])} of option premium collected")
+        bits = []
+        if stats["covered_calls"]:
+            bits.append(f"{stats['covered_calls']} covered call"
+                        f"{'s' if stats['covered_calls'] != 1 else ''}")
+        if stats["puts_sold"]:
+            bits.append(f"{stats['puts_sold']} short put"
+                        f"{'s' if stats['puts_sold'] != 1 else ''}")
+        if bits:
+            clause += f" across {' and '.join(bits)}"
+        candidates.append((stats["premium_collected"], clause + "."))
+    if stats["long_opens"] and stats["long_risk"] > 1:
+        w, l = stats["contract_wins"], stats["contract_losses"]
+        clause = (f"You put {_money(stats['long_risk'])} at risk on "
+                  f"{stats['long_opens']} long-option bet"
+                  f"{'s' if stats['long_opens'] != 1 else ''}")
+        if w + l:
+            clause += f"; your closed contracts here went {w}W / {l}L overall"
+        candidates.append((stats["long_risk"], clause + "."))
+    if stats["rolls"]:
+        clause = (f"When a strike got crowded you rolled rather than closed — "
+                  f"{stats['rolls']} roll{'s' if stats['rolls'] != 1 else ''}")
+        if stats["roll_credit"] > 1:
+            clause += f", collecting {_money(stats['roll_credit'])} while repositioning"
+        elif stats["roll_credit"] < -1:
+            clause += f", paying {_money(stats['roll_credit'])} to reposition"
+        candidates.append((max(abs(stats["roll_credit"]), 500 * stats["rolls"]),
+                           clause + "."))
+    if stats["expired_kept"]:
+        candidates.append((
+            stats["expired_premium"],
+            f"You let {stats['expired_kept']} contract"
+            f"{'s' if stats['expired_kept'] != 1 else ''} ride to worthless "
+            f"expiry and kept every dollar — {_money(stats['expired_premium'])}.",
+        ))
+    if stats["wheels_completed"]:
+        candidates.append((
+            2000.0 * stats["wheels_completed"],
+            f"You turned {stats['wheels_completed']} full wheel cycle"
+            f"{'s' if stats['wheels_completed'] != 1 else ''} — "
+            f"put premium, assignment, call premium, called away.",
+        ))
+    quiet_net = stats["quiet_gain"] - stats["quiet_loss"]
+    if stats["quiet_gain"] > 1 and quiet_net > 0:
+        candidates.append((
+            stats["quiet_gain"],
+            f"The quiet stretches did real work: {_money(stats['quiet_gain'])} "
+            f"arrived while you weren't trading at all.",
+        ))
+    if stats["dividend_total"] > 1:
+        candidates.append((
+            stats["dividend_total"],
+            f"Meanwhile {symbol} paid you {_money(stats['dividend_total'], 2)} "
+            f"in dividends for holding on.",
+        ))
+    if stats["adds"] >= 3 and stats["adds"] > 2 * max(stats["trims"], 1):
+        candidates.append((
+            300.0 * stats["adds"],
+            f"You built the stock position patiently — "
+            f"{stats['adds']} separate adds.",
+        ))
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    sentences.extend(text for _, text in candidates[:2])
+
+    # Where it sits in the book.
+    if book_rank and book_size and book_size >= 5:
+        if book_rank == 1:
+            sentences.append(
+                f"Across your whole book, {symbol} is your single best "
+                f"position by total P&L ({book_size} symbols)."
+            )
+        elif book_rank <= max(3, round(book_size * 0.1)):
+            sentences.append(
+                f"Across your whole book, {symbol} ranks #{book_rank} of "
+                f"{book_size} symbols by total P&L."
+            )
+        elif book_rank > book_size - max(3, round(book_size * 0.1)):
+            sentences.append(
+                f"Across your whole book, {symbol} sits near the bottom — "
+                f"#{book_rank} of {book_size} symbols by total P&L."
+            )
+        else:
+            sentences.append(
+                f"Across your whole book, {symbol} is #{book_rank} of "
+                f"{book_size} symbols by total P&L."
+            )
+
+    return sentences

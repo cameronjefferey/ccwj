@@ -1155,7 +1155,7 @@ POSITION_SPLITS_QUERY = """
 # covered calls, assignments, kept premium) + interludes narrated from the
 # daily-mark chart series. Built entirely from frames the page already
 # fetches — no extra queries.
-from app.position_story import build_position_story  # noqa: E402
+from app.position_story import build_position_story, compose_mirror  # noqa: E402
 
 
 @app.route("/position/<symbol>")
@@ -1302,6 +1302,7 @@ def position_detail(symbol):
             chart_data_json="{}",
             story_days=[],
             story_markers_json="[]",
+            story_mirror=[],
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -2509,12 +2510,25 @@ def position_detail(symbol):
             _story_div_df = _story_div_df.copy()
             _story_div_df["_d"] = pd.to_datetime(_story_div_df["trade_date"]).dt.date
             _story_div_df = _story_div_df[_story_div_df["_d"].apply(_in_leg_range)]
-        story_days, story_markers = build_position_story(
+        story_days, story_markers, story_stats = build_position_story(
             trades_df, _story_div_df, chart_data, splits_df=splits_df
         )
+        # The mirror prologue: how this position was traded + where it
+        # sits in the trader's book. Rank comes from the tab-strip rollup
+        # (already tenant-scoped) so the mirror needs no extra query.
+        book_rank, book_size = None, None
+        ranked = sorted(
+            (t for t in tabs if t.get("total_return") is not None),
+            key=lambda t: t["total_return"], reverse=True,
+        )
+        for i, t in enumerate(ranked):
+            if str(t.get("symbol") or "").upper() == symbol.upper():
+                book_rank, book_size = i + 1, len(ranked)
+                break
+        story_mirror = compose_mirror(story_stats, symbol, book_rank, book_size)
     except Exception as exc:
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
-        story_days, story_markers = [], []
+        story_days, story_markers, story_mirror = [], [], []
 
     return render_template(
         "position_detail.html",
@@ -2537,6 +2551,7 @@ def position_detail(symbol):
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
         story_days=story_days,
         story_markers_json=json.dumps(story_markers),
+        story_mirror=story_mirror,
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,

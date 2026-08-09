@@ -879,12 +879,23 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   it narrates INTERLUDES from the daily-mark chart series — "13 quiet
   weeks did the heavy lifting: +$3,434 without placing a trade" — the
   data only HappyTrader has (per-day option marks), plus "flat and out
-  of the name" breaks for long gaps while closed. Two-way chart↔story
-  choreography in position_detail.html: hovering a chart dot highlights
-  + scrolls to its chapter, hovering a chapter pops the dot's tooltip,
-  clicking a dot jumps to the chapter. Leg-filter aware. Pinned by
-  `tests/test_position_story.py`. This narrative layer is the intended
-  basis for the future cross-position "trader novel".
+  of the name" breaks for long gaps while closed. While narrating, the
+  engine accumulates a BEHAVIORAL FINGERPRINT (`_new_stats()`: rolls,
+  premium collected, covered calls, kept-at-expiry, wheels completed,
+  contract W/L, quiet-stretch P&L, adds/trims…) recorded by the same
+  branches that write the sentences, so the mirror can never disagree
+  with the chapters. `compose_mirror()` turns that + the tab-strip book
+  rank into a 2-4 sentence MIRROR PROLOGUE ("Your RKLB story: 22
+  chapters across 20 months… you ran RKLB as an income engine… ranks
+  #4 of 94 symbols") rendered always-visible above the chapters, which
+  are COLLAPSED by default behind "Read the N chapters". Chart↔story
+  choreography is CLICK-driven (deliberate act, not hover strobe):
+  clicking a chart dot opens the story and scrolls/flashes its chapter;
+  clicking a chapter pops the dot's tooltip on the chart (click again
+  to put it away). Leg-filter aware. Pinned by
+  `tests/test_position_story.py`. The per-position fingerprints are the
+  intended input for the future cross-position "trader novel" — the
+  mirror concept woven into every surface.
 - **Dark mode**: navbar toggle → localStorage → inline head script sets
   `data-bs-theme` pre-paint. Bootstrap 5.3 handles its components; the
   app's hardcoded light surfaces are overridden in base.html's
