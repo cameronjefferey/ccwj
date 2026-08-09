@@ -1156,6 +1156,11 @@ POSITION_SPLITS_QUERY = """
 # daily-mark chart series. Built entirely from frames the page already
 # fetches — no extra queries.
 from app.position_story import build_position_story, compose_mirror  # noqa: E402
+from app.execution_quality import (  # noqa: E402
+    POSITION_EXECUTION_QUERY,
+    exit_notes as _execution_exit_notes,
+    symbol_execution_sentences as _symbol_execution_sentences,
+)
 
 
 @app.route("/position/<symbol>")
@@ -1247,6 +1252,13 @@ def position_detail(symbol):
             # market data (like earnings above); running it through the
             # tenant filter would fail-closed to empty.
             "splits": POSITION_SPLITS_QUERY.format(symbol=safe_symbol),
+            # Execution review (int_option_exit_quality): after-the-fact
+            # verdicts on early closes / rolls, graded against the
+            # underlying's close at each contract's expiry. Feeds the
+            # mirror sentences and the day-row verdict notes.
+            "execution": POSITION_EXECUTION_QUERY.format(
+                symbol=safe_symbol, tenant_filter=_pos_acct
+            ),
         }
         # Crypto positions don't pay dividends in our pipeline, so
         # _compute_breakdown_by_type skips them — don't fetch the frame.
@@ -1272,6 +1284,7 @@ def position_detail(symbol):
         chart_df = dfs.get("chart", pd.DataFrame())
         dividends_df = dfs.get("dividends")
         splits_df = dfs.get("splits", pd.DataFrame())
+        execution_df = dfs.get("execution", pd.DataFrame())
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -2514,12 +2527,18 @@ def position_detail(symbol):
             _story_div_df = _story_div_df.copy()
             _story_div_df["_d"] = pd.to_datetime(_story_div_df["trade_date"]).dt.date
             _story_div_df = _story_div_df[_story_div_df["_d"].apply(_in_leg_range)]
+        # Execution review: after-the-fact verdicts graded in dbt
+        # (int_option_exit_quality). Tenant-filtered like every other
+        # frame; the notes hook onto completing closes inside the engine.
+        _exec_df = _filter_df_by_tenant_ids(execution_df, tenant_scope)
+        _exit_notes = _execution_exit_notes(_exec_df)
         story_days, story_markers, story_stats = build_position_story(
             trades_df,
             _story_div_df,
             chart_data,
             splits_df=splits_df,
             seed_trades_df=story_seed_trades,
+            exit_notes=_exit_notes,
         )
         # The mirror prologue: how this position was traded + where it
         # sits in the trader's book. Rank comes from the tab-strip rollup
@@ -2534,6 +2553,9 @@ def position_detail(symbol):
                 book_rank, book_size = i + 1, len(ranked)
                 break
         story_mirror = compose_mirror(story_stats, symbol, book_rank, book_size)
+        # Execution sentences extend the mirror: same evidence-only voice,
+        # but graded against the market's record instead of the fills.
+        story_mirror = story_mirror + _symbol_execution_sentences(_exec_df)
     except Exception as exc:
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []

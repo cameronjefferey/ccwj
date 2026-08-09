@@ -76,6 +76,24 @@
     .ts-score-desc { color: #94a3b8; font-size: .78rem; }
     [data-bs-theme="dark"] .ts-score td, [data-bs-theme="dark"] .ts-score th { border-bottom-color: #1f2a3f; }
 
+    .ts-identity.ts-exec {
+        border-left-color: #0d9488;
+        background: linear-gradient(90deg, rgba(13,148,136,.07), rgba(13,148,136,.02));
+    }
+    [data-bs-theme="dark"] .ts-identity.ts-exec {
+        background: linear-gradient(90deg, rgba(13,148,136,.16), rgba(13,148,136,.04));
+    }
+    a.ts-exec-example {
+        display: flex; gap: .6rem; align-items: baseline;
+        padding: .5rem .75rem; border: 1px solid #e2e8f0; border-radius: 10px;
+        margin-bottom: .5rem; text-decoration: none; color: inherit;
+        font-size: .9rem; line-height: 1.45;
+        transition: border-color .15s ease;
+    }
+    a.ts-exec-example:hover { border-color: #0d9488; }
+    a.ts-exec-example:last-child { margin-bottom: 0; }
+    [data-bs-theme="dark"] a.ts-exec-example { border-color: #24304a; }
+
     .ts-epilogue { text-align: center; color: #64748b; font-size: .95rem; }
     [data-bs-theme="dark"] .ts-card { background: #111a2c; }
     [data-bs-theme="dark"] .ts-epilogue { color: #94a3b8; }
@@ -123,6 +141,40 @@
         {% endfor %}
     </div>
 </div>
+
+{% if novel.execution %}
+{# Execution review: every resolved contract graded against the market's
+   subsequent record (underlying close at expiry + accumulating daily
+   option marks). The differentiator card — no trade log can say this.
+   Gated in app/execution_quality.py on >= 5 graded contracts. #}
+<div class="card ts-card p-4 mb-4">
+    <h2>Execution review</h2>
+    <div class="ts-identity ts-exec">
+        {% for s in novel.execution.sentences %}
+        <p>{{ s }}</p>
+        {% endfor %}
+    </div>
+    <div class="ts-chips mt-3">
+        {% for c in novel.execution.chips %}
+        <div class="ts-chip">
+            <div class="ts-chip-v">{{ c.value }}</div>
+            <div class="ts-chip-l">{{ c.label }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% if novel.execution.examples %}
+    <div class="mt-3">
+        {% for ex in novel.execution.examples %}
+        <a class="ts-exec-example" href="{{ url_for('position_detail', symbol=ex.symbol, account=selected_account, story='open') }}">
+            <span class="fw-bold">{{ ex.symbol }}</span>
+            <span>{{ ex.desc }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <p class="text-muted small mb-0 mt-3">Graded against the underlying's closing price on each contract's expiry date, and daily option marks where coverage exists. Evidence, not advice — every early close also removed risk.</p>
+</div>
+{% endif %}
 
 {% if novel.standouts %}
 <div class="card ts-card p-4 mb-4">

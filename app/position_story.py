@@ -236,16 +236,28 @@ class _AccountState:
         return self.options.setdefault(tsym, {"net": 0.0, "cash": 0.0})
 
 
-def _day_headline(day_fills, state_by_account, multi_account, stats):
+def _day_headline(day_fills, state_by_account, multi_account, stats,
+                  exit_notes=None):
     """Compose the plain-English sentences for one day's fills.
 
     Mutates per-account state as it consumes fills and accumulates the
     behavioral fingerprint into ``stats`` (the same detection that writes
     a sentence records the maneuver — the mirror never disagrees with the
     story). Returns (sentences, dominant_kind).
+
+    ``exit_notes`` — optional {trade_symbol: verdict sentence} from the
+    execution-review layer (app/execution_quality.py). When a contract's
+    completing close (buyback, sale, or the closed leg of a roll)
+    narrates, its after-the-fact verdict ("this contract went on to
+    expire worthless…") renders on the next line, so the story and the
+    grade read as one voice.
     """
     sentences = []
     kinds = []
+    exit_notes = exit_notes or {}
+
+    def _note_for(fill):
+        return exit_notes.get((fill.get("trade_symbol") or "").strip())
 
     # Group per physical tenant so share counts / coverage are computed
     # against the right account. Display labels are not unique: one user can
@@ -340,6 +352,9 @@ def _day_headline(day_fills, state_by_account, multi_account, stats):
                     consumed.add(id(c))
                     consumed.add(id(o))
                     sentences.append(_tag(_phrase_roll(c, o, short_side), account))
+                    note = _note_for(c)
+                    if note:
+                        sentences.append(_tag(note, account))
                     kinds.append("sell" if short_side else "buy")
                     stats["rolls"] += 1
                     stats["roll_credit"] += c["amount"] + o["amount"]
@@ -386,6 +401,17 @@ def _day_headline(day_fills, state_by_account, multi_account, stats):
             if s:
                 sentences.append(_tag(s, account))
                 kinds.append(_RAW_VERBS[f["action"]][1])
+                # Verdict from the execution-review layer, on the
+                # COMPLETING close only (net position back to zero) so a
+                # contract closed in pieces gets one verdict, not one per
+                # partial fill.
+                if f["action"] in ("option_buy_to_close",
+                                   "option_sell_to_close"):
+                    rec = st.opt(f["trade_symbol"])
+                    if abs(rec["net"]) < 0.0001:
+                        note = _note_for(f)
+                        if note:
+                            sentences.append(_tag(note, account))
 
         if len(sentences) == sentences_before and fills:
             # Nothing narratable (shouldn't happen) — keep the day silent
@@ -785,6 +811,7 @@ def build_position_story(
     chart_data=None,
     splits_df=None,
     seed_trades_df=None,
+    exit_notes=None,
 ):
     """Return ``(story_items, story_markers)``.
 
@@ -810,6 +837,11 @@ def build_position_story(
     a leg/date-filtered post-split sell starts from zero shares and invents
     a phantom short even though the pre-split buy exists outside the view.
     Seed activity never contributes chapters or behavioral stats.
+
+    ``exit_notes`` — optional {trade_symbol: verdict sentence} from the
+    execution-review layer; appended to the completing close's headline
+    (see _day_headline). Seed replay never narrates, so it never receives
+    the notes.
     """
     fills = _normalize_fills(trades_df)
     seed_fills = _normalize_fills(seed_trades_df)
@@ -924,7 +956,8 @@ def build_position_story(
 
         day_fills = fills_by_day.get(d, [])
         headlines, dominant = ([], "income") if not day_fills else _day_headline(
-            day_fills, state_by_account, multi_account, stats)
+            day_fills, state_by_account, multi_account, stats,
+            exit_notes=exit_notes)
         if split_headlines:
             headlines = split_headlines + headlines
             if not day_fills:

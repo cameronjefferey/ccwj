@@ -13,13 +13,13 @@
     For sold options, positive unrealized_pnl means the option has decayed
     in your favor (you could buy it back cheaper than you sold it).
 
-    v2: under the SnapTrade-only architecture we no longer build daily
-    snapshot wrappers — see docs/V2_TENANT_KEY_DESIGN.md (history loss
-    accepted on cutover). Marks come from the live ``stg_current``
-    snapshot for today only. Downstream coaching surfaces (which depended
-    on multi-day history to compute peak / giveback metrics) degrade
-    gracefully — they use ``data_reliable`` and ``snapshot_density``
-    flags that fall through to "not enough data" naturally.
+    Marks come from two disjoint sources (Aug 2026 rewire, same split as
+    int_option_contract_daily_pnl): today from the live ``stg_current``
+    snapshot; history from ``int_option_marks_daily`` (the SCD2 options
+    snapshot unfolded per day, accumulating since 2026-08-04). Downstream
+    coaching surfaces gate on ``data_reliable`` / ``snapshot_density``,
+    so peak / giveback metrics strengthen automatically as history
+    accrues instead of needing a flag day.
 */
 
 with opt_snapshot as (
@@ -41,6 +41,26 @@ with opt_snapshot as (
     from {{ ref('stg_current') }}
     where snapshot_date is not null
       and instrument_type in ('Call', 'Put')
+
+    union all
+
+    select
+        account,
+        user_id,
+        tenant_id,
+        trade_symbol,
+        underlying_symbol,
+        option_expiry,
+        option_strike,
+        option_type,
+        quantity,
+        current_price,
+        market_value,
+        cost_basis,
+        unrealized_pnl,
+        date as snapshot_date
+    from {{ ref('int_option_marks_daily') }}
+    where date < current_date()
 ),
 
 daily as (

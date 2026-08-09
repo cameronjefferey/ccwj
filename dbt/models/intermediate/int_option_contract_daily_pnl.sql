@@ -99,12 +99,18 @@ with contracts as (
 -- ``short_aware_unrealized_pnl`` in app/upload.py is the Python
 -- mirror of the same rule.
 --
--- v2: under the SnapTrade-only architecture there's no daily snapshot
--- wrapper (history loss accepted on cutover — see
--- docs/V2_TENANT_KEY_DESIGN.md). Marks come from the live
--- ``stg_current`` snapshot for today only; historical days fall
--- through to $0 contribution from the spine and the realized credit
--- on close_date does the rest.
+-- TWO SOURCES, DISJOINT BY CONSTRUCTION (Aug 2026 rewire):
+--   * TODAY — the live ``stg_current`` snapshot (snapshot_date =
+--     current_date()), the freshest mark available.
+--   * HISTORY — ``int_option_marks_daily`` (date < current_date()),
+--     the SCD2 options snapshot unfolded to one end-of-day mark per
+--     contract per day. Before this rewire the accumulated history
+--     was consumed by NOTHING and every historical day contributed
+--     $0 MTM; the "daily option values" differentiator only existed
+--     for today's row. History accumulates from 2026-08-04 (prior
+--     generation lost to the dataset-expiration incident); days
+--     before first capture still fall through to $0 + the realized
+--     credit on close_date, exactly as before.
 snapshots as (
     select
         tenant_id,
@@ -125,6 +131,19 @@ snapshots as (
       and instrument_type in ('Call', 'Put')
       and underlying_symbol is not null
       and trim(underlying_symbol) != ''
+
+    union all
+
+    select
+        tenant_id,
+        account,
+        user_id,
+        underlying_symbol as symbol,
+        trade_symbol,
+        date,
+        mtm_unrealized_pnl
+    from {{ ref('int_option_marks_daily') }}
+    where date < current_date()
 ),
 
 -- Per-contract last snapshot date. Used to cap the lifetime spine —

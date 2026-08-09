@@ -27,6 +27,10 @@ from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
 )
+from app.execution_quality import (
+    EXECUTION_REVIEW_QUERY,
+    summarize_execution,
+)
 from app.position_story import (
     _behavior_candidates,
     _money,
@@ -548,6 +552,11 @@ def story_query_batch(tenant_ids):
             tenant_filter=_tenant_sql_and(tenant_ids)),
         "story_summary": STORY_SUMMARY_QUERY.format(
             tenant_filter=_tenant_sql_and(tenant_ids)),
+        # Execution review rows (int_option_exit_quality): decisions graded
+        # against the market's subsequent record. Tenant-scoped + projects
+        # tenant_id like the other frames.
+        "story_execution": EXECUTION_REVIEW_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids)),
         # Public symbol-grain market data — NOT tenant filtered (see
         # STORY_SPLITS_QUERY comment).
         "story_splits": STORY_SPLITS_QUERY,
@@ -585,9 +594,17 @@ def trader_story():
         summary_df = _filter_df_by_tenant_ids(
             dfs.get("story_summary", pd.DataFrame()), tenant_scope)
         splits_df = dfs.get("story_splits", pd.DataFrame())
+        execution_df = _filter_df_by_tenant_ids(
+            dfs.get("story_execution", pd.DataFrame()), tenant_scope)
 
         book = build_book(trades_df, div_df, splits_df, summary_df)
         context["novel"] = compose_novel(book, trades_df)
+        if context["novel"] is not None:
+            # Execution review: the same record, graded. None until the
+            # account clears the data-sufficiency gate (>= 5 contracts
+            # with a known expiry outcome), so young accounts see the
+            # profile without half-baked grades.
+            context["novel"]["execution"] = summarize_execution(execution_df)
     except Exception as e:
         if app.debug:
             raise

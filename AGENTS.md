@@ -662,6 +662,48 @@ disagreement; `scripts/audit/reconcile.py` CHECK 9 enforces this in CI.
 - Account chart: `_build_account_chart_from_daily_pnl` in `app/pnl_charts.py`
 - Tests: `tests/test_chart_options_pnl.py`
 
+**Historical marks come from `int_option_marks_daily` (Aug 2026 rewire).**
+`stg_current.snapshot_date` is always `current_date()` — the live snapshot
+carries TODAY's mark only. Historical per-day marks live in the SCD2
+snapshot `snapshot_options_market_values_daily` (accumulating since
+2026-08-04; the prior generation died in the dataset-expiration incident),
+which `int_option_marks_daily` unfolds into one end-of-day mark per
+(tenant, contract, day) — latest `dbt_valid_from` wins on multi-sync days,
+the SCD2 `user_id=-1` MERGE sentinel maps back to NULL. Both
+`int_option_contract_daily_pnl` and `int_option_pnl_series` union it
+(history, `date < current_date()`) with live `stg_current` (today) —
+disjoint by construction. Before this rewire the accumulated history was
+consumed by NOTHING: every historical day contributed $0 MTM and the
+"daily option values" differentiator existed only for today's row. Days
+before first capture still fall through to $0 + realize-on-close.
+
+**Execution review (`int_option_exit_quality` + `app/execution_quality.py`,
+Aug 2026).** Every resolved contract is graded against the record of what
+happened after the decision — this is the "grade the trader on ALL the
+data we know" differentiator surface. Two evidence layers: (1) the EXPIRY
+COUNTERFACTUAL, computable for the entire trade record from
+`stg_daily_prices` (needs no snapshot history): for early BTC/STC closes,
+`early_close_vs_expiry_delta` = closing cash − hypothetical expiry
+settlement (negative = paid to close a contract that went on to expire
+worthless; positive = dodged an ITM finish). A rolled-away contract's own
+intrinsic at its ORIGINAL expiry answers roll necessity ("never tested"
+vs "sidestepped $X"). Assignments/exercises/expiries are deliberately
+ungraded (NULL delta). (2) the MARKS RECORD (peak capture / giveback via
+`int_option_exit_analysis`, now a TABLE — it's read at request time by
+insights + weekly_review), gated per-contract on `data_reliable` and
+strengthening automatically as `int_option_marks_daily` coverage accrues.
+Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
+contracts — the "after X days of data" promise), Position review mirror
+sentences (≥2 graded), and day-row verdicts ("The record after the fact:
+…") appended to the completing close's headline via the `exit_notes`
+param of `build_position_story`. Copy register: neutral evidence, counts
+and dollars, never advice — every early close also removed risk, and the
+sentences must not pretend otherwise. All three models keep one row per
+contract (`dbt/tests/option_exit_quality_one_row_per_contract.sql`);
+queries are tenant-scoped + project tenant_id (pinned in
+`tests/test_tenant_filtered_queries_carry_tenant_id.py`); aggregation +
+phrasing pinned by `tests/test_execution_quality.py`.
+
 ---
 
 ## Mirror Score Rules

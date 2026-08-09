@@ -1,10 +1,14 @@
 {{
     config(
-        materialized='view'
+        materialized='table'
     )
 }}
 /*
     Exit timing analysis per closed option contract.
+
+    Table (was view, Aug 2026): read at REQUEST TIME by insights and
+    weekly_review, and its upstream int_option_pnl_series now unfolds the
+    SCD2 marks history — recomputing that per page read is wasted work.
 
     For each closed contract with snapshot history, computes:
       - peak_unrealized_pnl: the best P&L observed during the hold
