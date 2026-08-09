@@ -1287,6 +1287,20 @@
         return null;
     }
 
+    // Deep link from /story standout cards: ?story=open lands with the
+    // chapters expanded and the story card in view. Independent of the
+    // chart (works even for positions with no chart series).
+    if (new URLSearchParams(window.location.search).get('story') === 'open') {
+        var deepDetails = document.getElementById('storyDetails');
+        var deepCard = document.getElementById('storyCard');
+        if (deepDetails) deepDetails.open = true;
+        if (deepCard) {
+            setTimeout(function () {
+                deepCard.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            }, 150);
+        }
+    }
+
     if (chartData.dates && chartData.dates.length > 0) {
         var pnlChart = new Chart(document.getElementById('pnlChart'), {
             type: 'line',

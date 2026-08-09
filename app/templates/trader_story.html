@@ -129,7 +129,9 @@
     <h2>The standout stories</h2>
     <div class="ts-standouts">
         {% for s in novel.standouts %}
-        <a class="ts-standout" href="{{ url_for('position_detail', symbol=s.symbol, account=selected_account) }}">
+        {# story=open makes the position page land with the chapters expanded
+           and scrolled into view — the card's claim, immediately provable. #}
+        <a class="ts-standout" href="{{ url_for('position_detail', symbol=s.symbol, account=selected_account, story='open') }}">
             <div class="ts-standout-label">{{ s.label }}</div>
             <div class="d-flex justify-content-between align-items-baseline">
                 <span class="ts-standout-sym">{{ s.symbol }}
