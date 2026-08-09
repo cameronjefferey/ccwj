@@ -13,12 +13,13 @@ from app.position_story import build_position_story, parse_occ
 
 
 def _trades(rows):
-    """rows: (date, action, instrument_type, trade_symbol, qty, price, amount)"""
+    """rows: date/action/type/symbol/qty/price/amount[/account/tenant_id]."""
     return pd.DataFrame([
         {
             "trade_date": r[0], "action": r[1], "instrument_type": r[2],
             "trade_symbol": r[3], "quantity": r[4], "price": r[5],
             "amount": r[6], "account": r[7] if len(r) > 7 else "Schwab",
+            "tenant_id": r[8] if len(r) > 8 else None,
         }
         for r in rows
     ])
@@ -178,6 +179,28 @@ def test_multi_account_sentences_are_tagged():
     text = _headlines(items)
     assert "— Cameron 401k." in text
     assert "— Sara IRA." in text
+
+
+def test_colliding_account_labels_keep_tenant_state_separate():
+    label = "Schwab Account"
+    tenant_a = "snaptrade:tenant-a"
+    tenant_b = "snaptrade:tenant-b"
+    df = _trades([
+        # Tenant A owns the shares and writes one genuinely covered call.
+        (date(2024, 1, 2), "equity_buy", "Equity", "X", 100, 10.0, -1000.0, label, tenant_a),
+        (date(2024, 1, 3), "option_sell_to_open", "Call", "X 240216C00011000", 1, 0.50, 50.0, label, tenant_a),
+        # Closing A while opening B on the same day is not a roll: these are
+        # different physical accounts despite their identical broker labels.
+        (date(2024, 2, 1), "option_buy_to_close", "Call", "X 240216C00011000", 1, 0.80, -80.0, label, tenant_a),
+        (date(2024, 2, 1), "option_sell_to_open", "Call", "X 240419C00013000", 1, 1.10, 110.0, label, tenant_b),
+        # Tenant B still owns no shares, so another call there is also naked.
+        (date(2024, 2, 2), "option_sell_to_open", "Call", "X 240419C00014000", 1, 0.60, 60.0, label, tenant_b),
+    ])
+
+    _, _, stats = build_position_story(df, None)
+
+    assert stats["rolls"] == 0
+    assert stats["covered_calls"] == 1
 
 
 def test_break_interlude_for_long_flat_gap():

@@ -151,10 +151,23 @@ def _normalize_fills(trades_df):
         if hasattr(d, "date") and callable(getattr(d, "date", None)):
             d = d.date()
         tsym = str(r.get("trade_symbol") or "").strip()
+        raw_tenant_id = r.get("tenant_id")
+        tenant_id = (
+            ""
+            if raw_tenant_id is None or pd.isna(raw_tenant_id)
+            else str(raw_tenant_id).strip()
+        )
+        account = str(r.get("account") or "")
         fills.append({
             "date": d,
             "action": action,
-            "account": str(r.get("account") or ""),
+            "account": account,
+            # account is a display label and can collide across physical
+            # accounts.  State must follow the broker-stable tenant grain or
+            # shares/options in two "Schwab Account" tenants fuse into one
+            # fictional position.  The account fallback keeps synthetic and
+            # legacy callers that do not carry tenant_id working.
+            "state_key": tenant_id or account,
             "is_option": str(r.get("instrument_type") or "") in ("Call", "Put"),
             "trade_symbol": tsym,
             "occ": parse_occ(tsym),
@@ -234,11 +247,12 @@ def _day_headline(day_fills, state_by_account, multi_account, stats):
     sentences = []
     kinds = []
 
-    # Group per account so share counts / coverage are computed against
-    # the right account, then narrate in one merged stream.
+    # Group per physical tenant so share counts / coverage are computed
+    # against the right account. Display labels are not unique: one user can
+    # legitimately have several tenants all named "Schwab Account".
     by_account = {}
     for f in day_fills:
-        by_account.setdefault(f["account"], []).append(f)
+        by_account.setdefault(f["state_key"], []).append(f)
 
     def _tag(sentence, account):
         """Append the account name inside the final period for multi-account
@@ -249,8 +263,9 @@ def _day_headline(day_fills, state_by_account, multi_account, stats):
             return f"{sentence[:-1]} — {account}."
         return f"{sentence} — {account}"
 
-    for account, fills in by_account.items():
-        st = state_by_account.setdefault(account, _AccountState())
+    for state_key, fills in by_account.items():
+        account = fills[0]["account"]
+        st = state_by_account.setdefault(state_key, _AccountState())
         sentences_before = len(sentences)
 
         opt_fills = [f for f in fills if f["is_option"] or f["occ"]]
@@ -817,7 +832,9 @@ def build_position_story(trades_df, div_df, chart_data=None, splits_df=None):
 
     all_days = sorted(set(fills_by_day) | set(div_by_day) | set(splits_by_day))
 
-    accounts = {f["account"] for f in fills if f["account"]}
+    # Multi-account detection follows the same tenant grain as state. Two
+    # physical accounts with the same display label are still two accounts.
+    accounts = {f["state_key"] for f in fills if f["state_key"]}
     multi_account = len(accounts) > 1
 
     def _flat_everywhere():
