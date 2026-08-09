@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{# Your Story (/story) — the trader novel. Every position's story engine
+   fingerprint folded into one book: identity, eras, standout stories,
+   style scoreboard. See app/trader_story.py. #}
+
+{% block content %}
+<style>
+    .ts-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 14px; color: #fff; padding: 2rem 1.75rem;
+        text-align: center;
+    }
+    .ts-hero .ts-kicker { font-size: .78rem; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
+    .ts-hero h1 { font-size: 2rem; font-weight: 800; margin: .35rem 0 .4rem; }
+    .ts-hero .ts-sub { color: #cbd5e1; font-size: 1rem; }
+    .ts-hero .ts-sub strong { color: #fff; }
+
+    .ts-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .ts-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; font-weight: 700; margin-bottom: .85rem; }
+
+    .ts-identity {
+        border-left: 3px solid #6366f1; border-radius: 0 10px 10px 0;
+        background: linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
+        padding: 1rem 1.2rem; font-size: 1.02rem; line-height: 1.75; color: #1e293b;
+    }
+    .ts-identity p { margin-bottom: .35rem; }
+    .ts-identity p:last-child { margin-bottom: 0; }
+    [data-bs-theme="dark"] .ts-identity {
+        color: #e2e8f0;
+        background: linear-gradient(90deg, rgba(99,102,241,.16), rgba(99,102,241,.04));
+    }
+
+    .ts-chips { display: flex; flex-wrap: wrap; gap: .6rem; }
+    .ts-chip {
+        flex: 1 1 140px; min-width: 130px; text-align: center;
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: .7rem .5rem;
+    }
+    .ts-chip .ts-chip-v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .ts-chip .ts-chip-l { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: #6b7280; font-weight: 700; }
+    [data-bs-theme="dark"] .ts-chip { background: #16213a; border-color: #24304a; }
+
+    .ts-era { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid #f1f5f9; }
+    .ts-era:last-child { border-bottom: 0; }
+    .ts-era-year { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+    .ts-era-title { font-weight: 700; }
+    .ts-era-line { color: #64748b; font-size: .88rem; margin-top: .1rem; }
+    [data-bs-theme="dark"] .ts-era { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .ts-era-line { color: #94a3b8; }
+
+    .ts-standouts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .9rem; }
+    a.ts-standout {
+        display: block; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: .9rem 1rem; text-decoration: none; color: inherit;
+        transition: border-color .15s ease, transform .15s ease;
+    }
+    a.ts-standout:hover { border-color: #6366f1; transform: translateY(-2px); }
+    .ts-standout-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; color: #6366f1; font-weight: 700; }
+    .ts-standout-sym { font-size: 1.25rem; font-weight: 800; }
+    .ts-standout-pnl { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .ts-standout-pnl.pos { color: var(--color-positive); }
+    .ts-standout-pnl.neg { color: var(--color-negative); }
+    .ts-standout-hook { color: #64748b; font-size: .87rem; margin-top: .35rem; line-height: 1.45; }
+    .ts-standout-open { font-size: .68rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; background: #ecfdf5; color: #047857; vertical-align: middle; }
+    [data-bs-theme="dark"] a.ts-standout { border-color: #24304a; }
+    [data-bs-theme="dark"] .ts-standout-hook { color: #94a3b8; }
+    [data-bs-theme="dark"] .ts-standout-open { background: #052e22; color: #6ee7b7; }
+
+    .ts-score { width: 100%; font-size: .92rem; }
+    .ts-score td, .ts-score th { padding: .55rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .ts-score tr:last-child td { border-bottom: 0; }
+    .ts-score th { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: #6b7280; }
+    .ts-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 700; white-space: nowrap; }
+    .ts-money.pos { color: var(--color-positive); }
+    .ts-money.neg { color: var(--color-negative); }
+    .ts-score-desc { color: #94a3b8; font-size: .78rem; }
+    [data-bs-theme="dark"] .ts-score td, [data-bs-theme="dark"] .ts-score th { border-bottom-color: #1f2a3f; }
+
+    .ts-epilogue { text-align: center; color: #64748b; font-size: .95rem; }
+    [data-bs-theme="dark"] .ts-card { background: #111a2c; }
+    [data-bs-theme="dark"] .ts-epilogue { color: #94a3b8; }
+
+    @media (max-width: 480px) {
+        .ts-hero { padding: 1.3rem 1rem; }
+        .ts-hero h1 { font-size: 1.5rem; }
+        .ts-era { grid-template-columns: 60px 1fr; gap: .6rem; }
+    }
+</style>
+
+<div class="ts-hero mb-4">
+    <div class="ts-kicker">Your trading mirror</div>
+    {% if novel %}
+    <h1>{{ novel.hero_counts.stories }} stories. {{ "{:,}".format(novel.hero_counts.chapters) }} chapters. One trader.</h1>
+    <div class="ts-sub">
+        The book you've been writing{% if novel.hero_counts.since %} since <strong>{{ novel.hero_counts.since }}</strong>{% endif %}
+        {% if novel.hero_counts.open_stories %} &middot; <strong>{{ novel.hero_counts.open_stories }}</strong> stor{{ 'ies' if novel.hero_counts.open_stories != 1 else 'y' }} still open{% endif %}
+    </div>
+    {% else %}
+    <h1>Your story starts with a trade.</h1>
+    <div class="ts-sub">Once your trade history syncs, this page becomes the book of how you trade.</div>
+    {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-warning">{{ error }}</div>
+{% endif %}
+
+{% if novel %}
+
+<div class="card ts-card p-4 mb-4">
+    <h2>Prologue &middot; who the fills say you are</h2>
+    <div class="ts-identity">
+        {% for s in novel.identity %}
+        <p>{{ s }}</p>
+        {% endfor %}
+    </div>
+    <div class="ts-chips mt-3">
+        {% for c in novel.chips %}
+        <div class="ts-chip">
+            <div class="ts-chip-v">{{ c.value }}</div>
+            <div class="ts-chip-l">{{ c.label }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% if novel.standouts %}
+<div class="card ts-card p-4 mb-4">
+    <h2>The standout stories</h2>
+    <div class="ts-standouts">
+        {% for s in novel.standouts %}
+        <a class="ts-standout" href="{{ url_for('position_detail', symbol=s.symbol, account=selected_account) }}">
+            <div class="ts-standout-label">{{ s.label }}</div>
+            <div class="d-flex justify-content-between align-items-baseline">
+                <span class="ts-standout-sym">{{ s.symbol }}
+                    {% if s.open %}<span class="ts-standout-open">still open</span>{% endif %}
+                </span>
+                <span class="ts-standout-pnl {{ 'pos' if s.pnl >= 0 else 'neg' }}">{{ s.pnl_text }}</span>
+            </div>
+            <div class="ts-standout-hook">{{ s.hook }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    <p class="text-muted small mb-0 mt-3">Each card opens the position's full story — the chapters that prove the claim.</p>
+</div>
+{% endif %}
+
+{% if novel.scoreboard %}
+<div class="card ts-card p-4 mb-4">
+    <h2>How each style has paid</h2>
+    <div style="overflow-x:auto;">
+        <table class="ts-score">
+            <thead>
+                <tr>
+                    <th>Style</th>
+                    <th style="text-align:right;">Stories</th>
+                    <th style="text-align:right;">Ended green</th>
+                    <th style="text-align:right;">Total P&amp;L</th>
+                    <th style="text-align:right;">Best story</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in novel.scoreboard %}
+                <tr>
+                    <td>
+                        <span class="fw-bold">{{ r.label }}</span>
+                        <div class="ts-score-desc">{{ r.desc }}</div>
+                    </td>
+                    <td class="ts-money" style="font-weight:600;">{{ r.symbols }}</td>
+                    <td class="ts-money" style="font-weight:600;">{{ r.green }} of {{ r.symbols }}</td>
+                    <td class="ts-money {{ 'pos' if r.pnl >= 0 else 'neg' }}">{{ r.pnl_text }}</td>
+                    <td class="ts-money">
+                        {% if r.best_symbol %}
+                        <a href="{{ url_for('position_detail', symbol=r.best_symbol, account=selected_account) }}">{{ r.best_symbol }}</a>
+                        <span class="{{ 'text-success' if r.best_pnl >= 0 else 'text-danger' }}">{{ r.best_text }}</span>
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if novel.eras %}
+<div class="card ts-card p-4 mb-4">
+    <h2>The eras</h2>
+    {% for e in novel.eras %}
+    <div class="ts-era">
+        <div class="ts-era-year">{{ e.year }}</div>
+        <div>
+            <div class="ts-era-title">{{ e.title }}</div>
+            <div class="ts-era-line">{{ e.line }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="ts-epilogue mb-4">
+    {% if novel.open_stories %}
+    {{ novel.open_stories }} of your stories {{ 'are' if novel.open_stories != 1 else 'is' }} still being written — today's marks are tomorrow's paragraphs.
+    {% else %}
+    Every story in the book is closed. The next chapter starts with your next trade.
+    {% endif %}
+    <div class="mt-2">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('positions') }}">Browse the positions behind the book</a>
+    </div>
+</div>
+
+{% else %}
+{% if not error %}
+<div class="card ts-card p-4 mb-4 text-center text-muted">
+    No trade history yet — connect a broker or upload a CSV, and this page will write itself.
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}

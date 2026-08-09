@@ -506,6 +506,10 @@
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
                        href="{{ url_for('weekly_review', account=selected_account, tenant=selected_tenant) }}">Daily Review</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'trader_story' %}active{% endif %}"
+                       href="{{ url_for('trader_story', account=selected_account) }}">Your Story</a>
+                </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
                        id="navPortfolio" data-bs-toggle="dropdown" aria-expanded="false">Portfolio</a>

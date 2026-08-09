@@ -303,3 +303,17 @@ def test_compose_mirror_empty_for_empty_story():
     _, _, stats = build_position_story(pd.DataFrame(), None)
     assert compose_mirror(stats, "X") == []
     assert compose_mirror(None, "X") == []
+
+
+def test_roll_open_leg_counts_as_premium_collected():
+    # Identity/eras consistency: the /story eras sum STO credits straight
+    # from fills, so the fingerprint must count a roll's open leg too.
+    df = _trades([
+        (date(2024, 1, 2), "equity_buy", "Equity", "F", 100, 12.0, -1200.0),
+        (date(2024, 1, 3), "option_sell_to_open", "Call", "F 240216C00013000", 1, 0.50, 50.0),
+        (date(2024, 2, 1), "option_buy_to_close", "Call", "F 240216C00013000", 1, 0.80, -80.0),
+        (date(2024, 2, 1), "option_sell_to_open", "Call", "F 240419C00014000", 1, 1.10, 110.0),
+    ])
+    _, _, stats = build_position_story(df, None)
+    assert stats["rolls"] == 1
+    assert stats["premium_collected"] == 160.0  # 50 STO + 110 roll open

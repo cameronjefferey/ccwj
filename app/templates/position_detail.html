@@ -582,6 +582,11 @@
         {% for s in story_mirror %}
         <p class="mb-1">{{ s }}</p>
         {% endfor %}
+        <p class="mb-0 mt-2 small">
+            <a href="{{ url_for('trader_story') }}" style="color:#6366f1; font-weight:600; text-decoration:none;">
+                This is one story in your book — read the whole thing &rarr;
+            </a>
+        </p>
     </div>
     {% endif %}
     <details id="storyDetails">

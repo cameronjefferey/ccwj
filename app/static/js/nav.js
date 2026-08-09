@@ -66,6 +66,7 @@
   /* ── 1. Quick switcher ───────────────────────────────────────── */
   var PAGES = [
     { s: "Daily Review", href: "/daily-review", kind: "page" },
+    { s: "Your Story", href: "/story", kind: "page" },
     { s: "Positions", href: "/positions", kind: "page" },
     { s: "Daily P&L", href: "/symbols", kind: "page" },
     { s: "Accounts", href: "/accounts", kind: "page" },

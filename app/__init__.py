@@ -372,6 +372,7 @@ from app import sectors_page  # noqa: F401  registers /sectors + /industries
 from app import strategy_fit  # noqa: F401  registers /strategy-fit
 from app import accounts_page  # noqa: F401  registers /accounts + /accounts/breakdown
 from app import earnings_page  # noqa: F401  registers /earnings
+from app import trader_story  # noqa: F401  registers /story (the trader novel)
 from app import auth
 from app import upload
 from app import insights

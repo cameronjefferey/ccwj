@@ -32,7 +32,15 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-__all__ = ["build_position_story", "compose_mirror", "parse_occ"]
+__all__ = [
+    "build_position_story",
+    "compose_mirror",
+    "parse_occ",
+    "_behavior_candidates",
+    "_new_stats",
+    "_money",
+    "_span_text",
+]
 
 
 # OCC option symbol: "RKLB 250117C00037000" -> expiry / type / strike.
@@ -320,6 +328,11 @@ def _day_headline(day_fills, state_by_account, multi_account, stats):
                     kinds.append("sell" if short_side else "buy")
                     stats["rolls"] += 1
                     stats["roll_credit"] += c["amount"] + o["amount"]
+                    # The roll's open leg is still premium collected — keep
+                    # the gross-credit stat consistent with fills-level
+                    # rollups (the /story eras sum STO credits directly).
+                    if short_side:
+                        stats["premium_collected"] += max(o["amount"], 0.0)
                     # State: apply both fills.
                     for f in (c, o):
                         rec = st.opt(f["trade_symbol"])
@@ -924,34 +937,10 @@ def _span_text(days):
     return f"{days / 365:.1f} years"
 
 
-def compose_mirror(stats, symbol, book_rank=None, book_size=None):
-    """2-4 evidence-only sentences reflecting HOW the trader traded this
-    position, plus where it sits in their book. This is the mirror: it
-    describes behavior the chapters below can prove, never intent (see
-    AGENTS.md pattern-detection rules — no psychological labeling).
-
-    ``book_rank``/``book_size``: 1-based P&L rank among the trader's
-    symbols (from the tab-strip rollup), included when the book is big
-    enough for rank to mean something.
-    """
-    if not stats or not stats["chapters"]:
-        return []
-
-    sentences = []
-
-    # Shape of the story.
-    shape = f"{stats['chapters']} chapter{'s' if stats['chapters'] != 1 else ''}"
-    if stats["span_days"] >= 14:
-        shape += f" across {_span_text(stats['span_days'])}"
-    if stats["away_breaks"]:
-        shape += (f", including {stats['away_breaks']} stretch"
-                  f"{'es' if stats['away_breaks'] != 1 else ''} where you "
-                  f"walked away completely")
-    sentences.append(f"Your {symbol} story: {shape}.")
-
-    # Candidate behavior reflections, scored by the dollars (or repetition)
-    # behind them — keep only the two most load-bearing so the mirror stays
-    # a reflection, not a report.
+def _behavior_candidates(stats, symbol):
+    """(score, sentence) pairs for the behaviors this position's chapters
+    can prove, scored by the dollars (or repetition) behind them. Shared
+    by the per-position mirror and the cross-position trader novel."""
     candidates = []
     if stats["premium_collected"] > 1:
         clause = (f"You ran {symbol} as an income engine: "
@@ -1018,7 +1007,37 @@ def compose_mirror(stats, symbol, book_rank=None, book_size=None):
         ))
 
     candidates.sort(key=lambda c: c[0], reverse=True)
-    sentences.extend(text for _, text in candidates[:2])
+    return candidates
+
+
+def compose_mirror(stats, symbol, book_rank=None, book_size=None):
+    """2-4 evidence-only sentences reflecting HOW the trader traded this
+    position, plus where it sits in their book. This is the mirror: it
+    describes behavior the chapters below can prove, never intent (see
+    AGENTS.md pattern-detection rules — no psychological labeling).
+
+    ``book_rank``/``book_size``: 1-based P&L rank among the trader's
+    symbols (from the tab-strip rollup), included when the book is big
+    enough for rank to mean something.
+    """
+    if not stats or not stats["chapters"]:
+        return []
+
+    sentences = []
+
+    # Shape of the story.
+    shape = f"{stats['chapters']} chapter{'s' if stats['chapters'] != 1 else ''}"
+    if stats["span_days"] >= 14:
+        shape += f" across {_span_text(stats['span_days'])}"
+    if stats["away_breaks"]:
+        shape += (f", including {stats['away_breaks']} stretch"
+                  f"{'es' if stats['away_breaks'] != 1 else ''} where you "
+                  f"walked away completely")
+    sentences.append(f"Your {symbol} story: {shape}.")
+
+    # Keep only the two most load-bearing behaviors so the mirror stays a
+    # reflection, not a report.
+    sentences.extend(text for _, text in _behavior_candidates(stats, symbol)[:2])
 
     # Where it sits in the book.
     if book_rank and book_size and book_size >= 5:

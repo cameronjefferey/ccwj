@@ -66,6 +66,9 @@ FILTERED_QUERIES = [
     ("app.weekly_review", "DAY_TRADES_QUERY"),
     ("app.insights", "BEHAVIOR_OBSERVATIONS_QUERY"),
     ("app.wealth", "WEALTH_DAILY_QUERY"),
+    ("app.trader_story", "STORY_TRADES_QUERY"),
+    ("app.trader_story", "STORY_DIVIDENDS_QUERY"),
+    ("app.trader_story", "STORY_SUMMARY_QUERY"),
 ]
 
 

@@ -893,9 +893,34 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   clicking a chart dot opens the story and scrolls/flashes its chapter;
   clicking a chapter pops the dot's tooltip on the chart (click again
   to put it away). Leg-filter aware. Pinned by
-  `tests/test_position_story.py`. The per-position fingerprints are the
-  intended input for the future cross-position "trader novel" — the
-  mirror concept woven into every surface.
+  `tests/test_position_story.py`. The per-position fingerprints feed the
+  trader novel (next bullet) — the mirror concept woven into every
+  surface.
+- **Trader novel** (`/story`, `app/trader_story.py`, endpoint
+  `trader_story`, nav "Your Story"): runs the story engine across EVERY
+  symbol the user traded (one `stg_history` scan + `int_dividend_events`
+  + `positions_summary` rollup + public `stg_split_events`, all through
+  `_bq_parallel`; trades/divs/summary tenant-scoped in SQL AND
+  DataFrame-filtered, pinned in
+  `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
+  the per-symbol fingerprints into one book: an IDENTITY prologue
+  ("income engine vs betting book", signature move, contract record,
+  dividends, busiest day), stat chips, STANDOUT story cards (best
+  seller / toughest chapter / the saga / the marathon / the boomerang —
+  each linking to the position page whose chapters prove the claim),
+  a per-style scoreboard (income/directional/stock × stories, green
+  count, P&L), and per-year ERAS computed straight from fills.
+  CONSISTENCY INVARIANT: era premium sums STO credits from fills, so
+  the fingerprint's `premium_collected` must count a roll's open leg
+  too (recorded in the roll branch; pinned by
+  `test_roll_open_leg_counts_as_premium_collected`) — otherwise the
+  prologue and the eras disagree on the same page. Interlude
+  (quiet-stretch) stats stay zero here: they need the per-day chart
+  series, too heavy to build 90× per load; that voice remains a
+  Position Detail feature. No novel-specific mart — the page is
+  composed in pandas from cached queries (~all-symbol history for one
+  user is thousands of rows, not millions). Skeleton-wrapped. Pinned by
+  `tests/test_trader_story.py`.
 - **Dark mode**: navbar toggle → localStorage → inline head script sets
   `data-bs-theme` pre-paint. Bootstrap 5.3 handles its components; the
   app's hardcoded light surfaces are overridden in base.html's
