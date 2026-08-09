@@ -3578,6 +3578,10 @@ def weekly_review():
         "today": today,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
+        # Preserve broker-stable URL scope when a heatmap cell opens the
+        # day-detail time machine. account is only a display-label alias.
+        "selected_tenant": request.args.get("tenant") or None,
+        "selected_tenants": request.args.get("tenants") or None,
         "error": None,
         "equity_snapshot": None,
         "today_snapshots_by_account": [],
@@ -4332,9 +4336,16 @@ def day_detail(day_str):
     today = _date_in_user_tz(user_tz)
     if day >= today:
         # Today and the future belong to the live Daily Review.
-        return redirect(url_for("weekly_review", account=request.args.get("account") or None))
+        return redirect(url_for(
+            "weekly_review",
+            account=request.args.get("account") or None,
+            tenant=request.args.get("tenant") or None,
+            tenants=request.args.get("tenants") or None,
+        ))
 
     selected_account = request.args.get("account", "")
+    selected_tenant = request.args.get("tenant") or None
+    selected_tenants = request.args.get("tenants") or None
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
 
@@ -4426,6 +4437,8 @@ def day_detail(day_str):
         prev_day=prev_day,
         next_day=next_day if next_day < today else None,
         selected_account=selected_account,
+        selected_tenant=selected_tenant,
+        selected_tenants=selected_tenants,
         user_accounts=_user_account_list(),
         account_rows=account_rows,
         total_value=total_value,

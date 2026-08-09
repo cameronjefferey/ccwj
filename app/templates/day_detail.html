@@ -83,13 +83,22 @@
             {% endif %}
         </div>
         <div class="dd-nav text-end">
-            <a href="{{ url_for('day_detail', day_str=prev_day.isoformat(), account=selected_account or None) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+            <a href="{{ url_for('day_detail', day_str=prev_day.isoformat(),
+                                account=selected_account or None,
+                                tenant=selected_tenant,
+                                tenants=selected_tenants) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
             <span class="mx-1" style="color:#475569;">|</span>
-            <a href="{{ url_for('day_detail', day_str=next_day.isoformat(), account=selected_account or None) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+            <a href="{{ url_for('day_detail', day_str=next_day.isoformat(),
+                                account=selected_account or None,
+                                tenant=selected_tenant,
+                                tenants=selected_tenants) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
-                <a href="{{ url_for('weekly_review', account=selected_account or None) }}">Back to Daily Review</a>
+                <a href="{{ url_for('weekly_review',
+                                    account=selected_account or None,
+                                    tenant=selected_tenant,
+                                    tenants=selected_tenants) }}">Back to Daily Review</a>
             </div>
         </div>
     </div>

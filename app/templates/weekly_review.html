@@ -1158,7 +1158,10 @@
                    the day-detail review for that date (day_detail route). #}
                 {% if not c.is_future and not c.is_today %}
                 <a class="cal-day cal-day-link{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};"
-                   href="{{ url_for('day_detail', day_str=c.date.isoformat(), account=selected_account or None) }}"
+                   href="{{ url_for('day_detail', day_str=c.date.isoformat(),
+                                    account=selected_account or None,
+                                    tenant=selected_tenant,
+                                    tenants=selected_tenants) }}"
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
@@ -1208,12 +1211,16 @@
 
 {# ════════════════════════════════════
    THE MIRROR TEASER — one-line weave to the trader profile (/story). Uses
-   only data this page already computed (today_strip length); zero extra
-   queries on the hottest page.
+   only data this page already computed (today_strip length — one entry
+   per symbol with an open position, so "open positions" names the exact
+   metric); zero extra queries on the hottest page.
    ════════════════════════════════════ #}
 {% if today_strip %}
 <div class="review-section">
-    <a href="{{ url_for('trader_story', account=selected_account) }}"
+    <a href="{{ url_for('trader_story',
+                        account=selected_account,
+                        tenant=selected_tenant,
+                        tenants=selected_tenants) }}"
        style="display:block; text-decoration:none; color:inherit;
               border-left:3px solid #6366f1; border-radius:0 10px 10px 0;
               background:linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
