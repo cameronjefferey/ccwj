@@ -546,6 +546,12 @@ def send_weekly_summary_email(
         lines.append(f"  Best trade:   {summary.get('best_symbol')} {_money(summary.get('best_pnl'))}")
     if summary.get("worst_symbol"):
         lines.append(f"  Worst trade:  {summary.get('worst_symbol')} {_money(summary.get('worst_pnl'))}")
+    verdicts = list(summary.get("verdicts") or [])
+    if verdicts:
+        lines += ["", "Verdicts that landed this week (early closes graded "
+                      "against the expiry outcome):"]
+        for v in verdicts[:5]:
+            lines.append(f"  • {v.get('symbol')}: {v.get('sentence')}")
     lines += ["", f"See the full breakdown: {dashboard_url}", "", "— HappyTrader", ""]
     body = "\n".join(lines)
 
@@ -568,12 +574,27 @@ def send_weekly_summary_email(
         f'<td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:right;">{val}</td></tr>'
         for label, val in rows
     )
+    verdicts_html = ""
+    if verdicts:
+        items = "".join(
+            f'<li style="margin:4px 0;color:#3c4043;font-size:14px;">'
+            f'<strong>{v.get("symbol")}</strong>: {v.get("sentence")}</li>'
+            for v in verdicts[:5]
+        )
+        verdicts_html = (
+            '<p style="color:#1a1a2e;font-size:14px;font-weight:600;margin:16px 0 4px;">'
+            'Verdicts that landed this week</p>'
+            '<p style="color:#9aa0a6;font-size:12px;margin:0 0 8px;">'
+            'Early closes graded against what the contract did at expiry.</p>'
+            f'<ul style="margin:0 0 12px;padding-left:18px;">{items}</ul>'
+        )
     html_body = _wrap_html(
         title=f"Your week: {week}",
         inner_html=(
             f'<p style="color:#3c4043;font-size:15px;">Hi {username}, here\'s how your week went.</p>'
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             f'style="margin:8px 0 20px;">{rows_html}</table>'
+            f'{verdicts_html}'
             f'<p style="margin:8px 0 0;"><a href="{dashboard_url}" '
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
             'border-radius:8px;font-weight:600;display:inline-block;">See the full breakdown</a></p>'

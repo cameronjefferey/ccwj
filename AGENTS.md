@@ -704,6 +704,28 @@ queries are tenant-scoped + project tenant_id (pinned in
 `tests/test_tenant_filtered_queries_carry_tenant_id.py`); aggregation +
 phrasing pinned by `tests/test_execution_quality.py`.
 
+**Execution review recurring surfaces (Aug 2026 follow-up).** The
+lifetime card alone is read-once; three surfaces make the grading
+RECURRING: (1) **Verdict maturation** — a verdict "lands" on the closed
+contract's `option_expiry` (the day the counterfactual becomes knowable).
+Daily Review's "Execution Review" section (`weekly_review.html`) shows
+verdicts landed in the trailing 7 days (`verdicts_landed`) plus the
+pending open loop ("N verdicts pending — next lands Fri …",
+`verdicts_pending`); the weekly summary EMAIL carries the same landed
+list (`_VERDICTS_SQL` in `app/email_digests_cli.py` reuses
+`verdicts_landed` for phrasing so email and page can never drift).
+(2) **Rolling self-comparison** — `execution_trend` (90-day window,
+≥3 recent AND ≥3 baseline exits) adds the "number that moves" sentence +
+chip to the Trader Profile card: recent avg early-close delta per
+contract vs the lifetime baseline before the window. (3) **Live
+open-contract record** — `OPEN_OPTION_RECORD_QUERY` (int_option_contracts
+Open rows) + `open_option_record`: shorts show % of premium captured so
+far, longs show mark vs paid, both with days-left; strictly
+observational, never advice. Both new Daily Review queries live inside
+`build_daily_review_batch` so the cache warmer replays them; windowing
+is client-side (no dates in SQL) so cached frames stay valid across
+days.
+
 ---
 
 ## Mirror Score Rules

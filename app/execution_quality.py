@@ -27,6 +27,8 @@ switch on per-contract via ``data_reliable`` and need
 automatically as history accrues — no flag day.
 """
 
+from datetime import date, timedelta
+
 import pandas as pd
 
 from app.position_story import _money
@@ -66,11 +68,34 @@ POSITION_EXECUTION_QUERY = """
     {tenant_filter}
 """
 
+# Live open-option record for the Daily Review "right now" block. Reads
+# int_option_contracts directly (no new mart needed): premium collected /
+# paid is fills-truth, the current mark is the live broker snapshot.
+# Tenant-scoped + projects tenant_id (pinned by
+# tests/test_tenant_filtered_queries_carry_tenant_id.py).
+OPEN_OPTION_RECORD_QUERY = """
+    SELECT
+        tenant_id, account,
+        underlying_symbol AS symbol,
+        trade_symbol, option_type, option_strike, option_expiry,
+        direction, open_date,
+        contracts_sold_to_open, contracts_bought_to_open,
+        premium_received, premium_paid,
+        current_market_value, current_unrealized_pnl
+    FROM `ccwj-dbt.analytics.int_option_contracts`
+    WHERE status = 'Open'
+      AND option_expiry IS NOT NULL
+    {tenant_filter}
+"""
+
 MIN_GRADED_PROFILE = 5
 MIN_GRADED_SYMBOL = 2
 MIN_MARKED_CONTRACTS = 3
 # Below this the verdict is rounding noise, not evidence.
 MIN_NOTE_DELTA = 20.0
+# Rolling self-comparison window (days) and the minimum recent sample.
+TREND_WINDOW_DAYS = 90
+MIN_TREND_RECENT = 3
 
 
 def _prep(df):
@@ -87,7 +112,13 @@ def _prep(df):
     for col in ("gradeable_early_close", "expired_worthless", "was_rolled",
                 "data_reliable"):
         if col in out.columns:
-            out[col] = out[col].fillna(False).astype(bool)
+            # map() instead of fillna().astype(bool): object-dtype columns
+            # with None trip pandas' downcasting FutureWarning.
+            out[col] = out[col].map(
+                lambda v: bool(v) if pd.notna(v) else False)
+    for col in ("open_date", "close_date", "option_expiry"):
+        if col in out.columns:
+            out[col] = pd.to_datetime(out[col], errors="coerce").dt.date
     if "symbol" in out.columns:
         out["symbol"] = out["symbol"].astype(str).str.strip().str.upper()
     if "trade_symbol" in out.columns:
@@ -119,11 +150,16 @@ def _signed(v):
 
 # ── Profile card ─────────────────────────────────────────────────────────
 
-def summarize_execution(df, min_graded=MIN_GRADED_PROFILE):
+def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     """Fold the exit-quality rows into the Trader Profile card context.
 
     Returns None when there isn't enough graded evidence yet (the
     sufficiency gate), else a dict with sentences / chips / examples.
+
+    ``today`` anchors the rolling self-comparison (recent
+    TREND_WINDOW_DAYS of early exits vs the lifetime baseline) — the
+    part of this card that MOVES week to week. Defaults to the wall
+    clock; tests pin it.
     """
     df = _prep(df)
     if df.empty or "gradeable_early_close" not in df.columns:
@@ -202,7 +238,17 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE):
             chips.append({"label": "Held to worthless expiry",
                           "value": f"{len(expired)} · {_money(kept)} kept"})
 
-    # 5. Marks record — unlocks as daily-mark coverage accumulates.
+    # 5. Rolling self-comparison — the mirror compares you to you, and
+    #    this is the number that moves week to week. Per-contract average
+    #    (not total) so a different recent trade count doesn't masquerade
+    #    as a behavior change.
+    trend = execution_trend(graded, today=today)
+    if trend:
+        sentences.append(trend["sentence"])
+        chips.append({"label": f"Last {TREND_WINDOW_DAYS} days vs baseline",
+                      "value": trend["chip"]})
+
+    # 6. Marks record — unlocks as daily-mark coverage accumulates.
     marked = df[df["data_reliable"] & (df["peak_unrealized_pnl"] > 50)
                 & (df["realized_pnl"] > 0)]
     if len(marked) >= MIN_MARKED_CONTRACTS:
@@ -256,6 +302,201 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE):
         "chips": chips[:6],
         "examples": examples,
     }
+
+
+# ── Rolling self-comparison ──────────────────────────────────────────────
+
+def execution_trend(graded, today=None, window_days=TREND_WINDOW_DAYS):
+    """Recent early-exit record vs the lifetime baseline.
+
+    ``graded`` — already-_prep'd rows with a non-null delta (the caller
+    filters). Returns None until there are MIN_TREND_RECENT recent exits
+    AND an out-of-window baseline to compare against; else
+    {sentence, chip, recent_avg, baseline_avg, n_recent}.
+    """
+    if graded is None or len(graded) == 0 or "close_date" not in graded.columns:
+        return None
+    today = today or date.today()
+    cutoff = today - timedelta(days=window_days)
+    recent = graded[graded["close_date"] >= cutoff]
+    baseline = graded[graded["close_date"] < cutoff]
+    if len(recent) < MIN_TREND_RECENT or len(baseline) < MIN_TREND_RECENT:
+        return None
+    recent_avg = float(recent["early_close_vs_expiry_delta"].mean())
+    baseline_avg = float(baseline["early_close_vs_expiry_delta"].mean())
+
+    sentence = (
+        f"The number that moves: your {len(recent)} early exits over the "
+        f"last {window_days} days averaged {_money(recent_avg)} per contract "
+        f"{'ahead of' if recent_avg >= 0 else 'behind'} the expiry outcome — "
+        f"your baseline before that window was {_money(baseline_avg)} "
+        f"{'ahead' if baseline_avg >= 0 else 'behind'}."
+    )
+    return {
+        "sentence": sentence,
+        "chip": f"{_signed(recent_avg)} vs {_signed(baseline_avg)}",
+        "recent_avg": round(recent_avg, 2),
+        "baseline_avg": round(baseline_avg, 2),
+        "n_recent": int(len(recent)),
+    }
+
+
+# ── Verdict maturation (Daily Review) ────────────────────────────────────
+
+def _verdict_sentence(row):
+    """One landed verdict, phrased for the Daily Review feed."""
+    delta = float(row["early_close_vs_expiry_delta"])
+    label = _contract_label(row)
+    closed = row.get("close_date")
+    closed_txt = ""
+    try:
+        closed_txt = f" on {pd.Timestamp(closed).strftime('%b %-d')}"
+    except (TypeError, ValueError):
+        pass
+    if row["was_rolled"]:
+        if row["expired_worthless"]:
+            return (f"The {label} you rolled away from{closed_txt} expired "
+                    f"worthless — the roll was never tested.")
+        return (f"The {label} you rolled away from{closed_txt} finished in "
+                f"the money — rolling sidestepped {_money(delta)}.")
+    if str(row["direction"]) == "Sold":
+        if delta < 0:
+            if row["expired_worthless"]:
+                return (f"The {label} you bought back{closed_txt} expired "
+                        f"worthless — that close gave up {_money(delta)} vs "
+                        f"holding.")
+            return (f"The {label} you bought back{closed_txt} — holding to "
+                    f"expiry would have come out {_money(delta)} better.")
+        return (f"The {label} you bought back{closed_txt} finished in the "
+                f"money — closing early avoided {_money(delta)}.")
+    if delta < 0:
+        return (f"The {label} you sold{closed_txt} was worth {_money(delta)} "
+                f"more at expiry than your exit.")
+    return (f"The {label} you sold{closed_txt} — that exit beat the expiry "
+            f"outcome by {_money(delta)}.")
+
+
+def verdicts_landed(df, start, end):
+    """Verdicts that MATURED in [start, end] — early closes whose expiry
+    date arrived in the window, making the counterfactual knowable. This
+    is the Daily Review's "news since you last looked": each item is new
+    information on the day it lands, not a re-read of a lifetime total."""
+    df = _prep(df)
+    if df.empty or "gradeable_early_close" not in df.columns:
+        return []
+    rows = df[df["gradeable_early_close"]
+              & df["early_close_vs_expiry_delta"].notna()
+              & df["option_expiry"].notna()
+              & (df["option_expiry"] >= start)
+              & (df["option_expiry"] <= end)]
+    if rows.empty:
+        return []
+    rows = rows.reindex(
+        rows["early_close_vs_expiry_delta"].abs()
+        .sort_values(ascending=False).index)
+    out = []
+    for _, r in rows.iterrows():
+        delta = float(r["early_close_vs_expiry_delta"])
+        out.append({
+            "symbol": r["symbol"],
+            "landed": r["option_expiry"].isoformat(),
+            "landed_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+            "sentence": _verdict_sentence(r),
+            "delta": round(delta, 2),
+        })
+    return out
+
+
+def verdicts_pending(df, today):
+    """The open loop: early closes whose expiry hasn't arrived yet. Each
+    one is a verdict already in the mail — {n, next_date_label, items}."""
+    df = _prep(df)
+    if df.empty or "close_type" not in df.columns:
+        return None
+    rows = df[(df["close_type"] == "Closed")
+              & df["close_date"].notna()
+              & df["option_expiry"].notna()
+              & (df["close_date"] < df["option_expiry"])
+              & (df["option_expiry"] >= today)]
+    if rows.empty:
+        return None
+    rows = rows.sort_values("option_expiry")
+    items = []
+    for _, r in rows.iterrows():
+        items.append({
+            "symbol": r["symbol"],
+            "label": _contract_label(r),
+            "expiry": r["option_expiry"].isoformat(),
+            "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+            "days_away": int((r["option_expiry"] - today).days),
+        })
+    nxt = items[0]
+    return {
+        "n": len(items),
+        "next_date_label": nxt["expiry_label"],
+        "next_symbol": nxt["symbol"],
+        "next_label": nxt["label"],
+        "items": items,
+    }
+
+
+# ── Live open-option record (Daily Review) ───────────────────────────────
+
+def open_option_record(df, today):
+    """The record so far on OPEN contracts — the number a premium seller
+    checks daily. Strictly observational: premium captured / mark vs cost
+    and days left; never a suggestion.
+
+    Returns {"shorts": [...], "longs": [...]} or None. Only contracts the
+    live broker snapshot actually carries (a never-snapshotted open
+    contract has no mark to report)."""
+    if df is None or df.empty:
+        return None
+    out = df.copy()
+    for col in ("premium_received", "premium_paid", "current_market_value",
+                "current_unrealized_pnl", "option_strike",
+                "contracts_sold_to_open", "contracts_bought_to_open"):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
+    out["option_expiry"] = pd.to_datetime(
+        out["option_expiry"], errors="coerce").dt.date
+    out = out[out["option_expiry"].notna()
+              & (out["option_expiry"] >= today)
+              & ((out["current_market_value"].abs() > 0.004)
+                 | (out["current_unrealized_pnl"].abs() > 0.004))]
+    if out.empty:
+        return None
+
+    shorts, longs = [], []
+    for _, r in out.iterrows():
+        days_left = int((r["option_expiry"] - today).days)
+        base = {
+            "symbol": str(r.get("symbol") or "").upper(),
+            "label": _contract_label(r),
+            "days_left": days_left,
+            "unrealized": round(float(r["current_unrealized_pnl"]), 2),
+        }
+        if str(r.get("direction")) == "Sold" and r["premium_received"] > 0.004:
+            pct = float(r["current_unrealized_pnl"]) / float(r["premium_received"])
+            shorts.append({
+                **base,
+                "premium": round(float(r["premium_received"]), 2),
+                "captured_pct": max(-999, min(999, round(pct * 100))),
+            })
+        elif str(r.get("direction")) == "Bought" and r["premium_paid"] < -0.004:
+            paid = -float(r["premium_paid"])
+            longs.append({
+                **base,
+                "paid": round(paid, 2),
+                "mark": round(float(r["current_market_value"]), 2),
+                "change_pct": max(-999, min(999, round(
+                    float(r["current_unrealized_pnl"]) / paid * 100))),
+            })
+    if not shorts and not longs:
+        return None
+    shorts.sort(key=lambda x: x["days_left"])
+    longs.sort(key=lambda x: x["days_left"])
+    return {"shorts": shorts, "longs": longs}
 
 
 # ── Position review integration ──────────────────────────────────────────

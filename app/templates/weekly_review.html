@@ -270,6 +270,10 @@
         align-items: center;
     }
     .watch-item:last-child { border-bottom: none; }
+    /* Execution-review rows lead with a dollar/percent figure, wider than
+       the 2-digit day counts the base grid was sized for. */
+    .watch-item.exec { grid-template-columns: 5rem 1fr auto; }
+    .watch-item.exec .watch-days { font-size: 1rem; }
     .watch-item:hover { background: #fff; color: inherit; text-decoration: none; border-radius: 8px; padding-left: .5rem; padding-right: .5rem; }
     .watch-days {
         font-weight: 700; font-size: 1.3rem;
@@ -1102,6 +1106,99 @@
             <div class="wb-empty">No projected ex-dividends in the next 30 days.</div>
             {% endif %}
         </div>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════
+   EXECUTION REVIEW — verdicts that matured + live open-option record
+   A verdict "lands" on the contract's expiry date: that's the day the
+   expiry counterfactual for an early close becomes knowable. Pending
+   items are verdicts already in the mail. The open-contract record is
+   strictly observational (premium captured / mark vs cost, days left).
+   ════════════════════════════════════ #}
+{% if exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs)) %}
+<div class="review-section">
+    <div class="section-label">Execution Review</div>
+    <p class="section-sub">
+        Decisions graded against what the market did next. A verdict lands on the
+        contract's expiry date — the day the outcome becomes knowable.
+    </p>
+    <div class="watch-grid">
+        {% if exit_verdicts_landed or exit_verdicts_pending %}
+        <div class="watch-block">
+            <div class="wb-title">
+                <span>Verdicts This Week</span>
+                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ exit_verdicts_landed|length }} landed</span>
+            </div>
+            {% if exit_verdicts_landed %}
+            <div class="watch-list">
+            {% for v in exit_verdicts_landed[:8] %}
+            <a href="{{ url_for('position_detail', symbol=v.symbol) }}" class="watch-item exec">
+                <div>
+                    <div class="watch-days {% if v.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if v.delta >= 0 else "-" }}${{ "{:,.0f}".format(v.delta|abs) }}</div>
+                    <div class="watch-days-label">vs expiry</div>
+                </div>
+                <div>
+                    <div class="watch-sym">{{ v.symbol }}<span class="watch-badge">landed {{ v.landed_label }}</span></div>
+                    <div class="watch-meta">{{ v.sentence }}</div>
+                </div>
+            </a>
+            {% endfor %}
+            </div>
+            {% else %}
+            <div class="wb-empty">No verdicts matured this week.</div>
+            {% endif %}
+            {% if exit_verdicts_pending %}
+            <div class="text-muted small" style="margin-top:.6rem;">
+                {{ exit_verdicts_pending.n }} verdict{{ 's' if exit_verdicts_pending.n != 1 }} pending —
+                next lands {{ exit_verdicts_pending.next_date_label }}
+                ({{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_label }}).
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
+        <div class="watch-block">
+            <div class="wb-title">
+                <span>Open Contracts — The Record So Far</span>
+                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ (open_option_record.shorts|length) + (open_option_record.longs|length) }} open</span>
+            </div>
+            <div class="watch-list">
+            {% for s in open_option_record.shorts[:8] %}
+            <a href="{{ url_for('position_detail', symbol=s.symbol) }}" class="watch-item exec">
+                <div>
+                    <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
+                    <div class="watch-days-label">captured</div>
+                </div>
+                <div>
+                    <div class="watch-sym">{{ s.symbol }}</div>
+                    <div class="watch-meta">{{ s.label }} — ${{ "{:,.0f}".format(s.premium) }} premium collected · {{ s.days_left }} day{{ 's' if s.days_left != 1 }} left</div>
+                </div>
+                <div class="watch-aux {% if s.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {{ "+" if s.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(s.unrealized|abs) }}
+                </div>
+            </a>
+            {% endfor %}
+            {% for l in open_option_record.longs[:8] %}
+            <a href="{{ url_for('position_detail', symbol=l.symbol) }}" class="watch-item exec">
+                <div>
+                    <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
+                    <div class="watch-days-label">vs paid</div>
+                </div>
+                <div>
+                    <div class="watch-sym">{{ l.symbol }}</div>
+                    <div class="watch-meta">{{ l.label }} — paid ${{ "{:,.0f}".format(l.paid) }}, marked ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }} day{{ 's' if l.days_left != 1 }} left</div>
+                </div>
+                <div class="watch-aux {% if l.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {{ "+" if l.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(l.unrealized|abs) }}
+                </div>
+            </a>
+            {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}

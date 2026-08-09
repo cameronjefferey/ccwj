@@ -6,15 +6,21 @@ verdict notes — plus the data-sufficiency gates (the "after X days"
 promise). All synthetic frames; no BigQuery.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
 from app.execution_quality import (
     MIN_GRADED_PROFILE,
+    MIN_TREND_RECENT,
+    TREND_WINDOW_DAYS,
+    execution_trend,
     exit_notes,
+    open_option_record,
     summarize_execution,
     symbol_execution_sentences,
+    verdicts_landed,
+    verdicts_pending,
 )
 from app.position_story import build_position_story
 
@@ -208,6 +214,184 @@ def test_exit_notes_variants():
     assert "never tested" in notes["RKLB 250321C00030000"]
     assert "worth $200 more than the exit price" in notes["ORCL 260618C00200000"]
     assert "TINY 250620C00001000" not in notes
+
+
+# ── Rolling self-comparison ──────────────────────────────────────────────
+
+_TODAY = date(2026, 8, 9)
+
+
+def _prepped(rows):
+    """Run rows through the module's own _prep (dates → date objects)."""
+    from app.execution_quality import _prep
+    df = _prep(pd.DataFrame(rows))
+    return df[df["gradeable_early_close"]
+              & df["early_close_vs_expiry_delta"].notna()]
+
+
+def test_trend_requires_recent_and_baseline_samples():
+    recent_day = _TODAY - timedelta(days=10)
+    old_day = _TODAY - timedelta(days=TREND_WINDOW_DAYS + 30)
+    # All recent, no baseline → None.
+    rows = [_row(trade_symbol=f"R{i}", close_date=recent_day)
+            for i in range(MIN_TREND_RECENT)]
+    assert execution_trend(_prepped(rows), today=_TODAY) is None
+    # All old, no recent → None.
+    rows = [_row(trade_symbol=f"O{i}", close_date=old_day)
+            for i in range(MIN_TREND_RECENT)]
+    assert execution_trend(_prepped(rows), today=_TODAY) is None
+
+
+def test_trend_compares_recent_avg_to_baseline_avg():
+    recent_day = _TODAY - timedelta(days=10)
+    old_day = _TODAY - timedelta(days=TREND_WINDOW_DAYS + 30)
+    rows = (
+        # Recent: avg -$30/contract.
+        [_row(trade_symbol=f"R{i}", close_date=recent_day,
+              early_close_vs_expiry_delta=-30.0) for i in range(3)]
+        # Baseline: avg -$80/contract.
+        + [_row(trade_symbol=f"O{i}", close_date=old_day,
+                early_close_vs_expiry_delta=-80.0) for i in range(3)]
+    )
+    out = execution_trend(_prepped(rows), today=_TODAY)
+    assert out is not None
+    assert out["recent_avg"] == -30.0
+    assert out["baseline_avg"] == -80.0
+    assert out["n_recent"] == 3
+    assert "$30 per contract behind" in out["sentence"]
+    assert "$80 behind" in out["sentence"]
+
+
+def test_trend_sentence_reaches_profile_card():
+    recent_day = _TODAY - timedelta(days=10)
+    old_day = _TODAY - timedelta(days=TREND_WINDOW_DAYS + 30)
+    rows = (
+        [_row(trade_symbol=f"R{i}", close_date=recent_day,
+              early_close_vs_expiry_delta=25.0) for i in range(3)]
+        + [_row(trade_symbol=f"O{i}", close_date=old_day,
+                early_close_vs_expiry_delta=-60.0) for i in range(3)]
+    )
+    out = summarize_execution(pd.DataFrame(rows), today=_TODAY)
+    assert out is not None
+    text = " ".join(out["sentences"])
+    assert "The number that moves" in text
+    labels = {c["label"]: c["value"] for c in out["chips"]}
+    assert f"Last {TREND_WINDOW_DAYS} days vs baseline" in labels
+
+
+# ── Verdict maturation (Daily Review) ────────────────────────────────────
+
+def test_verdicts_landed_windows_on_expiry_date():
+    in_window = _row(trade_symbol="A", option_expiry=_TODAY - timedelta(days=2))
+    out_window = _row(trade_symbol="B", symbol="RKLB",
+                      option_expiry=_TODAY - timedelta(days=30))
+    future = _row(trade_symbol="C", symbol="ORCL",
+                  option_expiry=_TODAY + timedelta(days=5),
+                  gradeable_early_close=False,
+                  early_close_vs_expiry_delta=None,
+                  intrinsic_at_expiry=None, expired_worthless=None)
+    df = pd.DataFrame([in_window, out_window, future])
+    landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
+    assert [v["symbol"] for v in landed] == ["SOFI"]
+    assert "expired worthless" in landed[0]["sentence"]
+    assert landed[0]["delta"] == -45.0
+
+
+def test_verdicts_landed_sorted_by_magnitude():
+    df = pd.DataFrame([
+        _row(trade_symbol="A", option_expiry=_TODAY,
+             early_close_vs_expiry_delta=-30.0),
+        _row(trade_symbol="B", symbol="RKLB", option_expiry=_TODAY,
+             expired_worthless=False, intrinsic_at_expiry=8.2,
+             early_close_vs_expiry_delta=820.0),
+    ])
+    landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
+    assert [v["symbol"] for v in landed] == ["RKLB", "SOFI"]
+    assert "closing early avoided $820" in landed[0]["sentence"]
+
+
+def test_verdicts_pending_counts_and_next():
+    df = pd.DataFrame([
+        # Early close, expiry still ahead → pending.
+        _row(trade_symbol="A", option_expiry=_TODAY + timedelta(days=12),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        _row(trade_symbol="B", symbol="RKLB",
+             option_expiry=_TODAY + timedelta(days=5),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        # Already matured → not pending.
+        _row(trade_symbol="C", symbol="ORCL",
+             option_expiry=_TODAY - timedelta(days=3)),
+        # Expiry-type close → never pending.
+        _row(trade_symbol="D", symbol="JEPI", close_type="Expired",
+             option_expiry=_TODAY + timedelta(days=5)),
+    ])
+    out = verdicts_pending(df, _TODAY)
+    assert out["n"] == 2
+    assert out["next_symbol"] == "RKLB"
+    assert out["items"][0]["days_away"] == 5
+
+
+def test_verdicts_empty_frames():
+    assert verdicts_landed(pd.DataFrame(), _TODAY, _TODAY) == []
+    assert verdicts_pending(None, _TODAY) is None
+
+
+# ── Live open-option record ──────────────────────────────────────────────
+
+def _open_row(**kw):
+    base = {
+        "tenant_id": "snaptrade:abc",
+        "account": "Schwab Account",
+        "symbol": "SOFI",
+        "trade_symbol": "SOFI 260918C00007000",
+        "option_type": "C",
+        "option_strike": 7.0,
+        "option_expiry": _TODAY + timedelta(days=40),
+        "direction": "Sold",
+        "open_date": _TODAY - timedelta(days=20),
+        "contracts_sold_to_open": 1.0,
+        "contracts_bought_to_open": 0.0,
+        "premium_received": 200.0,
+        "premium_paid": 0.0,
+        "current_market_value": -50.0,
+        "current_unrealized_pnl": 150.0,
+    }
+    base.update(kw)
+    return base
+
+
+def test_open_record_short_premium_capture():
+    out = open_option_record(pd.DataFrame([_open_row()]), _TODAY)
+    assert out is not None and len(out["shorts"]) == 1
+    s = out["shorts"][0]
+    assert s["captured_pct"] == 75  # 150 of 200 premium
+    assert s["days_left"] == 40
+    assert s["premium"] == 200.0
+    assert not out["longs"]
+
+
+def test_open_record_long_mark_vs_paid():
+    row = _open_row(direction="Bought", premium_received=0.0,
+                    premium_paid=-400.0, current_market_value=500.0,
+                    current_unrealized_pnl=100.0)
+    out = open_option_record(pd.DataFrame([row]), _TODAY)
+    assert out is not None and len(out["longs"]) == 1
+    l = out["longs"][0]
+    assert l["paid"] == 400.0
+    assert l["mark"] == 500.0
+    assert l["change_pct"] == 25
+
+
+def test_open_record_skips_unmarked_and_past_expiry():
+    never_snapshotted = _open_row(trade_symbol="X",
+                                  current_market_value=0.0,
+                                  current_unrealized_pnl=0.0)
+    stale_expiry = _open_row(trade_symbol="Y",
+                             option_expiry=_TODAY - timedelta(days=2))
+    assert open_option_record(
+        pd.DataFrame([never_snapshotted, stale_expiry]), _TODAY) is None
+    assert open_option_record(pd.DataFrame(), _TODAY) is None
+    assert open_option_record(None, _TODAY) is None
 
 
 def test_exit_note_renders_on_completing_close_in_story():

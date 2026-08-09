@@ -87,6 +87,42 @@ WHERE CAST(user_id AS STRING) = @user_id
 """
 
 
+# Execution verdicts that MATURED in the last 7 days: early closes whose
+# expiry date arrived, making the "what if you'd held" counterfactual
+# knowable. Phrasing is delegated to app.execution_quality.verdicts_landed
+# so the email and the Daily Review section can never drift apart.
+_VERDICTS_SQL = f"""
+SELECT symbol, trade_symbol, option_type, option_strike, option_expiry,
+       direction, close_date, close_type, was_rolled, expired_worthless,
+       gradeable_early_close, early_close_vs_expiry_delta
+FROM `{_PROJECT}.int_option_exit_quality`
+WHERE CAST(user_id AS STRING) = @user_id
+  AND tenant_id IN UNNEST(@tenant_ids)
+  AND gradeable_early_close
+  AND option_expiry BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+                        AND CURRENT_DATE()
+"""
+
+
+def _build_weekly_verdicts(client, bigquery, user_id, tenant_ids):
+    """[{symbol, sentence, delta}] for verdicts that landed this week, or []
+    (including on any error — a missing section, never a crashed digest)."""
+    import pandas as pd
+    from app.execution_quality import verdicts_landed
+    try:
+        cfg = bigquery.QueryJobConfig(
+            query_parameters=_scope_params(bigquery, user_id, tenant_ids))
+        rows = [dict(r) for r in client.query(_VERDICTS_SQL, job_config=cfg).result()]
+        if not rows:
+            return []
+        return verdicts_landed(
+            pd.DataFrame(rows),
+            date.today() - timedelta(days=6), date.today())
+    except Exception as exc:
+        print(f"User {user_id}: weekly verdicts query failed: {exc}", file=sys.stderr)
+        return []
+
+
 def _build_weekly_summary(client, bigquery, user_id, tenant_ids):
     """Aggregate the user's most-recent-week rows (one per tenant) into a
     single summary dict, or None if there's no week to report."""
@@ -134,6 +170,7 @@ def _build_weekly_summary(client, bigquery, user_id, tenant_ids):
         "best_pnl": float(best["best_pnl"]) if best else None,
         "worst_symbol": worst["worst_symbol"] if worst else None,
         "worst_pnl": float(worst["worst_pnl"]) if worst else None,
+        "verdicts": _build_weekly_verdicts(client, bigquery, user_id, tenant_ids),
     }
 
 
@@ -157,7 +194,9 @@ def run_weekly_summary(client, bigquery):
         except Exception as exc:
             print(f"User {user_id}: weekly_summary query failed: {exc}", file=sys.stderr)
             continue
-        if not summary or not summary.get("trades_closed") and not summary.get("dividends"):
+        if not summary or (not summary.get("trades_closed")
+                           and not summary.get("dividends")
+                           and not summary.get("verdicts")):
             empty += 1
             continue
 

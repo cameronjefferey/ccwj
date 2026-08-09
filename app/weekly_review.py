@@ -109,6 +109,13 @@ from app.routes import (
     _filter_df_by_tenant_ids,  # noqa: E402,F401
     _tenant_label_map_for_user,  # noqa: E402,F401
 )
+from app.execution_quality import (  # noqa: E402
+    EXECUTION_REVIEW_QUERY as _EXECUTION_REVIEW_QUERY,
+    OPEN_OPTION_RECORD_QUERY as _OPEN_OPTION_RECORD_QUERY,
+    open_option_record as _open_option_record,
+    verdicts_landed as _verdicts_landed,
+    verdicts_pending as _verdicts_pending,
+)
 
 
 def _classify_expiring_moneyness(*, instrument_type, option_type, stock_price, strike):
@@ -3515,6 +3522,15 @@ def build_daily_review_batch(tenant_filter, today, this_week):
             tenant_filter=tenant_filter, week_start=this_week.isoformat()),
         "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
         "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
+        # Execution verdicts (int_option_exit_quality): early closes whose
+        # expiry arrived recently (the verdict "landed") + the pending
+        # open loop. Windowing happens in Python; the frame is small.
+        "exit_verdicts": _EXECUTION_REVIEW_QUERY.format(
+            tenant_filter=tenant_filter),
+        # Live open-option record: premium captured so far / mark vs cost
+        # on open contracts — the strictly-observational daily numbers.
+        "open_options": _OPEN_OPTION_RECORD_QUERY.format(
+            tenant_filter=tenant_filter),
     }
 
 
@@ -3612,6 +3628,9 @@ def weekly_review():
         "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
         "benchmark_snapshot": [],
+        "exit_verdicts_landed": [],
+        "exit_verdicts_pending": None,
+        "open_option_record": None,
         "community_profile_visibility": "private",
         "community_publish_ready": False,
     }
@@ -3667,7 +3686,8 @@ def weekly_review():
         # filter before we touch it. The SQL also carries the predicate,
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
-                 "today_moves", "weekly_trades", "attribution"):
+                 "today_moves", "weekly_trades", "attribution",
+                 "exit_verdicts", "open_options"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -3995,6 +4015,24 @@ def weekly_review():
             context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df)
         except Exception as e:
             app.logger.warning("Upcoming ex-div processing failed: %s", e)
+
+        # ── Execution verdicts + live open-option record ──────────────
+        # Verdicts MATURE on their expiry date (that's when the expiry
+        # counterfactual becomes knowable), so the feed shows the ones
+        # that landed in the last 7 days plus the pending open loop —
+        # new information on the day it arrives, not a lifetime rehash.
+        try:
+            ev_df = batch.get("exit_verdicts", pd.DataFrame())
+            context["exit_verdicts_landed"] = _verdicts_landed(
+                ev_df, today - timedelta(days=6), today)
+            context["exit_verdicts_pending"] = _verdicts_pending(ev_df, today)
+        except Exception as e:
+            app.logger.warning("Execution verdicts processing failed: %s", e)
+        try:
+            oo_df = batch.get("open_options", pd.DataFrame())
+            context["open_option_record"] = _open_option_record(oo_df, today)
+        except Exception as e:
+            app.logger.warning("Open option record processing failed: %s", e)
 
         # ── Trades opened / closed this week ──────────────────────────
         try:
