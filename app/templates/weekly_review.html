@@ -1210,20 +1210,23 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   THE MIRROR TEASER — one-line weave to the trader novel (/story). Uses
-   only data this page already computed (today_strip length); zero extra
-   queries on the hottest page.
+   THE MIRROR TEASER — one-line weave to the trader novel (/story).
+   today_strip counts open symbols, not the novel's chapter-producing
+   stories, so the copy names that exact metric.
    ════════════════════════════════════ #}
 {% if today_strip %}
 <div class="review-section">
-    <a href="{{ url_for('trader_story', account=selected_account) }}"
+    <a href="{{ url_for('trader_story',
+                        account=selected_account,
+                        tenant=selected_tenant,
+                        tenants=selected_tenants) }}"
        style="display:block; text-decoration:none; color:inherit;
               border-left:3px solid #6366f1; border-radius:0 10px 10px 0;
               background:linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
               padding:.8rem 1rem;">
         <span style="font-weight:700; color:#6366f1; font-size:.72rem; letter-spacing:.8px; text-transform:uppercase;">Your trading mirror</span>
         <div style="margin-top:.15rem; font-size:.95rem;">
-            {{ today_strip|length }} of your stories {{ 'are' if today_strip|length != 1 else 'is' }} still being written —
+            You're still active in {{ today_strip|length }} symbol{{ 's' if today_strip|length != 1 else '' }} —
             today's marks are tomorrow's paragraphs.
             <span style="color:#6366f1; font-weight:600;">Read the book of how you trade &rarr;</span>
         </div>

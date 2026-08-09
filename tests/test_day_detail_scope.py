@@ -41,7 +41,7 @@ def test_heatmap_day_link_preserves_tenant_scope():
         "error": None,
         "equity_snapshot": None,
         "today_snapshots_by_account": [],
-        "today_strip": [],
+        "today_strip": [{"symbol": "X"}],
         "expiring_options": [],
         "upcoming_earnings_this_week": [],
         "upcoming_earnings_next_week": [],
@@ -85,6 +85,13 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert queries
     assert queries[0]["tenant"] == [TENANT]
     assert queries[0]["tenants"] == [TENANTS]
+    assert "still active in 1 symbol" in rendered
+    assert "of your stories" not in rendered
+
+    story_queries = _queries_for_path(rendered, "/story")
+    assert story_queries
+    assert story_queries[0]["tenant"] == [TENANT]
+    assert story_queries[0]["tenants"] == [TENANTS]
 
 
 def test_day_navigation_and_back_link_preserve_tenant_scope():
