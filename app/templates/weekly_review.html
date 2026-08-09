@@ -1158,7 +1158,10 @@
                    the day-detail review for that date (day_detail route). #}
                 {% if not c.is_future and not c.is_today %}
                 <a class="cal-day cal-day-link{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};"
-                   href="{{ url_for('day_detail', day_str=c.date.isoformat(), account=selected_account or None) }}"
+                   href="{{ url_for('day_detail', day_str=c.date.isoformat(),
+                                    account=selected_account or None,
+                                    tenant=selected_tenant,
+                                    tenants=selected_tenants) }}"
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
