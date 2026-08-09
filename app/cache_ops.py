@@ -64,11 +64,13 @@ _warm_lock = threading.Lock()
 
 
 def _warm_scopes():
-    """(user_id, tenant_filter) pairs to warm: every user with linked
-    tenants, plus one unscoped pass (admin view / shared queries)."""
+    """(user_id, tenant_id list) pairs to warm: every user with linked
+    tenants, plus one unscoped pass (admin view / shared queries).
+    Filters are rendered per-query inside ``_warm_one_scope`` because
+    different queries need different column prefixes (e.g. the trader
+    story's ``h.tenant_id``)."""
     from app.db import fetch_all
     from app.models import get_broker_tenants_for_user
-    from app.tenant_scope import tenant_sql_and
 
     scopes = []
     try:
@@ -84,16 +86,17 @@ def _warm_scopes():
         tenants = get_broker_tenants_for_user(uid) or []
         ids = [t["tenant_id"] for t in tenants if t.get("tenant_id")]
         if ids:
-            scopes.append((uid, tenant_sql_and(ids)))
+            scopes.append((uid, ids))
     # Admin sees the unscoped variant (tenant_ids=None -> "" filter).
-    scopes.append((None, ""))
+    scopes.append((None, None))
     return scopes
 
 
-def _warm_one_scope(client, uid, tenant_filter):
+def _warm_one_scope(client, uid, tenant_ids):
     """Run the hot query sets for one tenant scope through the cache."""
     from app.models import get_user_profile
     from app.query_cache import cached_query_df
+    from app.tenant_scope import tenant_sql_and
     from app.weekly_review import (
         _bq_parallel,
         _date_in_user_tz,
@@ -101,6 +104,9 @@ def _warm_one_scope(client, uid, tenant_filter):
         build_daily_review_batch,
     )
     from app.positions_page import DEFAULT_QUERY as POSITIONS_DEFAULT_QUERY
+    from app.trader_story import story_query_batch
+
+    tenant_filter = tenant_sql_and(tenant_ids)
 
     tz = "America/New_York"
     if uid is not None:
@@ -120,6 +126,13 @@ def _warm_one_scope(client, uid, tenant_filter):
         label="warm_positions",
     )
 
+    # Trader novel (/story): its trades query is the one all-history scan
+    # in the product (~3s cold), so warming it is the difference between
+    # the book opening instantly and the page feeling like a report job.
+    # story_query_batch is the SAME builder the view uses, so the warmed
+    # SQL text is guaranteed to match what a request looks up.
+    _bq_parallel(client, story_query_batch(tenant_ids))
+
 
 def _warm_worker():
     """Background warm pass. Never raises; logs a one-line summary."""
@@ -129,9 +142,9 @@ def _warm_worker():
     ok = failed = 0
     try:
         client = get_bigquery_client()
-        for uid, tenant_filter in _warm_scopes():
+        for uid, tenant_ids in _warm_scopes():
             try:
-                _warm_one_scope(client, uid, tenant_filter)
+                _warm_one_scope(client, uid, tenant_ids)
                 ok += 1
             except Exception as exc:
                 failed += 1

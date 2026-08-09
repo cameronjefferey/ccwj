@@ -534,6 +534,23 @@ def compose_novel(book, trades_df):
 
 # ── Route ────────────────────────────────────────────────────────────────
 
+def story_query_batch(tenant_ids):
+    """The /story page's query set, keyed for `_bq_parallel`. Shared with
+    the cache warmer (app/cache_ops.py) so warmed keys are EXACTLY the keys
+    a request looks up — same discipline as build_daily_review_batch."""
+    return {
+        "story_trades": STORY_TRADES_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids, col="h.tenant_id")),
+        "story_divs": STORY_DIVIDENDS_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids)),
+        "story_summary": STORY_SUMMARY_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids)),
+        # Public symbol-grain market data — NOT tenant filtered (see
+        # STORY_SPLITS_QUERY comment).
+        "story_splits": STORY_SPLITS_QUERY,
+    }
+
+
 @app.route("/story")
 @login_required
 @skeleton_page
@@ -546,8 +563,6 @@ def trader_story():
     user_accounts = _user_account_list()
     selected_account = request.args.get("account", "").strip()
     tenant_scope = _tenants_for_scope(selected_account)
-    tenant_filter = _tenant_sql_and(tenant_scope)
-    tenant_filter_h = _tenant_sql_and(tenant_scope, col="h.tenant_id")
 
     context = {
         "title": "Your Story",
@@ -559,14 +574,7 @@ def trader_story():
 
     try:
         client = get_bigquery_client()
-        dfs = _bq_parallel(client, {
-            "story_trades": STORY_TRADES_QUERY.format(tenant_filter=tenant_filter_h),
-            "story_divs": STORY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
-            "story_summary": STORY_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
-            # Public symbol-grain market data — NOT tenant filtered (see
-            # STORY_SPLITS_QUERY comment).
-            "story_splits": STORY_SPLITS_QUERY,
-        })
+        dfs = _bq_parallel(client, story_query_batch(tenant_scope))
         trades_df = _filter_df_by_tenant_ids(
             dfs.get("story_trades", pd.DataFrame()), tenant_scope)
         div_df = _filter_df_by_tenant_ids(
