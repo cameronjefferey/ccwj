@@ -5,8 +5,8 @@ Queries positions_summary and int_strategy_classification to build a
 narrative profile of the trader. Designed to deliver at least one
 genuine insight on day one.
 """
-from flask import render_template, redirect, url_for
-from flask_login import login_required, current_user
+from flask import render_template, redirect, request, url_for
+from flask_login import login_required
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.routes import (
@@ -340,15 +340,36 @@ def _pick_key_insight(p):
     return max(insights, key=lambda i: i["priority"])
 
 
+# The standalone /first-look page was folded into /get-started in the
+# Aug 2026 surface audit: one onboarding surface that shows the checklist
+# until data lands, then flips to the "here's what we found" profile.
+# /first-look 301s so the post-upload/post-sync processing redirects and
+# any bookmarks keep working.
+
+
 @app.route("/first-look")
 @login_required
 def first_look():
-    """Post-upload 'Here's what we found' page."""
+    """Legacy URL — permanently moved to /get-started."""
+    args = {}
+    for key in ("from_upload", "from_sync"):
+        val = (request.args.get(key) or "").strip()
+        if val:
+            args[key] = val
+    return redirect(url_for("get_started", **args), code=301)
+
+
+def render_first_look_view():
+    """Render the post-upload "Here's what we found" profile, or None.
+
+    Returns None when the profile can't be built (no accounts, no rows
+    yet, or a transient BQ failure) so the caller (get_started) can fall
+    back to the onboarding checklist.
+    """
     user_accounts = _user_account_list()
     has_accounts = user_accounts is None or len(user_accounts) > 0
-
     if not has_accounts:
-        return redirect(url_for("upload"))
+        return None
 
     try:
         client = get_bigquery_client()
@@ -356,14 +377,13 @@ def first_look():
         where = _tenant_sql_filter(tenant_ids)
         tenant_and = _tenant_sql_and(tenant_ids)
         profile = _build_profile(client, where, tenant_and)
-
         if not profile:
-            return redirect(url_for("weekly_review"))
-
+            return None
         return render_template(
             "first_look.html",
             title="Your Trading Profile",
             profile=profile,
         )
-    except Exception as e:
-        return redirect(url_for("weekly_review"))
+    except Exception as exc:
+        app.logger.warning("first-look profile build failed: %s", exc)
+        return None

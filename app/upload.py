@@ -1685,7 +1685,7 @@ def upload_processing():
     is_first = (request.args.get("first") or "").strip() == "1"
 
     if is_first:
-        done_url = url_for("first_look", from_upload=1)
+        done_url = url_for("get_started", from_upload=1)
     else:
         done_url = url_for("weekly_review", from_upload=1)
 
@@ -1709,7 +1709,7 @@ def sync_processing():
     is_first = (request.args.get("first") or "").strip() == "1"
 
     if is_first:
-        done_url = url_for("first_look", from_sync=1)
+        done_url = url_for("get_started", from_sync=1)
     else:
         done_url = url_for("weekly_review", from_sync=1)
 

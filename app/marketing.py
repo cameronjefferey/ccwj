@@ -447,7 +447,13 @@ def healthz_db():
 @app.route("/get-started")
 @login_required
 def get_started():
-    """Onboarding checklist for new users — tracks real progress."""
+    """One onboarding surface (Aug 2026 surface audit).
+
+    Checklist while the user is still connecting/waiting for data; once
+    warehouse rows exist it flips to the former /first-look "here's what
+    we found" trading profile. The post-upload and post-sync processing
+    pages land here (via the /first-look 301).
+    """
     tenant_ids = get_tenant_ids_for_user(current_user.id) or []
     has_uploaded = len(tenant_ids) > 0
 
@@ -471,6 +477,16 @@ def get_started():
                 "get_started has_data check failed for user_id=%s: %s",
                 current_user.id, exc,
             )
+
+    if has_data:
+        # Data has landed — show the "here's what we found" profile
+        # (former /first-look). Falls through to the checklist when the
+        # profile can't be built (transient BQ failure). Deferred import:
+        # first_look imports from app.routes at module load.
+        from app.first_look import render_first_look_view
+        rendered = render_first_look_view()
+        if rendered is not None:
+            return rendered
 
     snaptrade_enabled = False
     snaptrade_connected = False
