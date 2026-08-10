@@ -18,27 +18,13 @@
     .ts-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
     .ts-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; font-weight: 700; margin-bottom: .85rem; }
 
-    .ts-identity {
-        border-left: 3px solid #6366f1; border-radius: 0 10px 10px 0;
-        background: linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
-        padding: 1rem 1.2rem; font-size: 1.02rem; line-height: 1.75; color: #1e293b;
+    /* Profile summary: takeaway-first — one identity statement, then the
+       same scannable label/value/detail rows the Execution review uses. */
+    .ts-profile-headline {
+        font-size: 1.15rem; font-weight: 700; line-height: 1.45;
+        color: #0f172a; max-width: 46rem; margin-bottom: .4rem;
     }
-    .ts-identity p { margin-bottom: .35rem; }
-    .ts-identity p:last-child { margin-bottom: 0; }
-    [data-bs-theme="dark"] .ts-identity {
-        color: #e2e8f0;
-        background: linear-gradient(90deg, rgba(99,102,241,.16), rgba(99,102,241,.04));
-    }
-
-    .ts-chips { display: flex; flex-wrap: wrap; gap: .6rem; }
-    .ts-chip {
-        flex: 1 1 140px; min-width: 130px; text-align: center;
-        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
-        padding: .7rem .5rem;
-    }
-    .ts-chip .ts-chip-v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .ts-chip .ts-chip-l { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: #6b7280; font-weight: 700; }
-    [data-bs-theme="dark"] .ts-chip { background: #16213a; border-color: #24304a; }
+    [data-bs-theme="dark"] .ts-profile-headline { color: #e2e8f0; }
 
     .ts-era { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid #f1f5f9; }
     .ts-era:last-child { border-bottom: 0; }
@@ -154,16 +140,16 @@
 
 <div class="card ts-card p-4 mb-4">
     <h2>Profile summary</h2>
-    <div class="ts-identity">
-        {% for s in novel.identity %}
-        <p>{{ s }}</p>
-        {% endfor %}
-    </div>
-    <div class="ts-chips mt-3">
-        {% for c in novel.chips %}
-        <div class="ts-chip">
-            <div class="ts-chip-v">{{ c.value }}</div>
-            <div class="ts-chip-l">{{ c.label }}</div>
+    {# Takeaway first: ONE identity statement, then scannable fact rows —
+       each number appears exactly once. Symbols / trade days / since live
+       in the hero above; this card never repeats them. #}
+    <div class="ts-profile-headline">{{ novel.profile.headline }}</div>
+    <div class="mt-2">
+        {% for f in novel.profile.facts %}
+        <div class="ts-finding">
+            <div class="ts-finding-label">{{ f.label }}</div>
+            <div class="ts-finding-value {{ f.tone }}">{{ f.value }}</div>
+            <div class="ts-finding-detail">{{ f.detail }}</div>
         </div>
         {% endfor %}
     </div>

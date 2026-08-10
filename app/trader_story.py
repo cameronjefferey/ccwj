@@ -209,25 +209,20 @@ def _sum_stats(book):
     return totals or {}
 
 
-def _identity_sentences(book, totals, first_day, last_day):
-    """The profile summary: what the fills show."""
-    n = len(book)
-    chapters = totals.get("chapters", 0)
-    sentences = []
+def _compose_profile(totals, busiest):
+    """The profile summary, takeaway-first (READABILITY REGISTER).
 
-    span = ""
-    if first_day and last_day and (last_day - first_day).days >= 14:
-        span = f" over {_span_text((last_day - first_day).days)}"
-    started = f" since {first_day.strftime('%B %Y')}" if first_day else ""
-    sentences.append(
-        f"You've traded {n} symbols across {chapters:,} trade days"
-        f"{span}{started}."
-    )
-
+    One identity HEADLINE (what kind of trader the fills show) plus
+    scannable fact rows — {label, value, tone, detail}, one bold number
+    per row, no number repeated in prose. The old form (six sentences +
+    a chip strip repeating the same numbers, opening with a line that
+    duplicated the hero) read as "a lot of words, not informative".
+    Symbols / trade days / since stay in the hero ONLY.
+    """
     premium = totals.get("premium_collected", 0.0)
     risk = totals.get("long_risk", 0.0)
     n_long = totals.get("long_opens", 0)
-    long_desc = f"{n_long} long-option purchase{'s' if n_long != 1 else ''}"
+
     short_bits = []
     if totals.get("covered_calls"):
         short_bits.append(f"{totals['covered_calls']} covered call"
@@ -238,96 +233,68 @@ def _identity_sentences(book, totals, first_day, last_day):
     if totals.get("rolls"):
         short_bits.append(f"{totals['rolls']} roll"
                           f"{'s' if totals['rolls'] != 1 else ''}")
-    short_desc = f" across {', '.join(short_bits)}" if short_bits else ""
+    income_detail = "premium collected"
+    if short_bits:
+        income_detail += " · " + " · ".join(short_bits)
+    long_detail = (f"placed at risk buying options · {n_long} "
+                   f"purchase{'s' if n_long != 1 else ''}")
 
     if premium > 1 and risk > 1 and max(premium, risk) < 2 * min(premium, risk):
-        sentences.append(
-            f"You trade two distinct styles in similar size: income "
-            f"({_money(premium)} of premium collected{short_desc}) and "
-            f"directional ({_money(risk)} at risk across {long_desc})."
-        )
+        headline = ("You run two books at similar size — selling premium "
+                    "for income, and buying options directionally.")
     elif premium > 1 and premium >= risk:
-        sentences.append(
-            f"Your primary style is income: {_money(premium)} of option "
-            f"premium collected{short_desc}."
-        )
-        if risk > 1:
-            sentences.append(
-                f"Directional trades are the smaller book — {_money(risk)} "
-                f"at risk across {long_desc}."
-            )
+        headline = ("You're an income trader first — most of your options "
+                    "work sells premium.")
     elif risk > 1:
-        sentences.append(
-            f"Your primary style is directional: {_money(risk)} at risk "
-            f"across {long_desc}."
-        )
-        if premium > 1:
-            sentences.append(
-                f"Income trades are the smaller book — {_money(premium)} of "
-                f"premium collected{short_desc}."
-            )
+        headline = ("You're a directional trader first — most of your "
+                    "options work buys options outright.")
     else:
         adds = totals.get("adds", 0) + totals.get("stock_opens", 0)
-        sentences.append(
-            f"You build stock positions incrementally — {adds} separate "
-            f"buys, no options."
-        )
+        headline = (f"You build stock positions incrementally — "
+                    f"{adds} separate buys, no options.")
 
-    # Signature adjustment: the maneuver that shows up most in the record.
-    moves = [
-        (totals.get("rolls", 0),
-         lambda: (f"Your most frequent adjustment is the roll — "
-                  f"{totals['rolls']} times you repositioned a strike "
-                  f"rather than closing it.")),
-        (totals.get("expired_kept", 0),
-         lambda: (f"{totals['expired_kept']} short contracts were held to "
-                  f"worthless expiry, keeping the full "
-                  f"{_money(totals.get('expired_premium', 0.0))} of premium.")),
-        (totals.get("wheels_completed", 0),
-         lambda: (f"You've completed {totals['wheels_completed']} full wheel "
-                  f"cycle{'s' if totals['wheels_completed'] != 1 else ''} — "
-                  f"put premium, assignment, call premium, called away.")),
-    ]
-    moves.sort(key=lambda m: m[0], reverse=True)
-    if moves[0][0] >= 3:
-        sentences.append(moves[0][1]())
+    facts = []
+    if premium > 1:
+        facts.append({"label": "Income book", "value": _money(premium),
+                      "tone": "pos", "detail": income_detail})
+    if risk > 1:
+        facts.append({"label": "Directional book", "value": _money(risk),
+                      "tone": "", "detail": long_detail})
 
     w = totals.get("contract_wins", 0)
     losses = totals.get("contract_losses", 0)
     if w + losses >= 5:
-        sentences.append(
-            f"Across all closed contracts, your record is {w}W / {losses}L."
-        )
-    if totals.get("dividend_total", 0.0) > 100:
-        sentences.append(
-            f"Dividends added {_money(totals['dividend_total'])} on top of "
-            f"trading P&L."
-        )
-    return sentences
-
-
-def _number_chips(book, totals, busiest):
-    chips = [
-        {"label": "Symbols traded", "value": f"{len(book)}"},
-        {"label": "Trade days", "value": f"{totals.get('chapters', 0):,}"},
-    ]
-    if totals.get("premium_collected", 0.0) > 1:
-        chips.append({"label": "Premium collected",
-                      "value": _money(totals["premium_collected"])})
-    w, losses = totals.get("contract_wins", 0), totals.get("contract_losses", 0)
-    if w + losses:
-        chips.append({"label": "Contract record", "value": f"{w}W / {losses}L"})
-    if totals.get("rolls"):
-        chips.append({"label": "Rolls", "value": f"{totals['rolls']}"})
+        pct = round(100.0 * w / (w + losses))
+        facts.append({
+            "label": "Contract record", "value": f"{w}W / {losses}L",
+            "tone": "pos" if w >= losses else "neg",
+            "detail": f"{pct}% of the contracts you closed finished profitable",
+        })
+    if totals.get("expired_kept", 0) >= 3:
+        facts.append({
+            "label": "Kept at expiry",
+            "value": _money(totals.get("expired_premium", 0.0)),
+            "tone": "pos",
+            "detail": (f"{totals['expired_kept']} short contracts rode to "
+                       f"worthless expiry — you kept every dollar"),
+        })
     if totals.get("wheels_completed"):
-        chips.append({"label": "Wheels completed",
-                      "value": f"{totals['wheels_completed']}"})
-    if totals.get("dividend_total", 0.0) > 1:
-        chips.append({"label": "Dividends",
-                      "value": _money(totals["dividend_total"])})
+        facts.append({
+            "label": "Wheels completed",
+            "value": f"{totals['wheels_completed']}", "tone": "",
+            "detail": "put premium → assignment → call premium → called away",
+        })
+    if totals.get("dividend_total", 0.0) > 100:
+        facts.append({
+            "label": "Dividends", "value": _money(totals["dividend_total"]),
+            "tone": "pos", "detail": "collected on top of trading P&L",
+        })
     if busiest:
-        chips.append({"label": "Busiest day", "value": busiest})
-    return chips[:6]
+        facts.append({
+            "label": "Busiest day", "value": busiest["value"], "tone": "",
+            "detail": busiest["detail"],
+        })
+    return {"headline": headline, "facts": facts[:6]}
 
 
 def _build_eras(trades_df):
@@ -485,13 +452,15 @@ def _build_scoreboard(book):
 
 
 def _busiest_day(trades_df):
+    """The single heaviest fill day, as a {value, detail} fact row
+    (None when no day clears the 5-fill bar)."""
     if trades_df is None or trades_df.empty:
-        return None, None
+        return None
     df = trades_df.copy()
     df["_d"] = pd.to_datetime(df["trade_date"], errors="coerce").dt.date
     df = df.dropna(subset=["_d"])
     if df.empty:
-        return None, None
+        return None
     counts = df.groupby("_d").agg(
         fills=("_d", "size"),
         syms=("symbol", lambda s: s.astype(str).str.upper().nunique()),
@@ -499,12 +468,12 @@ def _busiest_day(trades_df):
     day = counts["fills"].idxmax()
     row = counts.loc[day]
     if int(row["fills"]) < 5:
-        return None, None
-    chip = day.strftime("%b %-d, %Y")
-    line = (f"Your busiest day was {day.strftime('%B %-d, %Y')} — "
-            f"{int(row['fills'])} fills across {int(row['syms'])} "
-            f"symbol{'s' if int(row['syms']) != 1 else ''}.")
-    return chip, line
+        return None
+    return {
+        "value": day.strftime("%b %-d, %Y"),
+        "detail": (f"{int(row['fills'])} fills across {int(row['syms'])} "
+                   f"symbol{'s' if int(row['syms']) != 1 else ''}"),
+    }
 
 
 def compose_novel(book, trades_df):
@@ -513,15 +482,8 @@ def compose_novel(book, trades_df):
         return None
     totals = _sum_stats(book)
     firsts = [e["first"] for e in book.values() if e["first"]]
-    lasts = [e["last"] for e in book.values() if e["last"]]
     first_day = min(firsts) if firsts else None
-    last_day = max(lasts) if lasts else None
     open_stories = sum(1 for e in book.values() if e["open"])
-    busiest_chip, busiest_line = _busiest_day(trades_df)
-
-    identity = _identity_sentences(book, totals, first_day, last_day)
-    if busiest_line:
-        identity.append(busiest_line)
 
     return {
         "hero_counts": {
@@ -530,8 +492,7 @@ def compose_novel(book, trades_df):
             "open_stories": open_stories,
             "since": first_day.strftime("%B %Y") if first_day else "",
         },
-        "identity": identity,
-        "chips": _number_chips(book, totals, busiest_chip),
+        "profile": _compose_profile(totals, _busiest_day(trades_df)),
         "eras": _build_eras(trades_df),
         "standouts": _build_standouts(book),
         "scoreboard": _build_scoreboard(book),

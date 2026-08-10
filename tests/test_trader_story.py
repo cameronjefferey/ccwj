@@ -124,16 +124,15 @@ def test_eras_one_row_per_year_with_new_names_and_premium():
 
 
 def test_busiest_day_requires_a_real_cluster():
-    chip, line = _busiest_day(_BOOK_TRADES)
-    assert chip is None and line is None  # max 1 fill/day here
+    assert _busiest_day(_BOOK_TRADES) is None  # max 1 fill/day here
 
     burst = _trades([
         (date(2024, 6, 3), s, "equity_buy", "Equity", s, 1, 1.0, -1.0)
         for s in ("A", "B", "C", "D", "E", "F")
     ])
-    chip, line = _busiest_day(burst)
-    assert chip == "Jun 3, 2024"
-    assert "6 fills across 6 symbols" in line
+    fact = _busiest_day(burst)
+    assert fact["value"] == "Jun 3, 2024"
+    assert fact["detail"] == "6 fills across 6 symbols"
 
 
 def test_compose_novel_shape():
@@ -141,9 +140,15 @@ def test_compose_novel_shape():
     assert novel["hero_counts"]["stories"] == 3
     assert novel["hero_counts"]["open_stories"] == 2
     assert novel["hero_counts"]["since"] == "January 2024"
-    text = " ".join(novel["identity"])
-    assert "3 symbols" in text
-    assert any(c["label"] == "Premium collected" for c in novel["chips"])
+    # Takeaway-first profile: one identity headline + fact rows, no prose
+    # list, no chip strip repeating the same numbers.
+    profile = novel["profile"]
+    assert profile["headline"]
+    labels = [f["label"] for f in profile["facts"]]
+    assert "Income book" in labels
+    for f in profile["facts"]:
+        assert set(f) == {"label", "value", "tone", "detail"}
+    assert "identity" not in novel and "chips" not in novel
     assert len(novel["eras"]) == 2
     assert novel["scoreboard"]
 

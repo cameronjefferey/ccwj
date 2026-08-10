@@ -978,8 +978,13 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   tenant-scoped in SQL AND DataFrame-filtered, pinned in
   `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
   the per-symbol fingerprints into one profile: a PROFILE SUMMARY
-  (primary style income vs directional, signature adjustment, contract
-  record, dividends, busiest day), stat chips, NOTABLE POSITIONS cards
+  (takeaway-first, Aug 2026 readability pass: ONE identity headline —
+  income vs directional vs stock — plus scannable {label, value, tone,
+  detail} fact rows for the income/directional books, contract record,
+  kept-at-expiry, dividends, busiest day; the old six-sentence prose
+  block + stat-chip strip repeating the same numbers was removed, and
+  the card never repeats the hero's symbols/trade-days/since counts),
+  NOTABLE POSITIONS cards
   (Top performer / Largest loss / Most active / Longest held / Most
   re-entered — each linking to the position page whose history proves
   the claim), a per-style scoreboard (income/directional/stock ×
