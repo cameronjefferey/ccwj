@@ -16,6 +16,7 @@ import pandas as pd
 from app.weekly_review import (
     ANNUALIZED_DENOMINATOR_FLOOR,
     ANNUALIZED_MIN_DAYS,
+    TODAY_OPTIONS_MOVES_QUERY,
     _aggregate_breakdown_by,
     _annualized_pct,
     _build_account_breakdown,
@@ -328,6 +329,13 @@ class TestBuildBreakdownTotals:
 
 
 class TestBuildTodayMovers:
+    def test_option_query_caps_mart_rows_at_latest_official_close(self):
+        """UTC tomorrow rows must not replace the latest U.S. trading day."""
+        normalized = " ".join(TODAY_OPTIONS_MOVES_QUERY.lower().split())
+        assert "max(date) as as_of_date" in normalized
+        assert "analytics.stg_daily_prices" in normalized
+        assert "m.date <= c.as_of_date" in normalized
+
     def test_empty_input(self):
         result = _build_today_movers(None)
         assert result["winners"] == []
