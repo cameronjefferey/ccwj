@@ -522,20 +522,25 @@ WITH holdings AS (
     WHERE quantity IS NOT NULL AND quantity != 0
       {tenant_filter}
 )
+-- No DATE_DIFF "days until" column here ON PURPOSE: CURRENT_DATE() is UTC,
+-- which rolls to tomorrow at 5pm PT / 8pm ET — a SQL-computed day count is
+-- off by one every US evening (and a cached frame can be a day stale on top).
+-- The window is padded a day on each side for the same reason; Python
+-- computes days_until against the user's profile-timezone "today" and drops
+-- anything already past.
 SELECT
     e.symbol,
     e.next_earnings_date,
     e.earnings_window_start,
     e.earnings_window_end,
-    DATE_DIFF(e.next_earnings_date, CURRENT_DATE(), DAY) AS days_until,
     m.long_name,
     m.sector,
     m.subsector
 FROM `ccwj-dbt.analytics.stg_earnings_calendar` e
 JOIN holdings h USING (symbol)
 LEFT JOIN `ccwj-dbt.analytics.stg_symbol_metadata` m USING (symbol)
-WHERE e.next_earnings_date BETWEEN CURRENT_DATE()
-                              AND DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY)
+WHERE e.next_earnings_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+                              AND DATE_ADD(CURRENT_DATE(), INTERVAL 15 DAY)
 ORDER BY e.next_earnings_date, e.symbol
 """
 
@@ -968,21 +973,24 @@ projected AS (
     FROM last_event le
     LEFT JOIN cadence c USING (symbol)
 )
+-- No DATE_DIFF "days until" column ON PURPOSE (UTC CURRENT_DATE() rolls to
+-- tomorrow at 5pm PT; cached frames add another day of staleness). Window
+-- padded a day each side; Python computes days_until vs the user's local
+-- today and drops past dates. See EARNINGS_UPCOMING_QUERY comment.
 SELECT
     h.symbol,
     p.last_ex_div_date,
     p.last_amount_per_share,
     p.median_spacing_days,
     p.projected_next_ex_div_date,
-    DATE_DIFF(p.projected_next_ex_div_date, CURRENT_DATE(), DAY) AS days_until_projected,
     m.sector,
     m.subsector,
     m.long_name
 FROM holdings h
 JOIN projected p USING (symbol)
 LEFT JOIN `ccwj-dbt.analytics.stg_symbol_metadata` m USING (symbol)
-WHERE p.projected_next_ex_div_date BETWEEN CURRENT_DATE()
-                                      AND DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)
+WHERE p.projected_next_ex_div_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+                                      AND DATE_ADD(CURRENT_DATE(), INTERVAL 31 DAY)
 ORDER BY p.projected_next_ex_div_date
 """
 
@@ -3169,18 +3177,27 @@ def _build_after_hours_movers(ah_df):
     }
 
 
-def _build_upcoming_dividends(div_df):
-    """Projected next ex-div dates for held dividend-paying symbols."""
+def _build_upcoming_dividends(div_df, today=None):
+    """Projected next ex-div dates for held dividend-paying symbols.
+
+    ``today`` is the user's profile-timezone date; the day count is computed
+    here (not in SQL) because BigQuery's CURRENT_DATE() is UTC and the frame
+    may be served from the query cache a day later.
+    """
     if div_df is None or div_df.empty:
         return []
+    today = today or date.today()
     out = []
     for _, r in div_df.iterrows():
         proj = r.get("projected_next_ex_div_date")
         last = r.get("last_ex_div_date")
+        proj_date = proj.date() if hasattr(proj, "date") and not isinstance(proj, date) else proj
         try:
-            d_until = int(r.get("days_until_projected")) if r.get("days_until_projected") is not None else None
-        except (TypeError, ValueError):
+            d_until = (proj_date - today).days
+        except TypeError:
             d_until = None
+        if d_until is not None and d_until < 0:
+            continue  # projected date already passed in the user's timezone
         proj_s = (
             proj.isoformat() if hasattr(proj, "isoformat") and not isinstance(proj, str)
             else str(proj)[:10] if proj is not None else None
@@ -3960,10 +3977,14 @@ def weekly_review():
                     if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
                         continue
                     ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
+                    # Day count vs the USER's today (profile tz), not SQL's
+                    # UTC CURRENT_DATE() — see EARNINGS_UPCOMING_QUERY comment.
                     try:
-                        days_until = int(row.get("days_until")) if row.get("days_until") is not None else None
-                    except (TypeError, ValueError):
+                        days_until = (ed_date - today).days
+                    except TypeError:
                         days_until = None
+                    if days_until is not None and days_until < 0:
+                        continue  # already reported in the user's timezone
                     item = {
                         "symbol": str(row["symbol"]),
                         "company": str(row.get("long_name") or ""),
@@ -4012,7 +4033,7 @@ def weekly_review():
         # ── Projected ex-dividend dates ───────────────────────────────
         try:
             ud_df = batch.get("upcoming_divs", pd.DataFrame())
-            context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df)
+            context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df, today=today)
         except Exception as e:
             app.logger.warning("Upcoming ex-div processing failed: %s", e)
 

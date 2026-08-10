@@ -456,29 +456,47 @@ class TestBuildUpcomingDividends:
         assert _build_upcoming_dividends(pd.DataFrame()) == []
 
     def test_sorted_by_days_until(self):
+        # days_until is computed in Python vs the caller's (user-tz) today,
+        # NOT read from SQL — UTC CURRENT_DATE() day counts go stale/off-by-one.
         df = pd.DataFrame([
             {"symbol": "JEPI", "last_ex_div_date": date(2026, 4, 15),
              "last_amount_per_share": 0.45, "median_spacing_days": 30,
              "projected_next_ex_div_date": date(2026, 5, 25),
-             "days_until_projected": 7,
              "sector": "Financial Services", "subsector": "Asset Management",
              "long_name": "JPMorgan EPI"},
             {"symbol": "SCHD", "last_ex_div_date": date(2026, 3, 20),
              "last_amount_per_share": 0.78, "median_spacing_days": 91,
              "projected_next_ex_div_date": date(2026, 6, 19),
-             "days_until_projected": 32,
              "sector": "Financial Services", "subsector": "Asset Management",
              "long_name": "Schwab US Dividend ETF"},
             {"symbol": "BKH", "last_ex_div_date": date(2026, 3, 1),
              "last_amount_per_share": 0.665, "median_spacing_days": 91,
              "projected_next_ex_div_date": date(2026, 5, 31),
-             "days_until_projected": 13,
              "sector": "Utilities", "subsector": "Diversified Utilities",
              "long_name": "Black Hills"},
         ])
-        rows = _build_upcoming_dividends(df)
+        rows = _build_upcoming_dividends(df, today=date(2026, 5, 18))
         # Sorted by days_until ascending: 7, 13, 32.
         assert [r["symbol"] for r in rows] == ["JEPI", "BKH", "SCHD"]
+        assert [r["days_until"] for r in rows] == [7, 13, 32]
+
+    def test_past_projection_dropped_for_user_today(self):
+        # A projected date that already passed in the USER's timezone is
+        # dropped even though the UTC-windowed query may still return it
+        # (window is padded a day; evening-UTC-rollover regression).
+        df = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 8, 1),
+             "last_amount_per_share": 0.45, "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 8, 9),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+            {"symbol": "SCHD", "last_ex_div_date": date(2026, 7, 1),
+             "last_amount_per_share": 0.78, "median_spacing_days": 91,
+             "projected_next_ex_div_date": date(2026, 8, 10),
+             "sector": "", "subsector": "", "long_name": "Schwab Dividend"},
+        ])
+        rows = _build_upcoming_dividends(df, today=date(2026, 8, 10))
+        assert [r["symbol"] for r in rows] == ["SCHD"]
+        assert rows[0]["days_until"] == 0
 
 
 class TestTodayHeadline:

@@ -1,9 +1,35 @@
 # app/utils.py
 import os
+from datetime import date, datetime
 from urllib.parse import urlencode, urlparse, quote
+from zoneinfo import ZoneInfo
 
 from flask import abort, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
+
+
+def user_local_today() -> date:
+    """Today's calendar date in the signed-in user's profile timezone.
+
+    BigQuery's ``CURRENT_DATE()`` is UTC — at 5pm PT it already reads
+    *tomorrow*, so any SQL-computed "days until" is off by one every US
+    evening (and a cached frame can be a full day stale). Day-count math
+    for user-facing surfaces must anchor on THIS date instead, computed
+    at render time. Falls back to America/New_York (market time) when
+    there's no profile / no request context (unit tests, crons).
+    """
+    tz_name = ""
+    try:
+        from app.models import get_user_profile  # lazy: avoid import cycle
+        prof = get_user_profile(current_user.id) or {}
+        tz_name = (prof.get("timezone") or "").strip()
+    except Exception:
+        tz_name = ""
+    try:
+        z = ZoneInfo(tz_name or "America/New_York")
+    except Exception:
+        z = ZoneInfo("America/New_York")
+    return datetime.now(z).date()
 
 # Post-login ?next= must stay on this site (relative path + query only).
 _MAX_INTERNAL_NEXT_LEN = 2048

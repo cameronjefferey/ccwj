@@ -28,6 +28,7 @@ from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df, cached_payload, frame_fingerprint, timed
 from app.skeleton import skeleton_page
 from app.models import get_tenant_ids_for_user, is_admin
+from app.utils import user_local_today
 from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
@@ -312,15 +313,19 @@ POSITION_MATRIX_QUERY = """
 # or possible here. The page itself is already tenant-scoped via the
 # other position queries above; this just decorates the hero with
 # "next earnings in N days" context.
+# No DATE_DIFF "days until" column ON PURPOSE: CURRENT_DATE() is UTC and
+# rolls to tomorrow at 5pm PT / 8pm ET, so a SQL day count is off by one
+# every US evening (plus query-cache staleness). The lower bound is padded a
+# day for the same reason; Python computes days_until against the user's
+# profile-timezone today and hides the pill once the date has passed.
 POSITION_EARNINGS_QUERY = """
     SELECT
         next_earnings_date,
         earnings_window_start,
-        earnings_window_end,
-        DATE_DIFF(next_earnings_date, CURRENT_DATE(), DAY) AS days_until
+        earnings_window_end
     FROM `ccwj-dbt.analytics.stg_earnings_calendar`
     WHERE UPPER(TRIM(symbol)) = UPPER(TRIM('{symbol}'))
-      AND next_earnings_date >= CURRENT_DATE()
+      AND next_earnings_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
     ORDER BY next_earnings_date
     LIMIT 1
 """
@@ -2392,16 +2397,18 @@ def position_detail(symbol):
             ed = erow.get("next_earnings_date")
             if ed is not None and not (hasattr(ed, "__float__") and pd.isna(ed)):
                 ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
-                days_until_raw = erow.get("days_until")
+                # Day count vs the USER's today (profile tz), not SQL's UTC
+                # CURRENT_DATE() — see POSITION_EARNINGS_QUERY comment.
                 try:
-                    days_until = int(days_until_raw) if days_until_raw is not None else None
-                except (TypeError, ValueError):
+                    days_until = (ed_date - user_local_today()).days
+                except TypeError:
                     days_until = None
-                symbol_next_earnings = {
-                    "date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
-                    "display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
-                    "days_until": days_until,
-                }
+                if days_until is None or days_until >= 0:
+                    symbol_next_earnings = {
+                        "date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                        "display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                        "days_until": days_until,
+                    }
     except Exception:
         symbol_next_earnings = None
 

@@ -9,7 +9,7 @@ Two layers:
      that the user already holds are excluded, and the flag gates the page.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -108,8 +108,11 @@ _HELD_DF = pd.DataFrame([
     {"symbol": "JEPI", "sector": "Financial Services", "subsector": "ETF", "long_name": "JPMorgan Equity Premium"},
 ])
 
+# next_earnings_date is dynamic (today+6): days_until is now computed in
+# Python vs the user's local today (the SQL query no longer ships a UTC
+# DATE_DIFF), and past dates are dropped — a fixed date would age out.
 _EARNINGS_DF = pd.DataFrame([
-    {"symbol": "AAPL", "next_earnings_date": date(2026, 6, 15), "days_until": 6,
+    {"symbol": "AAPL", "next_earnings_date": date.today() + timedelta(days=6),
      "long_name": "Apple Inc.", "sector": "Technology", "subsector": "Consumer Electronics"},
 ])
 

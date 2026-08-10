@@ -18,7 +18,7 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
 from app.tenant_scope import tenant_sql_and as _tenant_sql_and
-from app.utils import earnings_follower_url
+from app.utils import earnings_follower_url, user_local_today
 from app.routes import (
     _bq_parallel,
     _redirect_if_no_accounts,
@@ -68,18 +68,22 @@ WITH holdings AS (
     WHERE quantity IS NOT NULL AND quantity != 0
       {tenant_filter}
 )
+-- No DATE_DIFF "days until" column ON PURPOSE: CURRENT_DATE() is UTC and
+-- rolls to tomorrow at 5pm PT / 8pm ET, so a SQL day count is off by one
+-- every US evening (plus query-cache staleness). Window padded a day each
+-- side; Python computes days_until vs the user's local today and drops
+-- anything already past.
 SELECT
     e.symbol,
     e.next_earnings_date,
-    DATE_DIFF(e.next_earnings_date, CURRENT_DATE(), DAY) AS days_until,
     m.long_name,
     COALESCE(m.sector, 'Unknown')    AS sector,
     COALESCE(m.subsector, 'Unknown') AS subsector
 FROM `ccwj-dbt.analytics.stg_earnings_calendar` e
 JOIN holdings h USING (symbol)
 LEFT JOIN `ccwj-dbt.analytics.stg_symbol_metadata` m USING (symbol)
-WHERE e.next_earnings_date BETWEEN CURRENT_DATE()
-                              AND DATE_ADD(CURRENT_DATE(), INTERVAL 21 DAY)
+WHERE e.next_earnings_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+                              AND DATE_ADD(CURRENT_DATE(), INTERVAL 22 DAY)
 ORDER BY e.next_earnings_date, e.symbol
 """
 
@@ -164,13 +168,20 @@ def earnings_watch():
         # ── Upcoming earnings (held positions) ────────────────────────
         try:
             earn_df = batch.get("earnings_upcoming", pd.DataFrame())
+            today = user_local_today()
             for _, row in earn_df.iterrows():
                 ed = row.get("next_earnings_date")
                 if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
                     continue
                 ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
-                days_until = row.get("days_until")
-                days_until = int(days_until) if days_until is not None and not pd.isna(days_until) else None
+                # Day count vs the USER's today (profile tz), not SQL's UTC
+                # CURRENT_DATE() — see EARNINGS_WATCH_UPCOMING_QUERY comment.
+                try:
+                    days_until = (ed_date - today).days
+                except TypeError:
+                    days_until = None
+                if days_until is not None and days_until < 0:
+                    continue  # already reported in the user's timezone
                 sector = str(row.get("sector") or "")
                 subsector = str(row.get("subsector") or "")
                 context["upcoming_earnings"].append({
