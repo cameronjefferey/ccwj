@@ -23,6 +23,8 @@ profiles.yml
 .env
 *.json
 !dbt/dbt_project.yml
+# Agent automation config (no secrets) — see .cursor/hooks/
+!.cursor/hooks.json
 
 # OS
 .DS_Store

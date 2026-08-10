@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/dbt-parse-on-edit.sh",
+        "timeout": 90
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/guard-sensitive-files.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

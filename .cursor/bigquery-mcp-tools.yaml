@@ -1,0 +1,59 @@
+# MCP Toolbox for Databases (googleapis/mcp-toolbox) config for the ccwj
+# warehouse. Mirrors the official `--prebuilt bigquery` "data" group but with
+# writeMode: blocked — execute_sql accepts SELECT statements ONLY.
+#
+# Rationale: this MCP exists for investigation (source counts, tenant lookups,
+# mart QA — the checks .cursor/rules/data-pipeline-fixes.mdc mandates). All
+# legitimate writes go through dbt builds or the app's seed_store; an agent
+# must never be able to mutate the production warehouse through this channel
+# (see the AGENTS.md dataset-expiration and cross-environment purge incidents).
+#
+# Auth: Application Default Credentials (gcloud auth application-default login).
+# Wired up in ~/.cursor/mcp.json ("bigquery" server).
+
+kind: source
+name: bigquery-source
+type: bigquery
+project: ccwj-dbt
+writeMode: blocked
+maxQueryResultRows: 200
+---
+kind: tool
+name: execute_sql
+type: bigquery-execute-sql
+source: bigquery-source
+description: >
+  Execute a SELECT statement against the ccwj-dbt BigQuery project (prod
+  warehouse dataset `analytics`, dev mirror `analytics_dev`, raw seeds
+  `analytics_raw` / `analytics_raw_dev`). Read-only: non-SELECT statements
+  are rejected.
+---
+kind: tool
+name: list_dataset_ids
+type: bigquery-list-dataset-ids
+source: bigquery-source
+description: List datasets in the ccwj-dbt project.
+---
+kind: tool
+name: list_table_ids
+type: bigquery-list-table-ids
+source: bigquery-source
+description: List tables in a dataset.
+---
+kind: tool
+name: get_dataset_info
+type: bigquery-get-dataset-info
+source: bigquery-source
+description: Get dataset metadata.
+---
+kind: tool
+name: get_table_info
+type: bigquery-get-table-info
+source: bigquery-source
+description: Get table metadata (schema, row count, last modified).
+---
+kind: tool
+name: search_catalog
+type: bigquery-search-catalog
+source: bigquery-source
+description: Find tables, views, models, or routines by name.
