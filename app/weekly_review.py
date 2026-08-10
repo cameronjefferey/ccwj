@@ -31,11 +31,7 @@ from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
 from app.skeleton import skeleton_page
 from app.models import (
-    is_admin,
-    get_mirror_score_for_user, get_mirror_score_history,
-    get_insight_for_user,
     get_user_profile,
-    get_review_visit,
     bump_review_visit,
 )
 from google.cloud import bigquery
@@ -103,7 +99,6 @@ def _user_account_list():
 from app.routes import (
     _tenants_for_scope,
     _tenant_sql_and,  # noqa: E402,F401
-    _tenant_sql_filter as _tenant_sql_where,  # noqa: E402,F401
     _filter_df_by_tenant_ids,  # noqa: E402,F401
     _tenant_label_map_for_user,  # noqa: E402,F401
 )
@@ -393,19 +388,8 @@ def _build_benchmark_snapshot(bench_df):
     return [by_symbol[s] for s, _ in BENCHMARK_INDEXES if s in by_symbol]
 
 
-WEEKLY_SUMMARY_COMBINED_QUERY = """
-SELECT *
-FROM `ccwj-dbt.analytics.mart_weekly_summary`
-WHERE week_start IN UNNEST(@week_starts)
-  {tenant_filter}
-"""
 
-LATEST_ACTIVE_WEEK_QUERY = """
-SELECT MAX(week_start) AS latest_week
-FROM `ccwj-dbt.analytics.mart_weekly_summary`
-WHERE (trades_closed > 0 OR trades_opened > 0)
-  {tenant_filter}
-"""
+
 
 # Live account value per tenant (from the latest balances snapshot) for
 # context, return % vs account, AND a fallback for the Daily Review
@@ -426,12 +410,8 @@ GROUP BY tenant_id
 """
 
 # Weekly account return from dbt mart (replaces inline WEEKLY_ACCOUNT_CHANGE_QUERY)
-WEEKLY_RETURNS_QUERY = """
-SELECT account, start_value, end_value, weekly_return_pct
-FROM `ccwj-dbt.analytics.mart_account_weekly_returns`
-WHERE week_start = @week_start
-  {tenant_filter}
-"""
+
+
 
 # Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
 TODAY_SNAPSHOT_ENRICHED_QUERY = """
@@ -467,37 +447,12 @@ ORDER BY close_date DESC NULLS LAST, open_date DESC
 """
 
 # Weekly behavior baseline — compare this week to recent 8-week norm
-WEEKLY_BEHAVIOR_QUERY = """
-SELECT
-  account,
-  week_start,
-  trades_closed,
-  total_pnl,
-  num_winners,
-  num_losers,
-  win_rate_week,
-  avg_trades_closed_8w,
-  avg_total_pnl_8w,
-  avg_win_rate_8w,
-  baseline_weeks_8w
-FROM `ccwj-dbt.analytics.mart_weekly_behavior_enriched`
-WHERE week_start = @week_start
-  {tenant_filter}
-"""
+
+
 
 # Open positions exposure for Monday Risk Check
-EXPOSURE_QUERY = """
-SELECT
-    account,
-    underlying_symbol AS symbol,
-    instrument_type,
-    SUM(ABS(CAST(market_value AS FLOAT64))) AS exposure
-FROM `ccwj-dbt.analytics.int_enriched_current`
-WHERE quantity IS NOT NULL AND quantity != 0
-  {tenant_filter}
-GROUP BY 1, 2, 3
-ORDER BY exposure DESC
-"""
+
+
 
 # Upcoming earnings for currently-held holdings (next 14 days).
 #
@@ -1027,31 +982,9 @@ WHERE e.quantity IS NOT NULL AND e.quantity != 0
 ORDER BY e.underlying_symbol, e.instrument_type
 """
 
-WEEKLY_STOCK_MOVEMENT_QUERY = """
-WITH boundary AS (
-    SELECT account, symbol,
-        FIRST_VALUE(close_price) OVER (PARTITION BY account, symbol ORDER BY date) AS start_price,
-        FIRST_VALUE(date)        OVER (PARTITION BY account, symbol ORDER BY date) AS start_date,
-        FIRST_VALUE(close_price) OVER (PARTITION BY account, symbol ORDER BY date DESC) AS end_price,
-        FIRST_VALUE(date)        OVER (PARTITION BY account, symbol ORDER BY date DESC) AS end_date
-    FROM `ccwj-dbt.analytics.stg_daily_prices`
-    WHERE date BETWEEN @start_date AND @end_date
-      AND close_price IS NOT NULL AND close_price > 0
-      {tenant_filter}
-)
-SELECT DISTINCT account, symbol, start_price, start_date, end_price, end_date
-FROM boundary
-"""
 
-TRADING_DAYS_QUERY = """
-SELECT
-    COUNT(DISTINCT date) AS trading_days,
-    MAX(date) AS last_trading_date
-FROM `ccwj-dbt.analytics.stg_daily_prices`
-WHERE date BETWEEN @start_date AND @end_date
-  AND close_price IS NOT NULL
-  AND close_price > 0
-"""
+
+
 
 # Daily Account Δ calendar: day-over-day change in BROKERAGE ACCOUNT VALUE.
 #
@@ -1124,240 +1057,18 @@ ORDER BY date
 # "Opens" = trade-backed position groups. Snapshot-only rows (stg_current with
 # no stg_history yet) have num_trades = 0 and open_date = snapshot day — they
 # must not count as new activity or Pace Check will list every open position.
-OPENS_THIS_WEEK_QUERY = """
-SELECT
-    c.account, c.symbol, c.strategy, c.open_date
-FROM `ccwj-dbt.analytics.int_strategy_classification` c
-WHERE c.open_date >= @start_date
-  AND c.open_date <= @end_date
-  AND c.num_trades > 0
-  {tenant_filter}
-"""
+
+
 
 # This week's P&L and counts by strategy (for "What works for you" section)
-WEEKLY_STRATEGY_BREAKDOWN_QUERY = """
-SELECT
-  strategy,
-  SUM(total_pnl) AS total_pnl,
-  COUNT(*)       AS trades,
-  SUM(CASE WHEN is_winner THEN 1 ELSE 0 END) AS winners,
-  SUM(CASE WHEN NOT is_winner THEN 1 ELSE 0 END) AS losers
-FROM `ccwj-dbt.analytics.int_strategy_classification`
-WHERE status = 'Closed'
-  AND close_date >= @start_date
-  AND close_date <= @end_date
-  {tenant_filter}
-GROUP BY strategy
-ORDER BY total_pnl DESC
-"""
-
-PATTERNS_COMBINED_QUERY = """
-WITH streak AS (
-    SELECT streak_type, streak_length, week_pnl
-    FROM `ccwj-dbt.analytics.mart_weekly_streaks`
-    WHERE week_start = @week_start
-      {tenant_filter}
-    ORDER BY streak_length DESC
-    LIMIT 1
-),
-loss_cluster AS (
-    SELECT
-        COUNTIF(is_post_loss) AS post_loss_trades,
-        COUNTIF(is_post_loss AND outcome = 'Winner') AS post_loss_winners,
-        COUNTIF(is_post_loss AND outcome = 'Loser') AS post_loss_losers,
-        COUNT(*) AS total_trades,
-        COUNTIF(outcome = 'Winner') AS total_winners
-    FROM `ccwj-dbt.analytics.int_trade_sequence`
-    WHERE 1=1 {tenant_filter}
-),
-loss_cluster_week AS (
-    SELECT
-        COUNTIF(is_post_loss) AS week_post_loss_count,
-        COUNT(*) AS week_trades
-    FROM `ccwj-dbt.analytics.int_trade_sequence`
-    WHERE close_date >= @week_start
-      AND close_date <= @week_end
-      {tenant_filter}
-),
-dte_sensitivity AS (
-    SELECT
-        dte_bucket,
-        SUM(num_trades) AS num_trades,
-        SUM(CASE WHEN outcome = 'Winner' THEN num_trades ELSE 0 END) AS winners,
-        SUM(CASE WHEN outcome = 'Loser' THEN num_trades ELSE 0 END) AS losers,
-        SUM(total_pnl) AS total_pnl
-    FROM `ccwj-dbt.analytics.mart_option_trades_by_kind`
-    WHERE 1=1 {tenant_filter}
-    GROUP BY dte_bucket
-)
-SELECT 'streak' AS _section, streak_type, CAST(streak_length AS STRING) AS val1, CAST(week_pnl AS STRING) AS val2, NULL AS val3, NULL AS val4, NULL AS val5 FROM streak
-UNION ALL
-SELECT 'loss_cluster', NULL, CAST(post_loss_trades AS STRING), CAST(post_loss_winners AS STRING), CAST(total_trades AS STRING), CAST(total_winners AS STRING), NULL FROM loss_cluster
-UNION ALL
-SELECT 'loss_cluster_week', NULL, CAST(week_post_loss_count AS STRING), NULL, NULL, NULL, NULL FROM loss_cluster_week
-UNION ALL
-SELECT 'dte', dte_bucket, CAST(num_trades AS STRING), CAST(winners AS STRING), CAST(losers AS STRING), CAST(total_pnl AS STRING), NULL FROM dte_sensitivity
-"""
-
-WEEKLY_EXIT_ANALYSIS_QUERY = """
-SELECT
-    trade_symbol, underlying_symbol, strategy, direction,
-    close_date, actual_pnl, peak_unrealized_pnl, peak_date,
-    days_held_past_peak, pnl_given_back, giveback_pct,
-    pct_of_premium_captured, optimal_exit,
-    snapshot_count, snapshot_density, data_reliable
-FROM `ccwj-dbt.analytics.int_option_exit_analysis`
-WHERE close_date >= @week_start
-  AND close_date <= @week_end
-  AND data_reliable = true
-  {tenant_filter}
-ORDER BY pnl_given_back DESC
-"""
-
-COACHING_SIGNALS_WEEKLY_QUERY = """
-SELECT
-    strategy,
-    total_closed, reliable_contracts, pct_contracts_reliable,
-    avg_giveback_pct, avg_days_held_past_peak,
-    total_pnl_given_back, optimal_exit_rate,
-    num_rolls, avg_dte_at_roll,
-    rolls_after_losing_leg, pct_rolls_after_losing_leg,
-    rolls_at_0_or_1_dte, pct_rolls_at_0_or_1_dte,
-    rolls_with_spot_for_itm, pct_rolls_sold_short_itm_when_known
-FROM `ccwj-dbt.analytics.mart_coaching_signals`
-{where}
-ORDER BY total_pnl_given_back DESC
-"""
 
 
-def _detect_patterns(client, tenant_filter, week_start, week_end):
-    """Detect behavioral patterns from pre-computed dbt models.
 
-    Returns a list of pattern dicts:
-      { type, headline, detail, severity: positive|neutral|warning }
 
-    Uses a single combined query instead of 3-4 separate round-trips.
-    """
-    patterns = []
 
-    try:
-        cfg = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
-            bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
-        ])
-        combined_df = cached_query_df(
-            client,
-            PATTERNS_COMBINED_QUERY.format(tenant_filter=tenant_filter),
-            job_config=cfg,
-            label="patterns_combined",
-        )
 
-        if combined_df.empty:
-            return patterns
 
-        # ── Pattern 1: Week streak ──
-        streak_rows = combined_df[combined_df["_section"] == "streak"]
-        if not streak_rows.empty:
-            row = streak_rows.iloc[0]
-            slen = int(float(row["val1"]))
-            stype = str(row["streak_type"] or "")
-            if slen >= 2:
-                if stype == "winning":
-                    patterns.append({
-                        "type": "week_streak",
-                        "headline": f"{slen}-week winning streak",
-                        "detail": f"This is your {slen}{'th' if slen > 3 else ['', 'st', 'nd', 'rd'][min(slen, 3)]} consecutive positive week. Momentum is real — but so is reversion.",
-                        "severity": "positive",
-                    })
-                else:
-                    patterns.append({
-                        "type": "week_streak",
-                        "headline": f"{slen}-week losing streak",
-                        "detail": f"This is your {slen}{'th' if slen > 3 else ['', 'st', 'nd', 'rd'][min(slen, 3)]} consecutive negative week. Consider whether conditions changed or if execution is drifting.",
-                        "severity": "warning",
-                    })
 
-        # ── Pattern 2: Loss clustering ──
-        lc_rows = combined_df[combined_df["_section"] == "loss_cluster"]
-        if not lc_rows.empty:
-            row = lc_rows.iloc[0]
-            post_loss_total = int(float(row.get("val1") or 0))
-            post_loss_winners = int(float(row.get("val2") or 0))
-            total_trades = int(float(row.get("val3") or 0))
-            total_winners = int(float(row.get("val4") or 0))
-
-            if post_loss_total >= 5 and total_trades >= 10:
-                post_loss_wr = round(post_loss_winners / post_loss_total * 100, 0)
-                overall_wr = round(total_winners / total_trades * 100, 0)
-                wr_drop = overall_wr - post_loss_wr
-
-                if wr_drop >= 10:
-                    week_detail = ""
-                    lc_week_rows = combined_df[combined_df["_section"] == "loss_cluster_week"]
-                    if not lc_week_rows.empty:
-                        pl_count = int(float(lc_week_rows.iloc[0].get("val1") or 0))
-                        if pl_count > 0:
-                            week_detail = f" This week, {pl_count} of your trades came right after a loss."
-
-                    patterns.append({
-                        "type": "loss_cluster",
-                        "headline": "Loss clustering detected",
-                        "detail": (
-                            f"After a losing trade, your win rate drops to {post_loss_wr:.0f}% "
-                            f"(vs {overall_wr:.0f}% overall). "
-                            f"Trades placed right after a loss underperform.{week_detail}"
-                        ),
-                        "severity": "warning",
-                    })
-
-        # ── Pattern 3: DTE sensitivity ──
-        dte_rows = combined_df[combined_df["_section"] == "dte"].copy()
-        if not dte_rows.empty:
-            dte_rows["num_trades"] = pd.to_numeric(dte_rows["val1"], errors="coerce").fillna(0)
-            dte_rows["winners"] = pd.to_numeric(dte_rows["val2"], errors="coerce").fillna(0)
-
-            total_option_trades = int(dte_rows["num_trades"].sum())
-            total_option_winners = int(dte_rows["winners"].sum())
-            overall_wr = round(total_option_winners / total_option_trades * 100, 0) if total_option_trades > 0 else None
-
-            if overall_wr is not None:
-                for _, row in dte_rows.iterrows():
-                    bucket_trades = int(row["num_trades"])
-                    bucket_winners = int(row["winners"])
-                    if bucket_trades >= 5:
-                        bucket_wr = round(bucket_winners / bucket_trades * 100, 0)
-                        wr_gap = overall_wr - bucket_wr
-                        if wr_gap >= 15:
-                            bucket = str(row["streak_type"] or "")
-                            patterns.append({
-                                "type": "dte_sensitivity",
-                                "headline": f"Weak spot: {bucket} trades",
-                                "detail": (
-                                    f"Your win rate on {bucket} trades is {bucket_wr:.0f}% "
-                                    f"({wr_gap:.0f} points below your {overall_wr:.0f}% overall). "
-                                    f"Based on {bucket_trades} trades."
-                                ),
-                                "severity": "warning",
-                            })
-                            break
-                        elif wr_gap <= -15:
-                            bucket = str(row["streak_type"] or "")
-                            patterns.append({
-                                "type": "dte_sensitivity",
-                                "headline": f"Sweet spot: {bucket} trades",
-                                "detail": (
-                                    f"Your win rate on {bucket} trades is {bucket_wr:.0f}% "
-                                    f"({abs(wr_gap):.0f} points above your {overall_wr:.0f}% overall). "
-                                    f"This DTE range works for you."
-                                ),
-                                "severity": "positive",
-                            })
-                            break
-
-    except Exception as exc:
-        app.logger.warning("daily-review pattern extraction failed: %s", exc)
-
-    return patterns
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -1667,266 +1378,6 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
         return None
 
 
-def _build_narrative(mode, review, prev_review, behavior_mirror, market,
-                     today, week_start, trading_days=0, market_session=None):
-    """Generate a dynamic hero headline + subtitle from actual data."""
-    review = review or {}
-    bm = behavior_mirror or {}
-
-    total_pnl = float(review.get("total_pnl", 0) or 0)
-    trades_closed = int(review.get("trades_closed", 0) or 0)
-    num_winners = int(review.get("num_winners", 0) or 0)
-
-    bm_has_baseline = bm.get("has_baseline", False)
-    pnl_baseline = bm.get("pnl", {}).get("baseline")
-
-    if mode == "friday":
-        if trades_closed == 0:
-            return {
-                "headline": "No closed trades this week.",
-                "subtitle": "Your open positions are still in play. Come back when something closes.",
-            }
-        sign = "+" if total_pnl >= 0 else ""
-        headline = (
-            f"{trades_closed} trade{'s' if trades_closed != 1 else ''} closed \u00b7 "
-            f"{sign}${abs(total_pnl):,.0f} realized"
-        )
-        parts = []
-        if num_winners == trades_closed:
-            parts.append("Every closed trade finished as a winner.")
-        elif num_winners == 0:
-            parts.append("No winners in closed trades — all positions went against you.")
-        else:
-            losers = trades_closed - num_winners
-            parts.append(
-                f"{num_winners} winner{'s' if num_winners != 1 else ''}, "
-                f"{losers} loser{'s' if losers != 1 else ''}."
-            )
-        if bm_has_baseline and pnl_baseline is not None:
-            diff = total_pnl - pnl_baseline
-            if diff > 200:
-                parts.append(f"Better than your ${abs(pnl_baseline):,.0f}/week average.")
-            elif diff < -200:
-                parts.append(f"Below your ${abs(pnl_baseline):,.0f}/week average.")
-            else:
-                parts.append("Right in line with your recent average.")
-        if market:
-            spy = market.get("spy_week_pct")
-            if spy is not None:
-                if total_pnl > 0 and spy < -1:
-                    parts.append(f"SPY was down {abs(spy):.1f}% — you went against the market.")
-                elif total_pnl < 0 and spy > 1:
-                    parts.append(f"SPY was up {spy:.1f}% — a tough week relative to conditions.")
-
-        # Build richer story sections for Friday narrative
-        story_parts = {}
-
-        # Opening: frame the week
-        opening_parts = []
-        if trades_closed >= 5:
-            opening_parts.append(f"An active week with {trades_closed} closed trades.")
-        elif trades_closed <= 2:
-            opening_parts.append(f"A quiet week — just {trades_closed} trade{'s' if trades_closed != 1 else ''} closed.")
-        else:
-            opening_parts.append(f"A typical week with {trades_closed} closed trades.")
-        if trading_days and trading_days < 5:
-            opening_parts.append(f"({trading_days} trading day{'s' if trading_days != 1 else ''} this week.)")
-        if market:
-            spy_pct = market.get("spy_week_pct")
-            qqq_pct = market.get("qqq_week_pct")
-            if spy_pct is not None:
-                direction = "up" if spy_pct >= 0 else "down"
-                qqq_part = ""
-                if qqq_pct is not None:
-                    qqq_dir = "up" if qqq_pct >= 0 else "down"
-                    qqq_part = f" and QQQ {qqq_dir} {abs(qqq_pct):.1f}%"
-                opening_parts.append(f"SPY was {direction} {abs(spy_pct):.1f}%{qqq_part}.")
-        story_parts["opening"] = " ".join(opening_parts)
-
-        # Middle: behavior context
-        middle_parts = []
-        if bm_has_baseline:
-            vol = bm.get("volume", {})
-            vol_base = float(vol.get("baseline") or 0)
-            vol_val = float(vol.get("value") or 0)
-            if vol_base > 0:
-                ratio = vol_val / vol_base
-                if ratio >= 1.5:
-                    middle_parts.append(f"You traded {ratio:.1f}x your normal volume.")
-                elif ratio <= 0.6:
-                    middle_parts.append("You were more selective than usual.")
-
-            wr_data = bm.get("win_rate", {})
-            wr_val = wr_data.get("value")
-            wr_base = wr_data.get("baseline")
-            if wr_val is not None and wr_base is not None:
-                wr_diff = wr_val - wr_base
-                if wr_diff >= 10:
-                    middle_parts.append(f"Win rate of {wr_val:.0f}% — {wr_diff:.0f} points above your baseline.")
-                elif wr_diff <= -10:
-                    middle_parts.append(f"Win rate of {wr_val:.0f}% — {abs(wr_diff):.0f} points below your baseline.")
-        story_parts["middle"] = " ".join(middle_parts) if middle_parts else None
-
-        return {
-            "headline": headline,
-            "subtitle": " ".join(parts),
-            "story": story_parts,
-        }
-
-    elif mode == "monday":
-        prev = prev_review or {}
-        prev_pnl = float(prev.get("total_pnl", 0) or 0)
-        prev_trades = int(prev.get("trades_closed", 0) or 0)
-        if prev_trades > 0:
-            sign = "+" if prev_pnl >= 0 else ""
-            headline = (
-                f"Last week: {prev_trades} trade{'s' if prev_trades != 1 else ''} \u00b7 "
-                f"{sign}${abs(prev_pnl):,.0f}"
-            )
-            subtitle = "Before you trade anything this week, check what you're carrying and whether last week's behavior is worth repeating."
-        else:
-            headline = "New week, clean slate."
-            subtitle = "Set your intention before the market sets it for you."
-        return {"headline": headline, "subtitle": subtitle}
-
-    elif mode == "midweek":
-        # "Today" framing — forward-looking, not a recap. The weekly stats are
-        # context underneath; the headline answers "what's live right now".
-        try:
-            day_name = today.strftime("%A")
-        except Exception:
-            day_name = "Today"
-        if trades_closed > 0:
-            sign = "+" if total_pnl >= 0 else ""
-            headline = (
-                f"{day_name} \u00b7 {trades_closed} closed this week \u00b7 "
-                f"{sign}${abs(total_pnl):,.0f} so far"
-            )
-        else:
-            headline = f"{day_name} \u00b7 Nothing closed this week yet"
-        prefix = ""
-        if market_session:
-            st = market_session.get("state")
-            if st == "open":
-                prefix = "Markets are open. "
-            elif st == "weekend":
-                prefix = "Markets are closed (weekend). "
-            elif st == "pre_market":
-                prefix = "Before the U.S. open. "
-            elif st == "after_hours":
-                prefix = "After the U.S. close. "
-        subtitle = prefix + "Here's what's live, what just changed, and what's coming up."
-        return {
-            "headline": headline,
-            "subtitle": subtitle,
-        }
-
-    return {"headline": "Weekly Review", "subtitle": ""}
-
-
-def _key_observation(review, behavior_mirror, strategy_breakdown):
-    """Return the single most notable behavioral signal for the week."""
-    review = review or {}
-    bm = behavior_mirror or {}
-
-    trades_closed = int(review.get("trades_closed", 0) or 0)
-    num_winners = int(review.get("num_winners", 0) or 0)
-    total_pnl = float(review.get("total_pnl", 0) or 0)
-
-    if trades_closed == 0:
-        return None
-
-    vol = bm.get("volume", {})
-    baseline_vol = float(vol.get("baseline") or 0)
-    actual_vol = float(vol.get("value") or 0)
-    if baseline_vol > 0 and actual_vol > 0:
-        ratio = actual_vol / baseline_vol
-        if ratio >= 2.0:
-            return {
-                "type": "warning",
-                "icon": "⚡",
-                "text": (
-                    f"You traded {ratio:.1f}\u00d7 your normal volume "
-                    f"({int(actual_vol)} trades vs your {baseline_vol:.1f}/week average). "
-                    "Higher activity doesn't always mean better results — worth checking."
-                ),
-            }
-        if ratio <= 0.4:
-            return {
-                "type": "neutral",
-                "icon": "\u2014",
-                "text": (
-                    f"Quieter than usual — {int(actual_vol)} trade{'s' if actual_vol != 1 else ''} "
-                    f"vs your {baseline_vol:.1f}/week average. Patient, or cautious?"
-                ),
-            }
-
-    wr = bm.get("win_rate", {})
-    wr_val = wr.get("value")
-    wr_base = wr.get("baseline")
-    wr_diff = wr.get("diff")
-    if wr_val is not None and wr_base is not None and wr_diff is not None:
-        if wr_diff >= 20:
-            return {
-                "type": "positive",
-                "icon": "\u2191",
-                "text": (
-                    f"Win rate: {wr_val:.0f}% \u2014 {wr_diff:.0f} points above your "
-                    f"{wr_base:.0f}% baseline. You were selective, and it paid off."
-                ),
-            }
-        if wr_diff <= -20:
-            return {
-                "type": "negative",
-                "icon": "\u2193",
-                "text": (
-                    f"Win rate: {wr_val:.0f}% \u2014 {abs(wr_diff):.0f} points below your "
-                    f"{wr_base:.0f}% average. More losers than usual. Worth reviewing the pattern."
-                ),
-            }
-
-    if strategy_breakdown and len(strategy_breakdown) >= 2:
-        total_abs = sum(abs(s.get("total_pnl", 0)) for s in strategy_breakdown)
-        if total_abs > 100:
-            top = max(strategy_breakdown, key=lambda s: abs(s.get("total_pnl", 0)))
-            top_share = abs(top.get("total_pnl", 0)) / total_abs
-            if top_share > 0.80:
-                direction = "profit" if top.get("total_pnl", 0) >= 0 else "loss"
-                return {
-                    "type": "neutral",
-                    "icon": "\u2192",
-                    "text": (
-                        f"This week\u2019s {direction} was {top_share:.0%} driven by one strategy: "
-                        f"{top['strategy']}. Everything else barely moved the needle."
-                    ),
-                }
-
-    if trades_closed >= 2 and num_winners == trades_closed:
-        return {
-            "type": "positive",
-            "icon": "\u2713",
-            "text": f"Swept the week \u2014 all {trades_closed} closed trades were winners. Note what you did differently.",
-        }
-
-    pnl_data = bm.get("pnl", {})
-    pnl_diff = pnl_data.get("diff")
-    pnl_baseline = pnl_data.get("baseline")
-    if pnl_diff is not None and pnl_baseline and abs(pnl_diff) > max(200, abs(pnl_baseline) * 0.4):
-        if pnl_diff > 0:
-            return {
-                "type": "positive",
-                "icon": "\u2191",
-                "text": f"${pnl_diff:,.0f} above your typical week. Solid execution relative to your own baseline.",
-            }
-        return {
-            "type": "negative",
-            "icon": "\u2193",
-            "text": f"${abs(pnl_diff):,.0f} below your typical week. What was different this week?",
-        }
-
-    return None
-
-
 def _today_pulse(today_snapshots_by_account):
     """Distill today's account movement into a single number."""
     if not today_snapshots_by_account:
@@ -2093,16 +1544,6 @@ def _us_market_session():
         "label": f"U.S. regular session (9:30–4:00 ET) · {time_h}",
         "badge": "open",
     }
-
-
-def _auto_mode(today: date) -> str:
-    """Auto-detect mode from day of week in the user’s local calendar (profile TZ)."""
-    dow = today.weekday()
-    if dow == 0:
-        return "monday"
-    if dow >= 4:
-        return "friday"
-    return "midweek"
 
 
 _MODE_LABELS = {
@@ -2304,56 +1745,6 @@ def _build_week_diary(*, week_start, today, trades, daily_changes, expiring_opti
             "summary": summary,
         })
     return diary
-
-
-def _build_noticed(key_observation, patterns, coaching_take):
-    """Merge Key Observation + Patterns + Coach's Take into a single 'What we
-    noticed' panel of up to 3 cards. Process-first ordering.
-
-    Returns: list of dicts {severity, headline, detail, icon?}
-    """
-    cards = []
-
-    # 1) Key observation gets the top slot when present (it's the strongest single signal).
-    if key_observation:
-        cards.append({
-            "severity": key_observation.get("type") or "neutral",
-            "icon": key_observation.get("icon") or "",
-            "headline": "This week",
-            "detail": key_observation.get("text") or "",
-        })
-
-    # 2) Patterns from history (streaks, post-loss clusters, DTE sensitivity).
-    for p in patterns or []:
-        cards.append({
-            "severity": p.get("severity") or "neutral",
-            "icon": "",
-            "headline": p.get("headline") or "",
-            "detail": p.get("detail") or "",
-        })
-
-    # 3) Coach's Take — exit timing — only if there's a real story.
-    if coaching_take and coaching_take.get("coaching_signals"):
-        for sig in coaching_take["coaching_signals"][:1]:
-            cards.append({
-                "severity": "warning",
-                "icon": "",
-                "headline": "Exit timing",
-                "detail": sig,
-            })
-    elif coaching_take and coaching_take.get("total_given_back", 0) > 50:
-        cards.append({
-            "severity": "warning",
-            "icon": "",
-            "headline": "Exit timing",
-            "detail": (
-                f"Left ${coaching_take['total_given_back']:,.0f} on the table this week "
-                f"by holding past peak profit."
-            ),
-        })
-
-    # Cap at 3. The page should not become a wall of cards.
-    return cards[:3]
 
 
 # Calendar window:
