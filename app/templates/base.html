@@ -812,6 +812,43 @@
             </form>
         </div>
         {% endif %}
+        {# Reverse-trial state (app/plan.py via `plan_status` in the
+           feature-flag context processor). None for beta / active / no-data,
+           so only running trials and lapsed trials ever see these. #}
+        {% if plan_status %}
+            {% if plan_status.state == 'trialing' %}
+            <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="alert">
+                <div class="small">
+                    <strong>{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} of full access left.</strong>
+                    <span class="text-muted">After {{ plan_status.frozen_on }} your mirror freezes &mdash; everything stays readable, updates stop.</span>
+                </div>
+                <a href="{{ url_for('pricing') }}" class="btn btn-sm btn-outline-primary flex-shrink-0">See plans</a>
+            </div>
+            {% elif plan_status.state == 'frozen' %}
+            <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
+                <div>
+                    <strong>Your mirror stopped updating on {{ plan_status.frozen_on }}.</strong>
+                    <div class="small mt-1">
+                        Everything you see is as of that date. Your broker connection stays in place until
+                        {{ plan_status.disconnect_on }} ({{ plan_status.disconnect_in_days }} day{{ 's' if plan_status.disconnect_in_days != 1 }}) &mdash;
+                        subscribe before then and syncing resumes instantly.
+                    </div>
+                </div>
+                <a href="{{ url_for('pricing') }}" class="btn btn-sm btn-warning flex-shrink-0">Resume my mirror</a>
+            </div>
+            {% elif plan_status.state == 'grace_expired' %}
+            <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
+                <div>
+                    <strong>Your trial ended and your broker connection was removed on {{ plan_status.disconnect_on }}.</strong>
+                    <div class="small mt-1">
+                        Your history is preserved and stays readable. Subscribe and reconnect your broker
+                        to pick up where you left off.
+                    </div>
+                </div>
+                <a href="{{ url_for('pricing') }}" class="btn btn-sm btn-warning flex-shrink-0">See plans</a>
+            </div>
+            {% endif %}
+        {% endif %}
         {# SnapTrade-managed brokerages needing a reconnect. Set by
            `_inject_snaptrade_reauth_needed` in app/snaptrade.py — each row is
            enriched by `_connection_attention` with `kind`

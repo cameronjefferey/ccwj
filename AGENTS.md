@@ -35,6 +35,35 @@ The dev dataset is a **full mirror for testing**: `scripts/dev-refresh.sh` rebui
 
 **Per-broker staging layer (June 2026).** The three base staging models (`stg_history`, `stg_current`, `stg_account_balances`) no longer read the seeds directly — each is now a UNION of thin per-broker adapter models in `dbt/models/staging/brokers/` (`stg_broker_{schwab,alpaca,fidelity,interactive}_*`, plus an `stg_broker_other_*` catch-all) followed by the unchanged heavy parse. (`interactive` = IBKR; slug is the lowercased first token of the account label "Interactive Brokers …".) Each broker has its own model so broker-specific quirks (date formats, sign conventions, duplicate-fill patterns) stay isolated and independently queryable/testable instead of being special-cased in the shared parse. Broker identity is DISPLAY-derived (not a tenancy boundary): `tenant_id` is the literal `snaptrade:<uuid>` for EVERY broker, so the only broker signal in the warehouse is the account-label prefix — `dbt/macros/broker_slug_from_account.sql` maps it to a slug (`"Schwab Account"`→`schwab`, `"Alpaca Paper Account"`→`alpaca`). Tenant isolation stays on `tenant_id`; never scope a user-facing read by `broker_slug`. The catch-all is mutually-exclusive+exhaustive with the named brokers so no row is ever dropped; the `dbt/tests/broker_split_preserves_all_rows.sql` test enforces union-count parity. **To add a brokerage:** (1) add its slug to `known_brokers()`, (2) add `stg_broker_<slug>_{history,current,balances}` (one-line `broker_*_rows('<slug>')` calls), (3) add those three models to the UNION in the matching base staging model, (4) add them to the per-surface unions in `dbt/tests/broker_split_preserves_all_rows.sql`. `dim_broker_tenants.broker_slug` now shows the real brokerage (was the always-`snaptrade` aggregator slug, kept as `aggregator_slug`).
 
+**Reverse trial is the billing model (Aug 2026, pre-Stripe).** Every new
+signup is `users.plan='trial'`: full product, no card. The 30-day clock
+starts at FIRST DATA (`trial_started_at`, stamped once at the first
+successful sync in `_sync_one_connection` / first CSV upload), not at
+signup. Day 30 the mirror FREEZES — every page stays readable, but syncs
+and uploads stop; day 60 the daily `happytrader-plan-lifecycle` cron
+(`app/plan_lifecycle_cli.py`, also sends the day-23/30/53 lifecycle
+emails, dedupe per trial episode via `email_sends`) removes the SnapTrade
+authorizations and deletes the SnapTrade user so aggregator per-account
+billing stops. `broker_tenants` rows are marked `disconnected` but KEPT —
+**warehouse data is never purged**; a returning subscriber reconnects and
+history is intact. Everything except `plan` + `trial_started_at` is
+DERIVED (`app/plan.py`: `derive_plan_state`, day 30/60 boundaries) — no
+cron flips states, and derivation FAILS OPEN to exempt on DB errors.
+Gating: the MANDATORY chokepoint is `user_sync_allowed` at the top of
+`_sync_one_connection` (returns `error='plan_frozen'` WITHOUT recording a
+sync attempt — a frozen skip must never look like a broken connection);
+webhook + nightly CLI have efficiency skips; manual routes
+(connect/sync/refresh/upload) use `plan_block_writes` (the
+`demo_block_writes` twin, redirects to /pricing). Existing users were
+grandfathered to `plan='beta'` (never freezes) by the one-shot backfill in
+`_migrate_users_plan_columns`; admins + demo are always exempt. Banners
+live in base.html via `plan_status` (context processor in
+`app/__init__.py`). **The entire Stripe seam is `plan='active'`** — a
+future billing webhook sets it on subscribe and reverts to `trial` on
+cancellation (clock intact → straight to frozen); admin `/admin/users` has
+the manual set-plan / +30d levers until then. Pinned by
+`tests/test_plan_lifecycle.py`.
+
 **Brokerage sync is the most failure-prone surface in the product** — SnapTrade aggregator (Schwab, Fidelity, Vanguard, Robinhood, IBKR, etc.). Before editing `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/seed_store.py`, `app/snaptrade_sync_cli.py`, the raw seed table shape (`analytics_raw`, source `raw_broker`), `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/snaptrade/accounts`, or any column on `broker_tenants` / `snaptrade_users` (`connection_broken_at`, `first_sync_completed`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
 
 ---

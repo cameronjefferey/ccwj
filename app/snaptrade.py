@@ -67,6 +67,7 @@ from app.snaptrade_normalize import (
     positions_to_current_df,
 )
 from app.utils import demo_block_writes
+from app.plan import plan_block_writes
 
 _log = logging.getLogger(__name__)
 
@@ -251,6 +252,12 @@ def snaptrade_connect():
     (e.g. the auth id was never cached because the account never refreshed).
     """
     blocked = demo_block_writes("connecting a brokerage account")
+    if blocked:
+        return blocked
+    # Frozen trial: a new connection would immediately sync — same gate as
+    # syncing itself (app/plan.py). The existing connection stays alive
+    # through the grace window, so subscribing resumes instantly.
+    blocked = plan_block_writes("connecting a brokerage account")
     if blocked:
         return blocked
     reconnect_auth_id = (request.form.get("reconnect_authorization_id") or "").strip()
@@ -1046,6 +1053,9 @@ def snaptrade_refresh_broker():
     blocked = demo_block_writes("refreshing brokerage data")
     if blocked:
         return blocked
+    blocked = plan_block_writes("refreshing brokerage data")
+    if blocked:
+        return blocked
     if not _snaptrade_config():
         flash("Multi-broker connect is not configured.", "danger")
         return redirect(url_for("profile", tab="account"))
@@ -1090,6 +1100,9 @@ def snaptrade_sync():
             every row regardless of first-sync state.
     """
     blocked = demo_block_writes("syncing brokerage data")
+    if blocked:
+        return blocked
+    blocked = plan_block_writes("syncing brokerage data")
     if blocked:
         return blocked
     if not _snaptrade_config():
@@ -1211,6 +1224,25 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         "error": None,
     }
 
+    # MANDATORY plan gate (reverse trial, see app/plan.py): a lapsed trial
+    # freezes the mirror — no syncs, however they were triggered (webhook,
+    # cron, manual route). This chokepoint covers every entry point. Fails
+    # OPEN inside user_sync_allowed, and deliberately does NOT record a sync
+    # attempt/error: a frozen skip is a plan state, not a connection problem,
+    # and must never trip the broken-connection banner or reminder emails.
+    try:
+        from app.plan import user_sync_allowed
+        _plan_allowed = user_sync_allowed(user_id)
+    except Exception:
+        _plan_allowed = True
+    if not _plan_allowed:
+        out["error"] = "plan_frozen"
+        app.logger.info(
+            "SnapTrade sync skipped (trial lapsed, mirror frozen) "
+            "user_id=%s account=%s", user_id, snaptrade_account_id,
+        )
+        return out
+
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
     if not snap or not client:
@@ -1276,6 +1308,13 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
         record_snaptrade_sync_attempt(user_id, snaptrade_account_id, error=None)
+        # Reverse trial: the 30-day clock starts at FIRST DATA, not signup.
+        # Once-only + trial-plan-only inside the helper; best-effort.
+        try:
+            from app.plan import start_trial_clock
+            start_trial_clock(user_id)
+        except Exception:
+            pass
         # Persist SnapTrade's honest "broker data as of" timestamp (best-effort;
         # None is a no-op so a missing signal never clobbers a good value).
         record_snaptrade_holdings_sync(

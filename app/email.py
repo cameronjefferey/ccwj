@@ -673,6 +673,159 @@ def send_weekly_preview_email(
     )
 
 
+# ---------------------------------------------------------------------------
+# Reverse-trial lifecycle (see app/plan.py + app/plan_lifecycle_cli.py).
+# All four are TRANSACTIONAL account-state notices — always sent, no opt-out —
+# and keep the register factual: state the dates and what changes, never
+# pressure copy.
+# ---------------------------------------------------------------------------
+
+
+def send_trial_week_left_email(
+    *,
+    to: str,
+    username: str,
+    days_left: int,
+    frozen_on: str,
+    pricing_url: str,
+) -> None:
+    """Day ~23: one week of full access left."""
+    days = max(1, int(days_left or 0))
+    day_phrase = f"{days} day" + ("s" if days != 1 else "")
+    subject = f"{day_phrase} of full access left on your trial"
+    body = (
+        f"Hi {username},\n\n"
+        f"Your HappyTrader trial has {day_phrase} left. On {frozen_on} your "
+        "mirror freezes: every page stays readable, but daily syncs stop and "
+        "no new trades, marks, or verdicts are recorded.\n\n"
+        f"To keep it updating, see plans here: {pricing_url}\n\n"
+        "— HappyTrader\n"
+    )
+    html_body = _wrap_html(
+        title="One week of full access left",
+        inner_html=(
+            f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
+            f'<p style="color:#3c4043;font-size:15px;">Your trial has <strong>{day_phrase}</strong> left. '
+            f"On <strong>{frozen_on}</strong> your mirror freezes: every page stays readable, but daily "
+            "syncs stop and no new trades, marks, or verdicts are recorded.</p>"
+            f'<p style="margin:24px 0;"><a href="{pricing_url}" '
+            f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
+            'border-radius:8px;font-weight:600;display:inline-block;">Keep my mirror updating</a></p>'
+        ),
+    )
+    send_email(to=to, subject=subject, body=body, html_body=html_body, category="lifecycle")
+
+
+def send_trial_frozen_email(
+    *,
+    to: str,
+    username: str,
+    disconnect_on: str,
+    pricing_url: str,
+) -> None:
+    """Day 30: the mirror froze today."""
+    subject = "Your mirror is now frozen — your data is safe"
+    body = (
+        f"Hi {username},\n\n"
+        "Your HappyTrader trial ended today, so your mirror stopped updating. "
+        "Everything you built stays readable — positions, reviews, your "
+        "trading profile — it just no longer moves with the market.\n\n"
+        f"Your broker connection stays in place until {disconnect_on}; "
+        "subscribe before then and syncing resumes instantly with no gap to "
+        "repair.\n\n"
+        f"See plans: {pricing_url}\n\n"
+        "— HappyTrader\n"
+    )
+    html_body = _wrap_html(
+        title="Your mirror is now frozen",
+        inner_html=(
+            f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
+            '<p style="color:#3c4043;font-size:15px;">Your trial ended today, so your mirror '
+            "stopped updating. Everything you built stays readable — positions, reviews, your "
+            "trading profile — it just no longer moves with the market.</p>"
+            f'<p style="color:#3c4043;font-size:15px;">Your broker connection stays in place until '
+            f"<strong>{disconnect_on}</strong>; subscribe before then and syncing resumes instantly "
+            "with no gap to repair.</p>"
+            f'<p style="margin:24px 0;"><a href="{pricing_url}" '
+            f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
+            'border-radius:8px;font-weight:600;display:inline-block;">Resume my mirror</a></p>'
+        ),
+    )
+    send_email(to=to, subject=subject, body=body, html_body=html_body, category="lifecycle")
+
+
+def send_disconnect_warning_email(
+    *,
+    to: str,
+    username: str,
+    disconnect_on: str,
+    pricing_url: str,
+) -> None:
+    """Day ~53: broker connection removed in 7 days."""
+    subject = f"Your broker connection will be removed on {disconnect_on}"
+    body = (
+        f"Hi {username},\n\n"
+        f"Your mirror has been frozen since your trial ended. On {disconnect_on} "
+        "we'll remove your broker connection entirely. Your data and history "
+        "stay safe either way — but after that date, resuming means "
+        "reconnecting your broker, and the days in between are a permanent "
+        "gap in your daily record.\n\n"
+        f"Subscribe before then and syncing resumes instantly: {pricing_url}\n\n"
+        "— HappyTrader\n"
+    )
+    html_body = _wrap_html(
+        title="Broker connection removal in 7 days",
+        inner_html=(
+            f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
+            f'<p style="color:#3c4043;font-size:15px;">On <strong>{disconnect_on}</strong> we\'ll remove '
+            "your broker connection entirely. Your data and history stay safe either way — but after "
+            "that date, resuming means reconnecting your broker, and the days in between are a "
+            "permanent gap in your daily record.</p>"
+            f'<p style="margin:24px 0;"><a href="{pricing_url}" '
+            f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
+            'border-radius:8px;font-weight:600;display:inline-block;">Resume before the removal</a></p>'
+        ),
+    )
+    send_email(to=to, subject=subject, body=body, html_body=html_body, category="lifecycle")
+
+
+def send_disconnected_email(
+    *,
+    to: str,
+    username: str,
+    pricing_url: str,
+) -> None:
+    """Day 60: the disconnect happened."""
+    subject = "Your broker connection was removed — your history is preserved"
+    body = (
+        f"Hi {username},\n\n"
+        "As scheduled, we removed your broker connection today. Your complete "
+        "history — every trade, review, and profile insight — is preserved "
+        "and stays readable whenever you sign in.\n\n"
+        "If you come back: subscribe, reconnect your broker in a minute, and "
+        "your mirror picks up where it left off (with a gap for the days it "
+        "was offline).\n\n"
+        f"See plans: {pricing_url}\n\n"
+        "— HappyTrader\n"
+    )
+    html_body = _wrap_html(
+        title="Broker connection removed",
+        inner_html=(
+            f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
+            '<p style="color:#3c4043;font-size:15px;">As scheduled, we removed your broker connection '
+            "today. Your complete history — every trade, review, and profile insight — is preserved "
+            "and stays readable whenever you sign in.</p>"
+            '<p style="color:#3c4043;font-size:15px;">If you come back: subscribe, reconnect your '
+            "broker in a minute, and your mirror picks up where it left off (with a gap for the days "
+            "it was offline).</p>"
+            f'<p style="margin:24px 0;"><a href="{pricing_url}" '
+            f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
+            'border-radius:8px;font-weight:600;display:inline-block;">See plans</a></p>'
+        ),
+    )
+    send_email(to=to, subject=subject, body=body, html_body=html_body, category="lifecycle")
+
+
 def send_reengagement_email(
     *,
     to: str,

@@ -380,6 +380,19 @@ def snaptrade_webhook():
         from app.models import get_user_id_by_snaptrade_user_id
         user_id = get_user_id_by_snaptrade_user_id(str(snap_user_id))
         if user_id is not None:
+            # Reverse-trial gate (efficiency skip — the mandatory chokepoint
+            # lives in _sync_one_connection): a frozen user's webhook burst
+            # shouldn't even spawn debounce threads. Fails open.
+            try:
+                from app.plan import user_sync_allowed
+                if not user_sync_allowed(user_id):
+                    _log.info(
+                        "snaptrade_webhook: skipped (trial lapsed, mirror "
+                        "frozen) user_id=%s account=%s", user_id, account_id,
+                    )
+                    return ("", 200)
+            except Exception:
+                pass
             # Fire-and-forget: SnapTrade expects a prompt 200; the sync (broker
             # read + GitHub push) runs off-thread, DEBOUNCED per account so a
             # real-time burst collapses into one sync, and serialized by the

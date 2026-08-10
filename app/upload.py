@@ -1387,6 +1387,12 @@ def upload():
         blocked = demo_block_writes("uploading new trade data")
         if blocked:
             return blocked
+        # Frozen trial: uploads are data writes (each changed write dispatches
+        # a warehouse rebuild), so they pause with the rest of the mirror.
+        from app.plan import plan_block_writes
+        blocked = plan_block_writes("uploading new trade data")
+        if blocked:
+            return blocked
 
     if request.method == "GET":
         user_accounts = get_accounts_for_user(current_user.id)
@@ -1511,6 +1517,14 @@ def upload():
         _app.logger.error("Upload seeds update failed: %s", err)
         flash("Couldn't save that upload right now. Try again in a moment, or contact support if it keeps happening.", "danger")
         return redirect(url_for("upload"))
+
+    # Reverse trial: first data starts the 30-day clock (once-only,
+    # trial-plan-only inside the helper; best-effort).
+    try:
+        from app.plan import start_trial_clock
+        start_trial_clock(current_user.id)
+    except Exception:
+        pass
 
     if no_changes:
         # Identical upload — nothing changed on the branch, so no rebuild ran.

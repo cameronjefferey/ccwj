@@ -111,6 +111,21 @@ def _inject_feature_flags():
     except Exception:
         is_admin_user = False
 
+    # Reverse-trial banner data (app/plan.py). One users-row read per request
+    # for authenticated users, cached on flask.g; None for beta/active/no-data
+    # so beta users and subscribers pay nothing visually or query-wise.
+    plan_status = None
+    try:
+        if current_user.is_authenticated:
+            from flask import g
+            plan_status = getattr(g, "_plan_status", "__unset__")
+            if plan_status == "__unset__":
+                from app.plan import plan_status_for_banner
+                plan_status = plan_status_for_banner(current_user.id)
+                g._plan_status = plan_status
+    except Exception:
+        plan_status = None
+
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
         "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
@@ -119,6 +134,7 @@ def _inject_feature_flags():
         "is_demo_user": is_demo_user(),
         "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
         "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
+        "plan_status": plan_status,
     }
 
 

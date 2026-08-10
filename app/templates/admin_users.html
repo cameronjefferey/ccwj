@@ -24,6 +24,17 @@
     .au-admin-pill { background: #fef3c7; color: #92400e; font-weight: 700; font-size: .65rem; padding: .1rem .55rem; border-radius: 999px; margin-left: .35rem; letter-spacing: .04em; text-transform: uppercase; }
     .au-account { display: inline-block; background: #f1f5f9; color: #0f172a; padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-family: monospace; margin: .15rem .25rem .15rem 0; }
     .au-no-accounts { color: #a8a29e; font-size: .78rem; font-style: italic; }
+    .au-plan { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .au-plan-beta { background: #f5f5f4; color: #57534e; }
+    .au-plan-active { background: #dcfce7; color: #166534; }
+    .au-plan-trialing { background: #dbeafe; color: #1e40af; }
+    .au-plan-no_data { background: #fef9c3; color: #854d0e; }
+    .au-plan-frozen { background: #ffedd5; color: #9a3412; }
+    .au-plan-grace_expired { background: #fee2e2; color: #991b1b; }
+    .au-plan-form { display: flex; gap: .25rem; margin-top: .3rem; align-items: center; }
+    .au-plan-form select { font-size: .72rem; padding: .1rem .25rem; border: 1px solid #d6d3d1; border-radius: 6px; }
+    .au-plan-form button { font-size: .68rem; padding: .12rem .45rem; border: 1px solid #d6d3d1; border-radius: 6px; background: #fafaf9; cursor: pointer; }
+    .au-plan-form button:hover { background: #f5f5f4; }
     .au-vis { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
     .au-vis.private { background: #f5f5f4; color: #57534e; }
     .au-vis.followers { background: #dbeafe; color: #1e40af; }
@@ -121,6 +132,7 @@
         <thead>
             <tr>
                 <th class="sortable" data-sort="str">User</th>
+                <th class="sortable" data-sort="str">Plan</th>
                 <th class="sortable" data-sort="num">Broker accounts</th>
                 <th></th>
             </tr>
@@ -131,6 +143,23 @@
                 <td data-val="{{ u.username }}">
                     <div class="au-username">@{{ u.username }}{% if u.username|lower in admin_usernames %}<span class="au-admin-pill">admin</span>{% endif %}</div>
                     {% if u.display_name %}<div class="au-display">{{ u.display_name }}</div>{% endif %}
+                </td>
+                <td data-val="{{ u.plan_state }}">
+                    <span class="au-plan au-plan-{{ u.plan_state }}">{{ u.plan_state | replace('_', ' ') }}</span>
+                    {% if u.plan == 'trial' and u.trial_days is not none %}
+                    <div class="au-display">day {{ u.trial_days }}{% if u.plan_state == 'trialing' %} of 30{% elif u.plan_state == 'frozen' %} &mdash; disconnect at 60{% endif %}</div>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('admin_set_user_plan', user_id=u.id) }}" class="au-plan-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <select name="plan">
+                            <option value="" selected disabled>set&hellip;</option>
+                            <option value="trial">trial</option>
+                            <option value="beta">beta</option>
+                            <option value="active">active</option>
+                        </select>
+                        <button type="submit">Set</button>
+                        <button type="submit" name="reset_trial" value="1" title="Restart the 30-day trial clock from today">+30d</button>
+                    </form>
                 </td>
                 <td data-val="{{ u.accounts|length }}">
                     {% if u.accounts %}

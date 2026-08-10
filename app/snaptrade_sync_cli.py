@@ -272,6 +272,19 @@ def main():
     for row in rows:
         user_id = row["user_id"]
         snaptrade_account_id = row["snaptrade_account_id"]
+        # Reverse-trial gate (efficiency skip — _sync_one_connection has the
+        # mandatory chokepoint): don't hit SnapTrade at all for frozen users,
+        # and don't count them as errors. Fails open.
+        try:
+            from app.plan import user_sync_allowed
+            if not user_sync_allowed(user_id):
+                print(
+                    f"User {user_id} ({snaptrade_account_id}): skipped "
+                    "(trial lapsed, mirror frozen)"
+                )
+                continue
+        except Exception:
+            pass
         first_done = bool(row.get("first_sync_completed"))
         # Cron uses routine semantics — never force full-history. If a
         # row hasn't completed first sync yet (e.g. user connected but

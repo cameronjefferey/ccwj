@@ -515,6 +515,7 @@ def init_db():
     _migrate_user_profiles_email_prefs()
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
+    _migrate_users_plan_columns()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -570,6 +571,36 @@ def _migrate_users_preferred_llm_model_column():
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_llm_model TEXT")
     except Exception as exc:
         _log.warning("users.preferred_llm_model migration skipped: %s", exc)
+
+
+def _migrate_users_plan_columns():
+    """Idempotent: reverse-trial plan state (see app/plan.py).
+
+    - ``plan`` — 'trial' (default for new signups) | 'beta' | 'active'.
+    - ``trial_started_at`` — stamped at FIRST DATA (first successful sync or
+      CSV upload), not signup; NULL = clock not running.
+    - ``plan_updated_at`` — audit stamp for admin/Stripe plan changes.
+
+    GRANDFATHERING: every user that exists when the ``plan`` column first
+    lands is backfilled to 'beta' (never freezes). The backfill runs only on
+    the run that ADDS the column — detected via information_schema before the
+    ALTER — so later signups keep the 'trial' default.
+    """
+    try:
+        had_plan_col = fetch_one(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'users' AND column_name = 'plan'"
+        ) is not None
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "plan TEXT NOT NULL DEFAULT 'trial'"
+        )
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ")
+        if not had_plan_col:
+            execute("UPDATE users SET plan = 'beta', plan_updated_at = NOW()")
+    except Exception as exc:
+        _log.warning("users plan-columns migration skipped: %s", exc)
 
 
 def _migrate_user_profiles_email_prefs():
@@ -1687,6 +1718,25 @@ def remove_snaptrade_user(user_id):
         "DELETE FROM snaptrade_connections WHERE user_id = %s",
         (user_id,),
     )
+
+
+def mark_broker_tenants_disconnected(user_id):
+    """Flag every SnapTrade tenant for a user as disconnected (reverse-trial
+    day-60 disconnect). The broker_tenants rows are KEPT on purpose — they are
+    the tenancy boundary for the user's warehouse data, which is never purged;
+    a returning subscriber reconnects and their history is still there."""
+    try:
+        execute(
+            "UPDATE broker_tenants SET connection_status = 'disconnected', "
+            "connection_broken_at = COALESCE(connection_broken_at, NOW()), "
+            "updated_at = NOW() "
+            "WHERE user_id = %s AND broker_slug = 'snaptrade'",
+            (user_id,),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("mark_broker_tenants_disconnected(%s) failed: %s", user_id, exc)
+        return False
 
 
 def upsert_snaptrade_account(

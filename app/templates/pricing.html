@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block meta_tags %}
-<meta name="description" content="Simple pricing for HappyTrader. Start free—unlimited accounts, strategy detection, AI insights. No credit card required.">
-<meta property="og:description" content="Simple pricing for HappyTrader. Start free—unlimited accounts, strategy detection, AI insights. No credit card required.">
+<meta name="description" content="HappyTrader pricing: 30 days of the full product free, no credit card. After that your data stays readable forever — subscribe to keep your mirror updating daily.">
+<meta property="og:description" content="HappyTrader pricing: 30 days of the full product free, no credit card. After that your data stays readable forever — subscribe to keep your mirror updating daily.">
 {% endblock %}
 
 {% block head %}
@@ -59,46 +59,58 @@
 <div class="row justify-content-center">
     <div class="col-lg-10">
         <div class="pricing-hero">
-            <h1>Simple, transparent pricing</h1>
-            <p class="lead">Start free. No credit card required.</p>
+            <h1>Every feature, free for 30 days. No credit card.</h1>
+            <p class="lead">Connect a broker and get your full trading profile in minutes. Your data stays readable forever &mdash; the subscription is for keeping the mirror <em>live</em>.</p>
         </div>
 
         <div class="row g-4 justify-content-center mb-5">
-            <div class="col-md-6 col-lg-5">
+            <div class="col-md-6 col-lg-4">
                 <div class="pricing-card featured">
-                    <span class="badge-top">Current</span>
-                    <h3>Free</h3>
+                    <span class="badge-top">Start here</span>
+                    <h3>Full-access trial</h3>
                     <div class="price">$0</div>
-                    <div class="price-note">Free during beta</div>
+                    <div class="price-note">30 days from your first data &mdash; no card required</div>
                     <ul>
-                        <li>Unlimited accounts</li>
+                        <li>Complete history analyzed on day one</li>
+                        <li>Daily Review, updated every close</li>
+                        <li>Daily option marks &amp; execution review</li>
                         <li>Strategy auto-detection</li>
-                        <li>Weekly review with narrative</li>
-                        <li>Position detail &amp; drill-down</li>
-                        <li>Sector &amp; subsector breakdown</li>
-                        <li>Strategy fit matrix</li>
+                        <li>Position reviews &amp; trader profile</li>
+                        <li>Unlimited accounts, broker sync or CSV</li>
                         <li>AI Insights (analysis &amp; chat)</li>
-                        <li>Schwab Connect or CSV upload</li>
                     </ul>
                     {% if signup_enabled %}
                     <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
-                        {% if signup_invite_required %}Sign Up (invite required){% else %}Create Free Account{% endif %}
+                        {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
                     </a>
                     {% endif %}
                     <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-5">
+            <div class="col-md-6 col-lg-4">
+                <div class="pricing-card">
+                    <h3>Free</h3>
+                    <div class="price">$0</div>
+                    <div class="price-note">After your trial &mdash; the mirror freezes, your data doesn't vanish</div>
+                    <ul>
+                        <li>Everything stays readable, forever</li>
+                        <li>Your full history &amp; trading profile</li>
+                        <li>Position reviews as of your last sync</li>
+                        <li class="text-muted" style="list-style:none;">Daily syncing pauses &mdash; new trades, marks, and verdicts aren't recorded until you subscribe</li>
+                    </ul>
+                    <p class="text-muted small mb-0">No action needed &mdash; this is where every trial lands. Subscribe any time to pick the daily record back up.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
                 <div class="pricing-card">
                     <h3>Pro</h3>
-                    <div class="price text-muted">Coming soon</div>
-                    <div class="price-note">Subscription plans in the works</div>
+                    <div class="price">$20<span style="font-size:1rem;font-weight:600;">/mo</span></div>
+                    <div class="price-note">or $200/yr &mdash; launching soon</div>
                     <ul>
-                        <li>Everything in Free</li>
-                        <li>Priority support</li>
-                        <li>Advanced analytics</li>
-                        <li>Export & reporting</li>
-                        <li>More brokers (planned)</li>
+                        <li>Everything in the trial, ongoing</li>
+                        <li>Daily marks record that compounds with tenure</li>
+                        <li>Verdicts that keep landing every expiry</li>
+                        <li>Weekly summary &amp; preview emails</li>
                     </ul>
                     {% if pro_waitlisted %}
                     <button class="btn btn-success btn-lg w-100" disabled>You're on the list ✓</button>
@@ -108,12 +120,18 @@
                         {% if not current_user.is_authenticated %}
                         <input type="email" name="email" class="form-control form-control-lg" placeholder="you@example.com" required>
                         {% endif %}
-                        <button type="submit" class="btn btn-outline-primary btn-lg w-100">Notify me</button>
+                        <button type="submit" class="btn btn-outline-primary btn-lg w-100">Notify me at launch</button>
                     </form>
                     <p class="text-muted small mt-2 mb-0">No spam — one email when Pro is ready.</p>
                     {% endif %}
                 </div>
             </div>
+        </div>
+
+        <div class="text-center text-muted small mb-4" style="max-width: 640px; margin: 0 auto;">
+            <p class="mb-1"><strong>Why the mirror freezes instead of locking:</strong> your history is yours to read, always.
+            But the daily record — option marks, execution verdicts, account deltas — only accrues while connected,
+            and time away is a permanent gap in it. That's the honest trade.</p>
         </div>
 
         <p class="text-center text-muted small">

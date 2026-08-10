@@ -317,6 +317,8 @@ def admin_users():
             SELECT
                 u.id,
                 u.username,
+                u.plan,
+                u.trial_started_at,
                 up.created_at                                   AS profile_created_at,
                 up.display_name                                 AS display_name,
                 up.timezone                                     AS timezone,
@@ -333,16 +335,61 @@ def admin_users():
     except Exception as exc:
         app.logger.warning("admin_users query failed: %s", exc)
 
+    admin_usernames = {
+        u.strip().lower()
+        for u in (os.environ.get("ADMIN_USERS", "") or "").split(",")
+        if u.strip()
+    }
+
+    # Reverse-trial state per row (derived, same math as app/plan.py — no
+    # extra queries; the plan columns are in the SELECT above).
+    from app.plan import derive_plan_state, _days_since
+    for r in rows:
+        uname = (r.get("username") or "").strip().lower()
+        r["plan_state"] = derive_plan_state(
+            r.get("plan"), r.get("trial_started_at"),
+            exempt=(uname == "demo" or uname in admin_usernames),
+        )
+        r["trial_days"] = _days_since(r.get("trial_started_at"))
+
     return render_template(
         "admin_users.html",
         title="Admin: users",
         users=rows,
-        admin_usernames={
-            u.strip().lower()
-            for u in (os.environ.get("ADMIN_USERS", "") or "").split(",")
-            if u.strip()
-        },
+        admin_usernames=admin_usernames,
     )
+
+
+@app.route("/admin/users/<int:user_id>/plan", methods=["POST"])
+@_admin_only
+def admin_set_user_plan(user_id):
+    """Manual plan lever until Stripe lands: set trial/beta/active, or restart
+    the 30-day trial clock (comp/extend). ``plan='active'`` is the exact state
+    a future billing webhook will set — nothing else changes when it does."""
+    from app.plan import reset_trial_clock, set_user_plan
+
+    target = User.get_by_id(user_id)
+    if target is None:
+        flash("That user no longer exists.", "warning")
+        return redirect(url_for("admin_users"))
+
+    if (request.form.get("reset_trial") or "") == "1":
+        ok = reset_trial_clock(user_id)
+        flash(
+            f"Trial clock for @{target.username} restarted from today." if ok
+            else "Couldn't reset the trial clock — check logs.",
+            "success" if ok else "danger",
+        )
+        return redirect(url_for("admin_users"))
+
+    plan = (request.form.get("plan") or "").strip().lower()
+    ok = set_user_plan(user_id, plan)
+    flash(
+        f"@{target.username} set to plan '{plan}'." if ok
+        else f"Invalid plan '{plan}' — no changes made.",
+        "success" if ok else "danger",
+    )
+    return redirect(url_for("admin_users"))
 
 
 # ---------------------------------------------------------------------------

@@ -259,6 +259,79 @@ services:
           name: ccwj
           envVarKey: EMAIL_SMTP_PASSWORD
 
+  # Reverse-trial lifecycle (see app/plan.py): daily pass over running trials
+  # — day-23 "week left" / day-30 "frozen" / day-53 "removal in 7 days"
+  # emails (email_sends dedupe per trial episode), and the day-60 SnapTrade
+  # DISCONNECT (removes brokerage authorizations + deletes the SnapTrade user
+  # so aggregator per-account billing stops; broker_tenants rows are kept —
+  # warehouse data survives). Needs SnapTrade creds for the disconnect calls.
+  # Freezing itself needs NO cron — it's derived from users.trial_started_at.
+  # Daily 16:30 UTC (~9:30am PDT).
+  - type: cron
+    name: happytrader-plan-lifecycle
+    env: python
+    schedule: "30 16 * * *"
+    buildCommand: pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+    startCommand: python -m app.plan_lifecycle_cli
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: DATABASE_URL
+      # config.py hard-fails at import if SECRET_KEY is unset (the CLI imports
+      # app/__init__.py -> config). Inherit the web service's key instead of
+      # `sync: false` so the cron never fails on a blank/forgotten manual value.
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SECRET_KEY
+      - key: APP_BASE_URL
+        value: "https://happytrader.me"
+      # SnapTrade API creds for the day-60 disconnect calls
+      # (remove_brokerage_authorization + delete_snap_trade_user).
+      - key: SNAPTRADE_CLIENT_ID
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SNAPTRADE_CLIENT_ID
+      - key: SNAPTRADE_CONSUMER_KEY
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: SNAPTRADE_CONSUMER_KEY
+      # Email provider config: prod sends via Resend SMTP (the resend HTTP API
+      # is 403'd on Render egress — see docs/EMAIL_STRATEGY.md). Inherit the
+      # working config from the web service so the cron actually SENDS.
+      - key: EMAIL_BACKEND
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_BACKEND
+      - key: EMAIL_FROM
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_FROM
+      - key: EMAIL_SMTP_HOST
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_HOST
+      - key: EMAIL_SMTP_USER
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_USER
+      - key: EMAIL_SMTP_PASSWORD
+        fromService:
+          type: web
+          name: ccwj
+          envVarKey: EMAIL_SMTP_PASSWORD
+
   # Recurring "still disconnected — reconnect" reminder. Pure Postgres (no
   # BigQuery). Runs DAILY; the email_sends dedupe (key embeds stale-week
   # index) makes it effectively WEEKLY per broken-connection episode. Week 0
