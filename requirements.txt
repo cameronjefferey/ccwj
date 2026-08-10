@@ -10,6 +10,14 @@ click==8.1.8
 colorama==0.4.6
 daff==1.3.46
 db-dtypes==1.4.2
+# dbt stack — pinned together. KNOWN DEPENDABOT DEBT (triaged Aug 2026):
+# deepdiff 7.0.1 has open advisories (Delta class pollution / SAFE_TO_IMPORT
+# DoS) fixed in 8.6.2, and dbt-common <1.34.2 has a low-sev path-traversal.
+# Neither is reachable here: deepdiff is a dbt-CLI-only transitive dep that
+# never sees untrusted input (no Flask code imports it), and dbt-common only
+# handles repo-controlled files in CI. Upgrading is blocked by a solver
+# conflict — dbt-core 1.9.x needs protobuf<6 while every patched dbt-common
+# needs protobuf>=6 — so the real fix rides the next dbt-core major bump.
 dbt-adapters==1.14.3
 dbt-bigquery==1.9.1
 dbt-common==1.16.0
@@ -76,7 +84,8 @@ requests==2.33.0
 requests-oauthlib==2.0.0
 rpds-py==0.23.1
 rsa==4.9
-setuptools==80.9.0
+# 83.0.0+ fixes GHSA MANIFEST.in exclusion bypass (Dependabot #29)
+setuptools==83.0.0
 six==1.17.0
 snowplow-tracker==1.1.0
 sqlparse==0.5.4

@@ -224,12 +224,19 @@ Known issues:
   `app/pnl_charts.py` — see "Code Organization" below for the Aug 2026
   routes.py split.
 
-### Dashboard / Home (`/`, `/index`, `/dashboard`)
-**Status: Working. Summary landing page.**
+### Home (`/`, `/index`)
+**Status: Working. Public landing page; logged-in users redirect to Daily Review.**
 
-Shows account overview, recent trades, portfolio chart, trader profile.
-Silent error handling (`except: pass`) on chart build, mirror score history, and
-trader profile — errors are invisible in production.
+There is no separate dashboard page — Daily Review is the authenticated home.
+
+### Trader Profile (`/story`, endpoint `trader_story`)
+**Status: Working. The mirror across every symbol.**
+
+Runs the position-review engine over the user's whole history and folds the
+per-symbol fingerprints into one profile: takeaway-first Profile Summary
+(one identity headline + scannable fact rows), Execution Review card,
+notable positions, per-style scoreboard, year-by-year rows. Details in
+"App-shell UX layer" under Code Organization.
 
 ### Positions List (`/positions`)
 **Status: Working with recent filter-discipline pass.** Entry point to position detail.
@@ -269,15 +276,21 @@ Known issues:
   Can't be a pure dbt mart because of the runtime parameterization, but
   the dividend-attribution complexity now lives in dbt.
 
-### Symbols (`/symbols`)
-**Status: Functional but being superseded by Position Detail.**
+### Symbols / Daily P&L (`/symbols`) — RETIRED (Aug 2026 surface audit)
+**Status: URL 301s to `/positions`.** Position Detail answers everything it
+did, one symbol at a time, with the tab strip for flipping between symbols.
+`app/symbols_page.py` survives only as the home of the shared
+`TRADES_QUERY` / `CURRENT_POSITIONS_QUERY` (consumed by `/accounts`) and
+the `/api/nav/symbols` Cmd+K endpoint.
 
-Previously the main way to view per-symbol data. Matrix and detail logic has been
-moved to Position Detail. This page is now mostly a navigation step.
-Still has heavy pandas work (groupby, iterrows) that could be simplified.
-
-### Strategies (`/strategies`)
+### Strategies (`/strategies`) — two views
 **Status: Improved — drill-down now includes Breakdown by Type + tenant hardening.**
+
+One "Strategies" surface with a view switch (Aug 2026 surface audit):
+**Performance** (default, `app/strategies.py`) and **Fit matrix**
+(`?view=fit`, the former `/strategy-fit` page — win-rate/expectancy by
+strategy × sector/DTE/moneyness, `app/strategy_fit.py` +
+`render_strategy_fit_view`). `/strategy-fit` 301s to `/strategies?view=fit`.
 
 Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. When you click a strategy, you now get a **Breakdown by Type** table (equity sessions vs option contracts vs attributed dividends): equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label.
 
@@ -286,12 +299,17 @@ Tenant isolation: row-level query results go through `_filter_df_by_accounts(...
 Symbol links in the drill-down table preserve the selected account filter (`?account=`).
 
 **Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
-### Wealth (`/wealth`)
-**Status: Working. Daily account value over time + composition.**
+### Accounts (`/accounts`) — two views
+**Status: Working. One surface for per-account performance AND value/composition.**
 
-Reads `mart_wealth_daily` (account_value / cash / equity / options per day,
-plus cumulative dividends / interest / fees). Stacked-area chart of
-composition with a total line; hero shows allocation + change-over-time.
+**Performance** (default, `app/accounts_page.py`): per-account KPI cards,
+P&L-earned charts, windowed breakdown tables, Net deposits KPI.
+**Value & composition** (`?view=value`, `app/wealth.py` +
+`render_wealth_view` — the former `/wealth` page, merged Aug 2026 surface
+audit; `/wealth` 301s): reads `mart_wealth_daily` (account_value / cash /
+equity / options per day, plus cumulative dividends / interest / fees).
+Stacked-area chart of composition with a total line; hero shows allocation
++ change-over-time.
 
 **Deposits & withdrawals toggle (Aug 2026).** Deposits/withdrawals move
 account value without being trading gains, which distorts "how am I doing"
@@ -301,7 +319,7 @@ activities map to `action = 'cash_transfer'` / `instrument_type = 'Cash Event'`
 in `stg_history` (deposit +, withdrawal −; `TRANSFER` / `JOURNAL` /
 `DISTRIBUTION` stay dropped — they can be SHARE transfers or ambiguous
 income). `mart_wealth_daily` exposes `net_deposit_today` +
-`cumulative_net_deposits`. The `/wealth` page's **"Exclude deposits &
+`cumulative_net_deposits`. The value view's **"Exclude deposits &
 withdrawals"** toggle (`?exclude_transfers=1`) subtracts net cash flow
 (rebased to the window start) from the account-value line and the
 change-over-time numbers, so the curve reflects market + income only; the
@@ -333,18 +351,13 @@ dividend model (all filter to Equity/Call/Put/dividend). The one catch-all,
 must be a `Cash Event`); unit coverage in `tests/test_snaptrade_normalize.py`
 and `tests/test_wealth_chart.py`.
 
-### Mirror Score (`/mirror-score`)
-**Status: Functional but definition is evolving.**
+### Sectors (`/sectors`)
+**Status: Working. Sector / industry rollups (`app/sectors_page.py`).**
 
-Behavioral consistency signal. 4 equally weighted components. Reads from
-`mart_daily_trading_metrics` but does rolling-window comparison in Flask.
-This Flask-side computation could eventually move to a dbt mart.
-
-### Benchmark (`/benchmark`)
-**Status: Working. "If You Did Nothing" comparison.**
-
-Reads from `mart_benchmark`. Light aggregation in Flask for strategy grouping.
-Uses different auth import pattern (`app.auth.get_accounts_for_user`) vs other pages.
+### Earnings Watch (`/earnings`)
+**Status: Working. Upcoming earnings on held symbols (`app/earnings_page.py`);**
+gated on `EARNINGS_FOLLOWER_ENABLED`, cross-links to the EarningsFollower
+tandem product.
 
 ### AI Insights (`/insights`)
 **Status: Working. Gemini-powered narrative.**
@@ -352,40 +365,30 @@ Uses different auth import pattern (`app.auth.get_accounts_for_user`) vs other p
 Reads `positions_summary` mart, builds prompt, sends to Gemini.
 Follows ARCHITECTURE.md: AI interprets, doesn't compute.
 
-### Trade Kinds (`/trade-kinds`)
-**Status: Working. Option trade classification.**
-
-DTE bucket, moneyness, outcome analysis. Reads from `mart_option_trades_by_kind`.
-Optional Gemini summary.
-
-### Taxes (`/taxes`)
-**Status: Working. Tax lot reporting.**
-
-Reads from `int_tax_lots` and `stg_history` (dividends). Clean.
-
-### First Look (`/get-started`)
-**Status: Working. Onboarding page.**
+### Get Started (`/get-started`) — one onboarding surface
+**Status: Working.** Checklist while the user is connecting/waiting for
+data; once warehouse rows exist it flips to the former `/first-look`
+"here's what we found" trading profile (`render_first_look_view` in
+`app/first_look.py`; `/first-look` 301s here). The post-upload and
+post-sync processing pages land here on first data.
 
 ### Upload (`/upload`)
-**Status: Working. CSV upload + Schwab sync.**
+**Status: Working. CSV upload + SnapTrade sync entry points.**
 
----
-
-## Journal — REMOVED
-
-All journal features have been removed from the product. The journal concept did not
-align with the core principle that the system must work fully without user input.
-
-What was removed:
-- Journal pages and templates (deleted: `journal.html`, `journal_form.html`, `journal_import.html`)
-- Journal prompts/CTAs from all pages (weekly review, position detail, insights, etc.)
-- Journal import from `__init__.py` (routes no longer registered)
-- Mood tracking and behavioral anomaly sections
-
-Cleanup still needed:
-- `app/journal.py` file still on disk (dead code, not imported)
-- `app/models.py` still has `journal_entries` / `journal_tags` tables and CRUD helpers
-- `tests/test_data_isolation.py` still references `/journal/` routes (will 404)
+### Removed pages (do not resurrect without a product decision)
+- **Journal** (2025) — conflicted with "works fully without user input."
+  All code and models are gone.
+- **Mirror Score / Benchmark / Trade Kinds / Taxes** (2026) — cut in the
+  product focus passes; their marts (`mart_benchmark` etc.) still build and
+  feed other surfaces.
+- **Community** (Aug 2026 surface audit) — feed/follows/public profiles
+  shipped flag-off, saw no usage, and argued with the "compare traders to
+  themselves" identity. Routes, templates, nav, flag, and model helpers are
+  deleted; the Postgres tables (`user_follows`, `community_posts`,
+  `community_published_trades`) remain until a deliberate drop migration.
+- **Daily P&L `/symbols`, standalone `/wealth`, `/strategy-fit`,
+  `/first-look`** (Aug 2026 surface audit) — merged/retired as above; all
+  four legacy URLs 301 to their new homes.
 
 ---
 
@@ -423,8 +426,6 @@ Heavy logic belongs in dbt.
 - `_build_chart_from_daily_pnl` in `app/pnl_charts.py`: stateful equity P&L simulation via
   row iteration. Hard to move to dbt because of running average-cost logic, but heavy.
 - `_build_option_matrices` (also `app/pnl_charts.py`): nested groupby + loops in Flask.
-- Mirror Score rolling-window comparison done in Flask instead of dbt.
-- Symbols page (`app/symbols_page.py`) has extensive pandas groupby/iterrows.
 - `DATE_FILTERED_QUERY` in `app/positions_page.py`: runtime-parameterized analytical SQL (not a
   static mart) — documented rationale exists but still violates the principle.
 
@@ -888,9 +889,12 @@ These make debugging difficult. Errors should at minimum be logged.
 - Page modules, one per surface, endpoint names unchanged:
   `app/marketing.py` (landing/pricing/FAQ/health/onboarding),
   `app/positions_page.py` (/positions), `app/position_detail.py`
-  (/position/<symbol> + tag routes), `app/symbols_page.py` (/symbols),
-  `app/sectors_page.py` (/sectors), `app/strategy_fit.py` (/strategy-fit),
-  `app/accounts_page.py` (/accounts), `app/earnings_page.py` (/earnings).
+  (/position/<symbol> + tag routes), `app/sectors_page.py` (/sectors),
+  `app/accounts_page.py` (/accounts, incl. the ?view=value wealth view
+  rendered by `app/wealth.py`), `app/strategies.py` (/strategies, incl.
+  the ?view=fit matrix rendered by `app/strategy_fit.py`),
+  `app/earnings_page.py` (/earnings), `app/profile_page.py` (/profile).
+  `app/symbols_page.py` is queries + the Cmd+K API + a 301 only.
 - Routes register via `@app.route` on import (same pattern as admin.py /
   snaptrade.py); `app/__init__.py` imports every page module. No blueprints —
   endpoint names and every `url_for()` caller are unchanged.
@@ -1022,8 +1026,6 @@ dark mode stay readable; (2) new-page KPI strips should reuse
 `.ht-statbar`, not invent another card grid.
 
 Remaining debt:
-- `mirror_score.py` and `benchmark.py` import helpers from `routes.py` — unusual coupling
-  (now at least the helpers-only routes.py makes that coupling explicit).
 - Auth/account fetching is inconsistent: some modules use `app.auth`, others use `app.models`.
 - BigQuery project/dataset (`ccwj-dbt.analytics`) is hardcoded in query strings across files.
 
