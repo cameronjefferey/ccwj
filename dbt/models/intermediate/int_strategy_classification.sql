@@ -4,26 +4,45 @@
     Produces one row per classified "trade group" — either an equity session
     or an option contract — tagged with a strategy label:
 
-      - Covered Call      (sold call while holding equity)
+      - Covered Call      (sold call FULLY covered by shares held when the
+                           call was written — contracts × 100 vs shares
+                           as-of the write date, with a 3-day buy-write
+                           lookahead; see coverage_at_write)
+      - Partially Covered Call (>= 100 shares at write but fewer than
+                           contracts × 100 — some contracts are naked)
       - Cash-Secured Put  (sold put without equity)
       - Wheel             (put assigned → equity acquired, possibly with CCs)
-      - Call Spread        (bought + sold call, same expiry, different strikes)
-      - Put Spread         (bought + sold put,  same expiry, different strikes)
+      - Call Spread        (bought + sold call, same expiry, different strikes,
+                            legged in within 7 days OR alive simultaneously)
+      - Put Spread         (bought + sold put,  same treatment)
       - Iron Condor        (a call spread AND a put spread on the same
                             underlying + expiry, legged in together)
+      - Diagonal Call Spread (sold call covered by a live longer-dated long
+                            call that doesn't meet the PMCC windows)
+      - Diagonal Put Spread  (sold put covered by a live longer-dated long put)
+      - Straddle / Strangle  (call + put, same underlying/expiry/direction,
+                            opened within 3 days; same strike = Straddle)
       - Long Call          (bought call, standalone)
       - Long Put           (bought put,  standalone, no equity)
-      - Protective Put     (bought put while holding equity)
-      - Naked Call         (sold call without equity)
-      - Poor Man Covered Call (sold call covered by long call on same underlying, e.g. diagonal)
+      - Protective Put     (bought put while holding >= 100 shares at write)
+      - Naked Call         (sold call without any coverage at write)
+      - Poor Man Covered Call (sold call covered by long call matching the
+                            int_pmcc_pairs windows — long >= 180d, short <= 60d)
       - Buy and Hold       (equity only, no associated options; a nominal
-                            <= 1-share "price-tracker" lot held alongside
+                            < 25-share "price-tracker" lot held alongside
                             options is instead FOLDED into that underlying's
                             dominant option strategy — see equity_classified)
       - Crypto             (crypto holding — can't have options, so it's structurally
                             a buy-and-hold, but we surface it as its own bucket so the
                             mirror reflects asset-class choice rather than fusing BTC
                             with the trader's VOO / JEPI buckets)
+
+    Aug 2026 classification audit: coverage is judged AS OF THE WRITE DATE
+    from the split-adjusted running share count (int_equity_fills, which
+    includes synthesized opening balances for pre-window holdings), not from
+    the session's lifetime max_quantity_held — a trader who once held 500
+    shares but had sold them before writing a call was previously labeled
+    Covered when the call was in fact naked.
 */
 
 with equity_sessions as (
@@ -98,7 +117,25 @@ equity_options_summary as (
             when oc.open_date >= e.open_date
                  and oc.open_date <= case when e.status = 'Open' then current_date() else e.last_trade_date end
             then oc.trade_symbol
-        end) as num_option_contracts
+        end) as num_option_contracts,
+        -- Days of the session during which at least one sold call was live
+        -- (summed per contract, so overlapping calls can exceed the session
+        -- length — fine for a ratio threshold). Powers the >= 30% coverage
+        -- requirement in equity_classified: a 2-year holding that carried a
+        -- covered call for three weeks is a Buy and Hold whose equity P&L
+        -- must not be attributed to 'Covered Call' (Aug 2026 audit F5:
+        -- -$77K of equity P&L was mis-bucketed this way).
+        sum(case
+            when oc.direction = 'Sold' and oc.option_type = 'C'
+                 and oc.open_date <= case when e.status = 'Open' then current_date() else e.last_trade_date end
+                 and coalesce(oc.close_date, current_date()) >= e.open_date
+            then date_diff(
+                     least(coalesce(oc.close_date, current_date()),
+                           case when e.status = 'Open' then current_date() else e.last_trade_date end),
+                     greatest(oc.open_date, e.open_date),
+                     day) + 1
+            else 0
+        end) as sold_call_covered_days
     from equity_sessions e
     left join option_contracts oc
         on e.account = oc.account
@@ -148,6 +185,15 @@ spread_legs as (
     -- Self-join keyed on (account, user_id) so two users with the same
     -- account label and similar option positions don't get classified
     -- as spreading against each other.
+    --
+    -- Pairing rule (widened Aug 2026 audit F6): legs pair when opened
+    -- within 7 days of each other (the original rule — catches quick
+    -- legging even if the first leg closed before the second opened) OR
+    -- when their lifetimes OVERLAP (both alive at the same moment — a
+    -- vertical is a vertical no matter how far apart the legs were
+    -- legged in, as long as they actually coexisted). Pre-fix, opposite
+    -- legs opened 8-45 days apart read as independent Naked Call +
+    -- Long Call.
     select distinct a.tenant_id, a.account, a.user_id, a.trade_symbol
     from option_contracts a
     join option_contracts b
@@ -159,7 +205,11 @@ spread_legs as (
         and a.option_type       = b.option_type
         and a.option_strike    != b.option_strike
         and a.direction        != b.direction
-        and abs(date_diff(a.open_date, b.open_date, day)) <= 7
+        and (
+            abs(date_diff(a.open_date, b.open_date, day)) <= 7
+            or (a.open_date <= coalesce(b.close_date, current_date())
+                and b.open_date <= coalesce(a.close_date, current_date()))
+        )
 
     union distinct
 
@@ -174,7 +224,11 @@ spread_legs as (
         and a.option_type       = b.option_type
         and a.option_strike    != b.option_strike
         and a.direction        != b.direction
-        and abs(date_diff(a.open_date, b.open_date, day)) <= 7
+        and (
+            abs(date_diff(a.open_date, b.open_date, day)) <= 7
+            or (a.open_date <= coalesce(b.close_date, current_date())
+                and b.open_date <= coalesce(a.close_date, current_date()))
+        )
 ),
 
 ---------------------------------------------------------------------
@@ -250,6 +304,122 @@ pmcc_short_calls as (
 ),
 
 ---------------------------------------------------------------------
+-- 3c. Coverage AS OF WRITE TIME (Aug 2026 audit F2).
+--
+--     For each option contract: how many shares did this account hold on
+--     the day the contract was opened? Computed from int_equity_fills
+--     (split-adjusted, today's share-units, INCLUDING synthesized opening
+--     balances for pre-window holdings). A 3-day lookahead covers the
+--     buy-write pattern (call sold first, shares land 1-3 days later —
+--     4 real cases at audit time); greatest() means a sale within the
+--     lookahead window can never REDUCE the at-write count.
+--
+--     required_shares converts contracts × 100 into today's share-units
+--     via the split factor at the open date (an option's deliverable is
+--     100 shares in THAT DAY's units), so the comparison is unit-safe
+--     across splits. Snapshot-only contracts report 0 opened contracts —
+--     floor at 1 so they still demand at least one contract of coverage.
+---------------------------------------------------------------------
+coverage_at_write as (
+    select
+        oc.tenant_id,
+        oc.account,
+        oc.user_id,
+        oc.trade_symbol,
+        greatest(
+            sum(case when f.trade_date <= oc.open_date
+                     then f.signed_quantity else 0 end),
+            sum(case when f.trade_date <= date_add(oc.open_date, interval 3 day)
+                     then f.signed_quantity else 0 end)
+        ) as coverage_qty,
+        any_value(100.0 * coalesce(sf.cumulative_split_factor, 1.0))
+            as shares_per_contract,
+        any_value(
+            greatest(
+                coalesce(oc.contracts_sold_to_open, 0),
+                coalesce(oc.contracts_bought_to_open, 0),
+                1.0
+            ) * 100.0 * coalesce(sf.cumulative_split_factor, 1.0)
+        ) as required_shares
+    from option_contracts oc
+    join {{ ref('int_equity_fills') }} f
+        on  f.account = oc.account
+        and (f.user_id is not distinct from oc.user_id)
+        and (f.tenant_id is not distinct from oc.tenant_id)
+        and f.symbol = oc.underlying_symbol
+    left join {{ ref('int_split_factors') }} sf
+        on  sf.symbol     = oc.underlying_symbol
+        and sf.trade_date = oc.open_date
+    group by 1, 2, 3, 4
+),
+
+---------------------------------------------------------------------
+-- 3d. Diagonal spreads (Aug 2026 audit F4): a sold option covered by a
+--     LIVE longer-dated long option of the same type on the same
+--     underlying. The long must be open when the short is written and
+--     expire after it. This is the PMCC structure without PMCC's strict
+--     windows (long >= 180d, short <= 60d) — pre-fix these shorts fell
+--     through to 'Naked Call' even though a long covered them.
+---------------------------------------------------------------------
+diagonal_cover as (
+    select distinct
+        s.tenant_id,
+        s.account,
+        s.user_id,
+        s.trade_symbol
+    from option_contracts s
+    join option_contracts l
+        on  s.account = l.account
+        and (s.user_id is not distinct from l.user_id)
+        and (s.tenant_id is not distinct from l.tenant_id)
+        and s.underlying_symbol = l.underlying_symbol
+        and s.option_type       = l.option_type
+        and s.direction = 'Sold'
+        and l.direction = 'Bought'
+        and l.open_date <= s.open_date
+        and coalesce(l.close_date, current_date()) >= s.open_date
+        and l.option_expiry > s.option_expiry
+),
+
+---------------------------------------------------------------------
+-- 3e. Straddles / strangles (Aug 2026 audit F6): a call and a put on the
+--     same underlying + expiry, SAME direction, opened within 3 days.
+--     Same strike = Straddle, different strikes = Strangle. When one leg
+--     pairs with several candidates, prefer the Straddle reading.
+--     Equity coverage takes precedence in the CASE below: a sold call
+--     that is covered stays 'Covered Call' (covered-strangle structures
+--     read as Covered Call + Cash-Secured Put, matching how income
+--     traders think about them).
+---------------------------------------------------------------------
+straddle_legs as (
+    select tenant_id, account, user_id, trade_symbol, pair_label
+    from (
+        select
+            a.tenant_id,
+            a.account,
+            a.user_id,
+            a.trade_symbol,
+            case when a.option_strike = b.option_strike
+                 then 'Straddle' else 'Strangle' end as pair_label,
+            row_number() over (
+                partition by a.tenant_id, a.account, a.user_id, a.trade_symbol
+                order by case when a.option_strike = b.option_strike then 0 else 1 end
+            ) as rn
+        from option_contracts a
+        join option_contracts b
+            on  a.account = b.account
+            and (a.user_id is not distinct from b.user_id)
+            and (a.tenant_id is not distinct from b.tenant_id)
+            and a.underlying_symbol = b.underlying_symbol
+            and a.option_expiry     = b.option_expiry
+            and a.direction         = b.direction
+            and a.option_type      != b.option_type
+            and abs(date_diff(a.open_date, b.open_date, day)) <= 3
+    )
+    where rn = 1
+),
+
+---------------------------------------------------------------------
 -- 4. Classify option contracts
 ---------------------------------------------------------------------
 options_classified as (
@@ -282,7 +452,10 @@ options_classified as (
         oc.premium_received,
         oc.premium_paid,
 
-        -- Strategy
+        -- Strategy. Coverage branches use coverage_at_write (shares held
+        -- as of the write date, quantity-aware) — NOT the session-lifetime
+        -- max_quantity_held, which labeled calls Covered when the shares
+        -- had already been sold (Aug 2026 audit F2).
         case
             -- Iron Condor: this leg is part of a call spread + put spread
             -- on the same underlying/expiry legged in together. Checked
@@ -294,16 +467,41 @@ options_classified as (
             when sl.trade_symbol is not null then
                 case when oc.option_type = 'C' then 'Call Spread' else 'Put Spread' end
 
-            -- Sold call with underlying equity (>= 100 shares) → Covered Call
-            when oc.direction = 'Sold' and oc.option_type = 'C' and e.session_id is not null
-                 and e.max_quantity_held >= 100
+            -- Sold call fully covered at write (contracts × 100 vs shares
+            -- held on the write date, 3-day buy-write lookahead)
+            when oc.direction = 'Sold' and oc.option_type = 'C'
+                 and coalesce(cov.coverage_qty, 0) + 1e-6
+                     >= coalesce(cov.required_shares, 100)
                 then 'Covered Call'
 
-            -- Sold call covered by long call (same underlying) → Poor Man Covered Call
+            -- At least one contract's worth of shares, but not all
+            -- contracts covered → some are naked. Surfaced as its own
+            -- label so the trader can see the mixed exposure.
+            when oc.direction = 'Sold' and oc.option_type = 'C'
+                 and coalesce(cov.coverage_qty, 0) + 1e-6
+                     >= coalesce(cov.shares_per_contract, 100)
+                then 'Partially Covered Call'
+
+            -- Sold call covered by long call matching PMCC windows
             when oc.direction = 'Sold' and oc.option_type = 'C' and pmcc.trade_symbol is not null
                 then 'Poor Man Covered Call'
 
-            -- Sold call without equity or long cover → Naked Call
+            -- Sold option covered by a live longer-dated long of the same
+            -- type (diagonal / calendar structure outside PMCC windows)
+            when oc.direction = 'Sold' and dg.trade_symbol is not null
+                then case when oc.option_type = 'C'
+                          then 'Diagonal Call Spread'
+                          else 'Diagonal Put Spread' end
+
+            -- Call + put pair, same expiry + direction, legged in within
+            -- 3 days, with no equity coverage claiming the leg above.
+            when stl.trade_symbol is not null
+                 and (oc.direction = 'Bought'
+                      or coalesce(cov.coverage_qty, 0)
+                         < coalesce(cov.shares_per_contract, 100))
+                then stl.pair_label
+
+            -- Sold call without any coverage at write → Naked Call
             when oc.direction = 'Sold' and oc.option_type = 'C'
                 then 'Naked Call'
 
@@ -315,9 +513,10 @@ options_classified as (
             when oc.direction = 'Bought' and oc.option_type = 'C'
                 then 'Long Call'
 
-            -- Bought put with equity (>= 100 shares) → Protective Put
-            when oc.direction = 'Bought' and oc.option_type = 'P' and e.session_id is not null
-                 and e.max_quantity_held >= 100
+            -- Bought put while holding >= 100 shares at write → Protective Put
+            when oc.direction = 'Bought' and oc.option_type = 'P'
+                 and coalesce(cov.coverage_qty, 0) + 1e-6
+                     >= coalesce(cov.shares_per_contract, 100)
                 then 'Protective Put'
 
             -- Bought put standalone → Long Put
@@ -348,53 +547,29 @@ options_classified as (
         and (oc.user_id is not distinct from pmcc.user_id)
         and (oc.tenant_id is not distinct from pmcc.tenant_id)
         and oc.trade_symbol = pmcc.trade_symbol
-    -- Check for overlapping equity session (Covered Call / Protective Put detection).
-    --
-    -- Defensive dedup: this join used to match raw `equity_sessions` directly,
-    -- and a duplicated `int_equity_sessions` row (from a poisoned source — see
-    -- 2026-05-11 entry in ~/.cursor/skills/broker-sync-safety/SKILL.md) would
-    -- fan a single option contract into multiple classification rows. The same
-    -- option fill then showed up as both "Naked Call" and "Covered Call" under
-    -- the same trade_symbol on the position page, depending on which join
-    -- branch fired. Wrapping the join in a `qualify row_number() ... = 1`
-    -- subquery picks exactly one session per (account, user_id, trade_symbol):
-    -- prefer Open over Closed (Open is the "live coverage" reading), then the
-    -- session with the most shares held (covered-call eligibility threshold),
-    -- then the one with the latest open_date (most recently established).
-    -- Net: even if upstream `int_equity_sessions` ever holds duplicates, this
-    -- mart's classification row count stays exactly one per option contract.
-    left join (
-        select
-            oc2.tenant_id,
-            oc2.account,
-            oc2.user_id,
-            oc2.trade_symbol,
-            e.session_id,
-            e.status,
-            e.max_quantity_held
-        from option_contracts oc2
-        join equity_sessions e
-            on oc2.account = e.account
-            and (oc2.user_id is not distinct from e.user_id)
-            and (oc2.tenant_id is not distinct from e.tenant_id)
-            and oc2.underlying_symbol = e.symbol
-            and oc2.open_date >= e.open_date
-            and oc2.open_date <= case
-                when e.status = 'Open' then current_date()
-                else e.last_trade_date
-            end
-        qualify row_number() over (
-            partition by oc2.tenant_id, oc2.account, oc2.user_id, oc2.trade_symbol
-            order by case when e.status = 'Open' then 0 else 1 end,
-                     e.max_quantity_held desc nulls last,
-                     e.open_date desc,
-                     e.session_id desc
-        ) = 1
-    ) e
-        on oc.account = e.account
-        and (oc.user_id is not distinct from e.user_id)
-        and (oc.tenant_id is not distinct from e.tenant_id)
-        and oc.trade_symbol = e.trade_symbol
+    -- Shares held as of the write date (Covered / Partially Covered /
+    -- Protective Put detection). One row per contract by construction
+    -- (GROUP BY trade_symbol in coverage_at_write), so — unlike the old
+    -- session-overlap join this replaced — it cannot fan a contract into
+    -- multiple classification rows even if int_equity_sessions ever holds
+    -- duplicates (the 2026-05-11 poisoned-source incident).
+    left join coverage_at_write cov
+        on oc.account = cov.account
+        and (oc.user_id is not distinct from cov.user_id)
+        and (oc.tenant_id is not distinct from cov.tenant_id)
+        and oc.trade_symbol = cov.trade_symbol
+    -- Live longer-dated long cover of the same type (diagonal)
+    left join diagonal_cover dg
+        on oc.account = dg.account
+        and (oc.user_id is not distinct from dg.user_id)
+        and (oc.tenant_id is not distinct from dg.tenant_id)
+        and oc.trade_symbol = dg.trade_symbol
+    -- Straddle / strangle pair membership
+    left join straddle_legs stl
+        on oc.account = stl.account
+        and (oc.user_id is not distinct from stl.user_id)
+        and (oc.tenant_id is not distinct from stl.tenant_id)
+        and oc.trade_symbol = stl.trade_symbol
 ),
 
 -- Dominant option strategy per (tenant, account, user, underlying). Used to
@@ -508,21 +683,40 @@ equity_classified as (
                 then 'Wheel'
             when efa.session_id is not null
                 then 'Wheel'
+
+            -- Covered Call requires SUBSTANTIAL coverage, not incidental:
+            -- sold calls must have been live for >= 30% of the session's
+            -- days (Aug 2026 audit F5). A multi-year holding that carried
+            -- a call for a few weeks is a Buy and Hold — attributing its
+            -- entire equity P&L to 'Covered Call' mis-bucketed -$77K at
+            -- audit time. The call contracts themselves keep their own
+            -- (option-side) labels regardless of this branch.
             when eos.num_sold_calls > 0 and e.max_quantity_held >= 100
+                 and safe_divide(
+                         eos.sold_call_covered_days,
+                         date_diff(
+                             case when e.status = 'Open'
+                                  then current_date()
+                                  else e.last_trade_date end,
+                             e.open_date, day) + 1
+                     ) >= 0.30
                 then 'Covered Call'
 
-            -- Price-tracker fold (2026-07-14): a nominal equity lot (<= 1
-            -- share) held alongside options on the same underlying is a
-            -- "so I can watch the ticker" position, NOT a standalone Buy
-            -- and Hold. Surfacing it as its own strategy row made a pure
-            -- long-call position read as "mixed" and cluttered the Strategy
-            -- Breakdown. Fold it into the dominant option strategy on that
-            -- underlying so the symbol reads as the option play; the tiny
-            -- equity P&L still shows in Breakdown-by-Type's Equity row. The
-            -- <= 1 share threshold is deliberately tight to avoid
-            -- reclassifying a genuine small holding, and the "has options"
-            -- guard keeps standalone tiny lots as Buy and Hold.
-            when coalesce(e.max_quantity_held, 0) <= 1
+            -- Price-tracker fold (2026-07-14; threshold widened Aug 2026
+            -- audit F3): a nominal equity lot held alongside options on
+            -- the same underlying is a "so I can watch the ticker"
+            -- position, NOT a standalone Buy and Hold. Surfacing it as its
+            -- own strategy row made a pure long-call position read as
+            -- "mixed" and cluttered the Strategy Breakdown. Fold it into
+            -- the dominant option strategy on that underlying; the tiny
+            -- equity P&L still shows in Breakdown-by-Type's Equity row.
+            -- Threshold is < 25 shares (was <= 1): real tracker lots run
+            -- 1-20 shares (audit found 2.7 / 8 / 9.6 / 11 / 20-share
+            -- trackers labeled Buy and Hold), while anything >= 25 shares
+            -- is a real capital commitment that deserves its own row. A
+            -- < 25-share lot can never cover a call (needs 100), so this
+            -- cannot swallow a genuine covered-call session.
+            when coalesce(e.max_quantity_held, 0) < 25
                  and coalesce(eos.num_option_contracts, 0) > 0
                 then coalesce(dos.dominant_strategy, 'Long Call')
 

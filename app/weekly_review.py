@@ -579,14 +579,27 @@ per_sym_capital AS (
     -- ``underlying_symbol`` (canonical per-position label that matches
     -- int_strategy_classification.symbol). We attribute capital to the
     -- underlying so option fills roll up with their equity siblings.
+    -- Synthesized opening balances (int_opening_balances) count as equity
+    -- capital too — pre-window shares are deployed capital, and without
+    -- them the annualized-return column extrapolates from a fraction of
+    -- the real capital base.
     SELECT
         tenant_id, account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
         SUM(CASE WHEN action='equity_buy' THEN ABS(amount) ELSE 0 END) AS equity_capital,
         SUM(CASE WHEN action='option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
         SUM(CASE WHEN action='option_sell' THEN ABS(amount) ELSE 0 END) AS option_premium_collected
-    FROM `ccwj-dbt.analytics.stg_history`
-    WHERE underlying_symbol IS NOT NULL
-      {tenant_filter}
+    FROM (
+        SELECT tenant_id, account, user_id, underlying_symbol, action, amount
+        FROM `ccwj-dbt.analytics.stg_history`
+        WHERE underlying_symbol IS NOT NULL
+          {tenant_filter}
+        UNION ALL
+        SELECT tenant_id, account, user_id, symbol AS underlying_symbol,
+               'equity_buy' AS action, est_amount AS amount
+        FROM `ccwj-dbt.analytics.int_opening_balances`
+        WHERE price_source != 'unpriced'
+          {tenant_filter}
+    )
     GROUP BY 1, 2, 3, 4
 ),
 per_sym_holdings AS (

@@ -75,7 +75,7 @@
 -- 2026-04-27 (1500 sold shares × pre-split avg cost vs post-split sell
 -- price), even though int_equity_sessions / int_closed_equity_legs
 -- already report the true +$1,822.50.
-with trade_daily as (
+with trade_daily_history as (
     select
         h.tenant_id,
         h.account,
@@ -120,6 +120,36 @@ with trade_daily as (
       -- mart_wealth_daily instead.
       and h.action <> 'cash_transfer'
     group by 1, 2, 3, 4, 5
+),
+
+-- Synthetic opening-balance buys (int_opening_balances): positions whose
+-- buys predate the imported history window get an inferred opening fill so
+-- the chart's running average-cost walk has a cost basis for pre-window
+-- shares. Quantity is ALREADY in today's share-units (do not re-apply
+-- split factors); est_amount is the estimated opening cost (negative).
+-- Without this, selling pre-window shares rendered as ~100% profit.
+opening_daily as (
+    select
+        ob.tenant_id,
+        ob.account,
+        ob.user_id,
+        ob.symbol,
+        ob.opening_date as date,
+        cast(0 as float64)  as options_amount,
+        abs(ob.est_amount)  as equity_buy_cost,
+        ob.opening_qty      as equity_buy_qty,
+        cast(0 as float64)  as equity_sell_proceeds,
+        cast(0 as float64)  as equity_sell_qty,
+        cast(0 as float64)  as other_amount
+    from {{ ref('int_opening_balances') }} ob
+    where ob.opening_qty > 0.01
+      and ob.price_source != 'unpriced'
+),
+
+trade_daily as (
+    select * from trade_daily_history
+    union all
+    select * from opening_daily
 ),
 
 -- Dividends source: int_dividend_events. UNIONs CSV-reported dividends with

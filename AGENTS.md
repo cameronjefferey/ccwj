@@ -208,6 +208,40 @@ What's working:
 
 **Orphan tenancy + reconciliation (critical):** If Schwab synced **before** the user linked `user_id`, history can sit under **`user_id = NULL`** and later fills under **the same masked `account` + real `user_id`**. Marts partition `(account, user_id)` → buys and sells **split**, producing **\$0 dividends / \$0 KPIs while the chart is non‑zero** and tripping the **admin reconciliation invariant** (Strategy breakdown vs breakdown-by-type vs chart terminal). Fix is staging backfill in `stg_history` / `stg_current` / `stg_account_balances`; regression test **`dbt/tests/no_orphan_user_id_per_account.sql`**. Details: `.cursor/rules/position-detail-orphan-tenancy-reconciliation.mdc`.
 
+**Opening balances + classification accuracy (Aug 2026 audit):** SnapTrade/Schwab
+only backfill a limited transaction window, so a long-tenured trader's positions
+routinely start MID-POSITION (buys predate the window) — 92 positions across 4
+users at audit time. **`int_opening_balances`** infers the missing opening
+share count per (tenant, account, user, symbol) with provable arithmetic
+(`greatest(current − net_history, −min_running, 0)`, all today-unit
+split-adjusted; symbols with `equity_sell_short` fills or no history rows are
+skipped) and prices it on a confidence ladder: broker cost basis when the
+position is still held (exact, keeps the open-session realized formula
+consistent) → market close at the window start → first-fill price. **`int_equity_fills`**
+is the canonical equity fill stream — real fills UNION synthetic openings with
+split adjustment applied CENTRALLY (today's share-units) — and every
+running-quantity consumer reads it: `int_equity_sessions`,
+`int_closed_equity_legs`, `int_dividend_events`, `mart_daily_pnl` (via its
+`opening_daily` UNION), `mart_benchmark`, and the coverage CTEs in
+`int_strategy_classification`. The quantity is provable; only the COST is an
+estimate — Position Detail renders a "history starts mid-position" disclosure
+banner (`opening_balances` context, `POSITION_OPENING_BALANCES_QUERY`) naming
+the pricing method and linking the CSV-upload path to replace estimates with
+real fills. Strategy classification judges coverage **as of the write date**
+(`coverage_at_write`: split-aware contracts × 100 vs shares held at open + 3-day
+buy-write lookahead), labels partial coverage (`Partially Covered Call`),
+detects diagonals (`Diagonal Call/Put Spread` — live longer-dated long cover
+outside PMCC windows), straddles/strangles, pairs verticals by lifetime overlap
+(not just ±7d legging), requires ≥30% covered-days for an equity session to be
+labeled `Covered Call`, and folds <25-share tracker lots (was ≤1) into the
+dominant option strategy. Regression tests:
+`dbt/tests/no_unexplained_negative_running_equity_qty.sql`,
+`dbt/tests/covered_call_has_coverage_at_write.sql`,
+`dbt/tests/tracker_lot_folds_into_option_strategy.sql`. When adding a new
+strategy label: update the FIVE template color maps (`position_detail.html`,
+`positions.html` ×2, `accounts.html` ×2) and check the dividend-rank CASEs
+(macro + `DATE_FILTERED_QUERY`) if the label should ever receive dividends.
+
 **Stock splits (critical):** Schwab ships `stg_history.quantity` in the **share-units that existed at the fill time** — pre-split for old buys, post-split for new sells. The broker snapshot (`stg_current`) is always in **today's** share-units. Without explicit split-adjustment, FIFO cost basis on a buy → split → sell mismatches units and produces **massive phantom realized losses** (XLU May 2026: $-65,925 phantom on a position whose real realized was +$1,822.50). Splits land in `daily_split_events` (loader: `current_position_stock_price.py`) → `stg_split_events` → `int_split_factors`, then JOINed and applied to quantity in `int_equity_sessions`, `int_closed_equity_legs`, `int_dividend_events`, and `mart_daily_pnl`. Cash flow is split-invariant. Regression: `dbt/tests/equity_running_qty_matches_snapshot_after_splits.sql` + `tests/test_stock_splits.py`. Details: `.cursor/rules/stock-splits-share-unit.mdc`.
 
 **Verification:** Never ship Position Detail / `mart_daily_pnl` / `_build_chart_from_daily_pnl` changes validated on **one symbol only**. Always check at least **one dividend ETF** (JEPI‑class), a **mixed equity+option** position, **multiple tenants/accounts**, and — if the change touches running share counts — at least **one symbol with a known split during the user's window** (XLU is the canonical regression case).

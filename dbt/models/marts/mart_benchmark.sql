@@ -18,17 +18,18 @@ with positions as (
     from {{ ref('positions_summary') }}
 ),
 
+-- int_equity_fills includes the synthetic opening-balance buys, so the
+-- hold-P&L capital base covers pre-window shares too (estimated cost).
 equity_cost as (
     select
         tenant_id,
         account,
         user_id,
-        underlying_symbol as symbol,
-        sum(abs(cast(amount as float64))) as equity_cost
-    from {{ ref('stg_history') }}
-    where instrument_type = 'Equity'
-      and action = 'equity_buy'
-      and cast(amount as float64) < 0
+        symbol,
+        sum(abs(amount)) as equity_cost
+    from {{ ref('int_equity_fills') }}
+    where action = 'equity_buy'
+      and amount < 0
     group by 1, 2, 3, 4
 ),
 

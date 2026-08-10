@@ -33,6 +33,7 @@ FILTERED_QUERIES = [
     ("app.position_detail", "POSITION_MATRIX_QUERY"),
     ("app.position_detail", "POSITION_LEGS_QUERY"),
     ("app.position_detail", "POSITION_DIVIDENDS_QUERY"),
+    ("app.position_detail", "POSITION_OPENING_BALANCES_QUERY"),
     ("app.position_detail", "SYMBOL_TABS_QUERY"),
     ("app.pnl_charts", "CHART_DATA_QUERY"),
     ("app.pnl_charts", "CHART_DATA_ALL_QUERY"),

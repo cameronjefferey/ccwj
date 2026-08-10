@@ -59,23 +59,20 @@
 -- (under-counted by 50%). Correct: 3400 split-adjusted × $0.284 =
 -- $965.60 (matches the broker's actual cash dividend the user would
 -- have received).
+-- Equity fills from int_equity_fills — split adjustment and synthetic
+-- opening-balance buys applied centrally there. Opening balances matter
+-- here specifically: a JEPI-class holding whose buys predate the imported
+-- history window used to look like 0 shares on every ex-div date, so no
+-- dividend was ever synthesized for it.
 with equity_events as (
     select
-        h.tenant_id,
-        h.account,
-        h.user_id,
-        h.underlying_symbol as symbol,
-        h.trade_date,
-        case
-            when h.action = 'equity_buy'                          then  h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            when h.action in ('equity_sell', 'equity_sell_short') then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            else 0
-        end as signed_qty
-    from {{ ref('stg_history') }} h
-    left join {{ ref('int_split_factors') }} sf
-        on  sf.symbol     = h.underlying_symbol
-        and sf.trade_date = h.trade_date
-    where h.instrument_type = 'Equity'
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        trade_date,
+        signed_quantity as signed_qty
+    from {{ ref('int_equity_fills') }}
 ),
 
 ex_divs as (

@@ -9,50 +9,25 @@
     Open sessions are enriched with current market data from stg_current.
 */
 
--- Split-adjusted equity trades.
---
--- Quantity is multiplied by ``cumulative_split_factor`` (forward, from
--- trade_date to today) so a buy of 1700 shares on 2025-10-29 followed by
--- a 2:1 split on 2025-12-05 followed by a sell of 1500 shares on
--- 2026-04-27 becomes:
---   - buy: 1700 * 2.0 = 3400 effective shares
---   - sell: 1500 * 1.0 = 1500 effective shares
---   - running qty after sell: 3400 - 1500 = 1900 (matches snapshot)
--- Without this the running qty would be 200 (1700 - 1500), the snapshot
--- would show 1900, and FIFO cost basis would compare 1500 split-adjusted
--- shares to a $90 pre-split avg cost — phantom $66K realized loss.
---
--- ``amount`` (cash flow) is split-invariant: the user paid $153,561 no
--- matter how the broker re-partitioned the share count later. The
--- session-level avg cost downstream is therefore total_buy_cost /
--- adjusted_total_buy_qty = $153,561 / 3400 = $45.165 per share — which
--- matches the broker snapshot's per-share basis.
---
--- Adjustment is no-op (factor = 1.0) for any symbol with no splits ever
--- AND for any trade after all known splits. Most tickers never split.
---
--- See dbt/models/intermediate/int_split_factors.sql for the factor.
+-- Equity fills — split-adjusted centrally in int_equity_fills (today's
+-- share-units; cash split-invariant; see that model's header for the XLU
+-- worked example) PLUS synthetic opening-balance buys for positions whose
+-- history starts mid-position (int_opening_balances). The opening rows are
+-- dated before the first real fill so running quantities never go negative
+-- and pre-window sells stop generating phantom P&L.
 with equity_trades as (
     select
-        h.tenant_id,
-        h.account,
-        h.user_id,
-        h.underlying_symbol as symbol,
-        h.trade_date,
-        h.action,
-        case
-            when h.action = 'equity_buy'        then  h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            when h.action = 'equity_sell'       then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            when h.action = 'equity_sell_short' then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            else 0
-        end as signed_quantity,
-        h.quantity * coalesce(sf.cumulative_split_factor, 1.0) as quantity,
-        h.amount
-    from {{ ref('stg_history') }} h
-    left join {{ ref('int_split_factors') }} sf
-        on  sf.symbol     = h.underlying_symbol
-        and sf.trade_date = h.trade_date
-    where h.instrument_type = 'Equity'
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        trade_date,
+        action,
+        signed_quantity,
+        quantity,
+        amount,
+        is_synthetic_opening
+    from {{ ref('int_equity_fills') }}
 ),
 
 -- Running share count.
@@ -143,7 +118,9 @@ trade_session_summary as (
         sum(case when action in ('equity_sell','equity_sell_short')
                  then quantity else 0 end)
                          as total_sell_qty,
-        count(*)         as num_trades
+        -- Synthetic opening-balance rows are position state, not trades the
+        -- user placed — keep them out of the visible trade count.
+        countif(not is_synthetic_opening) as num_trades
     from sessions
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
     group by 1, 2, 3, 4, 5
@@ -242,8 +219,13 @@ snapshot_equity_sessions as (
       -- We deliberately do NOT emit a snapshot session for the partial
       -- case (trade has some still-open shares + snapshot has more):
       -- attributing market_value to two sessions joined on the same
-      -- stg_current row would double-count it. Partial mismatches are a
-      -- data integrity issue better surfaced than silently patched.
+      -- stg_current row would double-count it. Since Aug 2026 the partial
+      -- case is instead repaired UPSTREAM: int_opening_balances synthesizes
+      -- the missing pre-window shares as an opening fill (priced from the
+      -- broker's own cost basis when the position is still held), so
+      -- net_open_qty_from_trades now explains the snapshot and this guard
+      -- correctly suppresses the snapshot session. The no-history case (a)
+      -- still lands here — synthesis requires at least one real fill.
       and coalesce(tsbs.net_open_qty_from_trades, 0) <= 0
 ),
 

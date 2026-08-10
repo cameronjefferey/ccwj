@@ -1141,6 +1141,19 @@ POSITION_DIVIDENDS_QUERY = """
     {tenant_filter}
 """
 
+# Synthesized opening balances (int_opening_balances): positions whose buys
+# predate the imported broker history window. Powers the "history starts
+# here" disclosure banner — the share quantity is provable arithmetic, but
+# the opening COST is estimated (price_source says how), so the page must
+# say so and offer the CSV-upload path to fill the gap with real fills.
+POSITION_OPENING_BALANCES_QUERY = """
+    SELECT account, tenant_id, user_id, symbol, opening_date,
+           first_trade_date, opening_qty, price_source, est_amount
+    FROM `ccwj-dbt.analytics.int_opening_balances`
+    WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{symbol}'))
+    {tenant_filter}
+"""
+
 # Symbol-grain public market data (same class as POSITION_EARNINGS_QUERY):
 # no tenant column exists and none is needed — a split applies identically
 # to every holder. Do NOT run the result through _filter_df_by_tenant_ids
@@ -1264,6 +1277,10 @@ def position_detail(symbol):
             "execution": POSITION_EXECUTION_QUERY.format(
                 symbol=safe_symbol, tenant_filter=_pos_acct
             ),
+            # Synthesized opening balances → "history starts here" banner.
+            "opening": POSITION_OPENING_BALANCES_QUERY.format(
+                symbol=safe_symbol, tenant_filter=_pos_acct
+            ),
         }
         # Crypto positions don't pay dividends in our pipeline, so
         # _compute_breakdown_by_type skips them — don't fetch the frame.
@@ -1290,6 +1307,7 @@ def position_detail(symbol):
         dividends_df = dfs.get("dividends")
         splits_df = dfs.get("splits", pd.DataFrame())
         execution_df = dfs.get("execution", pd.DataFrame())
+        opening_df = dfs.get("opening", pd.DataFrame())
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -1326,6 +1344,7 @@ def position_detail(symbol):
             symbol_subsector="",
             symbol_company="",
             symbol_next_earnings=None,
+            opening_balances=[],
             tabs=[],
             active_symbol=symbol,
             tab_href_base="/position/",
@@ -1375,6 +1394,7 @@ def position_detail(symbol):
     matrix_df = _filter_df_by_tenant_ids(matrix_df, tenant_scope)
     # Tab strip data has the same tenancy boundary as everything else above.
     tabs_df = _filter_df_by_tenant_ids(tabs_df, tenant_scope)
+    opening_df = _filter_df_by_tenant_ids(opening_df, tenant_scope)
     # earnings_df is symbol-grain PUBLIC market data (stg_earnings_calendar
     # has no tenant/account/user column at all — it cannot leak tenant rows).
     # It must NOT go through _filter_df_by_tenant_ids: the filter fails
@@ -2521,6 +2541,30 @@ def position_detail(symbol):
     if selected_account:
         tab_qs = "?account=" + quote_plus(selected_account)
 
+    # ── "History starts here" disclosure ─────────────────────────────
+    # One row per account whose imported history begins mid-position
+    # (int_opening_balances synthesized an opening fill). The share count
+    # is provable; the COST is estimated — the banner says which method
+    # priced it and offers the CSV-upload path to replace the estimate
+    # with real fills. Already tenant-filtered above.
+    opening_balances = []
+    try:
+        if opening_df is not None and not opening_df.empty:
+            for _, ob in opening_df.iterrows():
+                qty = float(ob.get("opening_qty") or 0.0)
+                if qty <= 0:
+                    continue
+                opening_balances.append({
+                    "account": str(ob.get("account") or ""),
+                    "qty": round(qty, 2),
+                    "first_trade_date": ob.get("first_trade_date"),
+                    "est_cost": round(abs(float(ob.get("est_amount") or 0.0)), 2),
+                    "price_source": str(ob.get("price_source") or ""),
+                })
+    except Exception as exc:
+        app.logger.warning("opening-balance banner build failed for %s: %s", symbol, exc)
+        opening_balances = []
+
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
     # get the same tenant + leg treatment here (the raw batch frame is
@@ -2598,6 +2642,7 @@ def position_detail(symbol):
         symbol_company=symbol_company,
         symbol_next_earnings=symbol_next_earnings,
         invariant_warning=invariant_warning,
+        opening_balances=opening_balances,
         viewer_is_admin=is_admin(current_user.username),
         tabs=tabs,
         active_symbol=symbol,

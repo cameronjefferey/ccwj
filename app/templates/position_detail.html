@@ -151,6 +151,38 @@
 </div>
 {% endif %}
 
+{# ── Imported history starts mid-position (opening balance disclosure) ──
+   int_opening_balances synthesized an opening fill: the SHARE COUNT is
+   provable arithmetic (broker snapshot + history), the COST is estimated.
+   Say so, and offer the CSV path to replace the estimate with real fills. #}
+{% if opening_balances %}
+<div class="alert alert-info d-flex align-items-start gap-3 mb-3" role="alert" style="border-left: 4px solid #0d6efd;">
+    <div style="font-size: 1.25rem;">&#128337;</div>
+    <div class="flex-grow-1">
+        <div class="fw-bold mb-1">Your imported history starts mid-position</div>
+        <div class="small mb-1">
+            {% for ob in opening_balances %}
+            <div>
+                {% if opening_balances|length > 1 and ob.account %}<strong>{{ ob.account }}:</strong> {% endif %}
+                {{ '{:,.2f}'.format(ob.qty).rstrip('0').rstrip('.') }} shares were already held when your
+                history begins{% if ob.first_trade_date %} ({{ ob.first_trade_date }}){% endif %}.
+                Opening value {% if ob.price_source == 'broker_cost_basis' %}${{ '{:,.0f}'.format(ob.est_cost) }},
+                taken from your broker's reported cost basis.{% elif ob.price_source == 'market_close' %}estimated
+                at ${{ '{:,.0f}'.format(ob.est_cost) }} from the market close just before your first imported
+                trade.{% else %}estimated at ${{ '{:,.0f}'.format(ob.est_cost) }} from your first imported
+                fill price.{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="small text-muted">
+            All numbers on this page include this opening position.
+            Have older records? <a href="{{ url_for('upload') }}">Upload a CSV of your earlier
+            trade history</a> and we'll replace the estimate with your real fills.
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {# ── Hero ── #}
 <div class="pos-hero">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -770,6 +802,8 @@
         'Long Call': '#20c997', 'Long Put': '#0dcaf0',
         'Call Spread': '#6610f2', 'Put Spread': '#d63384', 'Iron Condor': '#e8590c',
         'Naked Call': '#dc3545', 'Poor Man Covered Call': '#6f42c1', 'Protective Put': '#ffc107',
+        'Partially Covered Call': '#4d94ff', 'Diagonal Call Spread': '#7950f2',
+        'Diagonal Put Spread': '#c2255c', 'Straddle': '#0ca678', 'Strangle': '#f08c00',
         'Other Option': '#6c757d'
     } %}
     <div class="table-responsive">

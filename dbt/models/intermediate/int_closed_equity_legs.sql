@@ -12,44 +12,24 @@
     precede all sells (the common case for covered-call positions).
 */
 
--- Split-adjusted equity trades. Identical signed_quantity / quantity
--- treatment to int_equity_sessions — the running quantity windows in
--- both models MUST use the same share-unit so session boundaries
--- agree. ``amount`` (cash flow) is split-invariant.
---
--- The avg_cost_per_share computed downstream uses
--- total_buy_cost / max(adjusted_total_buy_qty, adjusted_total_sell_qty).
--- For XLU (1700 buy @ $90.33, 2:1 split, 1500 sell @ $46.38):
---   - total_buy_cost   = $153,561 (unchanged)
---   - adjusted buy_qty = 3400
---   - adjusted sell_qty= 1500
---   - avg_cost         = $153,561 / 3400 = $45.165
---   - realized on 1500 sold = $69,570 - 1500 * $45.165 = +$1,822.50
--- Pre-fix: avg_cost was $153,561 / 1700 = $90.33 → realized $-65,925.
---
--- See int_split_factors.sql for the cumulative factor definition.
+-- Equity fills from int_equity_fills — split adjustment (today's
+-- share-units, cash split-invariant; XLU worked example in that model's
+-- header) AND synthetic opening-balance buys are applied centrally there,
+-- so the running-quantity windows here and in int_equity_sessions cut
+-- session boundaries identically by construction.
 with equity_trades as (
     select
-        h.tenant_id,
-        h.account,
-        h.user_id,
-        h.underlying_symbol as symbol,
-        h.trade_date,
-        h.trade_symbol,
-        h.action,
-        h.quantity * coalesce(sf.cumulative_split_factor, 1.0) as quantity,
-        h.amount,
-        case
-            when h.action = 'equity_buy'        then  h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            when h.action = 'equity_sell'       then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            when h.action = 'equity_sell_short' then -h.quantity * coalesce(sf.cumulative_split_factor, 1.0)
-            else 0
-        end as signed_quantity
-    from {{ ref('stg_history') }} h
-    left join {{ ref('int_split_factors') }} sf
-        on  sf.symbol     = h.underlying_symbol
-        and sf.trade_date = h.trade_date
-    where h.instrument_type = 'Equity'
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        trade_date,
+        trade_symbol,
+        action,
+        quantity,
+        amount,
+        signed_quantity
+    from {{ ref('int_equity_fills') }}
 ),
 
 -- Window keyed by (tenant_id, account, user_id, symbol) so two physical

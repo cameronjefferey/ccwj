@@ -1,7 +1,9 @@
 {#
-    Price-tracker fold regression (2026-07-14).
+    Price-tracker fold regression (2026-07-14; threshold widened to < 25
+    shares in the Aug 2026 classification audit — real tracker lots ran
+    2.7 / 8 / 9.6 / 11 / 20 shares and were stuck as Buy and Hold).
 
-    A nominal equity lot (<= 1 share) held alongside options on the same
+    A nominal equity lot (< 25 shares) held alongside options on the same
     underlying is a "so I can watch the ticker" position, not a standalone
     Buy and Hold. It must be FOLDED into that underlying's option strategy
     in int_strategy_classification — otherwise a pure long-call position
@@ -9,7 +11,7 @@
     Hold row for a single tracking share (real case: SEI, user 9, 1 share +
     a long call).
 
-    Fails (returns rows) if any equity session with <= 1 share that has at
+    Fails (returns rows) if any equity session with < 25 shares that has at
     least one overlapping option contract is still classified 'Buy and Hold'
     (or 'Crypto' — a tracker is neither). Standalone tiny lots with NO
     options are out of scope (they legitimately stay Buy and Hold).
@@ -30,7 +32,7 @@ sessions as (
         tenant_id, account, user_id, symbol, session_id, status,
         max_quantity_held, open_date, last_trade_date
     from {{ ref('int_equity_sessions') }}
-    where coalesce(max_quantity_held, 0) <= 1
+    where coalesce(max_quantity_held, 0) < 25
 ),
 
 overlapping_options as (
