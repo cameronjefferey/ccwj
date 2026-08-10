@@ -3025,12 +3025,16 @@ def _build_today_movers(today_moves_df, account_total_value=None,
         "options": [], "options_impact": 0.0,
         "dividends": [], "dividends_impact": 0.0,
         "combined_impact": 0.0,
+        # The view overwrites these against the user's local today; the
+        # defaults keep direct callers/tests rendering the "today" voice.
+        "is_today": True, "as_of_label": None,
     }
     if today_moves_df is None or today_moves_df.empty:
         base = dict(empty)
         # Options/dividends can still exist without equity price rows
         # (options-only accounts) — build them off their own frames.
         base.update(_today_options_and_divs(options_moves_df, dividends_df, None))
+        base["as_of"] = base.pop("options_as_of", None)
         base["combined_impact"] = round(
             base["options_impact"] + base["dividends_impact"], 2)
         return base
@@ -3066,8 +3070,12 @@ def _build_today_movers(today_moves_df, account_total_value=None,
         "losers": losers,
         "total_impact": round(total_impact, 2),
         "as_of": as_of,
+        "is_today": True,
+        "as_of_label": None,
     }
     out.update(_today_options_and_divs(options_moves_df, dividends_df, as_of))
+    out["as_of"] = out["as_of"] or out.pop("options_as_of", None)
+    out.pop("options_as_of", None)
     out["combined_impact"] = round(
         out["total_impact"] + out["options_impact"] + out["dividends_impact"], 2)
     return out
@@ -3085,6 +3093,7 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
     out = {
         "options": [], "options_impact": 0.0,
         "dividends": [], "dividends_impact": 0.0,
+        "options_as_of": None,
     }
 
     opt_as_of = None
@@ -3104,6 +3113,7 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
         opts.sort(key=lambda x: abs(x["dollar_impact"]), reverse=True)
         out["options"] = opts[:8]
         out["options_impact"] = round(sum(o["dollar_impact"] for o in opts), 2)
+        out["options_as_of"] = opt_as_of
 
     if dividends_df is not None and not dividends_df.empty:
         anchor = equity_as_of or opt_as_of
@@ -4012,6 +4022,20 @@ def weekly_review():
                 options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
                 dividends_df=batch.get("today_dividends", pd.DataFrame()),
             )
+            # DATE-HONEST LABELING: the movers pair is anchored on the
+            # latest close in the warehouse, which is FRIDAY all weekend
+            # and Monday pre-close (real complaint 2026-08-10: options
+            # closed Friday showed as "Options P&L today" Monday morning).
+            # When the as-of date isn't the user's today, the template
+            # renders the actual date instead of the word "today".
+            _tm = context["today_movers"]
+            if _tm.get("as_of"):
+                _tm["is_today"] = (_tm["as_of"] == today.isoformat())
+                try:
+                    _tm["as_of_label"] = datetime.strptime(
+                        _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
+                except ValueError:
+                    _tm["as_of_label"] = _tm["as_of"]
         except Exception as e:
             app.logger.warning("Today movers processing failed: %s", e)
 

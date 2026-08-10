@@ -837,13 +837,19 @@
    TODAY'S MOVERS — biggest stock $ impact on holdings
    ════════════════════════════════════ #}
 {% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
+{# DATE-HONEST: on weekends / Monday pre-close the movers pair is still
+   Friday's close, so everything here must say the DATE, not "today" —
+   a Friday options realization labeled "today" on Monday reads as a
+   position the user knows they no longer hold. #}
+{% set tm_is_today = today_movers.is_today if today_movers.is_today is defined else true %}
+{% set tm_day = 'today' if tm_is_today else (today_movers.as_of_label or 'latest close') %}
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>Today's Biggest Movers (your holdings)</span>
+        <span>{% if tm_is_today %}Today's Biggest Movers (your holdings){% else %}Biggest Movers — {{ tm_day }} (your holdings){% endif %}</span>
         {% if today_movers.combined_impact %}
         {% set ti = today_movers.combined_impact %}
         <span style="font-size: .8rem; color: {% if ti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
-            Today's $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+            {% if tm_is_today %}Today's{% else %}{{ tm_day }}{% endif %} $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
             <span class="text-muted" style="font-weight:400;">
                 (stocks {{ "+" if today_movers.total_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}{%
                 if today_movers.options %} · options {{ "+" if today_movers.options_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}{% endif %}{%
@@ -853,11 +859,11 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Stock-price moves today on currently-held shares, weighted by your share count{% if today_movers.options or today_movers.dividends %} — plus option P&amp;L moves and dividends paid today below{% endif %}.
+        Stock-price moves {{ tm_day }} on shares you hold{% if today_movers.options or today_movers.dividends %} — plus option P&amp;L moves and dividends paid that day{% endif %}.{% if not tm_is_today %} Nothing has settled for today yet — this updates when today's close publishes.{% endif %}
     </p>
     <div class="movers-grid">
         <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up today</div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.winners %}
                 <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
@@ -872,12 +878,12 @@
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
                 </a>
                 {% else %}
-                <div class="text-muted small">No green names today.</div>
+                <div class="text-muted small">No green names {{ tm_day }}.</div>
                 {% endfor %}
             </div>
         </div>
         <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down today</div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.losers %}
                 <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
@@ -892,7 +898,7 @@
                     <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
                 </a>
                 {% else %}
-                <div class="text-muted small">No red names today.</div>
+                <div class="text-muted small">No red names {{ tm_day }}.</div>
                 {% endfor %}
             </div>
         </div>
@@ -900,7 +906,7 @@
     {% if today_movers.options %}
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
-            Options P&amp;L today
+            Options P&amp;L {{ tm_day }}
             {% set oi = today_movers.options_impact %}
             <span style="color: {% if oi >= 0 %}#15803d{% else %}#b91c1c{% endif %};">{{ "+" if oi >= 0 else "-" }}${{ "{:,.0f}".format(oi|abs) }}</span>
         </div>
@@ -913,14 +919,14 @@
             {% endfor %}
         </div>
         <div class="text-muted" style="font-size:.72rem; margin-top:.3rem;">
-            Mark-to-market drift on open contracts plus P&amp;L realized today (closes, expiries).
+            Mark-to-market drift on open contracts, plus P&amp;L realized {{ 'today' if tm_is_today else 'that day' }} by closes and expiries — a contract you closed {{ 'today' if tm_is_today else tm_day }} shows its full realized P&amp;L here even though it's no longer open.
         </div>
     </div>
     {% endif %}
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
-            Dividends paid today
+            Dividends paid {{ tm_day }}
             <span style="color:#15803d;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
@@ -1163,9 +1169,12 @@
             {% endif %}
             {% if exit_verdicts_pending %}
             <div class="text-muted small" style="margin-top:.6rem;">
-                {{ exit_verdicts_pending.n }} pending —
-                {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}
-                lands {{ exit_verdicts_pending.next_date_label }}.
+                {{ exit_verdicts_pending.n }} awaiting a verdict &mdash;
+                contract{{ 's' if exit_verdicts_pending.n != 1 }} you closed early,
+                graded once the expiry arrives and the outcome is knowable.
+                Next: {{ exit_verdicts_pending.next_symbol }}
+                {{ exit_verdicts_pending.next_short_label }},
+                {{ exit_verdicts_pending.next_date_label }}.
             </div>
             {% endif %}
         </div>

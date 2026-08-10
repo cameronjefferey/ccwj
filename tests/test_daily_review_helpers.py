@@ -372,6 +372,24 @@ class TestBuildTodayMovers:
         assert result["winners"] == []
         assert result["options_impact"] == 210.0
         assert result["combined_impact"] == 210.0
+        # With no equity rows the card's as-of anchors on the option-mart
+        # date so the view can still date-label a stale (weekend) card.
+        assert result["as_of"] == "2026-05-18"
+
+    def test_date_honesty_defaults(self):
+        # The builder defaults to the "today" voice; the VIEW flips
+        # is_today off when as_of != the user's local today (the Monday-
+        # morning "Friday realizations labeled today" complaint).
+        df = pd.DataFrame([
+            {"symbol": "AAPL", "shares": 100, "current_value": 17000,
+             "today_close": 170, "prev_close": 167,
+             "price_change": 3.0, "price_change_pct": 1.8,
+             "dollar_impact": 300.0, "today_date": date(2026, 5, 18)},
+        ])
+        result = _build_today_movers(df)
+        assert result["is_today"] is True
+        assert result["as_of_label"] is None
+        assert "options_as_of" not in result
 
     def test_dividend_anchor_falls_back_to_option_date(self):
         opt = pd.DataFrame([
