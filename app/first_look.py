@@ -60,7 +60,11 @@ SYMBOL_QUERY = """
     FROM `ccwj-dbt.analytics.positions_summary`
     {where}
     GROUP BY symbol
-    ORDER BY SUM(total_return) DESC
+    -- NB: must be the output alias, not SUM(total_return) — BigQuery
+    -- resolves total_return in ORDER BY to the SELECT alias, so wrapping
+    -- it in SUM() again is an "aggregation of aggregations" error that
+    -- silently killed this page for months (the old route swallowed it).
+    ORDER BY total_return DESC
 """
 
 WIN_LOSS_QUERY = """
@@ -73,7 +77,9 @@ WIN_LOSS_QUERY = """
 
 BUSIEST_MONTH_QUERY = """
     SELECT
-        FORMAT_DATE('%%Y-%%m', open_date) AS month,
+        -- Single %: this string goes through str.format() (which ignores %),
+        -- NOT %-formatting. %% here would render a literal "%Y-%m" on the page.
+        FORMAT_DATE('%B %Y', open_date) AS month,
         COUNT(*) AS trades_opened
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE open_date IS NOT NULL {tenant_filter}
