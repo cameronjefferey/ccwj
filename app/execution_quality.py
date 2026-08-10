@@ -154,7 +154,16 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     """Fold the exit-quality rows into the Trader Profile card context.
 
     Returns None when there isn't enough graded evidence yet (the
-    sufficiency gate), else a dict with sentences / chips / examples.
+    sufficiency gate), else a TAKEAWAY-FIRST dict (Aug 2026 readability
+    pass — the old shape was paragraphs of prose plus chips repeating
+    the same numbers, and users couldn't find the takeaway):
+
+      headline  — the one number that answers "are my exits good?":
+                  net of every graded early close vs the expiry outcome.
+      findings  — scannable rows {label, value, tone, detail}: one bold
+                  number per row, one short muted clause of context.
+      examples  — largest verdicts, each provable on its position page.
+      pending_note — set while daily-mark coverage is still accumulating.
 
     ``today`` anchors the rolling self-comparison (recent
     TREND_WINDOW_DAYS of early exits vs the lifetime baseline) — the
@@ -169,36 +178,54 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     if len(graded) < min_graded:
         return None
 
-    sentences = []
-    chips = [{"label": "Contracts graded", "value": f"{len(graded)}"}]
+    net_all = float(graded["early_close_vs_expiry_delta"].sum())
+    headline = {
+        "value": _signed(net_all),
+        "tone": "pos" if net_all >= 0 else "neg",
+        "text": ("your early exits vs holding to expiry"),
+        "sub": (f"Every early buyback, roll, and long sale — "
+                f"{len(graded)} contracts graded against what each one "
+                f"actually did at expiry."),
+    }
 
-    # 1. Early buybacks on short options (rolls handled separately).
+    findings = []
+
+    # 1. Long options sold before expiry — usually the biggest number,
+    #    so it leads.
+    longs = graded[(graded["direction"] == "Bought") & ~graded["was_rolled"]]
+    if len(longs) >= 2:
+        n_better = int((longs["early_close_vs_expiry_delta"] > 0).sum())
+        net = float(longs["early_close_vs_expiry_delta"].sum())
+        findings.append({
+            "label": "Long exits",
+            "value": _signed(net),
+            "tone": "pos" if net >= 0 else "neg",
+            "detail": (f"{len(longs)} sales before expiry — the exit beat "
+                       f"holding in {n_better} of them."),
+        })
+
+    # 2. Early buybacks on short options (rolls handled separately).
     shorts = graded[(graded["direction"] == "Sold") & ~graded["was_rolled"]]
     if len(shorts) >= 2:
-        worthless = shorts[shorts["expired_worthless"]]
-        cost = float(-shorts.loc[
-            shorts["early_close_vs_expiry_delta"] < 0,
-            "early_close_vs_expiry_delta"].sum())
+        n_worthless = int(shorts["expired_worthless"].sum())
         saved = float(shorts.loc[
             shorts["early_close_vs_expiry_delta"] > 0,
             "early_close_vs_expiry_delta"].sum())
         net = float(shorts["early_close_vs_expiry_delta"].sum())
-        s = (f"You bought back {len(shorts)} short contracts before expiry; "
-             f"{len(worthless)} of them went on to expire worthless.")
-        bits = []
-        if cost > 1:
-            bits.append(f"those early closes gave up {_money(cost)} vs holding")
+        detail = (f"{n_worthless} of {len(shorts)} buybacks would have "
+                  f"expired worthless anyway.")
         if saved > 1:
             n_saved = int((shorts["early_close_vs_expiry_delta"] > 0).sum())
-            bits.append(f"{n_saved} finished in the money, and closing early "
-                        f"avoided {_money(saved)}")
-        if bits:
-            s += " Against the expiry record, " + "; ".join(bits) + "."
-        sentences.append(s)
-        chips.append({"label": "Early buybacks vs expiry",
-                      "value": _signed(net)})
+            detail += (f" Closing dodged {_money(saved)} on the {n_saved} "
+                       f"that finished in the money.")
+        findings.append({
+            "label": "Short buybacks",
+            "value": _signed(net),
+            "tone": "pos" if net >= 0 else "neg",
+            "detail": detail,
+        })
 
-    # 2. Roll necessity — the closed leg's own expiry answers whether the
+    # 3. Roll necessity — the closed leg's own expiry answers whether the
     #    strike ever got run over.
     rolls = graded[graded["was_rolled"]]
     if len(rolls) >= 2:
@@ -206,28 +233,16 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         sidestepped = float(rolls.loc[
             rolls["early_close_vs_expiry_delta"] > 0,
             "early_close_vs_expiry_delta"].sum())
-        s = (f"Of the {len(rolls)} strikes you rolled away from, {untested} "
-             f"went on to expire worthless — those rolls were never tested.")
+        detail = "The old strike expired worthless — insurance, not rescue."
         if sidestepped > 1:
-            s += (f" The rest were: rolling sidestepped {_money(sidestepped)} "
-                  f"of settlement value at the original strikes.")
-        sentences.append(s)
-        chips.append({"label": "Rolls never tested",
-                      "value": f"{untested} of {len(rolls)}"})
-
-    # 3. Long options sold before expiry.
-    longs = graded[(graded["direction"] == "Bought") & ~graded["was_rolled"]]
-    if len(longs) >= 2:
-        n_better = int((longs["early_close_vs_expiry_delta"] > 0).sum())
-        net = float(longs["early_close_vs_expiry_delta"].sum())
-        verdict = ("came out ahead of" if net >= 0 else "gave up value vs")
-        sentences.append(
-            f"On long options, you sold before expiry {len(longs)} times; "
-            f"selling early beat holding to expiry in {n_better} of them. "
-            f"Net across all of these, your exits {verdict} the expiry "
-            f"outcome by {_money(net)}."
-        )
-        chips.append({"label": "Long exits vs expiry", "value": _signed(net)})
+            detail = (f"The rest finished in the money — rolling sidestepped "
+                      f"{_money(sidestepped)}.")
+        findings.append({
+            "label": "Rolls never tested",
+            "value": f"{untested} of {len(rolls)}",
+            "tone": "neutral",
+            "detail": detail,
+        })
 
     # 4. Expiry discipline (no counterfactual needed — it happened).
     if "close_type" in df.columns:
@@ -235,8 +250,13 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
                      & (df["direction"] == "Sold") & (df["realized_pnl"] > 0)]
         if len(expired) >= 2:
             kept = float(expired["realized_pnl"].sum())
-            chips.append({"label": "Held to worthless expiry",
-                          "value": f"{len(expired)} · {_money(kept)} kept"})
+            findings.append({
+                "label": "Held to expiry",
+                "value": f"{_money(kept)} kept",
+                "tone": "pos",
+                "detail": (f"{len(expired)} short contracts carried all the "
+                           f"way to worthless expiry."),
+            })
 
     # 5. Rolling self-comparison — the mirror compares you to you, and
     #    this is the number that moves week to week. Per-contract average
@@ -244,29 +264,34 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     #    as a behavior change.
     trend = execution_trend(graded, today=today)
     if trend:
-        sentences.append(trend["sentence"])
-        chips.append({"label": f"Last {TREND_WINDOW_DAYS} days vs baseline",
-                      "value": trend["chip"]})
+        findings.append({
+            "label": f"Last {TREND_WINDOW_DAYS} days",
+            "value": f"{_signed(trend['recent_avg'])}/exit",
+            "tone": "pos" if trend["recent_avg"] >= 0 else "neg",
+            "detail": (f"Average early-exit result across "
+                       f"{trend['n_recent']} recent exits, vs "
+                       f"{_signed(trend['baseline_avg'])}/exit before "
+                       f"the window."),
+        })
 
     # 6. Marks record — unlocks as daily-mark coverage accumulates.
+    pending_note = None
     marked = df[df["data_reliable"] & (df["peak_unrealized_pnl"] > 50)
                 & (df["realized_pnl"] > 0)]
     if len(marked) >= MIN_MARKED_CONTRACTS:
         capture = (marked["realized_pnl"] / marked["peak_unrealized_pnl"]) \
             .clip(0, 1)
         med = float(capture.median()) * 100
-        sentences.append(
-            f"On the {len(marked)} winning contracts with daily-mark "
-            f"coverage, you captured a median {med:.0f}% of the best exit "
-            f"the marks recorded."
-        )
-        chips.append({"label": "Median peak capture", "value": f"{med:.0f}%"})
+        findings.append({
+            "label": "Peak capture",
+            "value": f"{med:.0f}% median",
+            "tone": "neutral",
+            "detail": (f"Share of the best exit the daily marks recorded, "
+                       f"across {len(marked)} winners."),
+        })
     else:
-        sentences.append(
-            "Daily option marks are still accumulating for your accounts — "
-            "peak-capture grading switches on per contract as coverage "
-            "becomes reliable."
-        )
+        pending_note = ("Daily option marks are still accumulating — "
+                        "peak-capture grading unlocks as coverage builds.")
 
     # Examples: the largest verdicts, each provable on its position page.
     examples = []
@@ -298,9 +323,10 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
 
     return {
         "n_graded": int(len(graded)),
-        "sentences": sentences,
-        "chips": chips[:6],
+        "headline": headline,
+        "findings": findings,
         "examples": examples,
+        "pending_note": pending_note,
     }
 
 
@@ -312,7 +338,7 @@ def execution_trend(graded, today=None, window_days=TREND_WINDOW_DAYS):
     ``graded`` — already-_prep'd rows with a non-null delta (the caller
     filters). Returns None until there are MIN_TREND_RECENT recent exits
     AND an out-of-window baseline to compare against; else
-    {sentence, chip, recent_avg, baseline_avg, n_recent}.
+    {recent_avg, baseline_avg, n_recent} (the profile card phrases it).
     """
     if graded is None or len(graded) == 0 or "close_date" not in graded.columns:
         return None
@@ -324,17 +350,7 @@ def execution_trend(graded, today=None, window_days=TREND_WINDOW_DAYS):
         return None
     recent_avg = float(recent["early_close_vs_expiry_delta"].mean())
     baseline_avg = float(baseline["early_close_vs_expiry_delta"].mean())
-
-    sentence = (
-        f"The number that moves: your {len(recent)} early exits over the "
-        f"last {window_days} days averaged {_money(recent_avg)} per contract "
-        f"{'ahead of' if recent_avg >= 0 else 'behind'} the expiry outcome — "
-        f"your baseline before that window was {_money(baseline_avg)} "
-        f"{'ahead' if baseline_avg >= 0 else 'behind'}."
-    )
     return {
-        "sentence": sentence,
-        "chip": f"{_signed(recent_avg)} vs {_signed(baseline_avg)}",
         "recent_avg": round(recent_avg, 2),
         "baseline_avg": round(baseline_avg, 2),
         "n_recent": int(len(recent)),
@@ -343,8 +359,47 @@ def execution_trend(graded, today=None, window_days=TREND_WINDOW_DAYS):
 
 # ── Verdict maturation (Daily Review) ────────────────────────────────────
 
+def _short_label(row):
+    """"$200 call" — the compact handle for feed rows where the expiry is
+    already carried by an adjacent badge or days-left figure."""
+    try:
+        strike = float(row.get("option_strike"))
+        strike_txt = f"${int(strike)}" if strike == int(strike) else f"${strike:g}"
+    except (TypeError, ValueError):
+        strike_txt = ""
+    ot = str(row.get("option_type") or "").upper()
+    otype = "call" if ot.startswith("C") else "put" if ot.startswith("P") else "option"
+    return f"{strike_txt} {otype}".strip()
+
+
+def _verdict_action(row):
+    """The SHORT action line for a landed verdict in the Daily Review feed.
+
+    The row already leads with the signed dollar delta in its own column,
+    so this line only says WHAT HAPPENED — no numbers repeated (Aug 2026
+    readability pass; the full sentence form lives on in
+    _verdict_sentence for the email digest, which has no layout to lean
+    on)."""
+    delta = float(row["early_close_vs_expiry_delta"])
+    short = _short_label(row)
+    if row["was_rolled"]:
+        if row["expired_worthless"]:
+            return f"Rolled off the {short} — the old strike was never tested."
+        return f"Rolled off the {short} — the old strike finished in the money."
+    if str(row["direction"]) == "Sold":
+        if delta < 0:
+            if row["expired_worthless"]:
+                return f"Bought back the {short}; it expired worthless anyway."
+            return f"Bought back the {short}; holding would have paid more."
+        return f"Bought back the {short} before it finished in the money."
+    if delta < 0:
+        return f"Sold the {short} early; it was worth more at expiry."
+    return f"Sold the {short}; the exit beat the expiry outcome."
+
+
 def _verdict_sentence(row):
-    """One landed verdict, phrased for the Daily Review feed."""
+    """One landed verdict as a full sentence — used by the weekly summary
+    EMAIL, which renders plain list items with no delta column."""
     delta = float(row["early_close_vs_expiry_delta"])
     label = _contract_label(row)
     closed = row.get("close_date")
@@ -401,6 +456,9 @@ def verdicts_landed(df, start, end):
             "symbol": r["symbol"],
             "landed": r["option_expiry"].isoformat(),
             "landed_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+            # action → the page feed (delta rendered separately);
+            # sentence → the email digest (self-contained prose).
+            "action": _verdict_action(r),
             "sentence": _verdict_sentence(r),
             "delta": round(delta, 2),
         })
@@ -426,6 +484,7 @@ def verdicts_pending(df, today):
         items.append({
             "symbol": r["symbol"],
             "label": _contract_label(r),
+            "short_label": _short_label(r),
             "expiry": r["option_expiry"].isoformat(),
             "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
             "days_away": int((r["option_expiry"] - today).days),
@@ -436,6 +495,7 @@ def verdicts_pending(df, today):
         "next_date_label": nxt["expiry_label"],
         "next_symbol": nxt["symbol"],
         "next_label": nxt["label"],
+        "next_short_label": nxt["short_label"],
         "items": items,
     }
 
@@ -513,21 +573,19 @@ def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
     out = []
     net = float(graded["early_close_vs_expiry_delta"].sum())
     worthless = int(graded["expired_worthless"].sum())
-    lead = (f"{len(graded)} of the contracts you closed early here have a "
-            f"known expiry outcome: {worthless} went on to expire worthless")
     if net < -1:
-        out.append(f"{lead}, and the early exits gave up {_money(net)} "
-                   f"vs holding to expiry.")
+        verdict = f"closing early gave up {_money(net)} vs holding"
     elif net > 1:
-        out.append(f"{lead}, and the early exits came out {_money(net)} "
-                   f"ahead of the expiry outcome.")
+        verdict = f"closing early came out {_money(net)} ahead"
     else:
-        out.append(f"{lead}.")
+        verdict = "closing early came out about even"
+    out.append(f"Early exits here: {worthless} of {len(graded)} expired "
+               f"worthless anyway — {verdict}.")
     rolls = graded[graded["was_rolled"]]
     if len(rolls) >= 2:
         untested = int(rolls["expired_worthless"].sum())
-        out.append(f"{untested} of the {len(rolls)} strikes you rolled away "
-                   f"from were never tested at their original expiry.")
+        out.append(f"{untested} of {len(rolls)} rolls were never tested — "
+                   f"the original strike expired worthless.")
     return out
 
 
@@ -549,31 +607,31 @@ def exit_notes(df):
             continue
         if row["was_rolled"]:
             if row["expired_worthless"]:
-                note = ("The record after the fact: the strike you rolled "
+                note = ("After the fact: the strike you rolled "
                         "away from expired worthless — the roll was never "
                         "tested.")
             else:
-                note = (f"The record after the fact: the original strike "
+                note = (f"After the fact: the original strike "
                         f"finished in the money — rolling sidestepped "
                         f"{_money(delta)} of settlement value.")
         elif str(row["direction"]) == "Sold":
             if delta < 0:
-                note = (f"The record after the fact: this contract expired "
+                note = (f"After the fact: this contract expired "
                         f"worthless — the early close gave up {_money(delta)} "
                         f"vs holding."
                         if row["expired_worthless"] else
-                        f"The record after the fact: holding to expiry would "
+                        f"After the fact: holding to expiry would "
                         f"have come out {_money(delta)} better.")
             else:
-                note = (f"The record after the fact: the strike finished in "
+                note = (f"After the fact: the strike finished in "
                         f"the money — closing early avoided {_money(delta)}.")
         else:
             if delta < 0:
-                note = (f"The record after the fact: by expiry this contract "
+                note = (f"After the fact: by expiry this contract "
                         f"was worth {_money(delta)} more than the exit "
                         f"price.")
             else:
-                note = (f"The record after the fact: this exit beat the "
+                note = (f"After the fact: this exit beat the "
                         f"expiry outcome by {_money(delta)}.")
         notes[tsym] = note
     return notes

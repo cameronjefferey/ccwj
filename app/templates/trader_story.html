@@ -76,12 +76,39 @@
     .ts-score-desc { color: #94a3b8; font-size: .78rem; }
     [data-bs-theme="dark"] .ts-score td, [data-bs-theme="dark"] .ts-score th { border-bottom-color: #1f2a3f; }
 
-    .ts-identity.ts-exec {
-        border-left-color: #0d9488;
+    .ts-exec-head {
+        border-left: 3px solid #0d9488; border-radius: 0 10px 10px 0;
         background: linear-gradient(90deg, rgba(13,148,136,.07), rgba(13,148,136,.02));
+        padding: 1rem 1.2rem;
     }
-    [data-bs-theme="dark"] .ts-identity.ts-exec {
+    [data-bs-theme="dark"] .ts-exec-head {
         background: linear-gradient(90deg, rgba(13,148,136,.16), rgba(13,148,136,.04));
+    }
+    .ts-exec-headline { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+    .ts-exec-headline .ts-exec-v { font-size: 1.75rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .ts-exec-headline .ts-exec-v.pos { color: var(--color-positive); }
+    .ts-exec-headline .ts-exec-v.neg { color: var(--color-negative); }
+    .ts-exec-headline .ts-exec-t { font-size: 1rem; font-weight: 600; color: #1e293b; }
+    [data-bs-theme="dark"] .ts-exec-headline .ts-exec-t { color: #e2e8f0; }
+    .ts-exec-headsub { color: #64748b; font-size: .85rem; margin-top: .25rem; }
+    [data-bs-theme="dark"] .ts-exec-headsub { color: #94a3b8; }
+
+    .ts-finding {
+        display: grid; grid-template-columns: 150px 130px 1fr;
+        gap: .35rem 1rem; align-items: baseline;
+        padding: .6rem 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .ts-finding:last-child { border-bottom: 0; }
+    .ts-finding-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .6px; color: #6b7280; font-weight: 700; }
+    .ts-finding-value { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-finding-value.pos { color: var(--color-positive); }
+    .ts-finding-value.neg { color: var(--color-negative); }
+    .ts-finding-detail { color: #64748b; font-size: .88rem; line-height: 1.45; }
+    [data-bs-theme="dark"] .ts-finding { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .ts-finding-detail { color: #94a3b8; }
+    @media (max-width: 560px) {
+        .ts-finding { grid-template-columns: 1fr auto; }
+        .ts-finding-detail { grid-column: 1 / -1; }
     }
     a.ts-exec-example {
         display: flex; gap: .6rem; align-items: baseline;
@@ -149,16 +176,23 @@
    Gated in app/execution_quality.py on >= 5 graded contracts. #}
 <div class="card ts-card p-4 mb-4">
     <h2>Execution review</h2>
-    <div class="ts-identity ts-exec">
-        {% for s in novel.execution.sentences %}
-        <p>{{ s }}</p>
-        {% endfor %}
+    {# Takeaway first: ONE headline number (net of every graded early exit
+       vs the expiry outcome), then scannable finding rows. No prose
+       paragraphs — the old sentences+chips form repeated every number
+       twice and buried the verdict. #}
+    <div class="ts-exec-head">
+        <div class="ts-exec-headline">
+            <span class="ts-exec-v {{ novel.execution.headline.tone }}">{{ novel.execution.headline.value }}</span>
+            <span class="ts-exec-t">{{ novel.execution.headline.text }}</span>
+        </div>
+        <div class="ts-exec-headsub">{{ novel.execution.headline.sub }}</div>
     </div>
-    <div class="ts-chips mt-3">
-        {% for c in novel.execution.chips %}
-        <div class="ts-chip">
-            <div class="ts-chip-v">{{ c.value }}</div>
-            <div class="ts-chip-l">{{ c.label }}</div>
+    <div class="mt-2">
+        {% for f in novel.execution.findings %}
+        <div class="ts-finding">
+            <div class="ts-finding-label">{{ f.label }}</div>
+            <div class="ts-finding-value {{ f.tone }}">{{ f.value }}</div>
+            <div class="ts-finding-detail">{{ f.detail }}</div>
         </div>
         {% endfor %}
     </div>
@@ -172,7 +206,10 @@
         {% endfor %}
     </div>
     {% endif %}
-    <p class="text-muted small mb-0 mt-3">Graded against the underlying's closing price on each contract's expiry date, and daily option marks where coverage exists. Evidence, not advice — every early close also removed risk.</p>
+    <p class="text-muted small mb-0 mt-3">
+        {% if novel.execution.pending_note %}{{ novel.execution.pending_note }} {% endif %}
+        Evidence, not advice — every early close also removed risk.
+    </p>
 </div>
 {% endif %}
 

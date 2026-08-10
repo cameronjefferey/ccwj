@@ -694,11 +694,19 @@ insights + weekly_review), gated per-contract on `data_reliable` and
 strengthening automatically as `int_option_marks_daily` coverage accrues.
 Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
 contracts — the "after X days of data" promise), Position review mirror
-sentences (≥2 graded), and day-row verdicts ("The record after the fact:
-…") appended to the completing close's headline via the `exit_notes`
+sentences (≥2 graded), and day-row verdicts ("After the fact: …")
+appended to the completing close's headline via the `exit_notes`
 param of `build_position_story`. Copy register: neutral evidence, counts
 and dollars, never advice — every early close also removed risk, and the
-sentences must not pretend otherwise. All three models keep one row per
+sentences must not pretend otherwise. READABILITY REGISTER (Aug 2026
+pass, user feedback "a lot of words, I don't know the takeaway"): these
+surfaces are TAKEAWAY-FIRST, not prose-first. The profile card is one
+headline number + scannable findings rows ({label, value, tone, detail} —
+one bold number per row, never a number repeated in both a sentence and
+a chip); Daily Review verdict rows show the signed delta in its own
+column with a SHORT action line (`action` field), while the full
+`sentence` form is reserved for the weekly EMAIL (no layout to lean on).
+New execution copy must follow this shape — no paragraph blocks on pages. All three models keep one row per
 contract (`dbt/tests/option_exit_quality_one_row_per_contract.sql`);
 queries are tenant-scoped + project tenant_id (pinned in
 `tests/test_tenant_filtered_queries_carry_tenant_id.py`); aggregation +

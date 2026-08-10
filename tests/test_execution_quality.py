@@ -128,42 +128,49 @@ def _profile_df():
 
 
 def test_profile_summary_buckets_and_copy():
+    """Takeaway-first shape: headline (net of all graded deltas) +
+    scannable findings rows — one bold number per row, detail in prose."""
     out = summarize_execution(_profile_df())
     assert out is not None
     assert out["n_graded"] == 8
-    text = " ".join(out["sentences"])
-    # Early buybacks: 4 shorts, 3 worthless, $120 given up, $820 avoided.
-    assert "bought back 4 short contracts before expiry" in text
-    assert "3 of them went on to expire worthless" in text
-    assert "$120" in text and "$820" in text
-    # Rolls: 1 of 2 never tested; $400 sidestepped.
-    assert "2 strikes you rolled away from" in text
-    assert "$400" in text
-    # Longs: 1 of 2 beat expiry, net +$700.
-    assert "selling early beat holding to expiry in 1 of them" in text
-    assert "$700" in text
-    # Marks record still accumulating (no data_reliable rows).
-    assert "still accumulating" in text
 
-    labels = {c["label"]: c["value"] for c in out["chips"]}
-    assert labels["Contracts graded"] == "8"
-    assert labels["Rolls never tested"] == "1 of 2"
-    assert "$215" in labels["Held to worthless expiry"]  # 120 + 95 kept
+    # Headline: -120 + 820 - 25 + 400 + 900 - 200 = +$1,775 net.
+    assert out["headline"]["value"] == "+$1,775"
+    assert out["headline"]["tone"] == "pos"
+    assert "8 contracts graded" in out["headline"]["sub"]
+
+    f = {x["label"]: x for x in out["findings"]}
+    # Longs lead: net +$700, beat holding in 1 of 2.
+    assert list(f)[0] == "Long exits"
+    assert f["Long exits"]["value"] == "+$700"
+    assert "beat holding in 1" in f["Long exits"]["detail"]
+    # Shorts: 3 of 4 worthless anyway; dodged $820 on the 1 ITM finish.
+    assert f["Short buybacks"]["value"] == "+$700"  # -120 + 820
+    assert "3 of 4 buybacks" in f["Short buybacks"]["detail"]
+    assert "$820" in f["Short buybacks"]["detail"]
+    # Rolls: 1 of 2 never tested; the other sidestepped $400.
+    assert f["Rolls never tested"]["value"] == "1 of 2"
+    assert "$400" in f["Rolls never tested"]["detail"]
+    # Expiry discipline: $215 kept across 2 contracts.
+    assert f["Held to expiry"]["value"] == "$215 kept"
+    # Marks still accumulating (no data_reliable rows) → note, no finding.
+    assert "Peak capture" not in f
+    assert "still accumulating" in out["pending_note"]
 
     # Examples sorted by |delta|; biggest first (ORCL +$900).
     assert out["examples"][0]["symbol"] == "ORCL"
     assert len(out["examples"]) == 3
 
 
-def test_profile_marks_sentence_when_coverage_reliable():
+def test_profile_marks_finding_when_coverage_reliable():
     rows = [_row(trade_symbol=f"T{i}", data_reliable=True,
                  peak_unrealized_pnl=100.0, realized_pnl=80.0)
             for i in range(5)]
     out = summarize_execution(pd.DataFrame(rows))
-    text = " ".join(out["sentences"])
-    assert "captured a median 80% of the best exit" in text
-    labels = {c["label"]: c["value"] for c in out["chips"]}
-    assert labels["Median peak capture"] == "80%"
+    f = {x["label"]: x for x in out["findings"]}
+    assert f["Peak capture"]["value"] == "80% median"
+    assert "5 winners" in f["Peak capture"]["detail"]
+    assert out["pending_note"] is None
 
 
 # ── Per-symbol mirror sentences ──────────────────────────────────────────
@@ -176,8 +183,7 @@ def test_symbol_sentences_net_giveup():
     ])
     out = symbol_execution_sentences(df)
     assert len(out) == 1
-    assert "2 of the contracts you closed early here have a known expiry outcome" in out[0]
-    assert "2 went on to expire worthless" in out[0]
+    assert "2 of 2 expired worthless anyway" in out[0]
     assert "gave up $75" in out[0]
 
 
@@ -188,8 +194,7 @@ def test_symbol_sentences_roll_line():
              early_close_vs_expiry_delta=-30.0),
     ])
     out = symbol_execution_sentences(df)
-    assert any("2 of the 2 strikes you rolled away from were never tested"
-               in s for s in out)
+    assert any("2 of 2 rolls were never tested" in s for s in out)
 
 
 # ── Day-row verdict notes ────────────────────────────────────────────────
@@ -258,11 +263,9 @@ def test_trend_compares_recent_avg_to_baseline_avg():
     assert out["recent_avg"] == -30.0
     assert out["baseline_avg"] == -80.0
     assert out["n_recent"] == 3
-    assert "$30 per contract behind" in out["sentence"]
-    assert "$80 behind" in out["sentence"]
 
 
-def test_trend_sentence_reaches_profile_card():
+def test_trend_finding_reaches_profile_card():
     recent_day = _TODAY - timedelta(days=10)
     old_day = _TODAY - timedelta(days=TREND_WINDOW_DAYS + 30)
     rows = (
@@ -273,10 +276,10 @@ def test_trend_sentence_reaches_profile_card():
     )
     out = summarize_execution(pd.DataFrame(rows), today=_TODAY)
     assert out is not None
-    text = " ".join(out["sentences"])
-    assert "The number that moves" in text
-    labels = {c["label"]: c["value"] for c in out["chips"]}
-    assert f"Last {TREND_WINDOW_DAYS} days vs baseline" in labels
+    f = {x["label"]: x for x in out["findings"]}
+    trend = f[f"Last {TREND_WINDOW_DAYS} days"]
+    assert trend["value"] == "+$25/exit"
+    assert "vs \u2212$60/exit before the window" in trend["detail"]
 
 
 # ── Verdict maturation (Daily Review) ────────────────────────────────────
@@ -293,7 +296,11 @@ def test_verdicts_landed_windows_on_expiry_date():
     df = pd.DataFrame([in_window, out_window, future])
     landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
     assert [v["symbol"] for v in landed] == ["SOFI"]
+    # sentence = self-contained prose for the email; action = short line
+    # for the page (the delta renders in its own column there).
     assert "expired worthless" in landed[0]["sentence"]
+    assert landed[0]["action"] == \
+        "Bought back the $7 call; it expired worthless anyway."
     assert landed[0]["delta"] == -45.0
 
 
@@ -328,6 +335,7 @@ def test_verdicts_pending_counts_and_next():
     out = verdicts_pending(df, _TODAY)
     assert out["n"] == 2
     assert out["next_symbol"] == "RKLB"
+    assert out["next_short_label"] == "$7 call"
     assert out["items"][0]["days_away"] == 5
 
 
@@ -411,8 +419,8 @@ def test_exit_note_renders_on_completing_close_in_story():
                  if i["type"] == "day" and i["date_iso"] == "2025-06-01"][0]
     joined = " ".join(close_day["headlines"])
     assert "Bought back the $7 call" in joined
-    assert "The record after the fact" in joined
+    assert "After the fact" in joined
     # The open day carries no verdict.
     open_day = [i for i in items
                 if i["type"] == "day" and i["date_iso"] == "2025-05-01"][0]
-    assert "record after the fact" not in " ".join(open_day["headlines"])
+    assert "After the fact" not in " ".join(open_day["headlines"])

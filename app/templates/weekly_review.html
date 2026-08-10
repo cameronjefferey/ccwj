@@ -76,6 +76,19 @@
         font-size: .82rem; color: #64748b; margin: -.5rem 0 1rem;
         max-width: 56rem;
     }
+    /* Collapsed methodology fine print — keeps section intros to ONE
+       line (Aug 2026 readability pass); the "how" lives behind a click. */
+    details.section-fine { margin-top: .6rem; }
+    details.section-fine summary {
+        font-size: .75rem; color: #94a3b8; cursor: pointer;
+        user-select: none; width: fit-content;
+    }
+    details.section-fine summary:hover { color: #64748b; }
+    details.section-fine p {
+        font-size: .8rem; color: #64748b; margin: .4rem 0 0;
+        max-width: 56rem;
+    }
+    [data-bs-theme="dark"] details.section-fine p { color: #8fa0b5; }
 
     .text-positive { color: #15803d; }
     .text-negative { color: #b91c1c; }
@@ -941,9 +954,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Where your broker's last mark sits relative to today's official close.
-        The app reports on the close (the price you made decisions on); this is
-        extended-hours movement only{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %}.
+        Extended-hours movement since today's close{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %} &mdash; not counted in the numbers above.
     </p>
     <div class="movers-grid">
         <div>
@@ -1121,8 +1132,7 @@
 <div class="review-section">
     <div class="section-label">Execution Review</div>
     <p class="section-sub">
-        Decisions graded against what the market did next. A verdict lands on the
-        contract's expiry date — the day the outcome becomes knowable.
+        Your closes, graded against what each contract actually did at expiry.
     </p>
     <div class="watch-grid">
         {% if exit_verdicts_landed or exit_verdicts_pending %}
@@ -1141,7 +1151,9 @@
                 </div>
                 <div>
                     <div class="watch-sym">{{ v.symbol }}<span class="watch-badge">landed {{ v.landed_label }}</span></div>
-                    <div class="watch-meta">{{ v.sentence }}</div>
+                    {# Short action line only — the signed delta already
+                       leads the row; don't repeat it in prose. #}
+                    <div class="watch-meta">{{ v.action }}</div>
                 </div>
             </a>
             {% endfor %}
@@ -1151,9 +1163,9 @@
             {% endif %}
             {% if exit_verdicts_pending %}
             <div class="text-muted small" style="margin-top:.6rem;">
-                {{ exit_verdicts_pending.n }} verdict{{ 's' if exit_verdicts_pending.n != 1 }} pending —
-                next lands {{ exit_verdicts_pending.next_date_label }}
-                ({{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_label }}).
+                {{ exit_verdicts_pending.n }} pending —
+                {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}
+                lands {{ exit_verdicts_pending.next_date_label }}.
             </div>
             {% endif %}
         </div>
@@ -1162,7 +1174,7 @@
         {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
         <div class="watch-block">
             <div class="wb-title">
-                <span>Open Contracts — The Record So Far</span>
+                <span>Open Contracts</span>
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ (open_option_record.shorts|length) + (open_option_record.longs|length) }} open</span>
             </div>
             <div class="watch-list">
@@ -1174,7 +1186,7 @@
                 </div>
                 <div>
                     <div class="watch-sym">{{ s.symbol }}</div>
-                    <div class="watch-meta">{{ s.label }} — ${{ "{:,.0f}".format(s.premium) }} premium collected · {{ s.days_left }} day{{ 's' if s.days_left != 1 }} left</div>
+                    <div class="watch-meta">{{ s.label }} · collected ${{ "{:,.0f}".format(s.premium) }} · {{ s.days_left }}d left</div>
                 </div>
                 <div class="watch-aux {% if s.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if s.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(s.unrealized|abs) }}
@@ -1189,7 +1201,7 @@
                 </div>
                 <div>
                     <div class="watch-sym">{{ l.symbol }}</div>
-                    <div class="watch-meta">{{ l.label }} — paid ${{ "{:,.0f}".format(l.paid) }}, marked ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }} day{{ 's' if l.days_left != 1 }} left</div>
+                    <div class="watch-meta">{{ l.label }} · paid ${{ "{:,.0f}".format(l.paid) }} → ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }}d left</div>
                 </div>
                 <div class="watch-aux {% if l.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if l.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(l.unrealized|abs) }}
@@ -1353,14 +1365,8 @@
 <div class="review-section">
     <div class="section-label">Performance by Account</div>
     <p class="section-sub">
-        Open positions plus anything closed this week (since
-        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}),
-        per account &mdash; split by stock, options, and dividends. Each column
-        counts only positions currently open or closed this week; older closed
-        trades are excluded (they live in the full account breakdown).
-        Annualized factors in how long a position has been held. Click an
-        account for the full lifetime breakdown by position, strategy, and
-        sector.
+        This week's result per account &mdash; stock, options, and dividends.
+        Click an account for its full lifetime breakdown.
     </p>
     <div class="breakdown-wrap">
         <table class="breakdown-table">
@@ -1419,13 +1425,20 @@
             </tbody>
         </table>
     </div>
-    {% if account_breakdown.benchmarks or [] %}
-    <p class="section-sub" style="margin-top:.5rem;">
-        Benchmark rows show what the same capital would have returned in the
-        index over the same holding window &mdash; your Total / G/L % /
-        Annualized beating those rows means you outperformed the market.
-    </p>
-    {% endif %}
+    <details class="section-fine">
+        <summary>How this is computed</summary>
+        <p>
+            Counts open positions plus anything closed since
+            {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }};
+            older closed trades live in the full account breakdown. Annualized
+            factors in how long each position has been held.
+            {% if account_breakdown.benchmarks %}
+            Benchmark rows show what the same capital would have returned in
+            the index over the same holding window &mdash; beating them means
+            you outperformed the market.
+            {% endif %}
+        </p>
+    </details>
 </div>
 {% endif %}
 
@@ -1479,15 +1492,21 @@
         </span>
     </div>
     <p class="section-sub">
-        Everything you opened or closed since
+        Opened or closed since
         {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
-        One row per symbol &mdash; all of a symbol's contracts this week are netted
-        together. Closed rows show realized P&amp;L; open rows show unrealized G/L
-        at the latest snapshot. Add a tag (e.g. <code>earningsfollower</code>) to any
-        row to track how a group of trades performs &mdash; tags roll up on the
-        Accounts and Positions pages.
+        One row per symbol.
     </p>
+    <details class="section-fine" style="margin:-.4rem 0 .8rem;">
+        <summary>How this is computed</summary>
+        <p>
+            All of a symbol's contracts this week are netted into one row.
+            Closed rows show realized P&amp;L; open rows show unrealized G/L at
+            the latest snapshot. Add a tag (e.g. <code>earningsfollower</code>)
+            to any row to track a group of trades &mdash; tags roll up on the
+            Accounts and Positions pages.
+        </p>
+    </details>
     <div class="breakdown-wrap ht-sticky">
         <table class="breakdown-table">
             <thead>
