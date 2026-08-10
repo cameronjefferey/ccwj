@@ -182,10 +182,6 @@
             <a class="nav-link {% if tab == 'security' %}active{% endif %}" href="{{ url_for('profile', tab='security') }}">Login &amp; security</a>
             <a class="nav-link {% if tab == 'notifications' %}active{% endif %}" href="{{ url_for('profile', tab='notifications') }}">Notifications</a>
             <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
-            {% if community_enabled %}
-            <a class="nav-link {% if tab == 'community' %}active{% endif %}" href="{{ url_for('profile', tab='community') }}">Community</a>
-            <a class="nav-link {% if tab == 'published' %}active{% endif %}" href="{{ url_for('profile', tab='published') }}">Shared trades</a>
-            {% endif %}
         </nav>
 
         <div>
@@ -234,17 +230,6 @@
                 <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
                     <div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div>
                 </a>
-                {% if community_enabled %}
-                <a class="stat-tile" href="{{ url_for('community') }}">
-                    <div class="n">{{ follower_count }}</div><div class="l">Followers</div>
-                </a>
-                <a class="stat-tile" href="{{ url_for('community') }}">
-                    <div class="n">{{ following_count }}</div><div class="l">Following</div>
-                </a>
-                <a class="stat-tile" href="{{ url_for('profile', tab='published') }}">
-                    <div class="n">{{ published_count }}</div><div class="l">Shared</div>
-                </a>
-                {% endif %}
             </div>
 
             {# Connection health — status of every linked broker at a glance #}
@@ -686,71 +671,6 @@
             </div>
             {% endif %}
 
-            {% if tab == 'community' %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Visibility</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint mb-4">Controls whether other traders can find you and see trades you choose to share. Community features are early — you can stay private and nothing else on the site changes.</p>
-                    <form method="POST" action="{{ url_for('profile', tab='community') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="save_profile">
-                        <input type="hidden" name="settings_tab" value="community">
-                        <div class="atlas-field">
-                            <label class="atlas-label">Who can see your profile</label>
-                            <select class="form-select form-select-lg" name="profile_visibility">
-                                <option value="private" {% if profile_row.profile_visibility == 'private' %}selected{% endif %}>Private — not discoverable</option>
-                                <option value="followers" {% if profile_row.profile_visibility == 'followers' %}selected{% endif %}>Followers — only people who follow you</option>
-                                <option value="public" {% if profile_row.profile_visibility == 'public' %}selected{% endif %}>Public — any signed-in trader</option>
-                            </select>
-                        </div>
-                        <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" name="show_account_names_on_published" id="san" {% if profile_row.show_account_names_on_published %}checked{% endif %}>
-                            <label class="form-check-label" for="san">Show real account nicknames on shared trades (otherwise they read as “Account”)</label>
-                        </div>
-                        <button type="submit" class="btn btn-primary px-4 fw-semibold">Save</button>
-                    </form>
-                </div>
-            </div>
-            {% endif %}
-
-            {% if tab == 'published' %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Trades you’ve shared</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint">Removing a shared trade takes it off other people’s feeds. Your underlying data is untouched.</p>
-                    {% if my_published_trades %}
-                    <div class="table-responsive mt-3">
-                        <table class="table align-middle">
-                            <thead><tr><th class="sortable" data-sort="str">Symbol</th><th class="sortable" data-sort="str">Strategy</th><th class="sortable" data-sort="str">Status</th><th class="sortable text-end" data-sort="num">P&amp;L shown</th><th></th></tr></thead>
-                            <tbody>
-                                {% for p in my_published_trades %}
-                                <tr data-href="{{ url_for('position_detail', symbol=p.symbol) }}">
-                                    <td class="fw-bold" data-val="{{ p.symbol }}">{{ p.symbol }}</td>
-                                    <td class="small text-muted" data-val="{{ p.strategy }}">{{ p.strategy }}</td>
-                                    <td data-val="{{ p.status }}"><span class="badge rounded-pill text-bg-light">{{ p.status }}</span></td>
-                                    <td class="text-end small" data-val="{{ p.display_pnl if p.display_pnl is not none else '' }}">{% if p.display_pnl is not none %}{{ "+" if p.display_pnl >= 0 else "" }}${{ "{:,.2f}".format(p.display_pnl) }}{% else %}—{% endif %}</td>
-                                    <td class="text-end" data-no-row-nav>
-                                        <form method="POST" action="{{ url_for('community_publish_trade_route') }}" class="d-inline" onsubmit="return confirm('Remove this shared trade?');">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <input type="hidden" name="action" value="unpublish">
-                                            <input type="hidden" name="trade_fingerprint" value="{{ p.trade_fingerprint }}">
-                                            <input type="hidden" name="next" value="{{ url_for('profile', tab='published') }}">
-                                            <button type="submit" class="btn btn-link btn-sm text-danger p-0">Remove</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="mb-0 mt-3 fw-semibold text-dark">Nothing shared yet.</p>
-                    <p class="atlas-hint mt-2">If you want to start sharing, head to Daily Review and hit <strong>Show</strong> on a trade.</p>
-                    <a href="{{ url_for('weekly_review') }}" class="btn btn-primary px-4 fw-semibold mt-2">Go to Daily Review</a>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>

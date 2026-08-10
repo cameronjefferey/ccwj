@@ -34,9 +34,7 @@ from app.models import (
     is_admin,
     get_mirror_score_for_user, get_mirror_score_history,
     get_insight_for_user,
-    get_published_trade_fingerprints,
     get_user_profile,
-    trade_fingerprint,
     get_review_visit,
     bump_review_visit,
 )
@@ -3658,8 +3656,6 @@ def weekly_review():
         "exit_verdicts_landed": [],
         "exit_verdicts_pending": None,
         "open_option_record": None,
-        "community_profile_visibility": "private",
-        "community_publish_ready": False,
     }
 
     daily_changes_map = {}
@@ -4220,11 +4216,6 @@ def weekly_review():
         context.get("today_movers"),
         context.get("equity_snapshot"),
     )
-
-    _prof = get_user_profile(current_user.id)
-    _vis = (_prof.get("profile_visibility") or "private").lower()
-    context["community_profile_visibility"] = _vis
-    context["community_publish_ready"] = _vis in ("followers", "public")
 
     # NB: "Broker data as of" is now a GLOBAL freshness strip (base.html, fed
     # by `_inject_broker_data_freshness` in app/snaptrade.py) so it shows on

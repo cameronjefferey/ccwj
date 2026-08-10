@@ -106,7 +106,7 @@
 {% block content %}
 <div class="au-hero">
     <h1>Users <span style="color:rgba(255,255,255,.55);font-weight:500;font-size:1rem;">— {{ users|length }}</span></h1>
-    <p>Every user in the production database, with their linked broker accounts and community activity. Use Impersonate to see exactly what they see.</p>
+    <p>Every user in the production database, with their linked broker accounts. Use Impersonate to see exactly what they see.</p>
 </div>
 
 <div class="au-section">
@@ -121,10 +121,7 @@
         <thead>
             <tr>
                 <th class="sortable" data-sort="str">User</th>
-                <th class="sortable" data-sort="str">Visibility</th>
                 <th class="sortable" data-sort="num">Broker accounts</th>
-                <th class="sortable text-end" data-sort="num">Posts</th>
-                <th class="sortable" data-sort="str">Last post</th>
                 <th></th>
             </tr>
         </thead>
@@ -135,19 +132,12 @@
                     <div class="au-username">@{{ u.username }}{% if u.username|lower in admin_usernames %}<span class="au-admin-pill">admin</span>{% endif %}</div>
                     {% if u.display_name %}<div class="au-display">{{ u.display_name }}</div>{% endif %}
                 </td>
-                <td data-val="{{ u.profile_visibility or 'private' }}">
-                    <span class="au-vis {{ u.profile_visibility or 'private' }}">{{ u.profile_visibility or 'private' }}</span>
-                </td>
                 <td data-val="{{ u.accounts|length }}">
                     {% if u.accounts %}
                         {% for acct in u.accounts %}<span class="au-account">{{ acct }}</span>{% endfor %}
                     {% else %}
                         <span class="au-no-accounts">none linked</span>
                     {% endif %}
-                </td>
-                <td class="text-end" style="font-variant-numeric: tabular-nums;" data-val="{{ u.post_count or 0 }}">{{ u.post_count or 0 }}</td>
-                <td style="font-size: .78rem; color: #78716c;" data-val="{{ u.last_post_at.strftime('%Y-%m-%d') if u.last_post_at else '' }}">
-                    {% if u.last_post_at %}{{ u.last_post_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
                 </td>
                 <td>
                     <div class="au-actions">

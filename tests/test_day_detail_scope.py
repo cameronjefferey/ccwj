@@ -72,8 +72,6 @@ def test_heatmap_day_link_preserves_tenant_scope():
         "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
         "benchmark_snapshot": [],
-        "community_profile_visibility": "private",
-        "community_publish_ready": False,
     }
 
     with app.test_request_context(

@@ -70,17 +70,6 @@ class Config:
     # dataset is still being backfilled/tuned.
     BEHAVIOR_INSIGHTS_ENABLED = _env_bool("BEHAVIOR_INSIGHTS_ENABLED", "true")
 
-    # Community surface (followers, posts, public profiles, "Show" trade publish).
-    # Default OFF: the trading-mirror identity is single-player and the community
-    # surface still needs notifications, moderation, seeding, and on-strategy
-    # redesign before it should ship to real users. Code, schema, and routes
-    # stay in the repo so iteration can continue behind the flag — set
-    # COMMUNITY_ENABLED=1 to turn it back on (e.g. local dev, internal preview).
-    # When OFF: the /community, /u/<username>, /community/* routes 404, the
-    # Community nav link + Profile tabs disappear, and the Weekly Review "Show"
-    # column + publish modal are not rendered. Tests force-enable in conftest.
-    COMMUNITY_ENABLED = _env_bool("COMMUNITY_ENABLED", "false")
-
     # EarningsFollower — tandem product (separate deploy) surfaced via deep-links.
     # The /earnings ("Earnings Watch") page and the EarningsFollower cross-links
     # in the Daily Review are gated on this flag (default ON). Set

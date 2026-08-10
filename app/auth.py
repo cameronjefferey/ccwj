@@ -39,14 +39,16 @@ def _validate_email(raw):
         return None, "That email address doesn't look right."
     return email, None
 
-# Profile default "home" after login. Keys must match profile_community _ALLOWED_DEFAULT_ROUTE.
+# Profile default "home" after login. Keys must match profile_page _ALLOWED_DEFAULT_ROUTE.
+# "symbols" is a legacy stored value from the retired Daily P&L page — it maps
+# to /positions now (profile_page coerces it on read too).
 _LANDING = {
     "weekly_review": "weekly_review",
     "positions": "positions",
     "strategies": "strategies",
     "insights": "insights",
     "accounts": "accounts",
-    "symbols": "symbols_detail",
+    "symbols": "positions",
 }
 
 

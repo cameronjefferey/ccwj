@@ -320,16 +320,11 @@ def admin_users():
                 up.created_at                                   AS profile_created_at,
                 up.display_name                                 AS display_name,
                 up.timezone                                     AS timezone,
-                up.profile_visibility                           AS profile_visibility,
                 COALESCE(
                     (SELECT array_agg(account_name ORDER BY account_name)
                      FROM user_accounts WHERE user_id = u.id),
                     ARRAY[]::text[]
-                )                                               AS accounts,
-                (SELECT COUNT(*) FROM community_posts WHERE user_id = u.id)
-                                                                AS post_count,
-                (SELECT MAX(created_at) FROM community_posts WHERE user_id = u.id)
-                                                                AS last_post_at
+                )                                               AS accounts
             FROM users u
             LEFT JOIN user_profiles up ON up.user_id = u.id
             ORDER BY u.username

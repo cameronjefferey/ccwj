@@ -142,9 +142,8 @@ def earnings_follower_url(symbol=None, theme=None, tab=None, sector=None, subsec
 # signing up is logged in as the same Postgres user. That's fine for read
 # pages (every visitor sees the same canned weekly review, mirror score,
 # strategies, insights) but every write would let one stranger overwrite
-# what the next stranger sees: rename the demo profile, publish or delete
-# community trades, regenerate insights, replace the seed data by uploading
-# a different broker's export, etc.
+# what the next stranger sees: rename the demo profile, regenerate insights,
+# replace the seed data by uploading a different broker's export, etc.
 #
 # To keep the demo a faithful, predictable showcase we block writes server-
 # side. Each route that mutates per-user state calls ``demo_block_writes``
@@ -173,9 +172,9 @@ def demo_block_writes(action: str = "this action"):
     Returns a Flask response (redirect/JSON) when the request must be blocked,
     or ``None`` when the caller should continue. Routes use it like::
 
-        @app.route("/community/post", methods=["POST"])
-        def submit_post():
-            blocked = demo_block_writes("posting to the community")
+        @app.route("/profile", methods=["POST"])
+        def profile():
+            blocked = demo_block_writes("profile and account settings")
             if blocked:
                 return blocked
             ...

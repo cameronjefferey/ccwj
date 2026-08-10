@@ -113,7 +113,6 @@ def _inject_feature_flags():
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
-        "community_enabled": current_app.config.get("COMMUNITY_ENABLED", False),
         "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
         "earnings_follower_base_url": current_app.config.get("EARNINGS_FOLLOWER_URL", ""),
         "is_admin_user": is_admin_user,
@@ -383,6 +382,6 @@ from app import admin  # noqa: F401  registers /admin/* routes
 from app import snaptrade  # noqa: F401  registers /snaptrade/* routes
 from app import first_look
 from app import strategies
-from app import profile_community
+from app import profile_page  # noqa: F401  registers /profile (settings hub)
 from app import webhooks  # noqa: F401  registers /webhooks/* routes
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
