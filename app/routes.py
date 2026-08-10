@@ -820,43 +820,6 @@ def _resolve_position_leg_filter(sessions_list, leg_param):
     return raw, selected_legs
 
 
-def _iter_symbols_for_daily_detail(trades_df, pnl_df, current_df, open_pairs):
-    """
-    Row keys (account, symbol) for /symbols. dbt can classify open options from
-    the current snapshot alone (int_option_contracts.snapshot_only_options) so
-    positions_summary has a row with no stg_history rows — the Positions page
-    still works. This iterator unions trade-history keys with positions_summary
-    and current so Daily Detail matches that catalog.
-    """
-    seen = set()
-    out = []
-    if (
-        not trades_df.empty
-        and "account" in trades_df.columns
-        and "symbol" in trades_df.columns
-    ):
-        for (acc, sym), _ in trades_df.groupby(["account", "symbol"]):
-            k = (str(acc), str(sym))
-            if open_pairs is not None and k not in open_pairs:
-                continue
-            if k not in seen:
-                seen.add(k)
-                out.append((acc, sym))
-    for df in (pnl_df, current_df):
-        if df is None or df.empty or "account" not in df.columns or "symbol" not in df.columns:
-            continue
-        for _, row in df.drop_duplicates(["account", "symbol"]).iterrows():
-            acc, sym = row["account"], row["symbol"]
-            k = (str(acc), str(sym))
-            if open_pairs is not None and k not in open_pairs:
-                continue
-            if k in seen:
-                continue
-            seen.add(k)
-            out.append((acc, sym))
-    return out
-
-
 def _parse_date(value):
     """Return a date object if value is a valid YYYY-MM-DD string, else None."""
     if not value:
@@ -964,13 +927,7 @@ from app.earnings_page import (  # noqa: E402,F401
     earnings_watch,
 )
 from app.symbols_page import (  # noqa: E402,F401
-    CLOSED_EQUITY_LEGS_QUERY,
-    CLOSED_LEGS_QUERY,
     CURRENT_POSITIONS_QUERY,
-    OPEN_SESSION_START_QUERY,
-    STRATEGIES_MAP_QUERY,
-    SYMBOLS_PNL_QUERY,
     TRADES_QUERY,
-    _finish_symbol_chart,
     symbols_detail,
 )
