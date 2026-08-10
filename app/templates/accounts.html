@@ -40,6 +40,15 @@
     <p class="lede">A side-by-side view of every account you've connected &mdash; current value, what's invested, and how realized vs unrealized P&amp;L is trending over time.</p>
 </div>
 
+{# View switch — one Accounts surface, two lenses (former /wealth page is
+   the "Value & composition" view). #}
+<div class="btn-group btn-group-sm mb-3" role="group" aria-label="Accounts view">
+    <a class="btn btn-primary" aria-current="page"
+       href="{{ url_for('accounts', account=selected_account or none, tenant=request.args.get('tenant') or none) }}">Performance</a>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('accounts', view='value', account=selected_account or none, tenant=request.args.get('tenant') or none) }}">Value &amp; composition</a>
+</div>
+
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-info">
     <strong>No account data yet.</strong>

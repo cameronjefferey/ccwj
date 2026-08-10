@@ -108,6 +108,15 @@
 
 {% block content %}
 
+{# View switch — one Strategies surface, two lenses (former /strategy-fit
+   page is the "Fit matrix" view). #}
+<div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
+    <a class="btn btn-primary" aria-current="page"
+       href="{{ url_for('strategies', account=selected_account or none) }}">Performance</a>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('strategies', view='fit', account=selected_account or none) }}">Fit matrix</a>
+</div>
+
 {# ── Account filter ── #}
 {% if accounts and accounts|length > 1 %}
 <form method="get" class="filter-bar">

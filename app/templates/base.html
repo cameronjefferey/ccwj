@@ -602,8 +602,7 @@
                None-valued params, so unscoped pages get clean URLs. #}
             {% set selected_account = request.args.get('account') or None %}
             {% set selected_tenant = request.args.get('tenant') or None %}
-            {% set in_portfolio = ep in ('positions', 'accounts', 'wealth') %}
-            {% set in_breakdowns = ep in ('strategies', 'sectors', 'strategy_fit') %}
+            {% set in_portfolio = ep in ('positions', 'accounts', 'strategies', 'sectors') %}
             <ul class="navbar-nav me-auto">
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
@@ -626,27 +625,12 @@
                                href="{{ url_for('accounts', account=selected_account, tenant=selected_tenant) }}">Accounts</a>
                         </li>
                         <li>
-                            <a class="dropdown-item {% if ep == 'wealth' %}active{% endif %}"
-                               href="{{ url_for('wealth', account=selected_account, tenant=selected_tenant) }}">Wealth</a>
-                        </li>
-                    </ul>
-                </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if in_breakdowns %}active{% endif %}" href="#"
-                       id="navBreakdowns" data-bs-toggle="dropdown" aria-expanded="false">Breakdowns</a>
-                    <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navBreakdowns">
-                        <li>
                             <a class="dropdown-item {% if ep == 'strategies' %}active{% endif %}"
                                href="{{ url_for('strategies', account=selected_account, tenant=selected_tenant) }}">Strategies</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'sectors' %}active{% endif %}"
                                href="{{ url_for('sectors', account=selected_account, tenant=selected_tenant) }}">Sectors</a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item {% if ep == 'strategy_fit' %}active{% endif %}"
-                               href="{{ url_for('strategy_fit', account=selected_account, tenant=selected_tenant) }}">Strategy fit</a>
                         </li>
                     </ul>
                 </li>

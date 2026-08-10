@@ -7,7 +7,7 @@ live in app/strategy_fit_insights.py.
 
 import json
 import pandas as pd
-from flask import render_template, request
+from flask import redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 
 from app import app
@@ -427,9 +427,26 @@ def _strategy_fit_render_payload(
     )
 
 
+# The standalone /strategy-fit page was merged into /strategies in the
+# Aug 2026 surface audit: one "Strategies" surface with two views —
+# Performance (app/strategies.py, default) and Fit matrix (this module).
+# /strategy-fit 301s so bookmarks keep working; render_strategy_fit_view()
+# is called by the strategies endpoint when ?view=fit.
+
+
 @app.route("/strategy-fit")
 @login_required
 def strategy_fit():
+    """Legacy URL — permanently moved to /strategies?view=fit."""
+    args = {"view": "fit"}
+    for key in ("account", "tenant", "dim", "sector"):
+        val = (request.args.get(key) or "").strip()
+        if val:
+            args[key] = val
+    return redirect(url_for("strategies", **args), code=301)
+
+
+def render_strategy_fit_view():
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce

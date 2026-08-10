@@ -68,14 +68,13 @@
     { s: "Daily Review", href: "/daily-review", kind: "page" },
     { s: "Trader Profile", href: "/story", kind: "page" },
     { s: "Positions", href: "/positions", kind: "page" },
-    { s: "Daily P&L", href: "/symbols", kind: "page" },
     { s: "Accounts", href: "/accounts", kind: "page" },
-    { s: "Wealth", href: "/wealth", kind: "page" },
+    { s: "Account Value", href: "/accounts?view=value", kind: "page" },
     { s: "Strategies", href: "/strategies", kind: "page" },
+    { s: "Strategy Fit", href: "/strategies?view=fit", kind: "page" },
     { s: "Sectors", href: "/sectors", kind: "page" },
-    { s: "Strategy Fit", href: "/strategy-fit", kind: "page" },
-    { s: "Taxes", href: "/taxes", kind: "page" },
-    { s: "Benchmark", href: "/benchmark", kind: "page" },
+    { s: "Earnings", href: "/earnings", kind: "page" },
+    { s: "AI Insights", href: "/insights", kind: "page" },
     { s: "Profile", href: "/profile", kind: "page" }
   ];
 

@@ -252,7 +252,7 @@
         </a>
     </div>
     <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('strategy_fit') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
+        <a href="{{ url_for('strategies', view='fit') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
             <div class="feature-icon" style="background:rgba(220,53,69,.12); color:#dc3545">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M0 0h5v5H0V0zm6 0h5v5H6V0zm6 0h4v5h-4V0zM0 6h5v5H0V6zm6 0h5v5H6V6zm6 0h4v5h-4V6zM0 12h5v4H0v-4zm6 0h5v4H6v-4zm6 0h4v4h-4v-4z"/>

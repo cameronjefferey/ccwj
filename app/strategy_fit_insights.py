@@ -533,12 +533,12 @@ def generate_strategy_fit_insights():
         return blocked
     selected_account = request.args.get("account", "")
     drill_sector     = request.args.get("sector", "")
-    redir_kwargs = {}
+    redir_kwargs = {"view": "fit"}
     if selected_account:
         redir_kwargs["account"] = selected_account
     if drill_sector:
         redir_kwargs["sector"] = drill_sector
-    redir = url_for("strategy_fit", **redir_kwargs)
+    redir = url_for("strategies", **redir_kwargs)
 
     if not app.config.get("INSIGHTS_ENABLED", True):
         flash("AI Insights is currently disabled.", "warning")

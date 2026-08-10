@@ -17,7 +17,7 @@ import json
 from datetime import date, timedelta
 
 import pandas as pd
-from flask import render_template, request
+from flask import redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app import app
@@ -385,12 +385,28 @@ def _build_income_panel(df):
 
 
 # ---------------------------------------------------------------------------
-# Route
+# Routes
 # ---------------------------------------------------------------------------
+# The standalone /wealth page was merged into /accounts in the Aug 2026
+# surface audit: one "Accounts" surface with two views — Performance (the
+# accounts_page P&L view) and Value & composition (this module). /wealth
+# 301s so bookmarks keep working; render_wealth_view() is called by the
+# accounts endpoint when ?view=value.
+
 
 @app.route("/wealth")
 @login_required
 def wealth():
+    """Legacy URL — permanently moved to /accounts?view=value."""
+    args = {"view": "value"}
+    for key in ("account", "tenant", "range", "exclude_transfers"):
+        val = (request.args.get(key) or "").strip()
+        if val:
+            args[key] = val
+    return redirect(url_for("accounts", **args), code=301)
+
+
+def render_wealth_view():
     """Daily account value with cash / equity / options breakdown.
 
     Process-first: the chart and hero exist so a user can see *how*
@@ -433,7 +449,7 @@ def wealth():
     picker_accounts = sorted(user_accounts) if user_accounts else []
 
     context = {
-        "title": "Wealth",
+        "title": "Accounts — Value & composition",
         "selected_account": selected_account,
         "selected_range": (range_arg or "180").lower(),
         "exclude_transfers": exclude_transfers,

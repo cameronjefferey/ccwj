@@ -910,6 +910,7 @@ from app.sectors_page import (  # noqa: E402,F401
     sectors,
 )
 from app.strategy_fit import (  # noqa: E402,F401
+    render_strategy_fit_view,
     DIM_FIXED_COL_ORDER,
     DIM_META,
     STRATEGY_FIT_OPTIONS_QUERY,

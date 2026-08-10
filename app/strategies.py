@@ -333,6 +333,14 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
 @login_required
 def strategies():
     """Strategy performance — process-focused, trend-aware."""
+    # One "Strategies" surface, two views (Aug 2026 surface audit):
+    # Performance (this function, default) and Fit matrix (the former
+    # /strategy-fit page — win-rate/expectancy by strategy x sector/DTE/
+    # moneyness). Deferred import avoids a load-order cycle.
+    if (request.args.get("view") or "").strip().lower() == "fit":
+        from app.strategy_fit import render_strategy_fit_view
+        return render_strategy_fit_view()
+
     from app.routes import _redirect_if_no_accounts
     bounce = _redirect_if_no_accounts()
     if bounce:

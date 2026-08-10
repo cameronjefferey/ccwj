@@ -345,6 +345,15 @@ def _accounts_scope_query(args):
 @login_required
 @skeleton_page
 def accounts():
+    # One "Accounts" surface, two views (Aug 2026 surface audit):
+    # Performance (this function, default) and Value & composition (the
+    # former /wealth page — daily balance, cash/equity/options split,
+    # income, deposits toggle). Deferred import: wealth.py imports from
+    # app.routes at module load.
+    if (request.args.get("view") or "").strip().lower() == "value":
+        from app.wealth import render_wealth_view
+        return render_wealth_view()
+
     client = get_bigquery_client()
     user_accounts = _user_account_list()
     selected_account = request.args.get("account", "")
