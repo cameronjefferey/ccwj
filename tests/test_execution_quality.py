@@ -214,11 +214,15 @@ def test_exit_notes_variants():
              early_close_vs_expiry_delta=-5.0),
     ])
     notes = exit_notes(df)
-    assert "expired worthless — the early close gave up $45" in notes["SOFI 250620C00007000"]
-    assert "closing early avoided $820" in notes["SOFI 250620C00008000"]
-    assert "never tested" in notes["RKLB 250321C00030000"]
-    assert "worth $200 more than the exit price" in notes["ORCL 260618C00200000"]
-    assert "TINY 250620C00001000" not in notes
+    assert "expired worthless — the early close gave up $45" in \
+        notes[("snaptrade:abc", "SOFI 250620C00007000")]
+    assert "closing early avoided $820" in \
+        notes[("snaptrade:abc", "SOFI 250620C00008000")]
+    assert "never tested" in \
+        notes[("snaptrade:abc", "RKLB 250321C00030000")]
+    assert "worth $200 more than the exit price" in \
+        notes[("snaptrade:abc", "ORCL 260618C00200000")]
+    assert ("snaptrade:abc", "TINY 250620C00001000") not in notes
 
 
 # ── Rolling self-comparison ──────────────────────────────────────────────
@@ -407,11 +411,11 @@ def test_exit_note_renders_on_completing_close_in_story():
         {"trade_date": date(2025, 5, 1), "action": "option_sell_to_open",
          "instrument_type": "Call", "trade_symbol": "SOFI 250620C00007000",
          "quantity": 1, "price": 1.0, "amount": 100.0,
-         "account": "Schwab", "tenant_id": None},
+         "account": "Schwab", "tenant_id": "snaptrade:abc"},
         {"trade_date": date(2025, 6, 1), "action": "option_buy_to_close",
          "instrument_type": "Call", "trade_symbol": "SOFI 250620C00007000",
          "quantity": 1, "price": 0.45, "amount": -45.0,
-         "account": "Schwab", "tenant_id": None},
+         "account": "Schwab", "tenant_id": "snaptrade:abc"},
     ])
     notes = exit_notes(pd.DataFrame([_row()]))
     items, _, _ = build_position_story(trades, None, exit_notes=notes)
@@ -424,3 +428,50 @@ def test_exit_note_renders_on_completing_close_in_story():
     open_day = [i for i in items
                 if i["type"] == "day" and i["date_iso"] == "2025-05-01"][0]
     assert "After the fact" not in " ".join(open_day["headlines"])
+
+
+def test_exit_notes_stay_with_their_tenant_for_same_contract():
+    """Two accounts can hold the same OCC symbol; verdicts must not cross."""
+    trade_symbol = "SOFI 250620C00007000"
+    trades = pd.DataFrame([
+        {"trade_date": date(2025, 5, 1), "action": "option_sell_to_open",
+         "instrument_type": "Call", "trade_symbol": trade_symbol,
+         "quantity": 1, "price": 1.0, "amount": 100.0,
+         "account": "Schwab Account", "tenant_id": "snaptrade:one"},
+        {"trade_date": date(2025, 5, 2), "action": "option_sell_to_open",
+         "instrument_type": "Call", "trade_symbol": trade_symbol,
+         "quantity": 1, "price": 2.0, "amount": 200.0,
+         "account": "Schwab Account", "tenant_id": "snaptrade:two"},
+        {"trade_date": date(2025, 6, 1), "action": "option_buy_to_close",
+         "instrument_type": "Call", "trade_symbol": trade_symbol,
+         "quantity": 1, "price": 0.45, "amount": -45.0,
+         "account": "Schwab Account", "tenant_id": "snaptrade:one"},
+        {"trade_date": date(2025, 6, 2), "action": "option_buy_to_close",
+         "instrument_type": "Call", "trade_symbol": trade_symbol,
+         "quantity": 1, "price": 0.20, "amount": -20.0,
+         "account": "Schwab Account", "tenant_id": "snaptrade:two"},
+    ])
+    verdicts = pd.DataFrame([
+        _row(tenant_id="snaptrade:one", account="Schwab Account",
+             trade_symbol=trade_symbol, expired_worthless=True,
+             early_close_vs_expiry_delta=-45.0),
+        _row(tenant_id="snaptrade:two", account="Schwab Account",
+             trade_symbol=trade_symbol, expired_worthless=False,
+             intrinsic_at_expiry=8.2, early_close_vs_expiry_delta=820.0),
+    ])
+
+    items, _, _ = build_position_story(
+        trades, None, exit_notes=exit_notes(verdicts))
+    first_close = next(
+        i for i in items
+        if i["type"] == "day" and i["date_iso"] == "2025-06-01")
+    second_close = next(
+        i for i in items
+        if i["type"] == "day" and i["date_iso"] == "2025-06-02")
+    first_text = " ".join(first_close["headlines"])
+    second_text = " ".join(second_close["headlines"])
+
+    assert "expired worthless" in first_text
+    assert "closing early avoided $820" not in first_text
+    assert "closing early avoided $820" in second_text
+    assert "expired worthless" not in second_text

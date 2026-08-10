@@ -245,19 +245,28 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
     a sentence records the maneuver — the mirror never disagrees with the
     story). Returns (sentences, dominant_kind).
 
-    ``exit_notes`` — optional {trade_symbol: verdict sentence} from the
-    execution-review layer (app/execution_quality.py). When a contract's
-    completing close (buyback, sale, or the closed leg of a roll)
-    narrates, its after-the-fact verdict ("this contract went on to
-    expire worthless…") renders on the next line, so the story and the
-    grade read as one voice.
+    ``exit_notes`` — optional {(tenant/account key, trade_symbol): verdict
+    sentence} from the execution-review layer (app/execution_quality.py).
+    When a contract's completing close (buyback, sale, or the closed leg of
+    a roll) narrates, its after-the-fact verdict ("this contract went on to
+    expire worthless…") renders on the next line, so the story and the grade
+    read as one voice.
     """
     sentences = []
     kinds = []
     exit_notes = exit_notes or {}
 
     def _note_for(fill):
-        return exit_notes.get((fill.get("trade_symbol") or "").strip())
+        trade_symbol = (fill.get("trade_symbol") or "").strip()
+        # Physical accounts can hold the same OCC contract.  Match the
+        # execution verdict on the same tenant-grained state key used by the
+        # story engine so one account's result cannot decorate another's fill.
+        tenant_note = exit_notes.get((fill.get("state_key") or "", trade_symbol))
+        if tenant_note is not None:
+            return tenant_note
+        # Compatibility for synthetic/legacy callers that still supply the
+        # pre-tenant {trade_symbol: note} shape.
+        return exit_notes.get(trade_symbol)
 
     # Group per physical tenant so share counts / coverage are computed
     # against the right account. Display labels are not unique: one user can
@@ -838,10 +847,10 @@ def build_position_story(
     a phantom short even though the pre-split buy exists outside the view.
     Seed activity never contributes chapters or behavioral stats.
 
-    ``exit_notes`` — optional {trade_symbol: verdict sentence} from the
-    execution-review layer; appended to the completing close's headline
-    (see _day_headline). Seed replay never narrates, so it never receives
-    the notes.
+    ``exit_notes`` — optional {(tenant/account key, trade_symbol): verdict
+    sentence} from the execution-review layer; appended to the completing
+    close's headline (see _day_headline). Seed replay never narrates, so it
+    never receives the notes.
     """
     fills = _normalize_fills(trades_df)
     seed_fills = _normalize_fills(seed_trades_df)
