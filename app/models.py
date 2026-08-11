@@ -516,6 +516,7 @@ def init_db():
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
+    _migrate_users_stripe_columns()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -601,6 +602,61 @@ def _migrate_users_plan_columns():
             execute("UPDATE users SET plan = 'beta', plan_updated_at = NOW()")
     except Exception as exc:
         _log.warning("users plan-columns migration skipped: %s", exc)
+
+
+def _migrate_users_stripe_columns():
+    """Idempotent: Stripe subscription state (see app/billing.py).
+
+    ``users.plan`` stays the single authority the rest of the app reads —
+    these columns are the Stripe MIRROR that explains *why* the plan is what
+    it is, and the handles needed to manage the subscription:
+
+    - ``stripe_customer_id`` — one Customer per user, created at first
+      checkout and reused forever (so a resubscribe keeps card + history).
+    - ``stripe_subscription_id`` / ``subscription_status`` — Stripe's own
+      status string ('active', 'past_due', 'canceled', …), stored verbatim
+      for support/debugging rather than re-derived.
+    - ``subscription_price_id`` — which price they're on (monthly vs annual).
+    - ``subscription_current_period_end`` — when the paid period runs out;
+      also the "access until" date when a cancellation is pending.
+    - ``subscription_cancel_at_period_end`` — pending cancellation.
+    - ``plan_before_subscription`` — the plan the user held BEFORE they
+      subscribed, so cancelling a grandfathered beta user returns them to
+      'beta' rather than dropping them into a lapsed trial.
+
+    ``stripe_events`` makes webhook handling idempotent: Stripe retries
+    deliveries and can send the same event twice, and every handler here
+    writes plan state.
+    """
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_price_id TEXT")
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "subscription_current_period_end TIMESTAMPTZ"
+        )
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "subscription_cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_before_subscription TEXT")
+        execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_stripe_customer_id_idx "
+            "ON users (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL"
+        )
+        execute(
+            """
+            CREATE TABLE IF NOT EXISTS stripe_events (
+                event_id    TEXT PRIMARY KEY,
+                event_type  TEXT,
+                received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+    except Exception as exc:
+        _log.warning("users Stripe-columns migration skipped: %s", exc)
 
 
 def _migrate_user_profiles_email_prefs():

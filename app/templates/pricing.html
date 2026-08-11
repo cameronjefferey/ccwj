@@ -79,12 +79,19 @@
                         <li>Unlimited accounts, broker sync or CSV</li>
                         <li>AI Insights (analysis &amp; chat)</li>
                     </ul>
-                    {% if signup_enabled %}
-                    <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
-                        {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
-                    </a>
+                    {% if current_user.is_authenticated %}
+                        {# Already signed up — the trial is theirs, so point at
+                           the thing that starts the clock (first data) rather
+                           than a signup form they can't use. #}
+                        <a href="{{ url_for('get_started') }}" class="btn btn-outline-primary w-100">Connect your data</a>
+                    {% else %}
+                        {% if signup_enabled %}
+                        <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
+                            {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
                     {% endif %}
-                    <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
                 </div>
             </div>
             <div class="col-md-6 col-lg-4">
@@ -104,15 +111,47 @@
             <div class="col-md-6 col-lg-4">
                 <div class="pricing-card">
                     <h3>Pro</h3>
-                    <div class="price">$20<span style="font-size:1rem;font-weight:600;">/mo</span></div>
-                    <div class="price-note">or $200/yr &mdash; launching soon</div>
+                    {% if billing_enabled %}
+                    <div class="price">${{ price_monthly }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
+                    <div class="price-note">or ${{ price_annual }}/yr &mdash; ${{ price_annual_equiv }}/mo, two months free</div>
+                    {% else %}
+                    <div class="price">${{ price_monthly or '19.99' }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
+                    <div class="price-note">or ${{ price_annual or '199.99' }}/yr &mdash; launching soon</div>
+                    {% endif %}
                     <ul>
                         <li>Everything in the trial, ongoing</li>
                         <li>Daily marks record that compounds with tenure</li>
                         <li>Verdicts that keep landing every expiry</li>
                         <li>Weekly summary &amp; preview emails</li>
                     </ul>
-                    {% if pro_waitlisted %}
+                    {% if billing_enabled %}
+                        {% if subscription and subscription.is_paying %}
+                        <form method="post" action="{{ url_for('billing_portal') }}" class="d-grid gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-success btn-lg w-100">Manage subscription</button>
+                        </form>
+                        <p class="text-muted small mt-2 mb-0">
+                            You're subscribed{% if subscription.renews_on %} &mdash;
+                            {% if subscription.cancel_at_period_end %}access until{% else %}renews{% endif %}
+                            {{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %}.
+                        </p>
+                        {% elif current_user.is_authenticated %}
+                        <form method="post" action="{{ url_for('billing_checkout') }}" class="d-grid gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="period" value="monthly">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">Subscribe ${{ price_monthly }}/mo</button>
+                        </form>
+                        <form method="post" action="{{ url_for('billing_checkout') }}" class="d-grid mt-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="period" value="annual">
+                            <button type="submit" class="btn btn-outline-primary w-100">Pay yearly &mdash; ${{ price_annual }}</button>
+                        </form>
+                        <p class="text-muted small mt-2 mb-0">Cancel any time. Your data stays readable either way.</p>
+                        {% else %}
+                        <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, subscribe later</a>
+                        <p class="text-muted small mt-2 mb-0">Try the full product for 30 days first &mdash; no card.</p>
+                        {% endif %}
+                    {% elif pro_waitlisted %}
                     <button class="btn btn-success btn-lg w-100" disabled>You're on the list ✓</button>
                     {% else %}
                     <form method="post" action="{{ url_for('pro_waitlist') }}" class="d-grid gap-2">

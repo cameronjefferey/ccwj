@@ -319,6 +319,10 @@ def admin_users():
                 u.username,
                 u.plan,
                 u.trial_started_at,
+                u.subscription_status,
+                u.subscription_price_id,
+                u.subscription_cancel_at_period_end,
+                u.subscription_current_period_end,
                 up.created_at                                   AS profile_created_at,
                 up.display_name                                 AS display_name,
                 up.timezone                                     AS timezone,
@@ -352,20 +356,27 @@ def admin_users():
         )
         r["trial_days"] = _days_since(r.get("trial_started_at"))
 
+    # Price ids so the table can label a subscription monthly vs annual
+    # without a Stripe API call per row.
+    from app.billing import price_id
+
     return render_template(
         "admin_users.html",
         title="Admin: users",
         users=rows,
         admin_usernames=admin_usernames,
+        stripe_monthly_price=price_id("monthly"),
+        stripe_annual_price=price_id("annual"),
     )
 
 
 @app.route("/admin/users/<int:user_id>/plan", methods=["POST"])
 @_admin_only
 def admin_set_user_plan(user_id):
-    """Manual plan lever until Stripe lands: set trial/beta/active, or restart
-    the 30-day trial clock (comp/extend). ``plan='active'`` is the exact state
-    a future billing webhook will set — nothing else changes when it does."""
+    """Manual plan lever alongside Stripe: set trial/beta/active, or restart
+    the 30-day trial clock (comp/extend). Use it to comp an account or fix a
+    billing edge case — it writes the same ``plan`` column the Stripe webhook
+    does, so a later Stripe event for a real subscription will overwrite it."""
     from app.plan import reset_trial_clock, set_user_plan
 
     target = User.get_by_id(user_id)

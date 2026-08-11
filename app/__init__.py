@@ -126,6 +126,23 @@ def _inject_feature_flags():
     except Exception:
         plan_status = None
 
+    # Stripe is only offered when fully configured (keys + both price IDs);
+    # otherwise the pricing page falls back to the Pro waitlist form.
+    try:
+        from app.billing import (
+            PRICE_ANNUAL_DISPLAY,
+            PRICE_ANNUAL_MONTHLY_EQUIV,
+            PRICE_MONTHLY_DISPLAY,
+            stripe_enabled,
+        )
+        billing_enabled = stripe_enabled()
+        price_monthly = PRICE_MONTHLY_DISPLAY
+        price_annual = PRICE_ANNUAL_DISPLAY
+        price_annual_equiv = PRICE_ANNUAL_MONTHLY_EQUIV
+    except Exception:
+        billing_enabled = False
+        price_monthly = price_annual = price_annual_equiv = None
+
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
         "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
@@ -135,6 +152,10 @@ def _inject_feature_flags():
         "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
         "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
         "plan_status": plan_status,
+        "billing_enabled": billing_enabled,
+        "price_monthly": price_monthly,
+        "price_annual": price_annual,
+        "price_annual_equiv": price_annual_equiv,
     }
 
 
@@ -400,4 +421,5 @@ from app import first_look
 from app import strategies
 from app import profile_page  # noqa: F401  registers /profile (settings hub)
 from app import webhooks  # noqa: F401  registers /webhooks/* routes
+from app import billing  # noqa: F401  registers /billing/* + /webhooks/stripe
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)

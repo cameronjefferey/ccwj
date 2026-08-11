@@ -96,18 +96,32 @@ def feature_detail(slug):
 
 @app.route("/pricing")
 def pricing():
-    """Pricing placeholder for marketing."""
+    """Plans page: reverse trial, the frozen free tier, and Pro checkout.
+
+    ``subscription`` lets the Pro card show "Manage subscription" instead of a
+    second Subscribe button for someone who already pays. The Pro waitlist is
+    only consulted when Stripe isn't configured (``billing_enabled`` false),
+    which is the pre-launch / local-dev shape.
+    """
     waitlisted = False
+    subscription = None
     try:
         if current_user.is_authenticated:
-            from app.models import is_user_on_pro_waitlist
-            waitlisted = is_user_on_pro_waitlist(current_user.id)
+            from app.billing import stripe_enabled, subscription_summary
+
+            if stripe_enabled():
+                subscription = subscription_summary(current_user.id)
+            else:
+                from app.models import is_user_on_pro_waitlist
+                waitlisted = is_user_on_pro_waitlist(current_user.id)
     except Exception:
         waitlisted = False
+        subscription = None
     return render_template(
         "pricing.html",
         title="Pricing",
         pro_waitlisted=waitlisted,
+        subscription=subscription,
     )
 
 

@@ -149,6 +149,13 @@
                     {% if u.plan == 'trial' and u.trial_days is not none %}
                     <div class="au-display">day {{ u.trial_days }}{% if u.plan_state == 'trialing' %} of 30{% elif u.plan_state == 'frozen' %} &mdash; disconnect at 60{% endif %}</div>
                     {% endif %}
+                    {% if u.subscription_status %}
+                    <div class="au-display">
+                        stripe: {{ u.subscription_status }}{% if u.subscription_price_id == stripe_annual_price %} (annual){% elif u.subscription_price_id == stripe_monthly_price %} (monthly){% endif %}
+                        {%- if u.subscription_cancel_at_period_end %} &mdash; cancels{% elif u.subscription_current_period_end %} &mdash; renews{% endif %}
+                        {%- if u.subscription_current_period_end %} {{ u.subscription_current_period_end.strftime('%b %-d') }}{% endif %}
+                    </div>
+                    {% endif %}
                     <form method="POST" action="{{ url_for('admin_set_user_plan', user_id=u.id) }}" class="au-plan-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <select name="plan">

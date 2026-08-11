@@ -35,7 +35,7 @@ The dev dataset is a **full mirror for testing**: `scripts/dev-refresh.sh` rebui
 
 **Per-broker staging layer (June 2026).** The three base staging models (`stg_history`, `stg_current`, `stg_account_balances`) no longer read the seeds directly — each is now a UNION of thin per-broker adapter models in `dbt/models/staging/brokers/` (`stg_broker_{schwab,alpaca,fidelity,interactive}_*`, plus an `stg_broker_other_*` catch-all) followed by the unchanged heavy parse. (`interactive` = IBKR; slug is the lowercased first token of the account label "Interactive Brokers …".) Each broker has its own model so broker-specific quirks (date formats, sign conventions, duplicate-fill patterns) stay isolated and independently queryable/testable instead of being special-cased in the shared parse. Broker identity is DISPLAY-derived (not a tenancy boundary): `tenant_id` is the literal `snaptrade:<uuid>` for EVERY broker, so the only broker signal in the warehouse is the account-label prefix — `dbt/macros/broker_slug_from_account.sql` maps it to a slug (`"Schwab Account"`→`schwab`, `"Alpaca Paper Account"`→`alpaca`). Tenant isolation stays on `tenant_id`; never scope a user-facing read by `broker_slug`. The catch-all is mutually-exclusive+exhaustive with the named brokers so no row is ever dropped; the `dbt/tests/broker_split_preserves_all_rows.sql` test enforces union-count parity. **To add a brokerage:** (1) add its slug to `known_brokers()`, (2) add `stg_broker_<slug>_{history,current,balances}` (one-line `broker_*_rows('<slug>')` calls), (3) add those three models to the UNION in the matching base staging model, (4) add them to the per-surface unions in `dbt/tests/broker_split_preserves_all_rows.sql`. `dim_broker_tenants.broker_slug` now shows the real brokerage (was the always-`snaptrade` aggregator slug, kept as `aggregator_slug`).
 
-**Reverse trial is the billing model (Aug 2026, pre-Stripe).** Every new
+**Reverse trial is the billing model (Aug 2026).** Every new
 signup is `users.plan='trial'`: full product, no card. The 30-day clock
 starts at FIRST DATA (`trial_started_at`, stamped once at the first
 successful sync in `_sync_one_connection` / first CSV upload), not at
@@ -58,11 +58,53 @@ webhook + nightly CLI have efficiency skips; manual routes
 grandfathered to `plan='beta'` (never freezes) by the one-shot backfill in
 `_migrate_users_plan_columns`; admins + demo are always exempt. Banners
 live in base.html via `plan_status` (context processor in
-`app/__init__.py`). **The entire Stripe seam is `plan='active'`** — a
-future billing webhook sets it on subscribe and reverts to `trial` on
-cancellation (clock intact → straight to frozen); admin `/admin/users` has
-the manual set-plan / +30d levers until then. Pinned by
-`tests/test_plan_lifecycle.py`.
+`app/__init__.py`). Pinned by `tests/test_plan_lifecycle.py`.
+
+**Stripe is the payment layer; `plan='active'` is the whole seam
+(Aug 2026).** Pro is **$19.99/mo or $199.99/yr** via Stripe-hosted Checkout
++ Billing Portal — no card data touches this app. Everything lives in
+**`app/billing.py`** (`/billing/checkout`, `/billing/success`,
+`/billing/portal`, `/webhooks/stripe`); setup runbook in
+`docs/STRIPE_SETUP.md`. `users.plan` stays the ONLY column the product
+reads — the new `users.stripe_*` / `subscription_*` columns
+(`_migrate_users_stripe_columns`) are a MIRROR of Stripe for support and UI,
+never a second source of gating truth. Status mapping: `active`/`trialing`
+→ `plan='active'`; **`past_due`/`incomplete` also stay active** (Stripe is
+still retrying — yanking the mirror mid-dunning then restoring it is worse
+than a few days of risk); terminal statuses revert to
+`plan_before_subscription` or `trial`. Four rules that are load-bearing:
+(1) **`app.db.execute` coerces params to a tuple, so every plan write uses
+POSITIONAL `%s`** — a dict of named params raises "N placeholders but M
+parameters" and a paying customer silently never activates (pinned by
+`test_plan_writes_use_positional_params`); (2) **cancellation backdates
+`trial_started_at` to the freeze boundary** so churn lands in `frozen`
+(readable, broker connected through the 30-day grace, instant win-back), not
+in a fresh trial and not straight to disconnected — a grandfathered beta
+user returns to `beta` via `plan_before_subscription`; (3) **webhook
+signature verification is mandatory and deliveries are idempotent** via the
+`stripe_events` table, a handler failure returns 500 WITHOUT recording so
+Stripe retries, and an event whose customer can't be matched to a user is
+acked but logged at ERROR (an unlinked subscription needs a human); (4) **the
+live Stripe account is SHARED with sibling products (EarningsFollower, Job
+Glow) and Stripe gives every endpoint the ACCOUNT's whole event stream**, so
+every plan write is gated on `subscription_is_ours(sub)` — a price-id match
+against `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL`. All three apps stamp
+`client_reference_id` / `metadata.user_id` with THEIR OWN numeric user ids, so
+an ungated event resolves to the same-numbered HappyTrader user: a stranger's
+purchase grants free Pro and a stranger's cancellation freezes a paying
+customer. Price is the only discriminator that can't collide and that works
+retroactively on subscriptions predating the check (a metadata marker does
+not). There is NO per-product webhook filter to configure in Stripe — this
+MUST stay in code, on the webhook AND on `/billing/success` (whose session id
+arrives in a URL). Pinned by the sibling-product tests in
+`tests/test_billing.py`.
+Subscribing also queues an immediate catch-up sync through the webhook's
+existing debounce queue (`queue_resume_sync` → `_queue_snaptrade_sync`) so
+"Resume my mirror" means now — called only AFTER the plan flips, since
+`user_sync_allowed` would refuse otherwise. `stripe_enabled()` is
+all-or-nothing (secret key + BOTH price IDs) so an unconfigured deploy shows
+the waitlist instead of a broken checkout. Admin `/admin/users` keeps the
+manual set-plan / +30d levers for comps. Pinned by `tests/test_billing.py`.
 
 **Brokerage sync is the most failure-prone surface in the product** — SnapTrade aggregator (Schwab, Fidelity, Vanguard, Robinhood, IBKR, etc.). Before editing `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/seed_store.py`, `app/snaptrade_sync_cli.py`, the raw seed table shape (`analytics_raw`, source `raw_broker`), `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/snaptrade/accounts`, or any column on `broker_tenants` / `snaptrade_users` (`connection_broken_at`, `first_sync_completed`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
 

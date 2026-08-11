@@ -13,8 +13,8 @@ returning subscriber reconnects and their history is still there.
 
 Only ``users.plan`` (trial|beta|active) and ``users.trial_started_at`` are
 STORED; everything else is DERIVED from the clock, so no cron has to flip
-states. ``plan='active'`` is the entire Stripe seam: a future billing webhook
-sets it on subscribe and reverts to ``trial`` on cancellation (with
+states. ``plan='active'`` is the entire Stripe seam: ``app/billing.py`` sets
+it when a subscription starts and reverts it on cancellation (with
 ``trial_started_at`` intact, the account lands straight back in frozen).
 
 Exemptions: admins, the shared demo user, and grandfathered beta users never
@@ -47,7 +47,20 @@ STATE_GRACE_EXPIRED = "grace_expired"  # trial, day 60+ — broker disconnected
 STATE_ACTIVE = "active"
 STATE_BETA = "beta"
 
+# Banner-only pseudo-state: a paying subscriber who has cancelled and is
+# riding out the period they already paid for. Never returned by
+# derive_plan_state (they're a full 'active' user until the period ends).
+STATE_ACTIVE_CANCELING = "active_canceling"
+
 _SYNC_BLOCKED_STATES = (STATE_FROZEN, STATE_GRACE_EXPIRED)
+
+
+def _as_date(ts):
+    """Date part of a timestamp, or None."""
+    try:
+        return ts.date() if ts is not None else None
+    except AttributeError:
+        return None
 
 
 def _days_since(ts, now=None):
@@ -80,7 +93,23 @@ def derive_plan_state(plan, trial_started_at, *, exempt=False, now=None):
 
 
 def get_user_plan_row(user_id):
-    """``{plan, trial_started_at, username}`` or None. Never raises."""
+    """``{plan, trial_started_at, username}`` plus the Stripe mirror columns
+    (see app/billing.py), or None. Never raises.
+
+    The Stripe columns are selected in the same query so the per-request
+    banner costs one read, with a narrow fallback for databases where
+    ``_migrate_users_stripe_columns`` hasn't run yet — otherwise a missing
+    column would fail the whole read and silently exempt every user.
+    """
+    try:
+        return fetch_one(
+            "SELECT plan, trial_started_at, username, subscription_status, "
+            "subscription_cancel_at_period_end, subscription_current_period_end "
+            "FROM users WHERE id = %s",
+            (user_id,),
+        )
+    except Exception as exc:
+        _log.warning("get_user_plan_row(%s) wide read failed: %s", user_id, exc)
     try:
         return fetch_one(
             "SELECT plan, trial_started_at, username FROM users WHERE id = %s",
@@ -181,6 +210,21 @@ def plan_status_for_banner(user_id, now=None):
         exempt=_is_exempt_username(row.get("username")),
         now=now,
     )
+    # Subscribers only get a banner when their subscription is winding down:
+    # a pending cancellation means the mirror freezes on a known date, and
+    # that's exactly the kind of thing the product should say out loud rather
+    # than spring on them.
+    if state == STATE_ACTIVE:
+        if not row.get("subscription_cancel_at_period_end"):
+            return None
+        return {
+            "state": STATE_ACTIVE_CANCELING,
+            "days_elapsed": None,
+            "days_left": None,
+            "frozen_on": _as_date(row.get("subscription_current_period_end")),
+            "disconnect_on": None,
+            "disconnect_in_days": None,
+        }
     if state not in (STATE_TRIALING, STATE_FROZEN, STATE_GRACE_EXPIRED):
         return None
     days = _days_since(row.get("trial_started_at"), now=now) or 0

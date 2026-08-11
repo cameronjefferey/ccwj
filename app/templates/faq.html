@@ -176,7 +176,7 @@
                 </h3>
                 <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Every feature is free for your first 30 days &mdash; no credit card. After that your account doesn't lock: everything you built stays readable forever, but daily syncing pauses until you subscribe (Pro is $20/mo or $200/yr, launching soon). See the <a href="{{ url_for('pricing') }}">pricing page</a> for the full picture.
+                        Every feature is free for your first 30 days &mdash; no credit card. After that your account doesn't lock: everything you built stays readable forever, but daily syncing pauses until you subscribe. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free), cancel any time. See the <a href="{{ url_for('pricing') }}">pricing page</a> for the full picture.
                     </div>
                 </div>
             </div>

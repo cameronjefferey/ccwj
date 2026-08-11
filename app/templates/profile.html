@@ -182,6 +182,7 @@
             <a class="nav-link {% if tab == 'security' %}active{% endif %}" href="{{ url_for('profile', tab='security') }}">Login &amp; security</a>
             <a class="nav-link {% if tab == 'notifications' %}active{% endif %}" href="{{ url_for('profile', tab='notifications') }}">Notifications</a>
             <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
+            <a class="nav-link {% if tab == 'billing' %}active{% endif %}" href="{{ url_for('profile', tab='billing') }}">Plan &amp; billing</a>
         </nav>
 
         <div>
@@ -411,6 +412,97 @@
 
                 <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">Save</button>
             </form>
+            {% endif %}
+
+            {% if tab == 'billing' %}
+            {# Plan & billing. `plan_state` is the derived reverse-trial state
+               (app/plan.py); `subscription` is the Stripe mirror
+               (app/billing.py) and is None for anyone who never subscribed. #}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Your plan</div>
+                <div class="atlas-card-b">
+                    {% if plan_state == 'active' %}
+                        <p class="mb-1"><strong>Pro
+                        {%- if subscription and subscription.amount %} &mdash; ${{ subscription.amount }}/{{ 'year' if subscription.period == 'annual' else 'month' }}{% endif %}</strong></p>
+                        {% if subscription and subscription.cancel_at_period_end %}
+                        <p class="atlas-hint mb-0">
+                            Cancelled &mdash; you keep full access until
+                            {% if subscription.renews_on %}{{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %},
+                            then your mirror freezes and stays readable.
+                        </p>
+                        {% elif subscription and subscription.renews_on %}
+                        <p class="atlas-hint mb-0">Renews {{ subscription.renews_on.strftime('%b %-d, %Y') }}. Cancel any time.</p>
+                        {% else %}
+                        <p class="atlas-hint mb-0">Your mirror updates every close.</p>
+                        {% endif %}
+                        {% if subscription and subscription.status == 'past_due' %}
+                        <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                            Your last payment didn't go through. Update your card to avoid losing daily updates.
+                        </div>
+                        {% endif %}
+                    {% elif plan_state == 'beta' %}
+                        <p class="mb-1"><strong>Beta &mdash; free, no expiry</strong></p>
+                        <p class="atlas-hint mb-0">You were here early, so your mirror keeps updating at no charge. Nothing to do.</p>
+                    {% elif plan_state == 'trialing' %}
+                        <p class="mb-1"><strong>Free trial &mdash; full access</strong></p>
+                        <p class="atlas-hint mb-0">
+                            {% if plan_status and plan_status.days_left is not none %}{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} left.{% endif %}
+                            When it ends your mirror freezes: every page stays readable, daily updates stop.
+                        </p>
+                    {% elif plan_state in ('frozen', 'grace_expired') %}
+                        <p class="mb-1"><strong>Frozen &mdash; readable, not updating</strong></p>
+                        <p class="atlas-hint mb-0">Your history is intact. Subscribe to pick the daily record back up{% if plan_state == 'grace_expired' %} (you'll reconnect your broker too){% endif %}.</p>
+                    {% else %}
+                        <p class="mb-1"><strong>Free trial &mdash; not started</strong></p>
+                        <p class="atlas-hint mb-0">Your 30 days begin with your first broker sync or CSV upload, not at signup.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if billing_enabled %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">{% if subscription and subscription.has_customer %}Manage billing{% else %}Subscribe{% endif %}</div>
+                <div class="atlas-card-b">
+                    {% if subscription and subscription.has_customer %}
+                    <p class="atlas-hint mb-3">Update your card, switch between monthly and yearly, download invoices, or cancel &mdash; all handled securely by Stripe.</p>
+                    <form method="POST" action="{{ url_for('billing_portal') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary btn-lg px-4 fw-bold"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Open billing portal
+                        </button>
+                    </form>
+                    {% else %}
+                    <p class="atlas-hint mb-3">${{ price_monthly }}/month, or ${{ price_annual }}/year (${{ price_annual_equiv }}/month &mdash; two months free). Cancel any time; your data stays readable either way.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <form method="POST" action="{{ url_for('billing_checkout') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="period" value="monthly">
+                            <button type="submit" class="btn btn-primary btn-lg px-4 fw-bold"
+                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                                Subscribe ${{ price_monthly }}/mo
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('billing_checkout') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="period" value="annual">
+                            <button type="submit" class="btn btn-outline-primary btn-lg px-4"
+                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                                Pay yearly &mdash; ${{ price_annual }}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">Subscriptions</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint mb-0">Paid plans aren't switched on yet. See the <a href="{{ url_for('pricing') }}">pricing page</a> for what's coming.</p>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
 
             {% if tab == 'account' %}

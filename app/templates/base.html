@@ -814,9 +814,23 @@
         {% endif %}
         {# Reverse-trial state (app/plan.py via `plan_status` in the
            feature-flag context processor). None for beta / active / no-data,
-           so only running trials and lapsed trials ever see these. #}
+           so only running trials, lapsed trials, and subscribers with a
+           pending cancellation ever see these. Where a one-click subscribe is
+           possible (Stripe configured), the CTA posts straight to Checkout
+           rather than bouncing through /pricing. #}
         {% if plan_status %}
-            {% if plan_status.state == 'trialing' %}
+            {% if plan_status.state == 'active_canceling' %}
+            <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="alert">
+                <div class="small">
+                    <strong>Your subscription ends{% if plan_status.frozen_on %} {{ plan_status.frozen_on.strftime('%b %-d, %Y') }}{% endif %}.</strong>
+                    <span class="text-muted">Until then nothing changes. After that your mirror freezes &mdash; every page stays readable, updates stop.</span>
+                </div>
+                <form method="post" action="{{ url_for('billing_portal') }}" class="flex-shrink-0 mb-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Keep my subscription</button>
+                </form>
+            </div>
+            {% elif plan_status.state == 'trialing' %}
             <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="alert">
                 <div class="small">
                     <strong>{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} of full access left.</strong>
@@ -834,7 +848,15 @@
                         subscribe before then and syncing resumes instantly.
                     </div>
                 </div>
+                {% if billing_enabled %}
+                <form method="post" action="{{ url_for('billing_checkout') }}" class="flex-shrink-0 mb-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="period" value="monthly">
+                    <button type="submit" class="btn btn-sm btn-warning">Resume my mirror &mdash; ${{ price_monthly }}/mo</button>
+                </form>
+                {% else %}
                 <a href="{{ url_for('pricing') }}" class="btn btn-sm btn-warning flex-shrink-0">Resume my mirror</a>
+                {% endif %}
             </div>
             {% elif plan_status.state == 'grace_expired' %}
             <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">

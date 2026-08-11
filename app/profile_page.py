@@ -33,7 +33,8 @@ def profile():
     from app.auth import _validate_password
 
     tab = request.args.get("tab", "overview")
-    if tab not in ("overview", "preferences", "account", "security", "notifications"):
+    if tab not in ("overview", "preferences", "account", "security", "notifications",
+                   "billing"):
         tab = "overview"
 
     if request.method == "POST":
@@ -165,10 +166,27 @@ def profile():
     if not app.config.get("INSIGHTS_ENABLED", True):
         routes = [r for r in routes if r != "insights"]
 
+    # Billing tab: plan state (reverse trial) + the Stripe mirror. Both are
+    # cheap single-row reads and only the Billing tab renders them, but the
+    # tab strip needs `plan_state` on every tab to label itself.
+    plan_state_value = None
+    subscription = None
+    try:
+        from app.plan import plan_state as _plan_state
+
+        plan_state_value = _plan_state(current_user.id)
+        from app.billing import subscription_summary
+
+        subscription = subscription_summary(current_user.id)
+    except Exception:
+        pass
+
     return render_template(
         "profile.html",
         title="Settings",
         tab=tab,
+        plan_state=plan_state_value,
+        subscription=subscription,
         profile_row=profile_row,
         accounts=accounts,
         recent_uploads=recent_uploads,
