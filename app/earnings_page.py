@@ -311,13 +311,48 @@ SELECT
     SUM(num_individual_trades)       AS num_trades,
     MIN(first_trade_date)            AS first_trade_date,
     MAX(last_trade_date)             AS last_trade_date,
-    STRING_AGG(DISTINCT strategy ORDER BY strategy) AS strategies,
+    STRING_AGG(DISTINCT strategy, ', ' ORDER BY strategy) AS strategies,
     MAX(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS is_open
 FROM `ccwj-dbt.analytics.positions_summary`
 WHERE tenant_id = @tenant_id
   AND UPPER(TRIM(symbol)) = @symbol
 GROUP BY symbol
 """
+
+# The whole-account scorecard. This is the honest answer to "do the
+# suggestions make money" — it is deliberately NOT filtered to winners.
+# A visitor who only ever sees the symbol they clicked has been shown a
+# cherry-picked sample; the page states it isn't curated, so the
+# unfiltered account number has to be on it.
+EF_BRIDGE_ACCOUNT_QUERY = """
+SELECT
+    COUNT(DISTINCT symbol)      AS symbols,
+    SUM(total_pnl)              AS total_pnl,
+    SUM(num_individual_trades)  AS num_trades,
+    SUM(num_winners)            AS winners,
+    SUM(num_losers)             AS losers,
+    MIN(first_trade_date)       AS since
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE tenant_id = @tenant_id
+"""
+
+# Per-strategy attribution. Doubles as the product demo: the single most
+# useful thing HappyTrader does is tell you WHICH strategy is producing
+# the number above, and that is more convincing shown than described.
+EF_BRIDGE_STRATEGY_QUERY = """
+SELECT
+    strategy,
+    SUM(total_pnl) AS pnl
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE tenant_id = @tenant_id
+  AND strategy IS NOT NULL
+GROUP BY strategy
+ORDER BY pnl DESC
+"""
+
+# Best / worst strategies shown on the bridge. All of them is a wall of
+# rows; the extremes make the point and the demo has the rest.
+EF_BRIDGE_STRATEGY_SIDE = 3
 
 
 @app.route("/earningsfollower")
@@ -336,35 +371,88 @@ def earnings_follower_bridge(symbol=None):
     if sym and (len(sym) > 12 or not sym.replace(".", "").replace("-", "").isalnum()):
         sym = ""
 
+    def _short_date(d):
+        """'Jun 23' — the bridge is a glance surface, not a statement."""
+        if d is None or not hasattr(d, "strftime"):
+            return None
+        if getattr(d, "year", None) == user_local_today().year:
+            return d.strftime("%b %-d")
+        return d.strftime("%b %-d, %Y")
+
+    def _tenant_cfg(extra=None):
+        params = [bigquery.ScalarQueryParameter("tenant_id", "STRING", DEMO_TENANT_ID)]
+        if extra:
+            params.extend(extra)
+        return bigquery.QueryJobConfig(query_parameters=params)
+
     position = None
-    if sym:
-        try:
-            client = get_bigquery_client()
-            job_config = bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("tenant_id", "STRING", DEMO_TENANT_ID),
+    account = None
+    strategies_top = []
+    strategies_bottom = []
+    try:
+        client = get_bigquery_client()
+        wave = {
+            "ef_bridge_account": (EF_BRIDGE_ACCOUNT_QUERY, _tenant_cfg()),
+            "ef_bridge_strategy": (EF_BRIDGE_STRATEGY_QUERY, _tenant_cfg()),
+        }
+        if sym:
+            wave["ef_bridge_symbol"] = (EF_BRIDGE_SYMBOL_QUERY, _tenant_cfg([
                 bigquery.ScalarQueryParameter("symbol", "STRING", sym),
-            ])
-            df = client.query(
-                EF_BRIDGE_SYMBOL_QUERY, job_config=job_config
-            ).to_dataframe()
-            if not df.empty:
-                r = df.iloc[0]
-                position = {
-                    "symbol": sym,
-                    "company_name": (str(r.get("company_name"))
-                                     if r.get("company_name") else None),
-                    "total_pnl": float(r.get("total_pnl") or 0),
-                    "realized_pnl": float(r.get("realized_pnl") or 0),
-                    "num_trades": int(r.get("num_trades") or 0),
-                    "first_trade_date": r.get("first_trade_date"),
-                    "last_trade_date": r.get("last_trade_date"),
-                    "strategies": (str(r.get("strategies"))
-                                   if r.get("strategies") else None),
-                    "is_open": bool(r.get("is_open")),
-                }
-        except Exception as e:
-            # Never 500 a marketing landing page over a teaser query.
-            app.logger.warning("EF bridge teaser query failed for %s: %s", sym, e)
+            ]))
+        batch = _bq_parallel(client, wave)
+
+        sym_df = batch.get("ef_bridge_symbol", pd.DataFrame())
+        if sym and not sym_df.empty:
+            r = sym_df.iloc[0]
+            position = {
+                "symbol": sym,
+                "company_name": (str(r.get("company_name"))
+                                 if r.get("company_name") else None),
+                "total_pnl": float(r.get("total_pnl") or 0),
+                "realized_pnl": float(r.get("realized_pnl") or 0),
+                "num_trades": int(r.get("num_trades") or 0),
+                "first_trade_date": _short_date(r.get("first_trade_date")),
+                "last_trade_date": _short_date(r.get("last_trade_date")),
+                "strategies": (str(r.get("strategies"))
+                               if r.get("strategies") else None),
+                "is_open": bool(r.get("is_open")),
+            }
+
+        acct_df = batch.get("ef_bridge_account", pd.DataFrame())
+        if not acct_df.empty:
+            a = acct_df.iloc[0]
+            winners = int(a.get("winners") or 0)
+            losers = int(a.get("losers") or 0)
+            decided = winners + losers
+            account = {
+                "symbols": int(a.get("symbols") or 0),
+                "total_pnl": float(a.get("total_pnl") or 0),
+                "num_trades": int(a.get("num_trades") or 0),
+                "win_rate": (winners / decided) if decided else None,
+                "since": _short_date(a.get("since")),
+            }
+
+        strat_df = batch.get("ef_bridge_strategy", pd.DataFrame())
+        if not strat_df.empty:
+            rows = [
+                {"strategy": str(r.get("strategy")), "pnl": float(r.get("pnl") or 0)}
+                for _, r in strat_df.iterrows()
+                if r.get("strategy")
+            ]
+            rows.sort(key=lambda x: x["pnl"], reverse=True)
+            # Bar widths are relative to the largest absolute swing so the
+            # winning and losing sides stay visually comparable.
+            scale = max((abs(r["pnl"]) for r in rows), default=0.0) or 1.0
+            for r in rows:
+                r["width"] = round(min(abs(r["pnl"]) / scale, 1.0) * 100, 1)
+            n = EF_BRIDGE_STRATEGY_SIDE
+            strategies_top = [r for r in rows if r["pnl"] > 0][:n]
+            losing = [r for r in rows if r["pnl"] < 0]
+            losing.reverse()  # worst first
+            strategies_bottom = losing[:n]
+    except Exception as e:
+        # Never 500 a public landing page over a teaser query.
+        app.logger.warning("EF bridge queries failed (symbol=%s): %s", sym, e)
 
     # Where the CTA sends them. An already-signed-in real user should land
     # in THEIR OWN data, not be bounced into the demo (demo_start refuses
@@ -374,18 +462,39 @@ def earnings_follower_bridge(symbol=None):
     else:
         demo_target = url_for("weekly_review")
 
+    def _demo_link(target):
+        """Anonymous visitors need the demo session started first."""
+        if current_user.is_authenticated:
+            return target
+        return url_for("demo_start", next=target)
+
     if current_user.is_authenticated:
         cta_url = demo_target
         cta_label = "View in your account" if sym and position else "Go to your dashboard"
     else:
-        cta_url = url_for("demo_start", next=demo_target)
-        cta_label = f"See how {sym} played out" if position else "Explore the live demo"
+        cta_url = _demo_link(demo_target)
+        cta_label = f"See the {sym} breakdown" if position else "Open the live demo"
+
+    # "What HappyTrader does" shown as doors into the live account rather
+    # than described in prose — this is a bridge, not a features page.
+    highlights = [
+        ("Daily Review", "Close-of-day pulse on every position",
+         _demo_link(url_for("weekly_review"))),
+        ("Positions", "Every trade classified and scored",
+         _demo_link(url_for("positions"))),
+        ("Strategies", "Which strategy is actually working",
+         _demo_link(url_for("strategies"))),
+    ]
 
     return render_template(
         "ef_bridge.html",
         title=f"{sym} — EarningsFollower + HappyTrader" if sym else "EarningsFollower + HappyTrader",
         symbol=sym,
         position=position,
+        account=account,
+        strategies_top=strategies_top,
+        strategies_bottom=strategies_bottom,
+        highlights=highlights,
         cta_url=cta_url,
         cta_label=cta_label,
         ef_url=earnings_follower_url(symbol=sym or None),

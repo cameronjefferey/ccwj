@@ -225,33 +225,67 @@ _BRIDGE_DF = pd.DataFrame([{
     "strategies": "Cash-Secured Put,Strangle", "is_open": 0,
 }])
 
+_BRIDGE_ACCOUNT_DF = pd.DataFrame([{
+    "symbols": 210, "total_pnl": -14960.87, "num_trades": 571,
+    "winners": 134, "losers": 180, "since": date(2026, 6, 23),
+}])
+
+_BRIDGE_STRATEGY_DF = pd.DataFrame([
+    {"strategy": "Buy and Hold", "pnl": 3343.91, "symbols": 176},
+    {"strategy": "Strangle", "pnl": 3239.0, "symbols": 3},
+    {"strategy": "Put Spread", "pnl": 785.0, "symbols": 9},
+    {"strategy": "Naked Call", "pnl": -6414.0, "symbols": 9},
+    {"strategy": "Cash-Secured Put", "pnl": -6845.0, "symbols": 4},
+    {"strategy": "Call Spread", "pnl": -9045.0, "symbols": 17},
+])
+
 
 class _BridgeClient:
-    """Capture the SQL + bound parameters the bridge sends to BigQuery."""
+    """Capture every SQL + bound parameter set the bridge sends to BigQuery.
 
-    def __init__(self, df):
+    The page issues several queries in one parallel wave, so the tenancy
+    assertions have to hold for ALL of them, not just the last one.
+    """
+
+    def __init__(self, df, account_df=None, strategy_df=None):
         self.df = df
-        self.sql = None
-        self.params = {}
+        self.account_df = (_BRIDGE_ACCOUNT_DF if account_df is None else account_df)
+        self.strategy_df = (_BRIDGE_STRATEGY_DF if strategy_df is None else strategy_df)
+        self.calls = []  # [(sql, {param: value}), ...]
 
     def query(self, sql, job_config=None, **_kw):
-        self.sql = sql
+        params = {}
         if job_config is not None:
-            self.params = {p.name: p.value for p in job_config.query_parameters}
-        df = self.df
+            params = {p.name: p.value for p in job_config.query_parameters}
+        self.calls.append((sql, params))
+
+        if "num_winners" in sql:
+            df = self.account_df
+        elif "GROUP BY\n    strategy" in sql or "GROUP BY strategy" in sql:
+            df = self.strategy_df
+        else:
+            df = self.df
 
         class _Job:
             def to_dataframe(self_inner):
                 return df
         return _Job()
 
+    # -- convenience views over the captured calls --
+    @property
+    def symbol_calls(self):
+        return [(s, p) for s, p in self.calls if "symbol" in p]
+
+    def all_params(self, name):
+        return [p.get(name) for _s, p in self.calls]
+
 
 @contextmanager
-def _bridge(df=_BRIDGE_DF):
+def _bridge(df=_BRIDGE_DF, **kw):
     from app import app
     import app.earnings_page as routes
 
-    stub = _BridgeClient(df)
+    stub = _BridgeClient(df, **kw)
     with patch.object(routes, "get_bigquery_client", lambda: stub):
         with app.test_client() as c:
             yield c, stub
@@ -262,18 +296,24 @@ def test_bridge_scopes_to_demo_tenant_only():
     the symbol must be a bound PARAMETER (never interpolated)."""
     with _bridge() as (c, stub):
         assert c.get("/earningsfollower/MU").status_code == 200
-        assert stub.params["tenant_id"] == "demo:demo-account"
-        assert stub.params["symbol"] == "MU"
+        assert stub.calls, "bridge issued no queries"
+        # EVERY query in the wave — symbol, account scorecard, strategy
+        # attribution — is pinned to the demo tenant.
+        for sql, params in stub.calls:
+            assert params.get("tenant_id") == "demo:demo-account", sql
+            assert "@tenant_id" in sql
+        sym_sql, sym_params = stub.symbol_calls[0]
+        assert sym_params["symbol"] == "MU"
         # Symbol is bound, not concatenated into the SQL text.
-        assert "MU" not in stub.sql
-        assert "@tenant_id" in stub.sql and "@symbol" in stub.sql
+        assert "MU" not in sym_sql
+        assert "@symbol" in sym_sql
 
 
 def test_bridge_ignores_request_supplied_tenant_and_account():
     """A visitor must not be able to widen the scope via query params."""
     with _bridge() as (c, stub):
         c.get("/earningsfollower/MU?tenant=snaptrade:someone-else&account=Schwab%20Account")
-        assert stub.params["tenant_id"] == "demo:demo-account"
+        assert set(stub.all_params("tenant_id")) == {"demo:demo-account"}
 
 
 def test_bridge_renders_symbol_teaser_and_demo_cta():
@@ -282,6 +322,18 @@ def test_bridge_renders_symbol_teaser_and_demo_cta():
         assert "MU" in html
         assert "1,369.00" in html
         assert 'href="/demo/start?next=/position/MU"' in html
+
+
+def test_bridge_shows_whole_account_not_just_the_clicked_symbol():
+    """The bridge promises it isn't curated, so the unfiltered account
+    result and the losing strategies must both be on the page."""
+    with _bridge() as (c, _stub):
+        html = c.get("/earningsfollower/MU").get_data(as_text=True)
+        assert "-$14,961" in html          # account total, losses and all
+        assert "43%" in html               # 134 / (134 + 180)
+        assert "Call Spread" in html       # worst strategy shown
+        assert "-$9,045" in html
+        assert "Buy and Hold" in html      # best strategy shown
 
 
 def test_bridge_handles_symbol_the_bot_never_traded():
@@ -295,10 +347,13 @@ def test_bridge_handles_symbol_the_bot_never_traded():
 
 
 def test_bridge_rejects_junk_symbol_without_querying_bigquery():
+    """A junk path must never reach BigQuery as a symbol lookup (the
+    account-level panels still render)."""
     with _bridge() as (c, stub):
         r = c.get("/earningsfollower/" + "A" * 40)
         assert r.status_code == 200
-        assert stub.sql is None  # never reached BigQuery
+        assert stub.symbol_calls == []
+        assert not any("A" * 40 in sql for sql, _p in stub.calls)
 
 
 def test_bridge_survives_bigquery_failure():
