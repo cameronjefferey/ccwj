@@ -171,11 +171,13 @@ to copy a single user's data over. See the script docstring for usage.
 
 ### Demo Environment
 
-Visitors can explore the app with sample data—no sign-up required. Click **Try Demo** on the landing page to log in as the demo user.
+Visitors can explore the app with **real, live** data—no sign-up required. Click **Try Demo** on the landing page to log in as the demo user.
 
 - Demo credentials: `demo` / `demo123` (or use **Try Demo** for one-click access)
-- Uses the "Demo Account" data from `dbt/seeds/demo_history.csv` and `demo_current.csv`
-- Ensure `dbt seed` and `dbt build` have been run so BigQuery has the sample data
+- The "Demo Account" is a relabeled **mirror** of the EarningsFollower trading bot's Alpaca paper account, not fabricated data. The source tenant is `var('demo_source_tenant_id')` in `dbt/dbt_project.yml`; the mirror models live in `dbt/models/staging/demo/`.
+- Because it is a mirror into the demo's own `demo:demo-account` tenant, the demo renders through the exact same tenant scoping as a real user — there is no isolation carve-out.
+- Ensure `dbt build` has been run so BigQuery has current data
+- EarningsFollower links back in at `/earningsfollower/<symbol>` (see Routes)
 
 ## Routes
 

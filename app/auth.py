@@ -296,9 +296,18 @@ def logout():
 
 @app.route("/demo/start")
 def demo_start():
-    """Log in as the demo user and redirect to the dashboard. No sign-up required."""
+    """Log in as the demo user and redirect. No sign-up required.
+
+    Accepts an optional ``?next=`` so inbound deep-links (notably the
+    EarningsFollower bridge at /earningsfollower/<symbol>) can drop a
+    visitor straight onto a specific page instead of the dashboard. The
+    target is validated by ``safe_internal_next`` — same-origin path and
+    query only, so this can never become an open redirect.
+    """
+    next_page = safe_internal_next(request.args.get("next"))
+
     if current_user.is_authenticated:
-        return redirect(url_for("weekly_review"))
+        return redirect(next_page or url_for("weekly_review"))
 
     demo = User.get_by_username("demo")
     if demo is None:
@@ -307,7 +316,7 @@ def demo_start():
         return redirect(url_for(target))
 
     login_user(demo, remember=False)
-    return redirect(url_for("weekly_review"))
+    return redirect(next_page or url_for("weekly_review"))
 
 
 @app.route("/settings", methods=["GET", "POST"])

@@ -25,6 +25,15 @@ clean-targets:         # directories to be removed by `dbt clean`
   - "dbt_packages"
 
 
+vars:
+  # The public demo is a MIRROR of this real tenant, relabeled to the demo's
+  # own tenant (`demo:demo-account` / `Demo Account`). See
+  # dbt/models/staging/demo/stg_demo_history.sql for the full rationale.
+  # This is the EarningsFollower trading bot's Alpaca paper account.
+  # Set to '' to ship an empty demo (the mirror models then return no rows).
+  demo_source_tenant_id: 'snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd'
+
+
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
 

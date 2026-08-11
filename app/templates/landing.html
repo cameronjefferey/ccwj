@@ -149,7 +149,7 @@
         tracks performance, and surfaces the insights that matter—so you can trade smarter.
     </p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
+        <a href="{{ url_for('demo_start') }}" class="btn btn-light">See the Live Demo</a>
         {% if signup_enabled %}
         <a href="{{ url_for('signup') }}" class="btn btn-outline-light">
             {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
@@ -157,8 +157,12 @@
         {% endif %}
         <a href="{{ url_for('login') }}" class="btn btn-outline-light">Sign In</a>
     </div>
-    {% if signup_invite_required %}
     <p class="small mt-3 mb-0" style="color: rgba(255,255,255,.75)">
+        The demo is a live mirror of a trading bot's paper account &mdash; simulated
+        money, real market data, not a sample file. No sign-up required.
+    </p>
+    {% if signup_invite_required %}
+    <p class="small mt-2 mb-0" style="color: rgba(255,255,255,.75)">
         Closed beta &mdash; account creation requires an invite code. Try the demo to look around.
     </p>
     {% endif %}

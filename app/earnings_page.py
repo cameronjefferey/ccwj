@@ -7,7 +7,7 @@ Endpoint name unchanged (`earnings_watch`).
 from datetime import date
 
 import pandas as pd
-from flask import render_template, request, abort
+from flask import render_template, request, abort, url_for
 # current_user / is_admin are not referenced directly, but the earnings test
 # fixture patch.object()s them on this module — keep them importable.
 from flask_login import login_required, current_user  # noqa: F401
@@ -278,5 +278,117 @@ def earnings_watch():
         context["error"] = "Couldn't load earnings data right now."
 
     return render_template("earnings_watch.html", **context)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# EarningsFollower → HappyTrader bridge (/earningsfollower[/<symbol>])
+# ════════════════════════════════════════════════════════════════════════
+#
+# The INBOUND half of the tandem-product loop. /earnings and the Daily
+# Review deep-link OUT to EarningsFollower; this is where EarningsFollower
+# links back IN. It is a public, branded interstitial (no login) that
+# explains how the two products fit together and then hands the visitor
+# into the live demo.
+#
+# The demo is a mirror of the EarningsFollower trading bot's own account
+# (see AGENTS.md "The public demo is a MIRROR of a real tenant"), so the
+# story is literally true: EarningsFollower finds the setup, the bot
+# trades it, HappyTrader shows how it actually went.
+#
+# TENANCY: this page is unauthenticated, so it may ONLY ever read the demo
+# tenant. The query below hardcodes tenant_id = 'demo:demo-account' — it
+# takes no account/tenant input from the request and must never be
+# generalized to accept one. The symbol comes from the URL and is bound as
+# a query PARAMETER, never interpolated.
+DEMO_TENANT_ID = "demo:demo-account"
+
+EF_BRIDGE_SYMBOL_QUERY = """
+SELECT
+    symbol,
+    ANY_VALUE(company_name)          AS company_name,
+    SUM(total_pnl)                   AS total_pnl,
+    SUM(realized_pnl)                AS realized_pnl,
+    SUM(num_individual_trades)       AS num_trades,
+    MIN(first_trade_date)            AS first_trade_date,
+    MAX(last_trade_date)             AS last_trade_date,
+    STRING_AGG(DISTINCT strategy ORDER BY strategy) AS strategies,
+    MAX(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS is_open
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE tenant_id = @tenant_id
+  AND UPPER(TRIM(symbol)) = @symbol
+GROUP BY symbol
+"""
+
+
+@app.route("/earningsfollower")
+@app.route("/earningsfollower/<symbol>")
+def earnings_follower_bridge(symbol=None):
+    """Branded interstitial for visitors arriving from EarningsFollower.
+
+    Public by design — this is a top-of-funnel landing surface. It reads
+    ONLY the demo tenant (see the tenancy note above).
+    """
+    if not app.config.get("EARNINGS_FOLLOWER_ENABLED", True):
+        abort(404)
+
+    sym = (symbol or request.args.get("symbol") or "").strip().upper()
+    # Cheap sanity bound so a junk path can't reach BigQuery at all.
+    if sym and (len(sym) > 12 or not sym.replace(".", "").replace("-", "").isalnum()):
+        sym = ""
+
+    position = None
+    if sym:
+        try:
+            client = get_bigquery_client()
+            job_config = bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("tenant_id", "STRING", DEMO_TENANT_ID),
+                bigquery.ScalarQueryParameter("symbol", "STRING", sym),
+            ])
+            df = client.query(
+                EF_BRIDGE_SYMBOL_QUERY, job_config=job_config
+            ).to_dataframe()
+            if not df.empty:
+                r = df.iloc[0]
+                position = {
+                    "symbol": sym,
+                    "company_name": (str(r.get("company_name"))
+                                     if r.get("company_name") else None),
+                    "total_pnl": float(r.get("total_pnl") or 0),
+                    "realized_pnl": float(r.get("realized_pnl") or 0),
+                    "num_trades": int(r.get("num_trades") or 0),
+                    "first_trade_date": r.get("first_trade_date"),
+                    "last_trade_date": r.get("last_trade_date"),
+                    "strategies": (str(r.get("strategies"))
+                                   if r.get("strategies") else None),
+                    "is_open": bool(r.get("is_open")),
+                }
+        except Exception as e:
+            # Never 500 a marketing landing page over a teaser query.
+            app.logger.warning("EF bridge teaser query failed for %s: %s", sym, e)
+
+    # Where the CTA sends them. An already-signed-in real user should land
+    # in THEIR OWN data, not be bounced into the demo (demo_start refuses
+    # to switch an authenticated session anyway).
+    if sym and position:
+        demo_target = url_for("position_detail", symbol=sym)
+    else:
+        demo_target = url_for("weekly_review")
+
+    if current_user.is_authenticated:
+        cta_url = demo_target
+        cta_label = "View in your account" if sym and position else "Go to your dashboard"
+    else:
+        cta_url = url_for("demo_start", next=demo_target)
+        cta_label = f"See how {sym} played out" if position else "Explore the live demo"
+
+    return render_template(
+        "ef_bridge.html",
+        title=f"{sym} — EarningsFollower + HappyTrader" if sym else "EarningsFollower + HappyTrader",
+        symbol=sym,
+        position=position,
+        cta_url=cta_url,
+        cta_label=cta_label,
+        ef_url=earnings_follower_url(symbol=sym or None),
+    )
 
 

@@ -66,6 +66,38 @@ with versions as (
     where trade_symbol is not null
       and underlying_symbol is not null
       and trim(underlying_symbol) != ''
+
+    union all
+
+    -- Demo = relabeled MIRROR of the source tenant's option-mark history,
+    -- matching the staging mirror (stg_demo_current) and the balance mirror
+    -- in mart_account_equity_daily. Without this the demo tenant would have
+    -- no snapshot history of its own, every past day would contribute $0
+    -- MTM, and the demo's option leg would degrade to flat
+    -- realize-on-close steps — hiding the product's headline feature on the
+    -- one page prospects actually look at.
+    select
+        'demo:demo-account' as tenant_id,
+        'Demo Account'      as account,
+        cast(null as int64) as user_id,
+        trade_symbol,
+        underlying_symbol,
+        option_expiry,
+        option_strike,
+        option_type,
+        quantity,
+        current_price,
+        market_value,
+        cost_basis,
+        unrealized_pnl,
+        dbt_valid_from,
+        dbt_valid_to
+    from {{ ref('snapshot_options_market_values_daily') }}
+    where trade_symbol is not null
+      and underlying_symbol is not null
+      and trim(underlying_symbol) != ''
+      and nullif(trim(tenant_id), '') = '{{ var("demo_source_tenant_id", "") }}'
+      and '{{ var("demo_source_tenant_id", "") }}' != ''
 ),
 
 unfolded as (

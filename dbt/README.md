@@ -5,8 +5,9 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 ## Model Layers
 
 ### Staging (views)
-- `stg_history` — Normalizes historical trades from `trade_history` (manual upload and Schwab sync both write here) plus `demo_history`. Parses dates, actions, option symbols, instrument types.
-- `stg_current` — Cleans current positions from `current_positions` (same — one seed for both sources) plus `demo_current`. Filters cash/totals, parses option symbols, casts numerics.
+- `stg_history` — Normalizes historical trades from `trade_history` (manual upload and Schwab sync both write here) plus the demo mirror `stg_demo_history`. Parses dates, actions, option symbols, instrument types.
+- `stg_current` — Cleans current positions from `current_positions` (same — one source for both) plus the demo mirror `stg_demo_current`. Filters cash/totals, parses option symbols, casts numerics.
+- `stg_demo_{history,current,balances}` (`models/staging/demo/`) — The public demo, built as a relabeled **mirror** of a real tenant set by `var('demo_source_tenant_id')` rather than fabricated data. Reads the per-broker adapters, never the raw source, so it inherits every broker-quirk fix. See `stg_demo_history.sql`.
 
 ### Intermediate (tables)
 - `int_equity_sessions` — Detects equity position lifecycles using running share count. Session = one continuous holding period.
@@ -35,12 +36,10 @@ All columns are STRING; the extra `_row_seq` INT64 column preserves the
 app's write order (never selected by staging). Local dev builds read
 `analytics_raw_dev` via `DBT_RAW_DATASET` (set by `scripts/dev-refresh.sh`).
 
-## Seeds (static/demo data only)
+## Seeds (static reference data only)
 
 | File | Description |
 |------|-------------|
-| `demo_history.csv` | Demo user history |
-| `demo_current.csv` | Demo user current positions |
 | `cflt_prices.csv` | Optional price seed |
 | `crypto_symbols.csv` | Curated crypto symbol whitelist |
 

@@ -72,7 +72,32 @@ with bal_versions as (
         date(dbt_valid_from) as valid_from,
         date(dbt_valid_to)   as valid_to   -- NULL for the current (open) version
     from {{ ref('snapshot_account_balances_daily') }}
+    -- The 'Demo Account' exclusion is LOAD-BEARING and must stay: this SCD2
+    -- snapshot still holds legacy versions from the era when the demo was
+    -- fabricated seed data. The demo's balance history comes from the mirror
+    -- branch below instead, which yields the source tenant's full history on
+    -- day one rather than starting from the first post-cutover snapshot.
     where account != 'Demo Account'
+      and row_type in ('cash', 'account_total')
+
+    union all
+
+    -- Demo = relabeled MIRROR of the source tenant's balance history.
+    -- Matches the staging-layer mirror (stg_demo_balances) so the demo's
+    -- account-value chart reconciles with its positions instead of being
+    -- the synthetic curve int_demo_equity_daily used to emit.
+    select
+        'Demo Account'      as account,
+        cast(null as int64) as user_id,
+        'demo:demo-account' as tenant_id,
+        'demo:demo-account' as tenant_grain,
+        row_type,
+        market_value,
+        date(dbt_valid_from) as valid_from,
+        date(dbt_valid_to)   as valid_to
+    from {{ ref('snapshot_account_balances_daily') }}
+    where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
+      and '{{ var("demo_source_tenant_id", "") }}' != ''
       and row_type in ('cash', 'account_total')
 ),
 
@@ -117,8 +142,7 @@ option_rows as (
         market_value,
         snapshot_date
     from {{ ref('stg_current') }}
-    where account != 'Demo Account'
-      and instrument_type in ('Call', 'Put')
+    where instrument_type in ('Call', 'Put')
       and snapshot_date is not null
 ),
 
@@ -145,8 +169,7 @@ equity_rows as (
         market_value,
         snapshot_date
     from {{ ref('stg_current') }}
-    where account != 'Demo Account'
-      and instrument_type = 'Equity'
+    where instrument_type = 'Equity'
       and snapshot_date is not null
 ),
 
@@ -241,17 +264,12 @@ snapshot_result as (
 
 -- v2 tenant_id is carried natively from staging and is part of the grain
 -- so each physical account keeps its own daily account-value series. The
--- demo source has no tenant_id; the app filters demo by account label.
+-- demo rides this same path via the mirror branch in bal_versions — it is
+-- no longer a separate synthetic series bolted on here.
 all_rows as (
     select tenant_id, account, user_id, date, equity_value, option_value, cash_value, account_value
     from snapshot_result
     where account_value > 0
-    union all
-    -- int_demo_equity_daily emits user_id NULL by design (the demo user_id
-    -- is environment-specific). The app's demo path filters by
-    -- ``account = 'Demo Account'`` rather than user_id.
-    select cast(null as string) as tenant_id, account, user_id, date, equity_value, option_value, cash_value, account_value
-    from {{ ref('int_demo_equity_daily') }}
 )
 
 select * from all_rows f

@@ -13,10 +13,12 @@
     Error severity from day 1 — there is no "transition lenient" mode
     under v2 because the migration deliberately truncates all seeds.
 
-    Demo seeds (demo_history, demo_current) are intentionally NOT
-    covered here — they're shared sample data for the demo user, not
-    tenant-tied. They flow through stg_history's union and stay
-    unfiltered because their account label is hardcoded 'demo'.
+    The demo is intentionally NOT covered here. It is no longer seed data
+    at all: since Aug 2026 it is a relabeled MIRROR of a real tenant
+    (dbt/models/staging/demo/stg_demo_history.sql), synthesized downstream
+    of these raw tables and stamped 'demo:demo-account' in the mirror
+    models themselves — so it can never be the source of a NULL tenant_id
+    here. The source tenant it copies IS covered, as a normal broker row.
 */
 
 with combined as (

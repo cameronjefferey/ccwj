@@ -21,11 +21,13 @@
 -- and stays as a column for templates that show account names. It is
 -- NOT the join key.
 --
--- The demo seed union is preserved so the demo user keeps working —
--- demo rows carry tenant_id = 'demo:demo-account' (stamped in the seed
--- CSVs, Aug 2026) matching the demo user's broker_tenants row created by
--- ``ensure_demo_user``, so the public demo renders through the exact
--- same tenant scoping as a real user.
+-- The demo union is preserved so the demo user keeps working — demo rows
+-- carry tenant_id = 'demo:demo-account' matching the demo user's
+-- broker_tenants row created by ``ensure_demo_user``, so the public demo
+-- renders through the exact same tenant scoping as a real user. Since
+-- Aug 2026 the demo is no longer fabricated seed CSVs but a relabeled
+-- MIRROR of a real tenant (the EarningsFollower bot's Alpaca paper
+-- account) — see dbt/models/staging/demo/stg_demo_history.sql.
 --
 -- Real-broker rows now arrive via the per-broker staging adapters
 -- (dbt/models/staging/brokers/stg_broker_<slug>_history) rather than a
@@ -34,13 +36,6 @@
 -- ``_other_`` catch-all carries any not-yet-modeled broker so no row is
 -- dropped. See dbt/macros/broker_slug_from_account.sql for how to add a
 -- brokerage. The heavy OSI/option/dividend parse below is unchanged.
-{% if execute %}
-    {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_history')) | map(attribute='name') | list -%}
-{% else %}
-    {%- set _demo_cols = [] -%}
-{% endif %}
-{% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
-{% set _demo_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _demo_cols else "cast(null as string)" %}
 
 with trade_history_as_strings as (
     select * from {{ ref('stg_broker_schwab_history') }}
@@ -55,19 +50,7 @@ with trade_history_as_strings as (
 ),
 
 demo_as_strings as (
-    select
-        cast(Account as string) as Account,
-        {{ _demo_user_id_expr }} as user_id,
-        {{ _demo_tenant_id_expr }} as tenant_id,
-        cast(Date as string) as Date,
-        cast(Action as string) as Action,
-        cast(Symbol as string) as Symbol,
-        cast(Description as string) as Description,
-        cast(Quantity as string) as Quantity,
-        cast(Price as string) as Price,
-        cast(fees_and_comm as string) as fees_and_comm,
-        cast(Amount as string) as Amount
-    from {{ ref('demo_history') }}
+    select * from {{ ref('stg_demo_history') }}
 ),
 
 source as (

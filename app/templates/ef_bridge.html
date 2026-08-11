@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .efb-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        padding: 2.2rem 1.8rem;
+        border-radius: 16px;
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+    .efb-hero .kicker {
+        font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+        color: rgba(255,255,255,.65); font-weight: 700; margin-bottom: .6rem;
+    }
+    .efb-hero h1 { font-size: 1.9rem; font-weight: 800; margin: 0 0 .6rem; }
+    .efb-hero .lede {
+        color: rgba(255,255,255,.82); font-size: 1rem; margin: 0 auto;
+        max-width: 60ch; line-height: 1.5;
+    }
+    .efb-cta {
+        display: inline-block; margin-top: 1.3rem;
+        background: #fff; color: #0f172a; text-decoration: none;
+        border-radius: 999px; padding: .7rem 1.6rem;
+        font-size: .95rem; font-weight: 700;
+    }
+    .efb-cta:hover { background: #e2e8f0; color: #0f172a; }
+    .efb-subcta {
+        display: block; margin-top: .8rem;
+        color: rgba(255,255,255,.7); font-size: .8rem;
+    }
+    .efb-subcta a { color: rgba(255,255,255,.9); }
+
+    /* Symbol teaser */
+    .efb-card {
+        background: #fff; border: 1px solid #e7e5e4; border-radius: 14px;
+        padding: 1.2rem 1.4rem; margin-bottom: 1.5rem;
+    }
+    .efb-card .sym-row {
+        display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .efb-card .sym { font-size: 1.5rem; font-weight: 800; color: #0f172a; }
+    .efb-card .company { font-size: .85rem; color: #64748b; }
+    .efb-badge {
+        font-size: .66rem; text-transform: uppercase; letter-spacing: .05em;
+        font-weight: 700; border-radius: 999px; padding: .2rem .55rem;
+    }
+    .efb-badge.open { background: #dbeafe; color: #1d4ed8; }
+    .efb-badge.closed { background: #f1f5f9; color: #475569; }
+
+    .efb-stats {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: .9rem;
+    }
+    .efb-stat .lbl {
+        font-size: .66rem; text-transform: uppercase; letter-spacing: .05em;
+        color: #94a3b8; font-weight: 700; margin-bottom: .2rem;
+    }
+    .efb-stat .val {
+        font-size: 1.25rem; font-weight: 800; color: #0f172a;
+        font-variant-numeric: tabular-nums;
+    }
+    .efb-stat .val.pos { color: #15803d; }
+    .efb-stat .val.neg { color: #b91c1c; }
+    .efb-stat .sub { font-size: .7rem; color: #94a3b8; }
+
+    /* How it works */
+    .efb-steps {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem; margin-bottom: 1.5rem;
+    }
+    .efb-step {
+        background: #fff; border: 1px solid #e7e5e4; border-radius: 12px;
+        padding: 1rem 1.1rem;
+    }
+    .efb-step .n {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.6rem; height: 1.6rem; border-radius: 50%;
+        background: #1e3a8a; color: #fff; font-size: .78rem; font-weight: 800;
+        margin-bottom: .55rem;
+    }
+    .efb-step h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .3rem; color: #0f172a; }
+    .efb-step p { font-size: .82rem; color: #64748b; margin: 0; line-height: 1.5; }
+
+    .efb-note {
+        font-size: .78rem; color: #64748b; text-align: center;
+        max-width: 62ch; margin: 0 auto 1.5rem; line-height: 1.55;
+    }
+
+    /* Persistent, non-dismissible — these are simulated results and must
+       never read as a real-money track record. */
+    .efb-disclaimer {
+        font-size: .76rem; color: #78350f; line-height: 1.55;
+        background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+        padding: .8rem 1rem; max-width: 68ch; margin: 0 auto 1rem;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="efb-hero">
+    <div class="kicker">EarningsFollower &times; HappyTrader</div>
+    {% if symbol %}
+        <h1>{{ symbol }}: from setup to outcome</h1>
+        <p class="lede">
+            You found {{ symbol }} on EarningsFollower. This is the other half of the
+            story &mdash; an automated strategy took the setup in a paper account, and
+            HappyTrader shows exactly how it played out. No hindsight, no cherry-picking.
+        </p>
+    {% else %}
+        <h1>See how the setups actually played out</h1>
+        <p class="lede">
+            EarningsFollower surfaces the setup. An automated strategy trades it in a
+            paper account. HappyTrader is the mirror that shows what happened next
+            &mdash; every trade, every strategy, every dollar.
+        </p>
+    {% endif %}
+
+    <a href="{{ cta_url }}" class="efb-cta">{{ cta_label }} &rarr;</a>
+
+    {% if not current_user.is_authenticated %}
+    <span class="efb-subcta">
+        Live demo &mdash; no sign-up, no card. Just real data.
+    </span>
+    {% endif %}
+</div>
+
+{% if symbol and position %}
+<div class="efb-card">
+    <div class="sym-row">
+        <span class="sym">{{ position.symbol }}</span>
+        {% if position.company_name %}
+        <span class="company">{{ position.company_name }}</span>
+        {% endif %}
+        {% if position.is_open %}
+        <span class="efb-badge open">Open</span>
+        {% else %}
+        <span class="efb-badge closed">Closed</span>
+        {% endif %}
+    </div>
+
+    <div class="efb-stats">
+        <div class="efb-stat">
+            <div class="lbl">Total P&amp;L</div>
+            <div class="val {{ 'pos' if position.total_pnl >= 0 else 'neg' }}">
+                {{ '-' if position.total_pnl < 0 else '' }}${{ '{:,.2f}'.format(position.total_pnl|abs) }}
+            </div>
+        </div>
+        <div class="efb-stat">
+            <div class="lbl">Realized</div>
+            <div class="val {{ 'pos' if position.realized_pnl >= 0 else 'neg' }}">
+                {{ '-' if position.realized_pnl < 0 else '' }}${{ '{:,.2f}'.format(position.realized_pnl|abs) }}
+            </div>
+        </div>
+        <div class="efb-stat">
+            <div class="lbl">Trades</div>
+            <div class="val">{{ position.num_trades }}</div>
+        </div>
+        {% if position.strategies %}
+        <div class="efb-stat">
+            <div class="lbl">Strategy</div>
+            <div class="val" style="font-size:.95rem">{{ position.strategies }}</div>
+        </div>
+        {% endif %}
+        {% if position.first_trade_date %}
+        <div class="efb-stat">
+            <div class="lbl">First trade</div>
+            <div class="val" style="font-size:.95rem">{{ position.first_trade_date }}</div>
+            {% if position.last_trade_date %}
+            <div class="sub">through {{ position.last_trade_date }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% elif symbol %}
+<p class="efb-note">
+    The bot hasn't traded <strong>{{ symbol }}</strong> yet &mdash; so there's nothing
+    to show for it here. The demo is live data, so it only ever shows positions that
+    were genuinely taken. Take a look at what it <em>is</em> trading.
+</p>
+{% endif %}
+
+<div class="efb-steps">
+    <div class="efb-step">
+        <span class="n">1</span>
+        <h3>EarningsFollower finds it</h3>
+        <p>
+            Earnings calendars, themes, and movers &mdash; the screen that surfaces
+            which names are worth attention this week.
+        </p>
+    </div>
+    <div class="efb-step">
+        <span class="n">2</span>
+        <h3>The bot trades it</h3>
+        <p>
+            An automated strategy takes the setups in a paper trading account,
+            equities and options both. No discretion, no retroactive edits.
+        </p>
+    </div>
+    <div class="efb-step">
+        <span class="n">3</span>
+        <h3>HappyTrader mirrors it</h3>
+        <p>
+            Every trade classified, every strategy scored, daily marks on open
+            options. The demo below <em>is</em> that account &mdash; not a sample file.
+        </p>
+    </div>
+</div>
+
+<p class="efb-disclaimer">
+    <strong>Paper trading &mdash; simulated money.</strong>
+    The demo account is a live mirror of the bot's <em>paper</em> brokerage account,
+    updated as it syncs. Orders, fills, and market data are real; the capital is not.
+    These are not real-money results and are not a performance track record,
+    investment advice, or a solicitation. Past results &mdash; simulated or otherwise
+    &mdash; do not predict future returns.
+</p>
+
+<p class="efb-note">
+    Nothing here is curated: you see the same numbers the bot's owner sees, including
+    the losing trades.
+    {% if symbol %}
+    <br>
+    <a href="{{ ef_url }}" target="_blank" rel="noopener">Back to {{ symbol }} on EarningsFollower &#8599;</a>
+    {% endif %}
+</p>
+
+{% endblock %}

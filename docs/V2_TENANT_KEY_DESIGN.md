@@ -238,10 +238,18 @@ unrealized_pnl, unrealized_pnl_pct, percent_of_account
 - `dbt/seeds/schwab_account_balances.csv` — direct Schwab is gone;
   collapse into `account_balances.csv`.
 
-### Demo seeds (untouched)
+### Demo seeds (superseded Aug 2026)
 
-`demo_current.csv` / `demo_history.csv` keep their existing shape;
-they're the shared-demo-user fixtures.
+`demo_current.csv` / `demo_history.csv` are **gone**. The public demo is no
+longer fabricated fixtures — it is a relabeled **mirror** of a real tenant
+(`var('demo_source_tenant_id')`, the EarningsFollower bot's Alpaca paper
+account) built by `dbt/models/staging/demo/stg_demo_{history,current,balances}`.
+
+The mirror stamps `tenant_id = 'demo:demo-account'` itself, so the demo is
+still a genuinely separate tenant and renders through the exact same
+tenant scoping as a real user — no isolation carve-out. It reads the
+per-broker adapters (never the raw source) so it inherits every
+broker-quirk fix.
 
 ---
 
@@ -359,8 +367,11 @@ Every model that currently does `... AND user_id = X AND account IN
 - `int_split_factors`, `stg_split_events`, `daily_split_events`
   (symbol-only).
 - `stg_crypto_symbols` (symbol-only).
-- `int_demo_equity_daily`, `stg_demo_history`, `stg_demo_current`
-  (demo user, tenancy by `user_id='demo'` literal — keep as-is).
+- Demo models (`stg_demo_history`, `stg_demo_current`,
+  `stg_demo_balances`) stamp `tenant_id = 'demo:demo-account'` at the
+  mirror boundary, so they are already v2-correct. (`int_demo_equity_daily`
+  was deleted Aug 2026 — the demo's account-value series now comes from a
+  mirrored balance snapshot in `mart_account_equity_daily`.)
 - `stg_history` macros, `attribute_dividends_to_strategy` macro
   (logic-only, tenancy passes through).
 

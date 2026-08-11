@@ -16,47 +16,10 @@
 -- dbt/macros/broker_slug_from_account.sql for the rationale and the
 -- add-a-brokerage procedure. The OSI parse / short-aware recompute /
 -- dedup below are unchanged.
-{% if execute %}
-    {%- set _demo_cols = adapter.get_columns_in_relation(ref('demo_current')) | map(attribute='name') | list -%}
-{% else %}
-    {%- set _demo_cols = [] -%}
-{% endif %}
-{% set _demo_user_id_expr = "cast(user_id as string)" if 'user_id' in _demo_cols else "cast(null as string)" %}
-{% set _demo_tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _demo_cols else "cast(null as string)" %}
-
-{%- set common_string_cols -%}
-        cast(Account as string) as Account,
-        cast(Symbol as string) as Symbol,
-        cast(Description as string) as Description,
-        cast(Quantity as string) as Quantity,
-        cast(Price as string) as Price,
-        cast(price_change_dollar as string) as price_change_dollar,
-        cast(price_change_percent as string) as price_change_percent,
-        cast(market_value as string) as market_value,
-        cast(day_change_dollar as string) as day_change_dollar,
-        cast(day_change_percent as string) as day_change_percent,
-        cast(cost_bases as string) as cost_bases,
-        cast(gain_or_loss_dollat as string) as gain_or_loss_dollat,
-        cast(gain_or_loss_percent as string) as gain_or_loss_percent,
-        cast(rating as string) as rating,
-        cast(divident_reinvestment as string) as divident_reinvestment,
-        cast(is_capital_gain as string) as is_capital_gain,
-        cast(percent_of_account as string) as percent_of_account,
-        cast(expiration_date as string) as expiration_date,
-        cast(cost_per_share as string) as cost_per_share,
-        cast(last_earnings_date as string) as last_earnings_date,
-        cast(dividend_yield as string) as dividend_yield,
-        cast(last_dividend as string) as last_dividend,
-        cast(ex_dividend_date as string) as ex_dividend_date,
-        cast(pe_ratio as string) as pe_ratio,
-        cast(annual_week_low as string) as annual_week_low,
-        cast(annual_week_high as string) as annual_week_high,
-        cast(volume as string) as volume,
-        cast(intrinsic_value as string) as intrinsic_value,
-        cast(in_the_money as string) as in_the_money,
-        cast(security_type as string) as security_type,
-        cast(margin_requirement as string) as margin_requirement
-{%- endset %}
+--
+-- The demo branch is a relabeled MIRROR of a real tenant (the
+-- EarningsFollower bot's Alpaca paper account), not fabricated seed data —
+-- see dbt/models/staging/demo/stg_demo_current.sql.
 
 with current_as_strings as (
     select * from {{ ref('stg_broker_schwab_current') }}
@@ -71,11 +34,7 @@ with current_as_strings as (
 ),
 
 demo_as_strings as (
-    select
-        {{ _demo_user_id_expr }} as user_id,
-        {{ _demo_tenant_id_expr }} as tenant_id,
-        {{ common_string_cols }}
-    from {{ ref('demo_current') }}
+    select * from {{ ref('stg_demo_current') }}
 ),
 
 source as (

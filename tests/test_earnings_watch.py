@@ -9,6 +9,7 @@ Two layers:
      that the user already holds are excluded, and the flag gates the page.
 """
 
+from contextlib import contextmanager
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -208,3 +209,137 @@ def test_earnings_watch_404_when_flag_off(earnings_client):
         assert r.status_code == 404
     finally:
         app.config["EARNINGS_FOLLOWER_ENABLED"] = prev
+
+
+# --- Inbound bridge: /earningsfollower[/<symbol>] --------------------
+#
+# This is a PUBLIC (unauthenticated) surface that reads BigQuery, so the
+# tenancy assertions below are the load-bearing ones: it must read the
+# demo tenant and nothing else, and must never accept a tenant/account
+# from the request. See .cursor/rules/bigquery-tenant-isolation.mdc.
+
+_BRIDGE_DF = pd.DataFrame([{
+    "symbol": "MU", "company_name": "Micron Technology",
+    "total_pnl": 1369.0, "realized_pnl": 1369.0, "num_trades": 20,
+    "first_trade_date": date(2026, 7, 1), "last_trade_date": date(2026, 8, 4),
+    "strategies": "Cash-Secured Put,Strangle", "is_open": 0,
+}])
+
+
+class _BridgeClient:
+    """Capture the SQL + bound parameters the bridge sends to BigQuery."""
+
+    def __init__(self, df):
+        self.df = df
+        self.sql = None
+        self.params = {}
+
+    def query(self, sql, job_config=None, **_kw):
+        self.sql = sql
+        if job_config is not None:
+            self.params = {p.name: p.value for p in job_config.query_parameters}
+        df = self.df
+
+        class _Job:
+            def to_dataframe(self_inner):
+                return df
+        return _Job()
+
+
+@contextmanager
+def _bridge(df=_BRIDGE_DF):
+    from app import app
+    import app.earnings_page as routes
+
+    stub = _BridgeClient(df)
+    with patch.object(routes, "get_bigquery_client", lambda: stub):
+        with app.test_client() as c:
+            yield c, stub
+
+
+def test_bridge_scopes_to_demo_tenant_only():
+    """The unauthenticated bridge may only ever read the demo tenant, and
+    the symbol must be a bound PARAMETER (never interpolated)."""
+    with _bridge() as (c, stub):
+        assert c.get("/earningsfollower/MU").status_code == 200
+        assert stub.params["tenant_id"] == "demo:demo-account"
+        assert stub.params["symbol"] == "MU"
+        # Symbol is bound, not concatenated into the SQL text.
+        assert "MU" not in stub.sql
+        assert "@tenant_id" in stub.sql and "@symbol" in stub.sql
+
+
+def test_bridge_ignores_request_supplied_tenant_and_account():
+    """A visitor must not be able to widen the scope via query params."""
+    with _bridge() as (c, stub):
+        c.get("/earningsfollower/MU?tenant=snaptrade:someone-else&account=Schwab%20Account")
+        assert stub.params["tenant_id"] == "demo:demo-account"
+
+
+def test_bridge_renders_symbol_teaser_and_demo_cta():
+    with _bridge() as (c, _stub):
+        html = c.get("/earningsfollower/MU").get_data(as_text=True)
+        assert "MU" in html
+        assert "1,369.00" in html
+        assert 'href="/demo/start?next=/position/MU"' in html
+
+
+def test_bridge_handles_symbol_the_bot_never_traded():
+    with _bridge(df=pd.DataFrame()) as (c, _stub):
+        r = c.get("/earningsfollower/ZZZZ")
+        assert r.status_code == 200
+        html = r.get_data(as_text=True)
+        # No teaser card, and the CTA falls back to the demo dashboard.
+        assert "1,369.00" not in html
+        assert "/demo/start" in html
+
+
+def test_bridge_rejects_junk_symbol_without_querying_bigquery():
+    with _bridge() as (c, stub):
+        r = c.get("/earningsfollower/" + "A" * 40)
+        assert r.status_code == 200
+        assert stub.sql is None  # never reached BigQuery
+
+
+def test_bridge_survives_bigquery_failure():
+    """A marketing landing page must never 500 over a teaser query."""
+    from app import app
+    import app.earnings_page as routes
+
+    class _Boom:
+        def query(self, *a, **k):
+            raise RuntimeError("BQ down")
+
+    with patch.object(routes, "get_bigquery_client", lambda: _Boom()):
+        with app.test_client() as c:
+            r = c.get("/earningsfollower/MU")
+            assert r.status_code == 200
+            assert "/demo/start" in r.get_data(as_text=True)
+
+
+def test_bridge_404_when_flag_off():
+    from app import app
+    prev = app.config.get("EARNINGS_FOLLOWER_ENABLED", True)
+    app.config["EARNINGS_FOLLOWER_ENABLED"] = False
+    try:
+        with app.test_client() as c:
+            assert c.get("/earningsfollower/MU").status_code == 404
+    finally:
+        app.config["EARNINGS_FOLLOWER_ENABLED"] = prev
+
+
+# --- demo_start ?next= open-redirect guard ---------------------------
+
+@pytest.mark.parametrize("hostile", [
+    "https://evil.com",
+    "//evil.com",
+    "/\\evil.com",
+    "http://evil.com/path",
+])
+def test_demo_start_rejects_offsite_next(hostile):
+    """?next= must never become an open redirect out of the product."""
+    from app import app
+    with app.test_client() as c:
+        r = c.get(f"/demo/start?next={hostile}", follow_redirects=False)
+        loc = r.headers.get("Location", "")
+        assert "evil.com" not in loc

@@ -770,7 +770,12 @@
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
             <span>
                 <strong>Demo mode &mdash; read-only.</strong>
-                You're exploring with sample data; uploads, AI regeneration, follows, posts, and profile changes are disabled so the demo stays consistent for everyone.
+                A live mirror of the
+                {% if earnings_follower_enabled %}<a href="{{ earnings_follower_url() }}" target="_blank" rel="noopener" class="text-white">EarningsFollower</a>{% else %}EarningsFollower{% endif %}
+                bot's <strong>paper</strong> trading account &mdash; simulated money,
+                real market data and real execution, including the losing trades.
+                Writes (uploads, AI regeneration, profile changes) are disabled so it
+                stays consistent for everyone.
             </span>
             {% if signup_enabled %}
             <a href="{{ url_for('signup') }}" class="btn btn-light btn-sm">
