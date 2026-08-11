@@ -93,12 +93,15 @@ def disconnect_user_brokerages(user_id):
     broker_tenants disconnected (rows kept — tenancy + warehouse survive).
 
     Order matters: revoke authorizations at SnapTrade FIRST (needs the stored
-    user secret), then delete the SnapTrade user, then drop local rows. Any
-    SnapTrade API failure is logged and the local cleanup proceeds — the
-    delete_snap_trade_user call is the billing backstop, and a leftover
-    authorization with no SnapTrade user is inert.
+    user secret), then delete the SnapTrade user, then drop local rows.
+    Authorization-removal failures are tolerated only when deleting the remote
+    SnapTrade user succeeds (that deletion is the billing backstop). If the
+    client is unavailable or the remote user deletion fails, local credentials
+    and account rows MUST remain so tomorrow's run can retry; deleting them
+    would make the remote, still-billable user impossible to clean up.
 
-    Returns the number of local account rows removed.
+    Returns the number of local account rows removed, or None when remote
+    deletion could not be confirmed and local cleanup was deferred.
     """
     from app.models import (
         get_snaptrade_accounts,
@@ -111,39 +114,49 @@ def disconnect_user_brokerages(user_id):
 
     acc_rows = get_snaptrade_accounts(user_id) or []
     snap = get_snaptrade_user(user_id)
-    client = None
     try:
         client = _get_snaptrade_client()
     except Exception as exc:
         print(f"User {user_id}: SnapTrade client unavailable ({exc}); "
-              "cleaning local rows only.", file=sys.stderr)
+              "preserving local rows for retry.", file=sys.stderr)
+        return None
 
-    if snap and client:
-        for row in acc_rows:
-            # Mirror the interactive disconnect route: prefer the cached
-            # brokerage_authorization_id, fall back to the account id.
-            auth_id = (
-                row.get("brokerage_authorization_id")
-                or row["snaptrade_account_id"]
-            )
-            try:
-                client.connections.remove_brokerage_authorization(
-                    user_id=snap["snaptrade_user_id"],
-                    user_secret=snap["snaptrade_secret"],
-                    authorization_id=auth_id,
-                )
-                print(f"User {user_id}: removed authorization {auth_id}")
-            except Exception as exc:
-                print(f"User {user_id}: remove_brokerage_authorization "
-                      f"({auth_id}) failed: {exc}", file=sys.stderr)
+    if not snap:
+        print(f"User {user_id}: SnapTrade credentials missing; "
+              "preserving local rows for operator recovery.", file=sys.stderr)
+        return None
+    if not client:
+        print(f"User {user_id}: SnapTrade client unavailable; "
+              "preserving local rows for retry.", file=sys.stderr)
+        return None
+
+    for row in acc_rows:
+        # Mirror the interactive disconnect route: prefer the cached
+        # brokerage_authorization_id, fall back to the account id.
+        auth_id = (
+            row.get("brokerage_authorization_id")
+            or row["snaptrade_account_id"]
+        )
         try:
-            client.authentication.delete_snap_trade_user(
-                user_id=snap["snaptrade_user_id"]
+            client.connections.remove_brokerage_authorization(
+                user_id=snap["snaptrade_user_id"],
+                user_secret=snap["snaptrade_secret"],
+                authorization_id=auth_id,
             )
-            print(f"User {user_id}: SnapTrade user deleted")
+            print(f"User {user_id}: removed authorization {auth_id}")
         except Exception as exc:
-            print(f"User {user_id}: delete_snap_trade_user failed: {exc}",
-                  file=sys.stderr)
+            print(f"User {user_id}: remove_brokerage_authorization "
+                  f"({auth_id}) failed: {exc}", file=sys.stderr)
+
+    try:
+        client.authentication.delete_snap_trade_user(
+            user_id=snap["snaptrade_user_id"]
+        )
+        print(f"User {user_id}: SnapTrade user deleted")
+    except Exception as exc:
+        print(f"User {user_id}: delete_snap_trade_user failed: {exc}; "
+              "preserving local rows for retry.", file=sys.stderr)
+        return None
 
     removed = 0
     for row in acc_rows:
@@ -214,6 +227,13 @@ def run_plan_lifecycle(now=None):
             from app.models import get_snaptrade_accounts
             if get_snaptrade_accounts(rec["user_id"]):
                 removed = disconnect_user_brokerages(rec["user_id"])
+                if removed is None:
+                    print(
+                        f"User {rec['user_id']}: disconnect deferred at day "
+                        f"{days}; remote deletion was not confirmed.",
+                        file=sys.stderr,
+                    )
+                    continue
                 print(f"User {rec['user_id']}: disconnected at day {days} "
                       f"({removed} account rows removed)")
                 counts["disconnected"] += 1
