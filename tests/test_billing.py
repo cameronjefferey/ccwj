@@ -118,6 +118,7 @@ def test_terminal_statuses_deactivate(monkeypatch, status):
     )
     assert billing.apply_subscription(9, _sub(status)) is True
     assert seen["status"] == status
+    assert seen["subscription_id"] == "sub_1"
 
 
 def test_period_end_read_from_items_when_absent_at_top_level():
@@ -167,11 +168,23 @@ def test_activation_only_captures_prior_plan_on_the_way_in(captured_sql):
 
 
 def test_deactivation_falls_back_to_prior_plan_then_trial(captured_sql):
-    billing.deactivate_subscription(5, status="canceled")
+    billing.deactivate_subscription(
+        5, status="canceled", subscription_id="sub_current",
+    )
     sql, params = captured_sql[0]
     assert "COALESCE(NULLIF(plan_before_subscription, ''), %s)" in sql
     assert params[0] == PLAN_TRIAL
     assert "stripe_customer_id = NULL" not in sql, "keep the customer for resubscribes"
+    assert "stripe_subscription_id = %s" in sql
+    assert params[-2:] == ("sub_current", "sub_current")
+
+
+def test_activation_does_not_replace_another_paying_subscription(captured_sql):
+    billing.activate_subscription(5, subscription_id="sub_new", status="active")
+    sql, params = captured_sql[0]
+    assert "stripe_subscription_id IS NULL" in sql
+    assert "COALESCE(subscription_status, '') NOT IN" in sql
+    assert params[-2:] == ("sub_new", "sub_new")
 
 
 def test_churn_lands_in_frozen_grace_not_a_fresh_trial(captured_sql):
@@ -350,6 +363,70 @@ def test_webhook_returns_500_without_recording_so_stripe_retries(
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("postgres down")),
     )
     assert _post_webhook(client).status_code == 500
+
+
+def test_webhook_retries_when_plan_writer_returns_false(
+    client, monkeypatch, stripe_config
+):
+    """Plan writers catch DB exceptions and return False. The webhook must turn
+    that into a 500 instead of acknowledging and permanently losing the event."""
+    event = {"id": "evt_plan_false", "type": "customer.subscription.updated",
+             "data": {"object": _sub("active", metadata={"user_id": "42"})}}
+    monkeypatch.setattr(billing, "_stripe", lambda: _FakeStripe(event=event))
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(
+        billing, "record_event",
+        lambda *a: pytest.fail("failed plan writes must remain retryable"),
+    )
+    monkeypatch.setattr(billing, "apply_subscription", lambda *a, **k: False)
+
+    assert _post_webhook(client).status_code == 500
+
+
+def test_checkout_webhook_retries_when_activation_returns_false(
+    client, monkeypatch, stripe_config
+):
+    event = {
+        "id": "evt_checkout_false",
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "customer": "cus_1",
+            "subscription": "sub_1",
+            "client_reference_id": "42",
+        }},
+    }
+    fake = _FakeStripe(event=event, subscription=_sub("active"))
+    monkeypatch.setattr(billing, "_stripe", lambda: fake)
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "save_customer_id", lambda *a: True)
+    monkeypatch.setattr(billing, "apply_subscription", lambda *a, **k: False)
+    monkeypatch.setattr(
+        billing, "record_event",
+        lambda *a: pytest.fail("failed checkout activation must be retried"),
+    )
+
+    assert _post_webhook(client).status_code == 500
+
+
+def test_deleted_event_passes_subscription_id_to_atomic_guard(
+    client, monkeypatch, stripe_config
+):
+    event = {"id": "evt_stale_delete", "type": "customer.subscription.deleted",
+             "data": {"object": _sub(
+                 "canceled", id="sub_old", metadata={"user_id": "42"},
+             )}}
+    monkeypatch.setattr(billing, "_stripe", lambda: _FakeStripe(event=event))
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "record_event", lambda *a: None)
+    seen = {}
+    monkeypatch.setattr(
+        billing, "deactivate_subscription",
+        lambda uid, **kw: seen.update({"uid": uid, **kw}) or True,
+    )
+
+    assert _post_webhook(client).status_code == 200
+    assert seen["uid"] == 42
+    assert seen["subscription_id"] == "sub_old"
 
 
 def test_webhook_acks_but_logs_an_unmatchable_customer(client, monkeypatch, stripe_config):

@@ -229,6 +229,13 @@ def activate_subscription(
                    subscription_current_period_end = %s,
                    subscription_cancel_at_period_end = %s
              WHERE id = %s
+               AND (
+                   %s IS NULL
+                   OR stripe_subscription_id IS NULL
+                   OR stripe_subscription_id = %s
+                   OR COALESCE(subscription_status, '') NOT IN
+                      ('active', 'trialing', 'past_due', 'incomplete')
+               )
             """,
             (
                 PLAN_ACTIVE,
@@ -241,6 +248,8 @@ def activate_subscription(
                 current_period_end,
                 bool(cancel_at_period_end),
                 user_id,
+                str(subscription_id) if subscription_id else None,
+                str(subscription_id) if subscription_id else None,
             ),
         )
         _log.info("Stripe: user_id=%s activated (status=%s)", user_id, status)
@@ -250,7 +259,7 @@ def activate_subscription(
         return False
 
 
-def deactivate_subscription(user_id, *, status="canceled"):
+def deactivate_subscription(user_id, *, status="canceled", subscription_id=None):
     """Subscription is gone for good. Fall back to the plan they held before
     subscribing (beta stays beta) or to 'trial'.
 
@@ -266,6 +275,9 @@ def deactivate_subscription(user_id, *, status="canceled"):
     Warehouse data is never touched, and the Stripe customer id is kept so a
     returning subscriber reuses their saved card and invoice history.
     """
+    # Stripe does not guarantee webhook ordering. The subscription-id predicate
+    # makes a delayed cancellation for sub_A a no-op after sub_B has already
+    # activated; without it, that stale event freezes a currently-paying user.
     # Positional placeholders only — see the note in activate_subscription.
     try:
         execute(
@@ -282,6 +294,11 @@ def deactivate_subscription(user_id, *, status="canceled"):
                    subscription_cancel_at_period_end = FALSE,
                    stripe_subscription_id = NULL
              WHERE id = %s
+               AND (
+                   %s IS NULL
+                   OR stripe_subscription_id IS NULL
+                   OR stripe_subscription_id = %s
+               )
             """,
             (
                 PLAN_TRIAL,
@@ -290,6 +307,8 @@ def deactivate_subscription(user_id, *, status="canceled"):
                 int(TRIAL_DAYS),
                 str(status or "canceled"),
                 user_id,
+                str(subscription_id) if subscription_id else None,
+                str(subscription_id) if subscription_id else None,
             ),
         )
         _log.info("Stripe: user_id=%s subscription ended (status=%s)", user_id, status)
@@ -313,7 +332,11 @@ def apply_subscription(user_id, sub) -> bool:
             current_period_end=_ts(_subscription_period_end(sub)),
             cancel_at_period_end=bool(_get(sub, "cancel_at_period_end")),
         )
-    return deactivate_subscription(user_id, status=status or "canceled")
+    return deactivate_subscription(
+        user_id,
+        status=status or "canceled",
+        subscription_id=_get(sub, "id"),
+    )
 
 
 def queue_resume_sync(user_id):
@@ -688,7 +711,14 @@ def stripe_webhook():
                 customer_id = _get(obj, "customer")
                 if user_id and customer_id:
                     save_customer_id(user_id, customer_id)
-                if user_id and apply_subscription(user_id, sub):
+                if user_id:
+                    if not apply_subscription(user_id, sub):
+                        # Plan writers deliberately return False on DB errors.
+                        # Treat that as a failed delivery so Stripe retries;
+                        # acknowledging it would leave a paying customer frozen.
+                        raise RuntimeError(
+                            f"plan activation failed for user_id={user_id}"
+                        )
                     # Subscribe transition only — renewals arrive as
                     # invoice/subscription.updated events, not checkout.
                     queue_resume_sync(user_id)
@@ -702,11 +732,19 @@ def stripe_webhook():
                 _log_foreign_event(event_type, obj)
             elif (user_id := _user_id_from_subscription(obj)):
                 if event_type == "customer.subscription.deleted":
-                    deactivate_subscription(
-                        user_id, status=str(_get(obj, "status") or "canceled")
+                    changed = deactivate_subscription(
+                        user_id,
+                        status=str(_get(obj, "status") or "canceled"),
+                        subscription_id=_get(obj, "id"),
                     )
                 else:
-                    apply_subscription(user_id, obj)
+                    changed = apply_subscription(user_id, obj)
+                if not changed:
+                    # Returning 200 records the event and prevents Stripe from
+                    # retrying. A failed plan write must remain unrecorded.
+                    raise RuntimeError(
+                        f"plan update failed for user_id={user_id}"
+                    )
             else:
                 # Retrying won't help (the mapping is missing, not flaky), so
                 # this is acknowledged — but it means a real subscription is
