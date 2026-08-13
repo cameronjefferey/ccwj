@@ -62,6 +62,29 @@ def _frame(csv_text):
     return pd.read_csv(StringIO(csv_text), dtype=str, keep_default_na=False)
 
 
+def merge_seed_frames(prod, dev, local_ids):
+    """Merge prod raw rows with locally-synced tenants.
+
+    Local tenants that already have rows in ``dev`` win (fresh local sync);
+    every other tenant mirrors ``prod``. Stale copies of prod tenants left
+    in ``dev`` from a previous refresh are dropped — never carried over.
+
+    ``prod`` / ``dev`` are string-typed DataFrames with a ``tenant_id``
+    column. ``local_ids`` is the set of tenant_ids in local Postgres.
+    """
+    if dev is None or dev.empty:
+        return prod.copy(), set()
+    dev_ids = set(dev["tenant_id"]) if "tenant_id" in dev.columns else set()
+    local_fresh = {t for t in local_ids if t in dev_ids}
+    prod_rows = prod[~prod["tenant_id"].isin(local_fresh)]
+    dev_rows = dev[dev["tenant_id"].isin(local_fresh)]
+    merged = pd.concat([prod_rows, dev_rows], ignore_index=True)
+    merged = merged[
+        list(prod.columns) + [c for c in dev.columns if c not in prod.columns]
+    ]
+    return merged, local_fresh
+
+
 def main():
     local_ids = local_tenant_ids()
     print(f"local tenants: {len(local_ids)}")
@@ -80,17 +103,7 @@ def main():
         if dev is None:
             dev = prod.iloc[0:0]
 
-        # Local tenants with fresh local rows win over prod; every other
-        # tenant mirrors prod. Stale prod-tenant rows from the PREVIOUS
-        # refresh sit in the dev table too — never carry those over.
-        dev_ids = set(dev["tenant_id"]) if "tenant_id" in dev.columns else set()
-        local_fresh = {t for t in local_ids if t in dev_ids}
-        prod_rows = prod[~prod["tenant_id"].isin(local_fresh)]
-        dev_rows = dev[dev["tenant_id"].isin(local_fresh)]
-        merged = pd.concat([prod_rows, dev_rows], ignore_index=True)
-        merged = merged[
-            list(prod.columns) + [c for c in dev.columns if c not in prod.columns]
-        ]
+        merged, local_fresh = merge_seed_frames(prod, dev, local_ids)
 
         seed_store.write_seed_csvs(
             [(path, merged.to_csv(index=False))], client=client, dataset=DEV_DATASET,

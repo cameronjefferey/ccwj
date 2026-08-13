@@ -22,16 +22,26 @@
 # prod builds only.
 #
 # NOTE: dbt prefers a profiles.yml in the project directory over ~/.dbt,
-# so the --profiles-dir flag below is REQUIRED — without it the build
-# targets prod `analytics` (this exact mistake wiped prod once during
-# setup; don't remove the flag). DBT_RAW_DATASET points the raw_broker
-# source at analytics_raw_dev for the same reason.
+# so a --profiles-dir that is NOT the repo's dbt/ is REQUIRED — without it
+# the build targets prod `analytics` (this exact mistake wiped prod once
+# during setup; don't remove the flag). We use the in-repo
+# dbt/profiles.dev.yml (dataset: analytics_dev) copied to a temp dir, so
+# a missing ~/.dbt/profiles.yml can never silently hit prod.
+# DBT_RAW_DATASET points the raw_broker source at analytics_raw_dev.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_DBT="$SCRIPT_DIR/dbt/.venv/bin/dbt"
-VENV_PY="$SCRIPT_DIR/dbt/.venv/bin/python"
+if [[ -x "$SCRIPT_DIR/dbt/.venv/bin/dbt" ]]; then
+  VENV_DBT="$SCRIPT_DIR/dbt/.venv/bin/dbt"
+  VENV_PY="$SCRIPT_DIR/dbt/.venv/bin/python"
+elif [[ -x "$SCRIPT_DIR/.venv/bin/dbt" ]]; then
+  VENV_DBT="$SCRIPT_DIR/.venv/bin/dbt"
+  VENV_PY="$SCRIPT_DIR/.venv/bin/python"
+else
+  echo "No dbt virtualenv found at dbt/.venv or .venv." >&2
+  exit 1
+fi
 
 echo "==> Step 1: rebuild analytics_raw_dev = prod raw seeds + local syncs"
 "$VENV_PY" "$SCRIPT_DIR/scripts/dev_refresh_raw.py"
@@ -44,8 +54,15 @@ echo "==> Step 2: backfill accumulating snapshot history from prod"
 # accumulated history; the dbt snapshot step below then MERGEs today on top.
 BQ_DATASET=analytics_dev "$VENV_PY" "$SCRIPT_DIR/scripts/dev_backfill_snapshots.py"
 
-echo "==> Step 3: dbt build into analytics_dev (working tree code, profiles from ~/.dbt)"
+echo "==> Step 3: dbt build into analytics_dev (working tree code, in-repo profiles.dev.yml)"
+# The repo dbt/profiles.yml targets PROD analytics (CI / intentional prod
+# builds). A hand-maintained ~/.dbt/profiles.yml is easy to skip or point
+# at the wrong dataset. Copy the in-repo dev profile into a temp dir so
+# `dbt build` cannot silently fall through to prod.
+PROFILES_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ht-dbt-dev-XXXXXX")"
+trap 'rm -rf "$PROFILES_DIR"' EXIT
+cp "$SCRIPT_DIR/dbt/profiles.dev.yml" "$PROFILES_DIR/profiles.yml"
 cd "$SCRIPT_DIR/dbt"
-DBT_RAW_DATASET=analytics_raw_dev "$VENV_DBT" build --profiles-dir "$HOME/.dbt" --target dev
+DBT_RAW_DATASET=analytics_raw_dev "$VENV_DBT" build --profiles-dir "$PROFILES_DIR" --target dev
 
 echo "==> Done. analytics_dev = latest prod data + local dev syncs, built from local code."

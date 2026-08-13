@@ -1,0 +1,21 @@
+# In-repo dbt profile for building into analytics_dev.
+#
+# The repo's dbt/profiles.yml is the PROD profile (dataset: analytics) —
+# plain `dbt build` from dbt/ must keep targeting prod, which is what CI
+# and intentional prod builds use. Dev builds MUST NOT use that file.
+#
+# scripts/dev-refresh.sh copies this file into a temp profiles dir so a
+# local rebuild does not depend on a hand-maintained ~/.dbt/profiles.yml
+# (and cannot silently fall through to prod). Method is oauth / ADC —
+# `gcloud auth application-default login` locally; CI clone of analytics_dev
+# does not run dbt (see scripts/dev_clone_prod.py).
+ccwj:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: ccwj-dbt
+      dataset: analytics_dev
+      threads: 4
+      location: us

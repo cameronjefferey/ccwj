@@ -82,3 +82,11 @@ jobs:
         run: |
           curl -fsS -m 20 -X POST "https://ccwj.onrender.com/internal/cache/flush" \
             -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}" || true
+
+  # Evening close-snap also rewrites marts; keep analytics_dev in lockstep.
+  # Failure here must not fail the prices job.
+  mirror-dev:
+    needs: refresh-prices
+    if: success()
+    uses: ./.github/workflows/dev_mirror.yml
+    secrets: inherit

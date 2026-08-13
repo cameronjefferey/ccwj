@@ -1,0 +1,51 @@
+name: Mirror prod warehouse into analytics_dev
+
+# After every production warehouse build, copy `analytics` → `analytics_dev`
+# so local `./scripts/dev.sh` (BQ_DATASET=analytics_dev) sees the same marts
+# customers see — without anyone running a 10-minute local dbt rebuild.
+#
+# This job is READ-ONLY on prod. scripts/dev_clone_prod.py refuses to write
+# analytics / analytics_raw / analytics_backups. It does not touch
+# analytics_raw_dev (local syncs live there).
+#
+# Triggers:
+#   - workflow_call from bigquery_update.yml and prices_refresh.yml
+#   - workflow_dispatch for a manual "just refresh the mirror" from the
+#     Actions tab (e.g. local looks stale and you don't want to wait)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: bq-dev-mirror
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.DBT_KEYFILE_JSON }}'
+
+      - name: Install BigQuery client
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-cloud-bigquery
+
+      - name: Clone analytics → analytics_dev
+        run: python scripts/dev_clone_prod.py --dest analytics_dev
+        env:
+          # Belt-and-suspenders: the script also refuses prod dest, but
+          # never let a caller env leak a prod BQ_DATASET into --dest default.
+          BQ_DATASET: analytics_dev
