@@ -7,17 +7,18 @@
    collapsed to a single daily flow focused on what changed today / this
    week. Sections, top to bottom:
 
-     1. Today hero        — account total today + day delta + market
+     1. Today hero        — account total today + day delta + market + fill count
      2. Since you last looked — diff vs prior visit (kept from master)
      3. Account snapshot   — per-account today / vs day / week / month
-     4. Today's movers     — biggest $ impact from stock moves on holdings
-     5. Watch list         — earnings, expiring options, projected ex-div
-     6. Daily account Δ    — rolling 12-week heatmap
-     7. Performance by account — summarized scorecard, one row per account
+     4. Trades today       — every fill dated today (adds/trims included)
+     5. Today's movers     — biggest $ impact from stock moves on holdings
+     6. Watch list         — earnings, expiring options, projected ex-div
+     7. Daily account Δ    — rolling 12-week heatmap
+     8. Performance by account — summarized scorecard, one row per account
                             (stock / options / dividend / total / G/L % /
                             annualized), links to /accounts for the full
                             per-symbol / strategy / sector breakdown
-     8. Trades this week   — one row per group opened or closed this week
+     9. Trades this week   — one row per group opened or closed this week
 
    Lifetime per-symbol / strategy / sector / industry breakdowns and the
    "your positions right now" card grid were removed from this page (June
@@ -473,6 +474,35 @@
     }
     .pill-status.open { background: rgba(25,135,84,.08); color: #15803d; }
     .pill-status.closed { background: rgba(100,116,139,.12); color: #475569; }
+    .pill-status.today { background: rgba(37,99,235,.12); color: #1d4ed8; margin-left: .35rem; }
+
+    /* Trades today — fill-level rows (not weekly groups) */
+    .tt-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
+    .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .tt-table tr:last-child td { border-bottom: 0; }
+    .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
+    .tt-muted { color: #94a3b8; font-size: .8rem; }
+    .tt-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
+    .tt-verb.buy { background: #eff6ff; color: #1d4ed8; }
+    .tt-verb.sell { background: #fef2f2; color: #b91c1c; }
+    .tt-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
+    .tt-sym { font-weight: 700; color: #0f172a; text-decoration: none; }
+    .tt-sym:hover { color: #2563eb; }
+    .tt-empty { color: #94a3b8; font-size: .9rem; padding: .15rem 0; }
+    @media (max-width: 480px) {
+        .tt-table { font-size: .84rem; table-layout: fixed; }
+        .tt-table td { padding: .4rem .3rem; }
+        .tt-table td:first-child { width: 30%; }
+        .tt-table td:last-child { width: 32%; }
+        .tt-muted { word-break: break-all; }
+        .tt-verb { white-space: normal; }
+    }
+    [data-bs-theme="dark"] .tt-table td { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
+    [data-bs-theme="dark"] .tt-verb.sell { background: #450a0a; color: #fca5a5; }
+    [data-bs-theme="dark"] .tt-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
+    [data-bs-theme="dark"] .tt-sym { color: #e2e8f0; }
+    [data-bs-theme="dark"] .pill-status.today { background: rgba(96,165,250,.18); color: #93c5fd; }
 
     /* Trades this week — discrete open/close events */
     .trades-block { margin-top: 1rem; }
@@ -574,7 +604,7 @@
     {% endif %}
 
     <p class="hero-subtitle">
-        End of day: one place to see what just happened and what to watch tomorrow.
+        End of day: one place to see what you traded, what moved, and what to watch tomorrow.
     </p>
 
     <div class="hero-meta">
@@ -582,6 +612,9 @@
         <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %}" title="{{ market_session.label }}">
             U.S. market: {{ market_session.state|replace('_', ' ') }}
         </span>
+        {% endif %}
+        {% if trades_today and trades_today.count %}
+        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }} today</span>
         {% endif %}
         {% if market_neutral_line %}
         <span style="color: rgba(255,255,255,.65);">{{ market_neutral_line }}</span>
@@ -831,6 +864,88 @@
     </div>
 </div>
 {% endif %}
+{% endif %}
+
+{# ════════════════════════════════════
+   TRADES TODAY — every fill dated today (adds/trims, not just new groups).
+   "Trades this week" below only lists groups that opened or closed this
+   ISO week, so a trim on a long-held position never appeared there.
+   ════════════════════════════════════ #}
+{% set _tt = trades_today or {} %}
+{% set _tt_weekday = today and today.weekday() < 5 %}
+{% if _tt.has_any or _tt_weekday %}
+<div class="review-section">
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>Trades Today</span>
+        {% if _tt.count %}
+        <span style="text-transform:none; letter-spacing:0; font-size:.8rem; color:#64748b;">
+            {{ _tt.count }} fill{{ 's' if _tt.count != 1 }}{% if _tt.symbols %} · {{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}{% endif %}
+            {% if _tt.net_cash %}
+            <span class="trades-pnl {% if _tt.net_cash > 0 %}text-positive{% elif _tt.net_cash < 0 %}text-negative{% endif %}">
+                · {{ "+" if _tt.net_cash > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_cash|abs) }} cash
+            </span>
+            {% endif %}
+        </span>
+        {% endif %}
+    </div>
+    <p class="section-sub">
+        Every fill dated {{ today.strftime('%a %b %-d') if today else 'today' }} — including adds and trims on positions you already hold.
+    </p>
+    {% if _tt.trades %}
+    <div class="breakdown-wrap">
+        <table class="tt-table">
+            {% for t in _tt.trades %}
+            <tr>
+                <td>
+                    <span class="tt-verb {{ 'lifecycle' if t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                </td>
+                <td>
+                    {% if t.symbol %}<a class="tt-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                    {% if t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
+                    <div class="tt-muted">{{ t.trade_symbol }}</div>
+                    {% endif %}
+                    {% if t.account and accounts and accounts|length > 1 %}
+                    <div class="tt-muted">{{ t.account }}</div>
+                    {% endif %}
+                </td>
+                <td class="tt-muted d-none d-sm-table-cell">
+                    {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
+                    {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
+                </td>
+                <td class="tt-money {% if t.amount > 0 %}text-positive{% elif t.amount < 0 %}text-negative{% endif %}">
+                    {% if t.amount %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="tt-empty">No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.</div>
+    {% endif %}
+    {% if _tt.cash %}
+    <div class="tt-muted" style="margin-top:.85rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:.7rem;">Cash &amp; fees</div>
+    <table class="tt-table">
+        {% for c in _tt.cash %}
+        <tr>
+            <td>{{ c.verb }}{% if c.description %} <span class="tt-muted">{{ c.description|truncate(40) }}</span>{% endif %}</td>
+            <td class="tt-money {% if c.amount > 0 %}text-positive{% elif c.amount < 0 %}text-negative{% endif %}">
+                {{ "+" if c.amount > 0 else "" }}${{ "{:,.2f}".format(c.amount) }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    <details class="section-fine" style="margin:.8rem 0 0;">
+        <summary>How this is computed</summary>
+        <p>
+            Rows come from the same fill feed as a past day's review
+            (broker history dated today). This is not the weekly table
+            below: a covered-call write on a stock you've held for months
+            shows here even though that group didn't newly open this week.
+            Same-day trades appear after the next sync.
+        </p>
+    </details>
+</div>
 {% endif %}
 
 {# ════════════════════════════════════
@@ -1504,7 +1619,7 @@
         Opened or closed since
         {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
-        One row per symbol.
+        One row per symbol. Fills today on a position you already held are listed under Trades Today above.
     </p>
     <details class="section-fine" style="margin:-.4rem 0 .8rem;">
         <summary>How this is computed</summary>
@@ -1546,6 +1661,7 @@
                         {% else %}
                         <span class="pill-status open">Open</span>
                         {% endif %}
+                        {% if r.traded_today %}<span class="pill-status today">Today</span>{% endif %}
                     </td>
                     <td data-val="{{ r.result_pnl }}" class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
                         {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>

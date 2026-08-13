@@ -69,6 +69,16 @@ def test_heatmap_day_link_preserves_tenant_scope():
             "closed_count": 0, "realized_pnl": 0.0,
             "unrealized_pnl": 0.0, "has_any": False,
         },
+        "trades_today": {
+            "trades": [{
+                "verb": "Bought", "action": "equity_buy", "symbol": "AAPL",
+                "trade_symbol": "AAPL", "description": "", "quantity": 100,
+                "price": 185.2, "amount": -18520.0, "account": "Schwab",
+                "is_option": False,
+            }],
+            "cash": [], "count": 1, "net_cash": -18520.0,
+            "symbols": ["AAPL"], "has_any": True,
+        },
         "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
         "benchmark_snapshot": [],
@@ -85,6 +95,10 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert queries[0]["tenants"] == [TENANTS]
     assert "1 open position is adding to your track record" in rendered
     assert "of your stories" not in rendered
+    assert "Trades Today" in rendered
+    assert "Bought" in rendered
+    assert "1 fill today" in rendered
+    assert "AAPL" in rendered
 
     story_queries = _queries_for_path(rendered, "/story")
     assert story_queries

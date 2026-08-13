@@ -28,7 +28,9 @@ from app.weekly_review import (
     _build_trades_this_week,
     _build_upcoming_dividends,
     _format_trade_contract,
+    _split_day_fills,
     _today_headline,
+    build_daily_review_batch,
 )
 
 
@@ -937,3 +939,87 @@ class TestBuildBenchmarkSnapshot:
         assert out[0]["day_pct"] is None    # base missing
         assert out[0]["week_pct"] is None   # base <= 0 guarded
         assert out[0]["month_pct"] is not None
+
+
+class TestSplitDayFills:
+    """Fill-level rows for Daily Review 'Trades today' and the day page.
+
+    The weekly table only lists groups that opened or closed this ISO week.
+    An add/trim on a long-held position is a fill today and MUST show here.
+    """
+
+    def _row(self, **kw):
+        base = {
+            "tenant_id": "snaptrade:abc", "account": "Schwab Account",
+            "user_id": 9, "trade_date": date(2026, 8, 13),
+            "action": "equity_buy", "trade_symbol": "AAPL",
+            "underlying_symbol": "AAPL", "description": "Bought AAPL",
+            "quantity": 100.0, "price": 185.20, "amount": -18520.0,
+            "instrument_type": "Equity",
+        }
+        base.update(kw)
+        return base
+
+    def test_empty(self):
+        out = _split_day_fills(None)
+        assert out["has_any"] is False
+        assert out["trades"] == []
+        assert out["count"] == 0
+        assert _split_day_fills(pd.DataFrame())["has_any"] is False
+
+    def test_add_to_existing_position_is_a_trade(self):
+        # The product gap: this fill would never appear in Trades this week
+        # because the AAPL group opened months ago and is still open.
+        df = pd.DataFrame([self._row()])
+        out = _split_day_fills(df, label_map={"snaptrade:abc": "Sara Investment"})
+        assert out["count"] == 1
+        assert out["has_any"] is True
+        r = out["trades"][0]
+        assert r["verb"] == "Bought"
+        assert r["symbol"] == "AAPL"
+        assert r["is_option"] is False
+        assert r["account"] == "Sara Investment"
+        assert r["amount"] == -18520.0
+        assert out["net_cash"] == -18520.0
+        assert out["symbols"] == ["AAPL"]
+        assert out["cash"] == []
+
+    def test_option_sto_and_deposit_split(self):
+        df = pd.DataFrame([
+            self._row(action="option_sell_to_open", trade_symbol="ASTS  260821C00050000",
+                      underlying_symbol="ASTS", quantity=1, price=1.20, amount=120.0,
+                      instrument_type="Call"),
+            self._row(action="cash_transfer", trade_symbol="", underlying_symbol="",
+                      quantity=None, price=None, amount=5000.0, description="Deposit"),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        assert out["trades"][0]["verb"] == "Sold to open"
+        assert out["trades"][0]["is_option"] is True
+        assert out["net_cash"] == 120.0  # deposit is not a trade
+        assert len(out["cash"]) == 1
+        assert out["cash"][0]["verb"] == "Cash transfer"
+        assert out["symbols"] == ["ASTS"]
+
+    def test_unknown_action_is_cash_not_a_trade(self):
+        df = pd.DataFrame([self._row(action="margin_interest", amount=-12.5,
+                                    quantity=None, price=None, underlying_symbol="")])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+        assert out["cash"][0]["verb"] == "Margin interest"
+        assert out["has_any"] is True
+
+
+class TestDailyReviewBatchIncludesTodayTrades:
+    def test_today_trades_reuses_day_query_with_today_param(self):
+        today = date(2026, 8, 13)
+        batch = build_daily_review_batch("AND tenant_id IN ('snaptrade:abc')",
+                                         today, date(2026, 8, 10))
+        assert "today_trades" in batch
+        sql, cfg = batch["today_trades"]
+        assert "stg_history" in sql
+        assert "trade_date = @day" in sql
+        params = {p.name: p.value for p in cfg.query_parameters}
+        assert params["day"] == today
+
