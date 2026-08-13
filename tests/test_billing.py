@@ -69,6 +69,91 @@ def test_prices_are_the_advertised_amounts():
 
 
 # ---------------------------------------------------------------------------
+# Account deletion — Stripe must stop before its user mapping disappears
+# ---------------------------------------------------------------------------
+
+
+def test_account_deletion_cancels_live_subscription(monkeypatch, stripe_config):
+    calls = []
+
+    class _Subscriptions:
+        @staticmethod
+        def retrieve(subscription_id):
+            calls.append(("retrieve", subscription_id))
+            return _sub("active", id=subscription_id)
+
+        @staticmethod
+        def cancel(subscription_id):
+            calls.append(("cancel", subscription_id))
+
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: {
+        "stripe_subscription_id": "sub_live",
+    })
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: types.SimpleNamespace(Subscription=_Subscriptions),
+    )
+
+    assert billing.cancel_subscription_for_account_deletion(9) == (True, None)
+    assert calls == [("retrieve", "sub_live"), ("cancel", "sub_live")]
+
+
+def test_account_deletion_fails_closed_on_stripe_error(
+    monkeypatch, stripe_config
+):
+    class _Subscriptions:
+        @staticmethod
+        def retrieve(_subscription_id):
+            return _sub("active")
+
+        @staticmethod
+        def cancel(_subscription_id):
+            raise RuntimeError("stripe unavailable")
+
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: {
+        "stripe_subscription_id": "sub_live",
+    })
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: types.SimpleNamespace(Subscription=_Subscriptions),
+    )
+
+    ok, error = billing.cancel_subscription_for_account_deletion(9)
+    assert ok is False
+    assert "cancel" in error.lower()
+
+
+def test_account_deletion_refuses_foreign_subscription(
+    monkeypatch, stripe_config
+):
+    canceled = []
+    foreign = _sub("active")
+    foreign["items"]["data"][0]["price"]["id"] = "price_sibling_product"
+
+    class _Subscriptions:
+        @staticmethod
+        def retrieve(_subscription_id):
+            return foreign
+
+        @staticmethod
+        def cancel(subscription_id):
+            canceled.append(subscription_id)
+
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: {
+        "stripe_subscription_id": "sub_foreign",
+    })
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: types.SimpleNamespace(Subscription=_Subscriptions),
+    )
+
+    ok, error = billing.cancel_subscription_for_account_deletion(9)
+    assert ok is False
+    assert "happytrader" in error.lower()
+    assert canceled == []
+
+
+# ---------------------------------------------------------------------------
 # Status mapping — who keeps access
 # ---------------------------------------------------------------------------
 

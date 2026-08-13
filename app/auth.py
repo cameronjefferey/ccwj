@@ -367,18 +367,21 @@ def delete_account():
     deregistration step the admin path doesn't have. Order matters:
 
       1. Verify password + typed confirmation ("DELETE"). Demo blocked.
-      2. Purge warehouse rows (``purge_user_id_from_seeds``), resolving
+      2. Cancel any live Stripe subscription while its durable user mapping
+         and billing-portal access still exist. Abort on failure so a deleted
+         account can never continue renewing.
+      3. Purge warehouse rows (``purge_user_id_from_seeds``), resolving
          canonical tenant_ids so NULL/stale informational user_id rows are
          included. Abort the whole delete if this fails — never leave a
          deleted Postgres user whose trade rows silently live on in BigQuery.
-      3. Deregister the SnapTrade user (kills broker connections and
+      4. Deregister the SnapTrade user (kills broker connections and
          stops per-user aggregator billing). Best-effort: on failure we
          log loudly and continue — the periodic orphan sweep
          (``scripts/admin/deregister_orphan_snaptrade_users.py``) exists
          exactly for registrations left behind without a Postgres row.
-      4. ``DELETE FROM users`` — every user-scoped Postgres table
+      5. ``DELETE FROM users`` — every user-scoped Postgres table
          cascades (broker_tenants, snaptrade_*, profile, insights, …).
-      5. Log the session out.
+      6. Log the session out.
 
     Admins are refused (an admin deleting the last admin locks everyone
     out of /admin; have another admin do it via the admin panel, which
@@ -410,7 +413,25 @@ def delete_account():
     uid = current_user.id
     uname = current_user.username
 
-    # 2. Warehouse purge FIRST — abort everything if it fails.
+    # 2. Stop external payment FIRST. The user/customer/subscription mapping
+    # is destroyed by the Postgres cascade and the portal needs a login, so
+    # proceeding after a Stripe failure can leave an unreachable renewal.
+    from app.billing import cancel_subscription_for_account_deletion
+    stripe_ok, stripe_err = cancel_subscription_for_account_deletion(uid)
+    if not stripe_ok:
+        app.logger.error(
+            "SELF-DELETE: Stripe cancellation failed for user_id=%s: %s",
+            uid, stripe_err,
+        )
+        flash(
+            "We couldn't cancel your subscription just now, so your account "
+            "was NOT deleted and no data was removed. Please try again in a "
+            "few minutes or contact support.",
+            "danger",
+        )
+        return redirect(url_for("profile", tab="security"))
+
+    # 3. Warehouse purge — abort everything else if it fails.
     from app.upload import purge_user_id_from_seeds
     ok, err, rows_removed, _marker = purge_user_id_from_seeds(
         uid,
@@ -426,7 +447,7 @@ def delete_account():
         )
         return redirect(url_for("profile", tab="security"))
 
-    # 3. SnapTrade deregistration (best-effort, before Postgres cascade
+    # 4. SnapTrade deregistration (best-effort, before Postgres cascade
     #    removes the snaptrade_users row we need for the call).
     try:
         from app.models import get_snaptrade_user
@@ -449,7 +470,7 @@ def delete_account():
             "(orphan will be swept later): %s", uid, exc,
         )
 
-    # 4. Postgres cascade delete.
+    # 5. Postgres cascade delete.
     from app.models import delete_user
     if not delete_user(uid):
         app.logger.error("SELF-DELETE: Postgres delete failed for user_id=%s", uid)

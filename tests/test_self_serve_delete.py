@@ -59,8 +59,19 @@ def _login(client, username: str, password: str = "testpass123"):
 
 @pytest.fixture
 def patched_externals(monkeypatch):
-    """Neutralize the two external effects; record whether they ran."""
-    calls = {"purged": [], "snaptrade": []}
+    """Neutralize external effects; record whether they ran."""
+    calls = {"stripe": [], "purged": [], "snaptrade": []}
+
+    def fake_cancel_subscription(user_id):
+        calls["stripe"].append(user_id)
+        return True, None
+
+    import app.billing as billing_mod
+    monkeypatch.setattr(
+        billing_mod,
+        "cancel_subscription_for_account_deletion",
+        fake_cancel_subscription,
+    )
 
     def fake_purge(user_id, *, commit_message):
         calls["purged"].append(user_id)
@@ -92,6 +103,7 @@ class TestSelfServeDelete:
         )
         assert resp.status_code == 200
         assert _user_exists(db_conn, uid)
+        assert patched_externals["stripe"] == []
         assert patched_externals["purged"] == []
         client.post("/logout")
 
@@ -102,6 +114,30 @@ class TestSelfServeDelete:
         resp = client.post(
             "/profile/delete-account",
             data={"password": "testpass123", "confirm_text": "delete"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert _user_exists(db_conn, uid)
+        assert patched_externals["stripe"] == []
+        assert patched_externals["purged"] == []
+        client.post("/logout")
+
+    def test_stripe_failure_aborts_before_warehouse(
+        self, client, db_conn, patched_externals, monkeypatch
+    ):
+        username = _unique_username()
+        uid = _create_user(db_conn, username)
+
+        import app.billing as billing_mod
+        monkeypatch.setattr(
+            billing_mod,
+            "cancel_subscription_for_account_deletion",
+            lambda user_id: (False, "stripe down"),
+        )
+        _login(client, username)
+        resp = client.post(
+            "/profile/delete-account",
+            data={"password": "testpass123", "confirm_text": "DELETE"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -140,6 +176,7 @@ class TestSelfServeDelete:
         )
         assert resp.status_code == 200
         assert not _user_exists(db_conn, uid)
+        assert patched_externals["stripe"] == [uid]
         assert patched_externals["purged"] == [uid]
         # Session is gone: a login-required page must bounce to /login.
         follow = client.get("/daily-review", follow_redirects=False)
@@ -164,5 +201,6 @@ class TestSelfServeDelete:
         )
         assert resp.status_code == 200
         assert _user_exists(db_conn, uid)
+        assert patched_externals["stripe"] == []
         assert patched_externals["purged"] == []
         client.post("/logout")

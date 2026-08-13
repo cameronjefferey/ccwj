@@ -1385,10 +1385,10 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
             if uid_col is not None:
                 remove_mask |= (
                     row_tenants.eq("")
-                    & df[uid_col].astype(str).str.strip().eq(target)
+                    & df[uid_col].map(_normalize_uid).eq(target)
                 )
         elif uid_col is not None:
-            remove_mask |= df[uid_col].astype(str).str.strip().eq(target)
+            remove_mask |= df[uid_col].map(_normalize_uid).eq(target)
         keep_mask = ~remove_mask
         cleaned = df.loc[keep_mask].copy()
         removed = before - len(cleaned)

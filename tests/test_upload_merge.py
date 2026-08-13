@@ -99,8 +99,9 @@ def test_purge_user_removes_owned_tenants_even_with_null_or_stale_user_id(
         # Canonical tenant ownership must beat a stale matching user_id.
         _row("Other", 42, "01/03/2026", "Buy", "MSFT", 1, 200, -200,
              tenant_id=other_tenant),
-        # Truly pre-v2 rows still use user_id as a narrow fallback.
-        _row("Legacy", 42, "01/04/2026", "Buy", "TSLA", 1, 300, -300),
+        # Truly pre-v2 rows still use normalized user_id as a narrow
+        # fallback (pandas commonly round-trips integer ids as "42.0").
+        _row("Legacy", "42.0", "01/04/2026", "Buy", "TSLA", 1, 300, -300),
         _row("Other", 7, "01/05/2026", "Buy", "NVDA", 1, 150, -150,
              tenant_id=other_tenant),
     ])
