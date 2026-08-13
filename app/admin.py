@@ -414,9 +414,9 @@ def admin_delete_user(user_id):
     """Permanently delete a user.
 
     What this does:
-      1. (Optional) ``purge_bq=1`` — strip every seed-CSV row whose
-         ``user_id`` matches and commit a cleaned set to GitHub. The
-         next CI ``dbt build`` rebuilds BigQuery without those rows.
+      1. (Optional) ``purge_bq=1`` — strip every raw row owned by the
+         user's canonical tenant_ids (plus pre-v2 user_id-only rows).
+         The next CI ``dbt build`` rebuilds BigQuery without those rows.
          If the GitHub push fails we abort BEFORE touching Postgres so
          the operator can fix the env / retry without ending up in a
          half-deleted state.
@@ -489,8 +489,8 @@ def admin_delete_user(user_id):
             )
         else:
             bq_summary = (
-                " No matching user_id rows in the raw seed tables (nothing "
-                "to strip). Legacy rows with empty user_id were left in place."
+                " No rows owned by that user's tenant_ids or legacy user_id "
+                "were present in the raw seed tables (nothing to strip)."
             )
 
     from app.models import delete_user

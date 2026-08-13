@@ -367,9 +367,10 @@ def delete_account():
     deregistration step the admin path doesn't have. Order matters:
 
       1. Verify password + typed confirmation ("DELETE"). Demo blocked.
-      2. Purge warehouse rows (``purge_user_id_from_seeds``). Abort the
-         whole delete if this fails — never leave a deleted Postgres user
-         whose trade rows silently live on in BigQuery.
+      2. Purge warehouse rows (``purge_user_id_from_seeds``), resolving
+         canonical tenant_ids so NULL/stale informational user_id rows are
+         included. Abort the whole delete if this fails — never leave a
+         deleted Postgres user whose trade rows silently live on in BigQuery.
       3. Deregister the SnapTrade user (kills broker connections and
          stops per-user aggregator billing). Best-effort: on failure we
          log loudly and continue — the periodic orphan sweep

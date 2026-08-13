@@ -1,7 +1,7 @@
 """Self-serve account deletion (/profile/delete-account).
 
-The route reuses the admin-delete machinery (warehouse purge via
-purge_user_id_from_seeds, Postgres cascade via delete_user) plus a
+The route reuses the admin-delete machinery (tenant-resolved warehouse purge
+via purge_user_id_from_seeds, Postgres cascade via delete_user) plus a
 SnapTrade deregistration step. These tests pin the guards and the
 failure-ordering contract:
 
