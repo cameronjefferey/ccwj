@@ -57,6 +57,21 @@ Seeds (CSV)
 
 ## Setup
 
+**Local development against real production data** (the path you want before
+paying customers see a change): see [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
+Short version:
+
+```bash
+cp .env.example .env          # BQ_DATASET=analytics_dev is already set
+# gcloud auth application-default login
+# createdb happytrader
+./scripts/dev.sh --sync --link
+```
+
+`--sync` clones prod marts into `analytics_dev` (CI also does this after
+every warehouse build). `--link` attaches your prod `tenant_id`s so the UI
+is scoped like production. Then `./scripts/dev.sh` hot-reloads on save.
+
 ### Prerequisites
 
 - Python 3.11+
@@ -82,9 +97,9 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env: add SECRET_KEY (required), DATABASE_URL (required, e.g.
-# postgresql://localhost:5432/happytrader), GEMINI_API_KEY (optional),
-# HAPPYTRADER_USERS (optional).
+# Required: SECRET_KEY, DATABASE_URL (e.g. postgresql://localhost:5432/happytrader).
+# Local warehouse: BQ_DATASET=analytics_dev and BQ_RAW_DATASET=analytics_raw_dev
+# are already set in the example — leave them. Production (Render) leaves both unset.
 ```
 
 ### BigQuery Auth
@@ -95,19 +110,26 @@ gcloud auth application-default login
 
 ### Run dbt
 
+`cd dbt && dbt build` targets **prod** `analytics` (the repo `dbt/profiles.yml`).
+Do not run that from a laptop unless you intend a production warehouse rebuild.
+
+To test model changes against real data first:
+
 ```bash
-cd dbt
-dbt seed    # Load CSVs into BigQuery
-dbt build   # Build all models
+./scripts/dev.sh --refresh --no-run    # builds analytics_dev only
 ```
+
+See [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md).
 
 ### Run the App
 
 ```bash
-python -m flask run
+./scripts/dev.sh
 ```
 
-Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000). For a one-off without
+the wrapper: `python -m flask run` — but only after `.env` has
+`BQ_DATASET=analytics_dev` and `BQ_RAW_DATASET=analytics_raw_dev`.
 
 ### Deployment (e.g. Render)
 

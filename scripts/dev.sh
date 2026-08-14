@@ -4,14 +4,23 @@
 # The daily loop:
 #
 #   ./scripts/dev.sh                 # start the app (hot-reload) at :5000
-#   ./scripts/dev.sh --refresh       # rebuild analytics_dev from prod, then start
+#   ./scripts/dev.sh --sync          # clone latest prod marts into analytics_dev, then start
 #   ./scripts/dev.sh --link          # mirror your prod tenants locally, then start
-#   ./scripts/dev.sh --refresh --link --no-run   # set up, don't start the server
+#   ./scripts/dev.sh --refresh       # rebuild analytics_dev from YOUR dbt models (slow)
+#   ./scripts/dev.sh --sync --link --no-run   # set up, don't start the server
 #
 # Most edits (templates, routes, Python) hot-reload instantly under
-# FLASK_DEBUG — just save and refresh the browser. You only need --refresh
-# when you change dbt models or want fresher prod data in analytics_dev.
-# --link is a one-time step to "become" your prod self (see docs/LOCAL_DEV.md).
+# FLASK_DEBUG — just save and refresh the browser.
+#
+# Data freshness:
+#   --sync     copies prod `analytics` → `analytics_dev` (BigQuery COPY).
+#              Fast. This is what you want when the local UI looks empty or
+#              stale. CI also runs this after every prod warehouse build, so
+#              analytics_dev is usually already within one build of prod.
+#   --refresh  merges prod raw + local syncs, then `dbt build` into
+#              analytics_dev using this working tree. Use when you changed
+#              dbt models and need to see YOUR SQL against real data.
+#   --link     one-time step to "become" your prod self (see docs/LOCAL_DEV.md).
 #
 # Environment separation is enforced by .env (BQ_DATASET=analytics_dev,
 # BQ_RAW_DATASET=analytics_raw_dev); this script refuses to start if .env is
@@ -23,22 +32,36 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/dbt/.venv/bin/activate"
+# Prefer dbt/.venv (historical), then the repo-root .venv. Either is a
+# full app install; failing closed beats `python: command not found`.
+if [[ -f "$SCRIPT_DIR/dbt/.venv/bin/activate" ]]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/dbt/.venv/bin/activate"
+elif [[ -f "$SCRIPT_DIR/.venv/bin/activate" ]]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/.venv/bin/activate"
+else
+  echo "No virtualenv found at dbt/.venv or .venv. Run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+  exit 1
+fi
 
+DO_SYNC=0
 DO_REFRESH=0
 DO_LINK=0
+DO_LIST=0
 DO_RUN=1
 PORT="${PORT:-5000}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --sync)    DO_SYNC=1 ;;
     --refresh) DO_REFRESH=1 ;;
     --link)    DO_LINK=1 ;;
+    --list-tenants) DO_LIST=1 ;;
     --no-run)  DO_RUN=0 ;;
     --port)    shift; PORT="$1" ;;
     -h|--help)
-      sed -n '2,20p' "$0"; exit 0 ;;
+      sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
@@ -60,6 +83,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
   : "${BQ_RAW_DATASET:=$(env_val BQ_RAW_DATASET)}"
   : "${PROD_DATABASE_URL:=$(env_val PROD_DATABASE_URL)}"
   : "${DEV_PROD_USERNAME:=$(env_val DEV_PROD_USERNAME)}"
+  : "${DEV_PROD_USER_ID:=$(env_val DEV_PROD_USER_ID)}"
 fi
 
 # Refuse to run the LOCAL app against the PROD warehouse. analytics_dev is
@@ -79,17 +103,39 @@ if [[ "${BQ_RAW_DATASET:-analytics_raw}" != "analytics_raw_dev" ]]; then
   exit 1
 fi
 
+if [[ "$DO_LIST" == "1" ]]; then
+  echo "==> Listing prod user_id → tenants from the warehouse (read-only)"
+  python "$SCRIPT_DIR/scripts/dev-link-prod-tenants.py" --list-warehouse
+  if [[ "$DO_RUN" == "0" && "$DO_SYNC" == "0" && "$DO_REFRESH" == "0" && "$DO_LINK" == "0" ]]; then
+    exit 0
+  fi
+fi
+
 if [[ "$DO_LINK" == "1" ]]; then
   echo "==> Linking your prod broker tenants into local Postgres"
-  if [[ -z "${PROD_DATABASE_URL:-}" ]]; then
-    echo "  PROD_DATABASE_URL is not set. Add it to .env (or export it), e.g." >&2
-    echo "    PROD_DATABASE_URL=postgresql://USER:PASS@HOST:PORT/DB" >&2
-    echo "  Then re-run with --link. See docs/LOCAL_DEV.md." >&2
+  LINK_ARGS=(--create-local-user)
+  if [[ -n "${PROD_DATABASE_URL:-}" ]]; then
+    : "${DEV_PROD_USERNAME:?Set DEV_PROD_USERNAME in .env to your prod username (the account to mirror)}"
+    python "$SCRIPT_DIR/scripts/dev-link-prod-tenants.py" \
+      --prod-username "$DEV_PROD_USERNAME" "${LINK_ARGS[@]}"
+  elif [[ -n "${DEV_PROD_USER_ID:-}" ]]; then
+    : "${DEV_PROD_USERNAME:?Set DEV_PROD_USERNAME in .env to the local username to attach tenants to}"
+    python "$SCRIPT_DIR/scripts/dev-link-prod-tenants.py" \
+      --from-warehouse --prod-user-id "$DEV_PROD_USER_ID" \
+      --local-username "$DEV_PROD_USERNAME" "${LINK_ARGS[@]}"
+  else
+    echo "  Need either:" >&2
+    echo "    PROD_DATABASE_URL + DEV_PROD_USERNAME   (read-only prod Postgres)" >&2
+    echo "    DEV_PROD_USER_ID + DEV_PROD_USERNAME    (no password; warehouse path)" >&2
+    echo "  Find your user_id:  ./scripts/dev.sh --list-tenants --no-run" >&2
+    echo "  See docs/LOCAL_DEV.md." >&2
     exit 1
   fi
-  : "${DEV_PROD_USERNAME:?Set DEV_PROD_USERNAME in .env to your prod username (the account to mirror)}"
-  python "$SCRIPT_DIR/scripts/dev-link-prod-tenants.py" \
-    --prod-username "$DEV_PROD_USERNAME" --create-local-user
+fi
+
+if [[ "$DO_SYNC" == "1" ]]; then
+  echo "==> Cloning prod analytics → analytics_dev (fast; not a dbt rebuild)"
+  python "$SCRIPT_DIR/scripts/dev_clone_prod.py"
 fi
 
 if [[ "$DO_REFRESH" == "1" ]]; then

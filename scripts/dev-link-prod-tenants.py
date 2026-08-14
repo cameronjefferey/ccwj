@@ -32,6 +32,12 @@ What it does NOT do
 
 Usage
 -----
+    # password-free, from the warehouse:
+    python scripts/dev-link-prod-tenants.py --list-warehouse
+    python scripts/dev-link-prod-tenants.py --from-warehouse \
+        --prod-user-id <id> --local-username <you> --create-local-user
+
+    # or, if you have a read-only prod Postgres URL:
     PROD_DATABASE_URL=postgresql://USER:PASS@HOST:PORT/DBNAME \
         python scripts/dev-link-prod-tenants.py --prod-username <name>
 
@@ -40,16 +46,20 @@ Usage
         --prod-username alice --local-username alice-local
 
     # preview without writing:
-    PROD_DATABASE_URL=... python scripts/dev-link-prod-tenants.py \
-        --prod-username alice --dry-run
+    python scripts/dev-link-prod-tenants.py --from-warehouse \
+        --prod-user-id <id> --local-username alice --dry-run
 
 Flags
 -----
-    --prod-username      (required) the prod account whose tenants to mirror
+    --list-warehouse     print prod user_id → tenant counts from BigQuery; exit
+    --from-warehouse     read tenant_ids from dim_broker_tenants (no prod DB)
+    --prod-user-id       prod numeric user_id (warehouse path / DEV_PROD_USER_ID)
+    --prod-username      the prod account whose tenants to mirror (Postgres path)
     --local-username     local account to attach them to (default: prod name)
     --create-local-user  create the local user if missing (random password;
                           set one afterward with `flask reset-password`)
     --include-inactive   also copy tenants whose connection_status != 'active'
+    --rows-file          JSON array of tenant rows (manual export fallback)
     --dry-run            print what would change; write nothing
 """
 from __future__ import annotations
@@ -68,6 +78,9 @@ try:
 except ImportError:  # pragma: no cover - dotenv is a dev dependency
     load_dotenv = None
 
+
+PROJECT = "ccwj-dbt"
+PROD_WAREHOUSE = "analytics"
 
 # Columns copied verbatim from prod broker_tenants. user_id is intentionally
 # excluded — it is remapped to the LOCAL user's id (ids are not env-stable).
@@ -148,6 +161,119 @@ def _resolve_local_user(local, username, *, create):
     return row
 
 
+def split_tenant_id(tenant_id: str) -> tuple[str, str]:
+    """Split ``"<slug>:<uuid>"`` into (broker_slug, broker_uuid).
+
+    Warehouse ``dim_broker_tenants.broker_slug`` is the *display* brokerage
+    (schwab / alpaca / …). Postgres unique-keys on the aggregator slug that
+    actually prefixes ``tenant_id`` (``snaptrade`` / ``demo``). Using the
+    prefix keeps ``UNIQUE (broker_slug, broker_uuid)`` aligned with how the
+    app mints tenants.
+    """
+    tid = (tenant_id or "").strip()
+    slug, sep, rest = tid.partition(":")
+    if not sep or not rest:
+        # No colon (or empty uuid): don't invent a blank UNIQUE uuid.
+        return ("snaptrade", tid)
+    return slug, rest
+
+
+def dim_row_to_tenant(row: dict) -> dict:
+    """Project a ``dim_broker_tenants`` row onto the Postgres upsert shape."""
+    tenant_id = (row.get("tenant_id") or "").strip()
+    slug, uuid_part = split_tenant_id(tenant_id)
+    account_name = (row.get("account_name") or "").strip() or "Account"
+    # Display brokerage (schwab/…) if the dim has it; else the slug prefix.
+    display_broker = (row.get("broker_slug") or slug or "").strip() or None
+    return {
+        "tenant_id": tenant_id,
+        "broker_slug": slug,
+        "broker_uuid": uuid_part,
+        "account_name": account_name,
+        "account_mask": None,
+        "broker_label": display_broker,
+        "snaptrade_connection_id": None,
+        "connection_status": "active",
+        "connection_broken_at": None,
+        "first_sync_completed": True,
+        "display_nickname": None,
+    }
+
+
+def _bq_client():
+    from google.cloud import bigquery
+
+    return bigquery.Client(project=PROJECT)
+
+
+def _fetch_warehouse_tenants(prod_user_id: int):
+    """Read tenant rows for one prod ``user_id`` from ``dim_broker_tenants``.
+
+    Prod warehouse, not ``analytics_dev`` — the dim is the source of truth
+    for "which tenant_ids does this prod user own" even when the dev mirror
+    is stale. Raw client (no BQ_DATASET rewrite).
+    """
+    from google.cloud import bigquery
+
+    client = _bq_client()
+    sql = f"""
+        SELECT
+            tenant_id,
+            user_id,
+            account_name,
+            broker_slug,
+            aggregator_slug,
+            broker_uuid
+        FROM `{PROJECT}.{PROD_WAREHOUSE}.dim_broker_tenants`
+        WHERE user_id = @uid
+          AND tenant_id IS NOT NULL
+          AND tenant_id != ''
+        ORDER BY account_name
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("uid", "INT64", int(prod_user_id)),
+        ]
+    )
+    rows = []
+    for rec in client.query(sql, job_config=job_config).result():
+        rows.append({k: rec[k] for k in rec.keys()})
+    return [dim_row_to_tenant(r) for r in rows]
+
+
+def _list_warehouse_users():
+    """Print prod user_id → tenant counts so the operator can pick an id
+    without a prod Postgres password."""
+    client = _bq_client()
+    sql = f"""
+        SELECT
+            user_id,
+            COUNT(*) AS tenants,
+            ARRAY_AGG(DISTINCT account_name IGNORE NULLS LIMIT 8) AS accounts
+        FROM `{PROJECT}.{PROD_WAREHOUSE}.dim_broker_tenants`
+        WHERE tenant_id IS NOT NULL AND tenant_id != ''
+        GROUP BY user_id
+        ORDER BY tenants DESC
+    """
+    print(f"==> Prod users in `{PROJECT}.{PROD_WAREHOUSE}.dim_broker_tenants`")
+    print(f"    {'user_id':>8}  {'tenants':>7}  accounts")
+    n = 0
+    for rec in client.query(sql).result():
+        uid = rec["user_id"]
+        accounts = ", ".join(rec["accounts"] or [])
+        print(f"    {str(uid):>8}  {rec['tenants']:>7}  {accounts}")
+        n += 1
+    if n == 0:
+        print("    (none — has analytics been built?)")
+    else:
+        print(
+            "\n    Link with:  python scripts/dev-link-prod-tenants.py "
+            "--from-warehouse --prod-user-id <id> --local-username <you> "
+            "--create-local-user"
+        )
+    return n
+
+
 def _make_password_hash(password: str) -> str:
     # Reuse the app's hashing so the row is valid even before the password
     # is reset. Falls back to werkzeug directly if app import is heavy.
@@ -208,6 +334,25 @@ def main():
     parser.add_argument("--prod-username", default=None)
     parser.add_argument("--local-username", default=None)
     parser.add_argument(
+        "--prod-user-id",
+        type=int,
+        default=None,
+        help="Prod numeric user_id (warehouse path). Prefer this over a "
+        "prod Postgres password — list ids with --list-warehouse.",
+    )
+    parser.add_argument(
+        "--from-warehouse",
+        action="store_true",
+        help="Read tenant_ids from prod BigQuery dim_broker_tenants instead "
+        "of prod Postgres. Requires --prod-user-id (or DEV_PROD_USER_ID).",
+    )
+    parser.add_argument(
+        "--list-warehouse",
+        action="store_true",
+        help="Print prod user_id → tenant counts from the warehouse and exit. "
+        "No Postgres writes. Use this to find your --prod-user-id.",
+    )
+    parser.add_argument(
         "--rows-file",
         default=None,
         help="JSON file of tenant rows to load instead of reading prod "
@@ -222,6 +367,10 @@ def main():
 
     if load_dotenv:
         load_dotenv()  # local DATABASE_URL from .env
+
+    if args.list_warehouse:
+        _list_warehouse_users()
+        return
 
     local_url = os.environ.get("DATABASE_URL")
     if not local_url:
@@ -240,16 +389,49 @@ def main():
         if not args.include_inactive:
             tenants = [t for t in tenants if t.get("connection_status") == "active"]
         print(f"==> Loaded {len(tenants)} tenant row(s) from {args.rows_file}")
+    elif args.from_warehouse or (
+        (args.prod_user_id or os.environ.get("DEV_PROD_USER_ID"))
+        and not os.environ.get("PROD_DATABASE_URL")
+    ):
+        # Warehouse path: no prod Postgres password required. The dim is
+        # keyed by prod numeric user_id (not username — usernames aren't
+        # in the warehouse).
+        prod_user_id = args.prod_user_id
+        if prod_user_id is None:
+            env_uid = (os.environ.get("DEV_PROD_USER_ID") or "").strip()
+            if env_uid.isdigit():
+                prod_user_id = int(env_uid)
+        if prod_user_id is None:
+            sys.exit(
+                "error: --from-warehouse needs --prod-user-id (or DEV_PROD_USER_ID).\n"
+                "  List ids:  python scripts/dev-link-prod-tenants.py --list-warehouse"
+            )
+        local_username = args.local_username or args.prod_username
+        if not local_username:
+            sys.exit(
+                "error: --from-warehouse requires --local-username "
+                "(or --prod-username)."
+            )
+        print(
+            f"==> Reading prod tenants for user_id={prod_user_id} "
+            f"from `{PROJECT}.{PROD_WAREHOUSE}.dim_broker_tenants`"
+        )
+        tenants = _fetch_warehouse_tenants(prod_user_id)
     else:
         prod_url = os.environ.get("PROD_DATABASE_URL")
         if not args.prod_username:
-            sys.exit("error: --prod-username is required (or use --rows-file).")
+            sys.exit(
+                "error: --prod-username is required (or use --from-warehouse "
+                "/ --rows-file / --list-warehouse)."
+            )
         if not prod_url:
             sys.exit(
                 "error: PROD_DATABASE_URL is not set.\n"
-                "  PROD_DATABASE_URL=postgresql://USER:PASS@HOST:PORT/DB "
-                "python scripts/dev-link-prod-tenants.py --prod-username <name>\n"
-                "  (or export the rows and use --rows-file)"
+                "  Preferred (no prod DB password):  python scripts/"
+                "dev-link-prod-tenants.py --list-warehouse\n"
+                "    then  --from-warehouse --prod-user-id <id> "
+                "--local-username <you> --create-local-user\n"
+                "  Or set PROD_DATABASE_URL=postgresql://USER:PASS@HOST:PORT/DB"
             )
         if _normalize_url(local_url) == _normalize_url(prod_url):
             sys.exit(
@@ -266,8 +448,12 @@ def main():
             )
 
     if not tenants:
+        who = (
+            args.prod_username
+            or (f"user_id={args.prod_user_id or os.environ.get('DEV_PROD_USER_ID')}")
+        )
         sys.exit(
-            f"error: prod user {args.prod_username!r} has no "
+            f"error: prod user {who} has no "
             f"{'tenants' if args.include_inactive else 'active tenants'} to copy."
         )
     print(f"    found {len(tenants)} tenant(s) to mirror")
@@ -308,7 +494,7 @@ def main():
     print(f"==> Done. {verb} {copied} tenant(s) to local user {local_username!r}.")
     if not args.dry_run:
         print(
-            "    Next: run ./scripts/dev-refresh.sh (mirror prod data into "
+            "    Next: run ./scripts/dev.sh --sync (clone prod marts into "
             "analytics_dev), then log in locally as "
             f"{local_username!r} to see your prod-scoped view."
         )

@@ -24,15 +24,14 @@ parse there means this step is already green.)
 | Command | Builds into | Use for |
 |---|---|---|
 | `cd dbt && ../.venv/bin/dbt build` | **prod `analytics`** (repo `dbt/profiles.yml` wins) | Shipping a model so prod has the table before the app change deploys |
-| `cd dbt && DBT_RAW_DATASET=analytics_raw_dev ../.venv/bin/dbt build --profiles-dir ~/.dbt --target dev` | **dev `analytics_dev`** | Testing model changes against real data first |
-| `scripts/dev-refresh.sh` | rebuilds `analytics_raw_dev` from prod raw + local syncs, then full dev build | Refreshing the whole dev mirror |
+| `./scripts/dev.sh --sync` | COPY prod `analytics` → **`analytics_dev`** (no dbt) | UI work; local pages should match customers. CI also does this after every prod warehouse / prices build |
+| `./scripts/dev.sh --refresh` / `scripts/dev-refresh.sh` | rebuilds `analytics_raw_dev` from prod raw + local syncs, then full dbt build into **`analytics_dev`** via `dbt/profiles.dev.yml` | Testing *your* model changes against real data first |
 
 - Targeted builds: `--select int_option_marks_daily+` (model and downstream).
-- Dev builds MUST pass `--profiles-dir ~/.dbt --target dev` — plain `dbt build`
-  from `dbt/` always hits prod.
+- Dev dbt builds MUST use `dbt/profiles.dev.yml` (handled by `dev-refresh.sh`) — plain `dbt build` from `dbt/` always hits prod. Do not rely on a hand-maintained `~/.dbt/profiles.yml`.
 - A missing table in `analytics_dev` (e.g. `scripts/dev_render_pages.py`
-  errors) means the model was built to prod only — run the dev build above
-  with `--select <model>+`.
+  errors) means the model was built to prod only — `--sync` to clone prod's
+  copy, or `--refresh` to rebuild from local dbt.
 
 ## Snapshot safety (non-negotiable)
 
