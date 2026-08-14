@@ -745,17 +745,34 @@ WHERE h.shares > 0
 # recent mart dates per (tenant, account, user, symbol) partition. That
 # captures both open-contract MTM drift and P&L realized today (a BTC or
 # expiry shows up on its realization day, matching the chart shape).
+# The latest mart date can be UTC "tomorrow" after 8pm ET, while equity
+# movers remain anchored to the latest published U.S. close.  Cap each
+# symbol at that official-close date so the two sleeves always describe
+# the same trading day.
 # Symbol-grain aggregate (like TODAY_MOVES_QUERY): tenant-scoped in SQL,
 # no account column → not DataFrame-filtered (nothing leakable to merge).
 TODAY_OPTIONS_MOVES_QUERY = """
-WITH opt AS (
+WITH close_as_of AS (
     SELECT
-        tenant_id, account, user_id, symbol, date,
-        COALESCE(cumulative_options_pnl, 0)
-          + COALESCE(open_options_unrealized_pnl, 0) AS opt_total,
-        COALESCE(open_options_unrealized_pnl, 0) AS open_mtm
-    FROM `ccwj-dbt.analytics.mart_daily_pnl`
+        symbol,
+        MAX(date) AS as_of_date
+    FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+      AND close_price IS NOT NULL
+      AND close_price > 0
+    GROUP BY symbol
+),
+opt AS (
+    SELECT
+        m.tenant_id, m.account, m.user_id, m.symbol, m.date,
+        COALESCE(m.cumulative_options_pnl, 0)
+          + COALESCE(m.open_options_unrealized_pnl, 0) AS opt_total,
+        COALESCE(m.open_options_unrealized_pnl, 0) AS open_mtm
+    FROM `ccwj-dbt.analytics.mart_daily_pnl` m
+    JOIN close_as_of c
+      ON m.symbol = c.symbol
+     AND m.date <= c.as_of_date
+    WHERE m.date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
       {tenant_filter}
 ),
 ranked AS (

@@ -590,9 +590,13 @@ def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
 
 
 def exit_notes(df):
-    """{trade_symbol: verdict sentence} for the day-by-day review — appended
-    to the buyback / sale sentence on the day the contract closed, so the
-    story and the grade read as one voice."""
+    """{(tenant/account key, trade_symbol): verdict sentence} for the review.
+
+    The same OCC contract can be traded in multiple physical accounts, so
+    ``trade_symbol`` alone is not unique.  Keys mirror
+    ``position_story._normalize_fills``: broker-stable ``tenant_id`` first,
+    account display label only for legacy rows without a tenant id.
+    """
     df = _prep(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return {}
@@ -605,6 +609,13 @@ def exit_notes(df):
         tsym = row["trade_symbol"]
         if not tsym:
             continue
+        raw_tenant_id = row.get("tenant_id")
+        tenant_id = (
+            ""
+            if raw_tenant_id is None or pd.isna(raw_tenant_id)
+            else str(raw_tenant_id).strip()
+        )
+        state_key = tenant_id or str(row.get("account") or "")
         if row["was_rolled"]:
             if row["expired_worthless"]:
                 note = ("After the fact: the strike you rolled "
@@ -633,5 +644,5 @@ def exit_notes(df):
             else:
                 note = (f"After the fact: this exit beat the "
                         f"expiry outcome by {_money(delta)}.")
-        notes[tsym] = note
+        notes[(state_key, tsym)] = note
     return notes
