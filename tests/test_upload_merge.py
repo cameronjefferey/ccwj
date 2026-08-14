@@ -84,6 +84,62 @@ def _csv_from_rows(rows):
     return df.to_csv(index=False)
 
 
+def test_purge_user_removes_owned_tenants_even_with_null_or_stale_user_id(
+    monkeypatch,
+):
+    """Account deletion keys on canonical tenant_id, not informational uid."""
+    owned_tenant = "snaptrade:owned-account"
+    other_tenant = "snaptrade:other-account"
+    existing = _csv_from_rows([
+        # These are the exact pre-link/stale-uid shapes the old purge leaked.
+        _row("Owned", "", "01/01/2026", "Buy", "AAPL", 1, 100, -100,
+             tenant_id=owned_tenant),
+        _row("Owned", 999, "01/02/2026", "Sell", "AAPL", 1, 110, 110,
+             tenant_id=owned_tenant),
+        # Canonical tenant ownership must beat a stale matching user_id.
+        _row("Other", 42, "01/03/2026", "Buy", "MSFT", 1, 200, -200,
+             tenant_id=other_tenant),
+        # Truly pre-v2 rows still use normalized user_id as a narrow
+        # fallback (pandas commonly round-trips integer ids as "42.0").
+        _row("Legacy", "42.0", "01/04/2026", "Buy", "TSLA", 1, 300, -300),
+        _row("Other", 7, "01/05/2026", "Buy", "NVDA", 1, 150, -150,
+             tenant_id=other_tenant),
+    ])
+    monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
+    monkeypatch.setattr(
+        "app.models.get_broker_tenants_for_user",
+        lambda user_id, include_inactive=False: (
+            [{"tenant_id": owned_tenant}]
+            if user_id == 42 and include_inactive
+            else []
+        ),
+    )
+    monkeypatch.setattr(
+        _upload,
+        "_get_file_content",
+        lambda path: existing if path == HISTORY_PATH else None,
+    )
+    committed = {}
+
+    def _commit(path_contents, _message):
+        committed.update(dict(path_contents))
+        return True, None, "dispatch:123", False
+
+    monkeypatch.setattr(_upload, "_commit_git_paths", _commit)
+
+    ok, err, removed, marker = _upload.purge_user_id_from_seeds(
+        42, commit_message="test tenant-scoped account deletion",
+    )
+
+    assert ok is True and err is None and marker == "dispatch:123"
+    assert removed[HISTORY_PATH] == 3
+    kept = pd.read_csv(
+        io.StringIO(committed[HISTORY_PATH]), dtype=str, keep_default_na=False
+    )
+    assert set(kept["Symbol"]) == {"MSFT", "NVDA"}
+    assert set(kept["tenant_id"]) == {other_tenant}
+
+
 def _parse(csv_text):
     """Round-trip the merged CSV the way dbt reads it.
 

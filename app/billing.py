@@ -431,6 +431,78 @@ def subscription_is_ours(sub) -> bool:
     return bool(_subscription_price_ids(sub) & ours)
 
 
+def cancel_subscription_for_account_deletion(user_id):
+    """Cancel any live HappyTrader subscription before deleting its user.
+
+    The Postgres row is the only durable mapping from a HappyTrader user to
+    Stripe's customer/subscription ids. Deleting it first leaves a renewing
+    subscription that webhooks cannot re-link and the former user cannot
+    manage through the portal. Account deletion therefore fails closed until
+    Stripe confirms the subscription is canceled (or already absent/terminal).
+
+    Returns ``(ok, error_message)`` and never raises.
+    """
+    row = billing_row(user_id)
+    subscription_id = (
+        str((row or {}).get("stripe_subscription_id") or "").strip()
+    )
+    if not subscription_id:
+        return True, None
+
+    stripe_sdk = _stripe()
+    if stripe_sdk is None:
+        return False, "Stripe billing is not configured."
+
+    try:
+        sub = stripe_sdk.Subscription.retrieve(subscription_id)
+    except Exception as exc:
+        # A prior cancellation may have removed the object before our local
+        # mirror cleared. Missing means there is nothing left that can renew.
+        if (
+            getattr(exc, "code", None) == "resource_missing"
+            or "no such subscription" in str(exc).lower()
+        ):
+            return True, None
+        _log.exception(
+            "Stripe: could not retrieve subscription %s before deleting "
+            "user_id=%s: %s",
+            subscription_id, user_id, exc,
+        )
+        return False, "Could not verify the Stripe subscription."
+
+    if not subscription_is_ours(sub):
+        _log.error(
+            "Stripe: refusing account deletion for user_id=%s because stored "
+            "subscription %s is not a HappyTrader price",
+            user_id, subscription_id,
+        )
+        return False, "Stored subscription does not belong to HappyTrader."
+
+    status = str(_get(sub, "status") or "").strip().lower()
+    if status in {"canceled", "unpaid", "incomplete_expired"}:
+        return True, None
+
+    try:
+        stripe_sdk.Subscription.cancel(subscription_id)
+        _log.info(
+            "Stripe: canceled subscription %s before deleting user_id=%s",
+            subscription_id, user_id,
+        )
+        return True, None
+    except Exception as exc:
+        if (
+            getattr(exc, "code", None) == "resource_missing"
+            or "no such subscription" in str(exc).lower()
+        ):
+            return True, None
+        _log.exception(
+            "Stripe: cancellation failed for subscription %s before deleting "
+            "user_id=%s: %s",
+            subscription_id, user_id, exc,
+        )
+        return False, "Could not cancel the Stripe subscription."
+
+
 def _invoice_is_ours(inv) -> bool:
     """Same shared-account guard for invoice events, whose line items carry the
     price at one of two paths depending on API version."""

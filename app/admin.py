@@ -414,13 +414,15 @@ def admin_delete_user(user_id):
     """Permanently delete a user.
 
     What this does:
-      1. (Optional) ``purge_bq=1`` — strip every seed-CSV row whose
-         ``user_id`` matches and commit a cleaned set to GitHub. The
-         next CI ``dbt build`` rebuilds BigQuery without those rows.
+      1. Cancel any live Stripe subscription while the durable user mapping
+         still exists. Abort on failure so deletion cannot orphan a renewal.
+      2. (Optional) ``purge_bq=1`` — strip every raw row owned by the
+         user's canonical tenant_ids (plus pre-v2 user_id-only rows).
+         The next CI ``dbt build`` rebuilds BigQuery without those rows.
          If the GitHub push fails we abort BEFORE touching Postgres so
          the operator can fix the env / retry without ending up in a
          half-deleted state.
-      2. ``DELETE FROM users`` — Postgres cascades clean up the
+      3. ``DELETE FROM users`` — Postgres cascades clean up the
          user's profile, accounts, posts, mirror scores, schwab tokens,
          etc. ``feedback`` and ``pro_waitlist`` retain the row with
          ``user_id`` nulled (intentional — see ``app.models.delete_user``).
@@ -447,6 +449,21 @@ def admin_delete_user(user_id):
     if typed.lower() != (target.username or "").lower():
         flash(
             f"Typed username didn't match '{target.username}'. No changes made.",
+            "danger",
+        )
+        return redirect(url_for("admin_users"))
+
+    from app.billing import cancel_subscription_for_account_deletion
+    stripe_ok, stripe_err = cancel_subscription_for_account_deletion(target.id)
+    if not stripe_ok:
+        app.logger.error(
+            "ADMIN DELETE USER: Stripe cancellation failed for user_id=%s: %s",
+            target.id, stripe_err,
+        )
+        flash(
+            "Could not cancel the user's Stripe subscription. User NOT "
+            "deleted and no warehouse data removed; retry or resolve the "
+            "subscription in Stripe first.",
             "danger",
         )
         return redirect(url_for("admin_users"))
@@ -489,8 +506,8 @@ def admin_delete_user(user_id):
             )
         else:
             bq_summary = (
-                " No matching user_id rows in the raw seed tables (nothing "
-                "to strip). Legacy rows with empty user_id were left in place."
+                " No rows owned by that user's tenant_ids or legacy user_id "
+                "were present in the raw seed tables (nothing to strip)."
             )
 
     from app.models import delete_user

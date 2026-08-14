@@ -1276,7 +1276,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
 
 @_serialized_seed_write
 def purge_user_id_from_seeds(user_id, *, commit_message):
-    """Strip every raw-seed row whose ``user_id`` matches and write the
+    """Strip every raw-seed row owned by ``user_id`` and write the
     cleaned tables back to the seed store (a tenant-scoped delete
     implemented as read → filter → atomic ``WRITE_TRUNCATE`` rewrite, so
     it shares the exact storage path and locking every other writer uses).
@@ -1289,12 +1289,13 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     requires rewriting the raw seed tables themselves (the rebuild
     dispatched after the write then flushes the derived marts).
 
-    Filter is strict per the tenancy rule: only rows whose ``user_id``
-    column equals the target are removed. Rows with empty/NULL
-    ``user_id`` (legacy / un-migrated, see
-    ``scripts/backfill_seed_user_ids.py``) are left alone — we cannot
-    prove they belong to this tenant, and a per-user delete must never
-    accidentally take another tenant's history with it.
+    v2 ownership is ``broker_tenants.tenant_id``, not the informational
+    ``user_id`` carried on raw rows. Resolve every active and inactive
+    tenant before reading the seed store, then remove rows matching either
+    an owned tenant_id or the legacy user_id fallback. The tenant match is
+    load-bearing for pre-link rows whose user_id is NULL/stale: leaving
+    those behind after self-serve deletion retains the user's financial
+    history indefinitely even though the UI says their data was deleted.
 
     Returns ``(ok, error_message, rows_removed_dict, build_marker or None)``
     where ``rows_removed_dict`` maps each seed path to how many rows were
@@ -1309,6 +1310,25 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
         target = str(int(user_id))
     except (TypeError, ValueError):
         return False, f"Invalid user_id: {user_id!r}", {}, None
+
+    try:
+        # Include disabled/disconnected tenants: deleting an account must
+        # remove its retained warehouse history regardless of connection
+        # health. Runtime import avoids widening upload.py's model imports.
+        from app.models import get_broker_tenants_for_user
+
+        tenant_ids = {
+            str(row.get("tenant_id") or "").strip()
+            for row in (
+                get_broker_tenants_for_user(int(user_id), include_inactive=True)
+                or []
+            )
+            if str(row.get("tenant_id") or "").strip()
+        }
+    except Exception as exc:
+        # Fail closed. Falling back silently to user_id-only would recreate
+        # the privacy bug for NULL/stale user_id rows.
+        return False, f"Could not resolve tenant ownership: {exc}", {}, None
 
     seed_specs = [
         (HISTORY_PATH, HISTORY_SEED_COLUMNS),
@@ -1339,14 +1359,37 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
             if str(c).strip().lower() == "user_id":
                 uid_col = c
                 break
-        if uid_col is None:
-            # Older seed shapes pre-date the user_id column. Nothing to
-            # filter on, so skip rather than guessing by Account.
+
+        tenant_col = None
+        for c in df.columns:
+            if str(c).strip().lower() == "tenant_id":
+                tenant_col = c
+                break
+
+        if uid_col is None and tenant_col is None:
+            # Older seed shapes pre-date both ownership columns. Nothing
+            # can be proved from the free-form Account label.
             rows_removed[path] = 0
             continue
 
         before = len(df)
-        keep_mask = df[uid_col].astype(str).str.strip() != target
+        remove_mask = pd.Series(False, index=df.index)
+        if tenant_col is not None:
+            row_tenants = df[tenant_col].astype(str).str.strip()
+            if tenant_ids:
+                remove_mask |= row_tenants.isin(tenant_ids)
+            # user_id is only a fallback for rows that genuinely predate
+            # tenant_id. A non-empty tenant_id is canonical even if its
+            # informational user_id is stale, so never delete another
+            # tenant on the strength of user_id alone.
+            if uid_col is not None:
+                remove_mask |= (
+                    row_tenants.eq("")
+                    & df[uid_col].map(_normalize_uid).eq(target)
+                )
+        elif uid_col is not None:
+            remove_mask |= df[uid_col].map(_normalize_uid).eq(target)
+        keep_mask = ~remove_mask
         cleaned = df.loc[keep_mask].copy()
         removed = before - len(cleaned)
         if removed == 0:

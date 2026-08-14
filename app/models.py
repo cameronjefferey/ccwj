@@ -1015,8 +1015,9 @@ def delete_user(user_id):
     raw seed tables (``ccwj-dbt.analytics_raw``, see ``app/seed_store.py``)
     on every dbt build, so a BQ ``DELETE`` against a mart would be undone
     the next build. Use ``app.upload.purge_user_id_from_seeds`` first when
-    you want the warehouse cleaned alongside the Postgres delete (it
-    rewrites the raw tables and dispatches a rebuild).
+    you want the warehouse cleaned alongside the Postgres delete (despite
+    its legacy name, it resolves the user's canonical tenant_ids, rewrites
+    the raw tables, and dispatches a rebuild).
 
     Returns True on success, False if the DELETE raised.
     """
