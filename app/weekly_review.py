@@ -1414,17 +1414,23 @@ def _today_pulse(today_snapshots_by_account):
         return None
     total_delta = 0.0
     has_data = False
-    date_label = None
+    pulse_date = None
     for snap in today_snapshots_by_account:
         day_comp = snap.get("comparisons", {}).get("day", {})
         if day_comp.get("has_data") and day_comp.get("delta") is not None:
             total_delta += float(day_comp["delta"])
             has_data = True
-            if date_label is None and snap.get("today_date"):
-                date_label = str(snap["today_date"])
+            if pulse_date is None:
+                pulse_date = _coerce_date(snap.get("today_date"))
     if not has_data:
         return None
-    return {"delta": round(total_delta, 0), "positive": total_delta >= 0, "date": date_label}
+    date_label = pulse_date.strftime("%a %b %-d") if pulse_date else None
+    return {
+        "delta": round(total_delta, 0),
+        "positive": total_delta >= 0,
+        "date": pulse_date.isoformat() if pulse_date else None,
+        "date_label": date_label,
+    }
 
 
 def _today_totals(today_snapshots_by_account):
@@ -1538,6 +1544,88 @@ def _date_in_user_tz(tz_name: str) -> date:
     except Exception:
         z = ZoneInfo("America/New_York")
     return datetime.now(z).date()
+
+
+def _coerce_date(value):
+    """Best-effort DATE from a BQ/pandas cell (date, timestamp, or ISO string)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date") and callable(value.date):
+        try:
+            return value.date()
+        except Exception:
+            pass
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _frame_as_of_date(df):
+    """Latest ``today_date`` in a movers-style frame, or None."""
+    if df is None or getattr(df, "empty", True) or "today_date" not in df.columns:
+        return None
+    latest = None
+    for raw in df["today_date"].tolist():
+        parsed = _coerce_date(raw)
+        if parsed is not None and (latest is None or parsed > latest):
+            latest = parsed
+    return latest
+
+
+def _trades_as_of_date(user_today, market_session, et_today=None):
+    """Which day's fills Daily Review should list.
+
+    Before the U.S. open (and on weekends) calendar-today has no session
+    yet. Querying ``trade_date = today`` then renders "No fills recorded
+    for today" even when the trader just finished a full day — the
+    complaint that landed after Trades Today shipped (Aug 2026). Use the
+    last completed ET session instead. Once the regular session is open,
+    query calendar-today so same-day fills appear.
+
+    ``et_today`` is injectable so tests don't depend on the wall clock.
+    A West-Coast Thursday evening is already Friday pre-market in ET;
+    never walk back from the *user's* today in that case (that would
+    skip Thursday and show Wednesday).
+    """
+    et_today = et_today or _date_in_user_tz("America/New_York")
+    state = (market_session or {}).get("state")
+    if state in ("pre_market", "weekend"):
+        session = _adjacent_weekday(et_today, -1)
+    else:
+        session = et_today
+    if session > user_today:
+        session = user_today
+    return session
+
+
+def _snapshot_as_of_date(user_today, market_session, close_as_of=None,
+                         et_today=None):
+    """Latest snapshot date that is a real session, not a UTC forward-fill.
+
+    ``mart_account_equity_daily`` spines through ``CURRENT_DATE()`` (UTC).
+    After 8pm ET that is already tomorrow, and the new row is yesterday's
+    balance copied forward — ``delta_1d = $0``. Flask used to take the
+    latest row per tenant, so every "vs yesterday" tile went to zero the
+    moment UTC rolled. Cap at the last official close when we have one,
+    else at the last completed ET session (today only counts after the
+    bell). Never return a date after the user's local today.
+    """
+    et_today = et_today or _date_in_user_tz("America/New_York")
+    state = (market_session or {}).get("state")
+    if state == "after_hours":
+        cutoff = et_today
+    else:
+        cutoff = _adjacent_weekday(et_today, -1)
+    if close_as_of is not None and close_as_of < cutoff:
+        cutoff = close_as_of
+    if cutoff > user_today:
+        cutoff = user_today
+    return cutoff
 
 
 def _us_market_session():
@@ -2923,7 +3011,7 @@ def _today_headline(today_pulse, today_movers, equity_snapshot):
     return f"Today: {sign}${abs(delta):,.0f}{pct_str}"
 
 
-def build_daily_review_batch(tenant_filter, today, this_week):
+def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None):
     """The tenant-scoped core of the Daily Review parallel batch.
 
     Shared by the ``weekly_review`` view and the post-rebuild cache warmer
@@ -2932,6 +3020,10 @@ def build_daily_review_batch(tenant_filter, today, this_week):
     load will look up — any drift between the two and warming silently
     stops helping. The view adds the conditional ``after_hours`` query on
     top (session/state-dependent, deliberately not warmed).
+
+    ``trades_as_of`` is the fill date for ``today_trades`` (last completed
+    ET session before the open; calendar today once the session is open).
+    Defaults to ``today`` so existing callers/tests keep their meaning.
     """
     cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
     cal_end = this_week + timedelta(days=4)
@@ -2972,7 +3064,8 @@ def build_daily_review_batch(tenant_filter, today, this_week):
         "today_trades": (
             DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
             bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("day", "DATE", today),
+                bigquery.ScalarQueryParameter(
+                    "day", "DATE", trades_as_of or today),
             ]),
         ),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
@@ -3049,6 +3142,8 @@ def weekly_review():
         "week_end": week_end,
         "user_timezone": user_tz,
         "today": today,
+        "review_date": today,
+        "review_is_today": True,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
         # Preserve broker-stable URL scope when a heatmap cell opens the
@@ -3100,8 +3195,12 @@ def weekly_review():
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
+        trades_as_of = _trades_as_of_date(today, market_session)
+        context["review_date"] = trades_as_of
+        context["review_is_today"] = trades_as_of == today
 
-        batch_queries = build_daily_review_batch(tenant_filter, today, this_week)
+        batch_queries = build_daily_review_batch(
+            tenant_filter, today, this_week, trades_as_of=trades_as_of)
         # After-hours drift compares the broker mark to today's *official*
         # close. Two conditions must hold or the reading is noise/wrong:
         #   1) the bell has rung (state == after_hours) so the close exists;
@@ -3154,6 +3253,16 @@ def weekly_review():
         if "today_trades" in batch:
             batch["today_trades"] = _filter_df_by_tenant_ids(
                 batch["today_trades"], tenant_ids)
+
+        # Official-close as-of (movers) + session heuristic: the latest
+        # date whose snapshot/calendar cell is a real session, not a UTC
+        # spine forward-fill with a $0 delta.
+        close_as_of = (
+            _frame_as_of_date(batch.get("today_moves"))
+            or _frame_as_of_date(batch.get("today_options_moves"))
+        )
+        snap_cutoff = _snapshot_as_of_date(
+            today, market_session, close_as_of=close_as_of)
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -3221,6 +3330,10 @@ def weekly_review():
                     snap_df["date"] = snap_df["date"].dt.date
                 elif snap_df["date"].dtype == object:
                     snap_df["date"] = pd.to_datetime(snap_df["date"]).dt.date
+
+                # Drop UTC-tomorrow / same-morning forward-fill rows so
+                # "vs yesterday" is last-session vs prior, not $0.
+                snap_df = snap_df[snap_df["date"] <= snap_cutoff]
 
                 # v2: group by the broker-stable ``tenant_id`` (not the
                 # display ``account`` label) so several physical accounts
@@ -3602,7 +3715,10 @@ def weekly_review():
                 if "date" in cal_df.columns:
                     cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
                 for _, row in cal_df.iterrows():
-                    daily_changes_map[row["date"]] = round(float(row.get("daily_change") or 0), 2)
+                    d = row["date"]
+                    if d > snap_cutoff:
+                        continue
+                    daily_changes_map[d] = round(float(row.get("daily_change") or 0), 2)
 
             context["daily_calendar_no_query_rows"] = cal_df.empty
             context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)

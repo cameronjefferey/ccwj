@@ -28,9 +28,14 @@ from app.weekly_review import (
     _build_today_movers,
     _build_trades_this_week,
     _build_upcoming_dividends,
+    _coerce_date,
     _format_trade_contract,
+    _frame_as_of_date,
+    _snapshot_as_of_date,
     _split_day_fills,
     _today_headline,
+    _today_pulse,
+    _trades_as_of_date,
     build_daily_review_batch,
 )
 
@@ -1030,4 +1035,95 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "trade_date = @day" in sql
         params = {p.name: p.value for p in cfg.query_parameters}
         assert params["day"] == today
+
+    def test_today_trades_honors_trades_as_of(self):
+        # Friday pre-market must query Thursday, not calendar Friday —
+        # otherwise the new Trades Today empty-state lies.
+        friday = date(2026, 8, 14)
+        thursday = date(2026, 8, 13)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            friday, date(2026, 8, 10), trades_as_of=thursday)
+        params = {p.name: p.value
+                  for p in batch["today_trades"][1].query_parameters}
+        assert params["day"] == thursday
+
+
+class TestReviewSessionDates:
+    """Before the U.S. open, Daily Review describes the last completed
+    session — not calendar-today's empty UTC-forward-filled row."""
+
+    friday = date(2026, 8, 14)
+    thursday = date(2026, 8, 13)
+    wednesday = date(2026, 8, 12)
+
+    def test_pre_market_friday_uses_thursday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_open_friday_uses_friday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "open"}, et_today=self.friday
+        ) == self.friday
+
+    def test_after_hours_friday_uses_friday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "after_hours"}, et_today=self.friday
+        ) == self.friday
+
+    def test_weekend_uses_friday_fills(self):
+        saturday = date(2026, 8, 15)
+        assert _trades_as_of_date(
+            saturday, {"state": "weekend"}, et_today=saturday
+        ) == self.friday
+
+    def test_pt_thursday_evening_does_not_skip_to_wednesday(self):
+        # 9pm PT Thursday = Friday 12am ET pre-market. User today is still
+        # Thursday; walking back from Friday would wrongly show Wednesday.
+        assert _trades_as_of_date(
+            self.thursday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_drops_friday_forward_fill_before_the_bell(self):
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "open"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_after_hours_is_today(self):
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "after_hours"}, et_today=self.friday
+        ) == self.friday
+
+    def test_snapshot_cutoff_prefers_official_close_when_older(self):
+        # Friday after-hours but yfinance hasn't published Friday's close
+        # yet — the spine row is still Thursday's balance copied forward.
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "after_hours"},
+            close_as_of=self.thursday, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_never_after_user_today(self):
+        assert _snapshot_as_of_date(
+            self.thursday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_frame_as_of_date_reads_movers_today_date(self):
+        df = pd.DataFrame({"today_date": [self.thursday, self.wednesday]})
+        assert _frame_as_of_date(df) == self.thursday
+
+    def test_coerce_date_accepts_iso_string(self):
+        assert _coerce_date("2026-08-13") == self.thursday
+
+    def test_pulse_carries_date_label(self):
+        pulse = _today_pulse([{
+            "today_date": self.thursday,
+            "comparisons": {"day": {"has_data": True, "delta": -1234.0}},
+        }])
+        assert pulse["delta"] == -1234
+        assert pulse["date"] == "2026-08-13"
+        assert pulse["date_label"] == "Thu Aug 13"
 

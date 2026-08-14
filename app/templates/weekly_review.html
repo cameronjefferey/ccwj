@@ -578,11 +578,12 @@
    HERO — today's pulse
    ════════════════════════════════════ #}
 <div class="review-hero">
-    <div class="hero-kicker">Daily Review &middot; {{ today.strftime('%A, %b %-d') }}</div>
+    <div class="hero-kicker">Daily Review &middot; {{ (review_date or today).strftime('%A, %b %-d') }}</div>
     {% if today_pulse %}
     {% set _pos = today_pulse.delta >= 0 %}
+    {% set _pulse_is_today = today_pulse.date is none or (today and today_pulse.date == today.isoformat()) %}
     <p class="hero-headline">
-        Today:
+        {% if _pulse_is_today %}Today:{% elif today_pulse.date_label %}{{ today_pulse.date_label }}:{% else %}Today:{% endif %}
         <span class="delta-num {% if _pos %}text-positive{% else %}text-negative{% endif %}"
               style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
             {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(today_pulse.delta|abs) }}
@@ -614,7 +615,7 @@
         </span>
         {% endif %}
         {% if trades_today and trades_today.count %}
-        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }} today</span>
+        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }}{% if review_is_today or review_is_today is not defined %} today{% elif review_date %} {{ review_date.strftime('%a') }}{% endif %}</span>
         {% endif %}
         {% if market_neutral_line %}
         <span style="color: rgba(255,255,255,.65);">{{ market_neutral_line }}</span>
@@ -872,11 +873,13 @@
    ISO week, so a trim on a long-held position never appeared there.
    ════════════════════════════════════ #}
 {% set _tt = trades_today or {} %}
-{% set _tt_weekday = today and today.weekday() < 5 %}
+{% set _tt_day = review_date or today %}
+{% set _tt_is_today = review_is_today if review_is_today is defined else true %}
+{% set _tt_weekday = _tt_day and _tt_day.weekday() < 5 %}
 {% if _tt.has_any or _tt_weekday %}
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>Trades Today</span>
+        <span>{% if _tt_is_today %}Trades Today{% else %}Trades — {{ _tt_day.strftime('%a %b %-d') }}{% endif %}</span>
         {% if _tt.count %}
         <span style="text-transform:none; letter-spacing:0; font-size:.8rem; color:#64748b;">
             {{ _tt.count }} fill{{ 's' if _tt.count != 1 }}{% if _tt.symbols %} · {{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}{% endif %}
@@ -889,7 +892,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Every fill dated {{ today.strftime('%a %b %-d') if today else 'today' }} — including adds and trims on positions you already hold.
+        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'today' }} — including adds and trims on positions you already hold.{% if not _tt_is_today %} Today's session has not started yet — this is the last completed session.{% endif %}
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -920,7 +923,7 @@
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.</div>
+    <div class="tt-empty">No fills recorded for {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'today' }}{% if _tt_is_today and market_session and market_session.state == 'open' %} yet{% endif %}.</div>
     {% endif %}
     {% if _tt.cash %}
     <div class="tt-muted" style="margin-top:.85rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:.7rem;">Cash &amp; fees</div>
@@ -939,10 +942,11 @@
         <summary>How this is computed</summary>
         <p>
             Rows come from the same fill feed as a past day's review
-            (broker history dated today). This is not the weekly table
-            below: a covered-call write on a stock you've held for months
-            shows here even though that group didn't newly open this week.
-            Same-day trades appear after the next sync.
+            (broker history dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the session' }}).
+            This is not the weekly table below: a covered-call write on a
+            stock you've held for months shows here even though that group
+            didn't newly open this week. Same-day trades appear after the
+            next sync.
         </p>
     </details>
 </div>
