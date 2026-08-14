@@ -115,7 +115,7 @@ def _warm_one_scope(client, uid, tenant_ids):
     today = _date_in_user_tz(tz)
     this_week = _iso_week_start(today)
 
-    # Daily Review core batch (the primary landing page, 11 queries).
+    # Daily Review core batch (the primary landing page).
     batch = build_daily_review_batch(tenant_filter, today, this_week)
     _bq_parallel(client, batch)
 

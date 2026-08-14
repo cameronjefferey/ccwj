@@ -6,7 +6,7 @@ That made it three different products glued together: behavior-baseline
 narrative on Friday, exposure tables on Monday, "today" framing in the
 middle. Users actually want the same answer EVERY day at the close:
 
-    1. What happened today.
+    1. What happened today — including the fills I placed, not just MTM.
     2. What's coming that I need to watch (earnings, expiries, ex-div).
     3. How are my positions doing in total (G/L stock vs option vs div).
     4. Same breakdown rolled up by strategy.
@@ -64,7 +64,7 @@ def _bq_parallel(client, queries):
         except Exception as exc:
             return name, pd.DataFrame(), exc
 
-    # Cap at 16 (was 8): Daily Review fans out to ~10 tiny queries, each
+    # Cap at 16 (was 8): Daily Review fans out to ~16 tiny queries, each
     # dominated by BigQuery's fixed per-job latency; one wave beats two.
     with ThreadPoolExecutor(max_workers=min(len(queries), 16)) as pool:
         # Copy the request context per task so the query-cache stats
@@ -2947,6 +2947,17 @@ def build_daily_review_batch(tenant_filter, today, this_week):
         "today_dividends": TODAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
+        # Same-day fills from stg_history (DAY_TRADES_QUERY, shared with
+        # /daily-review/day/<date>). "Trades this week" only lists groups
+        # that OPENED or CLOSED this ISO week — adds/trims on a long-held
+        # position never appear there. This query is the fill-level answer
+        # to "what did I trade today?".
+        "today_trades": (
+            DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
+            bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("day", "DATE", today),
+            ]),
+        ),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
             tenant_filter=tenant_filter, week_start=this_week.isoformat()),
         "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
@@ -3053,6 +3064,8 @@ def weekly_review():
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
                              "closed_count": 0, "realized_pnl": 0.0,
                              "unrealized_pnl": 0.0, "has_any": False},
+        "trades_today": {"trades": [], "cash": [], "count": 0, "net_cash": 0.0,
+                         "symbols": [], "has_any": False},
         # Distinct user tags for the "Trades this week" tag autocomplete.
         "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
@@ -3113,11 +3126,17 @@ def weekly_review():
         # filter before we touch it. The SQL also carries the predicate,
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
-                 "today_moves", "weekly_trades", "attribution",
+                 "today_moves", "weekly_trades", "today_trades", "attribution",
                  "exit_verdicts", "open_options"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
+        # today_trades always has tenant_id (pinned in
+        # test_tenant_filtered_queries_carry_tenant_id); filter even when
+        # the account-column gate above skipped an empty/odd frame.
+        if "today_trades" in batch:
+            batch["today_trades"] = _filter_df_by_tenant_ids(
+                batch["today_trades"], tenant_ids)
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -3506,6 +3525,19 @@ def weekly_review():
         except Exception as e:
             app.logger.warning("Trades-this-week processing failed: %s", e)
 
+        # ── Fills dated today (adds/trims, not just new groups) ───────
+        try:
+            label_map = _tenant_label_map_for_user(current_user.id)
+            fills = _split_day_fills(
+                batch.get("today_trades", pd.DataFrame()), label_map=label_map,
+            )
+            context["trades_today"] = fills
+            today_syms = {s.upper() for s in fills.get("symbols") or [] if s}
+            for row in (context.get("trades_this_week") or {}).get("trades") or []:
+                row["traded_today"] = str(row.get("symbol") or "").upper() in today_syms
+        except Exception as e:
+            app.logger.warning("Trades-today processing failed: %s", e)
+
         # ── Performance by account (summarized scorecard) ─────────────
         try:
             attr_df = batch.get("attribution", pd.DataFrame())
@@ -3631,10 +3663,12 @@ def weekly_review():
 # ═════════════════════════════════════════════════════════════════════════
 # Time-machine: day detail (/daily-review/day/<YYYY-MM-DD>)
 #
-# The Daily Review answers "what happened TODAY". The heatmap already shows
-# the day-over-day account swing for the last 12 weeks — but a red Tuesday
-# three weeks ago was a dead pixel: no way to ask "what actually happened
-# that day?". Every heatmap cell now links here.
+# The Daily Review answers "what happened TODAY" — including the fills
+# placed today, not just mark-to-market on holdings. The heatmap already
+# shows the day-over-day account swing for the last 12 weeks — but a red
+# Tuesday three weeks ago was a dead pixel: no way to ask "what actually
+# happened that day?". Every heatmap cell now links here. Today's cell
+# redirects to Daily Review, which lists the same fill query for today.
 #
 # Scope decision (documented for the operator): the day page reports what
 # the warehouse can answer PER-DAY with full fidelity —
@@ -3662,6 +3696,9 @@ WHERE date = @day
   {tenant_filter}
 """
 
+# Fill-level trades for one calendar day. Shared by the time-machine
+# day page AND Daily Review (`today_trades` in build_daily_review_batch)
+# so today's fills and a past day's page can never drift.
 DAY_TRADES_QUERY = """
 SELECT
     tenant_id, account, user_id, trade_date, action, trade_symbol,
@@ -3786,6 +3823,64 @@ _TRADE_ACTIONS = {
 }
 
 
+def _split_day_fills(trades_df, label_map=None):
+    """Turn a ``DAY_TRADES_QUERY`` frame into fill rows.
+
+    Shared by Daily Review (today) and the time-machine day page. Trade
+    actions (buys/sells/option lifecycle) go in ``trades``; interest,
+    fees, and cash transfers go in ``cash``. ``count`` / ``net_cash``
+    cover the trade fills only — a deposit shouldn't look like a trade.
+
+    Returns ``{trades, cash, count, net_cash, symbols, has_any}``.
+    """
+    empty = {
+        "trades": [], "cash": [], "count": 0, "net_cash": 0.0,
+        "symbols": [], "has_any": False,
+    }
+    if trades_df is None or trades_df.empty:
+        return empty
+    label_map = label_map or {}
+    trade_rows, cash_rows = [], []
+    symbols = []
+    seen_sym = set()
+    net_cash = 0.0
+    for _, r in trades_df.iterrows():
+        action = str(r.get("action") or "")
+        qty = r.get("quantity")
+        price = r.get("price")
+        amount = float(r.get("amount") or 0)
+        symbol = str(r.get("underlying_symbol") or "").strip()
+        row = {
+            "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
+            "action": action,
+            "symbol": symbol,
+            "trade_symbol": str(r.get("trade_symbol") or "").strip(),
+            "description": str(r.get("description") or "").strip(),
+            "quantity": float(qty) if pd.notna(qty) else None,
+            "price": float(price) if pd.notna(price) else None,
+            "amount": amount,
+            "account": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "is_option": action.startswith("option_"),
+        }
+        if action in _TRADE_ACTIONS:
+            trade_rows.append(row)
+            net_cash += amount
+            key = symbol.upper()
+            if key and key not in seen_sym:
+                seen_sym.add(key)
+                symbols.append(symbol)
+        else:
+            cash_rows.append(row)
+    return {
+        "trades": trade_rows,
+        "cash": cash_rows,
+        "count": len(trade_rows),
+        "net_cash": round(net_cash, 2),
+        "symbols": symbols,
+        "has_any": bool(trade_rows or cash_rows),
+    }
+
+
 def _adjacent_weekday(d, step):
     """Next/previous Mon-Fri date from ``d`` (step = +1 / -1)."""
     d = d + timedelta(days=step)
@@ -3862,22 +3957,9 @@ def day_detail(day_str):
 
     # ── Fills that day ────────────────────────────────────────────────
     trades_df = _filter_df_by_tenant_ids(batch["trades"], tenant_ids)
-    trade_rows, cash_rows = [], []
-    for _, r in trades_df.iterrows():
-        action = str(r.get("action") or "")
-        row = {
-            "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
-            "action": action,
-            "symbol": str(r.get("underlying_symbol") or "").strip(),
-            "trade_symbol": str(r.get("trade_symbol") or "").strip(),
-            "description": str(r.get("description") or "").strip(),
-            "quantity": float(r.get("quantity")) if pd.notna(r.get("quantity")) else None,
-            "price": float(r.get("price")) if pd.notna(r.get("price")) else None,
-            "amount": float(r.get("amount") or 0),
-            "account": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
-            "is_option": action.startswith("option_"),
-        }
-        (trade_rows if action in _TRADE_ACTIONS else cash_rows).append(row)
+    fills = _split_day_fills(trades_df, label_map)
+    trade_rows = fills["trades"]
+    cash_rows = fills["cash"]
 
     # ── Option day moves / dividends (symbol-grain SQL aggregates) ────
     options_df = batch["options"]

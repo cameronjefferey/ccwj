@@ -151,7 +151,7 @@ It reflects behavior back to the trader.
 **Status: Rebuilt May 2026. End-of-day pulse page; mode-switching removed.**
 
 This is the page a paying customer opens at market close every day. It should answer:
-> "What just happened, what should I watch, and how is every position / strategy / sector
+> "What just happened (including what I traded today), what should I watch, and how is every position / strategy / sector
 > doing in total?"
 
 The previous Friday / Monday / Mid-week mode toggle was deleted. Users want the same answer
@@ -161,7 +161,14 @@ bookmarks) so the 30+ `url_for('weekly_review', ...)` callers across templates, 
 profile, upload, admin, etc. don't break.
 
 What's working (May 2026 rebuild):
-- Today hero: account total + day delta + market context line
+- Today hero: account total + day delta + market context line + today's fill count
+- Trades today: every fill dated today from `stg_history` (`DAY_TRADES_QUERY`,
+  shared with the time-machine day page). This is the fill-level answer to
+  "what did I trade today?" — adds and trims on a long-held position show
+  here even though **Trades this week** only lists groups that opened or
+  closed this ISO week. Lives in `build_daily_review_batch` as `today_trades`
+  so the cache warmer replays it. Empty state on weekdays so the page still
+  answers the question when you haven't traded.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
