@@ -327,6 +327,29 @@ def test_lifecycle_day_60_disconnects_when_rows_exist(monkeypatch, lifecycle_env
     assert ("plan_disconnected", f"4:{_started(60).date().isoformat()}") in lifecycle_env.seen_keys
 
 
+def test_lifecycle_retries_when_remote_disconnect_is_unconfirmed(
+    monkeypatch, lifecycle_env,
+):
+    import app.models as models_mod
+
+    monkeypatch.setattr(cli_mod, "_list_running_trials", lambda: [_rec(4, 60)])
+    monkeypatch.setattr(
+        models_mod, "get_snaptrade_accounts",
+        lambda uid: [{"snaptrade_account_id": "acc-1"}],
+    )
+    attempts = []
+    monkeypatch.setattr(
+        cli_mod, "disconnect_user_brokerages",
+        lambda uid: attempts.append(uid) or None,
+    )
+
+    counts = cli_mod.run_plan_lifecycle(now=NOW)
+
+    assert attempts == [4]
+    assert counts["disconnected"] == 0
+    assert not any(e[0] == "send_disconnected_email" for e in lifecycle_env.emails)
+
+
 def test_lifecycle_day_60_csv_only_user_no_disconnect_email(monkeypatch, lifecycle_env):
     monkeypatch.setattr(cli_mod, "_list_running_trials", lambda: [_rec(5, 61)])
     counts = cli_mod.run_plan_lifecycle(now=NOW)
@@ -400,3 +423,70 @@ def test_disconnect_ordering_and_tenant_rows_kept(monkeypatch):
     assert calls[-2] == ("remove_connection_row", 9)
     # broker_tenants rows marked disconnected but NEVER deleted
     assert calls[-1] == ("mark_tenants", 9)
+
+
+def test_disconnect_preserves_local_rows_when_remote_delete_fails(monkeypatch):
+    import app.models as models_mod
+    import app.snaptrade as snaptrade_mod
+
+    calls = []
+
+    class _FakeConnections:
+        def remove_brokerage_authorization(self, **kw):
+            calls.append(("remove_auth", kw["authorization_id"]))
+
+    class _FakeAuth:
+        def delete_snap_trade_user(self, **kw):
+            calls.append(("delete_user", kw["user_id"]))
+            raise RuntimeError("temporary SnapTrade outage")
+
+    fake_client = types.SimpleNamespace(
+        connections=_FakeConnections(), authentication=_FakeAuth(),
+    )
+    monkeypatch.setattr(
+        models_mod, "get_snaptrade_accounts",
+        lambda uid: [
+            {"snaptrade_account_id": "acc-1", "brokerage_authorization_id": "auth-1"},
+        ],
+    )
+    monkeypatch.setattr(
+        models_mod, "get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "st-user", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(snaptrade_mod, "_get_snaptrade_client", lambda: fake_client)
+
+    def _must_preserve(*args, **kwargs):
+        raise AssertionError("local state must remain until remote deletion succeeds")
+
+    monkeypatch.setattr(models_mod, "remove_snaptrade_account", _must_preserve)
+    monkeypatch.setattr(models_mod, "remove_snaptrade_user", _must_preserve)
+    monkeypatch.setattr(models_mod, "mark_broker_tenants_disconnected", _must_preserve)
+
+    assert cli_mod.disconnect_user_brokerages(9) is None
+    assert calls == [("remove_auth", "auth-1"), ("delete_user", "st-user")]
+
+
+def test_disconnect_preserves_local_rows_when_client_is_unavailable(monkeypatch):
+    import app.models as models_mod
+    import app.snaptrade as snaptrade_mod
+
+    monkeypatch.setattr(
+        models_mod, "get_snaptrade_accounts",
+        lambda uid: [
+            {"snaptrade_account_id": "acc-1", "brokerage_authorization_id": "auth-1"},
+        ],
+    )
+    monkeypatch.setattr(
+        models_mod, "get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "st-user", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(snaptrade_mod, "_get_snaptrade_client", lambda: None)
+
+    def _must_preserve(*args, **kwargs):
+        raise AssertionError("local state must remain while SnapTrade is unavailable")
+
+    monkeypatch.setattr(models_mod, "remove_snaptrade_account", _must_preserve)
+    monkeypatch.setattr(models_mod, "remove_snaptrade_user", _must_preserve)
+    monkeypatch.setattr(models_mod, "mark_broker_tenants_disconnected", _must_preserve)
+
+    assert cli_mod.disconnect_user_brokerages(9) is None
