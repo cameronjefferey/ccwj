@@ -91,6 +91,8 @@ option_contract_status as (
         account,
         user_id,
         trade_symbol,
+        regexp_extract(upper(trim(coalesce(trade_symbol, ''))), r'(\d{6}[CP]\d{8})') as osi_core,
+        upper(trim(coalesce(underlying_symbol, ''))) as underlying_key,
         status,
         -- Realized wedge of a PARTIAL close (0 for a fully-open contract).
         -- Surfaced on the open option row so the Flask Breakdown-by-Type /
@@ -328,7 +330,14 @@ left join option_contract_status oc
     on p.account = oc.account
     and (p.user_id is not distinct from oc.user_id)
     and (p.tenant_id is not distinct from oc.tenant_id)
-    and p.trade_symbol = oc.trade_symbol
+    and (
+        p.trade_symbol = oc.trade_symbol
+        or (
+            oc.osi_core is not null
+            and regexp_extract(upper(trim(coalesce(p.trade_symbol, ''))), r'(\d{6}[CP]\d{8})') = oc.osi_core
+            and upper(trim(coalesce(p.underlying_symbol, ''))) = oc.underlying_key
+        )
+    )
 where not (
     -- Drop options the contracts model has already realized.
     -- Equity rows (and option rows with no matching contract) pass

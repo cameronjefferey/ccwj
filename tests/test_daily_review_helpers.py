@@ -29,8 +29,10 @@ from app.weekly_review import (
     _build_trades_this_week,
     _build_upcoming_dividends,
     _coerce_date,
+    _drop_stale_option_rows,
     _format_trade_contract,
     _frame_as_of_date,
+    _option_row_key,
     _snapshot_as_of_date,
     _split_day_fills,
     _today_headline,
@@ -1126,4 +1128,71 @@ class TestReviewSessionDates:
         assert pulse["delta"] == -1234
         assert pulse["date"] == "2026-08-13"
         assert pulse["date_label"] == "Thu Aug 13"
+
+
+class TestDropStaleOptionRows:
+    """Past-expiry / mart-Closed options must not stay on Daily Review."""
+
+    today = date(2026, 8, 14)
+
+    def _opt(self, **kw):
+        row = {
+            "tenant_id": "snaptrade:fn",
+            "symbol": "FN",
+            "trade_symbol": "FN    260807C00200000",
+            "instrument_type": "Call",
+            "option_expiry": date(2026, 8, 7),
+            "option_strike": 200.0,
+            "option_type": "C",
+            "market_value": -150.0,
+            "quantity": -1,
+        }
+        row.update(kw)
+        return row
+
+    def test_osi_key_ignores_spacing(self):
+        a = self._opt(trade_symbol="FN    260807C00200000")
+        b = self._opt(trade_symbol="FN 260807C00200000")
+        assert _option_row_key(a) == _option_row_key(b)
+
+    def test_drops_last_week_expiry(self):
+        eq = {"tenant_id": "snaptrade:fn", "symbol": "FN",
+              "trade_symbol": "FN", "instrument_type": "Equity",
+              "option_expiry": None, "market_value": 10000.0, "quantity": 100}
+        df = pd.DataFrame([self._opt(), eq])
+        out = _drop_stale_option_rows(df, self.today)
+        assert list(out["instrument_type"]) == ["Equity"]
+
+    def test_keeps_live_expiry(self):
+        live = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        df = pd.DataFrame([live])
+        out = _drop_stale_option_rows(df, self.today)
+        assert len(out) == 1
+
+    def test_drops_closed_contract_still_in_snapshot(self):
+        # Snapshot still has FN; contracts mart says nothing is Open.
+        # Another symbol is Open so the frame is non-empty.
+        snap = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        open_other = pd.DataFrame([{
+            "tenant_id": "snaptrade:other",
+            "symbol": "AAPL",
+            "trade_symbol": "AAPL  260821C00200000",
+        }])
+        out = _drop_stale_option_rows(
+            pd.DataFrame([snap]), self.today, open_contracts_df=open_other)
+        assert out.empty
+
+    def test_keeps_when_open_contracts_lists_it(self):
+        live = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        open_df = pd.DataFrame([{
+            "tenant_id": "snaptrade:fn",
+            "symbol": "FN",
+            "trade_symbol": "FN 260821C00200000",  # different spacing
+        }])
+        out = _drop_stale_option_rows(
+            pd.DataFrame([live]), self.today, open_contracts_df=open_df)
+        assert len(out) == 1
 

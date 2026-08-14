@@ -37,6 +37,7 @@ from app.models import (
 from google.cloud import bigquery
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
+import re
 
 
 def _bq_parallel(client, queries):
@@ -1563,6 +1564,63 @@ def _coerce_date(value):
         return date.fromisoformat(str(value)[:10])
     except ValueError:
         return None
+
+
+_OSI_CORE = re.compile(r"(\d{6}[CP]\d{8})")
+
+
+def _option_row_key(row):
+    """Contract identity that survives OSI spacing differences.
+
+    ``FN    260814C00120000`` and ``FN 260814C00120000`` are the same
+    contract; exact ``trade_symbol`` joins have left a Closed row in
+    ``int_option_contracts`` while ``int_enriched_current`` still
+    rendered the stale snapshot as Open.
+    """
+    ts = str(row.get("trade_symbol") or "").upper()
+    matched = _OSI_CORE.search(ts)
+    osi = matched.group(1) if matched else ts.strip()
+    und = str(row.get("symbol") or row.get("underlying_symbol") or "").upper().strip()
+    tid = str(row.get("tenant_id") or "")
+    return (tid, und, osi)
+
+
+def _drop_stale_option_rows(positions_df, as_of, open_contracts_df=None):
+    """Remove option rows that are not a live holding.
+
+    1. Past-expiry (calendar truth). Schwab's snapshot lags expiry 1-2
+       days; the watch list used ``expiry <= today+14`` with no lower
+       bound, so last week's FN contracts still showed as "expiring"
+       with negative days-to-exp and inflated the position card.
+    2. When the Open-contracts frame is non-empty, drop snapshot option
+       rows whose contract is not in it — Closed in the mart, still in
+       ``stg_current`` because ``trade_symbol`` didn't join.
+    Equity rows always pass through.
+    """
+    if positions_df is None or positions_df.empty:
+        return positions_df
+    if "instrument_type" not in positions_df.columns:
+        return positions_df
+    df = positions_df.copy()
+    is_opt = df["instrument_type"].isin(["Call", "Put"])
+    if not is_opt.any():
+        return df
+
+    expired = pd.Series(False, index=df.index)
+    if "option_expiry" in df.columns:
+        exp = pd.to_datetime(df["option_expiry"], errors="coerce")
+        as_of_ts = pd.Timestamp(as_of)
+        expired = is_opt & exp.notna() & (exp.dt.normalize() < as_of_ts.normalize())
+
+    stale_closed = pd.Series(False, index=df.index)
+    if (open_contracts_df is not None
+            and not open_contracts_df.empty
+            and "trade_symbol" in open_contracts_df.columns):
+        open_keys = {_option_row_key(r) for _, r in open_contracts_df.iterrows()}
+        stale_closed = is_opt & ~df.apply(
+            lambda r: _option_row_key(r) in open_keys, axis=1)
+
+    return df.loc[~(expired | stale_closed)].copy()
 
 
 def _frame_as_of_date(df):
@@ -3446,6 +3504,13 @@ def weekly_review():
         try:
             all_pos_df = batch.get("positions", pd.DataFrame())
             if not all_pos_df.empty:
+                # Drop past-expiry / mart-Closed option rows before any
+                # aggregation so a stale Schwab snapshot can't keep FN
+                # (or any expired contract) on the strip or watch list.
+                all_pos_df = _drop_stale_option_rows(
+                    all_pos_df, today,
+                    open_contracts_df=batch.get("open_options"),
+                )
                 for col in ["market_value", "cost_basis", "unrealized_pnl", "unrealized_pnl_pct",
                              "current_price", "quantity", "option_strike", "latest_stock_price"]:
                     if col in all_pos_df.columns:
@@ -3488,7 +3553,9 @@ def weekly_review():
                     # weekly review's 7d hides the next-Mon expirations from a
                     # trader checking on a Wednesday.
                     expiry_cutoff = pd.Timestamp(today + timedelta(days=14))
+                    today_ts = pd.Timestamp(today)
                     expiring = opts[opts["option_expiry"].notna()
+                                    & (opts["option_expiry"] >= today_ts)
                                     & (opts["option_expiry"] <= expiry_cutoff)]
 
                     for _, row in expiring.iterrows():
