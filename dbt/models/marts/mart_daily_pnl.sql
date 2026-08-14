@@ -146,10 +146,35 @@ opening_daily as (
       and ob.price_source != 'unpriced'
 ),
 
-trade_daily as (
+trade_daily_rows as (
     select * from trade_daily_history
     union all
     select * from opening_daily
+),
+
+-- Preserve the mart's one-row-per-tenant/symbol/day grain after adding the
+-- synthetic opening stream. ``opening_date`` is deliberately the day before
+-- the first visible equity fill, but that date can already contain a real
+-- option fill or another symbol-level event. A bare UNION ALL then gives the
+-- downstream joins two rows for the same day, repeating dividends / option
+-- MTM in the cumulative windows and leaving Flask to discard one of the two
+-- different equity event rows nondeterministically. Re-collapse the additive
+-- event columns before building the date spine.
+trade_daily as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        date,
+        sum(options_amount)          as options_amount,
+        sum(equity_buy_cost)         as equity_buy_cost,
+        sum(equity_buy_qty)          as equity_buy_qty,
+        sum(equity_sell_proceeds)    as equity_sell_proceeds,
+        sum(equity_sell_qty)         as equity_sell_qty,
+        sum(other_amount)            as other_amount
+    from trade_daily_rows
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Dividends source: int_dividend_events. UNIONs CSV-reported dividends with
