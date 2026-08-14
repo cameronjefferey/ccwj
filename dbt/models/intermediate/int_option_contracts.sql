@@ -180,22 +180,17 @@ contract_summary as (
 
         count(*) as num_trades,
 
-        -- Alpaca activities do not expose open/close metadata: ambiguous
-        -- "... FILL at ..." rows are normalized as "to Open". When the
-        -- authoritative recent-orders row has aged out, a fully offset
-        -- buy/sell round trip therefore has no closing action and used to
-        -- remain Open until expiry. Exact offset + no explicit terminal event
-        -- is enough to prove that the contract ended; the final SELECT also
-        -- requires that the broker snapshot no longer carries the contract.
+        -- Offset round-trip with no explicit close action. Alpaca
+        -- activities omit open/close metadata (both legs land as "to
+        -- Open"); Schwab descriptions via SnapTrade are often just
+        -- "CALL FABRINET $X EXP …" with the same default-to-open
+        -- failure (ORCL 2026-06 phantom Naked Call). When buy qty
+        -- exactly offsets sell qty and the live snapshot no longer
+        -- carries the contract, the position ended — don't wait for
+        -- expiry. The final SELECT still requires cur_trade_symbol
+        -- IS NULL so a live remainder stays Open.
         case
-            when {{ broker_slug_from_account('o.account') }} = 'alpaca'
-             and countif(
-                    regexp_contains(
-                        coalesce(o.description, ''),
-                        r'(?i) (PARTIAL_)?FILL at '
-                    )
-                 ) > 0
-             and countif(o.action in (
+            when countif(o.action in (
                     'option_buy_to_close', 'option_sell_to_close',
                     'option_expired', 'option_assigned', 'option_exercised'
                  )) = 0
@@ -533,6 +528,10 @@ select
         when option_expiry < current_date()   then 'Closed'
         when inferred_otm_today               then 'Closed'
         when cur_trade_symbol is not null      then 'Open'
+        -- Opened before today and the live snapshot no longer carries
+        -- the contract: the broker does not hold it. Same-day opens can
+        -- beat the snapshot by minutes, so those stay Open.
+        when open_date < current_date('America/New_York') then 'Closed'
         else 'Open'
     end as status,
 

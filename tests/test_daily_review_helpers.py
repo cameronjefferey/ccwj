@@ -28,9 +28,16 @@ from app.weekly_review import (
     _build_today_movers,
     _build_trades_this_week,
     _build_upcoming_dividends,
+    _coerce_date,
+    _drop_stale_option_rows,
     _format_trade_contract,
+    _frame_as_of_date,
+    _option_row_key,
+    _snapshot_as_of_date,
     _split_day_fills,
     _today_headline,
+    _today_pulse,
+    _trades_as_of_date,
     build_daily_review_batch,
 )
 
@@ -1030,4 +1037,162 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "trade_date = @day" in sql
         params = {p.name: p.value for p in cfg.query_parameters}
         assert params["day"] == today
+
+    def test_today_trades_honors_trades_as_of(self):
+        # Friday pre-market must query Thursday, not calendar Friday —
+        # otherwise the new Trades Today empty-state lies.
+        friday = date(2026, 8, 14)
+        thursday = date(2026, 8, 13)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            friday, date(2026, 8, 10), trades_as_of=thursday)
+        params = {p.name: p.value
+                  for p in batch["today_trades"][1].query_parameters}
+        assert params["day"] == thursday
+
+
+class TestReviewSessionDates:
+    """Before the U.S. open, Daily Review describes the last completed
+    session — not calendar-today's empty UTC-forward-filled row."""
+
+    friday = date(2026, 8, 14)
+    thursday = date(2026, 8, 13)
+    wednesday = date(2026, 8, 12)
+
+    def test_pre_market_friday_uses_thursday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_open_friday_uses_friday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "open"}, et_today=self.friday
+        ) == self.friday
+
+    def test_after_hours_friday_uses_friday_fills(self):
+        assert _trades_as_of_date(
+            self.friday, {"state": "after_hours"}, et_today=self.friday
+        ) == self.friday
+
+    def test_weekend_uses_friday_fills(self):
+        saturday = date(2026, 8, 15)
+        assert _trades_as_of_date(
+            saturday, {"state": "weekend"}, et_today=saturday
+        ) == self.friday
+
+    def test_pt_thursday_evening_does_not_skip_to_wednesday(self):
+        # 9pm PT Thursday = Friday 12am ET pre-market. User today is still
+        # Thursday; walking back from Friday would wrongly show Wednesday.
+        assert _trades_as_of_date(
+            self.thursday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_drops_friday_forward_fill_before_the_bell(self):
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "open"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_after_hours_is_today(self):
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "after_hours"}, et_today=self.friday
+        ) == self.friday
+
+    def test_snapshot_cutoff_prefers_official_close_when_older(self):
+        # Friday after-hours but yfinance hasn't published Friday's close
+        # yet — the spine row is still Thursday's balance copied forward.
+        assert _snapshot_as_of_date(
+            self.friday, {"state": "after_hours"},
+            close_as_of=self.thursday, et_today=self.friday
+        ) == self.thursday
+
+    def test_snapshot_cutoff_never_after_user_today(self):
+        assert _snapshot_as_of_date(
+            self.thursday, {"state": "pre_market"}, et_today=self.friday
+        ) == self.thursday
+
+    def test_frame_as_of_date_reads_movers_today_date(self):
+        df = pd.DataFrame({"today_date": [self.thursday, self.wednesday]})
+        assert _frame_as_of_date(df) == self.thursday
+
+    def test_coerce_date_accepts_iso_string(self):
+        assert _coerce_date("2026-08-13") == self.thursday
+
+    def test_pulse_carries_date_label(self):
+        pulse = _today_pulse([{
+            "today_date": self.thursday,
+            "comparisons": {"day": {"has_data": True, "delta": -1234.0}},
+        }])
+        assert pulse["delta"] == -1234
+        assert pulse["date"] == "2026-08-13"
+        assert pulse["date_label"] == "Thu Aug 13"
+
+
+class TestDropStaleOptionRows:
+    """Past-expiry / mart-Closed options must not stay on Daily Review."""
+
+    today = date(2026, 8, 14)
+
+    def _opt(self, **kw):
+        row = {
+            "tenant_id": "snaptrade:fn",
+            "symbol": "FN",
+            "trade_symbol": "FN    260807C00200000",
+            "instrument_type": "Call",
+            "option_expiry": date(2026, 8, 7),
+            "option_strike": 200.0,
+            "option_type": "C",
+            "market_value": -150.0,
+            "quantity": -1,
+        }
+        row.update(kw)
+        return row
+
+    def test_osi_key_ignores_spacing(self):
+        a = self._opt(trade_symbol="FN    260807C00200000")
+        b = self._opt(trade_symbol="FN 260807C00200000")
+        assert _option_row_key(a) == _option_row_key(b)
+
+    def test_drops_last_week_expiry(self):
+        eq = {"tenant_id": "snaptrade:fn", "symbol": "FN",
+              "trade_symbol": "FN", "instrument_type": "Equity",
+              "option_expiry": None, "market_value": 10000.0, "quantity": 100}
+        df = pd.DataFrame([self._opt(), eq])
+        out = _drop_stale_option_rows(df, self.today)
+        assert list(out["instrument_type"]) == ["Equity"]
+
+    def test_keeps_live_expiry(self):
+        live = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        df = pd.DataFrame([live])
+        out = _drop_stale_option_rows(df, self.today)
+        assert len(out) == 1
+
+    def test_drops_closed_contract_still_in_snapshot(self):
+        # Snapshot still has FN; contracts mart says nothing is Open.
+        # Another symbol is Open so the frame is non-empty.
+        snap = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        open_other = pd.DataFrame([{
+            "tenant_id": "snaptrade:other",
+            "symbol": "AAPL",
+            "trade_symbol": "AAPL  260821C00200000",
+        }])
+        out = _drop_stale_option_rows(
+            pd.DataFrame([snap]), self.today, open_contracts_df=open_other)
+        assert out.empty
+
+    def test_keeps_when_open_contracts_lists_it(self):
+        live = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        open_df = pd.DataFrame([{
+            "tenant_id": "snaptrade:fn",
+            "symbol": "FN",
+            "trade_symbol": "FN 260821C00200000",  # different spacing
+        }])
+        out = _drop_stale_option_rows(
+            pd.DataFrame([live]), self.today, open_contracts_df=open_df)
+        assert len(out) == 1
 

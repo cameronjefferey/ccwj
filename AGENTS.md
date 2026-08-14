@@ -162,13 +162,17 @@ profile, upload, admin, etc. don't break.
 
 What's working (May 2026 rebuild):
 - Today hero: account total + day delta + market context line + today's fill count
-- Trades today: every fill dated today from `stg_history` (`DAY_TRADES_QUERY`,
-  shared with the time-machine day page). This is the fill-level answer to
-  "what did I trade today?" — adds and trims on a long-held position show
-  here even though **Trades this week** only lists groups that opened or
-  closed this ISO week. Lives in `build_daily_review_batch` as `today_trades`
-  so the cache warmer replays it. Empty state on weekdays so the page still
-  answers the question when you haven't traded.
+- Trades today: every fill dated the **review session** from `stg_history`
+ (`DAY_TRADES_QUERY`, shared with the time-machine day page). Before the
+ U.S. open (and on weekends) that session is the last completed ET
+ weekday — calendar-today has no fills yet, and the snapshot spine has
+ already forward-filled a $0-delta row for UTC "tomorrow" / this morning.
+ Once the regular session is open, the query flips to calendar today so
+ same-day fills appear. Adds and trims on a long-held position show here
+ even though **Trades this week** only lists groups that opened or closed
+ this ISO week. Lives in `build_daily_review_batch` as `today_trades`
+ so the cache warmer replays it (same `trades_as_of`). Empty state uses
+ the session date, not the word "today", when the two differ.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
@@ -201,7 +205,7 @@ What's working (May 2026 rebuild):
  NULL and the section will not appear in dev — that is expected, not a bug;
  it renders in prod once a real post-close sync lands and today's close is
  published.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d), projected ex-divs (≤30d)
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), projected ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
