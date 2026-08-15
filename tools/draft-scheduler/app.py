@@ -26,6 +26,7 @@ _LOCK = threading.Lock()
 _NAME_RE = re.compile(r"[^\w\s.'\-]", re.UNICODE)
 
 app = Flask(__name__)
+app.url_map.strict_slashes = False
 
 
 def _poll_path() -> Path:
@@ -207,6 +208,7 @@ def api_poll():
         return jsonify(_payload())
 
 
+@app.post("/api/poll")
 @app.post("/api/availability")
 def api_availability():
     body = request.get_json(silent=True) or {}

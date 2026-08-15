@@ -36,8 +36,13 @@ class DraftPollTests(unittest.TestCase):
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_save_and_toggle_dates(self):
+        slash = self.client.post(
+            "/api/poll/",
+            json={"name": "Alex", "dates": ["2026-08-22"]},
+        )
+        self.assertEqual(slash.status_code, 200)
         res = self.client.post(
-            "/api/availability",
+            "/api/poll",
             json={"name": "Alex", "dates": ["2026-08-22", "2026-08-29"]},
         )
         self.assertEqual(res.status_code, 200)

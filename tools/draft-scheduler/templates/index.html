@@ -70,6 +70,7 @@
       background: var(--card); border: 1px solid var(--line);
       border-radius: var(--radius); padding: 16px;
     }
+    [hidden] { display: none !important; }
     .name-card { display: flex; gap: 10px; align-items: center; }
     .name-card input {
       flex: 1; background: var(--bg-2); border: 1px solid var(--line);
@@ -195,10 +196,10 @@
       <p class="sub" id="time-note"></p>
     </header>
 
-    <section id="gate" class="card name-card">
+    <form id="gate" class="card name-card" action="/api/poll" method="post">
       <input id="name-input" type="text" maxlength="32" placeholder="Your name" autocomplete="nickname" enterkeyhint="go">
-      <button class="primary" type="button" id="name-go">I'm in</button>
-    </section>
+      <button class="primary" type="submit" id="name-go">I'm in</button>
+    </form>
     <section id="you" class="card you" hidden>
       <div>Picking as <b id="you-name"></b></div>
       <button class="ghost" type="button" id="name-change">Change</button>
@@ -224,7 +225,7 @@
       el.textContent = msg;
       el.classList.add("show");
       clearTimeout(toast._t);
-      toast._t = setTimeout(() => el.classList.remove("show"), 1400);
+      toast._t = setTimeout(() => el.classList.remove("show"), 2200);
     };
 
     const colorFor = (name) => {
@@ -235,9 +236,18 @@
     };
     const initials = (name) => name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase();
 
+    async function readJson(res) {
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(res.ok ? "Could not read server response" : `Save failed (${res.status})`);
+      }
+    }
+
     async function load() {
-      const res = await fetch("/api/poll");
-      state.poll = await res.json();
+      const res = await fetch("/api/poll", { cache: "no-store" });
+      state.poll = await readJson(res);
       render();
     }
 
@@ -249,16 +259,18 @@
         if (state.previous && state.previous.toLowerCase() !== state.me.toLowerCase()) {
           body.previous_name = state.previous;
         }
-        const res = await fetch("/api/availability", {
+        const res = await fetch("/api/poll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          cache: "no-store",
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        const data = await readJson(res);
         if (!res.ok) throw new Error(data.error || "Could not save");
         state.poll = data;
         state.previous = "";
         render();
+        toast("Saved");
       } catch (err) {
         toast(err.message);
       } finally {
@@ -471,14 +483,12 @@
       await saveDates([...next].sort());
     }
 
-    $("name-go").addEventListener("click", async () => {
+    $("gate").addEventListener("submit", async (e) => {
+      e.preventDefault();
       const name = $("name-input").value.trim();
       if (!name) { $("name-input").focus(); return; }
       setMe(name);
       await saveDates([...myDates()]);
-    });
-    $("name-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") $("name-go").click();
     });
     $("name-change").addEventListener("click", () => {
       $("name-input").value = state.me;
