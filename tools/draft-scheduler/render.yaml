@@ -1,0 +1,22 @@
+# Standalone service — do not merge this into app/render.yaml.
+# In the Render dashboard: New → Web Service → this repo,
+# root directory `tools/draft-scheduler`.
+services:
+  - type: web
+    name: draft-night
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: tools/draft-scheduler
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -b 0.0.0.0:$PORT app:app
+    healthCheckPath: /
+    envVars:
+      - key: DRAFT_TITLE
+        value: Draft Night
+      - key: DRAFT_TIME
+        value: 4:00 PM Pacific
+      - key: DRAFT_START
+        value: "2026-08-15"
+      - key: DRAFT_END
+        value: "2026-09-13"

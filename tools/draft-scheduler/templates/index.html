@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0c100d">
+  <title>{{ title }} · {{ time_label }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0c100d;
+      --bg-2: #121814;
+      --card: #171e19;
+      --ink: #f3f7f1;
+      --muted: #93a094;
+      --line: #2a332c;
+      --lime: #c6f54a;
+      --lime-ink: #14200a;
+      --grass: #3f8f5a;
+      --heat-1: #1d3a26;
+      --heat-2: #2d6a40;
+      --heat-3: #3f8f5a;
+      --heat-4: #c6f54a;
+      --warn: #f0b429;
+      --rose: #f07167;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--ink); }
+    body {
+      font-family: Figtree, ui-sans-serif, system-ui, sans-serif;
+      min-height: 100dvh;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    header.hero { margin-bottom: 22px; }
+    .kicker {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 8px;
+    }
+    .kicker span {
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--muted); font-weight: 600;
+    }
+    h1 {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2.2rem, 8vw, 3.4rem);
+      line-height: .95; letter-spacing: -.03em; margin: 0 0 10px;
+    }
+    .lede { color: var(--muted); font-size: 1.02rem; margin: 0 0 4px; }
+    .lede strong { color: var(--ink); font-weight: 700; }
+    .sub { color: var(--muted); font-size: .88rem; margin: 0; }
+
+    button, input { font: inherit; }
+    .ghost {
+      background: transparent; color: var(--ink); border: 1px solid var(--line);
+      border-radius: 999px; padding: 7px 12px; cursor: pointer;
+    }
+    .ghost:hover { border-color: var(--muted); }
+    .primary {
+      background: var(--lime); color: var(--lime-ink); border: 0;
+      border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer;
+    }
+    .primary:disabled { opacity: .45; cursor: not-allowed; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px;
+    }
+    .name-card { display: flex; gap: 10px; align-items: center; }
+    .name-card input {
+      flex: 1; background: var(--bg-2); border: 1px solid var(--line);
+      color: var(--ink); border-radius: 12px; padding: 12px 14px; outline: none;
+    }
+    .name-card input:focus { border-color: var(--lime); }
+    .you {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 10px 14px;
+    }
+    .you b { font-size: 1.05rem; }
+    .hint { color: var(--muted); font-size: .86rem; margin: 10px 2px 0; }
+
+    .best { margin: 16px 0; padding: 16px 18px; background:
+      linear-gradient(180deg, #1c2a18 0%, var(--card) 100%); }
+    .best .label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--lime); font-weight: 700; margin-bottom: 6px; }
+    .best h2 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -.02em; }
+    .best p { margin: 0; color: var(--muted); font-size: .92rem; }
+    .alts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip {
+      background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px;
+      padding: 5px 10px; font-size: .82rem; color: var(--muted);
+    }
+
+    .month + .month { margin-top: 14px; }
+    .month h3 { margin: 0 0 10px; font-size: 1.05rem; }
+    .dow, .grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+    }
+    .dow span {
+      text-align: center; font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); font-weight: 600;
+      padding-bottom: 4px;
+    }
+    .day {
+      appearance: none; -webkit-appearance: none;
+      position: relative; min-height: 64px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--bg-2); color: var(--ink);
+      padding: 7px 4px 6px; cursor: pointer; text-align: left;
+      transition: transform .08s ease, border-color .12s ease, background .12s ease;
+    }
+    .day:enabled:active { transform: scale(.97); }
+    .day.out, .day:disabled {
+      opacity: .28; cursor: default; background: transparent;
+    }
+    .day.weekend:enabled { background: #1a221c; }
+    .day .num { display: block; font-weight: 700; font-size: 1rem; line-height: 1; }
+    .day .faces {
+      display: block; margin-top: 8px; font-size: 10px; color: var(--muted);
+      letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .day .badge {
+      position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px;
+      border-radius: 999px; background: var(--line); color: var(--ink);
+      font-size: 10px; font-weight: 700; display: grid; place-items: center;
+      padding: 0 4px;
+    }
+    .day.heat-1 { background: var(--heat-1); border-color: #2d4a34; }
+    .day.heat-2 { background: var(--heat-2); border-color: #3d7a4e; }
+    .day.heat-3 { background: var(--heat-3); border-color: #58b072; color: #fff; }
+    .day.heat-4 { background: var(--heat-4); border-color: #d8ff6a; color: var(--lime-ink); }
+    .day.heat-4 .faces, .day.heat-4 .badge { color: var(--lime-ink); background: rgba(20,32,10,.18); }
+    .day.mine { box-shadow: inset 0 0 0 2px var(--lime); }
+    .day.kickoff .num::after {
+      content: " W1"; font-size: 9px; font-weight: 700; color: var(--warn);
+      letter-spacing: 0;
+    }
+    .day.heat-4.kickoff .num::after { color: #8a5a00; }
+    .day.today .num { text-decoration: underline; text-underline-offset: 2px; }
+
+    .detail {
+      margin-top: 14px; display: none;
+    }
+    .detail.open { display: block; }
+    .detail h3 { margin: 0 0 4px; }
+    .detail .when { color: var(--muted); font-size: .9rem; margin: 0 0 10px; }
+    .names { display: flex; flex-wrap: wrap; gap: 8px; }
+    .person {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--bg-2); border: 1px solid var(--line);
+      border-radius: 999px; padding: 5px 10px 5px 6px; font-size: .88rem;
+    }
+    .ava {
+      width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+      font-size: 10px; font-weight: 800; color: #0c100d;
+    }
+    .empty { color: var(--muted); font-size: .92rem; }
+
+    .people { margin-top: 16px; }
+    .people h3 { margin: 0 0 10px; font-size: 1.05rem; }
+    .row {
+      display: flex; justify-content: space-between; gap: 12px;
+      padding: 8px 0; border-top: 1px solid var(--line); font-size: .95rem;
+    }
+    .row:first-of-type { border-top: 0; }
+    .row span { color: var(--muted); }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
+      background: var(--lime); color: var(--lime-ink); font-weight: 700;
+      padding: 8px 14px; border-radius: 999px; opacity: 0; pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .err { color: var(--rose); font-size: .88rem; margin-top: 8px; }
+
+    @media (max-width: 520px) {
+      .day { min-height: 56px; padding: 6px 3px; }
+      .day .faces { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="kicker">
+        <span>Fantasy football · 2026</span>
+        <button class="ghost" type="button" id="copy-link">Copy link</button>
+      </div>
+      <h1>{{ title }}</h1>
+      <p class="lede">Every slot is <strong>{{ time_label }}</strong>. Tap the dates you can make it.</p>
+      <p class="sub" id="time-note"></p>
+    </header>
+
+    <section id="gate" class="card name-card">
+      <input id="name-input" type="text" maxlength="32" placeholder="Your name" autocomplete="nickname" enterkeyhint="go">
+      <button class="primary" type="button" id="name-go">I'm in</button>
+    </section>
+    <section id="you" class="card you" hidden>
+      <div>Picking as <b id="you-name"></b></div>
+      <button class="ghost" type="button" id="name-change">Change</button>
+    </section>
+    <p class="hint" id="status-hint">Enter your name, then tap every night you're free.</p>
+
+    <section id="best" class="card best" hidden></section>
+
+    <section id="calendars"></section>
+    <section id="detail" class="card detail"></section>
+
+    <section id="people" class="card people" hidden></section>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const storeKey = "draft-night-name";
+    const state = { me: localStorage.getItem(storeKey) || "", previous: "", poll: null, selected: null, saving: false };
+
+    const $ = (id) => document.getElementById(id);
+    const toast = (msg) => {
+      const el = $("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 1400);
+    };
+
+    const colorFor = (name) => {
+      const palette = ["#c6f54a","#7bdff2","#f0b429","#f07167","#c77dff","#80ed99","#ffd6a5","#90dbf4"];
+      let h = 0;
+      for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return palette[h % palette.length];
+    };
+    const initials = (name) => name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase();
+
+    async function load() {
+      const res = await fetch("/api/poll");
+      state.poll = await res.json();
+      render();
+    }
+
+    async function saveDates(dates) {
+      if (!state.me || state.saving) return;
+      state.saving = true;
+      try {
+        const body = { name: state.me, dates };
+        if (state.previous && state.previous.toLowerCase() !== state.me.toLowerCase()) {
+          body.previous_name = state.previous;
+        }
+        const res = await fetch("/api/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not save");
+        state.poll = data;
+        state.previous = "";
+        render();
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        state.saving = false;
+      }
+    }
+
+    function myDates() {
+      const person = (state.poll?.people || []).find(p => p.name.toLowerCase() === state.me.toLowerCase());
+      return new Set(person?.dates || []);
+    }
+
+    function setMe(name) {
+      state.me = name.trim();
+      if (state.me) localStorage.setItem(storeKey, state.me);
+      else localStorage.removeItem(storeKey);
+      render();
+    }
+
+    function heatClass(count, max) {
+      if (!count) return "";
+      if (max <= 1) return "heat-2";
+      const t = count / max;
+      if (t >= 0.9) return "heat-4";
+      if (t >= 0.6) return "heat-3";
+      if (t >= 0.3) return "heat-2";
+      return "heat-1";
+    }
+
+    function render() {
+      const poll = state.poll;
+      if (!poll) return;
+      $("time-note").textContent = poll.time_note;
+      $("gate").hidden = !!state.me;
+      $("you").hidden = !state.me;
+      $("you-name").textContent = state.me;
+      $("status-hint").textContent = state.me
+        ? "Tap a date to add or remove yourself. Darker green means more people are free."
+        : "Enter your name, then tap every night you're free.";
+
+      const max = Math.max(0, ...Object.values(poll.by_date).map(n => n.length));
+      const mine = myDates();
+
+      const best = $("best");
+      best.replaceChildren();
+      if (poll.best.length && poll.respondent_count) {
+        const top = poll.best[0];
+        best.hidden = false;
+        const label = document.createElement("div");
+        label.className = "label";
+        label.textContent = "Best so far";
+        const h2 = document.createElement("h2");
+        h2.textContent = `${top.label} · ${poll.time_label}`;
+        const p = document.createElement("p");
+        p.textContent = top.names.length
+          ? `${top.count} of ${poll.respondent_count} free — ${top.names.join(", ")}`
+          : `${top.count} of ${poll.respondent_count} free`;
+        best.append(label, h2, p);
+        const rest = poll.best.slice(1);
+        if (rest.length) {
+          const alts = document.createElement("div");
+          alts.className = "alts";
+          for (const b of rest) {
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            chip.textContent = `${b.label} · ${b.count}`;
+            alts.appendChild(chip);
+          }
+          best.appendChild(alts);
+        }
+      } else {
+        best.hidden = true;
+      }
+
+      const cal = $("calendars");
+      cal.innerHTML = "";
+      for (const month of poll.months) {
+        const card = document.createElement("section");
+        card.className = "card month";
+        const h = document.createElement("h3");
+        h.textContent = month.label;
+        card.appendChild(h);
+        const dow = document.createElement("div");
+        dow.className = "dow";
+        for (const d of ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]) {
+          const s = document.createElement("span");
+          s.textContent = d;
+          dow.appendChild(s);
+        }
+        card.appendChild(dow);
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        for (const week of month.weeks) {
+          for (const day of week) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "day";
+            btn.disabled = !day.enabled;
+            if (!day.in_month || !day.enabled) btn.classList.add("out");
+            if (day.is_weekend) btn.classList.add("weekend");
+            if (day.is_kickoff) btn.classList.add("kickoff");
+            if (day.is_today) btn.classList.add("today");
+            const names = poll.by_date[day.date] || [];
+            const heat = heatClass(names.length, max);
+            if (heat) btn.classList.add(heat);
+            if (mine.has(day.date)) btn.classList.add("mine");
+            const num = document.createElement("span");
+            num.className = "num";
+            num.textContent = day.in_month ? String(day.day) : "";
+            btn.appendChild(num);
+            if (names.length) {
+              const badge = document.createElement("span");
+              badge.className = "badge";
+              badge.textContent = String(names.length);
+              btn.appendChild(badge);
+              const faces = document.createElement("span");
+              faces.className = "faces";
+              faces.textContent = names.map(initials).join(" ");
+              btn.appendChild(faces);
+            }
+            if (day.enabled) {
+              btn.addEventListener("click", () => onDay(day.date));
+            }
+            grid.appendChild(btn);
+          }
+        }
+        card.appendChild(grid);
+        cal.appendChild(card);
+      }
+
+      renderDetail();
+      renderPeople();
+    }
+
+    function renderDetail() {
+      const el = $("detail");
+      const iso = state.selected;
+      if (!iso || !state.poll) { el.classList.remove("open"); return; }
+      const d = new Date(iso + "T12:00:00");
+      const names = state.poll.by_date[iso] || [];
+      const label = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+      el.classList.add("open");
+      el.innerHTML = "";
+      const h = document.createElement("h3");
+      h.textContent = label;
+      const when = document.createElement("p");
+      when.className = "when";
+      when.textContent = state.poll.time_label + "  ·  " + state.poll.time_note;
+      el.appendChild(h);
+      el.appendChild(when);
+      if (!names.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "Nobody has claimed this night yet.";
+        el.appendChild(empty);
+        return;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "names";
+      for (const name of names) {
+        const pill = document.createElement("span");
+        pill.className = "person";
+        const ava = document.createElement("span");
+        ava.className = "ava";
+        ava.textContent = initials(name);
+        ava.style.background = colorFor(name);
+        const labelEl = document.createElement("span");
+        labelEl.textContent = name;
+        pill.appendChild(ava);
+        pill.appendChild(labelEl);
+        wrap.appendChild(pill);
+      }
+      el.appendChild(wrap);
+    }
+
+    function renderPeople() {
+      const el = $("people");
+      const people = state.poll?.people || [];
+      if (!people.length) { el.hidden = true; return; }
+      el.hidden = false;
+      el.innerHTML = "";
+      const h = document.createElement("h3");
+      h.textContent = people.length === 1 ? "1 person in" : `${people.length} people in`;
+      el.appendChild(h);
+      for (const person of people) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const left = document.createElement("b");
+        left.textContent = person.name;
+        const right = document.createElement("span");
+        const n = (person.dates || []).length;
+        right.textContent = n ? `${n} night${n === 1 ? "" : "s"}` : "no dates yet";
+        row.appendChild(left);
+        row.appendChild(right);
+        el.appendChild(row);
+      }
+    }
+
+    async function onDay(iso) {
+      state.selected = iso;
+      renderDetail();
+      if (!state.me) {
+        $("name-input").focus();
+        toast("Add your name first");
+        return;
+      }
+      const next = myDates();
+      if (next.has(iso)) next.delete(iso);
+      else next.add(iso);
+      await saveDates([...next].sort());
+    }
+
+    $("name-go").addEventListener("click", async () => {
+      const name = $("name-input").value.trim();
+      if (!name) { $("name-input").focus(); return; }
+      setMe(name);
+      await saveDates([...myDates()]);
+    });
+    $("name-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("name-go").click();
+    });
+    $("name-change").addEventListener("click", () => {
+      $("name-input").value = state.me;
+      state.previous = state.me;
+      setMe("");
+      $("name-input").focus();
+    });
+    $("copy-link").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(location.href);
+        toast("Link copied");
+      } catch {
+        toast(location.href);
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>
