@@ -162,28 +162,28 @@
     }
     .empty { color: var(--muted); font-size: .92rem; }
 
-    .people { margin-top: 16px; }
-    .people h3 { margin: 0 0 10px; font-size: 1.05rem; }
+    .roster { margin-bottom: 16px; }
+    .roster h2 { margin: 0 0 6px; font-size: 1.25rem; letter-spacing: -.02em; }
+    .roster .how {
+      margin: 0 0 14px; color: var(--lime); font-weight: 700; font-size: 1rem;
+    }
+    .roster .empty { margin: 0 0 12px; }
+    .roster-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .row-wrap { display: flex; align-items: center; gap: 8px; }
     .row {
-      display: flex; justify-content: space-between; gap: 12px; width: 100%;
-      padding: 10px 0; border-top: 1px solid var(--line); font-size: .95rem;
-      background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
-      color: inherit; text-align: left; cursor: pointer;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      flex: 1; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--bg-2); color: inherit; text-align: left; cursor: pointer;
+      font-size: 1.05rem;
     }
-    .row:first-of-type { border-top: 0; }
-    .row span { color: var(--muted); }
-    .row.mine .who b { color: var(--lime); }
-    .row-wrap {
-      display: flex; align-items: center; gap: 8px;
-      border-top: 1px solid var(--line);
-    }
-    .row-wrap:first-of-type { border-top: 0; }
-    .row-wrap .row { border-top: 0; flex: 1; }
+    .row span { color: var(--muted); font-size: .88rem; }
+    .row.mine { border-color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime); }
     .remove {
       background: transparent; color: var(--rose); border: 1px solid var(--line);
-      border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: .8rem;
+      border-radius: 999px; padding: 8px 10px; cursor: pointer; font-size: .8rem;
       font-weight: 600;
     }
+    .add-label { display: block; font-size: .82rem; color: var(--muted); margin: 0 0 8px; }
 
     .toast {
       position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
@@ -208,26 +208,30 @@
         <button class="ghost" type="button" id="copy-link">Copy link</button>
       </div>
       <h1>{{ title }}</h1>
-      <p class="lede">Every slot is <strong>{{ time_label }}</strong>. Tap the dates you can make it.</p>
+      <p class="lede">Every slot is <strong>{{ time_label }}</strong>.</p>
       <p class="sub" id="time-note"></p>
     </header>
 
-    <form id="gate" class="card name-card" action="/api/poll" method="post">
-      <input id="name-input" type="text" maxlength="32" placeholder="Your name" autocomplete="nickname" enterkeyhint="go">
-      <button class="primary" type="submit" id="name-go">I'm in</button>
-    </form>
-    <section id="you" class="card you" hidden>
-      <div>Picking as <b id="you-name"></b></div>
-      <button class="ghost" type="button" id="name-change">Switch person</button>
+    <section id="roster" class="card roster">
+      <h2>Who's drafting</h2>
+      <p class="how" id="roster-how">Tap your name to start.</p>
+      <div id="people" class="roster-list"></div>
+      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add every name, then send this link. Friends tap their name.</p>
+      <p class="add-label">Add someone to the list</p>
+      <form id="gate" class="name-card" action="/api/poll" method="post">
+        <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
+        <button class="primary" type="submit" id="name-go">Add</button>
+      </form>
     </section>
-    <p class="hint" id="status-hint">Enter your name, then tap every night you're free.</p>
+    <section id="you" class="card you" hidden>
+      <div>You're in as <b id="you-name"></b>. Tap the nights you can make it.</div>
+    </section>
+    <p class="hint" id="status-hint">Tap your name above, then tap every night you're free at 4:00 PM Pacific.</p>
 
     <section id="best" class="card best" hidden></section>
 
     <section id="calendars"></section>
     <section id="detail" class="card detail"></section>
-
-    <section id="people" class="card people" hidden></section>
   </div>
   <div class="toast" id="toast"></div>
 
@@ -363,12 +367,21 @@
       $("time-note").textContent = poll.kickoff_label
         ? `${poll.time_note}  ·  First game ${poll.kickoff_label} — last draft night is the day before`
         : poll.time_note;
-      $("gate").hidden = !!state.me;
+      const known = (poll.people || []).some(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+      if (state.me && !known) {
+        state.me = "";
+        localStorage.removeItem(storeKey);
+      }
       $("you").hidden = !state.me;
       $("you-name").textContent = state.me;
+      $("roster-how").textContent = state.me
+        ? `Picking as ${state.me}. Tap another name to switch.`
+        : "Tap your name to start.";
       $("status-hint").textContent = state.me
-        ? "Tap nights you're free. Switch person to pass the phone — everyone's picks stay."
-        : "Enter your name, then tap every night you're free.";
+        ? "Tap the nights you can do 4:00 PM Pacific. Tap your name again to switch."
+        : "Tap your name at the top first. Then tap every night you're free.";
 
       const max = Math.max(0, ...Object.values(poll.by_date).map(n => n.length));
       const mine = myDates();
@@ -507,17 +520,10 @@
 
     function renderPeople() {
       const el = $("people");
+      const empty = $("roster-empty");
       const people = state.poll?.people || [];
-      if (!people.length) { el.hidden = true; return; }
-      el.hidden = false;
       el.innerHTML = "";
-      const h = document.createElement("h3");
-      h.textContent = people.length === 1 ? "1 person in" : `${people.length} people in`;
-      el.appendChild(h);
-      const hint = document.createElement("p");
-      hint.className = "empty";
-      hint.textContent = "Tap a name to pick as them.";
-      el.appendChild(hint);
+      empty.hidden = people.length > 0;
       for (const person of people) {
         const wrap = document.createElement("div");
         wrap.className = "row-wrap";
@@ -531,12 +537,12 @@
         left.textContent = person.name;
         const right = document.createElement("span");
         const n = (person.dates || []).length;
-        right.textContent = n ? `${n} night${n === 1 ? "" : "s"}` : "no dates yet";
+        right.textContent = n ? `${n} night${n === 1 ? "" : "s"}` : "tap to start";
         row.appendChild(left);
         row.appendChild(right);
         row.addEventListener("click", () => {
           setMe(person.name);
-          toast(`Picking as ${person.name}`);
+          toast(`You're in as ${person.name} — tap your nights`);
         });
         const del = document.createElement("button");
         del.type = "button";
@@ -557,7 +563,7 @@
       renderDetail();
       if (!state.me) {
         $("name-input").focus();
-        toast("Add your name first");
+        toast("Tap your name at the top first");
         return;
       }
       const next = myDates();
@@ -566,18 +572,34 @@
       await saveDates([...next].sort());
     }
 
-    $("gate").addEventListener("submit", (e) => {
+    $("gate").addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = $("name-input").value.trim();
       if (!name) { $("name-input").focus(); return; }
-      setMe(name);
-      $("name-input").value = "";
-    });
-    $("name-change").addEventListener("click", () => {
-      $("name-input").value = "";
-      $("name-input").placeholder = "Next person's name";
-      setMe("");
-      $("name-input").focus();
+      const exists = (state.poll?.people || []).some(
+        (p) => p.name.toLowerCase() === name.toLowerCase()
+      );
+      if (exists) {
+        $("name-input").value = "";
+        toast("Already on the list — tap their name");
+        return;
+      }
+      try {
+        const res = await fetch("/api/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ name, dates: [] }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not add");
+        state.poll = data;
+        $("name-input").value = "";
+        render();
+        toast(`Added ${name} — they tap their name to start`);
+      } catch (err) {
+        toast(err.message);
+      }
     });
     $("copy-link").addEventListener("click", async () => {
       try {
