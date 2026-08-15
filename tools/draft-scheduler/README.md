@@ -40,11 +40,12 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 
 ## What people see
 
-- August + September calendars (Sat Aug 15 – Sun Sep 13, 2026)
+- August + September calendars (Sat Aug 15 – Tue Sep 8, 2026)
 - Tap a date to mark yourself free; tap again to undo
 - Green heat = more people free that night
 - Lime outline = nights you picked
-- **W1** on Thu Sep 10 (NFL kickoff)
+- **Game** on Wed Sep 9 (first game) — not pickable
+- Remove a name from the people list
 - A “best so far” pick at the top, weekends winning ties
 
 ## Optional env
@@ -54,7 +55,8 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 | `DRAFT_TITLE` | `Draft Night` |
 | `DRAFT_TIME` | `4:00 PM Pacific` |
 | `DRAFT_TIME_NOTE` | `7:00 PM Eastern · 6:00 PM Central · 5:00 PM Mountain` |
-| `DRAFT_START` / `DRAFT_END` | `2026-08-15` / `2026-09-13` |
+| `DRAFT_START` / `DRAFT_END` | `2026-08-15` / `2026-09-08` |
+| `DRAFT_KICKOFF` | `2026-09-09` |
 | `POLL_PATH` | `./poll.json` |
 | `PORT` | `5050` locally, Render sets this |
 

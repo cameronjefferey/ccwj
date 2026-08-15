@@ -117,6 +117,9 @@
     .day.out, .day:disabled {
       opacity: .28; cursor: default; background: transparent;
     }
+    .day.kickoff:disabled, .day.out.kickoff {
+      opacity: 1; background: #2a2414; border-color: #8a6a20; color: var(--warn);
+    }
     .day.weekend:enabled { background: #1a221c; }
     .day .num { display: block; font-weight: 700; font-size: 1rem; line-height: 1; }
     .day .faces {
@@ -136,10 +139,9 @@
     .day.heat-4 .faces, .day.heat-4 .badge { color: var(--lime-ink); background: rgba(20,32,10,.18); }
     .day.mine { box-shadow: inset 0 0 0 2px var(--lime); }
     .day.kickoff .num::after {
-      content: " W1"; font-size: 9px; font-weight: 700; color: var(--warn);
+      content: " Game"; font-size: 9px; font-weight: 700; color: var(--warn);
       letter-spacing: 0;
     }
-    .day.heat-4.kickoff .num::after { color: #8a5a00; }
     .day.today .num { text-decoration: underline; text-underline-offset: 2px; }
 
     .detail {
@@ -170,7 +172,18 @@
     }
     .row:first-of-type { border-top: 0; }
     .row span { color: var(--muted); }
-    .row.mine { color: var(--lime); }
+    .row.mine .who b { color: var(--lime); }
+    .row-wrap {
+      display: flex; align-items: center; gap: 8px;
+      border-top: 1px solid var(--line);
+    }
+    .row-wrap:first-of-type { border-top: 0; }
+    .row-wrap .row { border-top: 0; flex: 1; }
+    .remove {
+      background: transparent; color: var(--rose); border: 1px solid var(--line);
+      border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: .8rem;
+      font-weight: 600;
+    }
 
     .toast {
       position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
@@ -272,6 +285,26 @@
       state.poll = { ...state.poll, people, by_date, respondent_count: people.length };
     }
 
+    async function removePerson(name) {
+      if (!confirm(`Remove ${name} and their dates?`)) return;
+      try {
+        const res = await fetch("/api/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ name }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not remove");
+        state.poll = data;
+        if (state.me && state.me.toLowerCase() === name.toLowerCase()) setMe("");
+        else render();
+        toast(`Removed ${name}`);
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
     async function saveDates(dates) {
       if (!state.me) return;
       state.pending = { name: state.me, dates: [...dates] };
@@ -327,7 +360,9 @@
     function render() {
       const poll = state.poll;
       if (!poll) return;
-      $("time-note").textContent = poll.time_note;
+      $("time-note").textContent = poll.kickoff_label
+        ? `${poll.time_note}  ·  First game ${poll.kickoff_label} — last draft night is the day before`
+        : poll.time_note;
       $("gate").hidden = !!state.me;
       $("you").hidden = !state.me;
       $("you-name").textContent = state.me;
@@ -484,6 +519,8 @@
       hint.textContent = "Tap a name to pick as them.";
       el.appendChild(hint);
       for (const person of people) {
+        const wrap = document.createElement("div");
+        wrap.className = "row-wrap";
         const row = document.createElement("button");
         row.type = "button";
         row.className = "row";
@@ -501,7 +538,17 @@
           setMe(person.name);
           toast(`Picking as ${person.name}`);
         });
-        el.appendChild(row);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "remove";
+        del.textContent = "Remove";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          removePerson(person.name);
+        });
+        wrap.appendChild(row);
+        wrap.appendChild(del);
+        el.appendChild(wrap);
       }
     }
 

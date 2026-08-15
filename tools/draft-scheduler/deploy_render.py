@@ -74,7 +74,8 @@ def main() -> int:
             {"key": "DRAFT_TITLE", "value": "Draft Night"},
             {"key": "DRAFT_TIME", "value": "4:00 PM Pacific"},
             {"key": "DRAFT_START", "value": "2026-08-15"},
-            {"key": "DRAFT_END", "value": "2026-09-13"},
+            {"key": "DRAFT_END", "value": "2026-09-08"},
+            {"key": "DRAFT_KICKOFF", "value": "2026-09-09"},
             {"key": "PYTHON_VERSION", "value": "3.12.8"},
         ],
         "serviceDetails": {

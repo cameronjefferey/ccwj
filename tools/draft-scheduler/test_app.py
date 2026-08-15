@@ -71,6 +71,32 @@ class DraftPollTests(unittest.TestCase):
         # Wednesday Aug 19 and Saturday Aug 22 both have 1 person; Sat wins.
         self.assertEqual(data["best"][0]["date"], "2026-08-22")
 
+    def test_first_game_is_marked_and_not_pickable(self):
+        data = self.client.get("/api/poll").get_json()
+        self.assertEqual(data["end"], "2026-09-08")
+        self.assertEqual(data["kickoff"], "2026-09-09")
+        days = [d for m in data["months"] for w in m["weeks"] for d in w]
+        eighth = next(d for d in days if d["date"] == "2026-09-08")
+        ninth = next(d for d in days if d["date"] == "2026-09-09")
+        tenth = next(d for d in days if d["date"] == "2026-09-10")
+        self.assertTrue(eighth["enabled"])
+        self.assertFalse(ninth["enabled"])
+        self.assertTrue(ninth["is_kickoff"])
+        self.assertFalse(tenth["enabled"])
+        self.assertEqual(
+            self.client.post(
+                "/api/poll", json={"name": "Alex", "dates": ["2026-09-09"]}
+            ).status_code,
+            400,
+        )
+
+    def test_remove_person(self):
+        self.client.post("/api/poll", json={"name": "Cameron", "dates": ["2026-08-22"]})
+        self.client.post("/api/poll", json={"name": "Sam", "dates": ["2026-08-29"]})
+        res = self.client.post("/api/remove", json={"name": "sam"})
+        people = res.get_json()["people"]
+        self.assertEqual([p["name"] for p in people], ["Cameron"])
+
     def test_two_people_keep_their_dates(self):
         self.client.post(
             "/api/poll",

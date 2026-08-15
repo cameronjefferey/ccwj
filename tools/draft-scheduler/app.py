@@ -13,8 +13,8 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 POLL_START = date.fromisoformat(os.environ.get("DRAFT_START", "2026-08-15"))
-POLL_END = date.fromisoformat(os.environ.get("DRAFT_END", "2026-09-13"))
-KICKOFF = date.fromisoformat(os.environ.get("DRAFT_KICKOFF", "2026-09-10"))
+POLL_END = date.fromisoformat(os.environ.get("DRAFT_END", "2026-09-08"))
+KICKOFF = date.fromisoformat(os.environ.get("DRAFT_KICKOFF", "2026-09-09"))
 LABOR_DAY = date(2026, 9, 7)
 TITLE = os.environ.get("DRAFT_TITLE", "Draft Night")
 TIME_LABEL = os.environ.get("DRAFT_TIME", "4:00 PM Pacific")
@@ -183,6 +183,7 @@ def _payload() -> dict:
         "start": POLL_START.isoformat(),
         "end": POLL_END.isoformat(),
         "kickoff": KICKOFF.isoformat(),
+        "kickoff_label": f"{KICKOFF.strftime('%a, %b')} {KICKOFF.day}",
         "people": people,
         "months": months,
         "by_date": by_date,
@@ -231,6 +232,23 @@ def api_availability():
             person["dates"] = dates
             person["updated_at"] = now
         people.sort(key=lambda p: p["name"].casefold())
+        _save(data)
+        return jsonify(_payload())
+
+
+@app.post("/api/remove")
+def api_remove():
+    body = request.get_json(silent=True) or {}
+    try:
+        name = _clean_name(body.get("name"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    with _LOCK:
+        data = _load()
+        data["people"] = [
+            p for p in data["people"] if str(p.get("name", "")).casefold() != name.casefold()
+        ]
         _save(data)
         return jsonify(_payload())
 

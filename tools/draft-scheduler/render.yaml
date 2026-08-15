@@ -19,4 +19,6 @@ services:
       - key: DRAFT_START
         value: "2026-08-15"
       - key: DRAFT_END
-        value: "2026-09-13"
+        value: "2026-09-08"
+      - key: DRAFT_KICKOFF
+        value: "2026-09-09"
