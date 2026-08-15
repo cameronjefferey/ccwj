@@ -163,11 +163,14 @@
     .people { margin-top: 16px; }
     .people h3 { margin: 0 0 10px; font-size: 1.05rem; }
     .row {
-      display: flex; justify-content: space-between; gap: 12px;
-      padding: 8px 0; border-top: 1px solid var(--line); font-size: .95rem;
+      display: flex; justify-content: space-between; gap: 12px; width: 100%;
+      padding: 10px 0; border-top: 1px solid var(--line); font-size: .95rem;
+      background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
+      color: inherit; text-align: left; cursor: pointer;
     }
     .row:first-of-type { border-top: 0; }
     .row span { color: var(--muted); }
+    .row.mine { color: var(--lime); }
 
     .toast {
       position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
@@ -202,7 +205,7 @@
     </form>
     <section id="you" class="card you" hidden>
       <div>Picking as <b id="you-name"></b></div>
-      <button class="ghost" type="button" id="name-change">Change</button>
+      <button class="ghost" type="button" id="name-change">Switch person</button>
     </section>
     <p class="hint" id="status-hint">Enter your name, then tap every night you're free.</p>
 
@@ -217,7 +220,7 @@
 
   <script>
     const storeKey = "draft-night-name";
-    const state = { me: localStorage.getItem(storeKey) || "", previous: "", poll: null, selected: null, saving: false };
+    const state = { me: localStorage.getItem(storeKey) || "", poll: null, selected: null, saving: false, pending: null };
 
     const $ = (id) => document.getElementById(id);
     const toast = (msg) => {
@@ -251,25 +254,46 @@
       render();
     }
 
+    function applyLocalDates(dates) {
+      if (!state.poll || !state.me) return;
+      const people = state.poll.people.map((p) => ({ ...p, dates: [...(p.dates || [])] }));
+      let person = people.find((p) => p.name.toLowerCase() === state.me.toLowerCase());
+      if (!person) {
+        person = { name: state.me, dates: [] };
+        people.push(person);
+      }
+      person.dates = [...dates];
+      const by_date = {};
+      for (const p of people) {
+        for (const iso of p.dates) {
+          (by_date[iso] ||= []).push(p.name);
+        }
+      }
+      state.poll = { ...state.poll, people, by_date, respondent_count: people.length };
+    }
+
     async function saveDates(dates) {
-      if (!state.me || state.saving) return;
+      if (!state.me) return;
+      state.pending = { name: state.me, dates: [...dates] };
+      applyLocalDates(dates);
+      render();
+      if (state.saving) return;
       state.saving = true;
       try {
-        const body = { name: state.me, dates };
-        if (state.previous && state.previous.toLowerCase() !== state.me.toLowerCase()) {
-          body.previous_name = state.previous;
+        while (state.pending) {
+          const next = state.pending;
+          state.pending = null;
+          const res = await fetch("/api/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(next),
+          });
+          const data = await readJson(res);
+          if (!res.ok) throw new Error(data.error || "Could not save");
+          state.poll = data;
+          render();
         }
-        const res = await fetch("/api/poll", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify(body),
-        });
-        const data = await readJson(res);
-        if (!res.ok) throw new Error(data.error || "Could not save");
-        state.poll = data;
-        state.previous = "";
-        render();
         toast("Saved");
       } catch (err) {
         toast(err.message);
@@ -308,7 +332,7 @@
       $("you").hidden = !state.me;
       $("you-name").textContent = state.me;
       $("status-hint").textContent = state.me
-        ? "Tap a date to add or remove yourself. Darker green means more people are free."
+        ? "Tap nights you're free. Switch person to pass the phone — everyone's picks stay."
         : "Enter your name, then tap every night you're free.";
 
       const max = Math.max(0, ...Object.values(poll.by_date).map(n => n.length));
@@ -455,9 +479,17 @@
       const h = document.createElement("h3");
       h.textContent = people.length === 1 ? "1 person in" : `${people.length} people in`;
       el.appendChild(h);
+      const hint = document.createElement("p");
+      hint.className = "empty";
+      hint.textContent = "Tap a name to pick as them.";
+      el.appendChild(hint);
       for (const person of people) {
-        const row = document.createElement("div");
+        const row = document.createElement("button");
+        row.type = "button";
         row.className = "row";
+        if (state.me && person.name.toLowerCase() === state.me.toLowerCase()) {
+          row.classList.add("mine");
+        }
         const left = document.createElement("b");
         left.textContent = person.name;
         const right = document.createElement("span");
@@ -465,6 +497,10 @@
         right.textContent = n ? `${n} night${n === 1 ? "" : "s"}` : "no dates yet";
         row.appendChild(left);
         row.appendChild(right);
+        row.addEventListener("click", () => {
+          setMe(person.name);
+          toast(`Picking as ${person.name}`);
+        });
         el.appendChild(row);
       }
     }
@@ -483,16 +519,16 @@
       await saveDates([...next].sort());
     }
 
-    $("gate").addEventListener("submit", async (e) => {
+    $("gate").addEventListener("submit", (e) => {
       e.preventDefault();
       const name = $("name-input").value.trim();
       if (!name) { $("name-input").focus(); return; }
       setMe(name);
-      await saveDates([...myDates()]);
+      $("name-input").value = "";
     });
     $("name-change").addEventListener("click", () => {
-      $("name-input").value = state.me;
-      state.previous = state.me;
+      $("name-input").value = "";
+      $("name-input").placeholder = "Next person's name";
       setMe("");
       $("name-input").focus();
     });

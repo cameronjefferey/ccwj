@@ -71,21 +71,24 @@ class DraftPollTests(unittest.TestCase):
         # Wednesday Aug 19 and Saturday Aug 22 both have 1 person; Sat wins.
         self.assertEqual(data["best"][0]["date"], "2026-08-22")
 
-    def test_rename_moves_dates(self):
+    def test_two_people_keep_their_dates(self):
         self.client.post(
-            "/api/availability",
-            json={"name": "Jordan", "dates": ["2026-08-30"]},
+            "/api/poll",
+            json={"name": "Cameron", "dates": ["2026-08-22"]},
         )
         res = self.client.post(
-            "/api/availability",
+            "/api/poll",
             json={
-                "name": "Jordan P",
-                "previous_name": "Jordan",
-                "dates": ["2026-08-30"],
+                "name": "Sam",
+                "previous_name": "Cameron",
+                "dates": ["2026-08-29"],
             },
         )
-        people = res.get_json()["people"]
-        self.assertEqual([p["name"] for p in people], ["Jordan P"])
+        people = {p["name"]: p["dates"] for p in res.get_json()["people"]}
+        self.assertEqual(people["Cameron"], ["2026-08-22"])
+        self.assertEqual(people["Sam"], ["2026-08-29"])
+        self.assertEqual(res.get_json()["by_date"]["2026-08-22"], ["Cameron"])
+        self.assertEqual(res.get_json()["by_date"]["2026-08-29"], ["Sam"])
 
     def test_rejects_bad_input(self):
         self.assertEqual(

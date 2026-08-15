@@ -215,18 +215,12 @@ def api_availability():
     try:
         name = _clean_name(body.get("name"))
         dates = _valid_dates(body.get("dates"))
-        previous = body.get("previous_name")
-        previous_name = _clean_name(previous) if previous else None
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
     with _LOCK:
         data = _load()
         people = data["people"]
-        if previous_name and previous_name.casefold() != name.casefold():
-            old = _find_person(people, previous_name)
-            if old is not None:
-                people.remove(old)
         person = _find_person(people, name)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if person is None:
