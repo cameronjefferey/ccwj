@@ -226,6 +226,9 @@ contract_summary as (
 
 -- Open options that appear in stg_current (e.g. Schwab snapshot) but have no
 -- matching rows in trade history yet — otherwise positions_summary stays empty.
+-- The existence check uses the same OSI-core identity as the live join below;
+-- exact-text checking would create a second snapshot-only row whenever history
+-- and holdings differ only in root padding.
 snapshot_only_options as (
     select
         c.tenant_id,
@@ -286,7 +289,24 @@ snapshot_only_options as (
           where x.account = c.account
             and (x.user_id is not distinct from c.user_id)
             and (x.tenant_id is not distinct from c.tenant_id)
-            and x.trade_symbol = c.trade_symbol
+            and (
+                x.trade_symbol = c.trade_symbol
+                or (
+                    regexp_extract(
+                        upper(trim(coalesce(x.trade_symbol, ''))),
+                        r'(\d{6}[CP]\d{8})'
+                    ) is not null
+                    and regexp_extract(
+                        upper(trim(coalesce(x.trade_symbol, ''))),
+                        r'(\d{6}[CP]\d{8})'
+                    ) = regexp_extract(
+                        upper(trim(coalesce(c.trade_symbol, ''))),
+                        r'(\d{6}[CP]\d{8})'
+                    )
+                    and upper(trim(coalesce(x.underlying_symbol, '')))
+                        = upper(trim(coalesce(c.underlying_symbol, '')))
+                )
+            )
       )
 ),
 

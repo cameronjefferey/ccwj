@@ -6,7 +6,8 @@
     ``FN 260814C00120000`` in current holdings. The option lifecycle uses
     snapshot absence to infer closure for contracts opened before today, so
     an exact-text-only join falsely realizes the position and removes it from
-    int_enriched_current. Match the stable OSI core plus underlying instead.
+    int_enriched_current. Match the stable OSI core plus underlying instead,
+    without also emitting a duplicate snapshot-only Open row.
 */
 
 with live_snapshot_matches as (
@@ -20,7 +21,14 @@ with live_snapshot_matches as (
         c.option_expiry,
         c.open_date,
         c.close_type,
-        c.status
+        c.status,
+        count(*) over (
+            partition by
+                cur.tenant_id,
+                cur.account,
+                cur.user_id,
+                cur.trade_symbol
+        ) as matching_contract_rows
     from {{ ref('int_option_contracts') }} c
     join {{ ref('stg_current') }} cur
         on (c.tenant_id is not distinct from cur.tenant_id)
@@ -59,3 +67,4 @@ with live_snapshot_matches as (
 select *
 from live_snapshot_matches
 where status != 'Open'
+   or matching_contract_rows != 1
