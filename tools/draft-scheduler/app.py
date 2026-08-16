@@ -87,6 +87,26 @@ def _find_person(people: list, name: str) -> dict | None:
     return None
 
 
+def _merge_people(existing: list, incoming: list) -> list:
+    merged = {str(p.get("name", "")).casefold(): dict(p) for p in existing if p.get("name")}
+    for raw in incoming:
+        try:
+            name = _clean_name(raw.get("name") if isinstance(raw, dict) else None)
+            dates = _valid_dates((raw or {}).get("dates") if isinstance(raw, dict) else [])
+        except ValueError:
+            continue
+        key = name.casefold()
+        prev = merged.get(key)
+        if prev is None:
+            merged[key] = {"name": name, "dates": dates}
+        else:
+            prev["name"] = name
+            prev["dates"] = sorted(set(prev.get("dates") or []) | set(dates))
+    people = list(merged.values())
+    people.sort(key=lambda p: p["name"].casefold())
+    return people
+
+
 def _valid_dates(raw_dates) -> list[str]:
     if raw_dates is None:
         return []
@@ -249,6 +269,19 @@ def api_remove():
         data["people"] = [
             p for p in data["people"] if str(p.get("name", "")).casefold() != name.casefold()
         ]
+        _save(data)
+        return jsonify(_payload())
+
+
+@app.post("/api/restore")
+def api_restore():
+    body = request.get_json(silent=True) or {}
+    incoming = body.get("people")
+    if not isinstance(incoming, list):
+        return jsonify({"error": "people must be a list"}), 400
+    with _LOCK:
+        data = _load()
+        data["people"] = _merge_people(data["people"], incoming)
         _save(data)
         return jsonify(_payload())
 

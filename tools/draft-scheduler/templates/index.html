@@ -237,6 +237,7 @@
 
   <script>
     const storeKey = "draft-night-name";
+    const snapKey = "draft-night-snapshot";
     const state = { me: localStorage.getItem(storeKey) || "", poll: null, selected: null, saving: false, pending: null };
 
     const $ = (id) => document.getElementById(id);
@@ -265,9 +266,75 @@
       }
     }
 
+    function namesFromUrl() {
+      return (new URLSearchParams(location.search).get("n") || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    function readSnap() {
+      try { return JSON.parse(localStorage.getItem(snapKey) || "null"); }
+      catch { return null; }
+    }
+
+    function remember() {
+      if (!state.poll) return;
+      localStorage.setItem(snapKey, JSON.stringify({ people: state.poll.people || [] }));
+      const names = (state.poll.people || []).map((p) => p.name).join(",");
+      const url = new URL(location.href);
+      if (names) url.searchParams.set("n", names);
+      else url.searchParams.delete("n");
+      history.replaceState(null, "", url);
+    }
+
+    function mergePeople(...lists) {
+      const byName = {};
+      for (const list of lists) {
+        for (const p of list || []) {
+          if (!p || !p.name) continue;
+          const key = p.name.toLowerCase();
+          const prev = byName[key];
+          const dates = [...new Set([...(prev?.dates || []), ...(p.dates || [])])].sort();
+          byName[key] = { name: prev?.name || p.name, dates };
+        }
+      }
+      return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function richer(a, b) {
+      const map = (list) => Object.fromEntries((list || []).map((p) => [p.name.toLowerCase(), new Set(p.dates || [])]));
+      const A = map(a), B = map(b);
+      if (Object.keys(A).length > Object.keys(B).length) return true;
+      for (const [k, dates] of Object.entries(A)) {
+        const other = B[k];
+        if (!other) return true;
+        for (const d of dates) if (!other.has(d)) return true;
+      }
+      return false;
+    }
+
+    async function restore(people) {
+      const res = await fetch("/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ people }),
+      });
+      return readJson(res);
+    }
+
     async function load() {
       const res = await fetch("/api/poll", { cache: "no-store" });
-      state.poll = await readJson(res);
+      let poll = await readJson(res);
+      const urlPeople = namesFromUrl().map((name) => ({ name, dates: [] }));
+      const snap = readSnap();
+      const merged = mergePeople(poll.people, snap?.people, urlPeople);
+      if (richer(merged, poll.people) || (urlPeople.length && merged.length !== (poll.people || []).length)) {
+        poll = await restore(merged);
+      }
+      state.poll = poll;
+      remember();
       render();
     }
 
@@ -301,6 +368,12 @@
         const data = await readJson(res);
         if (!res.ok) throw new Error(data.error || "Could not remove");
         state.poll = data;
+        const snap = readSnap();
+        if (snap?.people) {
+          snap.people = snap.people.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
+          localStorage.setItem(snapKey, JSON.stringify(snap));
+        }
+        remember();
         if (state.me && state.me.toLowerCase() === name.toLowerCase()) setMe("");
         else render();
         toast(`Removed ${name}`);
@@ -329,6 +402,7 @@
           const data = await readJson(res);
           if (!res.ok) throw new Error(data.error || "Could not save");
           state.poll = data;
+          remember();
           render();
         }
         toast("Saved");
@@ -595,6 +669,7 @@
         if (!res.ok) throw new Error(data.error || "Could not add");
         state.poll = data;
         $("name-input").value = "";
+        remember();
         render();
         toast(`Added ${name} — they tap their name to start`);
       } catch (err) {

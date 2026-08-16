@@ -91,6 +91,21 @@ class DraftPollTests(unittest.TestCase):
             400,
         )
 
+    def test_restore_merges_without_wiping(self):
+        self.client.post("/api/poll", json={"name": "Cameron", "dates": ["2026-08-22"]})
+        res = self.client.post(
+            "/api/restore",
+            json={
+                "people": [
+                    {"name": "Cameron", "dates": ["2026-08-29"]},
+                    {"name": "Sam", "dates": ["2026-08-30"]},
+                ]
+            },
+        )
+        people = {p["name"]: p["dates"] for p in res.get_json()["people"]}
+        self.assertEqual(people["Cameron"], ["2026-08-22", "2026-08-29"])
+        self.assertEqual(people["Sam"], ["2026-08-30"])
+
     def test_remove_person(self):
         self.client.post("/api/poll", json={"name": "Cameron", "dates": ["2026-08-22"]})
         self.client.post("/api/poll", json={"name": "Sam", "dates": ["2026-08-29"]})
