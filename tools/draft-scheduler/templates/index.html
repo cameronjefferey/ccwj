@@ -216,7 +216,7 @@
       <h2>Who's drafting</h2>
       <p class="how" id="roster-how">Tap your name to start.</p>
       <div id="people" class="roster-list"></div>
-      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add every name, then send this link. Friends tap their name.</p>
+      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add every name, then Copy link. That link keeps names and the nights people tap.</p>
       <p class="add-label">Add someone to the list</p>
       <form id="gate" class="name-card" action="/api/poll" method="post">
         <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
@@ -266,11 +266,40 @@
       }
     }
 
-    function namesFromUrl() {
-      return (new URLSearchParams(location.search).get("n") || "")
+    function compactDate(iso) {
+      return String(iso || "").replace(/-/g, "");
+    }
+
+    function expandDate(raw) {
+      const d = String(raw || "");
+      if (/^\d{8}$/.test(d)) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+      return d;
+    }
+
+    function encodePeople(people) {
+      return (people || []).map((p) => {
+        const dates = (p.dates || []).map(compactDate).filter(Boolean).join(".");
+        return encodeURIComponent(p.name) + (dates ? `~${dates}` : "");
+      }).join(",");
+    }
+
+    function peopleFromUrl() {
+      const q = new URLSearchParams(location.search);
+      const packed = q.get("p");
+      if (packed) {
+        return packed.split(",").map((part) => {
+          const [nameRaw, datesRaw] = part.split("~");
+          let name = nameRaw || "";
+          try { name = decodeURIComponent(name); } catch {}
+          const dates = (datesRaw || "").split(".").filter(Boolean).map(expandDate);
+          return { name: name.trim(), dates };
+        }).filter((p) => p.name);
+      }
+      return (q.get("n") || "")
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((name) => ({ name, dates: [] }));
     }
 
     function readSnap() {
@@ -281,10 +310,11 @@
     function remember() {
       if (!state.poll) return;
       localStorage.setItem(snapKey, JSON.stringify({ people: state.poll.people || [] }));
-      const names = (state.poll.people || []).map((p) => p.name).join(",");
+      const packed = encodePeople(state.poll.people || []);
       const url = new URL(location.href);
-      if (names) url.searchParams.set("n", names);
-      else url.searchParams.delete("n");
+      if (packed) url.searchParams.set("p", packed);
+      else url.searchParams.delete("p");
+      url.searchParams.delete("n");
       history.replaceState(null, "", url);
     }
 
@@ -327,10 +357,10 @@
     async function load() {
       const res = await fetch("/api/poll", { cache: "no-store" });
       let poll = await readJson(res);
-      const urlPeople = namesFromUrl().map((name) => ({ name, dates: [] }));
+      const urlPeople = peopleFromUrl();
       const snap = readSnap();
       const merged = mergePeople(poll.people, snap?.people, urlPeople);
-      if (richer(merged, poll.people) || (urlPeople.length && merged.length !== (poll.people || []).length)) {
+      if (richer(merged, poll.people)) {
         poll = await restore(merged);
       }
       state.poll = poll;
@@ -678,14 +708,28 @@
     });
     $("copy-link").addEventListener("click", async () => {
       try {
+        remember();
         await navigator.clipboard.writeText(location.href);
-        toast("Link copied");
+        toast("Link copied — includes names and nights");
       } catch {
         toast(location.href);
       }
     });
 
     load();
+    setInterval(async () => {
+      if (state.saving || document.hidden) return;
+      try {
+        const res = await fetch("/api/poll", { cache: "no-store" });
+        const poll = await readJson(res);
+        const merged = mergePeople(poll.people, state.poll?.people, readSnap()?.people, peopleFromUrl());
+        if (richer(merged, state.poll?.people) || richer(poll.people, state.poll?.people)) {
+          state.poll = richer(merged, poll.people) ? await restore(merged) : poll;
+          remember();
+          render();
+        }
+      } catch {}
+    }, 20000);
   </script>
 </body>
 </html>

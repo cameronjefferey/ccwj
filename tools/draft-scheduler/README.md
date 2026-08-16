@@ -26,8 +26,9 @@ That prints a `https://….trycloudflare.com` URL. Paste that in the chat.
 ## Deploy for the week (Render free)
 
 This is a **separate** web service from HappyTrader. Free instances sleep after
-15 minutes idle (first open can take ~30–50s) and wipe the vote file on
-redeploy — fine for a one-week poll.
+15 minutes idle (first open can take ~30–50s) and wipe the server file. The
+share link carries the name list (`?n=…`) and each browser keeps a snapshot,
+so people do not have to fill it out in one sitting.
 
 ```text
 Root directory: tools/draft-scheduler

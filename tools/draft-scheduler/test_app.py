@@ -34,6 +34,7 @@ class DraftPollTests(unittest.TestCase):
         self.assertIn(b"Draft Night", res.data)
         self.assertIn(b"4:00 PM Pacific", res.data)
         self.assertIn(b"Tap your name to start.", res.data)
+        self.assertIn(b"includes names and nights", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_save_and_toggle_dates(self):
