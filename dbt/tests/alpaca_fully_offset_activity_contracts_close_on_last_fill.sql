@@ -13,6 +13,7 @@ with activity_contracts as (
         account,
         user_id,
         trade_symbol,
+        max(underlying_symbol) as underlying_symbol,
         max(trade_date) as expected_close_date,
         sum(amount) as expected_total_pnl
     from {{ ref('stg_history') }}
@@ -59,7 +60,24 @@ expected_closed as (
           and (c.tenant_id is not distinct from a.tenant_id)
           and c.account = a.account
           and (c.user_id is not distinct from a.user_id)
-          and c.trade_symbol = a.trade_symbol
+          and (
+              c.trade_symbol = a.trade_symbol
+              or (
+                  regexp_extract(
+                      upper(trim(coalesce(a.trade_symbol, ''))),
+                      r'(\d{6}[CP]\d{8})'
+                  ) is not null
+                  and regexp_extract(
+                      upper(trim(coalesce(a.trade_symbol, ''))),
+                      r'(\d{6}[CP]\d{8})'
+                  ) = regexp_extract(
+                      upper(trim(coalesce(c.trade_symbol, ''))),
+                      r'(\d{6}[CP]\d{8})'
+                  )
+                  and upper(trim(coalesce(a.underlying_symbol, '')))
+                      = upper(trim(coalesce(c.underlying_symbol, '')))
+              )
+          )
     )
 )
 
