@@ -216,7 +216,7 @@
       <h2>Who's drafting</h2>
       <p class="how" id="roster-how">Tap your name to start.</p>
       <div id="people" class="roster-list"></div>
-      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add every name, then Copy link. That link keeps names and the nights people tap.</p>
+      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add the names, then send this page — nights stay saved here.</p>
       <p class="add-label">Add someone to the list</p>
       <form id="gate" class="name-card" action="/api/poll" method="post">
         <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
@@ -237,7 +237,6 @@
 
   <script>
     const storeKey = "draft-night-name";
-    const snapKey = "draft-night-snapshot";
     const state = { me: localStorage.getItem(storeKey) || "", poll: null, selected: null, saving: false, pending: null };
 
     const $ = (id) => document.getElementById(id);
@@ -266,105 +265,9 @@
       }
     }
 
-    function compactDate(iso) {
-      return String(iso || "").replace(/-/g, "");
-    }
-
-    function expandDate(raw) {
-      const d = String(raw || "");
-      if (/^\d{8}$/.test(d)) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
-      return d;
-    }
-
-    function encodePeople(people) {
-      return (people || []).map((p) => {
-        const dates = (p.dates || []).map(compactDate).filter(Boolean).join(".");
-        return encodeURIComponent(p.name) + (dates ? `~${dates}` : "");
-      }).join(",");
-    }
-
-    function peopleFromUrl() {
-      const q = new URLSearchParams(location.search);
-      const packed = q.get("p");
-      if (packed) {
-        return packed.split(",").map((part) => {
-          const [nameRaw, datesRaw] = part.split("~");
-          let name = nameRaw || "";
-          try { name = decodeURIComponent(name); } catch {}
-          const dates = (datesRaw || "").split(".").filter(Boolean).map(expandDate);
-          return { name: name.trim(), dates };
-        }).filter((p) => p.name);
-      }
-      return (q.get("n") || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((name) => ({ name, dates: [] }));
-    }
-
-    function readSnap() {
-      try { return JSON.parse(localStorage.getItem(snapKey) || "null"); }
-      catch { return null; }
-    }
-
-    function remember() {
-      if (!state.poll) return;
-      localStorage.setItem(snapKey, JSON.stringify({ people: state.poll.people || [] }));
-      const packed = encodePeople(state.poll.people || []);
-      const url = new URL(location.href);
-      if (packed) url.searchParams.set("p", packed);
-      else url.searchParams.delete("p");
-      url.searchParams.delete("n");
-      history.replaceState(null, "", url);
-    }
-
-    function mergePeople(...lists) {
-      const byName = {};
-      for (const list of lists) {
-        for (const p of list || []) {
-          if (!p || !p.name) continue;
-          const key = p.name.toLowerCase();
-          const prev = byName[key];
-          const dates = [...new Set([...(prev?.dates || []), ...(p.dates || [])])].sort();
-          byName[key] = { name: prev?.name || p.name, dates };
-        }
-      }
-      return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    function richer(a, b) {
-      const map = (list) => Object.fromEntries((list || []).map((p) => [p.name.toLowerCase(), new Set(p.dates || [])]));
-      const A = map(a), B = map(b);
-      if (Object.keys(A).length > Object.keys(B).length) return true;
-      for (const [k, dates] of Object.entries(A)) {
-        const other = B[k];
-        if (!other) return true;
-        for (const d of dates) if (!other.has(d)) return true;
-      }
-      return false;
-    }
-
-    async function restore(people) {
-      const res = await fetch("/api/restore", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ people }),
-      });
-      return readJson(res);
-    }
-
     async function load() {
       const res = await fetch("/api/poll", { cache: "no-store" });
-      let poll = await readJson(res);
-      const urlPeople = peopleFromUrl();
-      const snap = readSnap();
-      const merged = mergePeople(poll.people, snap?.people, urlPeople);
-      if (richer(merged, poll.people)) {
-        poll = await restore(merged);
-      }
-      state.poll = poll;
-      remember();
+      state.poll = await readJson(res);
       render();
     }
 
@@ -398,12 +301,6 @@
         const data = await readJson(res);
         if (!res.ok) throw new Error(data.error || "Could not remove");
         state.poll = data;
-        const snap = readSnap();
-        if (snap?.people) {
-          snap.people = snap.people.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
-          localStorage.setItem(snapKey, JSON.stringify(snap));
-        }
-        remember();
         if (state.me && state.me.toLowerCase() === name.toLowerCase()) setMe("");
         else render();
         toast(`Removed ${name}`);
@@ -432,7 +329,6 @@
           const data = await readJson(res);
           if (!res.ok) throw new Error(data.error || "Could not save");
           state.poll = data;
-          remember();
           render();
         }
         toast("Saved");
@@ -699,7 +595,6 @@
         if (!res.ok) throw new Error(data.error || "Could not add");
         state.poll = data;
         $("name-input").value = "";
-        remember();
         render();
         toast(`Added ${name} — they tap their name to start`);
       } catch (err) {
@@ -707,12 +602,12 @@
       }
     });
     $("copy-link").addEventListener("click", async () => {
+      const url = location.origin + "/";
       try {
-        remember();
-        await navigator.clipboard.writeText(location.href);
-        toast("Link copied — includes names and nights");
+        await navigator.clipboard.writeText(url);
+        toast("Link copied");
       } catch {
-        toast(location.href);
+        toast(url);
       }
     });
 
@@ -722,12 +617,11 @@
       try {
         const res = await fetch("/api/poll", { cache: "no-store" });
         const poll = await readJson(res);
-        const merged = mergePeople(poll.people, state.poll?.people, readSnap()?.people, peopleFromUrl());
-        if (richer(merged, state.poll?.people) || richer(poll.people, state.poll?.people)) {
-          state.poll = richer(merged, poll.people) ? await restore(merged) : poll;
-          remember();
-          render();
-        }
+        const before = JSON.stringify(state.poll?.people || []);
+        const after = JSON.stringify(poll.people || []);
+        if (before === after) return;
+        state.poll = poll;
+        render();
       } catch {}
     }, 20000);
   </script>

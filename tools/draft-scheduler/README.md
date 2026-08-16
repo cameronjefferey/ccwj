@@ -1,10 +1,26 @@
 # Draft Night
 
-A one-page calendar poll for picking a fantasy football draft. Every slot is **4:00 PM Pacific** (7:00 PM Eastern). Friends open the link, type their name, and tap the nights they can make it. The page ranks the best dates as people respond.
+A one-page calendar poll for picking a fantasy football draft. Every slot is **4:00 PM Pacific** (7:00 PM Eastern). Friends open **one URL**, tap their name, and tap the nights they can make it. The server remembers.
 
 This is a standalone app. It is not part of HappyTrader and is not served from the main site.
 
-## Run it tonight (fastest)
+**Live:** https://draft-night-live.onrender.com
+
+## How it works for the group
+
+1. Open the link.
+2. Add names (host) or tap your name.
+3. Tap every night you can do 4:00 PM Pacific.
+
+That's it. No second link, no order, no packing dates into the URL.
+
+## Why it's on a paid Render instance
+
+Free web services sleep after ~15 minutes and wipe the local file on recycle. Paid **Starter** (~$7/mo) stays awake. A **1GB disk** at `/var/data` is what actually keeps `poll.json` across deploys and restarts. You do not need a database; 30 days of names and nights is a tiny JSON file.
+
+Delete the `draft-night-live` service after the draft to stop billing. The older free service `draft-night` (`draft-night-grvg.onrender.com`) can be deleted too — do not share that one.
+
+## Run it locally
 
 From this folder:
 
@@ -15,26 +31,17 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open http://127.0.0.1:5050. To send a link to the group chat, put a public URL in front of it — Cloudflare Quick Tunnel needs no account:
+Open http://127.0.0.1:5050.
 
-```bash
-npx --yes cloudflared tunnel --url http://127.0.0.1:5050
-```
-
-That prints a `https://….trycloudflare.com` URL. Paste that in the chat.
-
-## Deploy for the week (Render free)
-
-This is a **separate** web service from HappyTrader. Free instances sleep after
-15 minutes idle (first open can take ~30–50s) and wipe the server file. The
-share link carries the name list (`?n=…`) and each browser keeps a snapshot,
-so people do not have to fill it out in one sitting.
+## Deploy
 
 ```text
 Root directory: tools/draft-scheduler
 Build:          pip install -r requirements.txt
 Start:          gunicorn -b 0.0.0.0:$PORT app:app
-Instance:       Free
+Instance:       Starter
+Disk:           1GB at /var/data
+POLL_PATH:      /var/data/poll.json
 ```
 
 Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
@@ -58,7 +65,7 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 | `DRAFT_TIME_NOTE` | `7:00 PM Eastern · 6:00 PM Central · 5:00 PM Mountain` |
 | `DRAFT_START` / `DRAFT_END` | `2026-08-15` / `2026-09-08` |
 | `DRAFT_KICKOFF` | `2026-09-09` |
-| `POLL_PATH` | `./poll.json` |
+| `POLL_PATH` | `./poll.json` locally; `/var/data/poll.json` on Render |
 | `PORT` | `5050` locally, Render sets this |
 
 ## Tests

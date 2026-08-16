@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the free Render web service for Draft Night.
+"""Create the paid Render web service for Draft Night (Starter + disk).
 
 Needs RENDER_API_KEY (Account Settings → API Keys).
 Optional: RENDER_OWNER_ID if the account has more than one workspace.
@@ -16,7 +16,7 @@ import urllib.request
 API = "https://api.render.com/v1"
 REPO = os.environ.get("DRAFT_RENDER_REPO", "https://github.com/cameronjefferey/ccwj")
 BRANCH = os.environ.get("DRAFT_RENDER_BRANCH", "cursor/draft-scheduler-c770")
-NAME = os.environ.get("DRAFT_RENDER_NAME", "draft-night")
+NAME = os.environ.get("DRAFT_RENDER_NAME", "draft-night-live")
 
 
 def _req(method: str, path: str, token: str, body: dict | None = None):
@@ -77,10 +77,11 @@ def main() -> int:
             {"key": "DRAFT_END", "value": "2026-09-08"},
             {"key": "DRAFT_KICKOFF", "value": "2026-09-09"},
             {"key": "PYTHON_VERSION", "value": "3.12.8"},
+            {"key": "POLL_PATH", "value": "/var/data/poll.json"},
         ],
         "serviceDetails": {
             "runtime": "python",
-            "plan": "free",
+            "plan": "starter",
             "region": "oregon",
             "healthCheckPath": "/",
             "envSpecificDetails": {
@@ -93,12 +94,30 @@ def main() -> int:
     service = (created or {}).get("service") or created or {}
     details = service.get("serviceDetails") or {}
     url = details.get("url") or service.get("dashboardUrl")
+    service_id = service.get("id")
+    disk = None
+    if service_id:
+        try:
+            _, disk = _req(
+                "POST",
+                "/disks",
+                token,
+                {
+                    "name": "draft-night-data",
+                    "sizeGB": 1,
+                    "mountPath": "/var/data",
+                    "serviceId": service_id,
+                },
+            )
+        except SystemExit as exc:
+            disk = {"error": str(exc)}
     print(json.dumps({
         "http": status,
-        "id": service.get("id"),
+        "id": service_id,
         "name": service.get("name"),
         "url": url,
         "dashboardUrl": service.get("dashboardUrl"),
+        "disk": disk,
     }, indent=2))
     return 0
 

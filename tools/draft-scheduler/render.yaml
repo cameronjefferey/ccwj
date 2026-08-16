@@ -1,16 +1,19 @@
 # Standalone service — do not merge this into app/render.yaml.
-# In the Render dashboard: New → Web Service → this repo,
-# root directory `tools/draft-scheduler`.
+# Paid Starter + a 1GB disk so one URL remembers picks (no sleep, no URL packing).
 services:
   - type: web
-    name: draft-night
+    name: draft-night-live
     runtime: python
-    plan: free
+    plan: starter
     region: oregon
     rootDir: tools/draft-scheduler
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -b 0.0.0.0:$PORT app:app
     healthCheckPath: /
+    disk:
+      name: draft-night-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: DRAFT_TITLE
         value: Draft Night
@@ -22,3 +25,5 @@ services:
         value: "2026-09-08"
       - key: DRAFT_KICKOFF
         value: "2026-09-09"
+      - key: POLL_PATH
+        value: /var/data/poll.json

@@ -34,8 +34,21 @@ class DraftPollTests(unittest.TestCase):
         self.assertIn(b"Draft Night", res.data)
         self.assertIn(b"4:00 PM Pacific", res.data)
         self.assertIn(b"Tap your name to start.", res.data)
-        self.assertIn(b"includes names and nights", res.data)
+        self.assertNotIn(b"includes names and nights", res.data)
+        self.assertIn(b"nights stay saved here", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
+
+    def test_canonical_url_redirects(self):
+        import app as draft_app
+
+        old = draft_app.CANONICAL_URL
+        draft_app.CANONICAL_URL = "https://draft-night-live.onrender.com"
+        try:
+            res = self.client.get("/")
+            self.assertEqual(res.status_code, 302)
+            self.assertEqual(res.headers.get("Location"), "https://draft-night-live.onrender.com")
+        finally:
+            draft_app.CANONICAL_URL = old
 
     def test_save_and_toggle_dates(self):
         slash = self.client.post(

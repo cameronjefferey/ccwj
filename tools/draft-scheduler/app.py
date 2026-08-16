@@ -10,7 +10,7 @@ import threading
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request
 
 POLL_START = date.fromisoformat(os.environ.get("DRAFT_START", "2026-08-15"))
 POLL_END = date.fromisoformat(os.environ.get("DRAFT_END", "2026-09-08"))
@@ -21,6 +21,8 @@ TIME_LABEL = os.environ.get("DRAFT_TIME", "4:00 PM Pacific")
 TIME_NOTE = os.environ.get(
     "DRAFT_TIME_NOTE", "7:00 PM Eastern · 6:00 PM Central · 5:00 PM Mountain"
 )
+# Point the old free service at the paid always-on URL.
+CANONICAL_URL = os.environ.get("DRAFT_CANONICAL_URL", "").rstrip("/")
 
 _LOCK = threading.Lock()
 _NAME_RE = re.compile(r"[^\w\s.'\-]", re.UNICODE)
@@ -30,6 +32,7 @@ app.url_map.strict_slashes = False
 
 
 def _poll_path() -> Path:
+    # On Render: POLL_PATH=/var/data/poll.json (persistent disk). Local default is a file next to this app.
     return Path(os.environ.get("POLL_PATH", Path(__file__).parent / "poll.json"))
 
 
@@ -220,6 +223,8 @@ def _noindex(resp):
 
 @app.get("/")
 def index():
+    if CANONICAL_URL:
+        return redirect(CANONICAL_URL, code=302)
     return render_template("index.html", title=TITLE, time_label=TIME_LABEL)
 
 
