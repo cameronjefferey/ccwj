@@ -205,7 +205,7 @@ What's working (May 2026 rebuild):
  NULL and the section will not appear in dev — that is expected, not a bug;
  it renders in prod once a real post-close sync lands and today's close is
  published.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), projected ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page.
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), projected ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
