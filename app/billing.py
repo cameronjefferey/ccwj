@@ -45,7 +45,7 @@ from flask import flash, jsonify, redirect, request, url_for
 from flask_login import current_user, login_required
 
 from app import app
-from app.db import execute, fetch_one
+from app.db import execute, execute_returning, fetch_one
 from app.extensions import csrf, limiter
 from app.plan import PLAN_ACTIVE, PLAN_TRIAL, TRIAL_DAYS
 
@@ -213,7 +213,7 @@ def activate_subscription(
     # NOTE: app.db.execute coerces params to a tuple, so these must be
     # POSITIONAL placeholders — named (%(name)s) params silently fail.
     try:
-        execute(
+        updated = execute_returning(
             """
             UPDATE users
                SET plan_before_subscription = CASE
@@ -236,6 +236,7 @@ def activate_subscription(
                    OR COALESCE(subscription_status, '') NOT IN
                       ('active', 'trialing', 'past_due', 'incomplete')
                )
+            RETURNING id
             """,
             (
                 PLAN_ACTIVE,
@@ -252,6 +253,13 @@ def activate_subscription(
                 str(subscription_id) if subscription_id else None,
             ),
         )
+        if not updated:
+            _log.error(
+                "Stripe: activation skipped for user_id=%s subscription_id=%s",
+                user_id,
+                subscription_id,
+            )
+            return False
         _log.info("Stripe: user_id=%s activated (status=%s)", user_id, status)
         return True
     except Exception as exc:

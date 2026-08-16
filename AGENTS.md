@@ -85,8 +85,11 @@ in a fresh trial and not straight to disconnected — a grandfathered beta
 user returns to `beta` via `plan_before_subscription`; (3) **webhook
 signature verification is mandatory and deliveries are idempotent** via the
 `stripe_events` table, a handler failure returns 500 WITHOUT recording so
-Stripe retries, and an event whose customer can't be matched to a user is
-acked but logged at ERROR (an unlinked subscription needs a human); (4) **the
+Stripe retries. A guarded activation that updates zero rows is also a failure,
+not success: otherwise a second paid subscription is acknowledged while the
+old subscription id remains mirrored. An event whose customer can't be
+matched to a user is acked but logged at ERROR (an unlinked subscription needs
+a human); (4) **the
 live Stripe account is SHARED with sibling products (EarningsFollower, Job
 Glow) and Stripe gives every endpoint the ACCOUNT's whole event stream**, so
 every plan write is gated on `subscription_is_ours(sub)` — a price-id match
