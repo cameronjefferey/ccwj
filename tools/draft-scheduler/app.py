@@ -261,23 +261,6 @@ def api_availability():
         return jsonify(_payload())
 
 
-@app.post("/api/remove")
-def api_remove():
-    body = request.get_json(silent=True) or {}
-    try:
-        name = _clean_name(body.get("name"))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    with _LOCK:
-        data = _load()
-        data["people"] = [
-            p for p in data["people"] if str(p.get("name", "")).casefold() != name.casefold()
-        ]
-        _save(data)
-        return jsonify(_payload())
-
-
 @app.post("/api/restore")
 def api_restore():
     body = request.get_json(silent=True) or {}

@@ -169,20 +169,14 @@
     }
     .roster .empty { margin: 0 0 12px; }
     .roster-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-    .row-wrap { display: flex; align-items: center; gap: 8px; }
     .row {
       display: flex; justify-content: space-between; align-items: center; gap: 12px;
-      flex: 1; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+      width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
       background: var(--bg-2); color: inherit; text-align: left; cursor: pointer;
       font-size: 1.05rem;
     }
     .row span { color: var(--muted); font-size: .88rem; }
     .row.mine { border-color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime); }
-    .remove {
-      background: transparent; color: var(--rose); border: 1px solid var(--line);
-      border-radius: 999px; padding: 8px 10px; cursor: pointer; font-size: .8rem;
-      font-weight: 600;
-    }
     .add-label { display: block; font-size: .82rem; color: var(--muted); margin: 0 0 8px; }
 
     .toast {
@@ -287,26 +281,6 @@
         }
       }
       state.poll = { ...state.poll, people, by_date, respondent_count: people.length };
-    }
-
-    async function removePerson(name) {
-      if (!confirm(`Remove ${name} and their dates?`)) return;
-      try {
-        const res = await fetch("/api/remove", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({ name }),
-        });
-        const data = await readJson(res);
-        if (!res.ok) throw new Error(data.error || "Could not remove");
-        state.poll = data;
-        if (state.me && state.me.toLowerCase() === name.toLowerCase()) setMe("");
-        else render();
-        toast(`Removed ${name}`);
-      } catch (err) {
-        toast(err.message);
-      }
     }
 
     async function saveDates(dates) {
@@ -525,8 +499,6 @@
       el.innerHTML = "";
       empty.hidden = people.length > 0;
       for (const person of people) {
-        const wrap = document.createElement("div");
-        wrap.className = "row-wrap";
         const row = document.createElement("button");
         row.type = "button";
         row.className = "row";
@@ -544,17 +516,7 @@
           setMe(person.name);
           toast(`You're in as ${person.name} — tap your nights`);
         });
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "remove";
-        del.textContent = "Remove";
-        del.addEventListener("click", (e) => {
-          e.stopPropagation();
-          removePerson(person.name);
-        });
-        wrap.appendChild(row);
-        wrap.appendChild(del);
-        el.appendChild(wrap);
+        el.appendChild(row);
       }
     }
 

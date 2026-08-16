@@ -36,6 +36,7 @@ class DraftPollTests(unittest.TestCase):
         self.assertIn(b"Tap your name to start.", res.data)
         self.assertNotIn(b"includes names and nights", res.data)
         self.assertIn(b"nights stay saved here", res.data)
+        self.assertNotIn(b">Remove<", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_canonical_url_redirects(self):
@@ -119,13 +120,6 @@ class DraftPollTests(unittest.TestCase):
         people = {p["name"]: p["dates"] for p in res.get_json()["people"]}
         self.assertEqual(people["Cameron"], ["2026-08-22", "2026-08-29"])
         self.assertEqual(people["Sam"], ["2026-08-30"])
-
-    def test_remove_person(self):
-        self.client.post("/api/poll", json={"name": "Cameron", "dates": ["2026-08-22"]})
-        self.client.post("/api/poll", json={"name": "Sam", "dates": ["2026-08-29"]})
-        res = self.client.post("/api/remove", json={"name": "sam"})
-        people = res.get_json()["people"]
-        self.assertEqual([p["name"] for p in people], ["Cameron"])
 
     def test_two_people_keep_their_dates(self):
         self.client.post(

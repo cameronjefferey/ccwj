@@ -53,7 +53,6 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 - Green heat = more people free that night
 - Lime outline = nights you picked
 - **Game** on Wed Sep 9 (first game) — not pickable
-- Remove a name from the people list
 - A “best so far” pick at the top, weekends winning ties
 
 ## Optional env
