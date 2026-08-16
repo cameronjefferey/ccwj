@@ -40,6 +40,11 @@ def stripe_config(monkeypatch):
 def captured_sql(monkeypatch):
     calls = []
     monkeypatch.setattr(billing, "execute", lambda sql, params=None: calls.append((sql, params)))
+    monkeypatch.setattr(
+        billing,
+        "execute_returning",
+        lambda sql, params=None: calls.append((sql, params)) or {"id": 5},
+    )
     return calls
 
 
@@ -287,7 +292,16 @@ def test_activation_does_not_replace_another_paying_subscription(captured_sql):
     sql, params = captured_sql[0]
     assert "stripe_subscription_id IS NULL" in sql
     assert "COALESCE(subscription_status, '') NOT IN" in sql
+    assert "RETURNING id" in sql
     assert params[-2:] == ("sub_new", "sub_new")
+
+
+def test_guarded_activation_noop_stays_retryable(monkeypatch):
+    """A conflicting subscription must not be acknowledged as activated."""
+    monkeypatch.setattr(billing, "execute_returning", lambda *a, **k: None)
+    assert billing.activate_subscription(
+        5, subscription_id="sub_new", status="active"
+    ) is False
 
 
 def test_churn_lands_in_frozen_grace_not_a_fresh_trial(captured_sql):
