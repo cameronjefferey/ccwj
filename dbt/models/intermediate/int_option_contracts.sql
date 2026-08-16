@@ -382,6 +382,12 @@ otm_at_expiry as (
 -- Join the live snapshot + OTM-at-expiry inference once, then derive the
 -- status / P&L flags in a single place so the partial-close logic stays
 -- readable (this used to be one giant final SELECT).
+--
+-- Contract symbols are joined by their OSI core as well as exact text.
+-- SnapTrade can vary the root padding between history and holdings
+-- (``FN    260814C00120000`` vs ``FN 260814C00120000``). Treating that
+-- formatting difference as "missing from the live snapshot" falsely
+-- realizes every such unexpired contract opened before today.
 joined as (
     select
         c.*,
@@ -399,7 +405,24 @@ joined as (
         on c.account = cur.account
         and (c.user_id is not distinct from cur.user_id)
         and (c.tenant_id is not distinct from cur.tenant_id)
-        and c.trade_symbol = cur.trade_symbol
+        and (
+            c.trade_symbol = cur.trade_symbol
+            or (
+                regexp_extract(
+                    upper(trim(coalesce(c.trade_symbol, ''))),
+                    r'(\d{6}[CP]\d{8})'
+                ) is not null
+                and regexp_extract(
+                    upper(trim(coalesce(c.trade_symbol, ''))),
+                    r'(\d{6}[CP]\d{8})'
+                ) = regexp_extract(
+                    upper(trim(coalesce(cur.trade_symbol, ''))),
+                    r'(\d{6}[CP]\d{8})'
+                )
+                and upper(trim(coalesce(c.underlying_symbol, '')))
+                    = upper(trim(coalesce(cur.underlying_symbol, '')))
+            )
+        )
         and cur.instrument_type in ('Call', 'Put')
 ),
 
