@@ -3253,7 +3253,13 @@ def weekly_review():
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
-        trades_as_of = _trades_as_of_date(today, market_session)
+        # Option expiries and U.S. session facts are dated in New York, not
+        # in the viewer's profile timezone. A Tokyo user is already on
+        # Saturday during Friday's U.S. session; using ``today`` would hide
+        # every still-live Friday expiry before the closing bell.
+        market_today = _date_in_user_tz("America/New_York")
+        trades_as_of = _trades_as_of_date(
+            today, market_session, et_today=market_today)
         context["review_date"] = trades_as_of
         context["review_is_today"] = trades_as_of == today
 
@@ -3320,7 +3326,8 @@ def weekly_review():
             or _frame_as_of_date(batch.get("today_options_moves"))
         )
         snap_cutoff = _snapshot_as_of_date(
-            today, market_session, close_as_of=close_as_of)
+            today, market_session, close_as_of=close_as_of,
+            et_today=market_today)
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -3508,7 +3515,7 @@ def weekly_review():
                 # aggregation so a stale Schwab snapshot can't keep FN
                 # (or any expired contract) on the strip or watch list.
                 all_pos_df = _drop_stale_option_rows(
-                    all_pos_df, today,
+                    all_pos_df, market_today,
                     open_contracts_df=batch.get("open_options"),
                 )
                 for col in ["market_value", "cost_basis", "unrealized_pnl", "unrealized_pnl_pct",
@@ -3552,8 +3559,9 @@ def weekly_review():
                     # 14 day window for the daily review's "expiring soon" — a
                     # weekly review's 7d hides the next-Mon expirations from a
                     # trader checking on a Wednesday.
-                    expiry_cutoff = pd.Timestamp(today + timedelta(days=14))
-                    today_ts = pd.Timestamp(today)
+                    expiry_cutoff = pd.Timestamp(
+                        market_today + timedelta(days=14))
+                    today_ts = pd.Timestamp(market_today)
                     expiring = opts[opts["option_expiry"].notna()
                                     & (opts["option_expiry"] >= today_ts)
                                     & (opts["option_expiry"] <= expiry_cutoff)]
@@ -3565,7 +3573,10 @@ def weekly_review():
                         stock_price = float(eq_prices.get(sym, 0)) or float(row.get("latest_stock_price") or 0)
                         expiry = row.get("option_expiry")
                         expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else str(expiry)[:10]
-                        days_to_exp = (expiry.date() - today).days if hasattr(expiry, "date") else None
+                        days_to_exp = (
+                            (expiry.date() - market_today).days
+                            if hasattr(expiry, "date") else None
+                        )
 
                         itm, distance = _classify_expiring_moneyness(
                             instrument_type=row.get("instrument_type"),
@@ -3685,13 +3696,15 @@ def weekly_review():
         try:
             ev_df = batch.get("exit_verdicts", pd.DataFrame())
             context["exit_verdicts_landed"] = _verdicts_landed(
-                ev_df, today - timedelta(days=6), today)
-            context["exit_verdicts_pending"] = _verdicts_pending(ev_df, today)
+                ev_df, market_today - timedelta(days=6), market_today)
+            context["exit_verdicts_pending"] = _verdicts_pending(
+                ev_df, market_today)
         except Exception as e:
             app.logger.warning("Execution verdicts processing failed: %s", e)
         try:
             oo_df = batch.get("open_options", pd.DataFrame())
-            context["open_option_record"] = _open_option_record(oo_df, today)
+            context["open_option_record"] = _open_option_record(
+                oo_df, market_today)
         except Exception as e:
             app.logger.warning("Open option record processing failed: %s", e)
 

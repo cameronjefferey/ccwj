@@ -1170,6 +1170,15 @@ class TestDropStaleOptionRows:
         out = _drop_stale_option_rows(df, self.today)
         assert len(out) == 1
 
+    def test_keeps_expiry_during_its_us_market_day(self):
+        # A viewer in Tokyo is already on Saturday during Friday's U.S.
+        # session. The caller must use the New York market date so this
+        # still-live Friday contract is not treated as yesterday's expiry.
+        live = self._opt(trade_symbol="FN    260814C00200000",
+                         option_expiry=self.today)
+        out = _drop_stale_option_rows(pd.DataFrame([live]), self.today)
+        assert len(out) == 1
+
     def test_drops_closed_contract_still_in_snapshot(self):
         # Snapshot still has FN; contracts mart says nothing is Open.
         # Another symbol is Open so the frame is non-empty.
