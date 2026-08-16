@@ -3614,6 +3614,11 @@ def weekly_review():
         session_date = _snapshot_as_of_date(today, market_session)
         context["review_date"] = session_date
         context["review_is_today"] = False
+        # Option expiries and U.S. session facts are dated in New York, not
+        # the viewer's profile timezone. A Tokyo user is already on
+        # Saturday during Friday's U.S. session; using ``today`` would hide
+        # every still-live Friday expiry before the closing bell.
+        market_today = _date_in_user_tz("America/New_York")
 
         batch_queries = build_daily_review_batch(
             tenant_filter, today, this_week,
@@ -3649,7 +3654,8 @@ def weekly_review():
             or _frame_as_of_date(batch.get("today_options_moves"))
         )
         snap_cutoff = _snapshot_as_of_date(
-            today, market_session, close_as_of=close_as_of)
+            today, market_session, close_as_of=close_as_of,
+            et_today=market_today)
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -3837,7 +3843,7 @@ def weekly_review():
                 # aggregation so a stale Schwab snapshot can't keep FN
                 # (or any expired contract) on the strip or watch list.
                 all_pos_df = _drop_stale_option_rows(
-                    all_pos_df, today,
+                    all_pos_df, market_today,
                     open_contracts_df=batch.get("open_options"),
                 )
                 for col in ["market_value", "cost_basis", "unrealized_pnl", "unrealized_pnl_pct",
@@ -3881,8 +3887,9 @@ def weekly_review():
                     # 14 day window for the daily review's "expiring soon" — a
                     # weekly review's 7d hides the next-Mon expirations from a
                     # trader checking on a Wednesday.
-                    expiry_cutoff = pd.Timestamp(today + timedelta(days=14))
-                    today_ts = pd.Timestamp(today)
+                    expiry_cutoff = pd.Timestamp(
+                        market_today + timedelta(days=14))
+                    today_ts = pd.Timestamp(market_today)
                     expiring = opts[opts["option_expiry"].notna()
                                     & (opts["option_expiry"] >= today_ts)
                                     & (opts["option_expiry"] <= expiry_cutoff)]
@@ -3894,7 +3901,10 @@ def weekly_review():
                         stock_price = float(eq_prices.get(sym, 0)) or float(row.get("latest_stock_price") or 0)
                         expiry = row.get("option_expiry")
                         expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else str(expiry)[:10]
-                        days_to_exp = (expiry.date() - today).days if hasattr(expiry, "date") else None
+                        days_to_exp = (
+                            (expiry.date() - market_today).days
+                            if hasattr(expiry, "date") else None
+                        )
 
                         itm, distance = _classify_expiring_moneyness(
                             instrument_type=row.get("instrument_type"),
@@ -4007,8 +4017,9 @@ def weekly_review():
         try:
             ev_df = batch.get("exit_verdicts", pd.DataFrame())
             context["exit_verdicts_landed"] = _verdicts_landed(
-                ev_df, today - timedelta(days=6), today)
-            context["exit_verdicts_pending"] = _verdicts_pending(ev_df, today)
+                ev_df, market_today - timedelta(days=6), market_today)
+            context["exit_verdicts_pending"] = _verdicts_pending(
+                ev_df, market_today)
         except Exception as e:
             app.logger.warning("Execution verdicts processing failed: %s", e)
         # Live open-contract marks live on /today, not the close-based recap.
@@ -4284,7 +4295,8 @@ def today_view():
                 context["after_hours_movers"] = _build_after_hours_movers(
                     batch.get("after_hours", pd.DataFrame()))
             context["open_option_record"] = _open_option_record(
-                batch.get("open_options", pd.DataFrame()), today)
+                batch.get("open_options", pd.DataFrame()),
+                _date_in_user_tz("America/New_York"))
 
         label_map = _tenant_label_map_for_user(current_user.id)
         context["trades_today"] = _split_day_fills(
