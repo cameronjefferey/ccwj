@@ -12,6 +12,7 @@ class DraftPollTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["POLL_PATH"] = str(Path(self.tmp.name) / "poll.json")
+        os.environ["DRAFT_HOST_PIN"] = "test-host"
         self.client = app.test_client()
 
     def tearDown(self):
@@ -37,6 +38,9 @@ class DraftPollTests(unittest.TestCase):
         self.assertNotIn(b"includes names and nights", res.data)
         self.assertIn(b"nights stay saved here", res.data)
         self.assertNotIn(b">Remove<", res.data)
+        self.assertIn(b"Good job.", res.data)
+        self.assertIn(b"Host pin", res.data)
+        self.assertIn(b">MASH<", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_canonical_url_redirects(self):
@@ -165,6 +169,83 @@ class DraftPollTests(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.get_json()["people"][0]["name"], "Alex")
+
+    def test_mash_hides_scores_until_host_reveals(self):
+        self.client.post("/api/poll", json={"name": "Sam", "dates": []})
+        self.client.post("/api/poll", json={"name": "Alex", "dates": []})
+        hidden = self.client.post("/api/mash", json={"name": "Sam", "count": 42}).get_json()
+        sam = next(p for p in hidden["people"] if p["name"] == "Sam")
+        self.assertTrue(sam["mashed"])
+        self.assertNotIn("mash_count", sam)
+        self.assertEqual(hidden["draft_order"], [])
+        self.assertFalse(hidden["mash"]["revealed"])
+        self.assertEqual(hidden["mash"]["mashed_count"], 1)
+
+        self.assertEqual(
+            self.client.post("/api/mash", json={"name": "Sam", "count": 99}).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.post("/api/reveal", json={"pin": "nope"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post("/api/host", json={"pin": "test-host"}).status_code,
+            200,
+        )
+
+        self.client.post("/api/mash", json={"name": "Alex", "count": 18})
+        shown = self.client.post("/api/reveal", json={"pin": "test-host"}).get_json()
+        self.assertTrue(shown["mash"]["revealed"])
+        self.assertEqual([r["name"] for r in shown["draft_order"]], ["Sam", "Alex"])
+        self.assertEqual(shown["draft_order"][0]["mash_count"], 42)
+        self.assertEqual(shown["draft_order"][0]["pick"], 1)
+        sam = next(p for p in shown["people"] if p["name"] == "Sam")
+        self.assertEqual(sam["mash_count"], 42)
+        self.assertEqual(sam["pick"], 1)
+        self.assertEqual(
+            self.client.post("/api/mash", json={"name": "Alex", "count": 3}).status_code,
+            409,
+        )
+
+    def test_mash_tie_goes_to_whoever_finished_first(self):
+        import json
+
+        self.client.post("/api/poll", json={"name": "Sam", "dates": []})
+        self.client.post("/api/poll", json={"name": "Alex", "dates": []})
+        path = Path(os.environ["POLL_PATH"])
+        data = json.loads(path.read_text())
+        for person in data["people"]:
+            person["mash_count"] = 40
+            if person["name"] == "Alex":
+                person["mash_finished_at"] = "2026-08-16T12:00:00.000+00:00"
+            else:
+                person["mash_finished_at"] = "2026-08-16T12:00:01.000+00:00"
+        path.write_text(json.dumps(data))
+        order = self.client.post("/api/reveal", json={"pin": "test-host"}).get_json()["draft_order"]
+        self.assertEqual([row["name"] for row in order], ["Alex", "Sam"])
+
+    def test_mash_rejects_bad_input(self):
+        self.client.post("/api/poll", json={"name": "Sam", "dates": []})
+        self.assertEqual(
+            self.client.post("/api/mash", json={"name": "Sam", "count": 0}).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post("/api/mash", json={"name": "Nobody", "count": 10}).status_code,
+            404,
+        )
+
+    def test_saving_dates_keeps_a_finished_mash(self):
+        self.client.post("/api/poll", json={"name": "Sam", "dates": []})
+        self.client.post("/api/mash", json={"name": "Sam", "count": 12})
+        data = self.client.post(
+            "/api/poll", json={"name": "Sam", "dates": ["2026-08-22"]}
+        ).get_json()
+        sam = data["people"][0]
+        self.assertEqual(sam["dates"], ["2026-08-22"])
+        self.assertTrue(sam["mashed"])
+        self.assertNotIn("mash_count", sam)
 
 
 if __name__ == "__main__":

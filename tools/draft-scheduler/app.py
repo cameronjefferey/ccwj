@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -23,6 +25,8 @@ TIME_NOTE = os.environ.get(
 )
 # Point the old free service at the paid always-on URL.
 CANONICAL_URL = os.environ.get("DRAFT_CANONICAL_URL", "").rstrip("/")
+MASH_SECONDS = int(os.environ.get("DRAFT_MASH_SECONDS", "8"))
+MASH_MAX = 250
 
 _LOCK = threading.Lock()
 _NAME_RE = re.compile(r"[^\w\s.'\-]", re.UNICODE)
@@ -37,7 +41,56 @@ def _poll_path() -> Path:
 
 
 def _empty() -> dict:
-    return {"people": []}
+    return {"people": [], "mash_revealed": False}
+
+
+def _host_pin() -> str:
+    return os.environ.get("DRAFT_HOST_PIN", "")
+
+
+def _check_pin(raw) -> bool:
+    pin = _host_pin()
+    if not pin:
+        return False
+    got = hashlib.sha256(str(raw or "").encode()).digest()
+    want = hashlib.sha256(pin.encode()).digest()
+    return hmac.compare_digest(got, want)
+
+
+def _has_mashed(person: dict) -> bool:
+    return bool(person.get("mash_finished_at")) or person.get("mash_count") is not None
+
+
+def _public_person(person: dict, revealed: bool) -> dict:
+    out = {
+        "name": person.get("name"),
+        "dates": list(person.get("dates") or []),
+        "mashed": _has_mashed(person),
+    }
+    if revealed and _has_mashed(person):
+        out["mash_count"] = int(person.get("mash_count") or 0)
+        out["mash_finished_at"] = person.get("mash_finished_at")
+    return out
+
+
+def _draft_order(people: list) -> list[dict]:
+    mashed = [p for p in people if _has_mashed(p)]
+
+    def sort_key(person: dict):
+        count = int(person.get("mash_count") or 0)
+        finished = str(person.get("mash_finished_at") or "")
+        return (-count, finished, str(person.get("name") or "").casefold())
+
+    ranked = []
+    for i, person in enumerate(sorted(mashed, key=sort_key), start=1):
+        ranked.append(
+            {
+                "pick": i,
+                "name": person["name"],
+                "mash_count": int(person.get("mash_count") or 0),
+            }
+        )
+    return ranked
 
 
 def _load() -> dict:
@@ -50,6 +103,7 @@ def _load() -> dict:
         return _empty()
     if not isinstance(data, dict) or not isinstance(data.get("people"), list):
         return _empty()
+    data.setdefault("mash_revealed", False)
     return data
 
 
@@ -105,6 +159,7 @@ def _merge_people(existing: list, incoming: list) -> list:
         else:
             prev["name"] = name
             prev["dates"] = sorted(set(prev.get("dates") or []) | set(dates))
+            # Keep mash fields on the existing row; restore never overwrites scores.
     people = list(merged.values())
     people.sort(key=lambda p: p["name"].casefold())
     return people
@@ -199,6 +254,17 @@ def _payload() -> dict:
         for iso in person.get("dates") or []:
             by_date.setdefault(iso, []).append(person["name"])
 
+    revealed = bool(data.get("mash_revealed"))
+    public_people = [_public_person(p, revealed) for p in people]
+    mashed_count = sum(1 for p in public_people if p["mashed"])
+    order = _draft_order(people) if revealed else []
+    if revealed:
+        pick_by_name = {row["name"].casefold(): row["pick"] for row in order}
+        for person in public_people:
+            pick = pick_by_name.get(str(person["name"]).casefold())
+            if pick:
+                person["pick"] = pick
+
     return {
         "title": TITLE,
         "time_label": TIME_LABEL,
@@ -207,11 +273,18 @@ def _payload() -> dict:
         "end": POLL_END.isoformat(),
         "kickoff": KICKOFF.isoformat(),
         "kickoff_label": f"{KICKOFF.strftime('%a, %b')} {KICKOFF.day}",
-        "people": people,
+        "people": public_people,
         "months": months,
         "by_date": by_date,
         "best": _best_dates(people),
         "respondent_count": len(people),
+        "mash": {
+            "seconds": MASH_SECONDS,
+            "revealed": revealed,
+            "mashed_count": mashed_count,
+            "total": len(people),
+        },
+        "draft_order": order,
     }
 
 
@@ -270,6 +343,55 @@ def api_restore():
     with _LOCK:
         data = _load()
         data["people"] = _merge_people(data["people"], incoming)
+        _save(data)
+        return jsonify(_payload())
+
+
+@app.post("/api/host")
+def api_host():
+    body = request.get_json(silent=True) or {}
+    if not _check_pin(body.get("pin")):
+        return jsonify({"error": "wrong pin"}), 403
+    return jsonify({"ok": True})
+
+
+@app.post("/api/mash")
+def api_mash():
+    body = request.get_json(silent=True) or {}
+    try:
+        name = _clean_name(body.get("name"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        count = int(body.get("count"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "count required"}), 400
+    if count < 1 or count > MASH_MAX:
+        return jsonify({"error": "count out of range"}), 400
+
+    with _LOCK:
+        data = _load()
+        if data.get("mash_revealed"):
+            return jsonify({"error": "order already revealed"}), 409
+        person = _find_person(data["people"], name)
+        if person is None:
+            return jsonify({"error": "name not on the list"}), 404
+        if _has_mashed(person):
+            return jsonify({"error": "already mashed"}), 409
+        person["mash_count"] = count
+        person["mash_finished_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        _save(data)
+        return jsonify(_payload())
+
+
+@app.post("/api/reveal")
+def api_reveal():
+    body = request.get_json(silent=True) or {}
+    if not _check_pin(body.get("pin")):
+        return jsonify({"error": "wrong pin"}), 403
+    with _LOCK:
+        data = _load()
+        data["mash_revealed"] = True
         _save(data)
         return jsonify(_payload())
 

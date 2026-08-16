@@ -169,15 +169,72 @@
     }
     .roster .empty { margin: 0 0 12px; }
     .roster-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .row-wrap { display: flex; align-items: stretch; gap: 8px; }
     .row {
       display: flex; justify-content: space-between; align-items: center; gap: 12px;
-      width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+      flex: 1; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
       background: var(--bg-2); color: inherit; text-align: left; cursor: pointer;
       font-size: 1.05rem;
     }
     .row span { color: var(--muted); font-size: .88rem; }
     .row.mine { border-color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime); }
+    .mash-go {
+      flex: 0 0 auto; min-width: 76px; padding: 0 14px;
+      background: var(--lime); color: var(--lime-ink); border: 0;
+      border-radius: 12px; font-weight: 800; cursor: pointer;
+    }
+    .mash-go.done, .mash-go:disabled {
+      background: var(--bg-2); color: var(--muted); border: 1px solid var(--line);
+      cursor: default;
+    }
+    .pick-badge {
+      flex: 0 0 auto; min-width: 44px; display: grid; place-items: center;
+      border-radius: 12px; background: var(--lime); color: var(--lime-ink);
+      font-weight: 800; font-size: .9rem;
+    }
     .add-label { display: block; font-size: .82rem; color: var(--muted); margin: 0 0 8px; }
+    .host-card { margin: 16px 0; }
+    .host-card h2 { margin: 0 0 8px; font-size: 1.15rem; }
+    .host-card p { margin: 0 0 12px; color: var(--muted); font-size: .92rem; }
+    .order-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .order-list li {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line);
+    }
+    .order-list .pick { font-weight: 800; color: var(--lime); min-width: 3.2rem; }
+    .kicker-actions { display: flex; gap: 8px; }
+
+    .mash-overlay {
+      position: fixed; inset: 0; z-index: 40;
+      background: #0c100d; color: var(--ink);
+      padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    .mash-overlay[hidden] { display: none !important; }
+    .mash-who { margin: 0 0 8px; font-size: 1.1rem; color: var(--muted); }
+    .mash-clock {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(3rem, 16vw, 5rem); line-height: 1; margin: 0 0 18px;
+    }
+    #mash-btn {
+      appearance: none; -webkit-appearance: none;
+      width: min(78vw, 280px); height: min(78vw, 280px);
+      border-radius: 50%; border: 0; cursor: pointer;
+      background: var(--lime); color: var(--lime-ink);
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2rem, 10vw, 3rem); font-weight: 800; letter-spacing: -.03em;
+      box-shadow: 0 12px 40px rgba(198, 245, 74, .22);
+      touch-action: none;
+    }
+    #mash-btn:active { transform: scale(.96); }
+    .mash-hint { color: var(--muted); margin: 18px 0 0; }
+    .mash-done h2 {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2.4rem, 12vw, 3.6rem); margin: 0 0 10px; letter-spacing: -.03em;
+    }
+    .mash-done p { color: var(--muted); margin: 0 0 22px; max-width: 22rem; }
+    body.mash-lock { overflow: hidden; overscroll-behavior: none; }
 
     .toast {
       position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
@@ -199,7 +256,10 @@
     <header class="hero">
       <div class="kicker">
         <span>Fantasy football · 2026</span>
-        <button class="ghost" type="button" id="copy-link">Copy link</button>
+        <div class="kicker-actions">
+          <button class="ghost" type="button" id="host-toggle">Host</button>
+          <button class="ghost" type="button" id="copy-link">Copy link</button>
+        </div>
       </div>
       <h1>{{ title }}</h1>
       <p class="lede">Every slot is <strong>{{ time_label }}</strong>.</p>
@@ -222,16 +282,50 @@
     </section>
     <p class="hint" id="status-hint">Tap your name above, then tap every night you're free at 4:00 PM Pacific.</p>
 
+    <section id="order" class="card best" hidden></section>
+    <section id="host-card" class="card host-card" hidden>
+      <h2>Host</h2>
+      <p id="host-status">Enter the host pin to reveal the draft order. Scores stay hidden until then.</p>
+      <form id="host-gate" class="name-card">
+        <input id="host-pin" type="password" inputmode="text" autocomplete="off" placeholder="Host pin">
+        <button class="primary" type="submit">Unlock</button>
+      </form>
+      <button class="primary" type="button" id="reveal-btn" hidden>Reveal draft order</button>
+    </section>
     <section id="best" class="card best" hidden></section>
 
     <section id="calendars"></section>
     <section id="detail" class="card detail"></section>
   </div>
   <div class="toast" id="toast"></div>
+  <div id="mash-overlay" class="mash-overlay" hidden>
+    <div id="mash-stage">
+      <p class="mash-who" id="mash-who"></p>
+      <p class="mash-clock" id="mash-clock">Ready</p>
+      <button type="button" id="mash-btn">MASH</button>
+      <p class="mash-hint" id="mash-hint">Tap when you're ready. Then mash for 8 seconds.</p>
+      <button class="ghost" type="button" id="mash-cancel" style="margin-top:18px">Not yet</button>
+    </div>
+    <div id="mash-done" class="mash-done" hidden>
+      <h2>Good job.</h2>
+      <p>You're in. The order stays hidden until the host reveals it.</p>
+      <button class="primary" type="button" id="mash-close">Back</button>
+    </div>
+  </div>
 
   <script>
     const storeKey = "draft-night-name";
-    const state = { me: localStorage.getItem(storeKey) || "", poll: null, selected: null, saving: false, pending: null };
+    const hostKey = "draft-night-host-pin";
+    const state = {
+      me: localStorage.getItem(storeKey) || "",
+      poll: null,
+      selected: null,
+      saving: false,
+      pending: null,
+      hostPin: sessionStorage.getItem(hostKey) || "",
+      hostOpen: false,
+      mash: { name: "", count: 0, started: false, timer: null, seconds: 8 },
+    };
 
     const $ = (id) => document.getElementById(id);
     const toast = (msg) => {
@@ -354,8 +448,10 @@
         ? `Picking as ${state.me}. Tap another name to switch.`
         : "Tap your name to start.";
       $("status-hint").textContent = state.me
-        ? "Tap the nights you can do 4:00 PM Pacific. Tap your name again to switch."
-        : "Tap your name at the top first. Then tap every night you're free.";
+        ? "Tap the nights you can do 4:00 PM Pacific, or mash for draft order."
+        : "Tap your name, pick nights, then mash when you're ready.";
+      renderOrder();
+      renderHost();
 
       const max = Math.max(0, ...Object.values(poll.by_date).map(n => n.length));
       const mine = myDates();
@@ -496,9 +592,12 @@
       const el = $("people");
       const empty = $("roster-empty");
       const people = state.poll?.people || [];
+      const revealed = !!state.poll?.mash?.revealed;
       el.innerHTML = "";
       empty.hidden = people.length > 0;
       for (const person of people) {
+        const wrap = document.createElement("div");
+        wrap.className = "row-wrap";
         const row = document.createElement("button");
         row.type = "button";
         row.className = "row";
@@ -516,7 +615,78 @@
           setMe(person.name);
           toast(`You're in as ${person.name} — tap your nights`);
         });
-        el.appendChild(row);
+        wrap.appendChild(row);
+        if (revealed && person.pick) {
+          const badge = document.createElement("div");
+          badge.className = "pick-badge";
+          badge.textContent = `#${person.pick}`;
+          wrap.appendChild(badge);
+        } else {
+          const mash = document.createElement("button");
+          mash.type = "button";
+          mash.className = "mash-go" + (person.mashed ? " done" : "");
+          mash.textContent = person.mashed ? "Done" : "Mash";
+          mash.disabled = !!person.mashed;
+          mash.addEventListener("click", (e) => {
+            e.stopPropagation();
+            startMash(person.name);
+          });
+          wrap.appendChild(mash);
+        }
+        el.appendChild(wrap);
+      }
+    }
+
+    function renderOrder() {
+      const el = $("order");
+      const order = state.poll?.draft_order || [];
+      el.replaceChildren();
+      if (!state.poll?.mash?.revealed || !order.length) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = "Draft order";
+      const h2 = document.createElement("h2");
+      h2.textContent = `${order[0].name} has the first pick`;
+      const p = document.createElement("p");
+      p.textContent = "Most mashes first. Ties go to whoever finished first.";
+      const list = document.createElement("ol");
+      list.className = "order-list";
+      for (const row of order) {
+        const li = document.createElement("li");
+        const who = document.createElement("span");
+        const pick = document.createElement("span");
+        pick.className = "pick";
+        pick.textContent = `#${row.pick}`;
+        who.append(pick, document.createTextNode(" " + row.name));
+        const taps = document.createElement("span");
+        taps.textContent = `${row.mash_count} mash${row.mash_count === 1 ? "" : "es"}`;
+        li.append(who, taps);
+        list.appendChild(li);
+      }
+      el.append(label, h2, p, list);
+    }
+
+    function renderHost() {
+      const card = $("host-card");
+      const gate = $("host-gate");
+      const reveal = $("reveal-btn");
+      const status = $("host-status");
+      card.hidden = !state.hostOpen;
+      if (!state.hostOpen) return;
+      const mash = state.poll?.mash || {};
+      const unlocked = !!state.hostPin;
+      gate.hidden = unlocked;
+      reveal.hidden = !unlocked || !!mash.revealed;
+      if (mash.revealed) {
+        status.textContent = "Draft order is live for everyone.";
+      } else if (unlocked) {
+        status.textContent = `${mash.mashed_count || 0} of ${mash.total || 0} mashed. Scores stay hidden until you reveal.`;
+      } else {
+        status.textContent = "Enter the host pin to reveal the draft order. Scores stay hidden until then.";
       }
     }
 
@@ -572,15 +742,135 @@
         toast(url);
       }
     });
+    $("host-toggle").addEventListener("click", () => {
+      state.hostOpen = !state.hostOpen;
+      renderHost();
+    });
+    $("host-gate").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pin = $("host-pin").value.trim();
+      if (!pin) { $("host-pin").focus(); return; }
+      try {
+        const res = await fetch("/api/host", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Wrong pin");
+        state.hostPin = pin;
+        sessionStorage.setItem(hostKey, pin);
+        $("host-pin").value = "";
+        renderHost();
+        toast("Host unlocked");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("reveal-btn").addEventListener("click", async () => {
+      if (!state.hostPin) return;
+      try {
+        const res = await fetch("/api/reveal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin: state.hostPin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not reveal");
+        state.poll = data;
+        render();
+        toast("Draft order is live");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    function closeMash() {
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      state.mash = { name: "", count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8 };
+      $("mash-overlay").hidden = true;
+      $("mash-stage").hidden = false;
+      $("mash-done").hidden = true;
+      document.body.classList.remove("mash-lock");
+    }
+
+    function startMash(name) {
+      const person = (state.poll?.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+      if (!person || person.mashed || state.poll?.mash?.revealed) return;
+      setMe(name);
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      state.mash = { name, count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8 };
+      $("mash-who").textContent = name;
+      $("mash-clock").textContent = "Ready";
+      $("mash-hint").textContent = `Tap when you're ready. Then mash for ${state.mash.seconds} seconds.`;
+      $("mash-btn").textContent = "MASH";
+      $("mash-cancel").hidden = false;
+      $("mash-stage").hidden = false;
+      $("mash-done").hidden = true;
+      $("mash-overlay").hidden = false;
+      document.body.classList.add("mash-lock");
+    }
+
+    function tickMash() {
+      state.mash.seconds -= 1;
+      $("mash-clock").textContent = String(Math.max(state.mash.seconds, 0));
+      if (state.mash.seconds > 0) return;
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      state.mash.timer = null;
+      finishMash();
+    }
+
+    async function finishMash() {
+      const name = state.mash.name;
+      const count = state.mash.count;
+      $("mash-stage").hidden = true;
+      $("mash-done").hidden = false;
+      try {
+        const res = await fetch("/api/mash", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ name, count }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not save mash");
+        state.poll = data;
+        render();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    $("mash-btn").addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if ($("mash-overlay").hidden || !$("mash-done").hidden) return;
+      if (!state.mash.started) {
+        state.mash.started = true;
+        state.mash.count = 1;
+        $("mash-cancel").hidden = true;
+        $("mash-clock").textContent = String(state.mash.seconds);
+        $("mash-hint").textContent = "Keep going";
+        state.mash.timer = setInterval(tickMash, 1000);
+        return;
+      }
+      if (state.mash.seconds > 0) state.mash.count += 1;
+    });
+    $("mash-btn").addEventListener("click", (e) => e.preventDefault());
+    $("mash-close").addEventListener("click", closeMash);
+    $("mash-cancel").addEventListener("click", () => {
+      if (!state.mash.started) closeMash();
+    });
 
     load();
     setInterval(async () => {
-      if (state.saving || document.hidden) return;
+      if (state.saving || document.hidden || !$("mash-overlay").hidden) return;
       try {
         const res = await fetch("/api/poll", { cache: "no-store" });
         const poll = await readJson(res);
-        const before = JSON.stringify(state.poll?.people || []);
-        const after = JSON.stringify(poll.people || []);
+        const before = JSON.stringify({ people: state.poll?.people, mash: state.poll?.mash, order: state.poll?.draft_order });
+        const after = JSON.stringify({ people: poll.people, mash: poll.mash, order: poll.draft_order });
         if (before === after) return;
         state.poll = poll;
         render();

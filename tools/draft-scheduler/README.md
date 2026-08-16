@@ -11,8 +11,10 @@ This is a standalone app. It is not part of HappyTrader and is not served from t
 1. Open the link.
 2. Add names (host) or tap your name.
 3. Tap every night you can do 4:00 PM Pacific.
+4. Tap **Mash** next to your name when you're ready. 8 seconds. Then "Good job."
+5. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
 
-That's it. No second link, no order, no packing dates into the URL.
+Scores stay hidden until the host reveals. That's it. One URL.
 
 ## Why it's on a paid Render instance
 
@@ -54,6 +56,7 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 - Lime outline = nights you picked
 - **Game** on Wed Sep 9 (first game) — not pickable
 - A “best so far” pick at the top, weekends winning ties
+- Mash button on each name; draft order stays hidden until the host reveals it
 
 ## Optional env
 
@@ -65,6 +68,8 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 | `DRAFT_START` / `DRAFT_END` | `2026-08-15` / `2026-09-08` |
 | `DRAFT_KICKOFF` | `2026-09-09` |
 | `POLL_PATH` | `./poll.json` locally; `/var/data/poll.json` on Render |
+| `DRAFT_HOST_PIN` | required to unlock Host → Reveal (set on Render, not in git) |
+| `DRAFT_MASH_SECONDS` | `8` |
 | `PORT` | `5050` locally, Render sets this |
 
 ## Tests
