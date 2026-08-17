@@ -1592,9 +1592,11 @@ def _drop_stale_option_rows(positions_df, as_of, open_contracts_df=None):
        days; the watch list used ``expiry <= today+14`` with no lower
        bound, so last week's FN contracts still showed as "expiring"
        with negative days-to-exp and inflated the position card.
-    2. When the Open-contracts frame is non-empty, drop snapshot option
-       rows whose contract is not in it — Closed in the mart, still in
-       ``stg_current`` because ``trade_symbol`` didn't join.
+    2. When the Open-contracts query succeeded (its schema is present), drop
+       snapshot option rows whose contract is not in it — Closed in the mart,
+       still in ``stg_current`` because ``trade_symbol`` didn't join. An empty
+       but schema-bearing frame authoritatively means there are zero open
+       contracts; a schema-less frame means the query failed, so fail open.
     Equity rows always pass through.
     """
     if positions_df is None or positions_df.empty:
@@ -1614,7 +1616,6 @@ def _drop_stale_option_rows(positions_df, as_of, open_contracts_df=None):
 
     stale_closed = pd.Series(False, index=df.index)
     if (open_contracts_df is not None
-            and not open_contracts_df.empty
             and "trade_symbol" in open_contracts_df.columns):
         open_keys = {_option_row_key(r) for _, r in open_contracts_df.iterrows()}
         stale_closed = is_opt & ~df.apply(

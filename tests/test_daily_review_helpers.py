@@ -1184,6 +1184,29 @@ class TestDropStaleOptionRows:
             pd.DataFrame([snap]), self.today, open_contracts_df=open_other)
         assert out.empty
 
+    def test_empty_open_contract_result_drops_all_snapshot_options(self):
+        # A successful empty BQ result keeps its projected schema. That means
+        # the mart authoritatively found zero open contracts, so an unexpired
+        # broker snapshot row is stale rather than live.
+        snap = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        open_none = pd.DataFrame(columns=[
+            "tenant_id", "account", "trade_symbol", "symbol",
+        ])
+        out = _drop_stale_option_rows(
+            pd.DataFrame([snap]), self.today, open_contracts_df=open_none)
+        assert out.empty
+
+    def test_schema_less_open_contract_failure_keeps_unexpired_options(self):
+        # _bq_parallel returns a schema-less empty frame when a query fails.
+        # Do not interpret that failure as proof that every option is Closed.
+        live = self._opt(trade_symbol="FN    260821C00200000",
+                         option_expiry=date(2026, 8, 21))
+        out = _drop_stale_option_rows(
+            pd.DataFrame([live]), self.today,
+            open_contracts_df=pd.DataFrame())
+        assert len(out) == 1
+
     def test_keeps_when_open_contracts_lists_it(self):
         live = self._opt(trade_symbol="FN    260821C00200000",
                          option_expiry=date(2026, 8, 21))
