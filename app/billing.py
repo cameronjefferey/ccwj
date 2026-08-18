@@ -443,8 +443,19 @@ def cancel_subscription_for_account_deletion(user_id):
     Returns ``(ok, error_message)`` and never raises.
     """
     row = billing_row(user_id)
+    if row is None:
+        # ``billing_row`` deliberately hides read errors from ordinary UI
+        # callers, but deletion must fail closed. Treating an unreadable row
+        # as "no subscription" would delete the only durable Stripe mapping
+        # while a live subscription could continue renewing.
+        _log.error(
+            "Stripe: refusing account deletion for user_id=%s because "
+            "billing state could not be verified",
+            user_id,
+        )
+        return False, "Could not verify the Stripe subscription."
     subscription_id = (
-        str((row or {}).get("stripe_subscription_id") or "").strip()
+        str(row.get("stripe_subscription_id") or "").strip()
     )
     if not subscription_id:
         return True, None
