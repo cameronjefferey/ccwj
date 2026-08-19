@@ -16,6 +16,7 @@ gives away the product:
 - the resume sync fires only AFTER the plan flips to active (the
   ``user_sync_allowed`` chokepoint would refuse otherwise)
 """
+import inspect
 import types
 from datetime import datetime, timedelta, timezone
 
@@ -66,6 +67,42 @@ def test_stripe_enabled_is_all_or_nothing(monkeypatch):
 def test_prices_are_the_advertised_amounts():
     assert billing.PRICE_MONTHLY_DISPLAY == "19.99"
     assert billing.PRICE_ANNUAL_DISPLAY == "199.99"
+
+
+# ---------------------------------------------------------------------------
+# Checkout — never stack a subscription when billing state is unreadable
+# ---------------------------------------------------------------------------
+
+
+def test_checkout_fails_closed_when_billing_state_is_unreadable(
+    monkeypatch, stripe_config
+):
+    class _Sessions:
+        @staticmethod
+        def create(**_kwargs):
+            pytest.fail("unreadable billing state must not create a subscription")
+
+    stripe = types.SimpleNamespace(
+        checkout=types.SimpleNamespace(Session=_Sessions),
+    )
+    monkeypatch.setattr(billing, "_stripe", lambda: stripe)
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: None)
+    monkeypatch.setattr(
+        billing,
+        "current_user",
+        types.SimpleNamespace(id=9, email="payer@example.com"),
+    )
+
+    # Exercise the route body directly; authentication and rate limiting are
+    # orthogonal to the billing-state guard.
+    checkout = inspect.unwrap(billing.billing_checkout)
+    with billing.app.test_request_context(
+        "/billing/checkout", method="POST", data={"period": "monthly"}
+    ):
+        response = checkout()
+
+    assert response.status_code == 302
+    assert response.location.endswith("/pricing")
 
 
 # ---------------------------------------------------------------------------

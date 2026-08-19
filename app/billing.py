@@ -594,7 +594,22 @@ def billing_checkout():
         return _billing_off_response()
 
     period = "annual" if (request.form.get("period") or "").strip() == "annual" else "monthly"
-    row = billing_row(current_user.id) or {}
+    row = billing_row(current_user.id)
+    if row is None:
+        # billing_row deliberately catches database failures, so ``None`` is
+        # not proof that this user has no subscription.  Continuing would
+        # create a second Stripe customer/subscription for an existing payer
+        # whenever Postgres has a transient read failure.
+        app.logger.error(
+            "Stripe checkout blocked: billing state unreadable for user_id=%s",
+            current_user.id,
+        )
+        flash(
+            "Couldn't verify your current subscription just now. Nothing was "
+            "charged — please try again in a moment.",
+            "danger",
+        )
+        return redirect(url_for("pricing"))
 
     # Already paying: send them to the portal to switch plans instead of
     # stacking a second subscription on the same customer.
