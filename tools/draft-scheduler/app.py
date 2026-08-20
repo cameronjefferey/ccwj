@@ -404,6 +404,24 @@ def api_mash():
         return jsonify(_payload())
 
 
+@app.post("/api/reset")
+def api_reset():
+    body = request.get_json(silent=True) or {}
+    if not _check_pin(body.get("pin")):
+        return jsonify({"error": "wrong pin"}), 403
+    with _LOCK:
+        data = _load()
+        cleaned = []
+        for person in data["people"]:
+            name = person.get("name")
+            if not name:
+                continue
+            cleaned.append({"name": name, "dates": []})
+        cleaned.sort(key=lambda p: str(p["name"]).casefold())
+        _save({"people": cleaned, "mash_revealed": False})
+        return jsonify(_payload())
+
+
 @app.post("/api/reveal")
 def api_reveal():
     body = request.get_json(silent=True) or {}

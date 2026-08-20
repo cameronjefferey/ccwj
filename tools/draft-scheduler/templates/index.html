@@ -290,7 +290,10 @@
         <input id="host-pin" type="password" inputmode="text" autocomplete="off" placeholder="Host pin">
         <button class="primary" type="submit">Unlock</button>
       </form>
-      <button class="primary" type="button" id="reveal-btn" hidden>Reveal draft order</button>
+      <div class="kicker-actions">
+        <button class="primary" type="button" id="reveal-btn" hidden>Reveal draft order</button>
+        <button class="ghost" type="button" id="reset-btn" hidden>Reset picks</button>
+      </div>
     </section>
     <section id="best" class="card best" hidden></section>
 
@@ -674,6 +677,7 @@
       const card = $("host-card");
       const gate = $("host-gate");
       const reveal = $("reveal-btn");
+      const reset = $("reset-btn");
       const status = $("host-status");
       card.hidden = !state.hostOpen;
       if (!state.hostOpen) return;
@@ -681,6 +685,7 @@
       const unlocked = !!state.hostPin;
       gate.hidden = unlocked;
       reveal.hidden = !unlocked || !!mash.revealed;
+      reset.hidden = !unlocked;
       if (mash.revealed) {
         status.textContent = "Draft order is live for everyone.";
       } else if (unlocked) {
@@ -782,6 +787,25 @@
         state.poll = data;
         render();
         toast("Draft order is live");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("reset-btn").addEventListener("click", async () => {
+      if (!state.hostPin) return;
+      if (!confirm("Clear nights and mash scores? Names stay.")) return;
+      try {
+        const res = await fetch("/api/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin: state.hostPin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not reset");
+        state.poll = data;
+        render();
+        toast("Picks cleared");
       } catch (err) {
         toast(err.message);
       }

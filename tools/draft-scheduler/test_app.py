@@ -249,6 +249,21 @@ class DraftPollTests(unittest.TestCase):
         self.assertTrue(sam["mashed"])
         self.assertNotIn("mash_count", sam)
 
+    def test_host_reset_keeps_names_clears_picks(self):
+        self.client.post("/api/poll", json={"name": "Sam", "dates": ["2026-08-22"]})
+        self.client.post("/api/mash", json={"name": "Sam", "count": 12})
+        self.client.post("/api/reveal", json={"pin": "test-host"})
+        self.assertEqual(
+            self.client.post("/api/reset", json={"pin": "nope"}).status_code,
+            403,
+        )
+        data = self.client.post("/api/reset", json={"pin": "test-host"}).get_json()
+        self.assertEqual([p["name"] for p in data["people"]], ["Sam"])
+        self.assertEqual(data["people"][0]["dates"], [])
+        self.assertFalse(data["people"][0]["mashed"])
+        self.assertFalse(data["mash"]["revealed"])
+        self.assertEqual(data["draft_order"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
