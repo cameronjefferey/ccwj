@@ -352,7 +352,27 @@ def api_host():
     body = request.get_json(silent=True) or {}
     if not _check_pin(body.get("pin")):
         return jsonify({"error": "wrong pin"}), 403
-    return jsonify({"ok": True})
+    with _LOCK:
+        data = _load()
+        mashed = []
+        for person in data["people"]:
+            if not _has_mashed(person):
+                continue
+            mashed.append(
+                {
+                    "name": person.get("name"),
+                    "mash_count": int(person.get("mash_count") or 0),
+                    "mash_finished_at": person.get("mash_finished_at"),
+                }
+            )
+        mashed.sort(key=lambda row: (-row["mash_count"], str(row["mash_finished_at"] or "")))
+        return jsonify(
+            {
+                "ok": True,
+                "revealed": bool(data.get("mash_revealed")),
+                "mashed": mashed,
+            }
+        )
 
 
 @app.post("/api/mash")

@@ -189,10 +189,12 @@ class DraftPollTests(unittest.TestCase):
             self.client.post("/api/reveal", json={"pin": "nope"}).status_code,
             403,
         )
-        self.assertEqual(
-            self.client.post("/api/host", json={"pin": "test-host"}).status_code,
-            200,
-        )
+        host = self.client.post("/api/host", json={"pin": "test-host"}).get_json()
+        self.assertEqual(host["mashed"][0]["name"], "Sam")
+        self.assertEqual(host["mashed"][0]["mash_count"], 42)
+        public = self.client.get("/api/poll").get_json()
+        self.assertFalse(public["mash"]["revealed"])
+        self.assertTrue(all("mash_count" not in p for p in public["people"]))
 
         self.client.post("/api/mash", json={"name": "Alex", "count": 18})
         shown = self.client.post("/api/reveal", json={"pin": "test-host"}).get_json()
