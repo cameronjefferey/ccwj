@@ -179,10 +179,11 @@
     .row span { color: var(--muted); font-size: .88rem; }
     .row.mine { border-color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime); }
     .mash-go {
-      flex: 0 0 auto; min-width: 76px; padding: 0 14px;
+      flex: 0 0 auto; min-width: 76px; padding: 0 12px;
       background: var(--lime); color: var(--lime-ink); border: 0;
-      border-radius: 12px; font-weight: 800; cursor: pointer;
+      border-radius: 12px; font-weight: 800; cursor: pointer; font-size: .82rem;
     }
+    .mash-go.real { min-width: 108px; }
     .mash-go.done, .mash-go:disabled {
       background: var(--bg-2); color: var(--muted); border: 1px solid var(--line);
       cursor: default;
@@ -212,6 +213,11 @@
       text-align: center; touch-action: none; user-select: none; -webkit-user-select: none;
     }
     .mash-overlay[hidden] { display: none !important; }
+    .mash-kicker {
+      margin: 0 0 6px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+      font-weight: 800; color: var(--lime);
+    }
+    .mash-kicker.practice { color: var(--warn); }
     .mash-who { margin: 0 0 8px; font-size: 1.1rem; color: var(--muted); }
     .mash-clock {
       font-family: "Bricolage Grotesque", Figtree, sans-serif;
@@ -303,16 +309,18 @@
   <div class="toast" id="toast"></div>
   <div id="mash-overlay" class="mash-overlay" hidden>
     <div id="mash-stage">
+      <p class="mash-kicker practice" id="mash-kicker">Practice</p>
       <p class="mash-who" id="mash-who"></p>
       <p class="mash-clock" id="mash-clock">Ready</p>
       <button type="button" id="mash-btn">MASH</button>
-      <p class="mash-hint" id="mash-hint">Tap when you're ready. Then mash for 8 seconds.</p>
+      <p class="mash-hint" id="mash-hint">This one is practice. It does not count.</p>
       <button class="ghost" type="button" id="mash-cancel" style="margin-top:18px">Not yet</button>
     </div>
     <div id="mash-done" class="mash-done" hidden>
-      <h2>Good job.</h2>
-      <p>You're in. The order stays hidden until the host reveals it.</p>
-      <button class="primary" type="button" id="mash-close">Back</button>
+      <h2 id="mash-done-title">Good job.</h2>
+      <p id="mash-done-copy">That was practice. Next one counts.</p>
+      <button class="primary" type="button" id="mash-real" hidden>This one counts</button>
+      <button class="ghost" type="button" id="mash-close">Back</button>
     </div>
   </div>
 
@@ -451,8 +459,8 @@
         ? `Picking as ${state.me}. Tap another name to switch.`
         : "Tap your name to start.";
       $("status-hint").textContent = state.me
-        ? "Tap the nights you can do 4:00 PM Pacific, or mash for draft order."
-        : "Tap your name, pick nights, then mash when you're ready.";
+        ? "Tap nights you can do 4:00 PM Pacific. First mash is practice. Second one counts."
+        : "Tap your name, pick nights, then Practice. The second mash is the one that counts.";
       renderOrder();
       renderHost();
 
@@ -627,13 +635,25 @@
         } else {
           const mash = document.createElement("button");
           mash.type = "button";
-          mash.className = "mash-go" + (person.mashed ? " done" : "");
-          mash.textContent = person.mashed ? "Done" : "Mash";
-          mash.disabled = !!person.mashed;
-          mash.addEventListener("click", (e) => {
-            e.stopPropagation();
-            startMash(person.name);
-          });
+          if (person.mashed) {
+            mash.className = "mash-go done";
+            mash.textContent = "Done";
+            mash.disabled = true;
+          } else if (person.practiced) {
+            mash.className = "mash-go real";
+            mash.textContent = "This one counts";
+            mash.addEventListener("click", (e) => {
+              e.stopPropagation();
+              startMash(person.name);
+            });
+          } else {
+            mash.className = "mash-go";
+            mash.textContent = "Practice";
+            mash.addEventListener("click", (e) => {
+              e.stopPropagation();
+              startMash(person.name);
+            });
+          }
           wrap.appendChild(mash);
         }
         el.appendChild(wrap);
@@ -689,7 +709,7 @@
       if (mash.revealed) {
         status.textContent = "Draft order is live for everyone.";
       } else if (unlocked) {
-        status.textContent = `${mash.mashed_count || 0} of ${mash.total || 0} mashed. Scores stay hidden until you reveal.`;
+        status.textContent = `${mash.mashed_count || 0} of ${mash.total || 0} have a real score. Scores stay hidden until you reveal.`;
       } else {
         status.textContent = "Enter the host pin to reveal the draft order. Scores stay hidden until then.";
       }
@@ -817,6 +837,7 @@
       $("mash-overlay").hidden = true;
       $("mash-stage").hidden = false;
       $("mash-done").hidden = true;
+      $("mash-real").hidden = true;
       document.body.classList.remove("mash-lock");
     }
 
@@ -825,12 +846,19 @@
       if (!person || person.mashed || state.poll?.mash?.revealed) return;
       setMe(name);
       if (state.mash.timer) clearInterval(state.mash.timer);
-      state.mash = { name, count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8 };
+      const official = !!person.practiced;
+      state.mash = { name, count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8, official };
+      const kicker = $("mash-kicker");
+      kicker.textContent = official ? "This one counts" : "Practice";
+      kicker.className = "mash-kicker" + (official ? "" : " practice");
       $("mash-who").textContent = name;
       $("mash-clock").textContent = "Ready";
-      $("mash-hint").textContent = `Tap when you're ready. Then mash for ${state.mash.seconds} seconds.`;
-      $("mash-btn").textContent = "MASH";
+      $("mash-hint").textContent = official
+        ? `Tap when you're ready. Mash for ${state.mash.seconds} seconds — this is your real score.`
+        : `Tap when you're ready. Mash for ${state.mash.seconds} seconds. This is practice and does not count.`;
+      $("mash-btn").textContent = official ? "MASH" : "PRACTICE";
       $("mash-cancel").hidden = false;
+      $("mash-real").hidden = true;
       $("mash-stage").hidden = false;
       $("mash-done").hidden = true;
       $("mash-overlay").hidden = false;
@@ -861,6 +889,16 @@
         const data = await readJson(res);
         if (!res.ok) throw new Error(data.error || "Could not save mash");
         state.poll = data;
+        const person = (data.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+        if (person?.mashed) {
+          $("mash-done-title").textContent = "Good job.";
+          $("mash-done-copy").textContent = "You're in. The order stays hidden until the host reveals it.";
+          $("mash-real").hidden = true;
+        } else {
+          $("mash-done-title").textContent = "Good job.";
+          $("mash-done-copy").textContent = "That was practice. Next one counts.";
+          $("mash-real").hidden = false;
+        }
         render();
       } catch (err) {
         toast(err.message);
@@ -883,6 +921,11 @@
     });
     $("mash-btn").addEventListener("click", (e) => e.preventDefault());
     $("mash-close").addEventListener("click", closeMash);
+    $("mash-real").addEventListener("click", () => {
+      const name = state.mash.name || state.me;
+      closeMash();
+      startMash(name);
+    });
     $("mash-cancel").addEventListener("click", () => {
       if (!state.mash.started) closeMash();
     });

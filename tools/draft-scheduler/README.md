@@ -11,7 +11,7 @@ This is a standalone app. It is not part of HappyTrader and is not served from t
 1. Open the link.
 2. Add names (host) or tap your name.
 3. Tap every night you can do 4:00 PM Pacific.
-4. Tap **Mash** next to your name when you're ready. 8 seconds. Then "Good job."
+4. Tap **Practice**, then **This one counts**. First mash is practice. Second is the real score.
 5. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
 
 Scores stay hidden until the host reveals. That's it. One URL.

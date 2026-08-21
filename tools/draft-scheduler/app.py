@@ -61,10 +61,15 @@ def _has_mashed(person: dict) -> bool:
     return bool(person.get("mash_finished_at")) or person.get("mash_count") is not None
 
 
+def _has_practiced(person: dict) -> bool:
+    return bool(person.get("mash_practice_finished_at")) or person.get("mash_practice_count") is not None
+
+
 def _public_person(person: dict, revealed: bool) -> dict:
     out = {
         "name": person.get("name"),
         "dates": list(person.get("dates") or []),
+        "practiced": _has_practiced(person) or _has_mashed(person),
         "mashed": _has_mashed(person),
     }
     if revealed and _has_mashed(person):
@@ -257,6 +262,7 @@ def _payload() -> dict:
     revealed = bool(data.get("mash_revealed"))
     public_people = [_public_person(p, revealed) for p in people]
     mashed_count = sum(1 for p in public_people if p["mashed"])
+    practiced_count = sum(1 for p in public_people if p["practiced"])
     order = _draft_order(people) if revealed else []
     if revealed:
         pick_by_name = {row["name"].casefold(): row["pick"] for row in order}
@@ -281,6 +287,7 @@ def _payload() -> dict:
         "mash": {
             "seconds": MASH_SECONDS,
             "revealed": revealed,
+            "practiced_count": practiced_count,
             "mashed_count": mashed_count,
             "total": len(people),
         },
@@ -398,8 +405,13 @@ def api_mash():
             return jsonify({"error": "name not on the list"}), 404
         if _has_mashed(person):
             return jsonify({"error": "already mashed"}), 409
-        person["mash_count"] = count
-        person["mash_finished_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        if not _has_practiced(person):
+            person["mash_practice_count"] = count
+            person["mash_practice_finished_at"] = now
+        else:
+            person["mash_count"] = count
+            person["mash_finished_at"] = now
         _save(data)
         return jsonify(_payload())
 

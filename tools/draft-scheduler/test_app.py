@@ -40,7 +40,8 @@ class DraftPollTests(unittest.TestCase):
         self.assertNotIn(b">Remove<", res.data)
         self.assertIn(b"Good job.", res.data)
         self.assertIn(b"Host pin", res.data)
-        self.assertIn(b">MASH<", res.data)
+        self.assertIn(b"Practice", res.data)
+        self.assertIn(b"This one counts", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_canonical_url_redirects(self):
@@ -170,9 +171,23 @@ class DraftPollTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.get_json()["people"][0]["name"], "Alex")
 
+    def _official_mash(self, name, count):
+        practice = self.client.post("/api/mash", json={"name": name, "count": 1})
+        self.assertEqual(practice.status_code, 200)
+        return self.client.post("/api/mash", json={"name": name, "count": count})
+
     def test_mash_hides_scores_until_host_reveals(self):
         self.client.post("/api/poll", json={"name": "Sam", "dates": []})
         self.client.post("/api/poll", json={"name": "Alex", "dates": []})
+        practice = self.client.post("/api/mash", json={"name": "Sam", "count": 99}).get_json()
+        sam = next(p for p in practice["people"] if p["name"] == "Sam")
+        self.assertTrue(sam["practiced"])
+        self.assertFalse(sam["mashed"])
+        self.assertNotIn("mash_count", sam)
+        self.assertEqual(practice["mash"]["mashed_count"], 0)
+        self.assertEqual(practice["draft_order"], [])
+        self.assertEqual(self.client.post("/api/host", json={"pin": "test-host"}).get_json()["mashed"], [])
+
         hidden = self.client.post("/api/mash", json={"name": "Sam", "count": 42}).get_json()
         sam = next(p for p in hidden["people"] if p["name"] == "Sam")
         self.assertTrue(sam["mashed"])
@@ -196,7 +211,7 @@ class DraftPollTests(unittest.TestCase):
         self.assertFalse(public["mash"]["revealed"])
         self.assertTrue(all("mash_count" not in p for p in public["people"]))
 
-        self.client.post("/api/mash", json={"name": "Alex", "count": 18})
+        self._official_mash("Alex", 18)
         shown = self.client.post("/api/reveal", json={"pin": "test-host"}).get_json()
         self.assertTrue(shown["mash"]["revealed"])
         self.assertEqual([r["name"] for r in shown["draft_order"]], ["Sam", "Alex"])
@@ -240,7 +255,7 @@ class DraftPollTests(unittest.TestCase):
 
     def test_saving_dates_keeps_a_finished_mash(self):
         self.client.post("/api/poll", json={"name": "Sam", "dates": []})
-        self.client.post("/api/mash", json={"name": "Sam", "count": 12})
+        self._official_mash("Sam", 12)
         data = self.client.post(
             "/api/poll", json={"name": "Sam", "dates": ["2026-08-22"]}
         ).get_json()
@@ -251,7 +266,7 @@ class DraftPollTests(unittest.TestCase):
 
     def test_host_reset_keeps_names_clears_picks(self):
         self.client.post("/api/poll", json={"name": "Sam", "dates": ["2026-08-22"]})
-        self.client.post("/api/mash", json={"name": "Sam", "count": 12})
+        self._official_mash("Sam", 12)
         self.client.post("/api/reveal", json={"pin": "test-host"})
         self.assertEqual(
             self.client.post("/api/reset", json={"pin": "nope"}).status_code,
