@@ -204,6 +204,56 @@
     }
     .order-list .pick { font-weight: 800; color: var(--lime); min-width: 3.2rem; }
     .kicker-actions { display: flex; gap: 8px; }
+    .steps {
+      display: flex;
+      gap: 6px;
+      margin: 0 0 18px;
+    }
+    .step-pill {
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 4px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+    }
+    .step-pill.on {
+      background: var(--ink);
+      color: #0c100d;
+      border-color: var(--ink);
+    }
+    .step-pill.done { color: var(--ink); }
+    .step-panel { display: none; }
+    .step-panel.on { display: block; }
+    .step-title {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(1.6rem, 6vw, 2rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 8px;
+    }
+    .welcome {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(1.7rem, 7vw, 2.2rem);
+      letter-spacing: -0.035em;
+      margin: 0 0 8px;
+    }
+    .mash-cta {
+      width: 100%;
+      min-height: 72px;
+      font-size: 1.25rem;
+      margin: 8px 0 0;
+      border-radius: 16px;
+    }
+    .step-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .step-nav .ghost, .step-nav .primary { margin: 0; flex: 1; }
 
     .mash-overlay {
       position: fixed; inset: 0; z-index: 40;
@@ -268,25 +318,53 @@
         </div>
       </div>
       <h1>{{ title }}</h1>
-      <p class="lede">Every slot is <strong>{{ time_label }}</strong>.</p>
+      <p class="lede">Name, nights, then mash. Every slot is <strong>{{ time_label }}</strong>.</p>
       <p class="sub" id="time-note"></p>
     </header>
 
-    <section id="roster" class="card roster">
-      <h2>Who's drafting</h2>
-      <p class="how" id="roster-how">Tap your name to start.</p>
-      <div id="people" class="roster-list"></div>
-      <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add the names, then send this page — nights stay saved here.</p>
-      <p class="add-label">Add someone to the list</p>
-      <form id="gate" class="name-card" action="/api/poll" method="post">
-        <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
-        <button class="primary" type="submit" id="name-go">Add</button>
-      </form>
+    <nav class="steps" aria-label="Steps">
+      <button type="button" class="step-pill on" id="pill-1">1 · Name</button>
+      <button type="button" class="step-pill" id="pill-2">2 · Nights</button>
+      <button type="button" class="step-pill" id="pill-3">3 · Mash</button>
+    </nav>
+
+    <section class="step-panel on" id="step-1">
+      <section id="roster" class="card roster">
+        <h2 class="step-title">Who are you?</h2>
+        <p class="how" id="roster-how">Tap your name to start.</p>
+        <div id="people" class="roster-list"></div>
+        <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add the names, then send this page — nights stay saved here.</p>
+        <p class="add-label">Missing? Add a name</p>
+        <form id="gate" class="name-card" action="/api/poll" method="post">
+          <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
+          <button class="primary" type="submit" id="name-go">Add</button>
+        </form>
+      </section>
     </section>
-    <section id="you" class="card you" hidden>
-      <div>You're in as <b id="you-name"></b>. Tap the nights you can make it.</div>
+
+    <section class="step-panel" id="step-2">
+      <h2 class="step-title" id="nights-title">Which nights work?</h2>
+      <p class="hint" id="status-hint">Tap every night you can do 4:00 PM Pacific.</p>
+      <section id="best" class="card best" hidden></section>
+      <section id="calendars"></section>
+      <section id="detail" class="card detail"></section>
+      <div class="step-nav">
+        <button type="button" class="ghost" id="back-names">Not you?</button>
+        <button type="button" class="primary" id="to-mash">Continue</button>
+      </div>
     </section>
-    <p class="hint" id="status-hint">Tap your name above, then tap every night you're free at 4:00 PM Pacific.</p>
+
+    <section class="step-panel" id="step-3">
+      <section class="card">
+        <h2 class="welcome" id="mash-welcome">Welcome. Let's mash for draft order.</h2>
+        <p class="sub" id="mash-copy">First mash is practice. The second one is the official score. Don't say your number.</p>
+        <p class="hint" id="mash-status"></p>
+        <button type="button" class="primary mash-cta" id="mash-cta">Practice mash</button>
+      </section>
+      <div class="step-nav">
+        <button type="button" class="ghost" id="back-nights">Back to nights</button>
+      </div>
+    </section>
 
     <section id="order" class="card best" hidden></section>
     <section id="host-card" class="card host-card" hidden>
@@ -301,10 +379,6 @@
         <button class="ghost" type="button" id="reset-btn" hidden>Reset picks</button>
       </div>
     </section>
-    <section id="best" class="card best" hidden></section>
-
-    <section id="calendars"></section>
-    <section id="detail" class="card detail"></section>
   </div>
   <div class="toast" id="toast"></div>
   <div id="mash-overlay" class="mash-overlay" hidden>
@@ -327,6 +401,7 @@
   <script>
     const storeKey = "draft-night-name";
     const hostKey = "draft-night-host-pin";
+    const stepKey = "draft-night-step";
     const state = {
       me: localStorage.getItem(storeKey) || "",
       poll: null,
@@ -335,6 +410,7 @@
       pending: null,
       hostPin: sessionStorage.getItem(hostKey) || "",
       hostOpen: false,
+      step: 1,
       mash: { name: "", count: 0, started: false, timer: null, seconds: 8 },
     };
 
@@ -367,6 +443,15 @@
     async function load() {
       const res = await fetch("/api/poll", { cache: "no-store" });
       state.poll = await readJson(res);
+      const known = (state.poll.people || []).some(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+      if (state.me && !known) {
+        state.me = "";
+        localStorage.removeItem(storeKey);
+        sessionStorage.removeItem(stepKey);
+      }
+      resumeStep();
       render();
     }
 
@@ -423,10 +508,43 @@
       return new Set(person?.dates || []);
     }
 
-    function setMe(name) {
+    function mePerson() {
+      return (state.poll?.people || []).find(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+    }
+
+    function setStep(n, persist) {
+      const next = Math.min(3, Math.max(1, Number(n) || 1));
+      if (next > 1 && !state.me) {
+        state.step = 1;
+      } else {
+        state.step = next;
+      }
+      if (persist !== false) sessionStorage.setItem(stepKey, String(state.step));
+      for (const i of [1, 2, 3]) {
+        const panel = $("step-" + i);
+        const pill = $("pill-" + i);
+        panel.classList.toggle("on", state.step === i);
+        pill.classList.toggle("on", state.step === i);
+        pill.classList.toggle("done", state.step > i);
+      }
+    }
+
+    function resumeStep() {
+      const saved = Number(sessionStorage.getItem(stepKey) || 0);
+      const person = mePerson();
+      if (!state.me || !person) return setStep(1, false);
+      if (saved === 2 || saved === 3) return setStep(saved, false);
+      if (person.mashed || person.practiced) return setStep(3, false);
+      return setStep(2, false);
+    }
+
+    function setMe(name, nextStep) {
       state.me = name.trim();
       if (state.me) localStorage.setItem(storeKey, state.me);
       else localStorage.removeItem(storeKey);
+      if (nextStep) setStep(nextStep);
       render();
     }
 
@@ -452,15 +570,18 @@
       if (state.me && !known) {
         state.me = "";
         localStorage.removeItem(storeKey);
+        sessionStorage.removeItem(stepKey);
       }
-      $("you").hidden = !state.me;
-      $("you-name").textContent = state.me;
       $("roster-how").textContent = state.me
-        ? `Picking as ${state.me}. Tap another name to switch.`
+        ? `That's you? Tap ${state.me} again, or pick someone else.`
         : "Tap your name to start.";
-      $("status-hint").textContent = state.me
-        ? "Tap nights you can do 4:00 PM Pacific. First mash is practice. Second one counts."
-        : "Tap your name, pick nights, then Practice. The second mash is the one that counts.";
+      $("nights-title").textContent = state.me
+        ? `Hey ${state.me} — which nights work?`
+        : "Which nights work?";
+      $("status-hint").textContent = "Tap every night you can do 4:00 PM Pacific.";
+      if (!state.me) setStep(1, false);
+      else setStep(state.step, false);
+      renderMashStep();
       renderOrder();
       renderHost();
 
@@ -623,8 +744,8 @@
         row.appendChild(left);
         row.appendChild(right);
         row.addEventListener("click", () => {
-          setMe(person.name);
-          toast(`You're in as ${person.name} — tap your nights`);
+          setMe(person.name, 2);
+          toast(`Hey ${person.name} — tap the nights that work`);
         });
         wrap.appendChild(row);
         if (revealed && person.pick) {
@@ -632,32 +753,47 @@
           badge.className = "pick-badge";
           badge.textContent = `#${person.pick}`;
           wrap.appendChild(badge);
-        } else {
-          const mash = document.createElement("button");
-          mash.type = "button";
-          if (person.mashed) {
-            mash.className = "mash-go done";
-            mash.textContent = "Done";
-            mash.disabled = true;
-          } else if (person.practiced) {
-            mash.className = "mash-go real";
-            mash.textContent = "This one counts";
-            mash.addEventListener("click", (e) => {
-              e.stopPropagation();
-              startMash(person.name);
-            });
-          } else {
-            mash.className = "mash-go";
-            mash.textContent = "Practice";
-            mash.addEventListener("click", (e) => {
-              e.stopPropagation();
-              startMash(person.name);
-            });
-          }
-          wrap.appendChild(mash);
         }
         el.appendChild(wrap);
       }
+    }
+
+    function renderMashStep() {
+      const person = mePerson();
+      const name = person?.name || state.me;
+      const welcome = $("mash-welcome");
+      const copy = $("mash-copy");
+      const status = $("mash-status");
+      const cta = $("mash-cta");
+      cta.disabled = false;
+      cta.hidden = false;
+      if (!name) {
+        welcome.textContent = "Welcome. Let's mash for draft order.";
+        copy.textContent = "Pick your name first, then come back here.";
+        status.textContent = "";
+        cta.hidden = true;
+        return;
+      }
+      if (person?.mashed) {
+        welcome.textContent = `You're in, ${name}.`;
+        copy.textContent = "Official mash is locked. Draft order stays hidden until the host reveals it.";
+        status.textContent = "Nothing left for you to tap.";
+        cta.textContent = "You're in";
+        cta.disabled = true;
+        return;
+      }
+      if (person?.practiced) {
+        welcome.textContent = `Welcome back, ${name}.`;
+        copy.textContent = "Practice is done. This next mash is your real score for draft order. Don't say the number.";
+        status.textContent = "Ready when you are.";
+        cta.textContent = "This one counts";
+        return;
+      }
+      const seconds = state.poll?.mash?.seconds || 8;
+      welcome.textContent = `Welcome, ${name}. Let's mash for draft order.`;
+      copy.textContent = "First mash is practice. The second one is the official score. Don't say your number.";
+      status.textContent = `Go hard for ${seconds} seconds. First one is a warm-up.`;
+      cta.textContent = "Practice mash";
     }
 
     function renderOrder() {
@@ -719,8 +855,9 @@
       state.selected = iso;
       renderDetail();
       if (!state.me) {
+        setStep(1);
         $("name-input").focus();
-        toast("Tap your name at the top first");
+        toast("Tap your name first");
         return;
       }
       const next = myDates();
@@ -757,6 +894,27 @@
       } catch (err) {
         toast(err.message);
       }
+    });
+    $("pill-1").addEventListener("click", () => setStep(1));
+    $("pill-2").addEventListener("click", () => {
+      if (!state.me) { toast("Tap your name first"); return; }
+      setStep(2);
+    });
+    $("pill-3").addEventListener("click", () => {
+      if (!state.me) { toast("Tap your name first"); return; }
+      setStep(3);
+    });
+    $("back-names").addEventListener("click", () => setStep(1));
+    $("back-nights").addEventListener("click", () => setStep(2));
+    $("to-mash").addEventListener("click", () => {
+      if (!state.me) { setStep(1); return; }
+      const n = myDates().size;
+      setStep(3);
+      toast(n ? "Welcome — let's mash" : "No nights yet — you can still mash");
+    });
+    $("mash-cta").addEventListener("click", () => {
+      if (!state.me) { setStep(1); return; }
+      startMash(state.me);
     });
     $("copy-link").addEventListener("click", async () => {
       const url = location.origin + "/";

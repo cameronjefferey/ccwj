@@ -1,6 +1,6 @@
 # Draft Night
 
-A one-page calendar poll for picking a fantasy football draft. Every slot is **4:00 PM Pacific** (7:00 PM Eastern). Friends open **one URL**, tap their name, and tap the nights they can make it. The server remembers.
+A one-page calendar poll for picking a fantasy football draft. Every slot is **4:00 PM Pacific** (7:00 PM Eastern). Friends open **one URL** and walk three steps: name, nights, mash. The server remembers.
 
 This is a standalone app. It is not part of HappyTrader and is not served from the main site.
 
@@ -8,11 +8,10 @@ This is a standalone app. It is not part of HappyTrader and is not served from t
 
 ## How it works for the group
 
-1. Open the link.
-2. Add names (host) or tap your name.
-3. Tap every night you can do 4:00 PM Pacific.
-4. Tap **Practice**, then **This one counts**. First mash is practice. Second is the real score.
-5. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
+1. Open the link and tap your name.
+2. Tap every night you can do 4:00 PM Pacific, then Continue.
+3. Mash: first is practice, second is the real score. The page welcomes you by name.
+4. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
 
 Scores stay hidden until the host reveals. That's it. One URL.
 
@@ -55,8 +54,9 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 - Green heat = more people free that night
 - Lime outline = nights you picked
 - **Game** on Wed Sep 9 (first game) — not pickable
-- A “best so far” pick at the top, weekends winning ties
-- Mash button on each name; draft order stays hidden until the host reveals it
+- A “best so far” pick on the nights step, weekends winning ties
+- Three steps: pick your name, pick nights, then mash for draft order
+- Draft order stays hidden until the host reveals it
 
 ## Optional env
 
