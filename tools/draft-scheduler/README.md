@@ -8,9 +8,9 @@ This is a standalone app. It is not part of HappyTrader and is not served from t
 
 ## How it works for the group
 
-1. Open the link and tap your name.
-2. Tap every night you can do 4:00 PM Pacific, then Continue.
-3. Mash: first is practice, second is the real score. The page welcomes you by name.
+1. Open the link. Find your name and tap it. If you’re missing, add it, then tap it.
+2. Tap every night you can sit down at 4:00 PM Pacific, then continue to mash.
+3. Mash twice: first is practice, second is the official score. The page welcomes you by name.
 4. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
 
 Scores stay hidden until the host reveals. That's it. One URL.
