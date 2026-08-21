@@ -37,7 +37,7 @@ class DraftPollTests(unittest.TestCase):
         self.assertIn(b"Who are you?", res.data)
         self.assertIn(b"Which nights work?", res.data)
         self.assertIn(b"Welcome. Let's mash for draft order.", res.data)
-        self.assertIn(b"1 · Name", res.data)
+        self.assertIn("1 · Name".encode(), res.data)
         self.assertIn(b"Tap your name to start.", res.data)
         self.assertNotIn(b"includes names and nights", res.data)
         self.assertIn(b"nights stay saved here", res.data)
