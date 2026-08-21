@@ -44,7 +44,7 @@ class DraftPollTests(unittest.TestCase):
         self.assertNotIn(b">Remove<", res.data)
         self.assertIn(b"Good job.", res.data)
         self.assertIn(b"Host pin", res.data)
-        self.assertIn(b"Practice mash", res.data)
+        self.assertIn(b"Start practice mash", res.data)
         self.assertIn(b"This one counts", res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
