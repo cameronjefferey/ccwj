@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0c100d">
+  <title>{{ title }} · {{ time_label }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0c100d;
+      --bg-2: #121814;
+      --card: #171e19;
+      --ink: #f3f7f1;
+      --muted: #93a094;
+      --line: #2a332c;
+      --lime: #c6f54a;
+      --lime-ink: #14200a;
+      --grass: #3f8f5a;
+      --heat-1: #1d3a26;
+      --heat-2: #2d6a40;
+      --heat-3: #3f8f5a;
+      --heat-4: #c6f54a;
+      --warn: #f0b429;
+      --rose: #f07167;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--ink); }
+    body {
+      font-family: Figtree, ui-sans-serif, system-ui, sans-serif;
+      min-height: 100dvh;
+      padding: 24px 16px 64px;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    header.hero { margin-bottom: 22px; }
+    .kicker {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 8px;
+    }
+    .kicker span {
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--muted); font-weight: 600;
+    }
+    h1 {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2.2rem, 8vw, 3.4rem);
+      line-height: .95; letter-spacing: -.03em; margin: 0 0 10px;
+    }
+    .lede { color: var(--muted); font-size: 1.02rem; margin: 0 0 4px; }
+    .lede strong { color: var(--ink); font-weight: 700; }
+    .sub { color: var(--muted); font-size: .88rem; margin: 0; }
+    .step-panel .sub, .step-panel .hint {
+      margin: 0 0 16px;
+      line-height: 1.5;
+      font-size: .95rem;
+    }
+
+    button, input { font: inherit; }
+    .ghost {
+      background: transparent; color: var(--ink); border: 1px solid var(--line);
+      border-radius: 999px; padding: 7px 12px; cursor: pointer;
+    }
+    .ghost:hover { border-color: var(--muted); }
+    .primary {
+      background: var(--lime); color: var(--lime-ink); border: 0;
+      border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer;
+    }
+    .primary:disabled { opacity: .45; cursor: not-allowed; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px;
+    }
+    [hidden] { display: none !important; }
+    .name-card { display: flex; gap: 10px; align-items: center; }
+    .name-card input {
+      flex: 1; background: var(--bg-2); border: 1px solid var(--line);
+      color: var(--ink); border-radius: 12px; padding: 12px 14px; outline: none;
+    }
+    .name-card input:focus { border-color: var(--lime); }
+    .you {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 10px 14px;
+    }
+    .you b { font-size: 1.05rem; }
+    .hint { color: var(--muted); font-size: .86rem; margin: 10px 2px 0; }
+
+    .best { margin: 16px 0; padding: 16px 18px; background:
+      linear-gradient(180deg, #1c2a18 0%, var(--card) 100%); }
+    .best .label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--lime); font-weight: 700; margin-bottom: 6px; }
+    .best h2 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -.02em; }
+    .best p { margin: 0; color: var(--muted); font-size: .92rem; }
+    .alts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip {
+      background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px;
+      padding: 5px 10px; font-size: .82rem; color: var(--muted);
+    }
+
+    .month + .month { margin-top: 14px; }
+    .month h3 { margin: 0 0 10px; font-size: 1.05rem; }
+    .dow, .grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+    }
+    .dow span {
+      text-align: center; font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); font-weight: 600;
+      padding-bottom: 4px;
+    }
+    .day {
+      appearance: none; -webkit-appearance: none;
+      position: relative; min-height: 64px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--bg-2); color: var(--ink);
+      padding: 7px 4px 6px; cursor: pointer; text-align: left;
+      transition: transform .08s ease, border-color .12s ease, background .12s ease;
+    }
+    .day:enabled:active { transform: scale(.97); }
+    .day.out, .day:disabled {
+      opacity: .28; cursor: default; background: transparent;
+    }
+    .day.kickoff:disabled, .day.out.kickoff {
+      opacity: 1; background: #2a2414; border-color: #8a6a20; color: var(--warn);
+    }
+    .day.weekend:enabled { background: #1a221c; }
+    .day .num { display: block; font-weight: 700; font-size: 1rem; line-height: 1; }
+    .day .faces {
+      display: block; margin-top: 8px; font-size: 10px; color: var(--muted);
+      letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .day .badge {
+      position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px;
+      border-radius: 999px; background: var(--line); color: var(--ink);
+      font-size: 10px; font-weight: 700; display: grid; place-items: center;
+      padding: 0 4px;
+    }
+    .day.heat-1 { background: var(--heat-1); border-color: #2d4a34; }
+    .day.heat-2 { background: var(--heat-2); border-color: #3d7a4e; }
+    .day.heat-3 { background: var(--heat-3); border-color: #58b072; color: #fff; }
+    .day.heat-4 { background: var(--heat-4); border-color: #d8ff6a; color: var(--lime-ink); }
+    .day.heat-4 .faces, .day.heat-4 .badge { color: var(--lime-ink); background: rgba(20,32,10,.18); }
+    .day.mine { box-shadow: inset 0 0 0 2px var(--lime); }
+    .day.kickoff .num::after {
+      content: " Game"; font-size: 9px; font-weight: 700; color: var(--warn);
+      letter-spacing: 0;
+    }
+    .day.today .num { text-decoration: underline; text-underline-offset: 2px; }
+
+    .detail {
+      margin-top: 14px; display: none;
+    }
+    .detail.open { display: block; }
+    .detail h3 { margin: 0 0 4px; }
+    .detail .when { color: var(--muted); font-size: .9rem; margin: 0 0 10px; }
+    .names { display: flex; flex-wrap: wrap; gap: 8px; }
+    .person {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--bg-2); border: 1px solid var(--line);
+      border-radius: 999px; padding: 5px 10px 5px 6px; font-size: .88rem;
+    }
+    .ava {
+      width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+      font-size: 10px; font-weight: 800; color: #0c100d;
+    }
+    .empty { color: var(--muted); font-size: .92rem; }
+
+    .roster { margin-bottom: 16px; }
+    .roster h2 { margin: 0 0 6px; font-size: 1.25rem; letter-spacing: -.02em; }
+    .roster .how {
+      margin: 0 0 14px; color: var(--lime); font-weight: 700; font-size: 1rem;
+    }
+    .roster .empty { margin: 0 0 12px; }
+    .roster-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .row-wrap { display: flex; align-items: stretch; gap: 8px; }
+    .row {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      flex: 1; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--bg-2); color: inherit; text-align: left; cursor: pointer;
+      font-size: 1.05rem;
+    }
+    .row span { color: var(--muted); font-size: .88rem; }
+    .row.mine { border-color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime); }
+    .mash-go {
+      flex: 0 0 auto; min-width: 76px; padding: 0 12px;
+      background: var(--lime); color: var(--lime-ink); border: 0;
+      border-radius: 12px; font-weight: 800; cursor: pointer; font-size: .82rem;
+    }
+    .mash-go.real { min-width: 108px; }
+    .mash-go.done, .mash-go:disabled {
+      background: var(--bg-2); color: var(--muted); border: 1px solid var(--line);
+      cursor: default;
+    }
+    .pick-badge {
+      flex: 0 0 auto; min-width: 44px; display: grid; place-items: center;
+      border-radius: 12px; background: var(--lime); color: var(--lime-ink);
+      font-weight: 800; font-size: .9rem;
+    }
+    .add-label { display: block; font-size: .82rem; color: var(--muted); margin: 0 0 8px; }
+    .host-card { margin: 16px 0; }
+    .host-card h2 { margin: 0 0 8px; font-size: 1.15rem; }
+    .host-card p { margin: 0 0 12px; color: var(--muted); font-size: .92rem; }
+    .order-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .order-list li {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line);
+    }
+    .order-list .pick { font-weight: 800; color: var(--lime); min-width: 3.2rem; }
+    .kicker-actions { display: flex; gap: 8px; }
+    .steps {
+      display: flex;
+      gap: 6px;
+      margin: 0 0 18px;
+    }
+    .step-pill {
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 4px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+    }
+    .step-pill.on {
+      background: var(--ink);
+      color: #0c100d;
+      border-color: var(--ink);
+    }
+    .step-pill.done { color: var(--ink); }
+    .step-panel { display: none; }
+    .step-panel.on { display: block; }
+    .step-title {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(1.6rem, 6vw, 2rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 8px;
+    }
+    .welcome {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(1.7rem, 7vw, 2.2rem);
+      letter-spacing: -0.035em;
+      margin: 0 0 8px;
+    }
+    .mash-cta {
+      width: 100%;
+      min-height: 72px;
+      font-size: 1.25rem;
+      margin: 8px 0 0;
+      border-radius: 16px;
+    }
+    .step-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .step-nav .ghost, .step-nav .primary { margin: 0; flex: 1; }
+
+    .mash-overlay {
+      position: fixed; inset: 0; z-index: 40;
+      background: #0c100d; color: var(--ink);
+      padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    .mash-overlay[hidden] { display: none !important; }
+    .mash-kicker {
+      margin: 0 0 6px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+      font-weight: 800; color: var(--lime);
+    }
+    .mash-kicker.practice { color: var(--warn); }
+    .mash-who { margin: 0 0 8px; font-size: 1.1rem; color: var(--muted); }
+    .mash-clock {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(3rem, 16vw, 5rem); line-height: 1; margin: 0 0 18px;
+    }
+    #mash-btn {
+      appearance: none; -webkit-appearance: none;
+      width: min(78vw, 280px); height: min(78vw, 280px);
+      border-radius: 50%; border: 0; cursor: pointer;
+      background: var(--lime); color: var(--lime-ink);
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2rem, 10vw, 3rem); font-weight: 800; letter-spacing: -.03em;
+      box-shadow: 0 12px 40px rgba(198, 245, 74, .22);
+      touch-action: none;
+    }
+    #mash-btn:active { transform: scale(.96); }
+    .mash-hint { color: var(--muted); margin: 18px 0 0; }
+    .mash-done h2 {
+      font-family: "Bricolage Grotesque", Figtree, sans-serif;
+      font-size: clamp(2.4rem, 12vw, 3.6rem); margin: 0 0 10px; letter-spacing: -.03em;
+    }
+    .mash-done p { color: var(--muted); margin: 0 0 22px; max-width: 22rem; }
+    body.mash-lock { overflow: hidden; overscroll-behavior: none; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(12px);
+      background: var(--lime); color: var(--lime-ink); font-weight: 700;
+      padding: 8px 14px; border-radius: 999px; opacity: 0; pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .err { color: var(--rose); font-size: .88rem; margin-top: 8px; }
+
+    @media (max-width: 520px) {
+      .day { min-height: 56px; padding: 6px 3px; }
+      .day .faces { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="kicker">
+        <span>Fantasy football · 2026</span>
+        <div class="kicker-actions">
+          <button class="ghost" type="button" id="host-toggle">Host</button>
+          <button class="ghost" type="button" id="copy-link">Copy link</button>
+        </div>
+      </div>
+      <h1>{{ title }}</h1>
+      <p class="lede">Three steps: your name, the nights you can do, then mash for draft order. Every slot is <strong>{{ time_label }}</strong>.</p>
+      <p class="sub" id="time-note"></p>
+    </header>
+
+    <nav class="steps" aria-label="Steps">
+      <button type="button" class="step-pill on" id="pill-1">1 · Your name</button>
+      <button type="button" class="step-pill" id="pill-2">2 · Your nights</button>
+      <button type="button" class="step-pill" id="pill-3">3 · Mash</button>
+    </nav>
+
+    <section class="step-panel on" id="step-1">
+      <section id="roster" class="card roster">
+        <h2 class="step-title">Step 1 — who are you?</h2>
+        <p class="sub" id="roster-how">Find your name on the list and tap it. That’s how we know who’s picking nights and who is mashing. If you’re not on the list yet, add your name below, then tap it.</p>
+        <div id="people" class="roster-list"></div>
+        <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add the names, then send this page — nights stay saved here.</p>
+        <p class="add-label">Not on the list? Type a name and tap Add.</p>
+        <form id="gate" class="name-card" action="/api/poll" method="post">
+          <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
+          <button class="primary" type="submit" id="name-go">Add</button>
+        </form>
+      </section>
+    </section>
+
+    <section class="step-panel" id="step-2">
+      <h2 class="step-title" id="nights-title">Step 2 — which nights work?</h2>
+      <p class="sub" id="status-hint">Tap every night you can sit down at 4:00 PM Pacific. Tap a night again to undo it. Greener nights already have more people free. When you’re done, continue to mash for draft order.</p>
+      <section id="best" class="card best" hidden></section>
+      <section id="calendars"></section>
+      <section id="detail" class="card detail"></section>
+      <div class="step-nav">
+        <button type="button" class="ghost" id="back-names">Back to names</button>
+        <button type="button" class="primary" id="to-mash">Continue to mash</button>
+      </div>
+    </section>
+
+    <section class="step-panel" id="step-3">
+      <section class="card">
+        <h2 class="welcome" id="mash-welcome">Welcome. Let's mash for draft order.</h2>
+        <p class="sub" id="mash-copy">This is how we set the draft order. You’ll mash twice: the first one is practice so you can get a feel for it. The second one is the official score. Don’t say your number — the host reveals the order once everyone is in.</p>
+        <p class="hint" id="mash-status"></p>
+        <button type="button" class="primary mash-cta" id="mash-cta">Start practice mash</button>
+      </section>
+      <div class="step-nav">
+        <button type="button" class="ghost" id="back-nights">Back to nights</button>
+      </div>
+    </section>
+
+    <section id="order" class="card best" hidden></section>
+    <section id="host-card" class="card host-card" hidden>
+      <h2>Host</h2>
+      <p id="host-status">Enter the host pin to reveal the draft order. Scores stay hidden until then.</p>
+      <form id="host-gate" class="name-card">
+        <input id="host-pin" type="password" inputmode="text" autocomplete="off" placeholder="Host pin">
+        <button class="primary" type="submit">Unlock</button>
+      </form>
+      <div class="kicker-actions">
+        <button class="primary" type="button" id="reveal-btn" hidden>Reveal draft order</button>
+        <button class="ghost" type="button" id="reset-btn" hidden>Reset picks</button>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div id="mash-overlay" class="mash-overlay" hidden>
+    <div id="mash-stage">
+      <p class="mash-kicker practice" id="mash-kicker">Practice</p>
+      <p class="mash-who" id="mash-who"></p>
+      <p class="mash-clock" id="mash-clock">Ready</p>
+      <button type="button" id="mash-btn">MASH</button>
+      <p class="mash-hint" id="mash-hint">This first mash is practice. It does not count toward draft order.</p>
+      <button class="ghost" type="button" id="mash-cancel" style="margin-top:18px">Not yet</button>
+    </div>
+    <div id="mash-done" class="mash-done" hidden>
+      <h2 id="mash-done-title">Good job.</h2>
+      <p id="mash-done-copy">That was practice. It does not count. Next one is the official mash for draft order.</p>
+      <button class="primary" type="button" id="mash-real" hidden>This one counts</button>
+      <button class="ghost" type="button" id="mash-close">Back</button>
+    </div>
+  </div>
+
+  <script>
+    const storeKey = "draft-night-name";
+    const hostKey = "draft-night-host-pin";
+    const stepKey = "draft-night-step";
+    const state = {
+      me: localStorage.getItem(storeKey) || "",
+      poll: null,
+      selected: null,
+      saving: false,
+      pending: null,
+      hostPin: sessionStorage.getItem(hostKey) || "",
+      hostOpen: false,
+      step: 1,
+      mash: { name: "", count: 0, started: false, timer: null, seconds: 8 },
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const toast = (msg) => {
+      const el = $("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 2200);
+    };
+
+    const colorFor = (name) => {
+      const palette = ["#c6f54a","#7bdff2","#f0b429","#f07167","#c77dff","#80ed99","#ffd6a5","#90dbf4"];
+      let h = 0;
+      for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return palette[h % palette.length];
+    };
+    const initials = (name) => name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase();
+
+    async function readJson(res) {
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(res.ok ? "Could not read server response" : `Save failed (${res.status})`);
+      }
+    }
+
+    async function load() {
+      const res = await fetch("/api/poll", { cache: "no-store" });
+      state.poll = await readJson(res);
+      const known = (state.poll.people || []).some(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+      if (state.me && !known) {
+        state.me = "";
+        localStorage.removeItem(storeKey);
+        sessionStorage.removeItem(stepKey);
+      }
+      resumeStep();
+      render();
+    }
+
+    function applyLocalDates(dates) {
+      if (!state.poll || !state.me) return;
+      const people = state.poll.people.map((p) => ({ ...p, dates: [...(p.dates || [])] }));
+      let person = people.find((p) => p.name.toLowerCase() === state.me.toLowerCase());
+      if (!person) {
+        person = { name: state.me, dates: [] };
+        people.push(person);
+      }
+      person.dates = [...dates];
+      const by_date = {};
+      for (const p of people) {
+        for (const iso of p.dates) {
+          (by_date[iso] ||= []).push(p.name);
+        }
+      }
+      state.poll = { ...state.poll, people, by_date, respondent_count: people.length };
+    }
+
+    async function saveDates(dates) {
+      if (!state.me) return;
+      state.pending = { name: state.me, dates: [...dates] };
+      applyLocalDates(dates);
+      render();
+      if (state.saving) return;
+      state.saving = true;
+      try {
+        while (state.pending) {
+          const next = state.pending;
+          state.pending = null;
+          const res = await fetch("/api/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(next),
+          });
+          const data = await readJson(res);
+          if (!res.ok) throw new Error(data.error || "Could not save");
+          state.poll = data;
+          render();
+        }
+        toast("Saved");
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        state.saving = false;
+      }
+    }
+
+    function myDates() {
+      const person = (state.poll?.people || []).find(p => p.name.toLowerCase() === state.me.toLowerCase());
+      return new Set(person?.dates || []);
+    }
+
+    function mePerson() {
+      return (state.poll?.people || []).find(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+    }
+
+    function setStep(n, persist) {
+      const next = Math.min(3, Math.max(1, Number(n) || 1));
+      if (next > 1 && !state.me) {
+        state.step = 1;
+      } else {
+        state.step = next;
+      }
+      if (persist !== false) sessionStorage.setItem(stepKey, String(state.step));
+      for (const i of [1, 2, 3]) {
+        const panel = $("step-" + i);
+        const pill = $("pill-" + i);
+        panel.classList.toggle("on", state.step === i);
+        pill.classList.toggle("on", state.step === i);
+        pill.classList.toggle("done", state.step > i);
+      }
+    }
+
+    function resumeStep() {
+      const saved = Number(sessionStorage.getItem(stepKey) || 0);
+      const person = mePerson();
+      if (!state.me || !person) return setStep(1, false);
+      if (saved === 2 || saved === 3) return setStep(saved, false);
+      if (person.mashed || person.practiced) return setStep(3, false);
+      return setStep(2, false);
+    }
+
+    function setMe(name, nextStep) {
+      state.me = name.trim();
+      if (state.me) localStorage.setItem(storeKey, state.me);
+      else localStorage.removeItem(storeKey);
+      if (nextStep) setStep(nextStep);
+      render();
+    }
+
+    function heatClass(count, max) {
+      if (!count) return "";
+      if (max <= 1) return "heat-2";
+      const t = count / max;
+      if (t >= 0.9) return "heat-4";
+      if (t >= 0.6) return "heat-3";
+      if (t >= 0.3) return "heat-2";
+      return "heat-1";
+    }
+
+    function render() {
+      const poll = state.poll;
+      if (!poll) return;
+      $("time-note").textContent = poll.kickoff_label
+        ? `${poll.time_note}  ·  First game ${poll.kickoff_label} — last draft night is the day before`
+        : poll.time_note;
+      const known = (poll.people || []).some(
+        (p) => p.name.toLowerCase() === state.me.toLowerCase()
+      );
+      if (state.me && !known) {
+        state.me = "";
+        localStorage.removeItem(storeKey);
+        sessionStorage.removeItem(stepKey);
+      }
+      $("roster-how").textContent = state.me
+        ? `You're picking as ${state.me}. Tap that name again to keep going, or tap a different name if this isn't you.`
+        : "Find your name on the list and tap it. That’s how we know who’s picking nights and who is mashing. If you’re not on the list yet, add your name below, then tap it.";
+      $("nights-title").textContent = state.me
+        ? `Hey ${state.me} — which nights can you do?`
+        : "Step 2 — which nights work?";
+      $("status-hint").textContent = "Tap every night you can sit down at 4:00 PM Pacific. Tap a night again to undo it. Greener nights already have more people free. When you’re done, continue to mash for draft order.";
+      if (!state.me) setStep(1, false);
+      else setStep(state.step, false);
+      renderMashStep();
+      renderOrder();
+      renderHost();
+
+      const max = Math.max(0, ...Object.values(poll.by_date).map(n => n.length));
+      const mine = myDates();
+
+      const best = $("best");
+      best.replaceChildren();
+      if (poll.best.length && poll.respondent_count) {
+        const top = poll.best[0];
+        best.hidden = false;
+        const label = document.createElement("div");
+        label.className = "label";
+        label.textContent = "Best so far";
+        const h2 = document.createElement("h2");
+        h2.textContent = `${top.label} · ${poll.time_label}`;
+        const p = document.createElement("p");
+        p.textContent = top.names.length
+          ? `${top.count} of ${poll.respondent_count} free — ${top.names.join(", ")}`
+          : `${top.count} of ${poll.respondent_count} free`;
+        best.append(label, h2, p);
+        const rest = poll.best.slice(1);
+        if (rest.length) {
+          const alts = document.createElement("div");
+          alts.className = "alts";
+          for (const b of rest) {
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            chip.textContent = `${b.label} · ${b.count}`;
+            alts.appendChild(chip);
+          }
+          best.appendChild(alts);
+        }
+      } else {
+        best.hidden = true;
+      }
+
+      const cal = $("calendars");
+      cal.innerHTML = "";
+      for (const month of poll.months) {
+        const card = document.createElement("section");
+        card.className = "card month";
+        const h = document.createElement("h3");
+        h.textContent = month.label;
+        card.appendChild(h);
+        const dow = document.createElement("div");
+        dow.className = "dow";
+        for (const d of ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]) {
+          const s = document.createElement("span");
+          s.textContent = d;
+          dow.appendChild(s);
+        }
+        card.appendChild(dow);
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        for (const week of month.weeks) {
+          for (const day of week) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "day";
+            btn.disabled = !day.enabled;
+            if (!day.in_month || !day.enabled) btn.classList.add("out");
+            if (day.is_weekend) btn.classList.add("weekend");
+            if (day.is_kickoff) btn.classList.add("kickoff");
+            if (day.is_today) btn.classList.add("today");
+            const names = poll.by_date[day.date] || [];
+            const heat = heatClass(names.length, max);
+            if (heat) btn.classList.add(heat);
+            if (mine.has(day.date)) btn.classList.add("mine");
+            const num = document.createElement("span");
+            num.className = "num";
+            num.textContent = day.in_month ? String(day.day) : "";
+            btn.appendChild(num);
+            if (names.length) {
+              const badge = document.createElement("span");
+              badge.className = "badge";
+              badge.textContent = String(names.length);
+              btn.appendChild(badge);
+              const faces = document.createElement("span");
+              faces.className = "faces";
+              faces.textContent = names.map(initials).join(" ");
+              btn.appendChild(faces);
+            }
+            if (day.enabled) {
+              btn.addEventListener("click", () => onDay(day.date));
+            }
+            grid.appendChild(btn);
+          }
+        }
+        card.appendChild(grid);
+        cal.appendChild(card);
+      }
+
+      renderDetail();
+      renderPeople();
+    }
+
+    function renderDetail() {
+      const el = $("detail");
+      const iso = state.selected;
+      if (!iso || !state.poll) { el.classList.remove("open"); return; }
+      const d = new Date(iso + "T12:00:00");
+      const names = state.poll.by_date[iso] || [];
+      const label = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+      el.classList.add("open");
+      el.innerHTML = "";
+      const h = document.createElement("h3");
+      h.textContent = label;
+      const when = document.createElement("p");
+      when.className = "when";
+      when.textContent = state.poll.time_label + "  ·  " + state.poll.time_note;
+      el.appendChild(h);
+      el.appendChild(when);
+      if (!names.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "Nobody has claimed this night yet.";
+        el.appendChild(empty);
+        return;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "names";
+      for (const name of names) {
+        const pill = document.createElement("span");
+        pill.className = "person";
+        const ava = document.createElement("span");
+        ava.className = "ava";
+        ava.textContent = initials(name);
+        ava.style.background = colorFor(name);
+        const labelEl = document.createElement("span");
+        labelEl.textContent = name;
+        pill.appendChild(ava);
+        pill.appendChild(labelEl);
+        wrap.appendChild(pill);
+      }
+      el.appendChild(wrap);
+    }
+
+    function renderPeople() {
+      const el = $("people");
+      const empty = $("roster-empty");
+      const people = state.poll?.people || [];
+      const revealed = !!state.poll?.mash?.revealed;
+      el.innerHTML = "";
+      empty.hidden = people.length > 0;
+      for (const person of people) {
+        const wrap = document.createElement("div");
+        wrap.className = "row-wrap";
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "row";
+        if (state.me && person.name.toLowerCase() === state.me.toLowerCase()) {
+          row.classList.add("mine");
+        }
+        const left = document.createElement("b");
+        left.textContent = person.name;
+        const right = document.createElement("span");
+        const n = (person.dates || []).length;
+        right.textContent = n ? `${n} night${n === 1 ? "" : "s"}` : "tap to start";
+        row.appendChild(left);
+        row.appendChild(right);
+        row.addEventListener("click", () => {
+          setMe(person.name, 2);
+          toast(`Hey ${person.name} — now pick the nights that work`);
+        });
+        wrap.appendChild(row);
+        if (revealed && person.pick) {
+          const badge = document.createElement("div");
+          badge.className = "pick-badge";
+          badge.textContent = `#${person.pick}`;
+          wrap.appendChild(badge);
+        }
+        el.appendChild(wrap);
+      }
+    }
+
+    function renderMashStep() {
+      const person = mePerson();
+      const name = person?.name || state.me;
+      const welcome = $("mash-welcome");
+      const copy = $("mash-copy");
+      const status = $("mash-status");
+      const cta = $("mash-cta");
+      cta.disabled = false;
+      cta.hidden = false;
+      if (!name) {
+        welcome.textContent = "Welcome. Let's mash for draft order.";
+        copy.textContent = "Go back to step 1 and tap your name first. Then you can mash.";
+        status.textContent = "";
+        cta.hidden = true;
+        return;
+      }
+      if (person?.mashed) {
+        welcome.textContent = `You're in, ${name}.`;
+        copy.textContent = "Your official mash is locked in. Nothing else to tap. Draft order stays hidden until the host reveals it for everyone.";
+        status.textContent = "Thanks — you're done.";
+        cta.textContent = "You're in";
+        cta.disabled = true;
+        return;
+      }
+      if (person?.practiced) {
+        welcome.textContent = `Welcome back, ${name}. Practice is done — now the one that counts.`;
+        copy.textContent = "This next mash is your official score for draft order. Same clock. Don't say the number out loud — the host reveals the order once everyone is in.";
+        status.textContent = "Ready when you are.";
+        cta.textContent = "This one counts";
+        return;
+      }
+      const seconds = state.poll?.mash?.seconds || 8;
+      welcome.textContent = `Welcome, ${name}. Let's mash for draft order.`;
+      copy.textContent = "You'll mash twice. The first one is practice so you can get a feel for it — it does not count. The second one is the official score for first pick. Don't say your number.";
+      status.textContent = `Go hard for ${seconds} seconds. First one is just a warm-up.`;
+      cta.textContent = "Start practice mash";
+    }
+
+    function renderOrder() {
+      const el = $("order");
+      const order = state.poll?.draft_order || [];
+      el.replaceChildren();
+      if (!state.poll?.mash?.revealed || !order.length) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = "Draft order";
+      const h2 = document.createElement("h2");
+      h2.textContent = `${order[0].name} has the first pick`;
+      const p = document.createElement("p");
+      p.textContent = "Most mashes first. Ties go to whoever finished first.";
+      const list = document.createElement("ol");
+      list.className = "order-list";
+      for (const row of order) {
+        const li = document.createElement("li");
+        const who = document.createElement("span");
+        const pick = document.createElement("span");
+        pick.className = "pick";
+        pick.textContent = `#${row.pick}`;
+        who.append(pick, document.createTextNode(" " + row.name));
+        const taps = document.createElement("span");
+        taps.textContent = `${row.mash_count} mash${row.mash_count === 1 ? "" : "es"}`;
+        li.append(who, taps);
+        list.appendChild(li);
+      }
+      el.append(label, h2, p, list);
+    }
+
+    function renderHost() {
+      const card = $("host-card");
+      const gate = $("host-gate");
+      const reveal = $("reveal-btn");
+      const reset = $("reset-btn");
+      const status = $("host-status");
+      card.hidden = !state.hostOpen;
+      if (!state.hostOpen) return;
+      const mash = state.poll?.mash || {};
+      const unlocked = !!state.hostPin;
+      gate.hidden = unlocked;
+      reveal.hidden = !unlocked || !!mash.revealed;
+      reset.hidden = !unlocked;
+      if (mash.revealed) {
+        status.textContent = "Draft order is live for everyone.";
+      } else if (unlocked) {
+        status.textContent = `${mash.mashed_count || 0} of ${mash.total || 0} have a real score. Scores stay hidden until you reveal.`;
+      } else {
+        status.textContent = "Enter the host pin to reveal the draft order. Scores stay hidden until then.";
+      }
+    }
+
+    async function onDay(iso) {
+      state.selected = iso;
+      renderDetail();
+      if (!state.me) {
+        setStep(1);
+        $("name-input").focus();
+        toast("Step 1 first — tap your name");
+        return;
+      }
+      const next = myDates();
+      if (next.has(iso)) next.delete(iso);
+      else next.add(iso);
+      await saveDates([...next].sort());
+    }
+
+    $("gate").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = $("name-input").value.trim();
+      if (!name) { $("name-input").focus(); return; }
+      const exists = (state.poll?.people || []).some(
+        (p) => p.name.toLowerCase() === name.toLowerCase()
+      );
+      if (exists) {
+        $("name-input").value = "";
+        toast("Already on the list — tap their name");
+        return;
+      }
+      try {
+        const res = await fetch("/api/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ name, dates: [] }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not add");
+        state.poll = data;
+        $("name-input").value = "";
+        render();
+        toast(`Added ${name} — they tap their name to start`);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("pill-1").addEventListener("click", () => setStep(1));
+    $("pill-2").addEventListener("click", () => {
+      if (!state.me) { toast("Step 1 first — tap your name"); return; }
+      setStep(2);
+    });
+    $("pill-3").addEventListener("click", () => {
+      if (!state.me) { toast("Step 1 first — tap your name"); return; }
+      setStep(3);
+    });
+    $("back-names").addEventListener("click", () => setStep(1));
+    $("back-nights").addEventListener("click", () => setStep(2));
+    $("to-mash").addEventListener("click", () => {
+      if (!state.me) { setStep(1); return; }
+      const n = myDates().size;
+      setStep(3);
+      toast(n ? "Welcome — time to mash for draft order" : "No nights yet — you can still mash");
+    });
+    $("mash-cta").addEventListener("click", () => {
+      if (!state.me) { setStep(1); return; }
+      startMash(state.me);
+    });
+    $("copy-link").addEventListener("click", async () => {
+      const url = location.origin + "/";
+      try {
+        await navigator.clipboard.writeText(url);
+        toast("Link copied");
+      } catch {
+        toast(url);
+      }
+    });
+    $("host-toggle").addEventListener("click", () => {
+      state.hostOpen = !state.hostOpen;
+      renderHost();
+    });
+    $("host-gate").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pin = $("host-pin").value.trim();
+      if (!pin) { $("host-pin").focus(); return; }
+      try {
+        const res = await fetch("/api/host", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Wrong pin");
+        state.hostPin = pin;
+        sessionStorage.setItem(hostKey, pin);
+        $("host-pin").value = "";
+        renderHost();
+        toast("Host unlocked");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("reveal-btn").addEventListener("click", async () => {
+      if (!state.hostPin) return;
+      try {
+        const res = await fetch("/api/reveal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin: state.hostPin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not reveal");
+        state.poll = data;
+        render();
+        toast("Draft order is live");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("reset-btn").addEventListener("click", async () => {
+      if (!state.hostPin) return;
+      if (!confirm("Clear nights and mash scores? Names stay.")) return;
+      try {
+        const res = await fetch("/api/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ pin: state.hostPin }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not reset");
+        state.poll = data;
+        render();
+        toast("Picks cleared");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    function closeMash() {
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      state.mash = { name: "", count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8 };
+      $("mash-overlay").hidden = true;
+      $("mash-stage").hidden = false;
+      $("mash-done").hidden = true;
+      $("mash-real").hidden = true;
+      document.body.classList.remove("mash-lock");
+    }
+
+    function startMash(name) {
+      const person = (state.poll?.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+      if (!person || person.mashed || state.poll?.mash?.revealed) return;
+      setMe(name);
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      const official = !!person.practiced;
+      state.mash = { name, count: 0, started: false, timer: null, seconds: state.poll?.mash?.seconds || 8, official };
+      const kicker = $("mash-kicker");
+      kicker.textContent = official ? "This one counts" : "Practice";
+      kicker.className = "mash-kicker" + (official ? "" : " practice");
+      $("mash-who").textContent = name;
+      $("mash-clock").textContent = "Ready";
+      $("mash-hint").textContent = official
+        ? `Tap the button when you're ready, then mash for ${state.mash.seconds} seconds. This is your official score for draft order.`
+        : `Tap the button when you're ready, then mash for ${state.mash.seconds} seconds. This first one is practice and does not count.`;
+      $("mash-btn").textContent = official ? "MASH" : "PRACTICE";
+      $("mash-cancel").hidden = false;
+      $("mash-real").hidden = true;
+      $("mash-stage").hidden = false;
+      $("mash-done").hidden = true;
+      $("mash-overlay").hidden = false;
+      document.body.classList.add("mash-lock");
+    }
+
+    function tickMash() {
+      state.mash.seconds -= 1;
+      $("mash-clock").textContent = String(Math.max(state.mash.seconds, 0));
+      if (state.mash.seconds > 0) return;
+      if (state.mash.timer) clearInterval(state.mash.timer);
+      state.mash.timer = null;
+      finishMash();
+    }
+
+    async function finishMash() {
+      const name = state.mash.name;
+      const count = state.mash.count;
+      $("mash-stage").hidden = true;
+      $("mash-done").hidden = false;
+      try {
+        const res = await fetch("/api/mash", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ name, count }),
+        });
+        const data = await readJson(res);
+        if (!res.ok) throw new Error(data.error || "Could not save mash");
+        state.poll = data;
+        const person = (data.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+        if (person?.mashed) {
+          $("mash-done-title").textContent = "Good job.";
+          $("mash-done-copy").textContent = "You're in. Your official score is locked. Draft order stays hidden until the host reveals it.";
+          $("mash-real").hidden = true;
+        } else {
+          $("mash-done-title").textContent = "Good job.";
+          $("mash-done-copy").textContent = "That was practice. It does not count. Next one is the official mash for draft order.";
+          $("mash-real").hidden = false;
+        }
+        render();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    $("mash-btn").addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if ($("mash-overlay").hidden || !$("mash-done").hidden) return;
+      if (!state.mash.started) {
+        state.mash.started = true;
+        state.mash.count = 1;
+        $("mash-cancel").hidden = true;
+        $("mash-clock").textContent = String(state.mash.seconds);
+        $("mash-hint").textContent = "Keep going — don't stop until the clock hits zero.";
+        state.mash.timer = setInterval(tickMash, 1000);
+        return;
+      }
+      if (state.mash.seconds > 0) state.mash.count += 1;
+    });
+    $("mash-btn").addEventListener("click", (e) => e.preventDefault());
+    $("mash-close").addEventListener("click", closeMash);
+    $("mash-real").addEventListener("click", () => {
+      const name = state.mash.name || state.me;
+      closeMash();
+      startMash(name);
+    });
+    $("mash-cancel").addEventListener("click", () => {
+      if (!state.mash.started) closeMash();
+    });
+
+    load();
+    setInterval(async () => {
+      if (state.saving || document.hidden || !$("mash-overlay").hidden) return;
+      try {
+        const res = await fetch("/api/poll", { cache: "no-store" });
+        const poll = await readJson(res);
+        const before = JSON.stringify({ people: state.poll?.people, mash: state.poll?.mash, order: state.poll?.draft_order });
+        const after = JSON.stringify({ people: poll.people, mash: poll.mash, order: poll.draft_order });
+        if (before === after) return;
+        state.poll = poll;
+        render();
+      } catch {}
+    }, 20000);
+  </script>
+</body>
+</html>
