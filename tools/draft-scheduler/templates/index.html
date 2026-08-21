@@ -53,6 +53,11 @@
     .lede { color: var(--muted); font-size: 1.02rem; margin: 0 0 4px; }
     .lede strong { color: var(--ink); font-weight: 700; }
     .sub { color: var(--muted); font-size: .88rem; margin: 0; }
+    .step-panel .sub, .step-panel .hint {
+      margin: 0 0 16px;
+      line-height: 1.5;
+      font-size: .95rem;
+    }
 
     button, input { font: inherit; }
     .ghost {
@@ -318,23 +323,23 @@
         </div>
       </div>
       <h1>{{ title }}</h1>
-      <p class="lede">Name, nights, then mash. Every slot is <strong>{{ time_label }}</strong>.</p>
+      <p class="lede">Three steps: your name, the nights you can do, then mash for draft order. Every slot is <strong>{{ time_label }}</strong>.</p>
       <p class="sub" id="time-note"></p>
     </header>
 
     <nav class="steps" aria-label="Steps">
-      <button type="button" class="step-pill on" id="pill-1">1 · Name</button>
-      <button type="button" class="step-pill" id="pill-2">2 · Nights</button>
+      <button type="button" class="step-pill on" id="pill-1">1 · Your name</button>
+      <button type="button" class="step-pill" id="pill-2">2 · Your nights</button>
       <button type="button" class="step-pill" id="pill-3">3 · Mash</button>
     </nav>
 
     <section class="step-panel on" id="step-1">
       <section id="roster" class="card roster">
-        <h2 class="step-title">Who are you?</h2>
-        <p class="how" id="roster-how">Tap your name to start.</p>
+        <h2 class="step-title">Step 1 — who are you?</h2>
+        <p class="sub" id="roster-how">Find your name on the list and tap it. That’s how we know who’s picking nights and who is mashing. If you’re not on the list yet, add your name below, then tap it.</p>
         <div id="people" class="roster-list"></div>
         <p class="empty" id="roster-empty" hidden>Nobody is on the list yet. Add the names, then send this page — nights stay saved here.</p>
-        <p class="add-label">Missing? Add a name</p>
+        <p class="add-label">Not on the list? Type a name and tap Add.</p>
         <form id="gate" class="name-card" action="/api/poll" method="post">
           <input id="name-input" type="text" maxlength="32" placeholder="Name" autocomplete="nickname" enterkeyhint="go">
           <button class="primary" type="submit" id="name-go">Add</button>
@@ -343,23 +348,23 @@
     </section>
 
     <section class="step-panel" id="step-2">
-      <h2 class="step-title" id="nights-title">Which nights work?</h2>
-      <p class="hint" id="status-hint">Tap every night you can do 4:00 PM Pacific.</p>
+      <h2 class="step-title" id="nights-title">Step 2 — which nights work?</h2>
+      <p class="sub" id="status-hint">Tap every night you can sit down at 4:00 PM Pacific. Tap a night again to undo it. Greener nights already have more people free. When you’re done, continue to mash for draft order.</p>
       <section id="best" class="card best" hidden></section>
       <section id="calendars"></section>
       <section id="detail" class="card detail"></section>
       <div class="step-nav">
-        <button type="button" class="ghost" id="back-names">Not you?</button>
-        <button type="button" class="primary" id="to-mash">Continue</button>
+        <button type="button" class="ghost" id="back-names">Back to names</button>
+        <button type="button" class="primary" id="to-mash">Continue to mash</button>
       </div>
     </section>
 
     <section class="step-panel" id="step-3">
       <section class="card">
         <h2 class="welcome" id="mash-welcome">Welcome. Let's mash for draft order.</h2>
-        <p class="sub" id="mash-copy">First mash is practice. The second one is the official score. Don't say your number.</p>
+        <p class="sub" id="mash-copy">This is how we set the draft order. You’ll mash twice: the first one is practice so you can get a feel for it. The second one is the official score. Don’t say your number — the host reveals the order once everyone is in.</p>
         <p class="hint" id="mash-status"></p>
-        <button type="button" class="primary mash-cta" id="mash-cta">Practice mash</button>
+        <button type="button" class="primary mash-cta" id="mash-cta">Start practice mash</button>
       </section>
       <div class="step-nav">
         <button type="button" class="ghost" id="back-nights">Back to nights</button>
@@ -387,12 +392,12 @@
       <p class="mash-who" id="mash-who"></p>
       <p class="mash-clock" id="mash-clock">Ready</p>
       <button type="button" id="mash-btn">MASH</button>
-      <p class="mash-hint" id="mash-hint">This one is practice. It does not count.</p>
+      <p class="mash-hint" id="mash-hint">This first mash is practice. It does not count toward draft order.</p>
       <button class="ghost" type="button" id="mash-cancel" style="margin-top:18px">Not yet</button>
     </div>
     <div id="mash-done" class="mash-done" hidden>
       <h2 id="mash-done-title">Good job.</h2>
-      <p id="mash-done-copy">That was practice. Next one counts.</p>
+      <p id="mash-done-copy">That was practice. It does not count. Next one is the official mash for draft order.</p>
       <button class="primary" type="button" id="mash-real" hidden>This one counts</button>
       <button class="ghost" type="button" id="mash-close">Back</button>
     </div>
@@ -573,12 +578,12 @@
         sessionStorage.removeItem(stepKey);
       }
       $("roster-how").textContent = state.me
-        ? `That's you? Tap ${state.me} again, or pick someone else.`
-        : "Tap your name to start.";
+        ? `You're picking as ${state.me}. Tap that name again to keep going, or tap a different name if this isn't you.`
+        : "Find your name on the list and tap it. That’s how we know who’s picking nights and who is mashing. If you’re not on the list yet, add your name below, then tap it.";
       $("nights-title").textContent = state.me
-        ? `Hey ${state.me} — which nights work?`
-        : "Which nights work?";
-      $("status-hint").textContent = "Tap every night you can do 4:00 PM Pacific.";
+        ? `Hey ${state.me} — which nights can you do?`
+        : "Step 2 — which nights work?";
+      $("status-hint").textContent = "Tap every night you can sit down at 4:00 PM Pacific. Tap a night again to undo it. Greener nights already have more people free. When you’re done, continue to mash for draft order.";
       if (!state.me) setStep(1, false);
       else setStep(state.step, false);
       renderMashStep();
@@ -745,7 +750,7 @@
         row.appendChild(right);
         row.addEventListener("click", () => {
           setMe(person.name, 2);
-          toast(`Hey ${person.name} — tap the nights that work`);
+          toast(`Hey ${person.name} — now pick the nights that work`);
         });
         wrap.appendChild(row);
         if (revealed && person.pick) {
@@ -769,31 +774,31 @@
       cta.hidden = false;
       if (!name) {
         welcome.textContent = "Welcome. Let's mash for draft order.";
-        copy.textContent = "Pick your name first, then come back here.";
+        copy.textContent = "Go back to step 1 and tap your name first. Then you can mash.";
         status.textContent = "";
         cta.hidden = true;
         return;
       }
       if (person?.mashed) {
         welcome.textContent = `You're in, ${name}.`;
-        copy.textContent = "Official mash is locked. Draft order stays hidden until the host reveals it.";
-        status.textContent = "Nothing left for you to tap.";
+        copy.textContent = "Your official mash is locked in. Nothing else to tap. Draft order stays hidden until the host reveals it for everyone.";
+        status.textContent = "Thanks — you're done.";
         cta.textContent = "You're in";
         cta.disabled = true;
         return;
       }
       if (person?.practiced) {
-        welcome.textContent = `Welcome back, ${name}.`;
-        copy.textContent = "Practice is done. This next mash is your real score for draft order. Don't say the number.";
+        welcome.textContent = `Welcome back, ${name}. Practice is done — now the one that counts.`;
+        copy.textContent = "This next mash is your official score for draft order. Same clock. Don't say the number out loud — the host reveals the order once everyone is in.";
         status.textContent = "Ready when you are.";
         cta.textContent = "This one counts";
         return;
       }
       const seconds = state.poll?.mash?.seconds || 8;
       welcome.textContent = `Welcome, ${name}. Let's mash for draft order.`;
-      copy.textContent = "First mash is practice. The second one is the official score. Don't say your number.";
-      status.textContent = `Go hard for ${seconds} seconds. First one is a warm-up.`;
-      cta.textContent = "Practice mash";
+      copy.textContent = "You'll mash twice. The first one is practice so you can get a feel for it — it does not count. The second one is the official score for first pick. Don't say your number.";
+      status.textContent = `Go hard for ${seconds} seconds. First one is just a warm-up.`;
+      cta.textContent = "Start practice mash";
     }
 
     function renderOrder() {
@@ -857,7 +862,7 @@
       if (!state.me) {
         setStep(1);
         $("name-input").focus();
-        toast("Tap your name first");
+        toast("Step 1 first — tap your name");
         return;
       }
       const next = myDates();
@@ -897,11 +902,11 @@
     });
     $("pill-1").addEventListener("click", () => setStep(1));
     $("pill-2").addEventListener("click", () => {
-      if (!state.me) { toast("Tap your name first"); return; }
+      if (!state.me) { toast("Step 1 first — tap your name"); return; }
       setStep(2);
     });
     $("pill-3").addEventListener("click", () => {
-      if (!state.me) { toast("Tap your name first"); return; }
+      if (!state.me) { toast("Step 1 first — tap your name"); return; }
       setStep(3);
     });
     $("back-names").addEventListener("click", () => setStep(1));
@@ -910,7 +915,7 @@
       if (!state.me) { setStep(1); return; }
       const n = myDates().size;
       setStep(3);
-      toast(n ? "Welcome — let's mash" : "No nights yet — you can still mash");
+      toast(n ? "Welcome — time to mash for draft order" : "No nights yet — you can still mash");
     });
     $("mash-cta").addEventListener("click", () => {
       if (!state.me) { setStep(1); return; }
@@ -1012,8 +1017,8 @@
       $("mash-who").textContent = name;
       $("mash-clock").textContent = "Ready";
       $("mash-hint").textContent = official
-        ? `Tap when you're ready. Mash for ${state.mash.seconds} seconds — this is your real score.`
-        : `Tap when you're ready. Mash for ${state.mash.seconds} seconds. This is practice and does not count.`;
+        ? `Tap the button when you're ready, then mash for ${state.mash.seconds} seconds. This is your official score for draft order.`
+        : `Tap the button when you're ready, then mash for ${state.mash.seconds} seconds. This first one is practice and does not count.`;
       $("mash-btn").textContent = official ? "MASH" : "PRACTICE";
       $("mash-cancel").hidden = false;
       $("mash-real").hidden = true;
@@ -1050,11 +1055,11 @@
         const person = (data.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
         if (person?.mashed) {
           $("mash-done-title").textContent = "Good job.";
-          $("mash-done-copy").textContent = "You're in. The order stays hidden until the host reveals it.";
+          $("mash-done-copy").textContent = "You're in. Your official score is locked. Draft order stays hidden until the host reveals it.";
           $("mash-real").hidden = true;
         } else {
           $("mash-done-title").textContent = "Good job.";
-          $("mash-done-copy").textContent = "That was practice. Next one counts.";
+          $("mash-done-copy").textContent = "That was practice. It does not count. Next one is the official mash for draft order.";
           $("mash-real").hidden = false;
         }
         render();
@@ -1071,7 +1076,7 @@
         state.mash.count = 1;
         $("mash-cancel").hidden = true;
         $("mash-clock").textContent = String(state.mash.seconds);
-        $("mash-hint").textContent = "Keep going";
+        $("mash-hint").textContent = "Keep going — don't stop until the clock hits zero.";
         state.mash.timer = setInterval(tickMash, 1000);
         return;
       }
