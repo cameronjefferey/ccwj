@@ -111,6 +111,25 @@
     [data-bs-theme="dark"] .ts-card { background: #111a2c; }
     [data-bs-theme="dark"] .ts-epilogue { color: #94a3b8; }
 
+    .ts-loop-kicker { font-size: .72rem; letter-spacing: .8px; text-transform: uppercase; color: var(--ht-label, #6b7280); font-weight: 700; }
+    .ts-loop-headline { font-size: 1.1rem; font-weight: 700; line-height: 1.4; color: var(--ht-ink, #0f172a); margin: .2rem 0 .25rem; }
+    [data-bs-theme="dark"] .ts-loop-headline { color: var(--ht-ink, #e2e8f0); }
+    .ts-loop-sub { color: var(--ht-muted, #64748b); font-size: .88rem; }
+    a.ts-watch {
+        display: block; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: .7rem .85rem; text-decoration: none; color: inherit;
+        margin-bottom: .5rem; transition: border-color .15s ease;
+    }
+    a.ts-watch:last-child { margin-bottom: 0; }
+    a.ts-watch:hover { border-color: #6366f1; }
+    [data-bs-theme="dark"] a.ts-watch { border-color: #24304a; }
+    .ts-watch-top { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
+    .ts-watch-sym { font-weight: 800; }
+    .ts-watch-days { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-watch-days.soon { color: var(--color-negative); }
+    .ts-watch-prompt { color: var(--ht-muted, #64748b); font-size: .88rem; margin-top: .3rem; line-height: 1.45; }
+    [data-bs-theme="dark"] .ts-watch-prompt { color: var(--ht-muted, #94a3b8); }
+
     @media (max-width: 480px) {
         .ts-hero { padding: 1.3rem 1rem; }
         .ts-hero h1 { font-size: 1.5rem; }
@@ -137,6 +156,48 @@
 {% endif %}
 
 {% if novel %}
+
+{% if novel.loop %}
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card ts-card p-4 h-100">
+            <div class="ts-loop-kicker">This week</div>
+            <div class="ts-loop-headline">{{ novel.loop.this_week.headline }}</div>
+            <div class="ts-loop-sub">{{ novel.loop.this_week.sub }}</div>
+            {% if novel.loop.this_week.items %}
+            <div class="mt-3">
+                {% for w in novel.loop.this_week.items %}
+                <a class="ts-watch" href="{{ url_for('position_detail', symbol=w.symbol, account=selected_account) }}">
+                    <div class="ts-watch-top">
+                        <span class="ts-watch-sym">{{ w.symbol }}{% if w.structure %}<span class="ts-standout-open" style="margin-left:.4rem;">{{ w.structure }}</span>{% endif %}</span>
+                        <span class="ts-watch-days {% if w.days_left <= 5 %}soon{% endif %}">{{ w.days_left }}d</span>
+                    </div>
+                    <div class="ts-watch-prompt">{{ w.prompt }}</div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card ts-card p-4 h-100">
+            <div class="ts-loop-kicker">Last week · {{ novel.loop.last_week.label }}</div>
+            <div class="ts-loop-headline">{{ novel.loop.last_week.headline }}</div>
+            {% if novel.loop.last_week.facts %}
+            <div class="mt-2">
+                {% for f in novel.loop.last_week.facts %}
+                <div class="ts-finding">
+                    <div class="ts-finding-label">{{ f.label }}</div>
+                    <div class="ts-finding-value {{ f.tone }}">{{ f.value }}</div>
+                    <div class="ts-finding-detail">{{ f.detail }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card ts-card p-4 mb-4">
     <h2>Profile summary</h2>

@@ -29,8 +29,10 @@ from app.tenant_scope import (
 )
 from app.execution_quality import (
     EXECUTION_REVIEW_QUERY,
+    OPEN_OPTION_RECORD_QUERY,
     summarize_execution,
 )
+from app.story_loop import compose_story_loop, today_for_user
 from app.position_story import (
     _behavior_candidates,
     _money,
@@ -518,6 +520,11 @@ def story_query_batch(tenant_ids):
         # tenant_id like the other frames.
         "story_execution": EXECUTION_REVIEW_QUERY.format(
             tenant_filter=_tenant_sql_and(tenant_ids)),
+        # Live open contracts for the this-week watch. Same query Daily
+        # Review uses for the open-option record — tenant-scoped +
+        # projects tenant_id (already pinned on OPEN_OPTION_RECORD_QUERY).
+        "story_open_options": OPEN_OPTION_RECORD_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids)),
         # Public symbol-grain market data — NOT tenant filtered (see
         # STORY_SPLITS_QUERY comment).
         "story_splits": STORY_SPLITS_QUERY,
@@ -557,6 +564,8 @@ def trader_story():
         splits_df = dfs.get("story_splits", pd.DataFrame())
         execution_df = _filter_df_by_tenant_ids(
             dfs.get("story_execution", pd.DataFrame()), tenant_scope)
+        open_df = _filter_df_by_tenant_ids(
+            dfs.get("story_open_options", pd.DataFrame()), tenant_scope)
 
         book = build_book(trades_df, div_df, splits_df, summary_df)
         context["novel"] = compose_novel(book, trades_df)
@@ -566,6 +575,16 @@ def trader_story():
             # with a known expiry outcome), so young accounts see the
             # profile without half-baked grades.
             context["novel"]["execution"] = summarize_execution(execution_df)
+            tz_name = None
+            try:
+                from app.models import get_user_profile
+                tz_name = (get_user_profile(current_user.id) or {}).get(
+                    "timezone")
+            except Exception:
+                tz_name = None
+            context["novel"]["loop"] = compose_story_loop(
+                trades_df, open_df, execution_df,
+                today=today_for_user(tz_name), tz_name=tz_name)
     except Exception as e:
         if app.debug:
             raise

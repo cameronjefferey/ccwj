@@ -370,9 +370,14 @@ There is no separate dashboard page — Daily Review is the authenticated home.
 **Status: Working. The mirror across every symbol.**
 
 Runs the position-review engine over the user's whole history and folds the
-per-symbol fingerprints into one profile: takeaway-first Profile Summary
-(one identity headline + scannable fact rows), Execution Review card,
-notable positions, per-style scoreboard, year-by-year rows. Details in
+per-symbol fingerprints into one profile. The page opens with a recurring
+**This week / Last week** loop (`app/story_loop.py`) so the profile is
+worth opening again: this week lists open options inside 14d (spreads
+grouped) and asks a mirror question against the trader's own roll/expire
+habit ("you usually roll — roll it, or let this one expire?"); last week
+reports fills/rolls/premium vs the median completed week and whether that
+looked like them. Lifetime Profile Summary, Execution Review, notable
+positions, style scoreboard, and year-by-year rows follow. Details in
 "App-shell UX layer" under Code Organization.
 
 ### Positions List (`/positions`)
@@ -1124,7 +1129,16 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   `stg_split_events`, all through `_bq_parallel`; trades/divs/summary
   tenant-scoped in SQL AND DataFrame-filtered, pinned in
   `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
-  the per-symbol fingerprints into one profile: a PROFILE SUMMARY
+  the per-symbol fingerprints into one profile. Recurring loop first
+  (`app/story_loop.py`, `compose_story_loop`): THIS WEEK is open options
+  expiring within 14d (same-tenant complementary legs grouped like
+  Execution Review) with a habit-aware question — roll-leaning traders
+  get "roll it, or let this one expire?"; expire-leaning get "you
+  usually hold to expiry"; mixed/unknown get the usual-DTE window.
+  LAST WEEK compares the prior ISO week to the median of prior weeks
+  (≥4) and headlines like/unlike (quiet when they usually trade, a
+  roll burst, first expiries). Questions, not advice. Then a PROFILE
+  SUMMARY
   (takeaway-first, Aug 2026 readability pass: ONE identity headline —
   income vs directional vs stock — plus scannable {label, value, tone,
   detail} fact rows for the income/directional books, contract record,
