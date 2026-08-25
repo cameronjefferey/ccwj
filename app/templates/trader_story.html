@@ -164,9 +164,9 @@
             <div class="ts-loop-kicker">This week</div>
             <div class="ts-loop-headline">{{ novel.loop.this_week.headline }}</div>
             <div class="ts-loop-sub">{{ novel.loop.this_week.sub }}</div>
-            {% if novel.loop.this_week.items %}
+            {% if novel.loop.this_week.watches %}
             <div class="mt-3">
-                {% for w in novel.loop.this_week.items %}
+                {% for w in novel.loop.this_week.watches %}
                 <a class="ts-watch" href="{{ url_for('position_detail', symbol=w.symbol, account=selected_account) }}">
                     <div class="ts-watch-top">
                         <span class="ts-watch-sym">{{ w.symbol }}{% if w.structure %}<span class="ts-standout-open" style="margin-left:.4rem;">{{ w.structure }}</span>{% endif %}</span>

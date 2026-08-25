@@ -272,7 +272,8 @@ def build_this_week(open_df, exec_df=None, today=None):
         return {
             "headline": "Nothing on the clock in the next 14 days.",
             "sub": "Open stock positions stay on Positions — this list is the options that force a decision.",
-            "items": [],
+            # `watches` not `items` — see note on the populated return.
+            "watches": [],
             "habit": habit,
             "typical_dte": typical_dte,
         }
@@ -298,7 +299,9 @@ def build_this_week(open_df, exec_df=None, today=None):
     return {
         "headline": headline,
         "sub": sub,
-        "items": items,
+        # Named `watches`, not `items`: Jinja2 prefers attributes over keys,
+        # so `this_week.items` would resolve to dict.items() and 500 the page.
+        "watches": items,
         "habit": habit,
         "typical_dte": typical_dte,
     }
@@ -427,7 +430,7 @@ def compose_story_loop(trades_df, open_df, exec_df=None, today=None,
     today = today or today_for_user(tz_name)
     this_week = build_this_week(open_df, exec_df, today=today)
     last_week = build_last_week(trades_df, exec_df, today=today)
-    has_watch = bool(this_week["items"])
+    has_watch = bool(this_week["watches"])
     has_last = bool(last_week["facts"] or last_week["activity"]["fills"]
                     or last_week["tone"])
     if not has_watch and not has_last:
