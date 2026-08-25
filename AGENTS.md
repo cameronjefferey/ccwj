@@ -418,7 +418,9 @@ Architecture:
   at request time, after dbt has finished building). `ATTRIBUTION_INVARIANT`
   comments in both files cross-reference; integration test
   `test_date_filtered_at_full_window_matches_mart` (set `RUN_BQ_TESTS=1`)
-  pins them together.
+  pins them together. Buy-and-Hold is relabeled Dividend only when
+  cash yield outweighs the price move (`div > abs(trade_pnl)` and
+  `div >= $50`) — a coupon on a losing buy-and-hold stays Buy and Hold.
 
 Known issues:
 - DATE_FILTERED_QUERY is still ~150 lines of inlined SQL in app/positions_page.py.

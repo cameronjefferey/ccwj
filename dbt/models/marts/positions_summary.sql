@@ -12,8 +12,9 @@
       Dividends are a peer P&L stream alongside equity and options. The headline
       total_pnl number folds in the dividend income that's been attributed to
       this strategy via the dividend_rank ordering. A Buy-and-Hold position
-      whose dividend income exceeds its price appreciation is reclassified
-      as the "Dividend" strategy — capturing the trader who buys for yield.
+      whose dividend income outweighs its price move (either direction)
+      is reclassified as the "Dividend" strategy — yield is the story,
+      not a coupon on a losing buy-and-hold.
       total_return is preserved as an alias of total_pnl for back-compat.
 */
 
@@ -107,17 +108,22 @@ final as (
         wad.tenant_id,  -- v2 passthrough; see strategy_summary CTE
         wad.symbol,
 
-        -- Strategy reclassification: a "Buy and Hold" position whose dividend
-        -- income exceeds its price-appreciation P&L (the trade-only total) is
-        -- bucketed as "Dividend" — recognising the buy-for-yield trader.
-        -- We only reclassify when this strategy is also the dividend-rank
-        -- holder so we never invent a Dividend bucket on a row that isn't
-        -- actually carrying dividend income (e.g. a Buy and Hold row that
-        -- sits behind a Wheel on the same symbol).
+        -- Strategy reclassification: Buy and Hold → Dividend only when
+        -- cash yield is the story. Dividends must outweigh the price
+        -- move in either direction (div > abs(trade_pnl)) AND beat a
+        -- $50 dust floor. The old greatest(pnl, 0) floor treated every
+        -- underwater buy-and-hold with a $1 coupon as Dividend (UFO
+        -- −$6,554 + $17.45). We only reclassify when this strategy is
+        -- also the dividend-rank holder so we never invent a Dividend
+        -- bucket on a row that isn't carrying the income (e.g. a Buy
+        -- and Hold sitting behind a Wheel on the same symbol).
+        -- ATTRIBUTION_INVARIANT: DATE_FILTERED_QUERY in
+        -- app/positions_page.py must use the same predicate.
         case
             when wad.dividend_rank = 1
                  and wad.strategy = 'Buy and Hold'
-                 and wad.attributed_dividend_income > greatest(wad.total_pnl, 0)
+                 and wad.attributed_dividend_income >= 50
+                 and wad.attributed_dividend_income > abs(wad.total_pnl)
                 then 'Dividend'
             else wad.strategy
         end as strategy,

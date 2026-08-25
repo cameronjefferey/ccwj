@@ -33,8 +33,12 @@
 
     Output: SQL fragment that emits two CTEs (with_dividend_rank and
     with_attributed_dividends), ready to be selected from in a final
-    SELECT. The downstream final SELECT must apply the Buy and Hold →
-    Dividend reclassification described inline below.
+    SELECT. The downstream final SELECT must apply Buy and Hold →
+    Dividend only when yield outweighs the price move:
+      attributed_dividend_income >= 50
+      AND attributed_dividend_income > abs(trade_only_pnl)
+    (not `div > greatest(pnl, 0)`, which labeled every loser with a
+    coupon as Dividend).
 
     Output shape (with_attributed_dividends):
       account, user_id, symbol, strategy, status,

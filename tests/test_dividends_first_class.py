@@ -2,8 +2,9 @@
 
 The product treats dividends like equity and option P&L:
   * total_pnl on positions/strategies includes attributed dividends
-  * Buy-and-Hold positions where dividends > price appreciation get
-    reclassified as the "Dividend" strategy
+  * Buy-and-Hold positions where yield outweighs the price move
+    (div > abs(trade_pnl) and div >= $50) get reclassified as Dividend.
+    A coupon on a losing buy-and-hold stays Buy and Hold.
   * Weekly Review headline P&L (total_return) includes dividend cash flows
 
 These tests pin the contract so a refactor doesn't quietly drop dividends
@@ -16,6 +17,22 @@ from __future__ import annotations
 import re
 
 import pytest
+
+from app.positions_page import yield_is_primary
+
+
+def test_yield_is_primary_screenshot_rows():
+    """Dad's /positions table: SCHD is a yield story; the rest are not."""
+    assert yield_is_primary(118.38, 78.43) is True          # SCHD
+    assert yield_is_primary(0.87, -20.85) is False          # QTUM Keeley
+    assert yield_is_primary(0.52, -93.11) is False          # UFO Keeley
+    assert yield_is_primary(15.80, -310.42) is False        # MSFT
+    assert yield_is_primary(59.66, -2107.14) is False       # QTUM Sara
+    assert yield_is_primary(3.13, -2223.25) is False        # VRT
+    assert yield_is_primary(17.45, -6571.50) is False       # UFO Sara
+    assert yield_is_primary(3000.0, -2000.0) is True        # JEPI-class: yield still wins
+    assert yield_is_primary(40.0, 10.0) is False            # under $50 dust floor
+    assert yield_is_primary(None, 100.0) is False
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +163,7 @@ class TestDateFilteredQueryDividendInclusive:
     a date window for the /positions date filter. It must mirror
     positions_summary's dividends-as-first-class semantics: total_pnl
     includes dividends and Buy-and-Hold gets reclassified to "Dividend"
-    when div income exceeds price appreciation.
+    only when yield outweighs the price move.
 
     These string-level checks catch regressions where someone copy-pastes
     the older trade-only block back in.
@@ -166,9 +183,11 @@ class TestDateFilteredQueryDividendInclusive:
         assert "'Dividend'" in normalized
         assert "Buy and Hold" in normalized
         assert "dividend_rank = 1" in normalized
-        # Reclassification only fires when div income beats price
-        # appreciation — guarded by GREATEST.
-        assert "GREATEST" in normalized.upper()
+        # Yield must outweigh the price move (either direction) and beat
+        # the $50 dust floor. GREATEST(pnl, 0) is the old bug.
+        assert "ABS(wa.total_pnl)" in normalized
+        assert "attributed_dividend_income >= 50" in normalized
+        assert "GREATEST" not in normalized.upper()
 
     def test_query_total_pnl_includes_attributed_dividends(self):
         sql = self._query()
@@ -213,7 +232,8 @@ class TestPositionsSummaryModelDividendsFirstClass:
     column on /positions, /position/<symbol>, and /strategies. After this
     change it MUST:
       (1) fold attributed dividend income into total_pnl,
-      (2) reclassify Buy-and-Hold to "Dividend" when div > price gain,
+      (2) reclassify Buy-and-Hold to "Dividend" only when yield
+          outweighs the price move (div > abs(pnl) and div >= $50),
       (3) keep total_return as a back-compat alias of total_pnl.
 
     String-level checks because we don't run BigQuery in unit tests.
@@ -235,10 +255,12 @@ class TestPositionsSummaryModelDividendsFirstClass:
         normalized = re.sub(r"\s+", " ", sql)
         # We reclassify only when this strategy is the dividend-rank
         # holder, the strategy is currently 'Buy and Hold', and dividends
-        # exceed price appreciation.
+        # outweigh the price move — not GREATEST(pnl, 0).
         assert "'Dividend'" in normalized
         assert "wad.strategy = 'Buy and Hold'" in normalized
-        assert "greatest(wad.total_pnl, 0)" in normalized
+        assert "abs(wad.total_pnl)" in normalized
+        assert "attributed_dividend_income >= 50" in normalized
+        assert "greatest(wad.total_pnl, 0)" not in normalized
 
     def test_total_return_is_alias(self, sql):
         normalized = re.sub(r"\s+", " ", sql)

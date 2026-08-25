@@ -8,6 +8,9 @@ DATE_FILTERED_QUERY duplicates the dividend-attribution semantics of
 dbt/macros/attribute_dividends_to_strategy.sql on purpose (runtime date
 params can't flow into a dbt macro) — see the ATTRIBUTION_INVARIANT
 comments in both files.
+
+Buy-and-Hold → Dividend only when yield is the *story*, not because a
+stock happened to pay a coupon. See ``yield_is_primary``.
 """
 
 from datetime import datetime, date, timedelta  # noqa: F401
@@ -41,6 +44,31 @@ from app.routes import (
 )
 
 
+# Dust coupon: $17 on a $6k loss is not a dividend strategy.
+DIVIDEND_RECLASS_FLOOR = 50.0
+
+
+def yield_is_primary(dividend_income, trade_pnl, *, floor=DIVIDEND_RECLASS_FLOOR):
+    """True when cash yield outweighs the price move (either direction).
+
+    The old SQL used ``div > GREATEST(trade_pnl, 0)``. On a loser that
+    floor is $0, so any dividend reclassified the row as Dividend —
+    UFO −$6,554 + $17.45, VRT −$2,220 + $3.13, MSFT −$310 + $15.80.
+    Those are buy-and-hold that happen to pay a coupon.
+
+    Equivalent to: dividends are more than half of (|price P&L| + dividends)
+    and beat the dust floor. SCHD +$78 / $118 div still qualifies; a
+    JEPI that is underwater on price but paid $3k on a $2k dip still
+    qualifies. Token coupons do not.
+    """
+    try:
+        div = float(dividend_income)
+        pnl = float(trade_pnl)
+    except (TypeError, ValueError):
+        return False
+    return div >= floor and div > abs(pnl)
+
+
 # ------------------------------------------------------------------
 # SQL: date-filtered re-aggregation of positions_summary
 # This CANNOT be a dbt model because it requires runtime date parameters
@@ -52,7 +80,9 @@ DATE_FILTERED_QUERY = """
 -- picker on /positions stays consistent with the un-filtered mart. Mirrors
 -- the dividends-as-first-class semantics:
 --   * total_pnl folds in attributed dividend income
---   * Buy-and-Hold reclassified to "Dividend" when div income > price gain
+--   * Buy-and-Hold reclassified to "Dividend" only when yield outweighs
+--     the price move (div > ABS(trade_pnl) and div >= $50). A coupon on
+--     a loser is still Buy and Hold.
 --   * total_return preserved as alias of total_pnl for back-compat
 --
 -- ATTRIBUTION_INVARIANT: The dividend ranking + attribution + Buy-and-Hold
@@ -202,7 +232,8 @@ final AS (
         CASE
             WHEN wa.dividend_rank = 1
                  AND wa.strategy = 'Buy and Hold'
-                 AND wa.attributed_dividend_income > GREATEST(wa.total_pnl, 0)
+                 AND wa.attributed_dividend_income >= 50
+                 AND wa.attributed_dividend_income > ABS(wa.total_pnl)
                 THEN 'Dividend'
             ELSE wa.strategy
         END AS strategy,

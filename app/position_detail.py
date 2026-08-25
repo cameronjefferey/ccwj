@@ -485,7 +485,7 @@ def _merge_position_strategy_breakdown(
         }
 
     # Equity bucket: positions_summary's "Buy and Hold" row gets reclassified
-    # to "Dividend" when dividend income > trade gain — and Coinbase / crypto
+    # to "Dividend" when yield outweighs the price move — and Coinbase / crypto
     # holdings come through as "Crypto". All three occupy the same
     # equity-strategy slot in the breakdown — only one of them can ever exist
     # for a given (account, symbol). Track which accounts already have one
