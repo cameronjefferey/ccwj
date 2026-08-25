@@ -98,8 +98,8 @@ def test_this_week_groups_put_spread_and_asks_roll_question():
               option_expiry=_TODAY + timedelta(days=20)),  # outside 14d
     ])
     out = build_this_week(open_df, _habit_rolls(), today=_TODAY)
-    assert len(out["items"]) == 1
-    item = out["items"][0]
+    assert len(out["watches"]) == 1
+    item = out["watches"][0]
     assert item["symbol"] == "VICR"
     assert item["structure"] == "Put Spread"
     assert item["days_left"] == 5
@@ -114,9 +114,9 @@ def test_this_week_standalone_stays_one_row():
               option_expiry=_TODAY + timedelta(days=3)),
     ])
     out = build_this_week(open_df, None, today=_TODAY)
-    assert len(out["items"]) == 1
-    assert out["items"][0]["structure"] is None
-    assert "expires in 3 days" in out["items"][0]["prompt"]
+    assert len(out["watches"]) == 1
+    assert out["watches"][0]["structure"] is None
+    assert "expires in 3 days" in out["watches"][0]["prompt"]
 
 
 def test_this_week_empty_when_nothing_in_horizon():
@@ -124,7 +124,7 @@ def test_this_week_empty_when_nothing_in_horizon():
         _open(option_expiry=_TODAY + timedelta(days=40)),
     ])
     out = build_this_week(open_df, None, today=_TODAY)
-    assert out["items"] == []
+    assert out["watches"] == []
     assert "Nothing on the clock" in out["headline"]
 
 
@@ -136,7 +136,7 @@ def test_this_week_expire_habit_does_not_nudge_a_roll():
         for _ in range(8)
     ])
     out = build_this_week(open_df, exec_df, today=_TODAY)
-    prompt = out["items"][0]["prompt"]
+    prompt = out["watches"][0]["prompt"]
     assert "usually hold to expiry" in prompt
     assert "Roll it" not in prompt
 
@@ -200,7 +200,7 @@ def test_compose_story_loop_returns_both_cards():
     open_df = pd.DataFrame([_open()])
     trades = _history_with_last_week(last_fills=4, typical_fills=4, weeks=5)
     out = compose_story_loop(trades, open_df, _habit_rolls(), today=_TODAY)
-    assert out["this_week"]["items"]
+    assert out["this_week"]["watches"]
     assert out["last_week"]["facts"]
 
 
@@ -210,3 +210,53 @@ def test_story_query_batch_includes_open_options():
     assert "story_open_options" in batch
     assert "int_option_contracts" in batch["story_open_options"]
     assert "tenant_id" in batch["story_open_options"]
+
+
+def test_template_never_uses_this_week_items():
+    """Jinja2 prefers attributes over keys. `this_week.items` is
+    dict.items(), not the watch list — that 500'd /story in prod."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "app" / "templates" / "trader_story.html").read_text()
+    assert "this_week.items" not in html
+    assert "this_week.watches" in html
+    assert "This week" in html
+    assert "Last week" in html
+    assert "trader-story-loop" in html or "ts-loop-kicker" in html
+
+
+def test_jinja_items_attr_is_the_dict_method():
+    """Reproduce the /story 500. Jinja prefers attributes over keys, so
+    `this_week.items` is dict.items the method — not iterable. The
+    `{% if this_week.items %}` is also always true (a method is truthy),
+    so the for-loop 500s even when the watch list is empty."""
+    from jinja2 import Environment
+    env = Environment()
+    this_week = {
+        "headline": "1 open option",
+        "sub": "A question, not a recommendation.",
+        "items": [{"symbol": "FN", "days_left": 3, "prompt": "p",
+                   "structure": None}],
+        "watches": [{"symbol": "FN", "days_left": 3, "prompt": "p",
+                     "structure": None}],
+    }
+    gate = env.from_string(
+        "{% if this_week.items %}entered{% endif %}"
+    )
+    assert gate.render(this_week={"items": []}) == "entered"
+    empty_ok = env.from_string(
+        "{% if this_week.watches %}entered{% endif %}"
+    )
+    assert empty_ok.render(this_week={"watches": []}) == ""
+    bad = env.from_string(
+        "{% for w in this_week.items %}{{ w.symbol }}{% endfor %}"
+    )
+    try:
+        bad.render(this_week=this_week)
+        raise AssertionError("expected Jinja to fail on dict.items()")
+    except TypeError as exc:
+        assert "not iterable" in str(exc)
+    good = env.from_string(
+        "{% for w in this_week.watches %}{{ w.symbol }}{% endfor %}"
+    )
+    assert good.render(this_week=this_week) == "FN"
