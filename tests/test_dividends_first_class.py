@@ -2,8 +2,10 @@
 
 The product treats dividends like equity and option P&L:
   * total_pnl on positions/strategies includes attributed dividends
-  * Buy-and-Hold positions where dividends > price appreciation get
-    reclassified as the "Dividend" strategy
+  * Buy-and-Hold is reclassified as "Dividend" only when the cash is a
+    real yield (≥ 2.5% of invested and ≥ 15% of the P&L story) or
+    dividends are ≥ 40% of (|price P&L| + dividends) — never just
+    because a losing stock paid a coupon
   * Weekly Review headline P&L (total_return) includes dividend cash flows
 
 These tests pin the contract so a refactor doesn't quietly drop dividends
@@ -146,7 +148,7 @@ class TestDateFilteredQueryDividendInclusive:
     a date window for the /positions date filter. It must mirror
     positions_summary's dividends-as-first-class semantics: total_pnl
     includes dividends and Buy-and-Hold gets reclassified to "Dividend"
-    when div income exceeds price appreciation.
+    only when the cash is a real yield (or ≥ 40% of the P&L story).
 
     These string-level checks catch regressions where someone copy-pastes
     the older trade-only block back in.
@@ -166,9 +168,16 @@ class TestDateFilteredQueryDividendInclusive:
         assert "'Dividend'" in normalized
         assert "Buy and Hold" in normalized
         assert "dividend_rank = 1" in normalized
-        # Reclassification only fires when div income beats price
-        # appreciation — guarded by GREATEST.
-        assert "GREATEST" in normalized.upper()
+        # Yield path: ≥ 2.5% of invested (GREATEST of fill capital and
+        # snapshot cost basis) and ≥ 15% of the P&L story. The old
+        # `divs > GREATEST(price_pnl, 0)` rule is gone — that labeled
+        # every underwater stock that paid a coupon.
+        assert "0.025" in normalized
+        assert "0.15" in normalized
+        assert "0.40" in normalized
+        assert "int_equity_fills" in normalized
+        assert "GREATEST(wa.total_pnl, 0)" not in normalized
+        assert "greatest(wa.total_pnl, 0)" not in normalized.lower()
 
     def test_query_total_pnl_includes_attributed_dividends(self):
         sql = self._query()
@@ -213,7 +222,8 @@ class TestPositionsSummaryModelDividendsFirstClass:
     column on /positions, /position/<symbol>, and /strategies. After this
     change it MUST:
       (1) fold attributed dividend income into total_pnl,
-      (2) reclassify Buy-and-Hold to "Dividend" when div > price gain,
+      (2) reclassify Buy-and-Hold to "Dividend" only on a real yield
+          (or ≥ 40% of the P&L story), never on `divs > greatest(pnl, 0)`,
       (3) keep total_return as a back-compat alias of total_pnl.
 
     String-level checks because we don't run BigQuery in unit tests.
@@ -234,11 +244,17 @@ class TestPositionsSummaryModelDividendsFirstClass:
     def test_dividend_strategy_reclassification(self, sql):
         normalized = re.sub(r"\s+", " ", sql)
         # We reclassify only when this strategy is the dividend-rank
-        # holder, the strategy is currently 'Buy and Hold', and dividends
-        # exceed price appreciation.
+        # holder, the strategy is currently 'Buy and Hold', and the
+        # cash is a real yield (2.5% of invested + 15% of story) or
+        # ≥ 40% of the P&L story. The old greatest(pnl, 0) loser-always-
+        # wins rule must not return.
         assert "'Dividend'" in normalized
         assert "wad.strategy = 'Buy and Hold'" in normalized
-        assert "greatest(wad.total_pnl, 0)" in normalized
+        assert "0.025" in normalized
+        assert "0.15" in normalized
+        assert "0.40" in normalized
+        assert "int_equity_fills" in normalized
+        assert "greatest(wad.total_pnl, 0)" not in normalized.lower()
 
     def test_total_return_is_alias(self, sql):
         normalized = re.sub(r"\s+", " ", sql)
@@ -250,6 +266,44 @@ class TestPositionsSummaryModelDividendsFirstClass:
         # trade_only_pnl. Make sure it's still surfaced.
         normalized = re.sub(r"\s+", " ", sql)
         assert "as trade_only_pnl" in normalized
+
+
+def _is_dividend_label(divs: float, price_pnl: float, invested: float) -> bool:
+    """Mirror of the positions_summary Buy-and-Hold → Dividend CASE.
+
+    Kept in Python so the 2026-08-25 screenshot rows (UFO / VRT / QTUM /
+    MSFT vs SCHD / JEPI) stay pinned without a warehouse round-trip.
+    """
+    if divs <= 0:
+        return False
+    story = abs(price_pnl) + divs
+    share = divs / story if story else 0.0
+    if share >= 0.40:
+        return True
+    if invested >= 200 and (divs / invested) >= 0.025 and share >= 0.15:
+        return True
+    return False
+
+
+class TestDividendYieldThreshold:
+    """Incidental coupons on buy-and-hold names stay Buy and Hold."""
+
+    def test_screenshot_losers_are_not_dividend(self):
+        # Sara 401k UFO / VRT / QTUM and Cameron 401k MSFT from the
+        # 2026-08-25 /positions?strategy=Dividend screenshot.
+        assert not _is_dividend_label(17.45, -6571.50, 19968)
+        assert not _is_dividend_label(3.13, -2223.25, 15086)
+        assert not _is_dividend_label(59.66, -2107.14, 34896)
+        assert not _is_dividend_label(15.80, -310.42, 4491)
+
+    def test_real_yield_names_stay_dividend(self):
+        assert _is_dividend_label(118.38, 78.43, 4871)       # SCHD (story ≥ 40%)
+        assert _is_dividend_label(68049.70, -9653.04, 439075)  # JEPI
+        assert _is_dividend_label(23250.92, 7258.95, 387262)   # JEPQ
+
+    def test_spy_coupon_is_not_a_dividend_strategy(self):
+        # VOO-class: 2.3% lifetime yield, price did the work.
+        assert not _is_dividend_label(1143.91, 14729.13, 49711)
 
 
 class TestWeeklySummaryModelHasDividendColumns:

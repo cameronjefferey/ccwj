@@ -52,7 +52,10 @@ DATE_FILTERED_QUERY = """
 -- picker on /positions stays consistent with the un-filtered mart. Mirrors
 -- the dividends-as-first-class semantics:
 --   * total_pnl folds in attributed dividend income
---   * Buy-and-Hold reclassified to "Dividend" when div income > price gain
+--   * Buy-and-Hold reclassified to "Dividend" only when the cash is a
+--     real yield (≥ 2.5% of invested and ≥ 15% of the P&L story) or
+--     dividends are ≥ 40% of (|price P&L| + dividends) — not merely
+--     because a losing stock paid a coupon
 --   * total_return preserved as alias of total_pnl for back-compat
 --
 -- ATTRIBUTION_INVARIANT: The dividend ranking + attribution + Buy-and-Hold
@@ -193,6 +196,34 @@ with_attributed AS (
         AND wdr.symbol = d.symbol
 ),
 
+-- Lifetime capital (NOT windowed) so a full-history date filter matches
+-- positions_summary. Same two sources as the mart. ATTRIBUTION_INVARIANT.
+invested AS (
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        SUM(ABS(amount)) AS fill_capital
+    FROM `ccwj-dbt.analytics.int_equity_fills`
+    WHERE action = 'equity_buy'
+      {tenant_filter}
+    GROUP BY 1, 2, 3, 4
+),
+
+current_basis AS (
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        underlying_symbol AS symbol,
+        SUM(ABS(COALESCE(cost_basis, 0))) AS cost_basis
+    FROM `ccwj-dbt.analytics.stg_current`
+    WHERE instrument_type = 'Equity'
+      {tenant_filter}
+    GROUP BY 1, 2, 3, 4
+),
+
 final AS (
     SELECT
         wa.tenant_id,
@@ -202,7 +233,24 @@ final AS (
         CASE
             WHEN wa.dividend_rank = 1
                  AND wa.strategy = 'Buy and Hold'
-                 AND wa.attributed_dividend_income > GREATEST(wa.total_pnl, 0)
+                 AND wa.attributed_dividend_income > 0
+                 AND (
+                     (
+                         GREATEST(COALESCE(inv.fill_capital, 0), COALESCE(cb.cost_basis, 0)) >= 200
+                         AND SAFE_DIVIDE(
+                                 wa.attributed_dividend_income,
+                                 GREATEST(COALESCE(inv.fill_capital, 0), COALESCE(cb.cost_basis, 0))
+                             ) >= 0.025
+                         AND SAFE_DIVIDE(
+                                 wa.attributed_dividend_income,
+                                 ABS(wa.total_pnl) + wa.attributed_dividend_income
+                             ) >= 0.15
+                     )
+                     OR SAFE_DIVIDE(
+                            wa.attributed_dividend_income,
+                            ABS(wa.total_pnl) + wa.attributed_dividend_income
+                        ) >= 0.40
+                 )
                 THEN 'Dividend'
             ELSE wa.strategy
         END AS strategy,
@@ -226,6 +274,16 @@ final AS (
         wa.attributed_dividend_count            AS dividend_count,
         ROUND(wa.total_pnl + wa.attributed_dividend_income, 2) AS total_return
     FROM with_attributed wa
+    LEFT JOIN invested inv
+        ON (wa.tenant_id IS NOT DISTINCT FROM inv.tenant_id)
+        AND wa.account = inv.account
+        AND (wa.user_id IS NOT DISTINCT FROM inv.user_id)
+        AND wa.symbol = inv.symbol
+    LEFT JOIN current_basis cb
+        ON (wa.tenant_id IS NOT DISTINCT FROM cb.tenant_id)
+        AND wa.account = cb.account
+        AND (wa.user_id IS NOT DISTINCT FROM cb.user_id)
+        AND wa.symbol = cb.symbol
 )
 
 SELECT * FROM final

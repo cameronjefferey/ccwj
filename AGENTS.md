@@ -419,6 +419,14 @@ Architecture:
   comments in both files cross-reference; integration test
   `test_date_filtered_at_full_window_matches_mart` (set `RUN_BQ_TESTS=1`)
   pins them together.
+- Buy and Hold → Dividend reclassification is a yield test, not "any
+  coupon." A position is labeled Dividend only when dividends are
+  ≥ 2.5% of invested capital AND ≥ 15% of the P&L story ($200 capital
+  floor), or when dividends are ≥ 40% of (|price P&L| + dividends).
+  The old `divs > greatest(price_pnl, 0)` rule labeled every underwater
+  stock that paid anything (UFO −$6,571 / $17 dividend). Invested
+  capital is `int_equity_fills` buy cash GREATEST the live snapshot
+  cost basis. Pinned by `dbt/tests/dividend_strategy_is_real_yield.sql`.
 
 Known issues:
 - DATE_FILTERED_QUERY is still ~150 lines of inlined SQL in app/positions_page.py.

@@ -11,9 +11,10 @@
     Dividends-as-first-class:
       Dividends are a peer P&L stream alongside equity and options. The headline
       total_pnl number folds in the dividend income that's been attributed to
-      this strategy via the dividend_rank ordering. A Buy-and-Hold position
-      whose dividend income exceeds its price appreciation is reclassified
-      as the "Dividend" strategy — capturing the trader who buys for yield.
+      this strategy via the dividend_rank ordering. A Buy-and-Hold is
+      reclassified as "Dividend" only when the cash is a real yield (see
+      the CASE in `final`) — not merely because the stock happened to pay
+      a coupon while the price did the work (or the work went the other way).
       total_return is preserved as an alias of total_pnl for back-compat.
 */
 
@@ -94,11 +95,43 @@ strategy_summary as (
 ---------------------------------------------------------------------
 -- Attach dividend income (once per account × symbol, to the primary equity strategy).
 -- Logic lives in the attribute_dividends_to_strategy macro so the
--- mart and the runtime DATE_FILTERED_QUERY in app/routes.py can
+-- mart and the runtime DATE_FILTERED_QUERY in app/positions_page.py can
 -- never silently drift. ATTRIBUTION_INVARIANT: keep these two paths in
 -- sync — see the macro docstring.
 ---------------------------------------------------------------------
 {{ attribute_dividends_to_strategy('strategy_summary', 'dividends') }},
+
+-- Invested capital for the yield test. int_equity_fills is the canonical
+-- buy stream (real fills UNION synthesized opening balances), so a
+-- mid-window start still has a denominator. GREATEST with the live
+-- snapshot cost basis covers transfer-in lots that never produced a fill.
+-- ATTRIBUTION_INVARIANT: the DATE_FILTERED_QUERY mirror in
+-- app/positions_page.py must join the same two sources (lifetime, not
+-- windowed — otherwise a full-history date filter would disagree with
+-- this mart).
+invested as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        sum(abs(amount)) as fill_capital
+    from {{ ref('int_equity_fills') }}
+    where action = 'equity_buy'
+    group by 1, 2, 3, 4
+),
+
+current_basis as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        underlying_symbol as symbol,
+        sum(abs(coalesce(cost_basis, 0))) as cost_basis
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+    group by 1, 2, 3, 4
+),
 
 final as (
     select
@@ -107,17 +140,41 @@ final as (
         wad.tenant_id,  -- v2 passthrough; see strategy_summary CTE
         wad.symbol,
 
-        -- Strategy reclassification: a "Buy and Hold" position whose dividend
-        -- income exceeds its price-appreciation P&L (the trade-only total) is
-        -- bucketed as "Dividend" — recognising the buy-for-yield trader.
-        -- We only reclassify when this strategy is also the dividend-rank
-        -- holder so we never invent a Dividend bucket on a row that isn't
-        -- actually carrying dividend income (e.g. a Buy and Hold row that
-        -- sits behind a Wheel on the same symbol).
+        -- Buy and Hold → Dividend only when the cash is a real yield, not
+        -- an incidental coupon. The old rule
+        --   divs > greatest(price_pnl, 0)
+        -- labeled every underwater stock that paid anything (UFO −$6,571
+        -- with a $17 dividend → "Dividend"). Two paths, both required to
+        -- keep JEPI / SCHD / a utility held for income while dropping
+        -- MSFT / QTUM / a crashed thematic ETF:
+        --   A. Yield: ≥ 2.5% of invested AND ≥ 15% of the P&L story, with
+        --      a $200 capital floor (same floor as Daily Review).
+        --   B. Story: dividends are ≥ 40% of (|price P&L| + dividends) —
+        --      SCHD-like cases just under the yield cutoff, and rows
+        --      with no reliable capital (opening-balance-only history).
+        -- Rank-1 only so we never invent a Dividend bucket on a Buy and
+        -- Hold sitting behind a Wheel on the same symbol.
         case
             when wad.dividend_rank = 1
                  and wad.strategy = 'Buy and Hold'
-                 and wad.attributed_dividend_income > greatest(wad.total_pnl, 0)
+                 and wad.attributed_dividend_income > 0
+                 and (
+                     (
+                         greatest(coalesce(inv.fill_capital, 0), coalesce(cb.cost_basis, 0)) >= 200
+                         and safe_divide(
+                                 wad.attributed_dividend_income,
+                                 greatest(coalesce(inv.fill_capital, 0), coalesce(cb.cost_basis, 0))
+                             ) >= 0.025
+                         and safe_divide(
+                                 wad.attributed_dividend_income,
+                                 abs(wad.total_pnl) + wad.attributed_dividend_income
+                             ) >= 0.15
+                     )
+                     or safe_divide(
+                            wad.attributed_dividend_income,
+                            abs(wad.total_pnl) + wad.attributed_dividend_income
+                        ) >= 0.40
+                 )
                 then 'Dividend'
             else wad.strategy
         end as strategy,
@@ -170,6 +227,16 @@ final as (
         sm.market_cap                        as market_cap
 
     from with_attributed_dividends wad
+    left join invested inv
+        on (wad.tenant_id is not distinct from inv.tenant_id)
+        and wad.account = inv.account
+        and (wad.user_id is not distinct from inv.user_id)
+        and wad.symbol = inv.symbol
+    left join current_basis cb
+        on (wad.tenant_id is not distinct from cb.tenant_id)
+        and wad.account = cb.account
+        and (wad.user_id is not distinct from cb.user_id)
+        and wad.symbol = cb.symbol
     left join symbol_meta sm
         on upper(trim(wad.symbol)) = sm.symbol
 )

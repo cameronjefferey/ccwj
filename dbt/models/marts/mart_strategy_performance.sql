@@ -11,8 +11,9 @@
       - premium_received, premium_paid
       - avg_days_in_trade, first_trade_date, last_trade_date
 
-    Strategy values include "Dividend" for buy-for-yield positions where the
-    dividend income exceeds the price-appreciation P&L (see positions_summary).
+    Strategy values include "Dividend" for buy-for-yield positions where
+    dividends are a real yield (see the CASE in positions_summary) — not
+    every Buy and Hold that happened to collect a coupon.
 
     Powers the Strategies page and strategy-focused sections on Weekly Review.
     No P/L judgment — just evidence: which strategies you use and how they've performed.
