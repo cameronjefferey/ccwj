@@ -373,10 +373,12 @@ Runs the position-review engine over the user's whole history and folds the
 per-symbol fingerprints into one profile. The page opens with a recurring
 **This week / Last week** loop (`app/story_loop.py`) so the profile is
 worth opening again: this week lists open options inside 14d (spreads
-grouped) with the live mark (`+$450 · 3d`) and, when ≥5 gradeable early
-closes land near that DTE, the leftover-vs-expiry record ("when you roll
-an OTM short around 3 DTE, you typically leave 15% of the credit on the
-table vs expiry") from `int_option_exit_quality`; last week
+grouped) with the live mark (`+$450 · 3d`). Leftover-vs-expiry ("when you
+close an OTM short around 3 DTE you typically leave 15% of the credit")
+only attaches when ≥5 gradeable early closes land near **this row's**
+DTE — a 10-day watch must not inherit a 2-DTE leftover. Farther watches
+use this position's mark vs its own credit ("8 days before your usual
+close; the mark has given back the credit and $X more"); last week
 reports fills/rolls/premium vs the median completed week and whether that
 looked like them. Lifetime Profile Summary, Execution Review, notable
 positions, style scoreboard, and year-by-year rows follow. Details in
@@ -1136,11 +1138,12 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   expiring within 14d (same-tenant complementary legs grouped like
   Execution Review). Each watch shows live unrealized P&L from
   `OPEN_OPTION_RECORD_QUERY` plus, when ≥5 gradeable early shorts closed
-  near that DTE, the leftover-vs-expiry % (OTM rolls that then expired
-  worthless) or sidestep $ (ITM finishes) from `story_execution` —
-  evidence, not advice; "every early close also removed risk." Without
-  that sample, habit-aware copy remains (roll / hold to expiry / usual
-  DTE). LAST WEEK compares the prior ISO week to the median of prior weeks
+  near **this row's** DTE, the leftover-vs-expiry % (OTM rolls that then
+  expired worthless) or sidestep $ (ITM finishes) from `story_execution`.
+  A 10-day watch must not inherit a 2-DTE leftover; farther rows use this
+  position's mark vs its own credit and days-until-usual-close. Evidence,
+  not advice; "every early close also removed risk." LAST WEEK compares
+  the prior ISO week to the median of prior weeks
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE
   SUMMARY

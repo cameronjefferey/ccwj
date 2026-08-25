@@ -262,7 +262,12 @@ def _leftover_record(exec_df, days, typical_dte=None):
     (−delta / premium) on shorts that then expired worthless. Sidestep $
     is the opposite: median positive delta on shorts that finished ITM.
     Returns None until MIN_LEFTOVER_SAMPLE — do not invent the number.
+
+    ``typical_dte`` is ignored on purpose. A 10-day watch must not inherit
+    the leftover record from 2-DTE closes just because that's when they
+    usually exit. Leftover is only about THIS row's days left.
     """
+    del typical_dte
     if exec_df is None or exec_df.empty:
         return None
     if "gradeable_early_close" not in exec_df.columns:
@@ -280,8 +285,6 @@ def _leftover_record(exec_df, days, typical_dte=None):
         return None
 
     sample = _dte_band(graded, days)
-    if len(sample) < MIN_LEFTOVER_SAMPLE and typical_dte is not None:
-        sample = _dte_band(graded, typical_dte)
     if len(sample) < MIN_LEFTOVER_SAMPLE:
         return None
 
@@ -340,15 +343,58 @@ def _leftover_record(exec_df, days, typical_dte=None):
     return None
 
 
-def _leftover_sentence(record):
+def _leftover_sentence(record, days=None):
     verb = "roll" if record["rolled"] else "close"
     dte = record["dte"]
+    if days is not None and abs(int(days) - int(dte)) <= LEFTOVER_DTE_PAD:
+        dte = int(days)
     if record["kind"] == "otm_leftover_pct":
         return (f"When you {verb} an OTM short around {dte} DTE, you "
                 f"typically leave {record['pct']}% of the credit on the "
                 f"table vs expiry.")
     return (f"When you {verb} a short around {dte} DTE, the typical "
             f"close sidestepped {_money(record['dollars'])} vs expiry.")
+
+
+def _net_credit(members):
+    """Net premium on the live structure. Short credit is +, long debit is −."""
+    rec = sum(_as_float(m.get("premium_received")) for m in members)
+    paid = sum(_as_float(m.get("premium_paid")) for m in members)
+    return rec + paid
+
+
+def _credit_sentence(pnl, credit):
+    """This position's mark vs its own credit — never a lifetime leftover."""
+    if pnl is None or credit is None or abs(credit) < 1:
+        return None
+    if credit > 1:
+        if pnl >= 0:
+            pct = int(round(min(999, max(-999, pnl / credit * 100))))
+            return (f"You've captured {pct}% of the {_money(credit)} "
+                    f"credit so far.")
+        given = -pnl
+        extra = given - credit
+        if extra >= 1:
+            return (f"The mark has given back the {_money(credit)} credit "
+                    f"and {_money(extra)} more.")
+        return (f"The mark has given back {_money(given)} of the "
+                f"{_money(credit)} credit.")
+    debit = -credit
+    if pnl >= 0:
+        return f"The long is {_signed(pnl)} on a {_money(debit)} debit."
+    return f"The long is {_signed(pnl)} against a {_money(debit)} debit."
+
+
+def _distance_sentence(days, typical_dte, in_usual):
+    if typical_dte is None:
+        return None
+    if in_usual:
+        return None
+    if days > typical_dte + USUAL_WINDOW_PAD:
+        gap = days - typical_dte
+        return (f"{gap} day{'s' if gap != 1 else ''} before your usual "
+                f"{typical_dte} DTE close.")
+    return None
 
 
 def _habit_clause(name, days, habit, typical_dte, in_usual):
@@ -370,6 +416,25 @@ def _habit_clause(name, days, habit, typical_dte, in_usual):
     return f"{name} — {days} days left."
 
 
+def _leftover_applies(leftover, days):
+    """Leftover is about closes near THIS expiry, not a lifetime DTE habit."""
+    if not leftover:
+        return False
+    try:
+        return abs(int(leftover["dte"]) - int(days)) <= LEFTOVER_DTE_PAD
+    except (TypeError, ValueError, KeyError):
+        return False
+
+
+def _lead_sentence(pnl, days):
+    if pnl is None:
+        return None
+    lead = f"Currently {_signed(pnl)}"
+    if days == 0:
+        return lead + " · expires today"
+    return lead + f" with {days} day{'s' if days != 1 else ''} left"
+
+
 def _watch_item(members, habit, typical_dte, leftover=None):
     days = min(int(m["_days"]) for m in members)
     symbol = members[0]["symbol"]
@@ -385,31 +450,36 @@ def _watch_item(members, habit, typical_dte, leftover=None):
         typical_dte is not None and days <= typical_dte + USUAL_WINDOW_PAD
     )
     pnl = _watch_pnl(members)
-    if leftover:
-        prompt = _leftover_sentence(leftover)
-        if pnl is not None:
-            lead = f"Currently {_signed(pnl)}"
-            if days == 0:
-                lead += " · expires today"
-            else:
-                lead += f" with {days} day{'s' if days != 1 else ''} left"
-            prompt = f"{lead}. {prompt}"
-    elif pnl is not None:
-        lead = f"Currently {_signed(pnl)}"
-        if days == 0:
-            lead += " · expires today"
-        else:
-            lead += f" with {days} day{'s' if days != 1 else ''} left"
-        if habit == "expire":
-            prompt = f"{lead}. You usually hold to expiry."
-        elif habit == "roll":
-            prompt = (f"{lead}. You usually roll — roll it, or let this "
-                      f"one expire?")
-        elif in_usual:
-            prompt = (f"{lead}. Your typical early close is around "
-                      f"{typical_dte} DTE.")
-        else:
-            prompt = f"{lead}."
+    credit = _net_credit(members)
+    use_leftover = _leftover_applies(leftover, days)
+    lead = _lead_sentence(pnl, days)
+    tail = None
+    if use_leftover:
+        tail = _leftover_sentence(leftover, days=days)
+    else:
+        leftover = None
+        far = _distance_sentence(days, typical_dte, in_usual)
+        mark = _credit_sentence(pnl, credit)
+        # Far from the usual close window: talk about THIS mark vs credit.
+        # Never paste the near-DTE leftover sentence onto a 10-day watch.
+        if far and mark:
+            tail = f"{far} {mark}"
+        elif far:
+            tail = far
+        elif habit == "expire" and days <= 7:
+            tail = "You usually hold to expiry."
+        elif habit == "roll" and (in_usual or days <= 7):
+            tail = "You usually roll — roll it, or let this one expire?"
+        elif in_usual and typical_dte is not None:
+            tail = f"Your typical early close is around {typical_dte} DTE."
+        elif mark:
+            tail = mark
+    if lead and tail:
+        prompt = f"{lead}. {tail}"
+    elif lead:
+        prompt = f"{lead}."
+    elif tail:
+        prompt = tail
     else:
         prompt = _habit_clause(name, days, habit, typical_dte, in_usual)
     return {

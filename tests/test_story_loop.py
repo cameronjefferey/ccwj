@@ -190,6 +190,32 @@ def test_this_week_leftover_needs_a_real_sample():
     assert "on the table" not in out["watches"][0]["prompt"]
 
 
+def test_this_week_far_watch_does_not_reuse_near_dte_leftover():
+    """PL at 10d must not inherit the 2-DTE leftover stamped on NVDA."""
+    exec_df = _otm_rolls_at_dte(dte=2, leftover=148.0, premium=400.0)
+    open_df = pd.DataFrame([
+        _open(symbol="NVDA", trade_symbol="NVDA  260828C00230000",
+              option_type="C", option_strike=230.0, direction="Sold",
+              option_expiry=_TODAY + timedelta(days=3),
+              current_unrealized_pnl=513.0, premium_received=800.0),
+        _open(symbol="PL", trade_symbol="PL    260904C00024000",
+              option_type="C", option_strike=24.0, direction="Sold",
+              option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-5079.0, premium_received=420.0),
+    ])
+    out = build_this_week(open_df, exec_df, today=_TODAY)
+    by_sym = {w["symbol"]: w for w in out["watches"]}
+    nvda, pl = by_sym["NVDA"], by_sym["PL"]
+    assert nvda["leftover"] is not None
+    assert "on the table" in nvda["prompt"]
+    assert pl["leftover"] is None
+    assert "on the table" not in pl["prompt"]
+    assert "vs expiry" not in pl["prompt"]
+    assert "8 days before your usual" in pl["prompt"]
+    assert "given back the $420 credit" in pl["prompt"]
+    assert nvda["prompt"] != pl["prompt"]
+
+
 def _history_with_last_week(*, last_fills, typical_fills=6, weeks=6):
     """`weeks` prior completed weeks of `typical_fills`, plus last week."""
     rows = []
