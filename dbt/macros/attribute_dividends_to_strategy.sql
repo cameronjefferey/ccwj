@@ -4,8 +4,8 @@
     Single source of truth for "which strategy gets credit for the cash
     dividends on this symbol?" Used by positions_summary.sql and mirrored
     (with a date-window filter on the source) by the runtime SQL in
-    app/routes.py:DATE_FILTERED_QUERY. If you change this macro, the
-    runtime mirror in routes.py MUST be updated to match — search for
+    app/positions_page.py:DATE_FILTERED_QUERY. If you change this macro, the
+    runtime mirror in positions_page.py MUST be updated to match — search for
     `ATTRIBUTION_INVARIANT` in that file.
 
     Why this lives in a macro:
@@ -34,7 +34,10 @@
     Output: SQL fragment that emits two CTEs (with_dividend_rank and
     with_attributed_dividends), ready to be selected from in a final
     SELECT. The downstream final SELECT must apply the Buy and Hold →
-    Dividend reclassification described inline below.
+    Dividend reclassification: yield (≥ 2.5% of invested AND ≥ 15% of
+    the P&L story, $200 capital floor) OR dividends ≥ 40% of
+    (|price P&L| + dividends). Never `divs > greatest(price_pnl, 0)` —
+    that labeled every underwater stock that paid a coupon.
 
     Output shape (with_attributed_dividends):
       account, user_id, symbol, strategy, status,

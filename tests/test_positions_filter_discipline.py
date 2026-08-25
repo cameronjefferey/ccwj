@@ -406,7 +406,7 @@ def test_date_filtered_at_full_window_matches_mart():
 
     If this test fails, you have ATTRIBUTION_INVARIANT drift — the
     dividend-attribution rules in dbt/macros/ and the runtime SQL in
-    app/routes.py:DATE_FILTERED_QUERY have diverged. Make them match.
+    app/positions_page.py:DATE_FILTERED_QUERY have diverged. Make them match.
     """
     from datetime import date
 
