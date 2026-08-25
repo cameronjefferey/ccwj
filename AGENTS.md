@@ -1134,11 +1134,16 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   user is thousands of rows, not millions). Skeleton-wrapped. Pinned by
   `tests/test_trader_story.py`.
 - **Dark mode**: navbar toggle → localStorage → inline head script sets
-  `data-bs-theme` pre-paint. Bootstrap 5.3 handles its components; the
-  app's hardcoded light surfaces are overridden in base.html's
-  `[data-bs-theme="dark"]` block; charts recolor via Chart.js global
-  defaults + theme-aware `borderColor` ternaries in page templates. New
-  templates with hardcoded light styling need a dark override added there.
+  `data-bs-theme` pre-paint. Ink/surface colors are `--ht-ink` /
+  `--ht-label` / `--ht-muted` / `--ht-surface` tokens on `:root` and
+  `[data-bs-theme="dark"]` in base.html — page style blocks must use
+  those, not hardcoded `#0f172a` (light-only ink, vanishes on a dark
+  card) or `#94a3b8` (dark-only muted, vanishes on white). Bootstrap 5.3
+  handles its components; leftover hardcoded light surfaces are
+  overridden in base.html's `[data-bs-theme="dark"]` block; charts
+  recolor via Chart.js global defaults + theme-aware `borderColor`
+  ternaries in page templates. New templates with hardcoded light
+  styling need a token or a dark override.
 
 **Design refresh layer (Aug 2026).** base.html carries a global "Design
 refresh" style block that owns the app's look: slate page background
