@@ -211,7 +211,7 @@ What's working (May 2026 rebuild):
  NULL and the section will not appear in dev — that is expected, not a bug;
  it renders in prod once a real post-close sync lands and today's close is
  published.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), projected ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page.
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
@@ -239,14 +239,22 @@ Implementation notes:
   capital floor so dust-lot dividends don't extrapolate to four-digit %.
 - Strategy / sector / subsector breakdowns are pure pandas groupby on the per-symbol
   rows — totals reconcile by construction.
-- Projected ex-dividend dates come from a cadence heuristic on `stg_daily_prices.dividend`
-  (median spacing of last 6 events). When last + one spacing is already
-  in the past (yfinance missed the latest JEPI ex-div while JEPQ still
-  projected), SQL and `_next_ex_div_on_or_after` roll the cadence
-  forward with `CEIL(days_since / spacing)` so the sibling stays on the
-  watch list. Labeled "projected" in UI; weekly preview email uses the
-  same roll-forward in `_EX_DIVS_SQL`. The long-term fix is a
-  yfinance Calendar refresher script that ships real future ex-div dates.
+- Ex-dividend dates: canonical source is `stg_ex_div_calendar` (yfinance
+  `Ticker.calendar` Ex-Dividend Date, written by
+  `scripts/refresh_earnings_calendar.py` into `earnings_calendar` on the
+  warehouse rebuild — ETFs like JEPI often have an ex-div and no
+  earnings, so the loader persists a row even when Earnings Date is
+  missing). Daily Review (`EX_DIV_CALENDAR_QUERY` +
+  `_build_upcoming_dividends`) and the weekly preview email
+  (`_EX_DIVS_SQL`) prefer a calendar date that is still on/after today.
+  Fallback is the last+median cadence heuristic on
+  `stg_daily_prices.dividend` (median spacing of last 6 events),
+  rolled forward with `CEIL(days_since / spacing)` when last + one
+  spacing is already in the past. Heuristic rows are labeled
+  "projected" in UI / `~` in the email; calendar rows are not. The
+  calendar query is a separate batch key so a missing view cannot
+  blank the heuristic. Symbol-grain public market data — do NOT run
+  the calendar frame through `_filter_df_by_tenant_ids`.
 
 What could be better:
 - ~~"Today's $ impact" only covers equity price-moves~~ — closed Aug 2026: the movers

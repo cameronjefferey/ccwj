@@ -998,6 +998,30 @@ WHERE p.projected_next_ex_div_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 D
 ORDER BY p.projected_next_ex_div_date
 """
 
+# Real future ex-div dates from yfinance Ticker.calendar (same payload
+# the earnings loader already fetched). Symbol-grain public market data
+# after a tenant-scoped holdings CTE — do NOT run the frame through
+# _filter_df_by_tenant_ids (no tenant_id column; fail-closed would empty
+# it). Independent batch key so a missing stg_ex_div_calendar (app
+# deploy before the warehouse build) cannot blank the heuristic query.
+EX_DIV_CALENDAR_QUERY = """
+WITH holdings AS (
+    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      AND instrument_type = 'Equity'
+      {tenant_filter}
+)
+SELECT
+    h.symbol,
+    c.next_ex_div_date,
+    c.next_dividend_pay_date
+FROM holdings h
+JOIN `ccwj-dbt.analytics.stg_ex_div_calendar` c USING (symbol)
+WHERE c.next_ex_div_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+                             AND DATE_ADD(CURRENT_DATE(), INTERVAL 31 DAY)
+"""
+
 OPEN_POSITIONS_QUERY = """
 WITH latest_prices AS (
     SELECT symbol, close_price
@@ -2795,32 +2819,69 @@ def _next_ex_div_on_or_after(last, spacing, today):
     return last + timedelta(days=periods * spacing_i)
 
 
-def _build_upcoming_dividends(div_df, today=None):
-    """Projected next ex-div dates for held dividend-paying symbols.
+def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
+    """Next ex-div dates for held dividend-paying symbols.
+
+    Prefer a real yfinance calendar date (``calendar_df``) when it is
+    on or after ``today``. Fall back to the last+median cadence
+    heuristic — including rolling a stale last event forward — when
+    the calendar is missing or already in the past.
 
     ``today`` is the user's profile-timezone date; the day count is computed
     here (not in SQL) because BigQuery's CURRENT_DATE() is UTC and the frame
     may be served from the query cache a day later.
     """
-    if div_df is None or div_df.empty:
-        return []
     today = today or date.today()
+    calendar = {}
+    if calendar_df is not None and not calendar_df.empty:
+        for _, cr in calendar_df.iterrows():
+            sym = str(cr.get("symbol") or "").strip().upper()
+            raw = cr.get("next_ex_div_date")
+            cal_d = raw.date() if hasattr(raw, "date") and not isinstance(raw, date) else raw
+            if sym and cal_d is not None:
+                calendar[sym] = cal_d
+
+    if (div_df is None or div_df.empty) and not calendar:
+        return []
+
+    rows_in = []
+    seen = set()
+    if div_df is not None and not div_df.empty:
+        for _, r in div_df.iterrows():
+            rows_in.append(r)
+            seen.add(str(r.get("symbol") or "").strip().upper())
+    # Calendar-only symbols (heuristic query dropped them) still show.
+    if calendar_df is not None and not calendar_df.empty:
+        for _, cr in calendar_df.iterrows():
+            sym = str(cr.get("symbol") or "").strip().upper()
+            if sym and sym not in seen:
+                rows_in.append(cr)
+                seen.add(sym)
+
     out = []
-    for _, r in div_df.iterrows():
+    for r in rows_in:
+        symbol = str(r.get("symbol") or "").strip()
         proj = r.get("projected_next_ex_div_date")
         last = r.get("last_ex_div_date")
         proj_date = proj.date() if hasattr(proj, "date") and not isinstance(proj, date) else proj
         last_date = last.date() if hasattr(last, "date") and not isinstance(last, date) else last
         spacing = r.get("median_spacing_days")
-        if proj_date is None or proj_date < today:
+        source = "heuristic"
+        cal_date = calendar.get(symbol.upper())
+        if cal_date is not None and cal_date >= today:
+            proj_date = cal_date
+            source = "calendar"
+        elif proj_date is None or proj_date < today:
             rolled = _next_ex_div_on_or_after(last_date or proj_date, spacing, today)
             if rolled is not None:
                 proj_date = rolled
+        if proj_date is None:
+            continue
         try:
             d_until = (proj_date - today).days
         except TypeError:
-            d_until = None
-        if d_until is not None and (d_until < 0 or d_until > 31):
+            continue
+        if d_until < 0 or d_until > 31:
             continue
         proj_s = (
             proj_date.isoformat() if hasattr(proj_date, "isoformat") and not isinstance(proj_date, str)
@@ -2831,7 +2892,7 @@ def _build_upcoming_dividends(div_df, today=None):
             else str(last)[:10] if last is not None else None
         )
         out.append({
-            "symbol": str(r.get("symbol") or ""),
+            "symbol": symbol,
             "company": str(r.get("long_name") or "") or None,
             "sector": str(r.get("sector") or "") if r.get("sector") not in (None, "Unknown") else "",
             "subsector": str(r.get("subsector") or "") if r.get("subsector") not in (None, "Unknown") else "",
@@ -2840,6 +2901,7 @@ def _build_upcoming_dividends(div_df, today=None):
             "last_amount_per_share": float(r.get("last_amount_per_share") or 0),
             "days_until": d_until,
             "median_spacing_days": int(r.get("median_spacing_days") or 0) or None,
+            "source": source,
         })
     out.sort(key=lambda x: x.get("days_until") if x.get("days_until") is not None else 999)
     return out
@@ -3299,6 +3361,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None)
         "today_options_moves": TODAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter),
         "today_dividends": TODAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
+        "ex_div_calendar": EX_DIV_CALENDAR_QUERY.format(tenant_filter=tenant_filter),
         "weekly_trades": (WEEKLY_TRADES_MART_QUERY.format(tenant_filter=tenant_filter), week_cfg),
         # Same-day fills from stg_history (DAY_TRADES_QUERY, shared with
         # /daily-review/day/<date>). "Trades this week" only lists groups
@@ -3859,7 +3922,12 @@ def weekly_review():
         # ── Projected ex-dividend dates ───────────────────────────────
         try:
             ud_df = batch.get("upcoming_divs", pd.DataFrame())
-            context["upcoming_ex_dividends"] = _build_upcoming_dividends(ud_df, today=today)
+            # Symbol-grain public calendar (stg_ex_div_calendar). Holdings
+            # were tenant-scoped in SQL; no tenant_id on the frame — do
+            # not run it through _filter_df_by_tenant_ids.
+            cal_df = batch.get("ex_div_calendar", pd.DataFrame())
+            context["upcoming_ex_dividends"] = _build_upcoming_dividends(
+                ud_df, today=today, calendar_df=cal_df)
         except Exception as e:
             app.logger.warning("Upcoming ex-div processing failed: %s", e)
 

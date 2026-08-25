@@ -1,19 +1,24 @@
 """
-Refresh earnings_calendar: pull next-earnings dates from yfinance for every
-ticker that shows up in stg_history (excluding crypto symbols and benchmarks
-that don't report earnings), and load into ccwj-dbt.analytics.earnings_calendar.
+Refresh earnings_calendar: pull next-earnings AND next-ex-div dates from
+yfinance for every ticker that shows up in stg_history (excluding crypto),
+and load into ccwj-dbt.analytics.earnings_calendar.
 
-yfinance exposes earnings via Ticker(...).calendar — a dict shaped like:
+yfinance exposes both via Ticker(...).calendar — a dict shaped like:
   {
     'Earnings Date': [datetime.date(2026, 7, 30)]   # 1-2 dates (windowed)
                 or [datetime.date(...), datetime.date(...)],
     'Earnings High': 1.99, 'Earnings Low': 1.83, ...
-    'Dividend Date': ..., 'Ex-Dividend Date': ...,
+    'Dividend Date': datetime.date(...),
+    'Ex-Dividend Date': datetime.date(...),
   }
 
-ETFs / indices / crypto return {} (no fundamentals). We persist a row even
-for those (as a negative cache, NULL date) so we have visibility into what
-was tried without scanning logs.
+ETFs / indices often have an Ex-Dividend Date and no earnings (JEPI/JEPQ/
+SPY). We used to return an empty row when Earnings Date was missing, so
+the calendar's real future ex-div never landed in the warehouse and Daily
+Review guessed from last+median spacing — which is how JEPI vanished
+next to JEPQ. Persist whatever the calendar has; NULL the rest.
+
+A row is always written (negative cache) so we know a ticker was tried.
 
 Mirrors the operational pattern of scripts/refresh_symbol_metadata.py:
   - Read distinct symbols out of BigQuery
@@ -40,12 +45,6 @@ from google.cloud import bigquery
 
 TABLE_ID = "ccwj-dbt.analytics.earnings_calendar"
 SLEEP_BETWEEN_CALLS_SEC = 0.2
-
-# Symbols that yfinance categorically has no earnings calendar for. We skip
-# them outright to avoid 404 spam in CI logs. Benchmark ETFs included
-# because every tenant gets SPY/QQQ minted into stg_history by the price
-# loader.
-BENCHMARK_TICKERS = {"SPY", "QQQ"}
 
 
 def _load_crypto_symbols() -> set[str]:
@@ -79,63 +78,108 @@ def _distinct_symbols(client: bigquery.Client) -> list[str]:
 
 def _coerce_date(val) -> date | None:
     """yfinance hands back datetime.date already, but be defensive against
-    datetime / Timestamp / string drift across versions."""
+    datetime / Timestamp / string / unix-seconds drift across versions."""
     if val is None:
         return None
     if isinstance(val, date) and not isinstance(val, datetime):
         return val
     if isinstance(val, datetime):
         return val.date()
+    if isinstance(val, (int, float)) and val > 0:
+        try:
+            return datetime.fromtimestamp(val, tz=timezone.utc).date()
+        except (OverflowError, OSError, ValueError):
+            return None
     try:
         return pd.Timestamp(val).date()
     except Exception:  # noqa: BLE001
         return None
 
 
-def _fetch_one(symbol: str) -> dict:
-    """Hit yfinance for one ticker. Always returns a row dict (with NULL
-    date fields for unknowns / errors) so the negative cache is preserved
-    and a single bad ticker can't kill the whole run."""
-    fetched_at = datetime.now(timezone.utc)
-    empty = {
+def _first_date(raw) -> date | None:
+    """Calendar values are a date, a list of dates, or a Timestamp."""
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        return None
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    coerced = [d for d in (_coerce_date(d) for d in raw) if d is not None]
+    return min(coerced) if coerced else None
+
+
+def _as_calendar_dict(cal) -> dict:
+    if cal is None:
+        return {}
+    if isinstance(cal, dict):
+        return cal
+    if isinstance(cal, pd.DataFrame):
+        out = {}
+        for idx, row in cal.iterrows():
+            out[str(idx)] = row.iloc[0] if len(row) else None
+        return out
+    return {}
+
+
+def _empty_row(symbol: str) -> dict:
+    return {
         "symbol": symbol,
         "next_earnings_date": None,
         "earnings_window_start": None,
         "earnings_window_end": None,
-        "fetched_at": fetched_at,
+        "next_ex_div_date": None,
+        "next_dividend_pay_date": None,
+        "fetched_at": datetime.now(timezone.utc),
     }
+
+
+def _fetch_one(symbol: str, ticker_factory=None) -> dict:
+    """Hit yfinance for one ticker. Always returns a row dict (with NULL
+    date fields for unknowns / errors) so the negative cache is preserved
+    and a single bad ticker can't kill the whole run.
+
+    ``ticker_factory`` is a test seam (same shape as refresh_symbol_metadata).
+    """
+    factory = ticker_factory or yf.Ticker
+    empty = _empty_row(symbol)
     try:
-        cal = yf.Ticker(symbol).calendar or {}
+        cal = _as_calendar_dict(factory(symbol).calendar)
     except Exception as exc:  # noqa: BLE001 — yfinance raises a wide range
         print(f"  ! {symbol}: yfinance error: {exc}")
         return empty
 
-    if not isinstance(cal, dict) or not cal:
+    if not cal:
         return empty
 
     earnings_dates = cal.get("Earnings Date") or []
     if not isinstance(earnings_dates, (list, tuple)):
         earnings_dates = [earnings_dates]
     coerced = [d for d in (_coerce_date(d) for d in earnings_dates) if d is not None]
+
+    empty["next_ex_div_date"] = _first_date(
+        cal.get("Ex-Dividend Date") or cal.get("exDividendDate")
+    )
+    empty["next_dividend_pay_date"] = _first_date(
+        cal.get("Dividend Date") or cal.get("dividendDate")
+    )
+
     if not coerced:
         return empty
 
-    return {
-        "symbol": symbol,
-        "next_earnings_date": min(coerced),
-        "earnings_window_start": min(coerced),
-        "earnings_window_end": max(coerced),
-        "fetched_at": fetched_at,
-    }
+    empty["next_earnings_date"] = min(coerced)
+    empty["earnings_window_start"] = min(coerced)
+    empty["earnings_window_end"] = max(coerced)
+    return empty
 
 
 def main() -> None:
     client = bigquery.Client()
     crypto = _load_crypto_symbols()
     all_symbols = _distinct_symbols(client)
-    symbols = [s for s in all_symbols if s not in crypto and s not in BENCHMARK_TICKERS]
+    # SPY/QQQ used to be skipped because they have no earnings. They DO
+    # have ex-div dates, and tenants hold them, so they stay in the fetch.
+    symbols = [s for s in all_symbols if s not in crypto]
     skipped = len(all_symbols) - len(symbols)
-    print(f"Fetching earnings for {len(symbols)} symbols (skipped {skipped} crypto/benchmark)...")
+    print(f"Fetching earnings/ex-div calendar for {len(symbols)} symbols "
+          f"(skipped {skipped} crypto)...")
 
     rows: list[dict] = []
     for i, sym in enumerate(symbols, start=1):
@@ -145,7 +189,7 @@ def main() -> None:
         time.sleep(SLEEP_BETWEEN_CALLS_SEC)
 
     if not rows:
-        print("No earnings fetched. Bailing out without overwriting the table.")
+        print("No calendar rows fetched. Bailing out without overwriting the table.")
         return
 
     df = pd.DataFrame(rows)
@@ -156,6 +200,8 @@ def main() -> None:
         bigquery.SchemaField("next_earnings_date", "DATE"),
         bigquery.SchemaField("earnings_window_start", "DATE"),
         bigquery.SchemaField("earnings_window_end", "DATE"),
+        bigquery.SchemaField("next_ex_div_date", "DATE"),
+        bigquery.SchemaField("next_dividend_pay_date", "DATE"),
         bigquery.SchemaField("fetched_at", "TIMESTAMP"),
     ]
     job = client.load_table_from_dataframe(
@@ -167,8 +213,10 @@ def main() -> None:
         ),
     )
     job.result()
-    with_dates = int(df["next_earnings_date"].notna().sum())
-    print(f"Loaded {len(df)} rows into {TABLE_ID} ({with_dates} with earnings dates).")
+    with_earn = int(df["next_earnings_date"].notna().sum())
+    with_div = int(df["next_ex_div_date"].notna().sum())
+    print(f"Loaded {len(df)} rows into {TABLE_ID} "
+          f"({with_earn} earnings, {with_div} ex-div).")
 
 
 if __name__ == "__main__":

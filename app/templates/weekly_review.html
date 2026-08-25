@@ -1232,7 +1232,7 @@
 
         <div class="watch-block">
             <div class="wb-title">
-                <span>Upcoming Ex-Div <span class="watch-badge" title="Projected from past cadence — not guaranteed">projected</span></span>
+                <span>Upcoming Ex-Div</span>
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">next 30d</span>
             </div>
             {% if upcoming_ex_dividends %}
@@ -1244,10 +1244,10 @@
                     <div class="watch-days-label">{{ 'day' if d.days_until == 1 else 'days' }}</div>
                 </div>
                 <div>
-                    <div class="watch-sym">{{ d.symbol }}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
+                    <div class="watch-sym">{{ d.symbol }}{% if d.source != 'calendar' %}<span class="watch-badge" title="Guessed from past cadence — not a declared date">projected</span>{% endif %}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
                     <div class="watch-meta">
-                        ${{ "%.2f"|format(d.last_amount_per_share) }} last
-                        {% if d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
+                        {% if d.last_amount_per_share %}${{ "%.2f"|format(d.last_amount_per_share) }} last{% endif %}
+                        {% if d.source != 'calendar' and d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
                     </div>
                 </div>
                 <div class="watch-aux">{{ d.projected_date }}</div>
@@ -1255,7 +1255,7 @@
             {% endfor %}
             </div>
             {% else %}
-            <div class="wb-empty">No projected ex-dividends in the next 30 days.</div>
+            <div class="wb-empty">No upcoming ex-dividends in the next 30 days.</div>
             {% endif %}
         </div>
     </div>

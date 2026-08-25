@@ -104,12 +104,13 @@ jobs:
         run: python scripts/refresh_symbol_metadata.py
         continue-on-error: true
 
-      # Earnings calendar: same shape as symbol metadata above — read the
-      # previous run's stg_history for the symbol list, hit yfinance per
-      # ticker, WRITE_TRUNCATE the earnings_calendar table. Must run before
-      # the first dbt build so stg_earnings_calendar has a source to read
-      # from. continue-on-error so a yfinance outage can't block the rest
-      # of the warehouse rebuild.
+      # Earnings + ex-div calendar: same shape as symbol metadata above —
+      # read the previous run's stg_history for the symbol list, hit
+      # yfinance Ticker.calendar per ticker (earnings AND Ex-Dividend
+      # Date), WRITE_TRUNCATE the earnings_calendar table. Must run
+      # before the first dbt build so stg_earnings_calendar /
+      # stg_ex_div_calendar have a source to read from. continue-on-error
+      # so a yfinance outage can't block the rest of the warehouse rebuild.
       - name: Refresh earnings calendar
         run: python scripts/refresh_earnings_calendar.py
         continue-on-error: true

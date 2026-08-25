@@ -517,6 +517,7 @@ class TestBuildUpcomingDividends:
         # watch-list window and is dropped — same bound as the SQL).
         assert [r["symbol"] for r in rows] == ["JEPI", "BKH", "SCHD"]
         assert [r["days_until"] for r in rows] == [7, 13, 31]
+        assert all(r["source"] == "heuristic" for r in rows)
 
     def test_past_projection_rolls_forward_for_monthly_payer(self):
         # JEPI's last+median step can already be in the past when the
@@ -538,6 +539,75 @@ class TestBuildUpcomingDividends:
         assert rows[1]["symbol"] == "JEPI"
         assert rows[1]["projected_date"] == "2026-08-31"
         assert rows[1]["days_until"] == 21
+        assert all(r["source"] == "heuristic" for r in rows)
+
+    def test_calendar_date_beats_stale_heuristic(self):
+        """JEPI-shaped: last+median is in the past, but yfinance calendar
+        already has the declared next ex-div. Calendar wins."""
+        heuristic = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 7, 1),
+             "last_amount_per_share": 0.45, "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 7, 31),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+        calendar = pd.DataFrame([{
+            "symbol": "JEPI",
+            "next_ex_div_date": date(2026, 9, 2),
+            "next_dividend_pay_date": date(2026, 9, 5),
+        }])
+        rows = _build_upcoming_dividends(
+            heuristic, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert len(rows) == 1
+        assert rows[0]["projected_date"] == "2026-09-02"
+        assert rows[0]["source"] == "calendar"
+        assert rows[0]["last_amount_per_share"] == 0.45
+
+    def test_past_calendar_date_falls_back_to_heuristic_roll(self):
+        heuristic = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 7, 1),
+             "last_amount_per_share": 0.45, "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 7, 31),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+        calendar = pd.DataFrame([{
+            "symbol": "JEPI",
+            "next_ex_div_date": date(2026, 8, 1),
+            "next_dividend_pay_date": None,
+        }])
+        rows = _build_upcoming_dividends(
+            heuristic, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert rows[0]["projected_date"] == "2026-08-30"
+        assert rows[0]["source"] == "heuristic"
+
+    def test_calendar_only_symbol_still_renders(self):
+        """Held symbol with no heuristic row (no recent prints) but a
+        future calendar date still appears on the watch list."""
+        calendar = pd.DataFrame([{
+            "symbol": "SCHD",
+            "next_ex_div_date": date(2026, 9, 15),
+            "next_dividend_pay_date": date(2026, 9, 22),
+        }])
+        rows = _build_upcoming_dividends(
+            pd.DataFrame(), today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert len(rows) == 1
+        assert rows[0]["symbol"] == "SCHD"
+        assert rows[0]["projected_date"] == "2026-09-15"
+        assert rows[0]["source"] == "calendar"
+        assert rows[0]["last_amount_per_share"] == 0.0
+
+    def test_past_calendar_only_is_dropped(self):
+        calendar = pd.DataFrame([{
+            "symbol": "SCHD",
+            "next_ex_div_date": date(2026, 8, 1),
+            "next_dividend_pay_date": None,
+        }])
+        rows = _build_upcoming_dividends(
+            None, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert rows == []
 
     def test_next_ex_div_rolls_stale_last_event(self):
         # Last event July 1, 30d cadence, today Aug 22 → Aug 30.
@@ -1166,6 +1236,14 @@ class TestDailyReviewBatchIncludesTodayTrades:
         params = {p.name: p.value
                   for p in batch["today_trades"][1].query_parameters}
         assert params["day"] == thursday
+
+    def test_batch_includes_ex_div_calendar_query(self):
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 8, 13), date(2026, 8, 10))
+        assert "ex_div_calendar" in batch
+        assert "stg_ex_div_calendar" in batch["ex_div_calendar"]
+        assert "upcoming_divs" in batch
 
 
 class TestReviewSessionDates:

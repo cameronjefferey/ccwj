@@ -252,9 +252,11 @@ WHERE instrument_type IN ('Call', 'Put')
 ORDER BY option_expiry, underlying_symbol
 """
 
-# Projected ex-dividends: same cadence heuristic as weekly_review's
-# UPCOMING_DIVIDENDS_QUERY (median spacing of the last ~6 ex-div events),
-# scoped to the user's currently-held equity.
+# Next ex-div: prefer yfinance calendar (stg_ex_div_calendar) when the
+# declared date is still ahead; else the same last+median cadence
+# heuristic as weekly_review.UPCOMING_DIVIDENDS_QUERY. Scoped to the
+# user's currently-held equity. LEFT JOIN so a missing calendar row
+# (or pre-loader empty view) falls through to the heuristic.
 _EX_DIVS_SQL = f"""
 WITH holdings AS (
     SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
@@ -282,7 +284,7 @@ cadence AS (
 last_event AS (
     SELECT symbol, ex_div_date AS last_ex_div_date FROM ex_divs WHERE rn = 1
 ),
-projected AS (
+heuristic AS (
     SELECT le.symbol,
            CASE
              WHEN le.last_ex_div_date >= CURRENT_DATE() THEN le.last_ex_div_date
@@ -298,15 +300,34 @@ projected AS (
                  ) AS INT64
                ) * COALESCE(c.median_spacing_days, 91)
                DAY)
-           END AS projected_next_ex_div_date
+           END AS heuristic_next_ex_div_date
     FROM last_event le LEFT JOIN cadence c USING (symbol)
+),
+chosen AS (
+    SELECT
+        h.symbol,
+        CASE
+          WHEN cal.next_ex_div_date IS NOT NULL
+           AND cal.next_ex_div_date >= CURRENT_DATE()
+          THEN cal.next_ex_div_date
+          ELSE heur.heuristic_next_ex_div_date
+        END AS projected_next_ex_div_date,
+        CASE
+          WHEN cal.next_ex_div_date IS NOT NULL
+           AND cal.next_ex_div_date >= CURRENT_DATE()
+          THEN 'calendar'
+          ELSE 'heuristic'
+        END AS ex_div_source
+    FROM holdings h
+    LEFT JOIN heuristic heur USING (symbol)
+    LEFT JOIN `{_PROJECT}.stg_ex_div_calendar` cal USING (symbol)
 )
-SELECT h.symbol, p.projected_next_ex_div_date,
-       DATE_DIFF(p.projected_next_ex_div_date, CURRENT_DATE(), DAY) AS days_until
-FROM holdings h JOIN projected p USING (symbol)
-WHERE p.projected_next_ex_div_date BETWEEN CURRENT_DATE()
-                                      AND DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)
-ORDER BY p.projected_next_ex_div_date
+SELECT symbol, projected_next_ex_div_date, ex_div_source,
+       DATE_DIFF(projected_next_ex_div_date, CURRENT_DATE(), DAY) AS days_until
+FROM chosen
+WHERE projected_next_ex_div_date BETWEEN CURRENT_DATE()
+                                    AND DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)
+ORDER BY projected_next_ex_div_date
 """
 
 
@@ -329,7 +350,11 @@ def _build_weekly_preview(client, bigquery, user_id, tenant_ids):
         for r in _q(_EXPIRATIONS_SQL)
     ]
     ex_divs = [
-        f"{r['symbol']} ~{r['projected_next_ex_div_date']:%b %d} (in {int(r['days_until'])}d)"
+        (
+            f"{r['symbol']} {r['projected_next_ex_div_date']:%b %d} (in {int(r['days_until'])}d)"
+            if (r.get("ex_div_source") == "calendar")
+            else f"{r['symbol']} ~{r['projected_next_ex_div_date']:%b %d} (in {int(r['days_until'])}d)"
+        )
         for r in _q(_EX_DIVS_SQL)
     ]
     return {"earnings": earnings, "expirations": expirations, "ex_dividends": ex_divs}
