@@ -165,5 +165,5 @@ def test_trader_story_template_renders_leftover_sentence():
     html = _render_trader_story(novel)
     assert "+$450" in html
     assert "Currently +$450 with 3 days left" in html
-    assert "leaves 15% of the credit" in html
+    assert "costs you 15% of the credit" in html
     assert "instead of expiry" in html

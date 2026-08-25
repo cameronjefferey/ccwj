@@ -65,6 +65,7 @@ FILTERED_QUERIES = [
     ("app.trader_story", "STORY_TRADES_QUERY"),
     ("app.trader_story", "STORY_DIVIDENDS_QUERY"),
     ("app.trader_story", "STORY_SUMMARY_QUERY"),
+    ("app.trader_story", "STORY_OPEN_STRATEGIES_QUERY"),
     ("app.execution_quality", "EXECUTION_REVIEW_QUERY"),
     ("app.execution_quality", "POSITION_EXECUTION_QUERY"),
     ("app.execution_quality", "OPEN_OPTION_RECORD_QUERY"),

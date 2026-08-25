@@ -316,6 +316,54 @@ def _kind_noun(kind):
     }.get(kind) or "short"
 
 
+# Warehouse labels from positions_summary / int_strategy_classification.
+# Never say "naked" without this evidence — live option rows have no
+# share-coverage column.
+_NAKED_CALL = "Naked Call"
+_COVERED_CALLS = {
+    "Covered Call",
+    "Partially Covered Call",
+    "Poor Man Covered Call",
+}
+_CASH_SECURED_PUT = "Cash-Secured Put"
+
+
+def _open_strategy_labels(symbol, strategies_df):
+    if strategies_df is None or strategies_df.empty:
+        return set()
+    if "symbol" not in strategies_df.columns or "strategy" not in strategies_df.columns:
+        return set()
+    sym = str(symbol or "").strip().upper()
+    col = strategies_df["symbol"].astype(str).str.strip().str.upper()
+    rows = strategies_df.loc[col == sym, "strategy"]
+    return {str(s).strip() for s in rows.tolist() if pd.notna(s) and str(s).strip()}
+
+
+def _display_noun(kind, symbol, strategies_df):
+    """Name this live structure. 'naked call' only when classification
+    says so and no covered-call label shares the symbol."""
+    labels = _open_strategy_labels(symbol, strategies_df)
+    if kind == "short_call":
+        naked = _NAKED_CALL in labels
+        covered = bool(labels & _COVERED_CALLS)
+        if naked and not covered:
+            return "naked call"
+        if covered and not naked:
+            return "covered call"
+        return "short call"
+    if kind == "short_put":
+        if _CASH_SECURED_PUT in labels:
+            return "cash-secured put"
+        return "short put"
+    return _kind_noun(kind)
+
+
+def _plural_noun(noun):
+    if not noun or noun.endswith("s"):
+        return noun or "shorts"
+    return noun + "s"
+
+
 def _filter_kind(df, kind):
     if df is None or df.empty or not kind:
         return df
@@ -469,33 +517,67 @@ def _hold_longer(exec_df, kind):
     }
 
 
-def _leftover_sentence(record, days=None):
-    noun = _kind_noun(record.get("structure"))
+def _leftover_dte(record, days=None):
     dte = record["dte"]
     pad = int(record.get("pad") or LEFTOVER_DTE_PAD)
     if (days is not None and record.get("horizon") != "week_plus"
             and abs(int(days) - int(dte)) <= pad):
-        dte = int(days)
+        return int(days)
+    return int(dte)
+
+
+def _leftover_clause(record, days, noun, *, name_structure=False):
+    """Uncapitalized leftover clause so it can glue onto 'hold too long'."""
+    dte = _leftover_dte(record, days)
+    named = f"on a {noun} " if name_structure else ""
     if record["kind"] == "otm_leftover_pct":
         if record.get("horizon") == "week_plus":
-            return (f"When you exit a {noun} with a week or more left "
-                    f"instead of expiry, you typically leave "
-                    f"{record['pct']}% of the credit.")
-        return (f"An exit on a {noun} around {dte} DTE instead of expiry "
-                f"typically leaves {record['pct']}% of the credit.")
+            return (f"an exit {named}with a week or more left "
+                    f"instead of expiry typically costs you "
+                    f"{record['pct']}% of the credit")
+        return (f"an exit {named}at {dte} DTE instead of expiry typically "
+                f"costs you {record['pct']}% of the credit")
     if record.get("horizon") == "week_plus":
-        return (f"When you exit a {noun} with a week or more left, the "
-                f"typical close sidestepped {_money(record['dollars'])} "
-                f"vs expiry.")
-    return (f"An exit on a {noun} around {dte} DTE sidestepped "
-            f"{_money(record['dollars'])} vs expiry.")
+        return (f"an exit {named}with a week or more left typically "
+                f"sidestepped {_money(record['dollars'])} vs expiry")
+    return (f"an exit {named}at {dte} DTE typically sidestepped "
+            f"{_money(record['dollars'])} vs expiry")
 
 
-def _hold_longer_sentence(hold):
-    noun = _kind_noun(hold["kind"])
-    noun_pl = noun + "s"
-    return (f"You tend to hold {noun_pl} longer than your other shorts "
-            f"(median {hold['this_dte']} DTE vs {hold['other_dte']}).")
+def _leftover_sentence(record, days=None, noun=None):
+    noun = noun or _kind_noun(record.get("structure"))
+    clause = _leftover_clause(record, days, noun, name_structure=True)
+    return clause[0].upper() + clause[1:] + "."
+
+
+def _hold_longer_sentence(hold, noun=None):
+    noun = noun or _kind_noun(hold["kind"])
+    return (f"You hold {_plural_noun(noun)} too long "
+            f"(median {hold['this_dte']} DTE vs {hold['other_dte']} "
+            f"on your other shorts).")
+
+
+def _pattern_sentence(hold, leftover, days, noun):
+    """One punchy claim when both facts exist — the only-here sentence.
+
+    'You hold naked calls too long, and an exit at 10 DTE instead of
+    expiry typically costs you 18% of the credit.'
+    """
+    combine = bool(
+        hold and leftover and leftover.get("kind") == "otm_leftover_pct"
+    )
+    leftover_clause = (
+        _leftover_clause(leftover, days, noun, name_structure=not combine)
+        if leftover else None
+    )
+    if combine:
+        return (f"You hold {_plural_noun(noun)} too long, and "
+                f"{leftover_clause}.")
+    if leftover_clause:
+        return leftover_clause[0].upper() + leftover_clause[1:] + "."
+    if hold:
+        return _hold_longer_sentence(hold, noun)
+    return None
 
 
 def _net_credit(members):
@@ -580,10 +662,12 @@ def _lead_sentence(pnl, days):
     return lead + f" with {days} day{'s' if days != 1 else ''} left"
 
 
-def _watch_item(members, habit, typical_dte, leftover=None, hold=None):
+def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
+                strategies_df=None):
     days = min(int(m["_days"]) for m in members)
     symbol = members[0]["symbol"]
     kind = _watch_kind(members)
+    noun = _display_noun(kind, symbol, strategies_df)
     if len(members) > 1:
         name = _structure_name(members)
         structure = _structure_kind(members)
@@ -598,30 +682,30 @@ def _watch_item(members, habit, typical_dte, leftover=None, hold=None):
     pnl = _watch_pnl(members)
     credit = _net_credit(members)
     use_leftover = _leftover_applies(leftover, days)
+    if not use_leftover:
+        leftover = None
     lead = _lead_sentence(pnl, days)
     bits = []
-    if hold:
-        bits.append(_hold_longer_sentence(hold))
-    if use_leftover:
-        bits.append(_leftover_sentence(leftover, days=days))
+    pattern = _pattern_sentence(hold, leftover, days, noun)
+    if pattern:
+        bits.append(pattern)
+        mark = _credit_sentence(pnl, credit)
+        if leftover is None and hold and mark and pnl is not None and pnl < 0:
+            bits.append(mark)
     else:
-        leftover = None
         far = _distance_sentence(days, typical_dte, in_usual)
         mark = _credit_sentence(pnl, credit)
-        if not hold:
-            if far and mark:
-                bits.append(f"{far} {mark}")
-            elif far:
-                bits.append(far)
-            elif habit == "expire" and days <= 7:
-                bits.append("You usually hold to expiry.")
-            elif habit == "roll" and (in_usual or days <= 7):
-                bits.append("You usually roll — roll it, or let this one expire?")
-            elif in_usual and typical_dte is not None:
-                bits.append(f"Your typical early close is around {typical_dte} DTE.")
-            elif mark:
-                bits.append(mark)
-        elif mark and pnl is not None and pnl < 0:
+        if far and mark:
+            bits.append(f"{far} {mark}")
+        elif far:
+            bits.append(far)
+        elif habit == "expire" and days <= 7:
+            bits.append("You usually hold to expiry.")
+        elif habit == "roll" and (in_usual or days <= 7):
+            bits.append("You usually roll — roll it, or let this one expire?")
+        elif in_usual and typical_dte is not None:
+            bits.append(f"Your typical early close is around {typical_dte} DTE.")
+        elif mark:
             bits.append(mark)
     tail = " ".join(bits) if bits else None
     if lead and tail:
@@ -645,7 +729,7 @@ def _watch_item(members, habit, typical_dte, leftover=None, hold=None):
     }
 
 
-def build_this_week(open_df, exec_df=None, today=None):
+def build_this_week(open_df, exec_df=None, today=None, strategies_df=None):
     """Forward-looking watch: expiries in the next 14 days, questioned
     against the trader's own roll / expire habit."""
     today = today or date.today()
@@ -666,7 +750,9 @@ def build_this_week(open_df, exec_df=None, today=None):
         kind = _watch_kind(members)
         leftover = _leftover_record(exec_df, days, typical_dte, kind=kind)
         hold = _hold_longer(exec_df, kind)
-        items.append(_watch_item(members, habit, typical_dte, leftover, hold))
+        items.append(_watch_item(
+            members, habit, typical_dte, leftover, hold,
+            strategies_df=strategies_df))
     items.sort(key=lambda x: (not x["in_usual_window"], x["days_left"], x["symbol"]))
     items = items[:THIS_WEEK_CAP]
     n = len(items)
@@ -812,10 +898,11 @@ def build_last_week(trades_df, exec_df=None, today=None):
 
 
 def compose_story_loop(trades_df, open_df, exec_df=None, today=None,
-                       tz_name=None):
+                       tz_name=None, strategies_df=None):
     """Both cards, or None when there is nothing to say yet."""
     today = today or today_for_user(tz_name)
-    this_week = build_this_week(open_df, exec_df, today=today)
+    this_week = build_this_week(
+        open_df, exec_df, today=today, strategies_df=strategies_df)
     last_week = build_last_week(trades_df, exec_df, today=today)
     has_watch = bool(this_week["watches"])
     has_last = bool(last_week["facts"] or last_week["activity"]["fills"]

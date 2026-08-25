@@ -178,8 +178,8 @@ def test_this_week_leftover_pct_from_otm_rolls_at_same_dte():
     assert "Currently +$450 with 3 days left" in item["prompt"]
     assert "short call" in item["prompt"]
     assert "instead of expiry" in item["prompt"]
-    assert "leaves 15% of the credit" in item["prompt"]
-    assert "3 DTE" in item["prompt"]
+    assert "costs you 15% of the credit" in item["prompt"]
+    assert "at 3 DTE" in item["prompt"]
     assert "should" not in item["prompt"].lower()
 
 
@@ -208,7 +208,7 @@ def test_this_week_far_watch_does_not_reuse_near_dte_leftover():
     by_sym = {w["symbol"]: w for w in out["watches"]}
     nvda, pl = by_sym["NVDA"], by_sym["PL"]
     assert nvda["leftover"] is not None
-    assert "leaves 37% of the credit" in nvda["prompt"]
+    assert "costs you 37% of the credit" in nvda["prompt"]
     assert pl["leftover"] is None
     assert "leaves 37%" not in pl["prompt"]
     assert "instead of expiry" not in pl["prompt"]
@@ -235,9 +235,9 @@ def test_this_week_short_call_at_10d_uses_horizon_leftover():
     nvda, pl = by_sym["NVDA"], by_sym["PL"]
     assert nvda["leftover"]["pct"] == 37
     assert pl["leftover"]["pct"] == 18
-    assert "leaves 37% of the credit" in nvda["prompt"]
-    assert "leaves 18% of the credit" in pl["prompt"]
-    assert "around 10 DTE instead of expiry" in pl["prompt"]
+    assert "costs you 37% of the credit" in nvda["prompt"]
+    assert "costs you 18% of the credit" in pl["prompt"]
+    assert "at 10 DTE instead of expiry" in pl["prompt"]
     assert "37%" not in pl["prompt"]
     assert "18%" not in nvda["prompt"]
 
@@ -258,10 +258,77 @@ def test_this_week_hold_longer_on_short_calls():
     ])
     out = build_this_week(open_df, exec_df, today=_TODAY)
     prompt = out["watches"][0]["prompt"]
-    assert "hold short calls longer" in prompt
-    assert "median 10 DTE vs 2" in prompt
-    assert "around 10 DTE instead of expiry" in prompt
-    assert "leaves 18% of the credit" in prompt
+    assert "You hold short calls too long" in prompt
+    assert "at 10 DTE instead of expiry" in prompt
+    assert "costs you 18% of the credit" in prompt
+    assert "naked" not in prompt.lower()
+
+
+def test_this_week_naked_call_hold_too_long_costs_pct():
+    """PL-shaped punch: hold-too-long + 10-DTE leftover, named naked
+    only because classification says so."""
+    calls = _otm_rolls_at_dte(dte=10, leftover=72.0, premium=400.0)
+    puts = pd.DataFrame([
+        _exec(symbol=f"P{i}", option_type="P", was_rolled=False,
+              dte_at_close=2, premium_received=400.0,
+              early_close_vs_expiry_delta=-40.0, expired_worthless=True)
+        for i in range(8)
+    ])
+    exec_df = pd.concat([calls, puts], ignore_index=True)
+    open_df = pd.DataFrame([
+        _open(symbol="PL", option_type="C", direction="Sold",
+              option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-5079.0, premium_received=420.0),
+    ])
+    strategies = pd.DataFrame([
+        {"tenant_id": "snaptrade:t1", "symbol": "PL", "strategy": "Naked Call"},
+    ])
+    out = build_this_week(open_df, exec_df, today=_TODAY,
+                          strategies_df=strategies)
+    prompt = out["watches"][0]["prompt"]
+    assert prompt.startswith("Currently −$5,079 with 10 days left.")
+    assert "You hold naked calls too long" in prompt
+    assert ("an exit at 10 DTE instead of expiry typically costs you "
+            "18% of the credit") in prompt
+    assert "short call" not in prompt
+
+
+def test_this_week_covered_call_does_not_say_naked():
+    calls = _otm_rolls_at_dte(dte=10, leftover=72.0, premium=400.0)
+    open_df = pd.DataFrame([
+        _open(symbol="PL", option_type="C", direction="Sold",
+              option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-200.0, premium_received=420.0),
+    ])
+    strategies = pd.DataFrame([
+        {"tenant_id": "snaptrade:t1", "symbol": "PL",
+         "strategy": "Covered Call"},
+    ])
+    out = build_this_week(open_df, calls, today=_TODAY,
+                          strategies_df=strategies)
+    prompt = out["watches"][0]["prompt"]
+    assert "naked" not in prompt.lower()
+    assert "costs you 18% of the credit" in prompt
+
+
+def test_this_week_mixed_call_labels_stay_short_call():
+    """Naked + Covered on the same symbol — don't guess."""
+    calls = _otm_rolls_at_dte(dte=10, leftover=72.0, premium=400.0)
+    open_df = pd.DataFrame([
+        _open(symbol="PL", option_type="C", direction="Sold",
+              option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-200.0, premium_received=420.0),
+    ])
+    strategies = pd.DataFrame([
+        {"tenant_id": "snaptrade:t1", "symbol": "PL", "strategy": "Naked Call"},
+        {"tenant_id": "snaptrade:t1", "symbol": "PL",
+         "strategy": "Covered Call"},
+    ])
+    out = build_this_week(open_df, calls, today=_TODAY,
+                          strategies_df=strategies)
+    prompt = out["watches"][0]["prompt"]
+    assert "naked" not in prompt.lower()
+    assert "short call" in prompt or "costs you 18%" in prompt
 
 
 def _history_with_last_week(*, last_fills, typical_fills=6, weeks=6):
@@ -333,6 +400,9 @@ def test_story_query_batch_includes_open_options():
     assert "story_open_options" in batch
     assert "int_option_contracts" in batch["story_open_options"]
     assert "tenant_id" in batch["story_open_options"]
+    assert "story_open_strategies" in batch
+    assert "positions_summary" in batch["story_open_strategies"]
+    assert "tenant_id" in batch["story_open_strategies"]
 
 
 def test_template_never_uses_this_week_items():

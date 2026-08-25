@@ -373,16 +373,17 @@ Runs the position-review engine over the user's whole history and folds the
 per-symbol fingerprints into one profile. The page opens with a recurring
 **This week / Last week** loop (`app/story_loop.py`) so the profile is
 worth opening again: this week lists open options inside 14d (spreads
-grouped) with the live mark (`+$450 · 3d`). Leftover-vs-expiry ("when you
-close an OTM short around 3 DTE you typically leave 15% of the credit")
+grouped) with the live mark (`+$450 · 3d`). Leftover-vs-expiry ("an
+exit at 3 DTE instead of expiry typically costs you 15% of the credit")
 only attaches when ≥5 gradeable early closes of **this structure**
 (short call vs short put vs spread) land near **this row's** DTE
 (band widens with horizon: ±2 near expiry, ±5 around 10 DTE). A 10-day
-short call reads "an exit on a short call around 10 DTE instead of
-expiry typically leaves 18% of the credit" — not the 2-DTE leftover.
-If this structure's median exit DTE is ≥3 days later than the trader's
-other shorts, the row also says they tend to hold that structure
-longer. Farther watches without a horizon sample fall back to mark vs
+short call that the trader also holds later than other shorts reads
+"You hold short calls too long, and an exit at 10 DTE instead of
+expiry typically costs you 18% of the credit" — not the 2-DTE leftover.
+"Naked call" only when `positions_summary` has an open Naked Call on
+that symbol and no covered-call label. Farther watches without a
+horizon sample fall back to mark vs
 this credit; last week
 reports fills/rolls/premium vs the median completed week and whether that
 looked like them. Lifetime Profile Summary, Execution Review, notable
@@ -1146,8 +1147,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   near **this row's** DTE for **this structure** (short call ≠ short put),
   the leftover-vs-expiry % or sidestep $ from `story_execution`. Horizon
   band widens with days left. A 10-day short call does not inherit a
-  2-DTE leftover; if short-call exits run later than other shorts, the
-  row says so. Evidence, not advice. LAST WEEK compares
+  2-DTE leftover; if that structure is also held later than other shorts,
+  one sentence combines hold-too-long + the 10-DTE cost. Open strategy
+  labels (`STORY_OPEN_STRATEGIES_QUERY`) name naked/covered when
+  unambiguous — never invent leftover % or say "naked" without the
+  classification row. Evidence, not advice. LAST WEEK compares
   the prior ISO week to the median of prior weeks
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE

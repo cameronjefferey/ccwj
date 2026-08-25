@@ -103,6 +103,20 @@ STORY_SUMMARY_QUERY = """
     GROUP BY tenant_id, symbol
 """
 
+# Open strategy labels so this-week watches can say "naked call" only
+# when classification proves it. Grain is (tenant, symbol, strategy);
+# tenant_id is projected for the fail-closed DataFrame filter.
+STORY_OPEN_STRATEGIES_QUERY = """
+    SELECT
+        tenant_id,
+        symbol,
+        strategy
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE symbol IS NOT NULL
+      AND LOWER(TRIM(COALESCE(status, ''))) = 'open'
+      {tenant_filter}
+"""
+
 # Symbol-grain public market data (same class as POSITION_SPLITS_QUERY):
 # no tenant column exists and none is needed. Do NOT run through
 # _filter_df_by_tenant_ids (it would fail-closed to empty for non-admins).
@@ -515,6 +529,8 @@ def story_query_batch(tenant_ids):
             tenant_filter=_tenant_sql_and(tenant_ids)),
         "story_summary": STORY_SUMMARY_QUERY.format(
             tenant_filter=_tenant_sql_and(tenant_ids)),
+        "story_open_strategies": STORY_OPEN_STRATEGIES_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids)),
         # Execution review rows (int_option_exit_quality): decisions graded
         # against the market's subsequent record. Tenant-scoped + projects
         # tenant_id like the other frames.
@@ -566,6 +582,8 @@ def trader_story():
             dfs.get("story_execution", pd.DataFrame()), tenant_scope)
         open_df = _filter_df_by_tenant_ids(
             dfs.get("story_open_options", pd.DataFrame()), tenant_scope)
+        strategies_df = _filter_df_by_tenant_ids(
+            dfs.get("story_open_strategies", pd.DataFrame()), tenant_scope)
 
         book = build_book(trades_df, div_df, splits_df, summary_df)
         context["novel"] = compose_novel(book, trades_df)
@@ -584,7 +602,8 @@ def trader_story():
                 tz_name = None
             context["novel"]["loop"] = compose_story_loop(
                 trades_df, open_df, execution_df,
-                today=today_for_user(tz_name), tz_name=tz_name)
+                today=today_for_user(tz_name), tz_name=tz_name,
+                strategies_df=strategies_df)
     except Exception as e:
         if app.debug:
             raise
