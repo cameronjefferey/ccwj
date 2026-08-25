@@ -22,6 +22,7 @@ Tenancy: every BQ read passes through `_tenant_sql_and` (SQL-level) and
 every DataFrame is filtered via `_filter_df_by_tenant_ids` BEFORE any
 merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
+import math
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from flask import abort, redirect, render_template, request, url_for
@@ -952,8 +953,27 @@ projected AS (
         le.last_ex_div_date,
         le.last_amount_per_share,
         c.median_spacing_days,
-        DATE_ADD(le.last_ex_div_date,
-                 INTERVAL COALESCE(c.median_spacing_days, 91) DAY) AS projected_next_ex_div_date
+        -- Roll the cadence forward until the next date is on/after
+        -- today. A single last+median step drops monthly payers (JEPI)
+        -- when yfinance missed the latest ex-div: last+30d is already
+        -- in the past while the sibling (JEPQ) still projects into the
+        -- window. CEIL(days_since / spacing) periods lands the next
+        -- expected date; last >= today (ex-div today) is used as-is.
+        CASE
+          WHEN le.last_ex_div_date >= CURRENT_DATE() THEN le.last_ex_div_date
+          ELSE DATE_ADD(
+            le.last_ex_div_date,
+            INTERVAL CAST(
+              GREATEST(
+                CEIL(
+                  DATE_DIFF(CURRENT_DATE(), le.last_ex_div_date, DAY)
+                  / CAST(COALESCE(c.median_spacing_days, 91) AS FLOAT64)
+                ),
+                1
+              ) AS INT64
+            ) * COALESCE(c.median_spacing_days, 91)
+            DAY)
+        END AS projected_next_ex_div_date
     FROM last_event le
     LEFT JOIN cadence c USING (symbol)
 )
@@ -2752,6 +2772,29 @@ def _build_after_hours_movers(ah_df):
     }
 
 
+def _next_ex_div_on_or_after(last, spacing, today):
+    """Advance ``last + n*spacing`` until the date is on or after ``today``.
+
+    Monthly payers (JEPI/JEPQ) drop out of the watch list when the price
+    feed misses the latest ex-div: a single last+median step lands in the
+    past and Python used to discard the row. Rolling forward keeps the
+    sibling on the same ~30d cadence instead of hiding it.
+    """
+    if last is None or today is None:
+        return None
+    try:
+        spacing_i = int(spacing or 91) or 91
+    except (TypeError, ValueError):
+        spacing_i = 91
+    if spacing_i < 1:
+        spacing_i = 91
+    if last >= today:
+        return last
+    days = (today - last).days
+    periods = max(1, int(math.ceil(days / spacing_i)))
+    return last + timedelta(days=periods * spacing_i)
+
+
 def _build_upcoming_dividends(div_df, today=None):
     """Projected next ex-div dates for held dividend-paying symbols.
 
@@ -2767,15 +2810,21 @@ def _build_upcoming_dividends(div_df, today=None):
         proj = r.get("projected_next_ex_div_date")
         last = r.get("last_ex_div_date")
         proj_date = proj.date() if hasattr(proj, "date") and not isinstance(proj, date) else proj
+        last_date = last.date() if hasattr(last, "date") and not isinstance(last, date) else last
+        spacing = r.get("median_spacing_days")
+        if proj_date is None or proj_date < today:
+            rolled = _next_ex_div_on_or_after(last_date or proj_date, spacing, today)
+            if rolled is not None:
+                proj_date = rolled
         try:
             d_until = (proj_date - today).days
         except TypeError:
             d_until = None
-        if d_until is not None and d_until < 0:
-            continue  # projected date already passed in the user's timezone
+        if d_until is not None and (d_until < 0 or d_until > 31):
+            continue
         proj_s = (
-            proj.isoformat() if hasattr(proj, "isoformat") and not isinstance(proj, str)
-            else str(proj)[:10] if proj is not None else None
+            proj_date.isoformat() if hasattr(proj_date, "isoformat") and not isinstance(proj_date, str)
+            else str(proj_date)[:10] if proj_date is not None else None
         )
         last_s = (
             last.isoformat() if hasattr(last, "isoformat") and not isinstance(last, str)
@@ -2831,6 +2880,143 @@ def _format_trade_contract(trade_symbol, symbol):
     if ts.endswith(tuple(f"_session_{i}" for i in range(0, 10))) or "_session_" in ts:
         return str(symbol or ts.split("_session_")[0])
     return compact
+
+
+def _parse_occ(trade_symbol):
+    """OSI core → {option_type, strike, expiry} or None."""
+    ts = " ".join(str(trade_symbol or "").split())
+    m = _OSI_RE.match(ts)
+    if not m:
+        return None
+    try:
+        exp = date(2000 + int(m.group("y")), int(m.group("m")), int(m.group("d")))
+    except ValueError:
+        return None
+    return {
+        "option_type": "Call" if m.group("cp") == "C" else "Put",
+        "strike": int(m.group("strike")) / 1000.0,
+        "expiry": exp,
+    }
+
+
+def _group_day_rolls(trade_rows):
+    """Collapse same-day close+open of the same option type into one roll.
+
+    Income traders (the Daily Review audience) read a BTC + STO of JPM
+    as one reposition, not two unrelated fills. A short roll "meets the
+    roll" when it is a credit (or flat) OR the strike moves in the
+    covered direction — calls up, puts down. Unpaired fills pass through
+    in their original order.
+    """
+    if not trade_rows:
+        return trade_rows
+    # Pair regardless of fill order (STO then BTC is still a roll).
+    close_open = {
+        "option_buy_to_close": ("option_sell_to_open", True),
+        "option_sell_to_close": ("option_buy_to_open", False),
+    }
+    open_close = {v[0]: (k, v[1]) for k, v in close_open.items()}
+    used = set()
+    out = []
+    for i, row in enumerate(trade_rows):
+        if i in used:
+            continue
+        action = row.get("action")
+        if action in close_open:
+            pair_action, short_side = close_open[action]
+            close_row, seek_open = row, True
+        elif action in open_close:
+            pair_action, short_side = open_close[action]
+            close_row, seek_open = None, False
+        else:
+            out.append(row)
+            continue
+        occ = _parse_occ(row.get("trade_symbol"))
+        if not occ:
+            out.append(row)
+            continue
+        match_idx = None
+        for j in range(i + 1, len(trade_rows)):
+            if j in used:
+                continue
+            cand = trade_rows[j]
+            if cand.get("action") != pair_action:
+                continue
+            if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
+                continue
+            # tenant_id is the grain — colliding "Schwab Account" labels
+            # must not pair a close in one account with an open in another.
+            ta = str(row.get("tenant_id") or "").strip()
+            tb = str(cand.get("tenant_id") or "").strip()
+            if ta and tb:
+                if ta != tb:
+                    continue
+            elif (cand.get("account") or "") != (row.get("account") or ""):
+                continue
+            o_occ = _parse_occ(cand.get("trade_symbol"))
+            if not o_occ or o_occ["option_type"] != occ["option_type"]:
+                continue
+            if o_occ["strike"] == occ["strike"] and o_occ["expiry"] == occ["expiry"]:
+                continue
+            match_idx = j
+            break
+        if match_idx is None:
+            out.append(row)
+            continue
+        other = trade_rows[match_idx]
+        used.add(match_idx)
+        if seek_open:
+            opened = other
+            closed = close_row
+        else:
+            opened = row
+            closed = other
+        occ = _parse_occ(closed.get("trade_symbol"))
+        row = closed  # labels / amounts read from the close below
+        o_occ = _parse_occ(opened.get("trade_symbol"))
+        net = float(row.get("amount") or 0) + float(opened.get("amount") or 0)
+        if o_occ["strike"] > occ["strike"]:
+            strike_dir = "up"
+        elif o_occ["strike"] < occ["strike"]:
+            strike_dir = "down"
+        else:
+            strike_dir = "same"
+        if o_occ["expiry"] > occ["expiry"]:
+            expiry_dir = "out"
+        elif o_occ["expiry"] < occ["expiry"]:
+            expiry_dir = "in"
+        else:
+            expiry_dir = "same"
+        success_bits = []
+        if net >= -0.005:
+            success_bits.append("credit")
+        if short_side and occ["option_type"] == "Call" and strike_dir == "up":
+            success_bits.append("strike")
+        if short_side and occ["option_type"] == "Put" and strike_dir == "down":
+            success_bits.append("strike")
+        out.append({
+            "kind": "roll",
+            "is_roll": True,
+            "verb": "Rolled",
+            "action": "option_roll",
+            "symbol": row.get("symbol") or "",
+            "trade_symbol": "",
+            "description": "",
+            "quantity": None,
+            "price": None,
+            "amount": round(net, 2),
+            "account": row.get("account") or "",
+            "is_option": True,
+            "short_side": short_side,
+            "option_type": occ["option_type"],
+            "close_label": _format_trade_contract(row.get("trade_symbol"), row.get("symbol")),
+            "open_label": _format_trade_contract(opened.get("trade_symbol"), opened.get("symbol")),
+            "strike_dir": strike_dir,
+            "expiry_dir": expiry_dir,
+            "successful": bool(success_bits) if short_side else None,
+            "success_bits": success_bits,
+        })
+    return out
 
 
 def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
@@ -4034,8 +4220,8 @@ def _split_day_fills(trades_df, label_map=None):
     Returns ``{trades, cash, count, net_cash, symbols, has_any}``.
     """
     empty = {
-        "trades": [], "cash": [], "count": 0, "net_cash": 0.0,
-        "symbols": [], "has_any": False,
+        "trades": [], "cash": [], "count": 0, "roll_count": 0,
+        "net_cash": 0.0, "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
         return empty
@@ -4050,6 +4236,7 @@ def _split_day_fills(trades_df, label_map=None):
         price = r.get("price")
         amount = float(r.get("amount") or 0)
         symbol = str(r.get("underlying_symbol") or "").strip()
+        tenant_id = str(r.get("tenant_id") or "").strip()
         row = {
             "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
             "action": action,
@@ -4059,7 +4246,8 @@ def _split_day_fills(trades_df, label_map=None):
             "quantity": float(qty) if pd.notna(qty) else None,
             "price": float(price) if pd.notna(price) else None,
             "amount": amount,
-            "account": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "tenant_id": tenant_id,
+            "account": label_map.get(tenant_id, str(r.get("account") or "")),
             "is_option": action.startswith("option_"),
         }
         if action in _TRADE_ACTIONS:
@@ -4071,10 +4259,12 @@ def _split_day_fills(trades_df, label_map=None):
                 symbols.append(symbol)
         else:
             cash_rows.append(row)
+    grouped = _group_day_rolls(trade_rows)
     return {
-        "trades": trade_rows,
+        "trades": grouped,
         "cash": cash_rows,
         "count": len(trade_rows),
+        "roll_count": sum(1 for r in grouped if r.get("is_roll")),
         "net_cash": round(net_cash, 2),
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),

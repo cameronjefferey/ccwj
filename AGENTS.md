@@ -170,9 +170,15 @@ What's working (May 2026 rebuild):
  Once the regular session is open, the query flips to calendar today so
  same-day fills appear. Adds and trims on a long-held position show here
  even though **Trades this week** only lists groups that opened or closed
- this ISO week. Lives in `build_daily_review_batch` as `today_trades`
- so the cache warmer replays it (same `trades_as_of`). Empty state uses
- the session date, not the word "today", when the two differ.
+ this ISO week. Same-day close + open of the same option type (same
+ symbol + tenant, different strike/expiry) is grouped as one **Rolled**
+ row (`_group_day_rolls`); a short roll "meets the roll" on a credit
+ (or flat) **or** a strike that moved in the covered direction (calls
+ up, puts down). Pairing keys on `tenant_id` so colliding "Schwab
+ Account" labels cannot fuse two physical accounts. Lives in
+ `build_daily_review_batch` as `today_trades` so the cache warmer
+ replays it (same `trades_as_of`). Empty state uses the session date,
+ not the word "today", when the two differ.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
@@ -234,7 +240,12 @@ Implementation notes:
 - Strategy / sector / subsector breakdowns are pure pandas groupby on the per-symbol
   rows — totals reconcile by construction.
 - Projected ex-dividend dates come from a cadence heuristic on `stg_daily_prices.dividend`
-  (median spacing of last 6 events). Labeled "projected" in UI; the long-term fix is a
+  (median spacing of last 6 events). When last + one spacing is already
+  in the past (yfinance missed the latest JEPI ex-div while JEPQ still
+  projected), SQL and `_next_ex_div_on_or_after` roll the cadence
+  forward with `CEIL(days_since / spacing)` so the sibling stays on the
+  watch list. Labeled "projected" in UI; weekly preview email uses the
+  same roll-forward in `_EX_DIVS_SQL`. The long-term fix is a
   yfinance Calendar refresher script that ships real future ex-div dates.
 
 What could be better:

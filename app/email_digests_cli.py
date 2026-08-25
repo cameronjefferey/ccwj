@@ -284,7 +284,21 @@ last_event AS (
 ),
 projected AS (
     SELECT le.symbol,
-           DATE_ADD(le.last_ex_div_date, INTERVAL COALESCE(c.median_spacing_days, 91) DAY) AS projected_next_ex_div_date
+           CASE
+             WHEN le.last_ex_div_date >= CURRENT_DATE() THEN le.last_ex_div_date
+             ELSE DATE_ADD(
+               le.last_ex_div_date,
+               INTERVAL CAST(
+                 GREATEST(
+                   CEIL(
+                     DATE_DIFF(CURRENT_DATE(), le.last_ex_div_date, DAY)
+                     / CAST(COALESCE(c.median_spacing_days, 91) AS FLOAT64)
+                   ),
+                   1
+                 ) AS INT64
+               ) * COALESCE(c.median_spacing_days, 91)
+               DAY)
+           END AS projected_next_ex_div_date
     FROM last_event le LEFT JOIN cadence c USING (symbol)
 )
 SELECT h.symbol, p.projected_next_ex_div_date,

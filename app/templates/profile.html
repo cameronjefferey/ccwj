@@ -318,7 +318,7 @@
                 <div class="atlas-card-h">Quick actions</div>
                 <div class="atlas-card-b">
                     <div class="qa-grid">
-                        {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker</a>{% endif %}
+                        {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker or another account</a>{% endif %}
                         <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV</a>
                         <a href="{{ url_for('profile', tab='preferences') }}" class="btn-sync-ghost">Edit profile</a>
                         <a href="{{ url_for('profile', tab='security') }}" class="btn-sync-ghost">Change password</a>
@@ -600,7 +600,8 @@
                         {% endfor %}
                     </ul>
                     <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
-                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add another broker</a>
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add a broker or another account</a>
+                    <p class="atlas-hint small mb-0 mt-2">Already on Schwab (or any connected broker)? Connect again and pick the extra account in the portal — another household Schwab, a second IBKR login, a TD RRSP. Same broker is fine.</p>
                     {% else %}
                     <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary">Connect a brokerage</a>
                     {% endif %}

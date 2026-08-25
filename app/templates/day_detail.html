@@ -24,7 +24,9 @@
     .dd-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .dd-money.pos { color: var(--color-positive); }
     .dd-money.neg { color: var(--color-negative); }
-    .dd-muted { color: #94a3b8; font-size: .8rem; }
+    .dd-muted { color: #475569; font-size: .8rem; }
+    .dd-roll-ok { color: #166534; font-size: .75rem; font-weight: 600; }
+    .dd-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
     .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
     .dd-verb.sell { background: #fef2f2; color: #b91c1c; }
@@ -134,17 +136,27 @@
                     {% for t in trade_rows %}
                     <tr>
                         <td>
-                            <span class="dd-verb {{ 'lifecycle' if t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                            <span class="dd-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                         </td>
                         <td>
                             {% if t.symbol %}<a class="dd-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
-                            {% if t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
+                            {% if t.is_roll %}
+                            <div class="dd-muted">{{ t.close_label }} → {{ t.open_label }}</div>
+                            {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
                             <div class="dd-muted">{{ t.trade_symbol }}</div>
                             {% endif %}
                         </td>
                         <td class="dd-muted d-none d-sm-table-cell">
+                            {% if t.is_roll %}
+                            {% if t.successful %}
+                            <span class="dd-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
+                            {% elif t.successful is sameas false %}
+                            <span class="dd-roll-miss">{% if t.strike_dir == 'same' %}Debit roll, strike unchanged{% else %}Did not meet the roll{% endif %}</span>
+                            {% endif %}
+                            {% else %}
                             {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
                             {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
+                            {% endif %}
                         </td>
                         <td class="dd-money {{ 'pos' if t.amount > 0 else 'neg' if t.amount < 0 else '' }}">
                             {% if t.amount %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
