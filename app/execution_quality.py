@@ -431,11 +431,162 @@ def _verdict_sentence(row):
             f"outcome by {_money(delta)}.")
 
 
+# Multi-leg labels from int_strategy_classification. Used when the
+# warehouse already tagged the legs; the structural fallback below
+# matches the same pairing rule (opposite direction or call+put on one
+# expiry) so Daily Review still groups a VICR-style put spread even if
+# the strategy column is not on the frame.
+_MULTI_LEG_STRATEGIES = {
+    "Call Spread", "Put Spread", "Iron Condor",
+    "Straddle", "Strangle",
+    "Diagonal Call Spread", "Diagonal Put Spread",
+}
+
+
+def _tenant_key(row):
+    """Broker-stable grouping key — tenant_id first, account only for
+    legacy rows. Same physical VICR spread in two users' tenants must
+    stay two verdicts."""
+    raw = row.get("tenant_id")
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        raw = row.get("account") or ""
+    return str(raw).strip()
+
+
+def _option_side(row):
+    ot = str(row.get("option_type") or "").upper()
+    if ot.startswith("C"):
+        return "C"
+    if ot.startswith("P"):
+        return "P"
+    return ""
+
+
+def _structure_bucket(row):
+    return (_tenant_key(row), str(row.get("symbol") or "").upper(),
+            row.get("option_expiry"))
+
+
+def _is_multi_leg_structure(members):
+    """True when these same-expiry legs are one strategy, not N unrelated
+    contracts. Opposite directions → vertical / condor; both call and
+    put → straddle / strangle / condor. A warehouse strategy tag wins
+    when present."""
+    if len(members) < 2:
+        return False
+    strategies = {str(m.get("strategy") or "") for m in members}
+    if strategies & _MULTI_LEG_STRATEGIES:
+        return True
+    dirs = {str(m.get("direction") or "") for m in members}
+    sides = {_option_side(m) for m in members} - {""}
+    if "Bought" in dirs and "Sold" in dirs:
+        return True
+    if sides >= {"C", "P"}:
+        return True
+    return False
+
+
+def _fmt_strikes(members):
+    strikes = []
+    for m in members:
+        try:
+            s = float(m.get("option_strike"))
+        except (TypeError, ValueError):
+            continue
+        if s not in strikes:
+            strikes.append(s)
+    strikes.sort()
+    bits = []
+    for s in strikes:
+        bits.append(f"${int(s)}" if s == int(s) else f"${s:g}")
+    return " / ".join(bits)
+
+
+def _structure_kind(members):
+    sides = {_option_side(m) for m in members} - {""}
+    dirs = {str(m.get("direction") or "") for m in members}
+    tagged = {str(m.get("strategy") or "") for m in members} & _MULTI_LEG_STRATEGIES
+    if len(tagged) == 1:
+        return tagged.pop()
+    if sides == {"P"}:
+        return "Put Spread"
+    if sides == {"C"}:
+        return "Call Spread"
+    if sides >= {"C", "P"} and dirs in ({"Bought"}, {"Sold"}):
+        strikes = {m.get("option_strike") for m in members}
+        return "Straddle" if len(strikes) == 1 else "Strangle"
+    if sides >= {"C", "P"}:
+        return "Iron Condor"
+    return "Spread"
+
+
+def _structure_name(members):
+    kind = _structure_kind(members)
+    strikes = _fmt_strikes(members)
+    if kind == "Iron Condor":
+        puts = [m for m in members if _option_side(m) == "P"]
+        calls = [m for m in members if _option_side(m) == "C"]
+        put_s = _fmt_strikes(puts) if puts else ""
+        call_s = _fmt_strikes(calls) if calls else ""
+        if put_s and call_s:
+            return f"{put_s} / {call_s} iron condor"
+        return f"{strikes} iron condor".strip()
+    if kind in ("Straddle", "Strangle"):
+        return f"{strikes} {kind.lower()}"
+    if kind == "Put Spread":
+        return f"{strikes} put spread"
+    if kind == "Call Spread":
+        return f"{strikes} call spread"
+    return f"{strikes} {kind.lower()}".strip()
+
+
+def _structure_action(members):
+    return f"Closed the {_structure_name(members)}."
+
+
+def _structure_sentence(members):
+    symbol = str(members[0].get("symbol") or "")
+    name = _structure_name(members)
+    delta = sum(float(m["early_close_vs_expiry_delta"]) for m in members)
+    n = len(members)
+    legs = "both legs" if n == 2 else "all legs"
+    if delta < 0:
+        return (f"The {symbol} {name} you closed — that exit was "
+                f"{_money(delta)} worse than holding {legs} to expiry.")
+    if delta > 0:
+        return (f"The {symbol} {name} you closed — that exit beat holding "
+                f"{legs} to expiry by {_money(delta)}.")
+    return (f"The {symbol} {name} you closed — that exit came out even "
+            f"with holding {legs} to expiry.")
+
+
+def _cluster_structure_groups(records):
+    """Partition same-(tenant, symbol, expiry) rows into one strategy
+    group or a list of standalone contracts."""
+    buckets = {}
+    for rec in records:
+        buckets.setdefault(_structure_bucket(rec), []).append(rec)
+    groups = []
+    for members in buckets.values():
+        if _is_multi_leg_structure(members):
+            groups.append(members)
+        else:
+            groups.extend([[m] for m in members])
+    return groups
+
+
 def verdicts_landed(df, start, end):
     """Verdicts that MATURED in [start, end] — early closes whose expiry
     date arrived in the window, making the counterfactual knowable. This
     is the Daily Review's "news since you last looked": each item is new
-    information on the day it lands, not a re-read of a lifetime total."""
+    information on the day it lands, not a re-read of a lifetime total.
+
+    Complementary legs of one structure (put/call spread, iron condor,
+    straddle/strangle) on the same tenant + expiry collapse to ONE row
+    whose delta is the net vs holding every leg. A standalone option
+    stays its own verdict — pairing two unrelated VICR-sized numbers as
+    if they were independent trades is the failure this grouping stops.
+    """
     df = _prep(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return []
@@ -446,28 +597,44 @@ def verdicts_landed(df, start, end):
               & (df["option_expiry"] <= end)]
     if rows.empty:
         return []
-    rows = rows.reindex(
-        rows["early_close_vs_expiry_delta"].abs()
-        .sort_values(ascending=False).index)
+    groups = _cluster_structure_groups(
+        [r.to_dict() for _, r in rows.iterrows()])
     out = []
-    for _, r in rows.iterrows():
-        delta = float(r["early_close_vs_expiry_delta"])
+    for members in groups:
+        if len(members) == 1:
+            r = members[0]
+            delta = float(r["early_close_vs_expiry_delta"])
+            out.append({
+                "symbol": r["symbol"],
+                "landed": r["option_expiry"].isoformat(),
+                "landed_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                # action → the page feed (delta rendered separately);
+                # sentence → the email digest (self-contained prose).
+                "action": _verdict_action(r),
+                "sentence": _verdict_sentence(r),
+                "delta": round(delta, 2),
+                "structure": None,
+            })
+            continue
+        delta = sum(float(m["early_close_vs_expiry_delta"]) for m in members)
+        exp = members[0]["option_expiry"]
         out.append({
-            "symbol": r["symbol"],
-            "landed": r["option_expiry"].isoformat(),
-            "landed_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
-            # action → the page feed (delta rendered separately);
-            # sentence → the email digest (self-contained prose).
-            "action": _verdict_action(r),
-            "sentence": _verdict_sentence(r),
+            "symbol": members[0]["symbol"],
+            "landed": exp.isoformat(),
+            "landed_label": pd.Timestamp(exp).strftime("%a %b %-d"),
+            "action": _structure_action(members),
+            "sentence": _structure_sentence(members),
             "delta": round(delta, 2),
+            "structure": _structure_kind(members),
         })
+    out.sort(key=lambda v: abs(v["delta"]), reverse=True)
     return out
 
 
 def verdicts_pending(df, today):
     """The open loop: early closes whose expiry hasn't arrived yet. Each
-    one is a verdict already in the mail — {n, next_date_label, items}."""
+    one is a verdict already in the mail — {n, next_date_label, items}.
+    Multi-leg structures count as one pending verdict."""
     df = _prep(df)
     if df.empty or "close_type" not in df.columns:
         return None
@@ -478,17 +645,31 @@ def verdicts_pending(df, today):
               & (df["option_expiry"] >= today)]
     if rows.empty:
         return None
-    rows = rows.sort_values("option_expiry")
+    groups = _cluster_structure_groups(
+        [r.to_dict() for _, r in rows.iterrows()])
+    groups.sort(key=lambda g: g[0]["option_expiry"])
     items = []
-    for _, r in rows.iterrows():
-        items.append({
-            "symbol": r["symbol"],
-            "label": _contract_label(r),
-            "short_label": _short_label(r),
-            "expiry": r["option_expiry"].isoformat(),
-            "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
-            "days_away": int((r["option_expiry"] - today).days),
-        })
+    for members in groups:
+        r = members[0]
+        if len(members) == 1:
+            items.append({
+                "symbol": r["symbol"],
+                "label": _contract_label(r),
+                "short_label": _short_label(r),
+                "expiry": r["option_expiry"].isoformat(),
+                "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                "days_away": int((r["option_expiry"] - today).days),
+            })
+        else:
+            name = _structure_name(members)
+            items.append({
+                "symbol": r["symbol"],
+                "label": name,
+                "short_label": name,
+                "expiry": r["option_expiry"].isoformat(),
+                "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                "days_away": int((r["option_expiry"] - today).days),
+            })
     nxt = items[0]
     return {
         "n": len(items),

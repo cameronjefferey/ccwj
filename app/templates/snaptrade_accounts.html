@@ -317,17 +317,19 @@
     </div>
 
     <div class="broker-card">
-        <h2>Add another brokerage</h2>
+        <h2>Add a broker or another account</h2>
         {% if snaptrade_enabled %}
         <p class="empty-hint mb-3">
-            Click below to open the SnapTrade connection portal. Pick your
-            broker, sign in there, and you'll be returned here with the new
-            account ready to sync.
+            Opens the SnapTrade connection portal. Use this for a new
+            brokerage <em>or</em> another account at a broker you already
+            use (a second Schwab household account, IBKR, TD Direct).
+            Sign in there, select the extra account, and you'll land back
+            here ready to sync.
         </p>
 
         <form method="POST" action="{{ url_for('snaptrade_connect') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-primary">Connect a brokerage</button>
+            <button type="submit" class="btn btn-primary">Connect an account</button>
         </form>
         {% else %}
         <p class="empty-hint">

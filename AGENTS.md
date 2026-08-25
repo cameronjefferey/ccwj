@@ -170,9 +170,15 @@ What's working (May 2026 rebuild):
  Once the regular session is open, the query flips to calendar today so
  same-day fills appear. Adds and trims on a long-held position show here
  even though **Trades this week** only lists groups that opened or closed
- this ISO week. Lives in `build_daily_review_batch` as `today_trades`
- so the cache warmer replays it (same `trades_as_of`). Empty state uses
- the session date, not the word "today", when the two differ.
+ this ISO week. Same-day close + open of the same option type (same
+ symbol + tenant, different strike/expiry) is grouped as one **Rolled**
+ row (`_group_day_rolls`); a short roll "meets the roll" on a credit
+ (or flat) **or** a strike that moved in the covered direction (calls
+ up, puts down). Pairing keys on `tenant_id` so colliding "Schwab
+ Account" labels cannot fuse two physical accounts. Lives in
+ `build_daily_review_batch` as `today_trades` so the cache warmer
+ replays it (same `trades_as_of`). Empty state uses the session date,
+ not the word "today", when the two differ.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
 - Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
@@ -205,7 +211,7 @@ What's working (May 2026 rebuild):
  NULL and the section will not appear in dev — that is expected, not a bug;
  it renders in prod once a real post-close sync lands and today's close is
  published.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), projected ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page.
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
@@ -233,9 +239,22 @@ Implementation notes:
   capital floor so dust-lot dividends don't extrapolate to four-digit %.
 - Strategy / sector / subsector breakdowns are pure pandas groupby on the per-symbol
   rows — totals reconcile by construction.
-- Projected ex-dividend dates come from a cadence heuristic on `stg_daily_prices.dividend`
-  (median spacing of last 6 events). Labeled "projected" in UI; the long-term fix is a
-  yfinance Calendar refresher script that ships real future ex-div dates.
+- Ex-dividend dates: canonical source is `stg_ex_div_calendar` (yfinance
+  `Ticker.calendar` Ex-Dividend Date, written by
+  `scripts/refresh_earnings_calendar.py` into `earnings_calendar` on the
+  warehouse rebuild — ETFs like JEPI often have an ex-div and no
+  earnings, so the loader persists a row even when Earnings Date is
+  missing). Daily Review (`EX_DIV_CALENDAR_QUERY` +
+  `_build_upcoming_dividends`) and the weekly preview email
+  (`_EX_DIVS_SQL`) prefer a calendar date that is still on/after today.
+  Fallback is the last+median cadence heuristic on
+  `stg_daily_prices.dividend` (median spacing of last 6 events),
+  rolled forward with `CEIL(days_since / spacing)` when last + one
+  spacing is already in the past. Heuristic rows are labeled
+  "projected" in UI / `~` in the email; calendar rows are not. The
+  calendar query is a separate batch key so a missing view cannot
+  blank the heuristic. Symbol-grain public market data — do NOT run
+  the calendar frame through `_filter_df_by_tenant_ids`.
 
 What could be better:
 - ~~"Today's $ impact" only covers equity price-moves~~ — closed Aug 2026: the movers
@@ -841,6 +860,12 @@ pending open loop ("N verdicts pending — next lands Fri …",
 `verdicts_pending`); the weekly summary EMAIL carries the same landed
 list (`_VERDICTS_SQL` in `app/email_digests_cli.py` reuses
 `verdicts_landed` for phrasing so email and page can never drift).
+Complementary legs of one structure (put/call spread, iron condor,
+straddle/strangle) on the same `tenant_id` + expiry collapse to one
+row whose dollar is the **net** vs holding every leg — a VICR $210
+put and $190 put are one Put Spread, not two offsetting ±$25k lines.
+Standalone options stay their own verdict. Pending counts use the
+same grouping.
 (2) **Rolling self-comparison** — `execution_trend` (90-day window,
 ≥3 recent AND ≥3 baseline exits) adds the "number that moves" sentence +
 chip to the Trader Profile card: recent avg early-close delta per
@@ -1123,11 +1148,16 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   user is thousands of rows, not millions). Skeleton-wrapped. Pinned by
   `tests/test_trader_story.py`.
 - **Dark mode**: navbar toggle → localStorage → inline head script sets
-  `data-bs-theme` pre-paint. Bootstrap 5.3 handles its components; the
-  app's hardcoded light surfaces are overridden in base.html's
-  `[data-bs-theme="dark"]` block; charts recolor via Chart.js global
-  defaults + theme-aware `borderColor` ternaries in page templates. New
-  templates with hardcoded light styling need a dark override added there.
+  `data-bs-theme` pre-paint. Ink/surface colors are `--ht-ink` /
+  `--ht-label` / `--ht-muted` / `--ht-surface` tokens on `:root` and
+  `[data-bs-theme="dark"]` in base.html — page style blocks must use
+  those, not hardcoded `#0f172a` (light-only ink, vanishes on a dark
+  card) or `#94a3b8` (dark-only muted, vanishes on white). Bootstrap 5.3
+  handles its components; leftover hardcoded light surfaces are
+  overridden in base.html's `[data-bs-theme="dark"]` block; charts
+  recolor via Chart.js global defaults + theme-aware `borderColor`
+  ternaries in page templates. New templates with hardcoded light
+  styling need a token or a dark override.
 
 **Design refresh layer (Aug 2026).** base.html carries a global "Design
 refresh" style block that owns the app's look: slate page background

@@ -79,19 +79,24 @@ sources:
           - name: fetched_at
       - name: earnings_calendar
         description: >
-          Next-earnings date per symbol, fetched via yfinance
-          (Ticker.calendar) by scripts/refresh_earnings_calendar.py.
+          Next-earnings AND next-ex-div dates per symbol, fetched via
+          yfinance (Ticker.calendar) by scripts/refresh_earnings_calendar.py.
           Symbol-only — no account column, safe to share across tenants.
-          Crypto and benchmark ETFs (SPY/QQQ) are filtered out at load
-          time; other ETFs / indices / symbols with no fundamentals are
+          Crypto is filtered out at load time. Benchmark ETFs (SPY/QQQ)
+          are included so their ex-div dates land (they have no earnings).
+          Other ETFs / indices / symbols with no fundamentals are
           persisted with NULL dates as a negative cache.
-          yfinance often returns a single date but occasionally a 1-2
-          element window (estimate ± a day) — we store both
-          earnings_window_start and earnings_window_end and surface the
-          minimum as next_earnings_date.
+          yfinance often returns a single earnings date but occasionally
+          a 1-2 element window — we store both earnings_window_start and
+          earnings_window_end and surface the minimum as next_earnings_date.
+          Ex-Dividend Date / Dividend Date are persisted as
+          next_ex_div_date / next_dividend_pay_date (Daily Review prefers
+          these over the last+median cadence heuristic).
         columns:
           - name: symbol
           - name: next_earnings_date
           - name: earnings_window_start
           - name: earnings_window_end
+          - name: next_ex_div_date
+          - name: next_dividend_pay_date
           - name: fetched_at

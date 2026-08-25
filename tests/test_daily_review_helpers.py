@@ -29,6 +29,8 @@ from app.weekly_review import (
     _build_trades_this_week,
     _build_upcoming_dividends,
     _coerce_date,
+    _group_day_rolls,
+    _next_ex_div_on_or_after,
     _drop_stale_option_rows,
     _format_trade_contract,
     _frame_as_of_date,
@@ -501,7 +503,7 @@ class TestBuildUpcomingDividends:
              "long_name": "JPMorgan EPI"},
             {"symbol": "SCHD", "last_ex_div_date": date(2026, 3, 20),
              "last_amount_per_share": 0.78, "median_spacing_days": 91,
-             "projected_next_ex_div_date": date(2026, 6, 19),
+             "projected_next_ex_div_date": date(2026, 6, 18),
              "sector": "Financial Services", "subsector": "Asset Management",
              "long_name": "Schwab US Dividend ETF"},
             {"symbol": "BKH", "last_ex_div_date": date(2026, 3, 1),
@@ -511,14 +513,16 @@ class TestBuildUpcomingDividends:
              "long_name": "Black Hills"},
         ])
         rows = _build_upcoming_dividends(df, today=date(2026, 5, 18))
-        # Sorted by days_until ascending: 7, 13, 32.
+        # Sorted by days_until ascending: 7, 13, 31 (32+ is outside the
+        # watch-list window and is dropped — same bound as the SQL).
         assert [r["symbol"] for r in rows] == ["JEPI", "BKH", "SCHD"]
-        assert [r["days_until"] for r in rows] == [7, 13, 32]
+        assert [r["days_until"] for r in rows] == [7, 13, 31]
+        assert all(r["source"] == "heuristic" for r in rows)
 
-    def test_past_projection_dropped_for_user_today(self):
-        # A projected date that already passed in the USER's timezone is
-        # dropped even though the UTC-windowed query may still return it
-        # (window is padded a day; evening-UTC-rollover regression).
+    def test_past_projection_rolls_forward_for_monthly_payer(self):
+        # JEPI's last+median step can already be in the past when the
+        # price feed missed the latest ex-div (JEPQ still projects). Roll
+        # last+n*spacing forward instead of dropping the row.
         df = pd.DataFrame([
             {"symbol": "JEPI", "last_ex_div_date": date(2026, 8, 1),
              "last_amount_per_share": 0.45, "median_spacing_days": 30,
@@ -530,8 +534,95 @@ class TestBuildUpcomingDividends:
              "sector": "", "subsector": "", "long_name": "Schwab Dividend"},
         ])
         rows = _build_upcoming_dividends(df, today=date(2026, 8, 10))
-        assert [r["symbol"] for r in rows] == ["SCHD"]
+        assert [r["symbol"] for r in rows] == ["SCHD", "JEPI"]
         assert rows[0]["days_until"] == 0
+        assert rows[1]["symbol"] == "JEPI"
+        assert rows[1]["projected_date"] == "2026-08-31"
+        assert rows[1]["days_until"] == 21
+        assert all(r["source"] == "heuristic" for r in rows)
+
+    def test_calendar_date_beats_stale_heuristic(self):
+        """JEPI-shaped: last+median is in the past, but yfinance calendar
+        already has the declared next ex-div. Calendar wins."""
+        heuristic = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 7, 1),
+             "last_amount_per_share": 0.45, "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 7, 31),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+        calendar = pd.DataFrame([{
+            "symbol": "JEPI",
+            "next_ex_div_date": date(2026, 9, 2),
+            "next_dividend_pay_date": date(2026, 9, 5),
+        }])
+        rows = _build_upcoming_dividends(
+            heuristic, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert len(rows) == 1
+        assert rows[0]["projected_date"] == "2026-09-02"
+        assert rows[0]["source"] == "calendar"
+        assert rows[0]["last_amount_per_share"] == 0.45
+
+    def test_past_calendar_date_falls_back_to_heuristic_roll(self):
+        heuristic = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 7, 1),
+             "last_amount_per_share": 0.45, "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 7, 31),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+        calendar = pd.DataFrame([{
+            "symbol": "JEPI",
+            "next_ex_div_date": date(2026, 8, 1),
+            "next_dividend_pay_date": None,
+        }])
+        rows = _build_upcoming_dividends(
+            heuristic, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert rows[0]["projected_date"] == "2026-08-30"
+        assert rows[0]["source"] == "heuristic"
+
+    def test_calendar_only_symbol_still_renders(self):
+        """Held symbol with no heuristic row (no recent prints) but a
+        future calendar date still appears on the watch list."""
+        calendar = pd.DataFrame([{
+            "symbol": "SCHD",
+            "next_ex_div_date": date(2026, 9, 15),
+            "next_dividend_pay_date": date(2026, 9, 22),
+        }])
+        rows = _build_upcoming_dividends(
+            pd.DataFrame(), today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert len(rows) == 1
+        assert rows[0]["symbol"] == "SCHD"
+        assert rows[0]["projected_date"] == "2026-09-15"
+        assert rows[0]["source"] == "calendar"
+        assert rows[0]["last_amount_per_share"] == 0.0
+
+    def test_past_calendar_only_is_dropped(self):
+        calendar = pd.DataFrame([{
+            "symbol": "SCHD",
+            "next_ex_div_date": date(2026, 8, 1),
+            "next_dividend_pay_date": None,
+        }])
+        rows = _build_upcoming_dividends(
+            None, today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert rows == []
+
+    def test_next_ex_div_rolls_stale_last_event(self):
+        # Last event July 1, 30d cadence, today Aug 22 → Aug 30.
+        nxt = _next_ex_div_on_or_after(date(2026, 7, 1), 30, date(2026, 8, 22))
+        assert nxt == date(2026, 8, 30)
+
+    def test_far_next_cycle_dropped(self):
+        df = pd.DataFrame([
+            {"symbol": "OLD", "last_ex_div_date": date(2026, 1, 1),
+             "last_amount_per_share": 0.5, "median_spacing_days": 91,
+             "projected_next_ex_div_date": date(2026, 4, 2),
+             "sector": "", "subsector": "", "long_name": ""},
+        ])
+        rows = _build_upcoming_dividends(df, today=date(2026, 8, 10))
+        assert rows == []
 
 
 class TestTodayHeadline:
@@ -1025,6 +1116,102 @@ class TestSplitDayFills:
         assert out["cash"][0]["verb"] == "Margin interest"
         assert out["has_any"] is True
 
+    def _jpm(self, action, trade_symbol, amount, tenant_id="snaptrade:abc",
+             account="Schwab Account"):
+        return self._row(
+            action=action, trade_symbol=trade_symbol,
+            underlying_symbol="JPM", quantity=1, price=abs(amount) / 100.0,
+            amount=amount, instrument_type="Call" if "C00" in trade_symbol else "Put",
+            tenant_id=tenant_id, account=account,
+        )
+
+    def test_btc_then_sto_call_credit_and_strike_up_is_successful(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821C00300000", -120),
+            self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 2
+        assert out["roll_count"] == 1
+        assert len(out["trades"]) == 1
+        g = out["trades"][0]
+        assert g["is_roll"] is True
+        assert g["verb"] == "Rolled"
+        assert g["amount"] == 60
+        assert g["successful"] is True
+        assert g["success_bits"] == ["credit", "strike"]
+        assert "300" in g["close_label"]
+        assert "305" in g["open_label"]
+
+    def test_sto_then_btc_still_groups(self):
+        df = pd.DataFrame([
+            self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
+            self._jpm("option_buy_to_close", "JPM   260821C00300000", -120),
+        ])
+        out = _split_day_fills(df)
+        assert out["roll_count"] == 1
+        assert out["trades"][0]["amount"] == 60
+        assert out["trades"][0]["successful"] is True
+
+    def test_put_roll_succeeds_on_strike_down(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821P00280000", -200),
+            self._jpm("option_sell_to_open", "JPM   260828P00275000", 150),
+        ])
+        out = _split_day_fills(df)
+        g = out["trades"][0]
+        assert g["is_roll"] is True
+        assert g["successful"] is True
+        assert "strike" in g["success_bits"]
+        assert "credit" not in g["success_bits"]
+
+    def test_debit_same_strike_is_not_successful(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821C00300000", -200),
+            self._jpm("option_sell_to_open", "JPM   260918C00300000", 150),
+        ])
+        out = _split_day_fills(df)
+        g = out["trades"][0]
+        assert g["is_roll"] is True
+        assert g["successful"] is False
+        assert g["success_bits"] == []
+        assert g["strike_dir"] == "same"
+
+    def test_unpaired_open_stays_a_fill(self):
+        df = pd.DataFrame([
+            self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
+        ])
+        out = _split_day_fills(df)
+        assert out["roll_count"] == 0
+        assert out["trades"][0]["verb"] == "Sold to open"
+        assert out["trades"][0].get("is_roll") is not True
+
+    def test_fill_count_stays_raw_when_grouped(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821C00300000", -120),
+            self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
+            self._row(action="equity_sell", trade_symbol="SPCE",
+                      underlying_symbol="SPCE", quantity=1, price=3.07,
+                      amount=3.07, instrument_type="Equity",
+                      tenant_id="snaptrade:cam", account="Cameron Investment"),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 3
+        assert out["roll_count"] == 1
+        assert any(t["symbol"] == "SPCE" and not t.get("is_roll") for t in out["trades"])
+
+    def test_colliding_account_labels_do_not_cross_pair(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821C00300000", -120,
+                      tenant_id="snaptrade:acct-a", account="Schwab Account"),
+            self._jpm("option_sell_to_open", "JPM   260828C00305000", 180,
+                      tenant_id="snaptrade:acct-b", account="Schwab Account"),
+        ])
+        out = _split_day_fills(df)
+        assert out["roll_count"] == 0
+        assert len(out["trades"]) == 2
+        assert {t["verb"] for t in out["trades"]} == {"Bought to close", "Sold to open"}
+
 
 class TestDailyReviewBatchIncludesTodayTrades:
     def test_today_trades_reuses_day_query_with_today_param(self):
@@ -1049,6 +1236,14 @@ class TestDailyReviewBatchIncludesTodayTrades:
         params = {p.name: p.value
                   for p in batch["today_trades"][1].query_parameters}
         assert params["day"] == thursday
+
+    def test_batch_includes_ex_div_calendar_query(self):
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 8, 13), date(2026, 8, 10))
+        assert "ex_div_calendar" in batch
+        assert "stg_ex_div_calendar" in batch["ex_div_calendar"]
+        assert "upcoming_divs" in batch
 
 
 class TestReviewSessionDates:
