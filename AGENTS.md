@@ -375,10 +375,15 @@ per-symbol fingerprints into one profile. The page opens with a recurring
 worth opening again: this week lists open options inside 14d (spreads
 grouped) with the live mark (`+$450 · 3d`). Leftover-vs-expiry ("when you
 close an OTM short around 3 DTE you typically leave 15% of the credit")
-only attaches when ≥5 gradeable early closes land near **this row's**
-DTE — a 10-day watch must not inherit a 2-DTE leftover. Farther watches
-use this position's mark vs its own credit ("8 days before your usual
-close; the mark has given back the credit and $X more"); last week
+only attaches when ≥5 gradeable early closes of **this structure**
+(short call vs short put vs spread) land near **this row's** DTE
+(band widens with horizon: ±2 near expiry, ±5 around 10 DTE). A 10-day
+short call reads "an exit on a short call around 10 DTE instead of
+expiry typically leaves 18% of the credit" — not the 2-DTE leftover.
+If this structure's median exit DTE is ≥3 days later than the trader's
+other shorts, the row also says they tend to hold that structure
+longer. Farther watches without a horizon sample fall back to mark vs
+this credit; last week
 reports fills/rolls/premium vs the median completed week and whether that
 looked like them. Lifetime Profile Summary, Execution Review, notable
 positions, style scoreboard, and year-by-year rows follow. Details in
@@ -1138,11 +1143,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   expiring within 14d (same-tenant complementary legs grouped like
   Execution Review). Each watch shows live unrealized P&L from
   `OPEN_OPTION_RECORD_QUERY` plus, when ≥5 gradeable early shorts closed
-  near **this row's** DTE, the leftover-vs-expiry % (OTM rolls that then
-  expired worthless) or sidestep $ (ITM finishes) from `story_execution`.
-  A 10-day watch must not inherit a 2-DTE leftover; farther rows use this
-  position's mark vs its own credit and days-until-usual-close. Evidence,
-  not advice; "every early close also removed risk." LAST WEEK compares
+  near **this row's** DTE for **this structure** (short call ≠ short put),
+  the leftover-vs-expiry % or sidestep $ from `story_execution`. Horizon
+  band widens with days left. A 10-day short call does not inherit a
+  2-DTE leftover; if short-call exits run later than other shorts, the
+  row says so. Evidence, not advice. LAST WEEK compares
   the prior ISO week to the median of prior weeks
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE

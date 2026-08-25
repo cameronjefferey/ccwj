@@ -34,11 +34,16 @@ THIS_WEEK_CAP = 8
 # the Execution Review card). Below this we only show live P&L.
 MIN_LEFTOVER_SAMPLE = 5
 # Match historical early closes to the live contract's days left.
+# Wider as the live DTE grows: a 10-day watch looks at ~5–15 DTE exits,
+# never at the 2-DTE habit.
 LEFTOVER_DTE_PAD = 2
 # Ignore leftover % below this — rounding, not a pattern.
 MIN_LEFTOVER_PCT = 5
 # Sidestep $ needs the same noise floor as day-row verdicts.
 MIN_SIDESTEP_DOLLARS = 20.0
+# "Hold this structure longer" needs two real samples.
+MIN_HOLD_COMPARE = 5
+HOLD_LONGER_GAP_DAYS = 3
 
 
 def today_for_user(tz_name=None):
@@ -248,32 +253,90 @@ def _watch_pnl(members):
                      for m in members), 2)
 
 
-def _dte_band(shorts, center):
+def _horizon_pad(days):
+    """How far a historical close may sit from this watch's days left."""
+    if days <= 4:
+        return LEFTOVER_DTE_PAD
+    if days <= 8:
+        return 3
+    return 5
+
+
+def _option_side(val):
+    ot = str(val or "").upper()
+    if ot.startswith("C"):
+        return "C"
+    if ot.startswith("P"):
+        return "P"
+    return ""
+
+
+def _watch_kind(members):
+    """Structure key for leftover matching. Single short call ≠ 2-DTE puts."""
+    if len(members) > 1:
+        return _structure_kind(members) or "spread"
+    m = members[0]
+    side = _option_side(m.get("option_type"))
+    direc = str(m.get("direction") or "")
+    if direc == "Sold" and side == "C":
+        return "short_call"
+    if direc == "Sold" and side == "P":
+        return "short_put"
+    if direc == "Bought" and side == "C":
+        return "long_call"
+    if direc == "Bought" and side == "P":
+        return "long_put"
+    if direc == "Sold":
+        return "short"
+    return None
+
+
+def _exec_kind(row):
+    direc = str(row.get("direction") or "")
+    side = _option_side(row.get("option_type"))
+    if direc == "Sold" and side == "C":
+        return "short_call"
+    if direc == "Sold" and side == "P":
+        return "short_put"
+    if direc == "Bought" and side == "C":
+        return "long_call"
+    if direc == "Bought" and side == "P":
+        return "long_put"
+    if direc == "Sold":
+        return "short"
+    return None
+
+
+def _kind_noun(kind):
+    return {
+        "short_call": "short call",
+        "short_put": "short put",
+        "long_call": "long call",
+        "long_put": "long put",
+    }.get(kind) or "short"
+
+
+def _filter_kind(df, kind):
+    if df is None or df.empty or not kind:
+        return df
+    if kind not in ("short_call", "short_put", "long_call", "long_put"):
+        return df
+    kinds = df.apply(_exec_kind, axis=1)
+    return df[kinds == kind]
+
+
+def _dte_band(shorts, center, pad=LEFTOVER_DTE_PAD):
     dte = pd.to_numeric(shorts["dte_at_close"], errors="coerce")
-    return shorts[(dte >= center - LEFTOVER_DTE_PAD)
-                  & (dte <= center + LEFTOVER_DTE_PAD)]
+    return shorts[(dte >= center - pad) & (dte <= center + pad)]
 
 
-def _leftover_record(exec_df, days, typical_dte=None):
-    """Trader's own leftover vs expiry when they closed shorts near ``days``.
-
-    Uses gradeable early closes from ``int_option_exit_quality`` (already
-    on the page as story_execution). OTM leftover % = median
-    (−delta / premium) on shorts that then expired worthless. Sidestep $
-    is the opposite: median positive delta on shorts that finished ITM.
-    Returns None until MIN_LEFTOVER_SAMPLE — do not invent the number.
-
-    ``typical_dte`` is ignored on purpose. A 10-day watch must not inherit
-    the leftover record from 2-DTE closes just because that's when they
-    usually exit. Leftover is only about THIS row's days left.
-    """
-    del typical_dte
+def _graded_shorts(exec_df):
     if exec_df is None or exec_df.empty:
-        return None
+        return pd.DataFrame()
     if "gradeable_early_close" not in exec_df.columns:
-        return None
+        return pd.DataFrame()
     if "early_close_vs_expiry_delta" not in exec_df.columns:
-        return None
+        return pd.DataFrame()
     df = exec_df.copy()
     if "direction" in df.columns:
         shorts = df[df["direction"].astype(str) == "Sold"]
@@ -282,12 +345,13 @@ def _leftover_record(exec_df, days, typical_dte=None):
     graded = shorts[shorts["gradeable_early_close"].fillna(False).astype(bool)
                     & shorts["early_close_vs_expiry_delta"].notna()]
     if graded.empty or "dte_at_close" not in graded.columns:
-        return None
+        return pd.DataFrame()
+    return graded
 
-    sample = _dte_band(graded, days)
-    if len(sample) < MIN_LEFTOVER_SAMPLE:
-        return None
 
+def _leftover_from_sample(sample, *, pad, horizon="this_dte"):
+    if sample is None or len(sample) < MIN_LEFTOVER_SAMPLE:
+        return None
     rolled = False
     if "was_rolled" in sample.columns:
         rolled = float(sample["was_rolled"].fillna(False).astype(bool)
@@ -321,6 +385,8 @@ def _leftover_record(exec_df, days, typical_dte=None):
                         and float(usable["was_rolled"].fillna(False)
                                   .astype(bool).mean()) >= 0.6
                     ),
+                    "pad": pad,
+                    "horizon": horizon,
                 }
 
     if "expired_worthless" in sample.columns:
@@ -339,21 +405,97 @@ def _leftover_record(exec_df, days, typical_dte=None):
                 "n": int(len(itm)),
                 "dte": dte_med,
                 "rolled": rolled,
+                "pad": pad,
+                "horizon": horizon,
             }
     return None
 
 
+def _leftover_record(exec_df, days, typical_dte=None, kind=None):
+    """Leftover vs expiry for THIS structure near THIS days left.
+
+    A 10-day short call reads short-call exits around 10 DTE — not the
+    lifetime 2-DTE habit, and not put leftovers. ``typical_dte`` is
+    ignored on purpose (kept so older callers don't break).
+    """
+    del typical_dte
+    graded = _graded_shorts(exec_df)
+    if graded.empty:
+        return None
+    scoped = _filter_kind(graded, kind)
+    if scoped is None or scoped.empty:
+        return None
+    pad = _horizon_pad(days)
+    sample = _dte_band(scoped, days, pad=pad)
+    rec = _leftover_from_sample(sample, pad=pad, horizon="this_dte")
+    if rec:
+        rec["structure"] = kind
+        return rec
+    # Far watches only: pool "a week or more left" for this structure.
+    # Phrase as week-plus — never as "at 10 DTE" if the median isn't.
+    if days >= 8:
+        dte = pd.to_numeric(scoped["dte_at_close"], errors="coerce")
+        week_plus = scoped[dte >= 7]
+        rec = _leftover_from_sample(week_plus, pad=pad, horizon="week_plus")
+        if rec:
+            rec["structure"] = kind
+            return rec
+    return None
+
+
+def _hold_longer(exec_df, kind):
+    """This structure's median exit DTE vs the trader's other shorts."""
+    if kind not in ("short_call", "short_put"):
+        return None
+    graded = _graded_shorts(exec_df)
+    if graded.empty:
+        return None
+    this = _filter_kind(graded, kind)
+    others = graded if this is None or this.empty else graded.drop(this.index, errors="ignore")
+    if this is None or len(this) < MIN_HOLD_COMPARE:
+        return None
+    if others is None or len(others) < MIN_HOLD_COMPARE:
+        return None
+    this_dte = _median(pd.to_numeric(this["dte_at_close"], errors="coerce").tolist())
+    other_dte = _median(pd.to_numeric(others["dte_at_close"], errors="coerce").tolist())
+    if this_dte is None or other_dte is None:
+        return None
+    if this_dte < other_dte + HOLD_LONGER_GAP_DAYS:
+        return None
+    return {
+        "kind": kind,
+        "this_dte": int(round(this_dte)),
+        "other_dte": int(round(other_dte)),
+    }
+
+
 def _leftover_sentence(record, days=None):
-    verb = "roll" if record["rolled"] else "close"
+    noun = _kind_noun(record.get("structure"))
     dte = record["dte"]
-    if days is not None and abs(int(days) - int(dte)) <= LEFTOVER_DTE_PAD:
+    pad = int(record.get("pad") or LEFTOVER_DTE_PAD)
+    if (days is not None and record.get("horizon") != "week_plus"
+            and abs(int(days) - int(dte)) <= pad):
         dte = int(days)
     if record["kind"] == "otm_leftover_pct":
-        return (f"When you {verb} an OTM short around {dte} DTE, you "
-                f"typically leave {record['pct']}% of the credit on the "
-                f"table vs expiry.")
-    return (f"When you {verb} a short around {dte} DTE, the typical "
-            f"close sidestepped {_money(record['dollars'])} vs expiry.")
+        if record.get("horizon") == "week_plus":
+            return (f"When you exit a {noun} with a week or more left "
+                    f"instead of expiry, you typically leave "
+                    f"{record['pct']}% of the credit.")
+        return (f"An exit on a {noun} around {dte} DTE instead of expiry "
+                f"typically leaves {record['pct']}% of the credit.")
+    if record.get("horizon") == "week_plus":
+        return (f"When you exit a {noun} with a week or more left, the "
+                f"typical close sidestepped {_money(record['dollars'])} "
+                f"vs expiry.")
+    return (f"An exit on a {noun} around {dte} DTE sidestepped "
+            f"{_money(record['dollars'])} vs expiry.")
+
+
+def _hold_longer_sentence(hold):
+    noun = _kind_noun(hold["kind"])
+    noun_pl = noun + "s"
+    return (f"You tend to hold {noun_pl} longer than your other shorts "
+            f"(median {hold['this_dte']} DTE vs {hold['other_dte']}).")
 
 
 def _net_credit(members):
@@ -417,11 +559,14 @@ def _habit_clause(name, days, habit, typical_dte, in_usual):
 
 
 def _leftover_applies(leftover, days):
-    """Leftover is about closes near THIS expiry, not a lifetime DTE habit."""
+    """Leftover is about this structure near this expiry — not a 2-DTE stamp."""
     if not leftover:
         return False
+    if leftover.get("horizon") == "week_plus":
+        return int(days) >= 8
     try:
-        return abs(int(leftover["dte"]) - int(days)) <= LEFTOVER_DTE_PAD
+        pad = int(leftover.get("pad") or LEFTOVER_DTE_PAD)
+        return abs(int(leftover["dte"]) - int(days)) <= pad
     except (TypeError, ValueError, KeyError):
         return False
 
@@ -435,9 +580,10 @@ def _lead_sentence(pnl, days):
     return lead + f" with {days} day{'s' if days != 1 else ''} left"
 
 
-def _watch_item(members, habit, typical_dte, leftover=None):
+def _watch_item(members, habit, typical_dte, leftover=None, hold=None):
     days = min(int(m["_days"]) for m in members)
     symbol = members[0]["symbol"]
+    kind = _watch_kind(members)
     if len(members) > 1:
         name = _structure_name(members)
         structure = _structure_kind(members)
@@ -453,27 +599,31 @@ def _watch_item(members, habit, typical_dte, leftover=None):
     credit = _net_credit(members)
     use_leftover = _leftover_applies(leftover, days)
     lead = _lead_sentence(pnl, days)
-    tail = None
+    bits = []
+    if hold:
+        bits.append(_hold_longer_sentence(hold))
     if use_leftover:
-        tail = _leftover_sentence(leftover, days=days)
+        bits.append(_leftover_sentence(leftover, days=days))
     else:
         leftover = None
         far = _distance_sentence(days, typical_dte, in_usual)
         mark = _credit_sentence(pnl, credit)
-        # Far from the usual close window: talk about THIS mark vs credit.
-        # Never paste the near-DTE leftover sentence onto a 10-day watch.
-        if far and mark:
-            tail = f"{far} {mark}"
-        elif far:
-            tail = far
-        elif habit == "expire" and days <= 7:
-            tail = "You usually hold to expiry."
-        elif habit == "roll" and (in_usual or days <= 7):
-            tail = "You usually roll — roll it, or let this one expire?"
-        elif in_usual and typical_dte is not None:
-            tail = f"Your typical early close is around {typical_dte} DTE."
-        elif mark:
-            tail = mark
+        if not hold:
+            if far and mark:
+                bits.append(f"{far} {mark}")
+            elif far:
+                bits.append(far)
+            elif habit == "expire" and days <= 7:
+                bits.append("You usually hold to expiry.")
+            elif habit == "roll" and (in_usual or days <= 7):
+                bits.append("You usually roll — roll it, or let this one expire?")
+            elif in_usual and typical_dte is not None:
+                bits.append(f"Your typical early close is around {typical_dte} DTE.")
+            elif mark:
+                bits.append(mark)
+        elif mark and pnl is not None and pnl < 0:
+            bits.append(mark)
+    tail = " ".join(bits) if bits else None
     if lead and tail:
         prompt = f"{lead}. {tail}"
     elif lead:
@@ -513,8 +663,10 @@ def build_this_week(open_df, exec_df=None, today=None):
     items = []
     for members in _cluster_structure_groups(recs):
         days = min(int(m["_days"]) for m in members)
-        leftover = _leftover_record(exec_df, days, typical_dte)
-        items.append(_watch_item(members, habit, typical_dte, leftover))
+        kind = _watch_kind(members)
+        leftover = _leftover_record(exec_df, days, typical_dte, kind=kind)
+        hold = _hold_longer(exec_df, kind)
+        items.append(_watch_item(members, habit, typical_dte, leftover, hold))
     items.sort(key=lambda x: (not x["in_usual_window"], x["days_left"], x["symbol"]))
     items = items[:THIS_WEEK_CAP]
     n = len(items)

@@ -51,6 +51,7 @@ def _exec(**kw):
         "gradeable_early_close": True,
         "dte_at_close": 12,
         "early_close_vs_expiry_delta": -40.0,
+        "option_type": "C",
     }
     base.update(kw)
     return base
@@ -175,10 +176,10 @@ def test_this_week_leftover_pct_from_otm_rolls_at_same_dte():
     assert item["pnl_text"] == "+$450"
     assert item["leftover"]["pct"] == 15
     assert "Currently +$450 with 3 days left" in item["prompt"]
-    assert "leave 15% of the credit on the table" in item["prompt"]
-    assert "OTM" in item["prompt"]
+    assert "short call" in item["prompt"]
+    assert "instead of expiry" in item["prompt"]
+    assert "leaves 15% of the credit" in item["prompt"]
     assert "3 DTE" in item["prompt"]
-    assert "vs expiry" in item["prompt"]
     assert "should" not in item["prompt"].lower()
 
 
@@ -207,13 +208,60 @@ def test_this_week_far_watch_does_not_reuse_near_dte_leftover():
     by_sym = {w["symbol"]: w for w in out["watches"]}
     nvda, pl = by_sym["NVDA"], by_sym["PL"]
     assert nvda["leftover"] is not None
-    assert "on the table" in nvda["prompt"]
+    assert "leaves 37% of the credit" in nvda["prompt"]
     assert pl["leftover"] is None
-    assert "on the table" not in pl["prompt"]
-    assert "vs expiry" not in pl["prompt"]
+    assert "leaves 37%" not in pl["prompt"]
+    assert "instead of expiry" not in pl["prompt"]
     assert "8 days before your usual" in pl["prompt"]
     assert "given back the $420 credit" in pl["prompt"]
     assert nvda["prompt"] != pl["prompt"]
+
+
+def test_this_week_short_call_at_10d_uses_horizon_leftover():
+    """PL-shaped: leftover at ~10 DTE on short calls, not the 2-DTE number."""
+    near = _otm_rolls_at_dte(dte=2, leftover=148.0, premium=400.0)  # 37%
+    far = _otm_rolls_at_dte(dte=10, leftover=72.0, premium=400.0)   # 18%
+    exec_df = pd.concat([near, far], ignore_index=True)
+    open_df = pd.DataFrame([
+        _open(symbol="NVDA", option_type="C", option_strike=230.0,
+              direction="Sold", option_expiry=_TODAY + timedelta(days=3),
+              current_unrealized_pnl=513.0, premium_received=800.0),
+        _open(symbol="PL", option_type="C", option_strike=24.0,
+              direction="Sold", option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-5079.0, premium_received=420.0),
+    ])
+    out = build_this_week(open_df, exec_df, today=_TODAY)
+    by_sym = {w["symbol"]: w for w in out["watches"]}
+    nvda, pl = by_sym["NVDA"], by_sym["PL"]
+    assert nvda["leftover"]["pct"] == 37
+    assert pl["leftover"]["pct"] == 18
+    assert "leaves 37% of the credit" in nvda["prompt"]
+    assert "leaves 18% of the credit" in pl["prompt"]
+    assert "around 10 DTE instead of expiry" in pl["prompt"]
+    assert "37%" not in pl["prompt"]
+    assert "18%" not in nvda["prompt"]
+
+
+def test_this_week_hold_longer_on_short_calls():
+    calls = _otm_rolls_at_dte(dte=10, leftover=72.0, premium=400.0)
+    puts = pd.DataFrame([
+        _exec(symbol=f"P{i}", option_type="P", was_rolled=False,
+              dte_at_close=2, premium_received=400.0,
+              early_close_vs_expiry_delta=-40.0, expired_worthless=True)
+        for i in range(8)
+    ])
+    exec_df = pd.concat([calls, puts], ignore_index=True)
+    open_df = pd.DataFrame([
+        _open(symbol="PL", option_type="C", direction="Sold",
+              option_expiry=_TODAY + timedelta(days=10),
+              current_unrealized_pnl=-5079.0, premium_received=420.0),
+    ])
+    out = build_this_week(open_df, exec_df, today=_TODAY)
+    prompt = out["watches"][0]["prompt"]
+    assert "hold short calls longer" in prompt
+    assert "median 10 DTE vs 2" in prompt
+    assert "around 10 DTE instead of expiry" in prompt
+    assert "leaves 18% of the credit" in prompt
 
 
 def _history_with_last_week(*, last_fills, typical_fills=6, weeks=6):
