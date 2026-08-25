@@ -6,6 +6,7 @@ import pandas as pd
 
 from app.story_loop import (
     MIN_BASELINE_WEEKS,
+    MIN_LEFTOVER_SAMPLE,
     build_last_week,
     build_this_week,
     compose_story_loop,
@@ -79,6 +80,17 @@ def _habit_rolls(n=8):
     ])
 
 
+def _otm_rolls_at_dte(n=8, dte=3, premium=400.0, leftover=60.0):
+    """Gradeable OTM rolls: leftover / premium is the % left on the table."""
+    return pd.DataFrame([
+        _exec(symbol=f"S{i}", was_rolled=True, dte_at_close=dte,
+              premium_received=premium,
+              early_close_vs_expiry_delta=-leftover,
+              expired_worthless=True, gradeable_early_close=True)
+        for i in range(n)
+    ])
+
+
 def test_week_bounds_monday_start():
     mon, last_mon, last_sun = week_bounds(date(2026, 8, 24))
     assert mon == date(2026, 8, 24)
@@ -92,7 +104,8 @@ def test_this_week_groups_put_spread_and_asks_roll_question():
               direction="Sold", option_expiry=_TODAY + timedelta(days=5)),
         _open(trade_symbol="VICR  260828P00190000", option_strike=190.0,
               direction="Bought", option_expiry=_TODAY + timedelta(days=5),
-              premium_received=0.0, premium_paid=-300.0),
+              premium_received=0.0, premium_paid=-300.0,
+              current_unrealized_pnl=-80.0),
         _open(symbol="LITE", trade_symbol="LITE  260918C01100000",
               option_type="C", option_strike=1100.0, direction="Sold",
               option_expiry=_TODAY + timedelta(days=20)),  # outside 14d
@@ -103,8 +116,11 @@ def test_this_week_groups_put_spread_and_asks_roll_question():
     assert item["symbol"] == "VICR"
     assert item["structure"] == "Put Spread"
     assert item["days_left"] == 5
-    assert "Roll it, or let this one expire?" in item["prompt"]
+    assert "roll it, or let this one expire?" in item["prompt"]
+    assert "Currently +$520" in item["prompt"]
     assert "usual roll window" in out["headline"]
+    assert item["pnl"] == 520.0
+    assert item["pnl_text"] == "+$520"
 
 
 def test_this_week_standalone_stays_one_row():
@@ -116,7 +132,9 @@ def test_this_week_standalone_stays_one_row():
     out = build_this_week(open_df, None, today=_TODAY)
     assert len(out["watches"]) == 1
     assert out["watches"][0]["structure"] is None
-    assert "expires in 3 days" in out["watches"][0]["prompt"]
+    assert out["watches"][0]["pnl"] == 600.0
+    assert "Currently +$600" in out["watches"][0]["prompt"]
+    assert "3 days left" in out["watches"][0]["prompt"]
 
 
 def test_this_week_empty_when_nothing_in_horizon():
@@ -139,6 +157,37 @@ def test_this_week_expire_habit_does_not_nudge_a_roll():
     prompt = out["watches"][0]["prompt"]
     assert "usually hold to expiry" in prompt
     assert "Roll it" not in prompt
+    assert "Currently +" in prompt
+
+
+def test_this_week_leftover_pct_from_otm_rolls_at_same_dte():
+    """The NVDA-shaped punch: live P&L + leftover % at this DTE."""
+    assert MIN_LEFTOVER_SAMPLE <= 8
+    open_df = pd.DataFrame([
+        _open(symbol="NVDA", trade_symbol="NVDA  260828C00230000",
+              option_type="C", option_strike=230.0, direction="Sold",
+              option_expiry=_TODAY + timedelta(days=3),
+              current_unrealized_pnl=450.0, premium_received=800.0),
+    ])
+    out = build_this_week(open_df, _otm_rolls_at_dte(), today=_TODAY)
+    item = out["watches"][0]
+    assert item["pnl"] == 450.0
+    assert item["pnl_text"] == "+$450"
+    assert item["leftover"]["pct"] == 15
+    assert "Currently +$450 with 3 days left" in item["prompt"]
+    assert "leave 15% of the credit on the table" in item["prompt"]
+    assert "OTM" in item["prompt"]
+    assert "3 DTE" in item["prompt"]
+    assert "vs expiry" in item["prompt"]
+    assert "should" not in item["prompt"].lower()
+
+
+def test_this_week_leftover_needs_a_real_sample():
+    open_df = pd.DataFrame([_open(option_expiry=_TODAY + timedelta(days=3))])
+    thin = _otm_rolls_at_dte(n=MIN_LEFTOVER_SAMPLE - 1)
+    out = build_this_week(open_df, thin, today=_TODAY)
+    assert out["watches"][0]["leftover"] is None
+    assert "on the table" not in out["watches"][0]["prompt"]
 
 
 def _history_with_last_week(*, last_fills, typical_fills=6, weeks=6):

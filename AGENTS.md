@@ -373,8 +373,10 @@ Runs the position-review engine over the user's whole history and folds the
 per-symbol fingerprints into one profile. The page opens with a recurring
 **This week / Last week** loop (`app/story_loop.py`) so the profile is
 worth opening again: this week lists open options inside 14d (spreads
-grouped) and asks a mirror question against the trader's own roll/expire
-habit ("you usually roll — roll it, or let this one expire?"); last week
+grouped) with the live mark (`+$450 · 3d`) and, when ≥5 gradeable early
+closes land near that DTE, the leftover-vs-expiry record ("when you roll
+an OTM short around 3 DTE, you typically leave 15% of the credit on the
+table vs expiry") from `int_option_exit_quality`; last week
 reports fills/rolls/premium vs the median completed week and whether that
 looked like them. Lifetime Profile Summary, Execution Review, notable
 positions, style scoreboard, and year-by-year rows follow. Details in
@@ -1132,10 +1134,13 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   the per-symbol fingerprints into one profile. Recurring loop first
   (`app/story_loop.py`, `compose_story_loop`): THIS WEEK is open options
   expiring within 14d (same-tenant complementary legs grouped like
-  Execution Review) with a habit-aware question — roll-leaning traders
-  get "roll it, or let this one expire?"; expire-leaning get "you
-  usually hold to expiry"; mixed/unknown get the usual-DTE window.
-  LAST WEEK compares the prior ISO week to the median of prior weeks
+  Execution Review). Each watch shows live unrealized P&L from
+  `OPEN_OPTION_RECORD_QUERY` plus, when ≥5 gradeable early shorts closed
+  near that DTE, the leftover-vs-expiry % (OTM rolls that then expired
+  worthless) or sidestep $ (ITM finishes) from `story_execution` —
+  evidence, not advice; "every early close also removed risk." Without
+  that sample, habit-aware copy remains (roll / hold to expiry / usual
+  DTE). LAST WEEK compares the prior ISO week to the median of prior weeks
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE
   SUMMARY

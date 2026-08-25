@@ -125,7 +125,10 @@
     [data-bs-theme="dark"] a.ts-watch { border-color: #24304a; }
     .ts-watch-top { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
     .ts-watch-sym { font-weight: 800; }
-    .ts-watch-days { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-watch-meta { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-watch-pnl.pos { color: var(--color-positive); }
+    .ts-watch-pnl.neg { color: var(--color-negative); }
+    .ts-watch-sep { color: var(--ht-muted, #94a3b8); font-weight: 600; padding: 0 .15rem; }
     .ts-watch-days.soon { color: var(--color-negative); }
     .ts-watch-prompt { color: var(--ht-muted, #64748b); font-size: .88rem; margin-top: .3rem; line-height: 1.45; }
     [data-bs-theme="dark"] .ts-watch-prompt { color: var(--ht-muted, #94a3b8); }
@@ -170,7 +173,13 @@
                 <a class="ts-watch" href="{{ url_for('position_detail', symbol=w.symbol, account=selected_account) }}">
                     <div class="ts-watch-top">
                         <span class="ts-watch-sym">{{ w.symbol }}{% if w.structure %}<span class="ts-standout-open" style="margin-left:.4rem;">{{ w.structure }}</span>{% endif %}</span>
-                        <span class="ts-watch-days {% if w.days_left <= 5 %}soon{% endif %}">{{ w.days_left }}d</span>
+                        <span class="ts-watch-meta">
+                            {% if w.pnl_text %}
+                            <span class="ts-watch-pnl {{ 'pos' if w.pnl >= 0 else 'neg' }}">{{ w.pnl_text }}</span>
+                            <span class="ts-watch-sep">·</span>
+                            {% endif %}
+                            <span class="ts-watch-days {% if w.days_left <= 5 %}soon{% endif %}">{{ w.days_left }}d</span>
+                        </span>
                     </div>
                     <div class="ts-watch-prompt">{{ w.prompt }}</div>
                 </a>
