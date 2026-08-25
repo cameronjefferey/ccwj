@@ -373,18 +373,15 @@ Runs the position-review engine over the user's whole history and folds the
 per-symbol fingerprints into one profile. The page opens with a recurring
 **This week / Last week** loop (`app/story_loop.py`) so the profile is
 worth opening again: this week lists open options inside 14d (spreads
-grouped) with the live mark (`+$450 · 3d`). Leftover-vs-expiry ("an
-exit at 3 DTE instead of expiry typically costs you 15% of the credit")
-only attaches when ≥5 gradeable early closes of **this structure**
-(short call vs short put vs spread) land near **this row's** DTE
-(band widens with horizon: ±2 near expiry, ±5 around 10 DTE). A 10-day
-short call that the trader also holds later than other shorts reads
-"You hold short calls too long, and an exit at 10 DTE instead of
-expiry typically costs you 18% of the credit" — not the 2-DTE leftover.
-"Naked call" only when `positions_summary` has an open Naked Call on
-that symbol and no covered-call label. Farther watches without a
-horizon sample fall back to mark vs
-this credit; last week
+grouped) with the live mark (`+$450 · 3d`). Each watch runs the same
+insight picker (`_collect_watch_insights` / `_pick_watch_insight`):
+leftover-vs-expiry at this structure × this DTE, leftover on this
+symbol, hold-later / close-earlier vs other shorts, roll/expire rate
+at this horizon, rare-to-hold-this-far, live mark vs leftover, credit
+size, then bookkeeping. Highest score wins; hold-later + leftover
+compose when both independently clear. Numbers are never invented;
+"naked call" only when `positions_summary` has an open Naked Call and
+no covered-call label. Last week
 reports fills/rolls/premium vs the median completed week and whether that
 looked like them. Lifetime Profile Summary, Execution Review, notable
 positions, style scoreboard, and year-by-year rows follow. Details in
@@ -1143,15 +1140,14 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   (`app/story_loop.py`, `compose_story_loop`): THIS WEEK is open options
   expiring within 14d (same-tenant complementary legs grouped like
   Execution Review). Each watch shows live unrealized P&L from
-  `OPEN_OPTION_RECORD_QUERY` plus, when ≥5 gradeable early shorts closed
-  near **this row's** DTE for **this structure** (short call ≠ short put),
-  the leftover-vs-expiry % or sidestep $ from `story_execution`. Horizon
-  band widens with days left. A 10-day short call does not inherit a
-  2-DTE leftover; if that structure is also held later than other shorts,
-  one sentence combines hold-too-long + the 10-DTE cost. Open strategy
-  labels (`STORY_OPEN_STRATEGIES_QUERY`) name naked/covered when
-  unambiguous — never invent leftover % or say "naked" without the
-  classification row. Evidence, not advice. LAST WEEK compares
+  `OPEN_OPTION_RECORD_QUERY` plus the single strongest claim from the
+  same insight picker (leftover at this structure × DTE, leftover on
+  this symbol, hold-later / close-earlier, horizon roll/expire, rare
+  hold, live-vs-leftover, credit size). A 10-day short call does not
+  inherit a 2-DTE leftover. Open strategy labels
+  (`STORY_OPEN_STRATEGIES_QUERY`) name naked/covered when unambiguous —
+  never invent leftover % or say "naked" without the classification
+  row. Evidence, not advice. LAST WEEK compares
   the prior ISO week to the median of prior weeks
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE

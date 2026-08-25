@@ -365,10 +365,12 @@ def _plural_noun(noun):
 
 
 def _filter_kind(df, kind):
-    if df is None or df.empty or not kind:
+    """Structure scope. Unknown kinds (spreads) return empty — do not
+    paste short-call leftover onto a put spread."""
+    if df is None or df.empty:
         return df
     if kind not in ("short_call", "short_put", "long_call", "long_put"):
-        return df
+        return df.iloc[0:0]
     kinds = df.apply(_exec_kind, axis=1)
     return df[kinds == kind]
 
@@ -459,6 +461,26 @@ def _leftover_from_sample(sample, *, pad, horizon="this_dte"):
     return None
 
 
+def _leftover_from_df(scoped, days, kind=None):
+    """Leftover vs expiry near ``days`` for an already-scoped sample."""
+    if scoped is None or scoped.empty:
+        return None
+    pad = _horizon_pad(days)
+    sample = _dte_band(scoped, days, pad=pad)
+    rec = _leftover_from_sample(sample, pad=pad, horizon="this_dte")
+    if rec:
+        rec["structure"] = kind
+        return rec
+    if days >= 8:
+        dte = pd.to_numeric(scoped["dte_at_close"], errors="coerce")
+        week_plus = scoped[dte >= 7]
+        rec = _leftover_from_sample(week_plus, pad=pad, horizon="week_plus")
+        if rec:
+            rec["structure"] = kind
+            return rec
+    return None
+
+
 def _leftover_record(exec_df, days, typical_dte=None, kind=None):
     """Leftover vs expiry for THIS structure near THIS days left.
 
@@ -470,28 +492,10 @@ def _leftover_record(exec_df, days, typical_dte=None, kind=None):
     graded = _graded_shorts(exec_df)
     if graded.empty:
         return None
-    scoped = _filter_kind(graded, kind)
-    if scoped is None or scoped.empty:
-        return None
-    pad = _horizon_pad(days)
-    sample = _dte_band(scoped, days, pad=pad)
-    rec = _leftover_from_sample(sample, pad=pad, horizon="this_dte")
-    if rec:
-        rec["structure"] = kind
-        return rec
-    # Far watches only: pool "a week or more left" for this structure.
-    # Phrase as week-plus — never as "at 10 DTE" if the median isn't.
-    if days >= 8:
-        dte = pd.to_numeric(scoped["dte_at_close"], errors="coerce")
-        week_plus = scoped[dte >= 7]
-        rec = _leftover_from_sample(week_plus, pad=pad, horizon="week_plus")
-        if rec:
-            rec["structure"] = kind
-            return rec
-    return None
+    return _leftover_from_df(_filter_kind(graded, kind), days, kind=kind)
 
 
-def _hold_longer(exec_df, kind):
+def _hold_compare(exec_df, kind):
     """This structure's median exit DTE vs the trader's other shorts."""
     if kind not in ("short_call", "short_put"):
         return None
@@ -508,13 +512,41 @@ def _hold_longer(exec_df, kind):
     other_dte = _median(pd.to_numeric(others["dte_at_close"], errors="coerce").tolist())
     if this_dte is None or other_dte is None:
         return None
-    if this_dte < other_dte + HOLD_LONGER_GAP_DAYS:
+    if this_dte >= other_dte + HOLD_LONGER_GAP_DAYS:
+        direction = "later"
+    elif other_dte >= this_dte + HOLD_LONGER_GAP_DAYS:
+        direction = "earlier"
+    else:
         return None
     return {
         "kind": kind,
+        "direction": direction,
         "this_dte": int(round(this_dte)),
         "other_dte": int(round(other_dte)),
+        "gap": int(round(abs(this_dte - other_dte))),
     }
+
+
+def _hold_longer(exec_df, kind):
+    hold = _hold_compare(exec_df, kind)
+    if hold and hold["direction"] == "later":
+        return hold
+    return None
+
+
+def _sold_rows(exec_df):
+    if exec_df is None or exec_df.empty:
+        return pd.DataFrame()
+    if "direction" in exec_df.columns:
+        return exec_df[exec_df["direction"].astype(str) == "Sold"]
+    return exec_df
+
+
+def _symbol_rows(df, symbol):
+    if df is None or df.empty or "symbol" not in df.columns:
+        return df.iloc[0:0] if df is not None else pd.DataFrame()
+    col = df["symbol"].astype(str).str.strip().str.upper()
+    return df[col == str(symbol or "").strip().upper()]
 
 
 def _leftover_dte(record, days=None):
@@ -558,13 +590,10 @@ def _hold_longer_sentence(hold, noun=None):
 
 
 def _pattern_sentence(hold, leftover, days, noun):
-    """One punchy claim when both facts exist — the only-here sentence.
-
-    'You hold naked calls too long, and an exit at 10 DTE instead of
-    expiry typically costs you 18% of the credit.'
-    """
+    """Compose hold-later + leftover when both facts independently exist."""
+    later = bool(hold and hold.get("direction") == "later")
     combine = bool(
-        hold and leftover and leftover.get("kind") == "otm_leftover_pct"
+        later and leftover and leftover.get("kind") == "otm_leftover_pct"
     )
     leftover_clause = (
         _leftover_clause(leftover, days, noun, name_structure=not combine)
@@ -575,9 +604,240 @@ def _pattern_sentence(hold, leftover, days, noun):
                 f"{leftover_clause}.")
     if leftover_clause:
         return leftover_clause[0].upper() + leftover_clause[1:] + "."
-    if hold:
+    if later:
         return _hold_longer_sentence(hold, noun)
+    if hold and hold.get("direction") == "earlier":
+        return (f"You usually close {_plural_noun(noun)} earlier than "
+                f"your other shorts (median {hold['this_dte']} DTE vs "
+                f"{hold['other_dte']}).")
     return None
+
+
+def _insight(kind, score, sentence, leftover=None, hold=None):
+    return {
+        "kind": kind,
+        "score": float(score),
+        "sentence": sentence,
+        "leftover": leftover,
+        "hold": hold,
+    }
+
+
+def _collect_watch_insights(ctx):
+    """Every claim that is true for THIS watch. Same detectors for every
+    symbol — NVDA leftover and PL hold-too-long are just two winners."""
+    found = []
+    found.extend(_insights_leftover(ctx))
+    found.extend(_insights_hold(ctx))
+    found.extend(_insights_horizon_habit(ctx))
+    found.extend(_insights_symbol_record(ctx))
+    found.extend(_insights_rare_hold(ctx))
+    found.extend(_insights_live_contrast(ctx))
+    found.extend(_insights_credit_size(ctx))
+    found.extend(_insights_bookkeeping(ctx))
+    return [i for i in found if i and i.get("sentence")]
+
+
+def _insights_leftover(ctx):
+    out = []
+    days, noun = ctx["days"], ctx["noun"]
+    leftover = ctx.get("leftover")
+    if leftover:
+        pct = leftover.get("pct") or 0
+        out.append(_insight(
+            "leftover_cost", 50 + pct,
+            _leftover_sentence(leftover, days=days, noun=noun),
+            leftover=leftover))
+    symbol_leftover = ctx.get("symbol_leftover")
+    if symbol_leftover:
+        pct = symbol_leftover.get("pct") or 0
+        clause = _leftover_clause(
+            symbol_leftover, days, noun, name_structure=False)
+        out.append(_insight(
+            "leftover_symbol", 70 + pct,
+            f"On {ctx['symbol']}, {clause}.",
+            leftover=symbol_leftover))
+    return out
+
+
+def _insights_hold(ctx):
+    hold = ctx.get("hold")
+    if not hold:
+        return []
+    noun = ctx["noun"]
+    score = 36 + 4 * hold["gap"]
+    if hold["direction"] == "later":
+        return [_insight(
+            "hold_later", score,
+            _hold_longer_sentence(hold, noun), hold=hold)]
+    return [_insight(
+        "close_earlier", score,
+        (f"You usually close {_plural_noun(noun)} earlier than your "
+         f"other shorts (median {hold['this_dte']} DTE vs "
+         f"{hold['other_dte']})."),
+        hold=hold)]
+
+
+def _insights_horizon_habit(ctx):
+    sample = ctx.get("horizon_closes")
+    if sample is None or len(sample) < MIN_LEFTOVER_SAMPLE:
+        return []
+    noun = ctx["noun"]
+    days = ctx["days"]
+    n = len(sample)
+    rolled = 0
+    expired = 0
+    if "was_rolled" in sample.columns:
+        rolled = int(sample["was_rolled"].fillna(False).astype(bool).sum())
+    if "close_type" in sample.columns:
+        expired = int(sample["close_type"].isin(
+            ["Expired", "ExpiredOTM"]).sum())
+    out = []
+    if rolled / n >= 0.6:
+        pct = int(round(100 * rolled / n))
+        out.append(_insight(
+            "roll_at_horizon", 28 + pct / 5,
+            f"When a {noun} has about {days} days left, you roll "
+            f"{pct}% of the time."))
+    if expired / n >= 0.6:
+        pct = int(round(100 * expired / n))
+        out.append(_insight(
+            "expire_at_horizon", 34 + pct / 5,
+            f"When a {noun} has about {days} days left, you usually "
+            f"let it expire ({pct}% of the time)."))
+    return out
+
+
+def _insights_symbol_record(ctx):
+    sample = ctx.get("symbol_closes")
+    if sample is None or len(sample) < MIN_HOLD_COMPARE:
+        return []
+    dtes = pd.to_numeric(sample["dte_at_close"], errors="coerce").dropna()
+    if len(dtes) < MIN_HOLD_COMPARE:
+        return []
+    typical = int(round(float(dtes.median())))
+    days = ctx["days"]
+    gap = abs(days - typical)
+    if gap < HOLD_LONGER_GAP_DAYS:
+        return []
+    return [_insight(
+        "symbol_dte", 42 + gap,
+        f"You usually close {ctx['symbol']} shorts around {typical} DTE.")]
+
+
+def _insights_rare_hold(ctx):
+    sample = ctx.get("kind_closes")
+    if sample is None or len(sample) < MIN_HOLD_COMPARE:
+        return []
+    days = ctx["days"]
+    if days < 8:
+        return []
+    dtes = pd.to_numeric(sample["dte_at_close"], errors="coerce").dropna()
+    if len(dtes) < MIN_HOLD_COMPARE:
+        return []
+    n_as_far = int((dtes >= days - 1).sum())
+    if n_as_far / len(dtes) > 0.2:
+        return []
+    typical = int(round(float(dtes.median())))
+    return [_insight(
+        "rare_hold", 46 + max(0, days - typical),
+        f"You've rarely held a {ctx['noun']} this far — typical "
+        f"close is {typical} DTE.")]
+
+
+def _insights_live_contrast(ctx):
+    leftover = ctx.get("leftover")
+    pnl, credit, days, noun = (
+        ctx.get("pnl"), ctx.get("credit"), ctx["days"], ctx["noun"])
+    if (not leftover or leftover.get("kind") != "otm_leftover_pct"
+            or pnl is None or credit is None or credit <= 1):
+        return []
+    hist = leftover["pct"]
+    capture = int(round(min(999, max(-999, pnl / credit * 100))))
+    sharp = pnl < 0 or capture >= 75
+    if not sharp:
+        return []
+    clause = _leftover_clause(leftover, days, noun, name_structure=False)
+    if pnl < 0:
+        sentence = f"The mark is underwater, and {clause}."
+    else:
+        sentence = (f"You've captured {capture}% of the credit so far, "
+                    f"and {clause}.")
+    return [_insight(
+        "live_contrast", 50 + hist + 12, sentence, leftover=leftover)]
+
+
+def _insights_credit_size(ctx):
+    sample = ctx.get("kind_closes")
+    credit = ctx.get("credit")
+    if (sample is None or credit is None or credit <= 1
+            or "premium_received" not in getattr(sample, "columns", [])):
+        return []
+    prem = pd.to_numeric(sample["premium_received"], errors="coerce").dropna()
+    prem = prem[prem > 1]
+    if len(prem) < MIN_HOLD_COMPARE:
+        return []
+    typical = float(prem.median())
+    if typical < 1 or credit < 2 * typical:
+        return []
+    mult = credit / typical
+    return [_insight(
+        "credit_size", 20 + 6 * min(mult, 6),
+        f"This {_money(credit)} credit is {mult:.1f}× your typical "
+        f"{ctx['noun']}.")]
+
+
+def _insights_bookkeeping(ctx):
+    days = ctx["days"]
+    habit = ctx.get("habit")
+    typical_dte = ctx.get("typical_dte")
+    in_usual = ctx.get("in_usual")
+    pnl = ctx.get("pnl")
+    credit = ctx.get("credit")
+    far = _distance_sentence(days, typical_dte, in_usual)
+    mark = _credit_sentence(pnl, credit)
+    out = []
+    if far and mark:
+        out.append(_insight("mark_vs_usual", 12, f"{far} {mark}"))
+    elif far:
+        out.append(_insight("days_before_usual", 11, far))
+    elif mark:
+        out.append(_insight("mark_vs_credit", 10, mark))
+    if habit == "expire" and days <= 7:
+        out.append(_insight(
+            "expire_habit", 14, "You usually hold to expiry."))
+    elif habit == "roll" and (in_usual or days <= 7):
+        out.append(_insight(
+            "roll_habit", 14,
+            "You usually roll — roll it, or let this one expire?"))
+    elif in_usual and typical_dte is not None:
+        out.append(_insight(
+            "usual_window", 13,
+            f"Your typical early close is around {typical_dte} DTE."))
+    return out
+
+
+def _pick_watch_insight(insights, *, noun=None, days=None):
+    """Highest-scoring true claim. Hold-later + leftover compose when
+    both independently cleared the bar — any symbol, not a PL special."""
+    if not insights:
+        return None
+    ranked = sorted(insights, key=lambda i: i["score"], reverse=True)
+    leftover_i = next(
+        (i for i in ranked
+         if i["kind"] in ("leftover_cost", "leftover_symbol")
+         and (i.get("leftover") or {}).get("kind") == "otm_leftover_pct"),
+        None)
+    hold_i = next((i for i in ranked if i["kind"] == "hold_later"), None)
+    if leftover_i and hold_i and leftover_i["score"] >= 30 and hold_i["score"] >= 30:
+        leftover = leftover_i["leftover"]
+        hold = hold_i.get("hold")
+        return _insight(
+            "hold_later_leftover",
+            leftover_i["score"] + 0.55 * hold_i["score"],
+            _pattern_sentence(hold, leftover, days, noun),
+            leftover=leftover, hold=hold)
+    return ranked[0]
 
 
 def _net_credit(members):
@@ -662,8 +922,7 @@ def _lead_sentence(pnl, days):
     return lead + f" with {days} day{'s' if days != 1 else ''} left"
 
 
-def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
-                strategies_df=None):
+def _watch_ctx(members, habit, typical_dte, exec_df, strategies_df):
     days = min(int(m["_days"]) for m in members)
     symbol = members[0]["symbol"]
     kind = _watch_kind(members)
@@ -681,33 +940,57 @@ def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
     )
     pnl = _watch_pnl(members)
     credit = _net_credit(members)
-    use_leftover = _leftover_applies(leftover, days)
-    if not use_leftover:
+    graded = _graded_shorts(exec_df)
+    sold = _sold_rows(exec_df)
+    leftover = _leftover_from_df(_filter_kind(graded, kind), days, kind=kind)
+    if not _leftover_applies(leftover, days):
         leftover = None
-    lead = _lead_sentence(pnl, days)
-    bits = []
-    pattern = _pattern_sentence(hold, leftover, days, noun)
-    if pattern:
-        bits.append(pattern)
-        mark = _credit_sentence(pnl, credit)
-        if leftover is None and hold and mark and pnl is not None and pnl < 0:
-            bits.append(mark)
+    symbol_leftover = _leftover_from_df(
+        _filter_kind(_symbol_rows(graded, symbol), kind), days, kind=kind)
+    if not _leftover_applies(symbol_leftover, days):
+        symbol_leftover = None
+    if (symbol_leftover and leftover
+            and symbol_leftover.get("pct") == leftover.get("pct")
+            and symbol_leftover.get("n") == leftover.get("n")):
+        symbol_leftover = None
+    kind_closes = _filter_kind(sold, kind)
+    if kind_closes is None or kind_closes.empty or "dte_at_close" not in kind_closes.columns:
+        horizon_closes = kind_closes.iloc[0:0] if kind_closes is not None else pd.DataFrame()
+        rare_closes = horizon_closes
     else:
-        far = _distance_sentence(days, typical_dte, in_usual)
-        mark = _credit_sentence(pnl, credit)
-        if far and mark:
-            bits.append(f"{far} {mark}")
-        elif far:
-            bits.append(far)
-        elif habit == "expire" and days <= 7:
-            bits.append("You usually hold to expiry.")
-        elif habit == "roll" and (in_usual or days <= 7):
-            bits.append("You usually roll — roll it, or let this one expire?")
-        elif in_usual and typical_dte is not None:
-            bits.append(f"Your typical early close is around {typical_dte} DTE.")
-        elif mark:
-            bits.append(mark)
-    tail = " ".join(bits) if bits else None
+        horizon_closes = _dte_band(kind_closes, days, pad=_horizon_pad(days))
+        rare_closes = kind_closes
+    return {
+        "members": members,
+        "days": days,
+        "symbol": symbol,
+        "kind": kind,
+        "noun": noun,
+        "name": name,
+        "structure": structure,
+        "label": label,
+        "habit": habit,
+        "typical_dte": typical_dte,
+        "in_usual": in_usual,
+        "pnl": pnl,
+        "credit": credit,
+        "leftover": leftover,
+        "symbol_leftover": symbol_leftover,
+        "hold": _hold_compare(exec_df, kind),
+        "horizon_closes": horizon_closes,
+        "kind_closes": rare_closes,
+        "symbol_closes": _symbol_rows(sold, symbol),
+    }
+
+
+def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
+                strategies_df=None, exec_df=None):
+    del leftover, hold  # computed in ctx so every detector sees the same facts
+    ctx = _watch_ctx(members, habit, typical_dte, exec_df, strategies_df)
+    picked = _pick_watch_insight(
+        _collect_watch_insights(ctx), noun=ctx["noun"], days=ctx["days"])
+    lead = _lead_sentence(ctx["pnl"], ctx["days"])
+    tail = picked["sentence"] if picked else None
     if lead and tail:
         prompt = f"{lead}. {tail}"
     elif lead:
@@ -715,23 +998,29 @@ def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
     elif tail:
         prompt = tail
     else:
-        prompt = _habit_clause(name, days, habit, typical_dte, in_usual)
+        prompt = _habit_clause(
+            ctx["name"], ctx["days"], ctx["habit"],
+            ctx["typical_dte"], ctx["in_usual"])
+    leftover = ctx["leftover"]
+    if picked and picked.get("leftover"):
+        leftover = picked["leftover"]
     return {
-        "symbol": symbol,
-        "label": label,
-        "structure": structure,
-        "days_left": days,
-        "pnl": pnl,
-        "pnl_text": _signed(pnl) if pnl is not None else None,
+        "symbol": ctx["symbol"],
+        "label": ctx["label"],
+        "structure": ctx["structure"],
+        "days_left": ctx["days"],
+        "pnl": ctx["pnl"],
+        "pnl_text": _signed(ctx["pnl"]) if ctx["pnl"] is not None else None,
         "prompt": prompt,
-        "in_usual_window": bool(in_usual),
+        "in_usual_window": bool(ctx["in_usual"]),
         "leftover": leftover,
+        "insight": picked["kind"] if picked else None,
     }
 
 
 def build_this_week(open_df, exec_df=None, today=None, strategies_df=None):
     """Forward-looking watch: expiries in the next 14 days, questioned
-    against the trader's own roll / expire habit."""
+    against the trader's own record — leftover, hold, habit, symbol."""
     today = today or date.today()
     habit, typical_dte = _habit(exec_df)
     recs = _open_records(open_df, today)
@@ -746,13 +1035,9 @@ def build_this_week(open_df, exec_df=None, today=None, strategies_df=None):
         }
     items = []
     for members in _cluster_structure_groups(recs):
-        days = min(int(m["_days"]) for m in members)
-        kind = _watch_kind(members)
-        leftover = _leftover_record(exec_df, days, typical_dte, kind=kind)
-        hold = _hold_longer(exec_df, kind)
         items.append(_watch_item(
-            members, habit, typical_dte, leftover, hold,
-            strategies_df=strategies_df))
+            members, habit, typical_dte,
+            strategies_df=strategies_df, exec_df=exec_df))
     items.sort(key=lambda x: (not x["in_usual_window"], x["days_left"], x["symbol"]))
     items = items[:THIS_WEEK_CAP]
     n = len(items)
