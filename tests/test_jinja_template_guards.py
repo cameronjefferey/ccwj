@@ -85,7 +85,8 @@ def test_trader_story_template_renders_loop_from_builders():
         _open(trade_symbol="VICR  260828P00210000", option_strike=210.0,
               direction="Sold"),
         _open(trade_symbol="VICR  260828P00190000", option_strike=190.0,
-              direction="Bought", premium_received=0.0, premium_paid=-300.0),
+              direction="Bought", premium_received=0.0, premium_paid=-300.0,
+              current_unrealized_pnl=-80.0),
     ])
     novel["loop"] = compose_story_loop(
         _history_with_last_week(last_fills=4, typical_fills=4, weeks=5),
@@ -99,8 +100,9 @@ def test_trader_story_template_renders_loop_from_builders():
     assert "This week" in html
     assert "Last week" in html
     assert "VICR" in html
-    assert "Roll it, or let this one expire?" in html
+    assert "roll it, or let this one expire?" in html
     assert "Put Spread" in html
+    assert "+$520" in html
     assert "Profile summary" in html
 
 
@@ -128,3 +130,40 @@ def test_trader_story_template_renders_empty_loop_card():
     assert "Nothing on the clock" in html
     assert "This week" in html
     assert "A quiet book." in html
+
+
+def test_trader_story_template_renders_leftover_sentence():
+    import pandas as pd
+
+    from app.story_loop import build_this_week
+    from datetime import timedelta
+
+    from tests.test_story_loop import _TODAY, _open, _otm_rolls_at_dte
+
+    this_week = build_this_week(
+        pd.DataFrame([
+            _open(symbol="NVDA", option_type="C", option_strike=230.0,
+                  option_expiry=_TODAY + timedelta(days=3),
+                  current_unrealized_pnl=450.0),
+        ]),
+        _otm_rolls_at_dte(),
+        today=_TODAY,
+    )
+    novel = {
+        "hero_counts": {"stories": 1, "chapters": 1, "since": None,
+                        "open_stories": 0},
+        "profile": {"headline": "A quiet book.", "facts": []},
+        "execution": None,
+        "standouts": [],
+        "scoreboard": [],
+        "eras": [],
+        "open_stories": 0,
+        "loop": {"this_week": this_week,
+                 "last_week": {"label": "Aug 17–23", "headline": "Quiet.",
+                               "facts": []}},
+    }
+    html = _render_trader_story(novel)
+    assert "+$450" in html
+    assert "Currently +$450 with 3 days left" in html
+    assert "leave 15% of the credit on the table" in html
+    assert "vs expiry" in html

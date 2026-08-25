@@ -16,6 +16,7 @@ import pandas as pd
 from app.execution_quality import (
     _cluster_structure_groups,
     _short_label,
+    _signed,
     _structure_kind,
     _structure_name,
 )
@@ -29,6 +30,15 @@ WATCH_HORIZON_DAYS = 14
 # that window plus a small cushion.
 USUAL_WINDOW_PAD = 2
 THIS_WEEK_CAP = 8
+# Leftover-vs-expiry claim at a DTE needs a real sample (same bar as
+# the Execution Review card). Below this we only show live P&L.
+MIN_LEFTOVER_SAMPLE = 5
+# Match historical early closes to the live contract's days left.
+LEFTOVER_DTE_PAD = 2
+# Ignore leftover % below this — rounding, not a pattern.
+MIN_LEFTOVER_PCT = 5
+# Sidestep $ needs the same noise floor as day-row verdicts.
+MIN_SIDESTEP_DOLLARS = 20.0
 
 
 def today_for_user(tz_name=None):
@@ -217,11 +227,150 @@ def _open_records(open_df, today):
         rec["option_expiry"] = exp
         rec["symbol"] = str(r.get("symbol") or "").strip().upper()
         rec["_days"] = days
+        rec["_pnl"] = _as_float(r.get("current_unrealized_pnl"))
         recs.append(rec)
     return recs
 
 
-def _watch_item(members, habit, typical_dte):
+def _as_float(val):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return 0.0
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _watch_pnl(members):
+    if not any("current_unrealized_pnl" in m for m in members):
+        return None
+    return round(sum(_as_float(m.get("current_unrealized_pnl"))
+                     for m in members), 2)
+
+
+def _dte_band(shorts, center):
+    dte = pd.to_numeric(shorts["dte_at_close"], errors="coerce")
+    return shorts[(dte >= center - LEFTOVER_DTE_PAD)
+                  & (dte <= center + LEFTOVER_DTE_PAD)]
+
+
+def _leftover_record(exec_df, days, typical_dte=None):
+    """Trader's own leftover vs expiry when they closed shorts near ``days``.
+
+    Uses gradeable early closes from ``int_option_exit_quality`` (already
+    on the page as story_execution). OTM leftover % = median
+    (−delta / premium) on shorts that then expired worthless. Sidestep $
+    is the opposite: median positive delta on shorts that finished ITM.
+    Returns None until MIN_LEFTOVER_SAMPLE — do not invent the number.
+    """
+    if exec_df is None or exec_df.empty:
+        return None
+    if "gradeable_early_close" not in exec_df.columns:
+        return None
+    if "early_close_vs_expiry_delta" not in exec_df.columns:
+        return None
+    df = exec_df.copy()
+    if "direction" in df.columns:
+        shorts = df[df["direction"].astype(str) == "Sold"]
+    else:
+        shorts = df
+    graded = shorts[shorts["gradeable_early_close"].fillna(False).astype(bool)
+                    & shorts["early_close_vs_expiry_delta"].notna()]
+    if graded.empty or "dte_at_close" not in graded.columns:
+        return None
+
+    sample = _dte_band(graded, days)
+    if len(sample) < MIN_LEFTOVER_SAMPLE and typical_dte is not None:
+        sample = _dte_band(graded, typical_dte)
+    if len(sample) < MIN_LEFTOVER_SAMPLE:
+        return None
+
+    rolled = False
+    if "was_rolled" in sample.columns:
+        rolled = float(sample["was_rolled"].fillna(False).astype(bool)
+                       .mean()) >= 0.6
+    dte_med = int(round(float(pd.to_numeric(
+        sample["dte_at_close"], errors="coerce").median())))
+
+    if "expired_worthless" in sample.columns:
+        otm = sample[sample["expired_worthless"].fillna(False).astype(bool)]
+    else:
+        otm = sample.iloc[0:0]
+    if (len(otm) >= MIN_LEFTOVER_SAMPLE
+            and "premium_received" in otm.columns):
+        prem = pd.to_numeric(otm["premium_received"], errors="coerce")
+        delta = pd.to_numeric(otm["early_close_vs_expiry_delta"],
+                              errors="coerce")
+        usable = otm[(prem > 1) & (delta < 0)]
+        if len(usable) >= MIN_LEFTOVER_SAMPLE:
+            pcts = ((-delta[usable.index] / prem[usable.index])
+                    .clip(lower=0, upper=2))
+            med_pct = float(pcts.median()) * 100
+            if med_pct >= MIN_LEFTOVER_PCT:
+                return {
+                    "kind": "otm_leftover_pct",
+                    "pct": int(round(med_pct)),
+                    "n": int(len(usable)),
+                    "dte": int(round(float(pd.to_numeric(
+                        usable["dte_at_close"], errors="coerce").median()))),
+                    "rolled": bool(
+                        "was_rolled" in usable.columns
+                        and float(usable["was_rolled"].fillna(False)
+                                  .astype(bool).mean()) >= 0.6
+                    ),
+                }
+
+    if "expired_worthless" in sample.columns:
+        itm = sample[~sample["expired_worthless"].fillna(False).astype(bool)
+                     & sample["expired_worthless"].notna()]
+    else:
+        itm = sample.iloc[0:0]
+    if len(itm) >= MIN_LEFTOVER_SAMPLE:
+        delta = pd.to_numeric(itm["early_close_vs_expiry_delta"],
+                              errors="coerce").dropna()
+        med = float(delta.median()) if len(delta) else 0.0
+        if med >= MIN_SIDESTEP_DOLLARS:
+            return {
+                "kind": "sidestep",
+                "dollars": med,
+                "n": int(len(itm)),
+                "dte": dte_med,
+                "rolled": rolled,
+            }
+    return None
+
+
+def _leftover_sentence(record):
+    verb = "roll" if record["rolled"] else "close"
+    dte = record["dte"]
+    if record["kind"] == "otm_leftover_pct":
+        return (f"When you {verb} an OTM short around {dte} DTE, you "
+                f"typically leave {record['pct']}% of the credit on the "
+                f"table vs expiry.")
+    return (f"When you {verb} a short around {dte} DTE, the typical "
+            f"close sidestepped {_money(record['dollars'])} vs expiry.")
+
+
+def _habit_clause(name, days, habit, typical_dte, in_usual):
+    if habit == "roll" and (in_usual or days <= 7):
+        return (f"You usually roll. {name} — {days} day"
+                f"{'s' if days != 1 else ''} left. Roll it, or let this "
+                f"one expire?")
+    if habit == "expire" and days <= 7:
+        return (f"You usually hold to expiry. {name} — {days} day"
+                f"{'s' if days != 1 else ''} left.")
+    if in_usual:
+        return (f"Your typical early close is around {typical_dte} DTE. "
+                f"{name} is inside that window. Close it, or hold?")
+    if days == 0:
+        return f"{name} expires today."
+    if days <= 7:
+        return (f"{name} expires in {days} day"
+                f"{'s' if days != 1 else ''}.")
+    return f"{name} — {days} days left."
+
+
+def _watch_item(members, habit, typical_dte, leftover=None):
     days = min(int(m["_days"]) for m in members)
     symbol = members[0]["symbol"]
     if len(members) > 1:
@@ -235,30 +384,44 @@ def _watch_item(members, habit, typical_dte):
     in_usual = (
         typical_dte is not None and days <= typical_dte + USUAL_WINDOW_PAD
     )
-    if habit == "roll" and (in_usual or days <= 7):
-        prompt = (f"You usually roll. {name} — {days} day"
-                  f"{'s' if days != 1 else ''} left. Roll it, or let this "
-                  f"one expire?")
-    elif habit == "expire" and days <= 7:
-        prompt = (f"You usually hold to expiry. {name} — {days} day"
-                  f"{'s' if days != 1 else ''} left.")
-    elif in_usual:
-        prompt = (f"Your typical early close is around {typical_dte} DTE. "
-                  f"{name} is inside that window. Close it, or hold?")
-    elif days == 0:
-        prompt = f"{name} expires today."
-    elif days <= 7:
-        prompt = (f"{name} expires in {days} day"
-                  f"{'s' if days != 1 else ''}.")
+    pnl = _watch_pnl(members)
+    if leftover:
+        prompt = _leftover_sentence(leftover)
+        if pnl is not None:
+            lead = f"Currently {_signed(pnl)}"
+            if days == 0:
+                lead += " · expires today"
+            else:
+                lead += f" with {days} day{'s' if days != 1 else ''} left"
+            prompt = f"{lead}. {prompt}"
+    elif pnl is not None:
+        lead = f"Currently {_signed(pnl)}"
+        if days == 0:
+            lead += " · expires today"
+        else:
+            lead += f" with {days} day{'s' if days != 1 else ''} left"
+        if habit == "expire":
+            prompt = f"{lead}. You usually hold to expiry."
+        elif habit == "roll":
+            prompt = (f"{lead}. You usually roll — roll it, or let this "
+                      f"one expire?")
+        elif in_usual:
+            prompt = (f"{lead}. Your typical early close is around "
+                      f"{typical_dte} DTE.")
+        else:
+            prompt = f"{lead}."
     else:
-        prompt = f"{name} — {days} days left."
+        prompt = _habit_clause(name, days, habit, typical_dte, in_usual)
     return {
         "symbol": symbol,
         "label": label,
         "structure": structure,
         "days_left": days,
+        "pnl": pnl,
+        "pnl_text": _signed(pnl) if pnl is not None else None,
         "prompt": prompt,
         "in_usual_window": bool(in_usual),
+        "leftover": leftover,
     }
 
 
@@ -279,7 +442,9 @@ def build_this_week(open_df, exec_df=None, today=None):
         }
     items = []
     for members in _cluster_structure_groups(recs):
-        items.append(_watch_item(members, habit, typical_dte))
+        days = min(int(m["_days"]) for m in members)
+        leftover = _leftover_record(exec_df, days, typical_dte)
+        items.append(_watch_item(members, habit, typical_dte, leftover))
     items.sort(key=lambda x: (not x["in_usual_window"], x["days_left"], x["symbol"]))
     items = items[:THIS_WEEK_CAP]
     n = len(items)
@@ -293,8 +458,8 @@ def build_this_week(open_df, exec_df=None, today=None):
     else:
         headline = (f"{n} open option{'s' if n != 1 else ''} expiring "
                     f"in the next {WATCH_HORIZON_DAYS} days.")
-    sub = "A question, not a recommendation — holding also keeps the risk."
-    if typical_dte is not None:
+    sub = "Every early close also removed risk — this is the record, not a recommendation."
+    if typical_dte is not None and not any(i.get("leftover") for i in items):
         sub = (f"You typically close shorts around {typical_dte} DTE. " + sub)
     return {
         "headline": headline,
