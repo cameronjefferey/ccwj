@@ -860,6 +860,12 @@ pending open loop ("N verdicts pending — next lands Fri …",
 `verdicts_pending`); the weekly summary EMAIL carries the same landed
 list (`_VERDICTS_SQL` in `app/email_digests_cli.py` reuses
 `verdicts_landed` for phrasing so email and page can never drift).
+Complementary legs of one structure (put/call spread, iron condor,
+straddle/strangle) on the same `tenant_id` + expiry collapse to one
+row whose dollar is the **net** vs holding every leg — a VICR $210
+put and $190 put are one Put Spread, not two offsetting ±$25k lines.
+Standalone options stay their own verdict. Pending counts use the
+same grouping.
 (2) **Rolling self-comparison** — `execution_trend` (90-day window,
 ≥3 recent AND ≥3 baseline exits) adds the "number that moves" sentence +
 chip to the Trader Profile card: recent avg early-close delta per

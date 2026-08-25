@@ -92,9 +92,9 @@ WHERE CAST(user_id AS STRING) = @user_id
 # knowable. Phrasing is delegated to app.execution_quality.verdicts_landed
 # so the email and the Daily Review section can never drift apart.
 _VERDICTS_SQL = f"""
-SELECT symbol, trade_symbol, option_type, option_strike, option_expiry,
-       direction, close_date, close_type, was_rolled, expired_worthless,
-       gradeable_early_close, early_close_vs_expiry_delta
+SELECT tenant_id, account, symbol, trade_symbol, option_type, option_strike,
+       option_expiry, direction, close_date, close_type, was_rolled,
+       expired_worthless, gradeable_early_close, early_close_vs_expiry_delta
 FROM `{_PROJECT}.int_option_exit_quality`
 WHERE CAST(user_id AS STRING) = @user_id
   AND tenant_id IN UNNEST(@tenant_ids)

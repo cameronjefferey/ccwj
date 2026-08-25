@@ -348,6 +348,91 @@ def test_verdicts_empty_frames():
     assert verdicts_pending(None, _TODAY) is None
 
 
+def test_verdicts_landed_groups_put_spread_as_one_net():
+    """VICR-shaped: short $210 put + long $190 put, same tenant/expiry.
+    Showing ±$28k and ±$24k independently is the misleading feed; the
+    trader closed one spread, so the verdict is the net vs holding both."""
+    df = pd.DataFrame([
+        _row(symbol="VICR", trade_symbol="VICR  260821P00210000",
+             option_type="P", option_strike=210.0, direction="Sold",
+             option_expiry=_TODAY, expired_worthless=False,
+             early_close_vs_expiry_delta=-28187.0),
+        _row(symbol="VICR", trade_symbol="VICR  260821P00190000",
+             option_type="P", option_strike=190.0, direction="Bought",
+             option_expiry=_TODAY, expired_worthless=False,
+             early_close_vs_expiry_delta=24293.0),
+        _row(symbol="FN", trade_symbol="FN    260821C00600000",
+             option_type="C", option_strike=600.0, direction="Bought",
+             option_expiry=_TODAY, expired_worthless=False,
+             early_close_vs_expiry_delta=26993.0),
+    ])
+    landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
+    assert [v["symbol"] for v in landed] == ["FN", "VICR"]
+    vicr = landed[1]
+    assert vicr["delta"] == -3894.0
+    assert vicr["structure"] == "Put Spread"
+    assert vicr["action"] == "Closed the $190 / $210 put spread."
+    assert "worse than holding both legs" in vicr["sentence"]
+    assert "$3,894" in vicr["sentence"]
+    fn = landed[0]
+    assert fn["structure"] is None
+    assert "Sold the $600 call" in fn["action"]
+
+
+def test_verdicts_landed_does_not_fuse_two_tenants():
+    df = pd.DataFrame([
+        _row(tenant_id="snaptrade:one", symbol="VICR",
+             trade_symbol="VICR  260821P00210000", option_type="P",
+             option_strike=210.0, direction="Sold", option_expiry=_TODAY,
+             early_close_vs_expiry_delta=-100.0),
+        _row(tenant_id="snaptrade:two", symbol="VICR",
+             trade_symbol="VICR  260821P00190000", option_type="P",
+             option_strike=190.0, direction="Bought", option_expiry=_TODAY,
+             expired_worthless=False, early_close_vs_expiry_delta=80.0),
+    ])
+    landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
+    assert len(landed) == 2
+    assert all(v["structure"] is None for v in landed)
+
+
+def test_verdicts_pending_counts_a_spread_as_one():
+    df = pd.DataFrame([
+        _row(symbol="VICR", trade_symbol="VICR  261120P00210000",
+             option_type="P", option_strike=210.0, direction="Sold",
+             option_expiry=_TODAY + timedelta(days=12),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        _row(symbol="VICR", trade_symbol="VICR  261120P00190000",
+             option_type="P", option_strike=190.0, direction="Bought",
+             option_expiry=_TODAY + timedelta(days=12),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        _row(symbol="LITE", trade_symbol="LITE  261120C01100000",
+             option_type="C", option_strike=1100.0, direction="Sold",
+             option_expiry=_TODAY + timedelta(days=5),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+    ])
+    out = verdicts_pending(df, _TODAY)
+    assert out["n"] == 2
+    assert out["next_symbol"] == "LITE"
+    assert out["next_short_label"] == "$1100 call"
+    vicr = [i for i in out["items"] if i["symbol"] == "VICR"][0]
+    assert vicr["short_label"] == "$190 / $210 put spread"
+
+
+def test_two_same_direction_puts_stay_independent():
+    """Two cash-secured puts, same expiry, no long leg — not a spread."""
+    df = pd.DataFrame([
+        _row(symbol="VICR", trade_symbol="VICR  260821P00210000",
+             option_type="P", option_strike=210.0, direction="Sold",
+             option_expiry=_TODAY, early_close_vs_expiry_delta=-40.0),
+        _row(symbol="VICR", trade_symbol="VICR  260821P00190000",
+             option_type="P", option_strike=190.0, direction="Sold",
+             option_expiry=_TODAY, early_close_vs_expiry_delta=-30.0),
+    ])
+    landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
+    assert len(landed) == 2
+    assert all(v["structure"] is None for v in landed)
+
+
 # ── Live open-option record ──────────────────────────────────────────────
 
 def _open_row(**kw):

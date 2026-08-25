@@ -1273,7 +1273,7 @@
 <div class="review-section">
     <div class="section-label">Execution Review</div>
     <p class="section-sub">
-        Your closes, graded against what each contract actually did at expiry.
+        Your closes, graded against what happened at expiry. Spread legs are one verdict.
     </p>
     <div class="watch-grid">
         {% if exit_verdicts_landed or exit_verdicts_pending %}
@@ -1291,7 +1291,7 @@
                     <div class="watch-days-label">vs expiry</div>
                 </div>
                 <div>
-                    <div class="watch-sym">{{ v.symbol }}<span class="watch-badge">landed {{ v.landed_label }}</span></div>
+                    <div class="watch-sym">{{ v.symbol }}{% if v.structure %}<span class="watch-badge">{{ v.structure }}</span>{% endif %}<span class="watch-badge">landed {{ v.landed_label }}</span></div>
                     {# Short action line only — the signed delta already
                        leads the row; don't repeat it in prose. #}
                     <div class="watch-meta">{{ v.action }}</div>
