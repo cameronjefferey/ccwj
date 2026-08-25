@@ -503,7 +503,7 @@ class TestBuildUpcomingDividends:
              "long_name": "JPMorgan EPI"},
             {"symbol": "SCHD", "last_ex_div_date": date(2026, 3, 20),
              "last_amount_per_share": 0.78, "median_spacing_days": 91,
-             "projected_next_ex_div_date": date(2026, 6, 19),
+             "projected_next_ex_div_date": date(2026, 6, 18),
              "sector": "Financial Services", "subsector": "Asset Management",
              "long_name": "Schwab US Dividend ETF"},
             {"symbol": "BKH", "last_ex_div_date": date(2026, 3, 1),
@@ -513,9 +513,10 @@ class TestBuildUpcomingDividends:
              "long_name": "Black Hills"},
         ])
         rows = _build_upcoming_dividends(df, today=date(2026, 5, 18))
-        # Sorted by days_until ascending: 7, 13, 32.
+        # Sorted by days_until ascending: 7, 13, 31 (32+ is outside the
+        # watch-list window and is dropped — same bound as the SQL).
         assert [r["symbol"] for r in rows] == ["JEPI", "BKH", "SCHD"]
-        assert [r["days_until"] for r in rows] == [7, 13, 32]
+        assert [r["days_until"] for r in rows] == [7, 13, 31]
 
     def test_past_projection_rolls_forward_for_monthly_payer(self):
         # JEPI's last+median step can already be in the past when the
