@@ -14,10 +14,14 @@ reverse trial already defines — no separate "churned" state to maintain.
 A grandfathered beta user who subscribes and later cancels returns to
 'beta' via ``plan_before_subscription``.
 
-Two prices, both live in Stripe (IDs come from env, never hardcoded):
+Two Pro prices, both live in Stripe (IDs come from env, never hardcoded):
 $19.99/month and $199.99/year. Amounts are read back FROM Stripe for
 display where possible so the page can never disagree with what the card
 is charged.
+
+HappyTrader AI is a SECOND subscription on the same customer
+(``STRIPE_PRICE_AI_MONTHLY``). It writes only the ``ai_*`` columns — never
+``users.plan``. Missing AI price must not take Pro checkout down.
 
 Design notes worth keeping:
 
@@ -56,6 +60,7 @@ _log = logging.getLogger(__name__)
 PRICE_MONTHLY_DISPLAY = "19.99"
 PRICE_ANNUAL_DISPLAY = "199.99"
 PRICE_ANNUAL_MONTHLY_EQUIV = "16.67"
+PRICE_AI_MONTHLY_DISPLAY = "9.99"
 
 # Stripe subscription statuses that mean "this person is paying us".
 # past_due / incomplete are IN here deliberately: Stripe is still retrying the
@@ -85,10 +90,38 @@ def stripe_enabled() -> bool:
     return bool(_env("STRIPE_SECRET_KEY") and price_id("monthly") and price_id("annual"))
 
 
+def ai_price_id() -> str:
+    return _env("STRIPE_PRICE_AI_MONTHLY")
+
+
+def ai_addon_enabled() -> bool:
+    """True when the AI add-on can be sold. Independent of ``stripe_enabled``
+    so a missing AI price cannot take Pro checkout down. Still needs the
+    secret key to create a real Checkout session. ``AI_ADDON_DEV_UNLOCK=1``
+    is a local-only bypass (blocked when a live secret is configured)."""
+    if _env("STRIPE_SECRET_KEY") and ai_price_id():
+        return True
+    return ai_addon_dev_unlock()
+
+
+def ai_addon_dev_unlock() -> bool:
+    """Grant / show Unlock on a laptop with no Stripe product configured.
+
+    Never honors the flag next to a live secret key, so a stray env var
+    on Render cannot give the add-on away.
+    """
+    secret = _env("STRIPE_SECRET_KEY")
+    if secret.startswith("sk_live"):
+        return False
+    return _env("AI_ADDON_DEV_UNLOCK") == "1"
+
+
 def _stripe():
-    """Configured Stripe client, or None when billing is off / the SDK is
-    missing. Imported lazily so the app boots without the package."""
-    if not stripe_enabled():
+    """Configured Stripe client, or None when the secret is missing / the
+    SDK is not installed. Pro checkout still gates on ``stripe_enabled()``
+    (secret + both Pro prices). AI checkout only needs the secret so a
+    missing Pro price cannot take the add-on down."""
+    if not _env("STRIPE_SECRET_KEY"):
         return None
     try:
         import stripe as stripe_sdk
@@ -112,15 +145,33 @@ def _base_url() -> str:
 _BILLING_COLS = (
     "plan, plan_before_subscription, stripe_customer_id, stripe_subscription_id, "
     "subscription_status, subscription_price_id, subscription_current_period_end, "
+    "subscription_cancel_at_period_end, "
+    "ai_stripe_subscription_id, ai_subscription_status, ai_subscription_price_id"
+)
+
+
+_BILLING_COLS_PRO_ONLY = (
+    "plan, plan_before_subscription, stripe_customer_id, stripe_subscription_id, "
+    "subscription_status, subscription_price_id, subscription_current_period_end, "
     "subscription_cancel_at_period_end"
 )
 
 
 def billing_row(user_id):
-    """Every Stripe column for a user, or None. Never raises."""
+    """Every Stripe column for a user, or None. Never raises.
+
+    Falls back to the Pro-only column set when the AI add-on migration
+    hasn't run yet so a deploy gap cannot blank the Billing tab.
+    """
     try:
         return fetch_one(
             f"SELECT {_BILLING_COLS} FROM users WHERE id = %s", (user_id,)
+        )
+    except Exception as exc:
+        _log.warning("billing_row(%s) wide read failed: %s", user_id, exc)
+    try:
+        return fetch_one(
+            f"SELECT {_BILLING_COLS_PRO_ONLY} FROM users WHERE id = %s", (user_id,)
         )
     except Exception as exc:
         _log.warning("billing_row(%s) failed: %s", user_id, exc)
@@ -339,6 +390,101 @@ def apply_subscription(user_id, sub) -> bool:
     )
 
 
+def activate_ai_addon(
+    user_id,
+    *,
+    subscription_id=None,
+    customer_id=None,
+    status="active",
+    stripe_price_id=None,
+):
+    """Mark the AI add-on as paying. Never writes ``users.plan``.
+
+    Positional placeholders only — see the note in activate_subscription.
+    The subscription-id predicate keeps a delayed event for an old AI sub
+    from overwriting a newer one.
+    """
+    try:
+        execute(
+            """
+            UPDATE users
+               SET stripe_customer_id = COALESCE(%s, stripe_customer_id),
+                   ai_stripe_subscription_id = COALESCE(%s, ai_stripe_subscription_id),
+                   ai_subscription_status = %s,
+                   ai_subscription_price_id = COALESCE(%s, ai_subscription_price_id)
+             WHERE id = %s
+               AND (
+                   %s IS NULL
+                   OR ai_stripe_subscription_id IS NULL
+                   OR ai_stripe_subscription_id = %s
+                   OR COALESCE(ai_subscription_status, '') NOT IN
+                      ('active', 'trialing', 'past_due', 'incomplete')
+               )
+            """,
+            (
+                str(customer_id) if customer_id else None,
+                str(subscription_id) if subscription_id else None,
+                str(status or "active"),
+                str(stripe_price_id) if stripe_price_id else None,
+                user_id,
+                str(subscription_id) if subscription_id else None,
+                str(subscription_id) if subscription_id else None,
+            ),
+        )
+        _log.info("Stripe: user_id=%s AI add-on activated (status=%s)", user_id, status)
+        return True
+    except Exception as exc:
+        _log.exception("activate_ai_addon(%s) failed: %s", user_id, exc)
+        return False
+
+
+def deactivate_ai_addon(user_id, *, status="canceled", subscription_id=None):
+    """AI add-on is gone. Leaves ``users.plan`` and the Pro subscription alone."""
+    try:
+        execute(
+            """
+            UPDATE users
+               SET ai_subscription_status = %s,
+                   ai_stripe_subscription_id = NULL
+             WHERE id = %s
+               AND (
+                   %s IS NULL
+                   OR ai_stripe_subscription_id IS NULL
+                   OR ai_stripe_subscription_id = %s
+               )
+            """,
+            (
+                str(status or "canceled"),
+                user_id,
+                str(subscription_id) if subscription_id else None,
+                str(subscription_id) if subscription_id else None,
+            ),
+        )
+        _log.info("Stripe: user_id=%s AI add-on ended (status=%s)", user_id, status)
+        return True
+    except Exception as exc:
+        _log.exception("deactivate_ai_addon(%s) failed: %s", user_id, exc)
+        return False
+
+
+def apply_ai_subscription(user_id, sub) -> bool:
+    """Route one AI Stripe Subscription to the add-on columns only."""
+    status = str(_get(sub, "status") or "")
+    if status in PAYING_STATUSES:
+        return activate_ai_addon(
+            user_id,
+            subscription_id=_get(sub, "id"),
+            customer_id=_get(sub, "customer"),
+            status=status,
+            stripe_price_id=_subscription_price_id(sub),
+        )
+    return deactivate_ai_addon(
+        user_id,
+        status=status or "canceled",
+        subscription_id=_get(sub, "id"),
+    )
+
+
 def queue_resume_sync(user_id):
     """Kick off a catch-up sync right after someone subscribes.
 
@@ -431,6 +577,24 @@ def subscription_is_ours(sub) -> bool:
     return bool(_subscription_price_ids(sub) & ours)
 
 
+def ai_price_ids() -> frozenset:
+    pid = ai_price_id()
+    return frozenset({pid} if pid else ())
+
+
+def ai_subscription_is_ours(sub) -> bool:
+    """Whether this Stripe Subscription is the HappyTrader AI add-on.
+
+    Same shared-account discipline as ``subscription_is_ours``: price is
+    the only discriminator. Fail closed when the AI price is unset so a
+    sibling event can never unlock paid models.
+    """
+    ours = ai_price_ids()
+    if not ours:
+        return False
+    return bool(_subscription_price_ids(sub) & ours)
+
+
 def cancel_subscription_for_account_deletion(user_id):
     """Cancel any live HappyTrader subscription before deleting its user.
 
@@ -440,67 +604,73 @@ def cancel_subscription_for_account_deletion(user_id):
     manage through the portal. Account deletion therefore fails closed until
     Stripe confirms the subscription is canceled (or already absent/terminal).
 
+    Cancels BOTH the Pro subscription and the AI add-on when present.
+
     Returns ``(ok, error_message)`` and never raises.
     """
-    row = billing_row(user_id)
-    subscription_id = (
-        str((row or {}).get("stripe_subscription_id") or "").strip()
-    )
-    if not subscription_id:
+    row = billing_row(user_id) or {}
+    targets = []
+    pro_id = str(row.get("stripe_subscription_id") or "").strip()
+    ai_id = str(row.get("ai_stripe_subscription_id") or "").strip()
+    if pro_id:
+        targets.append((pro_id, subscription_is_ours, "HappyTrader"))
+    if ai_id and ai_id != pro_id:
+        targets.append((ai_id, ai_subscription_is_ours, "HappyTrader AI"))
+    if not targets:
         return True, None
 
     stripe_sdk = _stripe()
     if stripe_sdk is None:
         return False, "Stripe billing is not configured."
 
-    try:
-        sub = stripe_sdk.Subscription.retrieve(subscription_id)
-    except Exception as exc:
-        # A prior cancellation may have removed the object before our local
-        # mirror cleared. Missing means there is nothing left that can renew.
-        if (
-            getattr(exc, "code", None) == "resource_missing"
-            or "no such subscription" in str(exc).lower()
-        ):
-            return True, None
-        _log.exception(
-            "Stripe: could not retrieve subscription %s before deleting "
-            "user_id=%s: %s",
-            subscription_id, user_id, exc,
-        )
-        return False, "Could not verify the Stripe subscription."
+    for subscription_id, is_ours_fn, label in targets:
+        try:
+            sub = stripe_sdk.Subscription.retrieve(subscription_id)
+        except Exception as exc:
+            if (
+                getattr(exc, "code", None) == "resource_missing"
+                or "no such subscription" in str(exc).lower()
+            ):
+                continue
+            _log.exception(
+                "Stripe: could not retrieve subscription %s before deleting "
+                "user_id=%s: %s",
+                subscription_id, user_id, exc,
+            )
+            return False, "Could not verify the Stripe subscription."
 
-    if not subscription_is_ours(sub):
-        _log.error(
-            "Stripe: refusing account deletion for user_id=%s because stored "
-            "subscription %s is not a HappyTrader price",
-            user_id, subscription_id,
-        )
-        return False, "Stored subscription does not belong to HappyTrader."
+        if not is_ours_fn(sub):
+            _log.error(
+                "Stripe: refusing account deletion for user_id=%s because stored "
+                "subscription %s is not a %s price",
+                user_id, subscription_id, label,
+            )
+            return False, "Stored subscription does not belong to HappyTrader."
 
-    status = str(_get(sub, "status") or "").strip().lower()
-    if status in {"canceled", "unpaid", "incomplete_expired"}:
-        return True, None
+        status = str(_get(sub, "status") or "").strip().lower()
+        if status in {"canceled", "unpaid", "incomplete_expired"}:
+            continue
 
-    try:
-        stripe_sdk.Subscription.cancel(subscription_id)
-        _log.info(
-            "Stripe: canceled subscription %s before deleting user_id=%s",
-            subscription_id, user_id,
-        )
-        return True, None
-    except Exception as exc:
-        if (
-            getattr(exc, "code", None) == "resource_missing"
-            or "no such subscription" in str(exc).lower()
-        ):
-            return True, None
-        _log.exception(
-            "Stripe: cancellation failed for subscription %s before deleting "
-            "user_id=%s: %s",
-            subscription_id, user_id, exc,
-        )
-        return False, "Could not cancel the Stripe subscription."
+        try:
+            stripe_sdk.Subscription.cancel(subscription_id)
+            _log.info(
+                "Stripe: canceled %s subscription %s before deleting user_id=%s",
+                label, subscription_id, user_id,
+            )
+        except Exception as exc:
+            if (
+                getattr(exc, "code", None) == "resource_missing"
+                or "no such subscription" in str(exc).lower()
+            ):
+                continue
+            _log.exception(
+                "Stripe: cancellation failed for subscription %s before deleting "
+                "user_id=%s: %s",
+                subscription_id, user_id, exc,
+            )
+            return False, "Could not cancel the Stripe subscription."
+
+    return True, None
 
 
 def _invoice_is_ours(inv) -> bool:
@@ -562,6 +732,9 @@ def subscription_summary(user_id):
         "renews_on": row.get("subscription_current_period_end"),
         "cancel_at_period_end": bool(row.get("subscription_cancel_at_period_end")),
         "has_customer": bool(row.get("stripe_customer_id")),
+        "ai_is_paying": (row.get("ai_subscription_status") or "") in PAYING_STATUSES,
+        "ai_status": row.get("ai_subscription_status"),
+        "ai_amount": PRICE_AI_MONTHLY_DISPLAY if ai_addon_enabled() else None,
     }
 
 
@@ -638,6 +811,125 @@ def billing_checkout():
         return redirect(url_for("pricing"))
 
     return redirect(session_obj.url, code=303)
+
+
+@app.route("/billing/checkout-ai", methods=["POST"])
+@login_required
+@limiter.limit("20 per hour")
+def billing_checkout_ai():
+    """Start Stripe Checkout for the HappyTrader AI add-on."""
+    from app.utils import demo_block_writes
+
+    blocked = demo_block_writes("subscribing to AI")
+    if blocked:
+        return blocked
+
+    if not ai_addon_enabled():
+        return _billing_off_response()
+
+    # Laptop with no Stripe product: grant the add-on so the Insights
+    # picker and Unlock button can be exercised. Real Checkout still
+    # requires STRIPE_SECRET_KEY + STRIPE_PRICE_AI_MONTHLY.
+    if ai_addon_dev_unlock() and not (_env("STRIPE_SECRET_KEY") and ai_price_id()):
+        activate_ai_addon(
+            current_user.id,
+            subscription_id="dev-local",
+            status="active",
+        )
+        flash("HappyTrader AI unlocked locally — not billed.", "success")
+        return redirect(url_for("insights"))
+
+    stripe_sdk = _stripe()
+    if stripe_sdk is None:
+        return _billing_off_response()
+
+    row = billing_row(current_user.id) or {}
+    if (row.get("ai_subscription_status") or "") in PAYING_STATUSES and row.get(
+        "ai_stripe_subscription_id"
+    ):
+        flash("You already have the AI add-on — manage it in Billing.", "info")
+        return redirect(url_for("profile", tab="billing"))
+
+    customer_id = row.get("stripe_customer_id")
+    base = _base_url()
+    try:
+        kwargs = {
+            "mode": "subscription",
+            "line_items": [{"price": ai_price_id(), "quantity": 1}],
+            "success_url": f"{base}/billing/success-ai?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{base}/insights",
+            "client_reference_id": str(current_user.id),
+            "allow_promotion_codes": True,
+            "billing_address_collection": "auto",
+            "subscription_data": {"metadata": {"user_id": str(current_user.id)}},
+            "metadata": {"user_id": str(current_user.id)},
+        }
+        if customer_id:
+            kwargs["customer"] = customer_id
+            kwargs["customer_update"] = {"address": "auto", "name": "auto"}
+        else:
+            email = (getattr(current_user, "email", "") or "").strip()
+            if email:
+                kwargs["customer_email"] = email
+        session_obj = stripe_sdk.checkout.Session.create(**kwargs)
+    except Exception as exc:
+        app.logger.exception("Stripe AI checkout create failed: %s", exc)
+        flash(
+            "Couldn't open the checkout page just now. Nothing was charged — "
+            "try again in a moment.",
+            "danger",
+        )
+        return redirect(url_for("insights"))
+
+    return redirect(session_obj.url, code=303)
+
+
+@app.route("/billing/success-ai")
+@login_required
+def billing_success_ai():
+    """Post-checkout landing for the AI add-on. Never writes ``users.plan``."""
+    stripe_sdk = _stripe()
+    session_id = (request.args.get("session_id") or "").strip()
+    activated = False
+
+    if stripe_sdk is not None and session_id:
+        try:
+            sess = stripe_sdk.checkout.Session.retrieve(
+                session_id, expand=["subscription"]
+            )
+            ref = str(_get(sess, "client_reference_id") or "")
+            if ref and ref != str(current_user.id):
+                app.logger.warning(
+                    "Stripe: AI checkout session %s does not belong to user_id=%s",
+                    session_id, current_user.id,
+                )
+            else:
+                sub = _get(sess, "subscription")
+                if isinstance(sub, str):
+                    sub = stripe_sdk.Subscription.retrieve(sub)
+                if sub is None or not ai_subscription_is_ours(sub):
+                    app.logger.warning(
+                        "Stripe: checkout session %s is not a HappyTrader AI "
+                        "purchase — ignoring for user_id=%s",
+                        session_id, current_user.id,
+                    )
+                else:
+                    customer_id = _get(sess, "customer")
+                    if customer_id:
+                        save_customer_id(current_user.id, customer_id)
+                    activated = apply_ai_subscription(current_user.id, sub)
+        except Exception as exc:
+            app.logger.exception("Stripe AI success reconcile failed: %s", exc)
+
+    if activated:
+        flash("AI add-on is on — Sonnet and Opus are unlocked.", "success")
+    else:
+        flash(
+            "Payment received. The AI add-on is being confirmed and will "
+            "be active in a moment.",
+            "success",
+        )
+    return redirect(url_for("insights"))
 
 
 @app.route("/billing/success")
@@ -774,11 +1066,12 @@ def stripe_webhook():
             # a sibling product's session carries its own user id in the very
             # fields we match on (see subscription_is_ours). A session with no
             # subscription is never ours — checkout is always mode=subscription.
+            # AI add-on is a second HappyTrader price: it writes ai_* only.
             sub_id = _get(obj, "subscription")
             sub = stripe_sdk.Subscription.retrieve(sub_id) if sub_id else None
-            if sub is None or not subscription_is_ours(sub):
+            if sub is None:
                 _log_foreign_event(event_type, obj)
-            else:
+            elif subscription_is_ours(sub):
                 user_id = _user_id_from_session(obj)
                 customer_id = _get(obj, "customer")
                 if user_id and customer_id:
@@ -794,29 +1087,55 @@ def stripe_webhook():
                     # Subscribe transition only — renewals arrive as
                     # invoice/subscription.updated events, not checkout.
                     queue_resume_sync(user_id)
+            elif ai_subscription_is_ours(sub):
+                user_id = _user_id_from_session(obj)
+                customer_id = _get(obj, "customer")
+                if user_id and customer_id:
+                    save_customer_id(user_id, customer_id)
+                if user_id:
+                    if not apply_ai_subscription(user_id, sub):
+                        raise RuntimeError(
+                            f"AI add-on activation failed for user_id={user_id}"
+                        )
+            else:
+                _log_foreign_event(event_type, obj)
 
         elif event_type in (
             "customer.subscription.created",
             "customer.subscription.updated",
             "customer.subscription.deleted",
         ):
-            if not subscription_is_ours(obj):
+            is_pro = subscription_is_ours(obj)
+            is_ai = ai_subscription_is_ours(obj)
+            if not is_pro and not is_ai:
                 _log_foreign_event(event_type, obj)
             elif (user_id := _user_id_from_subscription(obj)):
-                if event_type == "customer.subscription.deleted":
-                    changed = deactivate_subscription(
-                        user_id,
-                        status=str(_get(obj, "status") or "canceled"),
-                        subscription_id=_get(obj, "id"),
-                    )
-                else:
-                    changed = apply_subscription(user_id, obj)
-                if not changed:
-                    # Returning 200 records the event and prevents Stripe from
-                    # retrying. A failed plan write must remain unrecorded.
-                    raise RuntimeError(
-                        f"plan update failed for user_id={user_id}"
-                    )
+                if is_pro:
+                    if event_type == "customer.subscription.deleted":
+                        changed = deactivate_subscription(
+                            user_id,
+                            status=str(_get(obj, "status") or "canceled"),
+                            subscription_id=_get(obj, "id"),
+                        )
+                    else:
+                        changed = apply_subscription(user_id, obj)
+                    if not changed:
+                        raise RuntimeError(
+                            f"plan update failed for user_id={user_id}"
+                        )
+                if is_ai:
+                    if event_type == "customer.subscription.deleted":
+                        changed = deactivate_ai_addon(
+                            user_id,
+                            status=str(_get(obj, "status") or "canceled"),
+                            subscription_id=_get(obj, "id"),
+                        )
+                    else:
+                        changed = apply_ai_subscription(user_id, obj)
+                    if not changed:
+                        raise RuntimeError(
+                            f"AI add-on update failed for user_id={user_id}"
+                        )
             else:
                 # Retrying won't help (the mapping is missing, not flaky), so
                 # this is acknowledged — but it means a real subscription is

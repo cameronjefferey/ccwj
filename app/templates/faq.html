@@ -139,6 +139,8 @@
                         AI Insights reads the same numbers we compute from your trades &mdash; especially exit timing and giveback vs daily option marks, DTE buckets, and strategy-level performance &mdash; and writes a plain-English read of what's working and where you've left money on the table. It surfaces patterns; it does not give financial advice.
                         <br><br>
                         You can also ask follow-up questions about your own trading patterns. Every answer is grounded in your data &mdash; observations only, not recommendations.
+                        <br><br>
+                        Flash and Haiku are included. Gemini Pro, Claude Sonnet, and Claude Opus are part of the <a href="{{ url_for('pricing') }}">HappyTrader AI add-on</a>.
                     </div>
                 </div>
             </div>
@@ -176,7 +178,7 @@
                 </h3>
                 <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Every feature is free for your first 30 days &mdash; no credit card. After that your account doesn't lock: everything you built stays readable forever, but daily syncing pauses until you subscribe. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free), cancel any time. See the <a href="{{ url_for('pricing') }}">pricing page</a> for the full picture.
+                        Every feature is free for your first 30 days &mdash; no credit card. After that your account doesn't lock: everything you built stays readable forever, but daily syncing pauses until you subscribe. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on for the higher-tier Insights models. Cancel either any time. See the <a href="{{ url_for('pricing') }}">pricing page</a> for the full picture.
                     </div>
                 </div>
             </div>

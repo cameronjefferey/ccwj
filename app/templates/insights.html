@@ -321,18 +321,60 @@
            ════════════════════════════════════ #}
 
         {% if gemini_available and llm_models and not is_demo_user %}
+        {% set included_models = llm_models | rejectattr('tier', 'equalto', 'paid') | list %}
+        {% set addon_models = llm_models | selectattr('tier', 'equalto', 'paid') | list %}
         <div class="coaching-section d-flex flex-wrap align-items-center gap-2"
              style="padding:1rem 1.25rem;">
             <label for="llmModelSelect" class="section-label mb-0" style="margin-bottom:0;">AI Model</label>
-            <select id="llmModelSelect" class="form-select form-select-sm" style="width:auto; min-width:220px;">
-                {% for m in llm_models %}
-                <option value="{{ m.key }}" {% if m.key == selected_model %}selected{% endif %}>
-                    {{ m.label }}{% if m.tier and m.tier != 'free' %} · {{ m.tier }}{% endif %}
-                </option>
-                {% endfor %}
+            <select id="llmModelSelect" class="form-select form-select-sm" style="width:auto; min-width:240px;">
+                {% if included_models %}
+                <optgroup label="Included">
+                    {% for m in included_models %}
+                    <option value="{{ m.key }}"
+                            data-tier="{{ m.tier }}"
+                            data-locked="0"
+                            {% if m.key == selected_model %}selected{% endif %}>
+                        {{ m.label }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if addon_models %}
+                <optgroup label="HappyTrader AI">
+                    {% for m in addon_models %}
+                    {% set locked = not can_use_paid_llm %}
+                    <option value="{{ m.key }}"
+                            data-tier="{{ m.tier }}"
+                            data-locked="{{ '1' if locked else '0' }}"
+                            {% if m.key == selected_model %}selected{% endif %}>
+                        {{ m.label }}{% if locked %} (add-on){% endif %}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
             </select>
             <span id="llmModelSaved" class="small text-success" style="display:none;">Saved</span>
             <span class="small text-muted ms-auto">Used for generated insights &amp; Ask AI.</span>
+            <div id="llmUpgrade" class="w-100 small mt-1"
+                 data-always="{{ '1' if not can_use_paid_llm and addon_models else '0' }}"
+                 {% if can_use_paid_llm or not addon_models %}style="display:none;"{% endif %}>
+                <span class="text-muted">
+                    {% if addon_models %}
+                    {{ addon_models | map(attribute='label') | join(', ') }}
+                    {% else %}
+                    Higher-tier models
+                    {% endif %}
+                    are part of HappyTrader AI · ${{ ai_price_display or '9.99' }}/mo.
+                </span>
+                {% if ai_addon_enabled %}
+                <form method="POST" action="{{ url_for('billing_checkout_ai') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-primary ms-1">Unlock</button>
+                </form>
+                {% else %}
+                <a href="{{ url_for('pricing') }}#happytrader-ai" class="btn btn-sm btn-outline-primary ms-1">See pricing</a>
+                {% endif %}
+            </div>
         </div>
         {% endif %}
 
@@ -347,6 +389,7 @@
                 {% if gemini_available and not is_demo_user %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="model" class="js-llm-model-field" value="{{ selected_model or '' }}">
                     <button type="submit" class="btn btn-outline-primary btn-sm" id="regenBtn">
                         Regenerate
                     </button>
@@ -365,11 +408,29 @@
                 Ask about your exit timing, givebacks versus peaks, DTE preferences, or other behavioral patterns.
                 Grounded in your actual trading data. Responses are observations, not financial advice.
             </p>
-            <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;"></div>
+            <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;">
+                {% for msg in ask_thread or [] %}
+                {% if msg.role == 'user' %}
+                <div class="mb-2">
+                    <div class="small text-muted">You</div>
+                    <div>{{ msg.content }}</div>
+                </div>
+                {% elif msg.role == 'assistant' %}
+                <div class="mb-3">
+                    <div class="small text-muted">AI Insights</div>
+                    {{ msg.html }}
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
             <form id="coachForm" class="d-flex gap-2">
                 <input type="text" id="coachInput" class="form-control form-control-sm"
                        placeholder="e.g. 'Which DTE buckets seem strongest in my data?'" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
+            </form>
+            <form id="coachClearForm" method="POST" action="{{ url_for('insights_ask_clear') }}" class="mt-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-link btn-sm text-muted px-0">Clear conversation</button>
             </form>
             <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
         </div>
@@ -405,6 +466,7 @@
             {% else %}
             <form method="POST" action="{{ url_for('generate_insights') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="model" class="js-llm-model-field" value="{{ selected_model or '' }}">
                 <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
                     Generate Insights Report
                 </button>
@@ -442,10 +504,32 @@
 
     const modelSelect = document.getElementById('llmModelSelect');
     const modelSaved = document.getElementById('llmModelSaved');
+    const modelUpgrade = document.getElementById('llmUpgrade');
     if (modelSelect) {
         const modelUrl = '{{ url_for("set_insights_model") }}';
+        let lastUnlocked = modelSelect.value;
+        const upgradeAlways = modelUpgrade && modelUpgrade.dataset.always === '1';
+        const showUpgrade = (on) => {
+            if (modelUpgrade) modelUpgrade.style.display = (on || upgradeAlways) ? 'block' : 'none';
+        };
+        const selectedOpt = () => modelSelect.options[modelSelect.selectedIndex];
+        const syncHiddenModel = (value) => {
+            document.querySelectorAll('.js-llm-model-field').forEach((el) => {
+                el.value = value;
+            });
+        };
+        syncHiddenModel(lastUnlocked);
+        if (selectedOpt() && selectedOpt().dataset.locked === '1') {
+            showUpgrade(true);
+        }
         modelSelect.addEventListener('change', async () => {
+            const opt = selectedOpt();
             const csrf = document.querySelector('meta[name="csrf-token"]');
+            if (opt && opt.dataset.locked === '1') {
+                window.location.href = '{{ url_for("pricing") }}#happytrader-ai';
+                return;
+            }
+            showUpgrade(false);
             try {
                 const resp = await fetch(modelUrl, {
                     method: 'POST',
@@ -456,9 +540,17 @@
                     },
                     body: new URLSearchParams({ model: modelSelect.value })
                 });
-                if (resp.ok && modelSaved) {
-                    modelSaved.style.display = 'inline';
-                    setTimeout(() => { modelSaved.style.display = 'none'; }, 1800);
+                if (resp.status === 403) {
+                    window.location.href = '{{ url_for("pricing") }}#happytrader-ai';
+                    return;
+                }
+                if (resp.ok) {
+                    lastUnlocked = modelSelect.value;
+                    syncHiddenModel(lastUnlocked);
+                    if (modelSaved) {
+                        modelSaved.style.display = 'inline';
+                        setTimeout(() => { modelSaved.style.display = 'none'; }, 1800);
+                    }
                 }
             } catch (err) { /* non-fatal: choice still applies on next generate */ }
         });

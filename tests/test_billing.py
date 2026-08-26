@@ -233,6 +233,8 @@ def test_plan_writes_use_positional_params(captured_sql):
     convention: positional placeholders, count matching the params."""
     billing.activate_subscription(5, subscription_id="sub_1", customer_id="cus_1")
     billing.deactivate_subscription(5)
+    billing.activate_ai_addon(5, subscription_id="sub_ai", customer_id="cus_1")
+    billing.deactivate_ai_addon(5, subscription_id="sub_ai")
     for sql, params in captured_sql:
         assert isinstance(params, tuple), "app.db.execute only supports positional params"
         assert "%(" not in sql, "named placeholders are silently broken by app.db.execute"
@@ -823,3 +825,266 @@ def test_subscription_summary_none_for_never_subscribed(monkeypatch):
         "plan": "trial", "stripe_customer_id": None, "subscription_status": None,
     })
     assert billing.subscription_summary(1) is None
+
+
+# ---------------------------------------------------------------------------
+# HappyTrader AI add-on — second subscription, never writes users.plan
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ai_stripe_config(stripe_config, monkeypatch):
+    monkeypatch.setenv("STRIPE_PRICE_AI_MONTHLY", "price_ai_monthly")
+
+
+def _ai_sub(status="active", **kw):
+    return _sub(
+        status,
+        id="sub_ai",
+        items={"data": [{
+            "price": {"id": "price_ai_monthly"},
+            "current_period_end": 1788000000,
+        }]},
+        metadata={"user_id": "42"},
+        **kw,
+    )
+
+
+def test_ai_addon_enabled_is_independent_of_pro_prices(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setenv("STRIPE_PRICE_MONTHLY", "price_monthly")
+    monkeypatch.setenv("STRIPE_PRICE_ANNUAL", "price_annual")
+    monkeypatch.delenv("STRIPE_PRICE_AI_MONTHLY", raising=False)
+    monkeypatch.delenv("AI_ADDON_DEV_UNLOCK", raising=False)
+    assert billing.stripe_enabled() is True
+    assert billing.ai_addon_enabled() is False
+
+    monkeypatch.setenv("STRIPE_PRICE_AI_MONTHLY", "price_ai_monthly")
+    assert billing.ai_addon_enabled() is True
+    assert billing.stripe_enabled() is True, "AI price must not change the Pro gate"
+
+
+def test_ai_addon_dev_unlock_without_stripe(monkeypatch):
+    for name in (
+        "STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_ANNUAL",
+        "STRIPE_PRICE_AI_MONTHLY", "AI_ADDON_DEV_UNLOCK",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert billing.ai_addon_enabled() is False
+
+    monkeypatch.setenv("AI_ADDON_DEV_UNLOCK", "1")
+    assert billing.ai_addon_dev_unlock() is True
+    assert billing.ai_addon_enabled() is True
+    assert billing.stripe_enabled() is False
+
+
+def test_ai_addon_dev_unlock_blocked_by_live_secret(monkeypatch):
+    monkeypatch.setenv("AI_ADDON_DEV_UNLOCK", "1")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_not_real")
+    monkeypatch.delenv("STRIPE_PRICE_AI_MONTHLY", raising=False)
+    assert billing.ai_addon_dev_unlock() is False
+    assert billing.ai_addon_enabled() is False
+
+
+def test_ai_subscription_is_ours_matches_only_the_ai_price(ai_stripe_config):
+    assert billing.ai_subscription_is_ours(_ai_sub()) is True
+    assert billing.ai_subscription_is_ours(_sub("active")) is False
+    assert billing.subscription_is_ours(_ai_sub()) is False
+    assert billing.ai_subscription_is_ours(_foreign_sub()) is False
+
+
+def test_ai_subscription_is_ours_fails_closed_when_unconfigured(monkeypatch):
+    monkeypatch.delenv("STRIPE_PRICE_AI_MONTHLY", raising=False)
+    assert billing.ai_subscription_is_ours(_ai_sub()) is False
+
+
+def test_apply_ai_subscription_never_touches_plan(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        billing, "activate_ai_addon",
+        lambda uid, **kw: seen.update({"uid": uid, **kw}) or True,
+    )
+    monkeypatch.setattr(
+        billing, "activate_subscription",
+        lambda *a, **k: pytest.fail("AI add-on must not write users.plan"),
+    )
+    monkeypatch.setattr(
+        billing, "deactivate_subscription",
+        lambda *a, **k: pytest.fail("AI add-on must not write users.plan"),
+    )
+    assert billing.apply_ai_subscription(9, _ai_sub("active")) is True
+    assert seen["uid"] == 9
+    assert seen["stripe_price_id"] == "price_ai_monthly"
+
+
+def test_ai_checkout_webhook_does_not_activate_pro(
+    client, monkeypatch, ai_stripe_config
+):
+    event = {
+        "id": "evt_ai_checkout",
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "customer": "cus_1",
+            "subscription": "sub_ai",
+            "client_reference_id": "42",
+        }},
+    }
+    fake = _FakeStripe(event=event, subscription=_ai_sub())
+    monkeypatch.setattr(billing, "_stripe", lambda: fake)
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    recorded, applied_ai, customers = [], [], []
+    monkeypatch.setattr(billing, "record_event", lambda eid, t: recorded.append(eid))
+    monkeypatch.setattr(
+        billing, "save_customer_id", lambda uid, cid: customers.append((uid, cid)),
+    )
+    monkeypatch.setattr(
+        billing, "apply_ai_subscription",
+        lambda uid, sub: applied_ai.append((uid, sub["status"])) or True,
+    )
+    monkeypatch.setattr(
+        billing, "apply_subscription",
+        lambda *a, **k: pytest.fail("AI checkout must not set plan=active"),
+    )
+    monkeypatch.setattr(
+        billing, "queue_resume_sync",
+        lambda *a: pytest.fail("AI checkout is not a Pro subscribe"),
+    )
+
+    assert _post_webhook(client).status_code == 200
+    assert customers == [(42, "cus_1")]
+    assert applied_ai == [(42, "active")]
+    assert recorded == ["evt_ai_checkout"]
+
+
+def test_pro_checkout_webhook_does_not_activate_ai(
+    client, monkeypatch, ai_stripe_config
+):
+    event = {
+        "id": "evt_pro_not_ai",
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "customer": "cus_1",
+            "subscription": "sub_1",
+            "client_reference_id": "42",
+        }},
+    }
+    fake = _FakeStripe(event=event, subscription=_sub("active"))
+    monkeypatch.setattr(billing, "_stripe", lambda: fake)
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "record_event", lambda *a: None)
+    monkeypatch.setattr(billing, "save_customer_id", lambda *a: True)
+    monkeypatch.setattr(billing, "apply_subscription", lambda *a, **k: True)
+    monkeypatch.setattr(billing, "queue_resume_sync", lambda *a: None)
+    monkeypatch.setattr(
+        billing, "apply_ai_subscription",
+        lambda *a, **k: pytest.fail("Pro checkout must not set ai_subscription_status"),
+    )
+    assert _post_webhook(client).status_code == 200
+
+
+def test_ai_cancellation_leaves_pro_intact(
+    client, monkeypatch, ai_stripe_config
+):
+    event = {
+        "id": "evt_ai_cancel",
+        "type": "customer.subscription.deleted",
+        "data": {"object": _ai_sub("canceled")},
+    }
+    monkeypatch.setattr(billing, "_stripe", lambda: _FakeStripe(event=event))
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "record_event", lambda *a: None)
+    seen = {}
+    monkeypatch.setattr(
+        billing, "deactivate_ai_addon",
+        lambda uid, **kw: seen.update({"uid": uid, **kw}) or True,
+    )
+    monkeypatch.setattr(
+        billing, "deactivate_subscription",
+        lambda *a, **k: pytest.fail("AI cancel must not freeze the mirror"),
+    )
+    monkeypatch.setattr(
+        billing, "apply_subscription",
+        lambda *a, **k: pytest.fail("AI cancel must not write users.plan"),
+    )
+    assert _post_webhook(client).status_code == 200
+    assert seen["uid"] == 42
+    assert seen["subscription_id"] == "sub_ai"
+
+
+def test_pro_cancellation_leaves_ai_intact(
+    client, monkeypatch, ai_stripe_config
+):
+    event = {
+        "id": "evt_pro_cancel_not_ai",
+        "type": "customer.subscription.deleted",
+        "data": {"object": _sub(
+            "canceled", id="sub_pro", metadata={"user_id": "42"},
+        )},
+    }
+    monkeypatch.setattr(billing, "_stripe", lambda: _FakeStripe(event=event))
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "record_event", lambda *a: None)
+    monkeypatch.setattr(billing, "deactivate_subscription", lambda *a, **k: True)
+    monkeypatch.setattr(
+        billing, "deactivate_ai_addon",
+        lambda *a, **k: pytest.fail("Pro cancel must not clear the AI add-on"),
+    )
+    assert _post_webhook(client).status_code == 200
+
+
+def test_sibling_event_does_not_activate_ai_addon(
+    client, monkeypatch, ai_stripe_config
+):
+    event = {
+        "id": "evt_sibling_not_ai",
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "customer": "cus_stranger",
+            "subscription": "sub_stranger",
+            "client_reference_id": "4",
+        }},
+    }
+    fake = _FakeStripe(event=event, subscription=_foreign_sub())
+    monkeypatch.setattr(billing, "_stripe", lambda: fake)
+    monkeypatch.setattr(billing, "event_already_handled", lambda eid: False)
+    monkeypatch.setattr(billing, "record_event", lambda *a: None)
+    monkeypatch.setattr(
+        billing, "apply_ai_subscription",
+        lambda *a, **k: pytest.fail("sibling product must not unlock paid models"),
+    )
+    monkeypatch.setattr(
+        billing, "apply_subscription",
+        lambda *a, **k: pytest.fail("sibling product must not grant Pro"),
+    )
+    assert _post_webhook(client).status_code == 200
+
+
+def test_account_deletion_cancels_ai_addon_too(monkeypatch, ai_stripe_config):
+    calls = []
+
+    class _Subscriptions:
+        @staticmethod
+        def retrieve(subscription_id):
+            calls.append(("retrieve", subscription_id))
+            if subscription_id == "sub_ai":
+                return _ai_sub("active")
+            return _sub("active", id=subscription_id)
+
+        @staticmethod
+        def cancel(subscription_id):
+            calls.append(("cancel", subscription_id))
+
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: {
+        "stripe_subscription_id": "sub_live",
+        "ai_stripe_subscription_id": "sub_ai",
+    })
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: types.SimpleNamespace(Subscription=_Subscriptions),
+    )
+
+    assert billing.cancel_subscription_for_account_deletion(9) == (True, None)
+    assert ("retrieve", "sub_live") in calls
+    assert ("cancel", "sub_live") in calls
+    assert ("retrieve", "sub_ai") in calls
+    assert ("cancel", "sub_ai") in calls
