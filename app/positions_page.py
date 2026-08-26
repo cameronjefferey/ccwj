@@ -678,6 +678,24 @@ def positions():
     total_losers = int(filtered["num_losers"].sum())
     total_closed = total_winners + total_losers
 
+    # Distinct physical accounts in the FILTERED frame (tenant_id grain).
+    # Quick Stats used to render ``accounts | length``, which was unique
+    # raw broker labels on the *unfiltered* df — so Dividend on one
+    # Emmory SCHD row still said "Accounts in view: 2" (Schwab + Coinbase
+    # somewhere else in the book). Count tenants so colliding "Schwab
+    # Account" nicknames don't collapse either.
+    if filtered.empty:
+        num_accounts_in_view = 0
+    elif "tenant_id" in filtered.columns:
+        num_accounts_in_view = int(filtered["tenant_id"].nunique(dropna=True))
+        _missing = filtered["tenant_id"].isna()
+        if _missing.any() and "account" in filtered.columns:
+            num_accounts_in_view += int(
+                filtered.loc[_missing, "account"].nunique(dropna=True)
+            )
+    else:
+        num_accounts_in_view = int(filtered["account"].nunique(dropna=True))
+
     kpis = {
         "total_return": float(filtered["total_return"].sum()),
         "realized_pnl": float(filtered["realized_pnl"].sum()),
@@ -690,6 +708,7 @@ def positions():
         "premium_collected": float(filtered["total_premium_received"].sum()),
         "win_rate": total_winners / total_closed if total_closed else 0,
         "num_positions": len(filtered),
+        "num_accounts": num_accounts_in_view,
         "total_trades": int(filtered["num_individual_trades"].sum()),
         # Closed-trade-group counts. Distinct from total_trades, which sums
         # num_individual_trades (each open + close + roll fill counts). The
@@ -839,9 +858,9 @@ def positions():
         # `user_accounts` is the auth list (every account the user has
         # linked), used by the hero to decide between "you haven't
         # connected anything yet" and "your filter just returned nothing".
-        # `accounts` is the data list (accounts that have positions in the
-        # current view) and powers the Account dropdown. Distinct names
-        # because they answer different questions.
+        # `accounts` is unfiltered unique broker labels (empty-state +
+        # dropdown fallback). Quick Stats "Accounts in view" reads
+        # kpis.num_accounts off the filtered tenant_id grain.
         user_accounts=user_accounts,
         status_counts=status_counts,
         selected_account=selected_account,

@@ -386,6 +386,83 @@ def test_quick_stats_winners_uses_raw_count_not_derived(routed_app):
     assert losers == 6, f"expected 6 losers, got {losers}"
 
 
+def _accounts_in_view(html):
+    import re
+    m = re.search(
+        r"Accounts in view</td>\s*<td class=\"fw-bold text-end\">(\d+)</td>",
+        html,
+    )
+    return int(m.group(1)) if m else None
+
+
+def test_quick_stats_accounts_in_view_honors_strategy_filter(routed_app):
+    """Quick Stats 'Accounts in view' must count tenants in the FILTERED
+    frame. Pre-fix it was ``accounts | length`` from unique raw broker
+    labels on the unfiltered df — Dividend on one Emmory row still said 2
+    because Coinbase lived elsewhere in the book."""
+    unfiltered = routed_app.get("/positions")
+    assert unfiltered.status_code == 200
+    assert _accounts_in_view(unfiltered.data.decode()) == 2
+
+    # Covered Call is Sara-only in the fixture.
+    covered = routed_app.get("/positions?strategy=Covered%20Call")
+    assert covered.status_code == 200
+    html = covered.data.decode()
+    assert _accounts_in_view(html) == 1
+    assert 'data-href="/position/NVDA' in html
+    assert 'data-href="/position/PLTR' not in html
+
+
+def test_quick_stats_accounts_in_view_counts_colliding_labels():
+    """Two physical Schwab accounts sharing the display string 'Schwab
+    Account' are two accounts in view, not one."""
+    from app import app
+    import app.positions_page as routes
+
+    book = pd.DataFrame([
+        _summary_row(
+            account="Schwab Account", tenant_id="snaptrade:aaa",
+            symbol="SCHD", strategy="Dividend", status="Closed",
+            total_pnl=196.81, realized_pnl=78.43, unrealized_pnl=0,
+            total_dividend_income=118.38,
+            num_individual_trades=10, num_winners=1, num_losers=0,
+        ),
+        _summary_row(
+            account="Schwab Account", tenant_id="snaptrade:bbb",
+            symbol="UFO", strategy="Buy and Hold", status="Open",
+            total_pnl=-6554.05, realized_pnl=0, unrealized_pnl=-6571.5,
+            total_dividend_income=17.45,
+            num_individual_trades=2, num_winners=0, num_losers=0,
+        ),
+    ])
+    user = _stub_user(user_id=7)
+
+    class _StubClient:
+        def query(self, _sql, **_kw):
+            class _Job:
+                def to_dataframe(self_inner):
+                    return book.copy()
+            return _Job()
+
+    def _tenants(selected_account=None):
+        return ["snaptrade:aaa", "snaptrade:bbb"]
+
+    with patch.object(routes, "current_user", user), \
+         patch("flask_login.utils._get_user", lambda: user), \
+         patch.object(routes, "_redirect_if_no_accounts", lambda: None), \
+         patch.object(routes, "_user_account_list",
+                      lambda: ["Schwab Account", "Schwab Account"]), \
+         patch.object(routes, "_tenants_for_scope", _tenants), \
+         patch.object(routes, "is_admin", lambda u: False), \
+         patch.object(routes, "get_bigquery_client", lambda: _StubClient()):
+        with app.test_client() as c:
+            all_html = c.get("/positions").data.decode()
+            div_html = c.get("/positions?strategy=Dividend").data.decode()
+
+    assert _accounts_in_view(all_html) == 2
+    assert _accounts_in_view(div_html) == 1
+
+
 # --- ATTRIBUTION_INVARIANT integration test ---------------------------------
 
 
