@@ -46,6 +46,9 @@ class DraftPollTests(unittest.TestCase):
         self.assertIn(b"Host pin", res.data)
         self.assertIn(b"Start practice mash", res.data)
         self.assertIn(b"This one counts", res.data)
+        self.assertIn(b"The mash race", res.data)
+        self.assertIn(b"Start the mash race", res.data)
+        self.assertIn(b'id="race-track"', res.data)
         self.assertEqual(res.headers.get("X-Robots-Tag"), "noindex, nofollow")
 
     def test_canonical_url_redirects(self):

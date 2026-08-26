@@ -11,7 +11,7 @@ This is a standalone app. It is not part of HappyTrader and is not served from t
 1. Open the link. Find your name and tap it. If you’re missing, add it, then tap it.
 2. Tap every night you can sit down at 4:00 PM Pacific, then continue to mash.
 3. Mash twice: first is practice, second is the official score. The page welcomes you by name.
-4. Host unlocks with the pin and taps **Reveal draft order**. Most mashes = first pick; ties go to whoever finished first.
+4. Host unlocks with the pin and taps **Start the mash race**. Everyone starts running, the mash count climbs, and the lowest score stops first (last pick) until one person is left. Most mashes = first pick; ties go to whoever finished first.
 
 Scores stay hidden until the host reveals. That's it. One URL.
 
@@ -56,7 +56,8 @@ Or apply `render.yaml` as a Blueprint. Do not merge this into `app/render.yaml`.
 - **Game** on Wed Sep 9 (first game) — not pickable
 - A “best so far” pick on the nights step, weekends winning ties
 - Three steps: pick your name, pick nights, then mash for draft order
-- Draft order stays hidden until the host reveals it
+- Draft order stays hidden until the host starts the mash race
+- The race drops people last-pick-first as the mash count climbs
 
 ## Optional env
 
