@@ -14,6 +14,7 @@ from app.models import (
     get_accounts_for_user, is_admin,
     save_insight, get_insight_for_user,
     get_user_llm_model, set_user_llm_model,
+    get_insight_messages, append_insight_message, clear_insight_messages,
 )
 # Tenant-scoped query helpers live in app.routes so the same user_id
 # predicate and Stage 0/1 NULL-leniency apply everywhere. See
@@ -28,8 +29,10 @@ from app.routes import (
 from app.utils import demo_block_writes
 from app.llm import (
     call_llm, llm_available, selectable_models,
-    resolve_model_key, selectable_model_keys,
+    selectable_model_keys,
+    resolved_user_model_key, model_is_paid,
 )
+from app.llm_access import user_can_use_paid_llm
 
 
 # ------------------------------------------------------------------
@@ -802,6 +805,9 @@ You will receive:
 - PORTFOLIO OVERVIEW: Lifetime strategy performance
 - Optionally: RECENT EXITS showing specific trades where profit was left on the table
 - Optionally: LAST WEEK performance summary
+- Optionally: PRIOR ANALYSIS — the cached insights report already generated for this trader
+- Optionally: EXECUTION REVIEW — early-exit grades vs holding to expiry
+- Prior turns of this conversation, when present. Follow up in context.
 
 The behavioral signals only include contracts with reliable daily data (40%+
 snapshot density). If the data mentions "X of Y contracts," the remaining
@@ -825,7 +831,7 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 - Do NOT recommend changing size or strategy."""
 
 
-def _call_coach(data_text, model_key=None):
+def _call_coach(data_text, model_key=None, allow_paid=False):
     """Narrate the coaching brief and return ((summary, full_analysis), None).
 
     Vendor-agnostic: app.llm.call_llm dispatches to the chosen model
@@ -839,6 +845,7 @@ def _call_coach(data_text, model_key=None):
         max_tokens=2000,
         temperature=0.7,
         model_key=model_key,
+        allow_paid=allow_paid,
     )
     if error:
         return None, error
@@ -857,8 +864,73 @@ def _call_coach(data_text, model_key=None):
     return (summary, full_text), None
 
 
-def _call_coach_question(coaching_text, portfolio_text, weekly_text, question, model_key=None):
-    """Narrate a Q&A answer grounded in coaching + portfolio + weekly data."""
+def _call_coach_question(brief_text, question, model_key=None,
+                         allow_paid=False, history=None):
+    """Narrate a Q&A answer. Brief stays in the system block so follow-ups
+    do not re-paste it as a fake user turn."""
+    system = QA_SYSTEM_PROMPT
+    if brief_text:
+        system = (
+            QA_SYSTEM_PROMPT
+            + "\n\nGround every answer in this trader's data:\n\n"
+            + brief_text
+        )
+    return call_llm(
+        system,
+        question,
+        kind="coach.ask",
+        max_tokens=1500,
+        temperature=0.6,
+        model_key=model_key,
+        allow_paid=allow_paid,
+        history=history,
+    )
+
+
+def _execution_brief_text(client, tenant_ids):
+    """Plain-text rollup of the execution-review card, or None."""
+    from app.execution_quality import EXECUTION_REVIEW_QUERY, summarize_execution
+
+    try:
+        sql = EXECUTION_REVIEW_QUERY.format(
+            tenant_filter=_tenant_sql_and(tenant_ids),
+        )
+        df = cached_query_df(client, sql, label="insights_execution")
+        df = _filter_df_by_tenant_ids(df, tenant_ids)
+        summary = summarize_execution(df)
+    except Exception as exc:
+        app.logger.warning("insights: execution brief failed: %s", exc)
+        return None
+    if not summary:
+        return None
+    lines = ["EXECUTION REVIEW"]
+    headline = summary.get("headline") or {}
+    if headline.get("value"):
+        lines.append(
+            f"- {headline.get('value')} {headline.get('text') or ''}. "
+            f"{headline.get('sub') or ''}".strip()
+        )
+    for row in summary.get("findings") or []:
+        lines.append(
+            f"- {row.get('label')}: {row.get('value')} — {row.get('detail')}"
+        )
+    return "\n".join(lines) if len(lines) > 1 else None
+
+
+def _prior_analysis_brief(user_id):
+    cached = get_insight_for_user(user_id)
+    if not cached:
+        return None
+    text = (cached.get("full_analysis") or cached.get("summary") or "").strip()
+    if not text:
+        return None
+    if len(text) > 3000:
+        text = text[:3000].rstrip() + "\n[truncated]"
+    return "PRIOR ANALYSIS:\n" + text
+
+
+def _ask_brief(coaching_text, portfolio_text, weekly_text,
+               execution_text=None, prior_text=None):
     parts = []
     if coaching_text:
         parts.append("BEHAVIORAL SIGNALS:\n" + coaching_text)
@@ -866,21 +938,11 @@ def _call_coach_question(coaching_text, portfolio_text, weekly_text, question, m
         parts.append("LAST WEEK DATA:\n" + weekly_text)
     if portfolio_text:
         parts.append("PORTFOLIO OVERVIEW:\n" + portfolio_text)
-    parts.append(
-        "\nAnswer the user's question below. Be concise and specific, "
-        "grounded strictly in the data above.\n"
-        f"User question: {question}\n"
-    )
-    user_prompt = "\n\n".join(parts)
-
-    return call_llm(
-        QA_SYSTEM_PROMPT,
-        user_prompt,
-        kind="coach.ask",
-        max_tokens=800,
-        temperature=0.6,
-        model_key=model_key,
-    )
+    if execution_text:
+        parts.append(execution_text)
+    if prior_text:
+        parts.append(prior_text)
+    return "\n\n".join(parts) if parts else None
 
 
 def _md_to_html(md_text):
@@ -932,7 +994,25 @@ def _get_tenant_scope(selected_account=""):
 # Routes
 # ------------------------------------------------------------------
 
-_INSIGHTS_ENDPOINTS = frozenset({"insights", "generate_insights", "insights_ask"})
+_INSIGHTS_ENDPOINTS = frozenset({
+    "insights", "generate_insights", "insights_ask",
+    "insights_ask_clear", "set_insights_model",
+})
+
+_ASK_THREAD_LIMIT = 12
+
+
+def _ask_not_using_paid():
+    """Skip the tighter paid-model rate limit when this ask will use Haiku/Flash."""
+    try:
+        if not current_user.is_authenticated:
+            return True
+        key = resolved_user_model_key(
+            current_user.id, get_user_llm_model(current_user.id),
+        )
+        return not model_is_paid(key)
+    except Exception:
+        return True
 
 
 @app.before_request
@@ -963,8 +1043,19 @@ def insights():
 
     cached = get_insight_for_user(current_user.id)
     gemini_available = llm_available()
+    can_use_paid = user_can_use_paid_llm(current_user.id)
     llm_models = selectable_models()
-    selected_model = resolve_model_key(get_user_llm_model(current_user.id))
+    selected_model = resolved_user_model_key(
+        current_user.id, get_user_llm_model(current_user.id),
+    )
+    ask_thread = []
+    for msg in get_insight_messages(current_user.id, limit=_ASK_THREAD_LIMIT):
+        content = msg.get("content") or ""
+        ask_thread.append({
+            "role": msg.get("role"),
+            "content": content,
+            "html": _md_to_html(content) if msg.get("role") == "assistant" else None,
+        })
 
     if cached:
         cached["full_analysis_html"] = _md_to_html(cached["full_analysis"])
@@ -994,6 +1085,10 @@ def insights():
         gemini_available=gemini_available,
         llm_models=llm_models,
         selected_model=selected_model,
+        can_use_paid_llm=can_use_paid,
+        ai_addon_enabled=_ai_addon_enabled(),
+        ai_price_display=_ai_price_display(),
+        ask_thread=ask_thread,
         accounts=accounts,
         selected_account=selected_account,
         coaching=coaching_data,
@@ -1023,8 +1118,12 @@ def generate_insights():
     # so this and future generations / Q&A use it.
     posted_model = (request.form.get("model") or "").strip()
     if posted_model and posted_model in selectable_model_keys():
-        set_user_llm_model(current_user.id, posted_model)
-    model_key = resolve_model_key(get_user_llm_model(current_user.id))
+        if not model_is_paid(posted_model) or user_can_use_paid_llm(current_user.id):
+            set_user_llm_model(current_user.id, posted_model)
+    allow_paid = user_can_use_paid_llm(current_user.id)
+    model_key = resolved_user_model_key(
+        current_user.id, get_user_llm_model(current_user.id),
+    )
 
     try:
         client = get_bigquery_client()
@@ -1048,7 +1147,9 @@ def generate_insights():
             flash("Not enough data to generate insights.", "warning")
             return redirect(redir)
 
-        result, error = _call_coach(coaching_text, model_key=model_key)
+        result, error = _call_coach(
+            coaching_text, model_key=model_key, allow_paid=allow_paid,
+        )
         if error:
             flash(error, "danger")
             return redirect(redir)
@@ -1078,6 +1179,12 @@ def set_insights_model():
     model_key = (request.form.get("model") or "").strip()
     if model_key not in selectable_model_keys():
         return jsonify({"ok": False, "error": "That model isn't available."}), 400
+    if model_is_paid(model_key) and not user_can_use_paid_llm(current_user.id):
+        return jsonify({
+            "ok": False,
+            "error": "That model is part of the AI add-on.",
+            "upgrade": True,
+        }), 403
     set_user_llm_model(current_user.id, model_key)
     return jsonify({"ok": True, "model": model_key})
 
@@ -1085,6 +1192,7 @@ def set_insights_model():
 @app.route("/insights/ask", methods=["POST"])
 @login_required
 @limiter.limit("10 per minute; 60 per hour; 200 per day")
+@limiter.limit("20 per hour", exempt_when=_ask_not_using_paid)
 def insights_ask():
     """Q&A endpoint grounded in coaching signals + portfolio data.
 
@@ -1153,17 +1261,67 @@ def insights_ask():
         except Exception as exc:
             app.logger.warning("insights: weekly-context section failed (coach answers without it): %s", exc)
 
-        if not coaching_text and not portfolio_text:
+        execution_text = _execution_brief_text(client, tenant_ids)
+        prior_text = _prior_analysis_brief(current_user.id)
+        brief_text = _ask_brief(
+            coaching_text, portfolio_text, weekly_text,
+            execution_text=execution_text, prior_text=prior_text,
+        )
+        if not brief_text:
             return jsonify({"error": "No data available to answer questions."}), 400
 
+        allow_paid = user_can_use_paid_llm(current_user.id)
+        model_key = resolved_user_model_key(
+            current_user.id, get_user_llm_model(current_user.id),
+        )
+        history = [
+            {"role": m.get("role"), "content": m.get("content")}
+            for m in get_insight_messages(current_user.id, limit=_ASK_THREAD_LIMIT)
+        ]
         answer_md, error = _call_coach_question(
-            coaching_text, portfolio_text, weekly_text, question,
-            model_key=resolve_model_key(get_user_llm_model(current_user.id)),
+            brief_text, question,
+            model_key=model_key,
+            allow_paid=allow_paid,
+            history=history,
         )
         if error:
             return jsonify({"error": error}), 500
 
+        append_insight_message(current_user.id, "user", question, model_key)
+        append_insight_message(current_user.id, "assistant", answer_md, model_key)
         return jsonify({"answer_html": str(_md_to_html(answer_md)), "error": None})
 
     except Exception as exc:
         return jsonify({"error": f"Could not process question: {exc}"}), 500
+
+
+@app.route("/insights/ask/clear", methods=["POST"])
+@login_required
+@limiter.limit("10 per hour")
+def insights_ask_clear():
+    """Wipe this user's Ask AI thread. Demo stays write-blocked."""
+    blocked = demo_block_writes("clearing the Ask AI thread")
+    if blocked:
+        return blocked
+    clear_insight_messages(current_user.id)
+    if request.accept_mimetypes.best == "application/json" or (
+        request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
+    ):
+        return jsonify({"ok": True})
+    return redirect(url_for("insights"))
+
+
+def _ai_addon_enabled():
+    try:
+        from app.billing import ai_addon_enabled
+        return ai_addon_enabled()
+    except Exception:
+        return False
+
+
+def _ai_price_display():
+    try:
+        from app.billing import PRICE_AI_MONTHLY_DISPLAY
+        return PRICE_AI_MONTHLY_DISPLAY
+    except Exception:
+        return "9.99"

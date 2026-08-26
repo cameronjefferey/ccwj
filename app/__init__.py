@@ -130,18 +130,24 @@ def _inject_feature_flags():
     # otherwise the pricing page falls back to the Pro waitlist form.
     try:
         from app.billing import (
+            PRICE_AI_MONTHLY_DISPLAY,
             PRICE_ANNUAL_DISPLAY,
             PRICE_ANNUAL_MONTHLY_EQUIV,
             PRICE_MONTHLY_DISPLAY,
+            ai_addon_enabled,
             stripe_enabled,
         )
         billing_enabled = stripe_enabled()
         price_monthly = PRICE_MONTHLY_DISPLAY
         price_annual = PRICE_ANNUAL_DISPLAY
         price_annual_equiv = PRICE_ANNUAL_MONTHLY_EQUIV
+        ai_billing_enabled = ai_addon_enabled()
+        price_ai = PRICE_AI_MONTHLY_DISPLAY
     except Exception:
         billing_enabled = False
         price_monthly = price_annual = price_annual_equiv = None
+        ai_billing_enabled = False
+        price_ai = None
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
@@ -156,6 +162,8 @@ def _inject_feature_flags():
         "price_monthly": price_monthly,
         "price_annual": price_annual,
         "price_annual_equiv": price_annual_equiv,
+        "ai_billing_enabled": ai_billing_enabled,
+        "price_ai": price_ai,
     }
 
 

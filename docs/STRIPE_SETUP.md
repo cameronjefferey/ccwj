@@ -32,6 +32,27 @@ The dollar amounts in `app/billing.py` (`PRICE_MONTHLY_DISPLAY` /
 charged is whatever the Stripe Price says. If you change a price in Stripe,
 change those constants in the same commit or the marketing page will lie.
 
+### Optional — HappyTrader AI add-on
+
+A **separate product** (not a second price on Pro) so it can be bought or
+cancelled without touching `users.plan`:
+
+1. Product name: `HappyTrader AI`.
+2. One **recurring** price (suggested **$9.99 USD / month**). Copy `price_...`.
+3. Set `STRIPE_PRICE_AI_MONTHLY` on Render / in `.env`. **Do not** fold this
+   into `stripe_enabled()` — a missing AI price must not take Pro checkout down.
+4. Under Billing Portal → **Products**, add HappyTrader AI so customers can
+   cancel the add-on themselves.
+
+The same webhook URL already receives checkout / subscription events. The
+handler writes `users.ai_*` only when the price matches
+`STRIPE_PRICE_AI_MONTHLY`. Display copy lives in `PRICE_AI_MONTHLY_DISPLAY`.
+
+Until the AI price is set, `/insights` still shows paid-tier models (Gemini
+Pro, Sonnet, Opus) as locked and hides the Unlock button. Haiku/Flash keep
+working. Add more paid models by appending a `tier="paid"` row to
+`MODEL_CATALOG` in `app/llm.py`.
+
 ## Step 2 — Configure the Billing Portal
 
 Stripe Dashboard → **Settings** → **Billing** → **Customer portal**:

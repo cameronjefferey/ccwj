@@ -24,6 +24,7 @@
         padding: 2.5rem;
         text-align: center;
         height: 100%;
+        position: relative;
         transition: transform .2s, box-shadow .2s;
     }
     .pricing-card:hover {
@@ -77,7 +78,8 @@
                         <li>Strategy auto-detection</li>
                         <li>Position reviews &amp; trader profile</li>
                         <li>Unlimited accounts, broker sync or CSV</li>
-                        <li>AI Insights (analysis &amp; chat)</li>
+                        <li>AI Insights with Flash &amp; Haiku</li>
+                        <li>After day 30, everything stays readable &mdash; daily updates pause until you subscribe</li>
                     </ul>
                     {% if current_user.is_authenticated %}
                         {# Already signed up — the trial is theirs, so point at
@@ -96,20 +98,6 @@
             </div>
             <div class="col-md-6 col-lg-4">
                 <div class="pricing-card">
-                    <h3>Free</h3>
-                    <div class="price">$0</div>
-                    <div class="price-note">After your trial &mdash; the mirror freezes, your data doesn't vanish</div>
-                    <ul>
-                        <li>Everything stays readable, forever</li>
-                        <li>Your full history &amp; trading profile</li>
-                        <li>Position reviews as of your last sync</li>
-                        <li class="text-muted" style="list-style:none;">Daily syncing pauses &mdash; new trades, marks, and verdicts aren't recorded until you subscribe</li>
-                    </ul>
-                    <p class="text-muted small mb-0">No action needed &mdash; this is where every trial lands. Subscribe any time to pick the daily record back up.</p>
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-4">
-                <div class="pricing-card">
                     <h3>Pro</h3>
                     {% if billing_enabled %}
                     <div class="price">${{ price_monthly }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
@@ -122,6 +110,7 @@
                         <li>Everything in the trial, ongoing</li>
                         <li>Daily marks record that compounds with tenure</li>
                         <li>Verdicts that keep landing every expiry</li>
+                        <li>AI Insights with Flash &amp; Haiku included</li>
                         <li>Weekly summary &amp; preview emails</li>
                     </ul>
                     {% if billing_enabled %}
@@ -162,6 +151,40 @@
                         <button type="submit" class="btn btn-outline-primary btn-lg w-100">Notify me at launch</button>
                     </form>
                     <p class="text-muted small mt-2 mb-0">No spam — one email when Pro is ready.</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="pricing-card" id="happytrader-ai" style="scroll-margin-top: 5rem;">
+                    <span class="badge-top">Add-on</span>
+                    <h3>HappyTrader AI</h3>
+                    <div class="price">${{ price_ai or '9.99' }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
+                    <div class="price-note">Unlocks the higher-tier models on AI Insights</div>
+                    <ul>
+                        <li>Gemini 2.5 Pro, Claude Sonnet, and Claude Opus</li>
+                        <li>Same Insights report and Ask AI chat, stronger narration</li>
+                        <li>Independent of Pro &mdash; cancel one without the other</li>
+                        <li>Flash and Haiku stay included either way</li>
+                    </ul>
+                    {% if ai_billing_enabled %}
+                        {% if subscription and subscription.ai_is_paying %}
+                        <form method="post" action="{{ url_for('billing_portal') }}" class="d-grid gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-success btn-lg w-100">Manage AI add-on</button>
+                        </form>
+                        <p class="text-muted small mt-2 mb-0">You're subscribed to HappyTrader AI.</p>
+                        {% elif current_user.is_authenticated %}
+                        <form method="post" action="{{ url_for('billing_checkout_ai') }}" class="d-grid gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">Unlock ${{ price_ai }}/mo</button>
+                        </form>
+                        <p class="text-muted small mt-2 mb-0">Cancel any time from the billing portal.</p>
+                        {% else %}
+                        <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, add AI later</a>
+                        <p class="text-muted small mt-2 mb-0">Flash and Haiku are included with Insights. Upgrade when you want Pro-class models.</p>
+                        {% endif %}
+                    {% else %}
+                    <p class="text-muted small mb-0">The add-on isn't switched on yet. Flash and Haiku on Insights stay available.</p>
                     {% endif %}
                 </div>
             </div>

@@ -503,6 +503,37 @@
                 </div>
             </div>
             {% endif %}
+            {% if insights_enabled %}
+            <div class="atlas-card">
+                <div class="atlas-card-h">HappyTrader AI</div>
+                <div class="atlas-card-b">
+                    {% if subscription and subscription.ai_is_paying %}
+                    <p class="mb-1"><strong>Add-on active{% if subscription.ai_amount %} &mdash; ${{ subscription.ai_amount }}/month{% endif %}</strong></p>
+                    <p class="atlas-hint mb-3">Gemini Pro, Claude Sonnet, and Claude Opus on Insights and Ask AI. Flash and Haiku stay included.</p>
+                    {% if subscription.has_customer %}
+                    <form method="POST" action="{{ url_for('billing_portal') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-primary"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Manage AI add-on
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% elif ai_billing_enabled %}
+                    <p class="atlas-hint mb-3">Unlock Gemini Pro, Claude Sonnet, and Claude Opus on Insights. Flash and Haiku stay included. ${{ price_ai }}/month, cancel any time.</p>
+                    <form method="POST" action="{{ url_for('billing_checkout_ai') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Unlock HappyTrader AI &mdash; ${{ price_ai }}/mo
+                        </button>
+                    </form>
+                    {% else %}
+                    <p class="atlas-hint mb-0">Higher-tier models aren't switched on yet. Flash and Haiku on Insights stay available.</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
 
             {% if tab == 'account' %}

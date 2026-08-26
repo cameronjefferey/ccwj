@@ -517,6 +517,8 @@ def init_db():
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
     _migrate_users_stripe_columns()
+    _migrate_users_ai_addon_columns()
+    _migrate_insight_messages_table()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -657,6 +659,45 @@ def _migrate_users_stripe_columns():
         )
     except Exception as exc:
         _log.warning("users Stripe-columns migration skipped: %s", exc)
+
+
+def _migrate_users_ai_addon_columns():
+    """Idempotent: HappyTrader AI add-on mirror (see app/billing.py).
+
+    These columns are a Stripe MIRROR for the *second* subscription — they
+    must never be confused with ``users.plan``. Pro writes stay on the
+    existing stripe_* / subscription_* columns; an AI cancellation must
+    not freeze the mirror, and a Pro cancellation must not clear the add-on.
+    """
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_stripe_subscription_id TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_subscription_status TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_subscription_price_id TEXT")
+    except Exception as exc:
+        _log.warning("users AI-addon columns migration skipped: %s", exc)
+
+
+def _migrate_insight_messages_table():
+    """Idempotent: persisted Ask AI thread, scoped to one user."""
+    try:
+        execute(
+            """
+            CREATE TABLE IF NOT EXISTS insight_messages (
+                id         SERIAL PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                model_key  TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        execute(
+            "CREATE INDEX IF NOT EXISTS insight_messages_user_id_created_at_idx "
+            "ON insight_messages (user_id, created_at)"
+        )
+    except Exception as exc:
+        _log.warning("insight_messages table migration skipped: %s", exc)
 
 
 def _migrate_user_profiles_email_prefs():
@@ -1598,6 +1639,55 @@ def get_insight_for_user(user_id):
         "WHERE user_id = %s ORDER BY generated_at DESC LIMIT 1",
         (user_id,),
     )
+
+
+def get_insight_messages(user_id, limit=12):
+    """Oldest-first slice of the user's Ask AI thread (last ``limit`` turns)."""
+    if user_id is None:
+        return []
+    try:
+        rows = fetch_all(
+            "SELECT role, content, model_key, created_at FROM ("
+            "  SELECT role, content, model_key, created_at "
+            "  FROM insight_messages WHERE user_id = %s "
+            "  ORDER BY created_at DESC, id DESC LIMIT %s"
+            ") recent ORDER BY created_at ASC, id ASC",
+            (user_id, int(limit)),
+        )
+        return rows or []
+    except Exception:
+        return []
+
+
+def append_insight_message(user_id, role, content, model_key=None):
+    """Append one turn. ``role`` is ``user`` or ``assistant``."""
+    if user_id is None or role not in ("user", "assistant"):
+        return False
+    text = (content or "").strip()
+    if not text:
+        return False
+    try:
+        execute(
+            "INSERT INTO insight_messages (user_id, role, content, model_key) "
+            "VALUES (%s, %s, %s, %s)",
+            (user_id, role, text, model_key or None),
+        )
+        return True
+    except Exception as exc:
+        _log.warning("append_insight_message(%s) failed: %s", user_id, exc)
+        return False
+
+
+def clear_insight_messages(user_id):
+    """Wipe the Ask AI thread for this user. Never touches other users."""
+    if user_id is None:
+        return False
+    try:
+        execute("DELETE FROM insight_messages WHERE user_id = %s", (user_id,))
+        return True
+    except Exception as exc:
+        _log.warning("clear_insight_messages(%s) failed: %s", user_id, exc)
+        return False
 
 
 def save_strategy_fit_insight(user_id, account_filter, summary, full_analysis, brief_text):
