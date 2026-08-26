@@ -254,6 +254,12 @@
             </label>
         </div>
     </form>
+    {% if not ever_has_transfers %}
+    <div class="small text-muted" style="flex-basis:100%;">
+        No deposits or withdrawals recorded since we started reading your broker's cash-movement feed.
+        Funding from before that isn't in this number, so excluding transfers doesn't change the chart.
+    </div>
+    {% endif %}
 
     <div class="range-toggle">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
@@ -324,7 +330,10 @@
 
     <div class="col-md-3 col-6">
         <div class="kpi-card h-100">
-            <div class="kpi-label">vs 90d ago</div>
+            <div class="kpi-label">
+                {% if summary.change_90d_since %}since {{ summary.change_90d_since }}
+                {% else %}vs 90d ago{% endif %}
+            </div>
             {% if summary.change_90d %}
             <div class="kpi-value
                 {% if summary.change_90d.abs > 0 %}kpi-delta-pos
@@ -350,12 +359,14 @@
     <h2>Account value over time</h2>
     <p class="chart-sub">
         Stacked: cash, equity, options. The black line is total account value.
-        {% if exclude_transfers %}
+        {% if exclude_transfers and summary.has_transfers %}
         The dashed line removes your deposits &amp; withdrawals — the gap
         between the two lines is money you moved in or out. Hover for daily numbers.
-        {% else %}
+        {% elif ever_has_transfers %}
         Toggle <em>Exclude deposits &amp; withdrawals</em> to see the balance
         driven by the market and income only. Hover for daily numbers.
+        {% else %}
+        Hover for daily numbers.
         {% endif %}
     </p>
     <div style="position: relative; height: 360px;">
@@ -450,7 +461,7 @@
        three components add up to it (which they should). When excluding
        deposits/withdrawals, the bold line becomes the deposit-adjusted
        value and the raw account value is shown faint for reference. */
-    const excludeTransfers = !!data.exclude_transfers;
+    const excludeTransfers = !!data.exclude_transfers && !!data.has_transfers;
     const datasets = [
         {
             label: 'Cash',
@@ -554,7 +565,21 @@
             },
             scales: {
                 x: {
-                    ticks: { maxTicksLimit: 12, maxRotation: 0, autoSkip: true },
+                    ticks: {
+                        maxTicksLimit: 8,
+                        maxRotation: 45,
+                        autoSkip: true,
+                        callback: function (value) {
+                            const raw = this.getLabelForValue(value);
+                            const p = String(raw).split('-');
+                            if (p.length === 3) {
+                                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                                const m = months[parseInt(p[1], 10) - 1];
+                                return m ? (m + ' ' + parseInt(p[2], 10)) : raw;
+                            }
+                            return raw;
+                        }
+                    },
                     grid: { display: false }
                 },
                 y: {

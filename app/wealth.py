@@ -58,8 +58,6 @@ SELECT
     cumulative_net_deposits
 FROM `ccwj-dbt.analytics.mart_wealth_daily`
 WHERE 1=1 {tenant_filter}
-  AND date >= @start_date
-  AND date <= @end_date
 ORDER BY date, account
 """
 
@@ -87,8 +85,6 @@ SELECT
     cumulative_fees
 FROM `ccwj-dbt.analytics.mart_wealth_daily`
 WHERE 1=1 {tenant_filter}
-  AND date >= @start_date
-  AND date <= @end_date
 ORDER BY date, account
 """
 
@@ -168,6 +164,24 @@ def _resolve_range(arg_value, default_days):
     return end - timedelta(days=default_days), end
 
 
+def _slice_wealth_to_range(df, start, end):
+    """Keep rows whose ``date`` falls in ``[start, end]`` (inclusive)."""
+    if df is None or df.empty or "date" not in df.columns:
+        return df
+    d = pd.to_datetime(df["date"], errors="coerce")
+    mask = (d >= pd.Timestamp(start)) & (d <= pd.Timestamp(end))
+    return df.loc[mask].copy()
+
+
+def _fmt_as_of(val):
+    if hasattr(val, "strftime"):
+        try:
+            return val.strftime("%b %-d, %Y")
+        except ValueError:
+            return val.strftime("%b %d, %Y").replace(" 0", " ")
+    return str(val)
+
+
 def _net_deposits_by_date(df):
     """Return a date-indexed Series of cumulative net deposits (summed
     across accounts in scope), rebased so the FIRST day in the window is
@@ -179,8 +193,10 @@ def _net_deposits_by_date(df):
     """
     if df is None or df.empty or "cumulative_net_deposits" not in df.columns:
         return None
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.normalize()
     cum = (
-        df.groupby("date", as_index=False)
+        work.groupby("date", as_index=False)
         .agg(cumulative_net_deposits=("cumulative_net_deposits", "sum"))
         .sort_values("date")
     )
@@ -216,6 +232,7 @@ def _build_chart_payload(df, exclude_transfers=False):
         equity_value=("equity_value", "sum"),
         option_value=("option_value", "sum"),
     ).sort_values("date")
+    by_date["date"] = pd.to_datetime(by_date["date"], errors="coerce").dt.normalize()
 
     net_dep = _net_deposits_by_date(df)
     if net_dep is not None:
@@ -247,12 +264,19 @@ def _build_chart_payload(df, exclude_transfers=False):
     }
 
 
-def _build_summary(df, exclude_transfers=False):
+def _build_summary(df, exclude_transfers=False, lookback_df=None):
     """Hero numbers for the top of the page.
 
     Latest row is "today" (or last snapshot day). Prior rows are used
     to compute change-over-time. Returns ``None`` when the frame is
     empty so the template can render an empty-state card.
+
+    ``df`` is the *selected range* (chart + "change in range").
+    ``lookback_df`` is the unsliced history so "vs 90d ago" still
+    works when the range buttons have narrowed the chart to 30d — and
+    so an account whose snapshots only go back 80 days doesn't show
+    "Not enough history" on All. When 90 calendar days of snapshots
+    aren't available we fall back to the earliest row and label it.
 
     When ``exclude_transfers`` is set, the change-over-time figures are
     computed on a deposit-adjusted value (account_value minus net
@@ -263,68 +287,69 @@ def _build_summary(df, exclude_transfers=False):
     if df is None or df.empty:
         return None
 
-    by_date = df.groupby("date", as_index=False).agg(
-        account_value=("account_value", "sum"),
-        cash_value=("cash_value", "sum"),
-        equity_value=("equity_value", "sum"),
-        option_value=("option_value", "sum"),
-    ).sort_values("date")
+    def _by_date(frame):
+        out = frame.groupby("date", as_index=False).agg(
+            account_value=("account_value", "sum"),
+            cash_value=("cash_value", "sum"),
+            equity_value=("equity_value", "sum"),
+            option_value=("option_value", "sum"),
+        ).sort_values("date")
+        out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
+        net_dep = _net_deposits_by_date(frame)
+        if net_dep is not None:
+            out["net_dep"] = [float(net_dep.get(d, 0.0) or 0.0) for d in out["date"]]
+        else:
+            out["net_dep"] = 0.0
+        return out
 
+    by_date = _by_date(df)
     if by_date.empty:
         return None
 
-    # Cumulative net deposits per day, rebased to the window start (0 on
-    # the first day). Merged onto by_date so each reference row carries the
-    # net cash moved between that day and the latest day.
-    net_dep = _net_deposits_by_date(df)
-    if net_dep is not None:
-        by_date["net_dep"] = [float(net_dep.get(d, 0.0) or 0.0) for d in by_date["date"]]
-    else:
-        by_date["net_dep"] = 0.0
+    lookback = _by_date(lookback_df) if lookback_df is not None and not lookback_df.empty else by_date
+    if lookback.empty:
+        lookback = by_date
 
     latest = by_date.iloc[-1]
     first = by_date.iloc[0]
+    look_latest = lookback.iloc[-1]
 
-    # Pick a reference row roughly 30/90 days back from the latest
-    # snapshot day. We don't index by calendar arithmetic because
-    # snapshots are sparse (only days the cron ran), so we anchor on
-    # the closest snapshot ON OR BEFORE the target date.
-    def _at_or_before(target):
-        cutoff = by_date[by_date["date"] <= target]
+    def _at_or_before(frame, target):
+        target_ts = pd.Timestamp(target).normalize()
+        cutoff = frame[frame["date"] <= target_ts]
         return cutoff.iloc[-1] if not cutoff.empty else None
 
-    today = latest["date"]
-
-    def _change(row):
-        if row is None:
+    def _change(latest_row, ref_row):
+        if ref_row is None:
             return None
-        diff = float(latest["account_value"]) - float(row["account_value"])
-        base = float(row["account_value"]) or 0.0
+        diff = float(latest_row["account_value"]) - float(ref_row["account_value"])
+        base = float(ref_row["account_value"]) or 0.0
         if exclude_transfers:
             # Remove the external cash moved between the reference day and
             # now, so the delta reflects market + income only.
-            diff -= float(latest["net_dep"]) - float(row["net_dep"])
+            diff -= float(latest_row["net_dep"]) - float(ref_row["net_dep"])
         pct = (diff / base * 100) if base else None
         return {"abs": round(diff, 2), "pct": round(pct, 2) if pct is not None else None}
 
-    one_month_ago = today - timedelta(days=30) if hasattr(today, "__sub__") else None
-    three_months_ago = today - timedelta(days=90) if hasattr(today, "__sub__") else None
+    today = look_latest["date"]
+    three_months_ago = today - timedelta(days=90)
+    row_90 = _at_or_before(lookback, three_months_ago)
+    change_90d_since = None
+    if row_90 is None and len(lookback) >= 2:
+        row_90 = lookback.iloc[0]
+        change_90d_since = _fmt_as_of(row_90["date"])
 
-    # Net external cash flow across the whole window (latest − first,
-    # both rebased so first = 0 → this is simply the latest value).
     net_deposits_in_range = round(float(latest["net_dep"]) - float(first["net_dep"]), 2)
 
     return {
-        # Human date, not isoformat — pandas Timestamps carry a midnight
-        # time component that rendered as "2026-08-08T00:00:00" in the hero.
-        "as_of": today.strftime("%b %-d, %Y") if hasattr(today, "strftime") else str(today),
+        "as_of": _fmt_as_of(latest["date"]),
         "account_value": round(float(latest["account_value"]), 2),
         "cash_value": round(float(latest["cash_value"]), 2),
         "equity_value": round(float(latest["equity_value"]), 2),
         "option_value": round(float(latest["option_value"]), 2),
-        "change_in_range": _change(first),
-        "change_30d": _change(_at_or_before(one_month_ago)) if one_month_ago else None,
-        "change_90d": _change(_at_or_before(three_months_ago)) if three_months_ago else None,
+        "change_in_range": _change(latest, first),
+        "change_90d": _change(look_latest, row_90),
+        "change_90d_since": change_90d_since,
         "net_deposits_in_range": net_deposits_in_range,
         "has_transfers": abs(net_deposits_in_range) > 0.005,
         "exclude_transfers": bool(exclude_transfers),
@@ -468,24 +493,18 @@ def render_wealth_view():
         }),
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "ever_has_transfers": False,
         "error": None,
     }
 
     try:
         df = None
         if not wealth_no_match:
-            from google.cloud import bigquery
             client = get_bigquery_client()
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
-                    bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-                ]
-            )
             from app.query_cache import cached_query_df
             try:
                 sql = WEALTH_DAILY_QUERY.format(tenant_filter=tenant_filter)
-                df = cached_query_df(client, sql, job_config=job_config, label="wealth_daily")
+                df = cached_query_df(client, sql, label="wealth_daily")
             except Exception as col_exc:
                 # Deploy-order safety: the transfer columns may not be
                 # materialized yet. Fall back to the pre-transfer shape so
@@ -495,7 +514,7 @@ def render_wealth_view():
                     col_exc,
                 )
                 sql = WEALTH_DAILY_QUERY_LEGACY.format(tenant_filter=tenant_filter)
-                df = cached_query_df(client, sql, job_config=job_config, label="wealth_daily_legacy")
+                df = cached_query_df(client, sql, label="wealth_daily_legacy")
             # Defense-in-depth tenant filter on the DataFrame — even if a
             # SQL change ever drops the account_filter, this strips any
             # row whose ``user_id`` doesn't match the signed-in user.
@@ -517,9 +536,30 @@ def render_wealth_view():
             context["wealth_account_choices"] = admin_names
             context["accounts"] = admin_names
 
-        context["summary"] = _build_summary(df, exclude_transfers)
-        context["income_panel"] = _build_income_panel(df)
-        context["chart_json"] = json.dumps(_build_chart_payload(df, exclude_transfers))
+        # Fetch ALL snapshots, then slice. Range used to be pushed into SQL,
+        # which truncated the series "vs 90d ago" reads — a 30d window always
+        # said "Not enough history", and All with 80 days of snapshots did
+        # too because 90 calendar days predate the first row.
+        range_df = _slice_wealth_to_range(df, start_date, end_date)
+        if range_df is None or range_df.empty:
+            range_df = df
+        ever_has_transfers = False
+        if "cumulative_net_deposits" in df.columns:
+            ever_has_transfers = bool(
+                pd.to_numeric(df["cumulative_net_deposits"], errors="coerce")
+                .fillna(0)
+                .abs()
+                .gt(0.005)
+                .any()
+            )
+        context["ever_has_transfers"] = ever_has_transfers
+        context["summary"] = _build_summary(
+            range_df, exclude_transfers, lookback_df=df,
+        )
+        context["income_panel"] = _build_income_panel(range_df)
+        context["chart_json"] = json.dumps(
+            _build_chart_payload(range_df, exclude_transfers)
+        )
     except Exception as exc:
         app.logger.exception("Wealth page query failed: %s", exc)
         context["error"] = "Couldn't load wealth data. Try again in a moment."
