@@ -1,5 +1,7 @@
 """Wealth chart helpers — collapse duplicate mart rows before groupby-sum."""
 
+from datetime import date
+
 import pandas as pd
 
 from app.wealth import (
@@ -7,6 +9,7 @@ from app.wealth import (
     _build_income_panel,
     _build_summary,
     _collapse_wealth_daily_duplicate_grain,
+    _slice_wealth_to_range,
 )
 
 
@@ -164,4 +167,69 @@ def test_income_panel_reports_net_deposits_in_window():
     panel = _build_income_panel(_deposit_scenario())
     assert panel["net_deposits"] == 5000.0
     assert panel["has_transfers"] is True
+
+
+def _value_curve(start, days, start_val=16335.40, daily_delta=-12.04):
+    """Evenly spaced snapshots so lookback math is calendar-simple."""
+    rows = []
+    for i in range(days):
+        d = pd.Timestamp(start) + pd.Timedelta(days=i)
+        av = start_val + i * daily_delta
+        rows.append({
+            "tenant_id": "snaptrade:abc",
+            "account": "Emmory",
+            "user_id": 9,
+            "date": d,
+            "account_value": av,
+            "cash_value": 28.0,
+            "equity_value": av - 28.0,
+            "option_value": 0.0,
+            "cumulative_net_deposits": 0.0,
+            "cumulative_dividends": 0.0,
+            "cumulative_interest_net": 0.0,
+            "cumulative_fees": 0.0,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_vs_90d_falls_back_to_first_snapshot_when_history_is_shorter():
+    """Emmory-class: snapshots start ~80 days ago, so today-90d has no row."""
+    df = _value_curve("2026-06-08", 80)
+    out = _build_summary(df)
+    assert out["change_90d"] is not None
+    assert out["change_90d_since"] is not None
+    assert "Jun" in out["change_90d_since"]
+    assert out["change_90d"]["abs"] == out["change_in_range"]["abs"]
+
+
+def test_vs_90d_uses_true_90d_row_when_history_is_long_enough():
+    df = _value_curve("2026-04-01", 150, start_val=17000.0, daily_delta=-5.0)
+    out = _build_summary(df)
+    assert out["change_90d_since"] is None
+    latest = df.iloc[-1]["account_value"]
+    target = pd.Timestamp(df.iloc[-1]["date"]) - pd.Timedelta(days=90)
+    ref = df.loc[df["date"] <= target].iloc[-1]["account_value"]
+    assert out["change_90d"]["abs"] == round(float(latest) - float(ref), 2)
+
+
+def test_30d_window_does_not_blank_the_90d_card():
+    """Pre-fix, range was applied in SQL so a 30d view always said
+    'Not enough history' for vs 90d."""
+    full = _value_curve("2026-04-01", 150, start_val=17000.0, daily_delta=-5.0)
+    end = full.iloc[-1]["date"].date()
+    start = end - pd.Timedelta(days=30)
+    window = _slice_wealth_to_range(full, start, end)
+    out = _build_summary(window, lookback_df=full)
+    assert out["change_90d"] is not None
+    assert out["change_90d_since"] is None
+    # Change-in-range is the 30d window, not the 90d lookback.
+    assert out["change_in_range"]["abs"] != out["change_90d"]["abs"]
+
+
+def test_slice_keeps_only_the_requested_window():
+    df = _value_curve("2026-06-01", 60)
+    sliced = _slice_wealth_to_range(df, date(2026, 7, 1), date(2026, 7, 31))
+    assert sliced["date"].min() >= pd.Timestamp("2026-07-01")
+    assert sliced["date"].max() <= pd.Timestamp("2026-07-31")
+    assert len(sliced) == 30
 
