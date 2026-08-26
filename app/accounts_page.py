@@ -51,7 +51,7 @@ STRATEGY_CLASSIFICATION_QUERY = """
 """
 
 ACCOUNT_POSITIONS_SUMMARY_QUERY = """
-    SELECT account, tenant_id, strategy,
+    SELECT account, tenant_id, symbol, strategy,
            SUM(total_pnl) AS total_pnl,
            SUM(realized_pnl) AS realized_pnl,
            SUM(unrealized_pnl) AS unrealized_pnl,
@@ -64,8 +64,18 @@ ACCOUNT_POSITIONS_SUMMARY_QUERY = """
            SUM(total_return) AS total_return
     FROM `ccwj-dbt.analytics.positions_summary`
     WHERE 1=1 {tenant_filter}
-    GROUP BY account, tenant_id, strategy
+    GROUP BY account, tenant_id, symbol, strategy
     ORDER BY account, strategy
+"""
+
+# Payment-dated cash for the strategy time chart. Attributed in Python to
+# the positions_summary strategy that already owns the dividends (rank-1,
+# including Buy and Hold → Dividend). tenant_id is projected so the
+# DataFrame filter can run.
+ACCOUNT_DIVIDEND_EVENTS_QUERY = """
+    SELECT tenant_id, account, symbol, trade_date, amount
+    FROM `ccwj-dbt.analytics.int_dividend_events`
+    WHERE 1=1 {tenant_filter}
 """
 
 # Per-day external cash flow (deposits +, withdrawals −) for the /accounts
@@ -161,13 +171,74 @@ def _build_tag_breakdown(legs_df, tags_rows):
 
 
 
-def _build_strategy_time_chart(strat_df):
+def _dividend_relabel_keys(summary_df):
+    """(tenant_id, symbol) pairs whose positions_summary label is Dividend.
+
+    Classification never emits that label — it's a yield reclass of Buy
+    and Hold in positions_summary. The strategy chart and windowed
+    breakdowns have to apply the same rename or SCHD-class positions
+    stay fused into the Buy and Hold line.
+    """
+    keys = set()
+    if summary_df is None or summary_df.empty:
+        return keys
+    if "strategy" not in summary_df.columns or "symbol" not in summary_df.columns:
+        return keys
+    for _, r in summary_df.iterrows():
+        if str(r.get("strategy") or "") != "Dividend":
+            continue
+        keys.add((str(r.get("tenant_id") or ""), str(r.get("symbol") or "").upper()))
+    return keys
+
+
+def _apply_dividend_strategy_labels(strat_df, summary_df):
+    """Rename Buy and Hold classification rows to Dividend when the mart did."""
+    keys = _dividend_relabel_keys(summary_df)
+    if not keys or strat_df is None or strat_df.empty:
+        return strat_df
+    df = strat_df.copy()
+
+    def _label(row):
+        if str(row.get("strategy") or "") != "Buy and Hold":
+            return row.get("strategy")
+        key = (str(row.get("tenant_id") or ""), str(row.get("symbol") or "").upper())
+        return "Dividend" if key in keys else row.get("strategy")
+
+    df["strategy"] = df.apply(_label, axis=1)
+    return df
+
+
+def _dividend_strategy_map(summary_df):
+    """(tenant_id, symbol) → strategy that already owns attributed dividends."""
+    out = {}
+    if summary_df is None or summary_df.empty:
+        return out
+    if "symbol" not in summary_df.columns:
+        return out
+    if "dividend_income" not in summary_df.columns:
+        return out
+    for _, r in summary_df.iterrows():
+        try:
+            amount = float(r.get("dividend_income") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if abs(amount) < 0.005:
+            continue
+        key = (str(r.get("tenant_id") or ""), str(r.get("symbol") or "").upper())
+        out[key] = r.get("strategy")
+    return out
+
+
+def _build_strategy_time_chart(strat_df, dividend_events_df=None, dividend_strategy_map=None):
     """
     Build cumulative P&L over time per strategy from trade-group data.
     Closed groups → P&L attributed to close_date.
     Open groups   → P&L attributed to today.
+    Dividend cash (when provided) lands on the payment date of the
+    strategy that positions_summary already credited, so the chart
+    terminal matches Strategy Summary Total P&L.
     """
-    if strat_df.empty:
+    if strat_df is None or strat_df.empty:
         return {"dates": [], "series": {}}
 
     today = date.today()
@@ -175,6 +246,29 @@ def _build_strategy_time_chart(strat_df):
     for _, r in strat_df.iterrows():
         pnl_date = r["close_date"] if r["status"] == "Closed" and pd.notna(r["close_date"]) else today
         rows.append({"strategy": r["strategy"], "pnl_date": pnl_date, "pnl": float(r["total_pnl"])})
+
+    if (
+        dividend_events_df is not None
+        and not dividend_events_df.empty
+        and dividend_strategy_map
+    ):
+        for _, r in dividend_events_df.iterrows():
+            key = (str(r.get("tenant_id") or ""), str(r.get("symbol") or "").upper())
+            strat = dividend_strategy_map.get(key)
+            if not strat:
+                continue
+            try:
+                amount = float(r.get("amount") or 0)
+            except (TypeError, ValueError):
+                continue
+            if abs(amount) < 0.005:
+                continue
+            pay_date = r.get("trade_date")
+            if pd.isna(pay_date):
+                continue
+            if hasattr(pay_date, "date"):
+                pay_date = pay_date.date()
+            rows.append({"strategy": strat, "pnl_date": pay_date, "pnl": amount})
 
     events = pd.DataFrame(rows)
     events["pnl_date"] = pd.to_datetime(events["pnl_date"]).dt.date
@@ -394,6 +488,7 @@ def accounts():
             "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
             "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
+            "div_events": ACCOUNT_DIVIDEND_EVENTS_QUERY.format(tenant_filter=tenant_filter),
             # Windowed by the selected time frame (ALL = far-past sentinel so
             # every closed group counts; a range cutoff scopes each
             # per-asset-class P&L column to open + closed-in-window groups).
@@ -415,6 +510,7 @@ def accounts():
         attribution_df = dfs["attribution"]
         legs_df = dfs["legs"]
         net_deposits_df = dfs.get("net_deposits")
+        div_events_df = dfs.get("div_events")
     except Exception as exc:
         return render_template(
             "accounts.html",
@@ -480,6 +576,11 @@ def accounts():
     strat_summary_df = _filter_df_by_tenant_ids(strat_summary_df, tenant_ids)
     attribution_df = _filter_df_by_tenant_ids(attribution_df, tenant_ids)
     legs_df = _filter_df_by_tenant_ids(legs_df, tenant_ids)
+    if isinstance(div_events_df, pd.DataFrame) and "tenant_id" in div_events_df.columns:
+        div_events_df = _filter_df_by_tenant_ids(div_events_df, tenant_ids)
+    else:
+        div_events_df = pd.DataFrame()
+    strat_class_df = _apply_dividend_strategy_labels(strat_class_df, strat_summary_df)
 
     # Picker lists the full disambiguated account set (non-admin) so every
     # physical account is selectable after tenant scope narrows the data.
@@ -654,7 +755,11 @@ def accounts():
     # ------------------------------------------------------------------
     # Chart 2: Strategy P&L over time
     # ------------------------------------------------------------------
-    strategy_chart = _build_strategy_time_chart(strat_class_df)
+    strategy_chart = _build_strategy_time_chart(
+        strat_class_df,
+        dividend_events_df=div_events_df,
+        dividend_strategy_map=_dividend_strategy_map(strat_summary_df),
+    )
 
     # ------------------------------------------------------------------
     # Strategy summary table
@@ -771,9 +876,12 @@ def accounts_breakdown_fragment():
             "attribution": POSITION_ATTRIBUTION_QUERY.format(
                 tenant_filter=tenant_filter, week_start=attribution_week_start),
             "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
+            "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
         })
-        attribution_df = dfs["attribution"]
-        strat_class_df = dfs["strat_class"]
+        attribution_df = _filter_df_by_tenant_ids(dfs["attribution"], tenant_ids)
+        strat_class_df = _filter_df_by_tenant_ids(dfs["strat_class"], tenant_ids)
+        strat_summary_df = _filter_df_by_tenant_ids(dfs["strat_summary"], tenant_ids)
+        strat_class_df = _apply_dividend_strategy_labels(strat_class_df, strat_summary_df)
     except Exception as exc:
         app.logger.warning("Account breakdown fragment query failed: %s", exc)
         # Empty frames render an empty (but valid) fragment.
