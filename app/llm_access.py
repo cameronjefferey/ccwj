@@ -1,12 +1,13 @@
 """Who may spend paid LLM tokens.
 
 The AI add-on is a SECOND Stripe subscription. It must never be inferred
-from ``users.plan`` — a Pro subscriber without the add-on stays on
-Haiku/Flash, and an AI cancellation must not freeze the mirror.
+from ``users.plan`` — a Pro subscriber, a grandfathered beta user, or an
+admin without the add-on stays on Haiku/Flash. An AI cancellation must
+not freeze the mirror, and a Pro cancellation must not clear the add-on.
 
 Fail CLOSED: a missing column, a DB hiccup, or an unknown user does not
-unlock Sonnet/Opus. Admins and grandfathered beta users are the only
-non-Stripe exceptions. The shared demo user is never treated as paid
+unlock Sonnet/Opus. The only unlock is ``users.ai_subscription_status``
+in a paying Stripe status. The shared demo user is never treated as paid
 (Ask AI is already write-blocked for demo).
 """
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import logging
 
 from app.db import fetch_one
-from app.plan import PLAN_BETA, get_user_plan_row
+from app.plan import get_user_plan_row
 
 _log = logging.getLogger(__name__)
 
@@ -24,17 +25,12 @@ def user_can_use_paid_llm(user_id) -> bool:
     if user_id is None:
         return False
     try:
-        from app.models import is_admin
         from app.utils import DEMO_USERNAME
 
         row = get_user_plan_row(user_id)
         username = ((row or {}).get("username") or "").strip().lower()
         if username == DEMO_USERNAME:
             return False
-        if username and is_admin(username):
-            return True
-        if row and (row.get("plan") or "").strip().lower() == PLAN_BETA:
-            return True
 
         from app.billing import PAYING_STATUSES
 

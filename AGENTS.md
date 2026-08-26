@@ -116,7 +116,9 @@ A Pro cancellation must not clear the add-on; an AI cancellation must not
 freeze the mirror. Same shared-account rule: `ai_subscription_is_ours`
 matches the AI price id. Checkout is `/billing/checkout-ai`; Ask AI persists
 turns in `insight_messages` and sends the last 12 to the model. Haiku/Flash
-stay available without the add-on. Pinned by the AI-addon tests in
+stay available without the add-on. **Admin and grandfathered `beta` are
+not exceptions** — `user_can_use_paid_llm` reads only
+`users.ai_subscription_status`. Pinned by the AI-addon tests in
 `tests/test_billing.py` and catalog tests in `tests/test_llm.py`.
 
 **Brokerage sync is the most failure-prone surface in the product** — SnapTrade aggregator (Schwab, Fidelity, Vanguard, Robinhood, IBKR, etc.). Before editing `app/snaptrade.py`, `app/snaptrade_normalize.py`, `app/upload.py` (especially `merge_and_push_seeds` / `_merge_seed_with_existing`), `app/seed_store.py`, `app/snaptrade_sync_cli.py`, the raw seed table shape (`analytics_raw`, source `raw_broker`), `.github/workflows/bigquery_update.yml`, the multi-account Sync flows on `/profile?tab=account` / `/snaptrade/accounts`, or any column on `broker_tenants` / `snaptrade_users` (`connection_broken_at`, `first_sync_completed`), **load the `broker-sync-safety` agent skill** (`~/.cursor/skills/broker-sync-safety/SKILL.md`) and walk its pre-flight checklist. The skill is an append-only register of bugs already shipped, the invariants that must hold, and the recovery runbook. **When you ship a sync fix, append a new "Bugs we've shipped" entry to that skill before closing the PR** — the structured format (symptom / root cause + file:line / fix commit / regression test / lesson) is documented at the bottom of SKILL.md.
