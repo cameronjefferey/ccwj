@@ -1,0 +1,85 @@
+"""Send a one-shot ops alert to Telegram.
+
+Used by ``.github/workflows/ops_alert.yml`` when a warehouse / prices /
+reconcile job fails. No-op (exit 0) when ``TELEGRAM_BOT_TOKEN`` or
+``TELEGRAM_CHAT_ID`` is unset so a missing bot cannot fail CI.
+
+Setup is in the workflow file header (BotFather → secrets → test dispatch).
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+
+
+def compose_message(
+    *,
+    name: str,
+    conclusion: str,
+    event: str,
+    branch: str,
+    url: str,
+) -> str:
+    if (conclusion or "").strip().lower() == "test":
+        return "HappyTrader ops alert test ping. Telegram is wired."
+    status = (conclusion or "failed").strip().lower()
+    verb = "FAILED" if status in ("failure", "failed") else status.upper()
+    return (
+        f"HappyTrader: {name} {verb}\n"
+        f"event: {event or '?'}\n"
+        f"branch: {branch or '?'}\n"
+        f"{url}"
+    )
+
+
+def send_telegram(text: str, *, token: str, chat_id: str, timeout: int = 20) -> None:
+    payload = urllib.parse.urlencode(
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": "true",
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        TELEGRAM_API.format(token=token),
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8", errors="replace")
+    data = json.loads(body) if body else {}
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram API did not ok: {body[:300]}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    if not token or not chat_id:
+        print("ops_telegram: skipped (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID unset)")
+        return 0
+    text = compose_message(
+        name=os.environ.get("ALERT_NAME") or "ops job",
+        conclusion=os.environ.get("ALERT_CONCLUSION") or "failure",
+        event=os.environ.get("ALERT_EVENT") or "",
+        branch=os.environ.get("ALERT_BRANCH") or "",
+        url=os.environ.get("ALERT_URL") or "",
+    )
+    try:
+        send_telegram(text, token=token, chat_id=chat_id)
+    except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:
+        print(f"ops_telegram: send failed: {exc}", file=sys.stderr)
+        return 1
+    print("ops_telegram: sent")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
