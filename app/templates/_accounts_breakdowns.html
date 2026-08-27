@@ -1,8 +1,9 @@
 {# ── Detailed breakdown tables (Stock | Options | Dividend | Net | % |
       Annualized) — the per-position / strategy / sector drill-down behind
-      the Daily Review account scorecard. Windowed to the selected time frame
-      server-side. Rendered both inline on /accounts and standalone by the
-      /accounts/breakdown fragment endpoint (instant time-frame switch). ── #}
+      the Daily Review account scorecard. The selected time frame determines
+      which positions are active; all financial columns are lifetime totals
+      for those positions. Rendered both inline on /accounts and standalone by
+      /accounts/breakdown (instant time-frame switch). ─────────────────── #}
 {% macro money_cell(val) %}
 <td class="text-end {% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}" data-val="{{ val }}">
     {% if val == 0 %}<span class="text-muted">$0</span>
@@ -15,6 +16,11 @@
     {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
 </td>
 {% endmacro %}
+
+<p class="text-muted small mb-2">
+    The time frame chooses which positions appear below. Stock, option,
+    dividend, net and capital figures are lifetime totals for those positions.
+</p>
 
 {% if strategy_breakdown %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">

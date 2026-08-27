@@ -887,6 +887,7 @@ from app.accounts_page import (  # noqa: E402,F401
     ACCOUNTS_RANGE_DAYS,
     ACCOUNTS_VALID_RANGES,
     STRATEGY_CLASSIFICATION_QUERY,
+    _accounts_attribution_query,
     _accounts_range_start,
     _accounts_scope_query,
     _build_account_breakdowns,
