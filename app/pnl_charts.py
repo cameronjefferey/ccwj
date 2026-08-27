@@ -1001,14 +1001,22 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
 
 
 
-def _build_account_chart_from_daily_pnl(daily_df, current_df):
+def _build_account_chart_from_daily_pnl(daily_df, current_df, strategy_of=None):
     """
     Build account-level cumulative P&L chart from mart_daily_pnl.
 
     Aggregates across all symbols.  Options/dividends/other use running
     sums of daily amounts.  Equity requires per-symbol average-cost tracking.
+
+    When ``strategy_of`` maps ``(tenant_id, symbol)`` (or ``(account, symbol)``
+    when tenant is absent) to a strategy label, also emit ``series``: the
+    same daily total, bucketed by that primary strategy. Used by /accounts
+    "P&L by Strategy Over Time" so a buy-and-hold book follows the
+    cumulative chart instead of dumping every open lot's P&L on today.
     """
     empty = {"dates": [], "equity": [], "options": [], "dividends": [], "total": []}
+    if strategy_of is not None:
+        empty["series"] = {}
     if daily_df.empty:
         return empty
 
@@ -1039,6 +1047,21 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
     last_close = {}
     cum_div = cum_oth = 0.0
     dates_out, equity_s, options_s, dividends_s, total_s = [], [], [], [], []
+    strategy_series = {}
+    div_by_key = {}
+    oth_by_key = {}
+
+    def _strategy_for_key(key):
+        if not strategy_of:
+            return "Buy and Hold"
+        if key in strategy_of:
+            return strategy_of[key]
+        if isinstance(key, tuple) and len(key) == 2:
+            tid, sym = key
+            alt = (str(tid or ""), str(sym or "").upper())
+            if alt in strategy_of:
+                return strategy_of[alt]
+        return "Buy and Hold"
 
     # Account-level options P&L follows the same realize-on-close +
     # MTM-while-open rule as the position page (see AGENTS.md
@@ -1100,6 +1123,17 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         cum_opt = realized_total + open_mtm_total
         cum_div += float(day["dividends_amount"].sum())
         cum_oth += float(day["other_amount"].sum())
+        open_mtm_by_key = {}
+        if strategy_of is not None:
+            for r in day_records:
+                key = _eq_key(r)
+                open_mtm_by_key[key] = float(r.get("open_options_unrealized_pnl") or 0)
+                div_by_key[key] = div_by_key.get(key, 0.0) + float(
+                    r.get("dividends_amount") or 0
+                )
+                oth_by_key[key] = oth_by_key.get(key, 0.0) + float(
+                    r.get("other_amount") or 0
+                )
 
         for row in day_records:
             key = _eq_key(row)
@@ -1226,6 +1260,36 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         dividends_s.append(round(cum_div, 2))
         total_s.append(round(eq_total + cum_opt + cum_div + cum_oth, 2))
 
+        if strategy_of is not None:
+            strat_totals = {}
+            for key, s in eq_state.items():
+                eq_pnl = s["realized"]
+                close = last_close.get(key, 0.0)
+                if close > 0:
+                    if s["shares"] > 0:
+                        eq_pnl += s["shares"] * close - s["cost"]
+                    if s["short_shares"] > 0:
+                        eq_pnl += s["short_cost"] - s["short_shares"] * close
+                name = _strategy_for_key(key)
+                strat_totals[name] = strat_totals.get(name, 0.0) + eq_pnl
+            for key, realized in options_per_symbol_realized.items():
+                name = _strategy_for_key(key)
+                strat_totals[name] = strat_totals.get(name, 0.0) + realized + open_mtm_by_key.get(key, 0.0)
+            for key, amt in div_by_key.items():
+                name = _strategy_for_key(key)
+                strat_totals[name] = strat_totals.get(name, 0.0) + amt
+            for key, amt in oth_by_key.items():
+                name = _strategy_for_key(key)
+                strat_totals[name] = strat_totals.get(name, 0.0) + amt
+            emitted = len(dates_out)
+            for name in set(strategy_series) | set(strat_totals):
+                if name not in strategy_series:
+                    strategy_series[name] = [0.0] * (emitted - 1)
+                strategy_series[name].append(round(strat_totals.get(name, 0.0), 2))
+            for name, vals in strategy_series.items():
+                if len(vals) < emitted:
+                    vals.append(round(strat_totals.get(name, 0.0), 2))
+
     # Anchor the whole series at $0 the day BEFORE the first trading day so
     # every chart provably STARTS at zero. The account had no P&L before it
     # began trading, but the first EMITTED point is already the first day's
@@ -1245,6 +1309,8 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
         options_s.insert(0, 0.0)
         dividends_s.insert(0, 0.0)
         total_s.insert(0, 0.0)
+        for vals in strategy_series.values():
+            vals.insert(0, 0.0)
 
     today = date.today()
     today_str = str(today)
@@ -1317,14 +1383,22 @@ def _build_account_chart_from_daily_pnl(daily_df, current_df):
             options_s.append(today_options)
             dividends_s.append(dividends_s[-1])
             total_s.append(round(today_equity + today_options + dividends_s[-1] + cum_oth, 2))
+            for vals in strategy_series.values():
+                vals.append(vals[-1] if vals else 0.0)
 
-    return {
+    out = {
         "dates": dates_out,
         "equity": equity_s,
         "options": options_s,
         "dividends": dividends_s,
         "total": total_s,
     }
+    if strategy_of is not None:
+        out["series"] = {
+            k: v for k, v in strategy_series.items()
+            if any(abs(x) > 0.005 for x in v)
+        }
+    return out
 
 
 def _build_option_matrices(matrix_df, symbol):

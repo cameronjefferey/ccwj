@@ -4,6 +4,17 @@ from app.marketing import compose_feedback_body
 from app.upload import CSV_EXPORT_BROKERS
 
 
+def test_upload_template_current_positions_optional():
+    from pathlib import Path
+
+    html = Path("app/templates/upload.html").read_text()
+    assert 'name="skip_current_positions"' in html
+    assert "History only" in html
+    assert "!(h || c)" in html
+    faq = Path("app/templates/faq.html").read_text()
+    assert "Both files are required" not in faq
+
+
 def test_only_schwab_csv_export_is_ready():
     ready = [b["slug"] for b in CSV_EXPORT_BROKERS if b["ready"]]
     assert ready == ["schwab"]

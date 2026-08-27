@@ -422,7 +422,7 @@
               role="status" aria-hidden="true"></span>
     </div>
     <div>
-        <h2 class="fw-bold mb-2">{% if show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
+        <h2 class="fw-bold mb-2" id="pipelineHeading">{% if show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
         <p class="processing-sub mb-2">
             {% if show_onboarding %}
                 Usually about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}. Take your time with the survey.

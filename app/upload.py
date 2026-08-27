@@ -864,9 +864,9 @@ _WORKFLOW_FILE = "bigquery_update.yml"
 
 # Build markers replace commit SHAs in the post-sync "processing" UI: a
 # changed seed write returns ``dispatch:<unix_ts>`` and the workflow-status
-# poller resolves it to the first bigquery_update.yml run created at/after
-# that timestamp. (workflow_dispatch runs aren't tied to a commit the app
-# knows about, so SHA-based lookup no longer works.)
+# poller resolves it to the live or successful bigquery_update.yml run
+# created at/after that timestamp. (workflow_dispatch runs aren't tied to
+# a commit the app knows about, so SHA-based lookup no longer works.)
 _DISPATCH_MARKER_PREFIX = "dispatch:"
 
 
@@ -1482,28 +1482,39 @@ def upload():
     # Parse and validate CSVs
     # ------------------------------------------------------------------
     skip_history = request.form.get("no_trades_today") == "1"
+    skip_current = request.form.get("skip_current_positions") == "1"
+
+    def _csv_uploaded(file_storage):
+        return bool(file_storage and (file_storage.filename or "").strip())
 
     current_file = request.files.get("current_csv")
-    current_df, current_err = _validate_csv(
-        current_file, CURRENT_REQUIRED_COLS, "Current",
-        col_renames=CURRENT_COL_RENAMES,
-        header_markers={"symbol", "description", "price"},
-    )
-    if current_err:
-        flash(current_err, "danger")
-        return redirect(url_for("upload"))
+    current_df = None
+    if not skip_current and _csv_uploaded(current_file):
+        current_df, current_err = _validate_csv(
+            current_file, CURRENT_REQUIRED_COLS, "Current",
+            col_renames=CURRENT_COL_RENAMES,
+            header_markers={"symbol", "description", "price"},
+        )
+        if current_err:
+            flash(current_err, "danger")
+            return redirect(url_for("upload"))
 
     history_df = None
     if not skip_history:
         history_file = request.files.get("history_csv")
-        history_df, history_err = _validate_csv(
-            history_file, HISTORY_REQUIRED_COLS, "History",
-            col_renames=HISTORY_COL_RENAMES,
-            header_markers={"date", "action", "symbol", "quantity"},
-        )
-        if history_err:
-            flash(history_err, "danger")
-            return redirect(url_for("upload"))
+        if _csv_uploaded(history_file):
+            history_df, history_err = _validate_csv(
+                history_file, HISTORY_REQUIRED_COLS, "History",
+                col_renames=HISTORY_COL_RENAMES,
+                header_markers={"date", "action", "symbol", "quantity"},
+            )
+            if history_err:
+                flash(history_err, "danger")
+                return redirect(url_for("upload"))
+
+    if history_df is None and current_df is None:
+        flash("Upload a trade-history CSV, a current-positions CSV, or both.", "danger")
+        return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
     # Account name is mandatory (selected or typed on the form)
@@ -1532,15 +1543,22 @@ def upload():
     # ------------------------------------------------------------------
     # Merge into GitHub seeds (same path as Schwab sync)
     # ------------------------------------------------------------------
-    if skip_history:
+    n_hist = 0 if history_df is None else len(history_df)
+    n_cur = 0 if current_df is None else len(current_df)
+    if history_df is None:
         commit_msg = (
             f"Upload by {current_user.username}: "
-            f"positions only, {len(current_df)} current rows ({account_name})"
+            f"positions only, {n_cur} current rows ({account_name})"
+        )
+    elif current_df is None:
+        commit_msg = (
+            f"Upload by {current_user.username}: "
+            f"history only, {n_hist} history rows ({account_name})"
         )
     else:
         commit_msg = (
             f"Upload by {current_user.username}: "
-            f"{len(history_df)} history rows, {len(current_df)} current rows "
+            f"{n_hist} history rows, {n_cur} current rows "
             f"({account_name})"
         )
 
@@ -1596,9 +1614,15 @@ def upload():
         )
         return redirect(url_for("upload"))
 
-    if skip_history:
+    if history_df is None:
         flash(
             f"Upload saved for {account_name} ({current_rows:,} positions). "
+            "Your data is updating in the background.",
+            "success",
+        )
+    elif current_df is None:
+        flash(
+            f"Upload saved for {account_name} ({history_rows:,} trades). "
             "Your data is updating in the background.",
             "success",
         )
@@ -1617,6 +1641,30 @@ def upload():
     return redirect(url_for("upload_processing", **qp))
 
 
+_INFLIGHT_GITHUB_STATUS = frozenset({
+    "queued", "waiting", "requested", "pending", "in_progress",
+})
+
+
+def _pick_dispatch_run(matches):
+    """Choose which workflow_dispatch run the processing poll should follow.
+
+    GitHub returns newest-first. ``cancel-in-progress`` means a later dispatch
+    cancels an earlier one: the oldest match is often ``cancelled`` while the
+    live rebuild is still running. Prefer an in-flight run, then a success,
+    else the newest terminal result.
+    """
+    if not matches:
+        return None
+    for run in matches:
+        if run.get("status") in _INFLIGHT_GITHUB_STATUS:
+            return run
+    for run in matches:
+        if run.get("status") == "completed" and run.get("conclusion") == "success":
+            return run
+    return matches[0]
+
+
 def _github_workflow_state_for_head(head_sha: str) -> dict:
     """
     Return dict with keys: state, github_status, conclusion, html_url, error.
@@ -1625,8 +1673,8 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
     Accepts either a legacy commit SHA or a ``dispatch:<unix_ts>`` build
     marker (what seed writes return since the BQ seed store migration —
     the rebuild is a ``workflow_dispatch`` run, not a push-triggered one,
-    so it's resolved as "the first bigquery_update run created at/after
-    the dispatch timestamp").
+    so it's resolved as the live/successful bigquery_update run created
+    at/after the dispatch timestamp).
     """
     if not head_sha or len(head_sha) < 7:
         return {"state": "error", "error": "invalid_sha"}
@@ -1647,7 +1695,7 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
             f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/"
             f"{_WORKFLOW_FILE}/runs"
         )
-        params = {"event": "workflow_dispatch", "per_page": 10}
+        params = {"event": "workflow_dispatch", "per_page": 20}
     else:
         url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
         params = {"head_sha": head_sha.strip(), "per_page": 5}
@@ -1676,8 +1724,8 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
     runs = data.get("workflow_runs") or []
     if dispatched_at is not None:
         # Only runs created at/after the dispatch (small clock-skew grace)
-        # can be "our" build; the API returns newest-first, so take the
-        # OLDEST match — the run the dispatch actually started.
+        # can be "our" build. Newest-first list: prefer in-flight over a
+        # cancelled predecessor (concurrency cancel-in-progress).
         from datetime import datetime, timezone as _tz
 
         def _created_ts(r):
@@ -1688,7 +1736,8 @@ def _github_workflow_state_for_head(head_sha: str) -> dict:
             except ValueError:
                 return 0
         matches = [r for r in runs if _created_ts(r) >= dispatched_at - 120]
-        runs = matches[-1:] if matches else []
+        picked = _pick_dispatch_run(matches)
+        runs = [picked] if picked is not None else []
     if not runs:
         return {
             "state": "pending",

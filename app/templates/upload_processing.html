@@ -32,16 +32,16 @@
 
 {% block content %}
 <div class="processing-card mb-4">
-    <div class="processing-icon">
+    <div class="processing-icon" id="pipelineIcon">
         <span class="spinner-border text-primary" role="status"></span>
     </div>
-    <h2 class="fw-bold mb-2">Processing Your Upload</h2>
+    <h2 class="fw-bold mb-2" id="pipelineHeading">Processing Your Upload</h2>
     <p class="processing-sub mb-3">
         Your files were received and your data is updating in the background.
         This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
     </p>
-    <p class="processing-sub mb-4">
-        When it’s ready, your <strong>Daily Review</strong> and <strong>Daily P&amp;L</strong>
+    <p class="processing-sub mb-4" id="pipelineReadyCopy">
+        When it’s ready, your <strong>Daily Review</strong> and <strong>Positions</strong>
         pages will show the latest numbers.
     </p>
 
