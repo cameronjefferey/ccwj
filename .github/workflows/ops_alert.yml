@@ -1,0 +1,46 @@
+name: Ops alert (Telegram)
+
+# Phone ping when a data-pipeline job actually FAILS. Cancelled runs
+# (cancel-in-progress on overlapping warehouse rebuilds) do NOT fire —
+# those are expected. GitHub already emails watchers; this is the
+# "look at this now" channel for the operator.
+#
+# Setup (once):
+#   1. Telegram → @BotFather → /newbot → copy the token
+#   2. Message the bot once, then
+#      curl "https://api.telegram.org/bot<TOKEN>/getUpdates"
+#      and copy your numeric chat id (result[0].message.chat.id)
+#   3. gh secret set TELEGRAM_BOT_TOKEN
+#      gh secret set TELEGRAM_CHAT_ID
+#   4. Actions → "Ops alert (Telegram)" → Run workflow  (test ping)
+#
+# If the secrets are unset the job no-ops so a missing bot cannot fail CI.
+# This workflow file must live on the default branch — workflow_run
+# listeners only fire from master/main.
+
+on:
+  workflow_run:
+    workflows:
+      - Update Daily Position Performance
+      - Evening price refresh (snap equities to official close)
+      - Warehouse reconcile audit
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  telegram:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send Telegram alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_NAME: ${{ github.event.workflow_run.name || 'Ops alert' }}
+          ALERT_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'test' }}
+          ALERT_EVENT: ${{ github.event.workflow_run.event || 'workflow_dispatch' }}
+          ALERT_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          ALERT_URL: ${{ github.event.workflow_run.html_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
+        run: python scripts/ops_telegram.py

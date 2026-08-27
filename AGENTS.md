@@ -1073,6 +1073,7 @@ Use `--prices` flag to skip git pull and first dbt pass (prices only).
   ```
 - **Reconcile audit** (`.github/workflows/reconcile.yml`): nightly + manual; runs `scripts/audit/reconcile.py` and fails the job on any FAIL check.
 - **Evening prices** (`.github/workflows/prices_refresh.yml`): snaps equities to the official close after the bell.
+- **Ops alert** (`.github/workflows/ops_alert.yml`): Telegram ping on a real **failure** of the warehouse rebuild, evening prices, or reconcile audit. Cancelled overlapping rebuilds do not fire. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` GitHub secrets; no-ops if unset.
 
 Note: the warehouse workflow runs two full `dbt build`s vs local targeted selects. These could be aligned.
 
