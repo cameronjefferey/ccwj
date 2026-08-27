@@ -229,14 +229,50 @@ def _dividend_strategy_map(summary_df):
     return out
 
 
+def _primary_strategy_map(summary_df, class_df):
+    """(tenant_id, symbol) → primary strategy for the daily strategy chart.
+
+    Prefer ``positions_summary`` so Buy and Hold → Dividend reclass is
+    honored. When a symbol has several strategy rows, pick the largest
+    abs total_pnl — same primary-strategy rule as the windowed breakdowns.
+    Classification fills keys the summary doesn't have.
+    """
+    def _from_df(df):
+        buckets = {}
+        if df is None or df.empty:
+            return {}
+        if "symbol" not in df.columns or "strategy" not in df.columns:
+            return {}
+        for _, r in df.iterrows():
+            tid = str(r.get("tenant_id") or "")
+            sym = str(r.get("symbol") or "").upper()
+            if not sym:
+                continue
+            try:
+                pnl = float(r.get("total_pnl") or 0)
+            except (TypeError, ValueError):
+                pnl = 0.0
+            buckets.setdefault((tid, sym), []).append(
+                {"strategy": r.get("strategy"), "total_pnl": pnl}
+            )
+        out = {}
+        for key, rows in buckets.items():
+            top = max(rows, key=lambda r: abs(float(r.get("total_pnl") or 0)))
+            out[key] = top.get("strategy") or "Buy and Hold"
+        return out
+
+    out = _from_df(class_df)
+    out.update(_from_df(summary_df))
+    return out
+
+
 def _build_strategy_time_chart(strat_df, dividend_events_df=None, dividend_strategy_map=None):
     """
-    Build cumulative P&L over time per strategy from trade-group data.
-    Closed groups → P&L attributed to close_date.
-    Open groups   → P&L attributed to today.
-    Dividend cash (when provided) lands on the payment date of the
-    strategy that positions_summary already credited, so the chart
-    terminal matches Strategy Summary Total P&L.
+    Fallback strategy chart: closed groups on close_date, open groups on
+    today. Prefer the daily-MTM ``series`` from
+    ``_build_account_chart_from_daily_pnl(..., strategy_of=)`` — this
+    close/today dump draws a vertical cliff on any still-open book
+    (buy-and-hold especially).
     """
     if strat_df is None or strat_df.empty:
         return {"dates": [], "series": {}}
@@ -734,7 +770,14 @@ def accounts():
 
     # ------------------------------------------------------------------
     # Chart 1: Cumulative P&L over time (summary) — from mart_daily_pnl
+    # Chart 2: P&L by strategy, same daily marks, bucketed by primary
+    # strategy per (tenant, symbol). Dumping open-group total_pnl on
+    # today (the old _build_strategy_time_chart path) drew a vertical
+    # cliff on any still-open book — a buy-and-hold account looked
+    # nothing like the cumulative chart.
     # ------------------------------------------------------------------
+    strategy_map = _primary_strategy_map(strat_summary_df, strat_class_df)
+    strategy_from_daily = {}
     try:
         chart_tenant_ids = _tenants_for_scope(selected_account)
         chart_tenant_filter = _tenant_sql_and(chart_tenant_ids)
@@ -745,10 +788,22 @@ def accounts():
         chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
         # tenant scope already narrowed chart_df to the selected account's tenant
         with timed("acct_chart"):
-            summary_chart = cached_payload(
-                ("acct_chart", str(date.today()), frame_fingerprint(chart_df, current_df)),
-                lambda: _build_account_chart_from_daily_pnl(chart_df, current_df),
+            built = cached_payload(
+                (
+                    "acct_chart",
+                    str(date.today()),
+                    frame_fingerprint(chart_df, current_df),
+                    tuple(sorted((f"{k[0]}|{k[1]}", str(v)) for k, v in strategy_map.items())),
+                ),
+                lambda: _build_account_chart_from_daily_pnl(
+                    chart_df, current_df, strategy_of=strategy_map,
+                ),
             )
+        summary_chart = {
+            k: built.get(k, [])
+            for k in ("dates", "equity", "options", "dividends", "total")
+        }
+        strategy_from_daily = built.get("series") or {}
     except Exception as exc:
         app.logger.exception(
             "accounts chart query or build failed for account=%r: %s",
@@ -804,11 +859,17 @@ def accounts():
     # ------------------------------------------------------------------
     # Chart 2: Strategy P&L over time
     # ------------------------------------------------------------------
-    strategy_chart = _build_strategy_time_chart(
-        strat_class_df,
-        dividend_events_df=div_events_df,
-        dividend_strategy_map=_dividend_strategy_map(strat_summary_df),
-    )
+    if strategy_from_daily and summary_chart.get("dates"):
+        strategy_chart = {
+            "dates": summary_chart["dates"],
+            "series": strategy_from_daily,
+        }
+    else:
+        strategy_chart = _build_strategy_time_chart(
+            strat_class_df,
+            dividend_events_df=div_events_df,
+            dividend_strategy_map=_dividend_strategy_map(strat_summary_df),
+        )
 
     # ------------------------------------------------------------------
     # Strategy summary table

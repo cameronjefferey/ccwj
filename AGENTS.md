@@ -481,6 +481,11 @@ Symbol links in the drill-down table preserve the selected account filter (`?acc
 
 **Performance** (default, `app/accounts_page.py`): per-account KPI cards,
 P&L-earned charts, windowed breakdown tables, Net deposits KPI.
+The **P&L by Strategy Over Time** chart is the same daily mark-to-market
+walk as Cumulative P&L (`_build_account_chart_from_daily_pnl`), bucketed
+by primary strategy per `(tenant_id, symbol)`. Do not attribute open
+groups to today — that dumped lifetime unrealized onto the last date and
+made a buy-and-hold account look like a cliff.
 **Value & composition** (`?view=value`, `app/wealth.py` +
 `render_wealth_view` — the former `/wealth` page, merged Aug 2026 surface
 audit; `/wealth` 301s): reads `mart_wealth_daily` (account_value / cash /
@@ -591,7 +596,8 @@ allows promo codes).
 
 ### Upload (`/upload`)
 **Status: Working. CSV upload + SnapTrade sync entry points.**
-CSV upload parses Schwab's web export. The page lists a collapsed section
+CSV upload parses Schwab's web export. History and current-positions
+files are both optional (upload either or both). The page lists a collapsed section
 per brokerage; Schwab's section (open by default) holds export steps plus
 the history / positions file drop, account picker, and submit — copy that
 branch when another parser ships. Every other broker is a request

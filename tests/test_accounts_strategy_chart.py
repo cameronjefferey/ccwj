@@ -2,6 +2,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 import app.accounts_page as accounts
 
@@ -90,3 +91,113 @@ def test_strategy_chart_without_relabel_keeps_a_single_buy_and_hold_line():
     chart = accounts._build_strategy_time_chart(strat)
     assert list(chart["series"]) == ["Buy and Hold"]
     assert chart["series"]["Buy and Hold"][-1] == 1161.28
+
+
+def test_primary_strategy_map_prefers_summary_dividend_reclass():
+    summary = pd.DataFrame([
+        _summary_row("SCHD", "Dividend", divs=118.38) | {"total_pnl": 196.81},
+        _summary_row("UFO", "Buy and Hold", divs=11.11) | {"total_pnl": 1093.96},
+    ])
+    strat = pd.DataFrame([
+        _class_row("SCHD", "Buy and Hold", pnl=78.43, close=date(2025, 12, 29)),
+        _class_row("UFO", "Buy and Hold", pnl=1082.85, close=date(2026, 1, 2)),
+        _class_row("AAPL", "Covered Call", pnl=50.0, close=date(2026, 1, 3)),
+    ])
+    mapped = accounts._primary_strategy_map(summary, strat)
+    assert mapped[("t1", "SCHD")] == "Dividend"
+    assert mapped[("t1", "UFO")] == "Buy and Hold"
+    assert mapped[("t1", "AAPL")] == "Covered Call"
+
+
+def test_open_buy_and_hold_follows_daily_marks_not_today_dump():
+    """Open lots used to dump lifetime unrealized onto today, so a
+    buy-and-hold account's strategy line was flat then a vertical cliff.
+    The daily-MTM series must move with the close, matching the
+    cumulative Total line."""
+    from app.pnl_charts import _build_account_chart_from_daily_pnl
+
+    def _row(d, *, buy_qty=0.0, buy_cost=0.0, close=0.0, symbol="KALU"):
+        return {
+            "account": "Schwab Account",
+            "user_id": 9,
+            "tenant_id": "t1",
+            "symbol": symbol,
+            "date": d,
+            "options_amount": 0.0,
+            "dividends_amount": 0.0,
+            "equity_buy_qty": buy_qty,
+            "equity_buy_cost": buy_cost,
+            "equity_sell_qty": 0.0,
+            "equity_sell_proceeds": 0.0,
+            "other_amount": 0.0,
+            "close_price": close,
+            "has_trade": buy_qty > 0,
+            "cumulative_options_pnl": 0.0,
+            "open_options_unrealized_pnl": 0.0,
+            "cumulative_dividends_pnl": 0.0,
+            "cumulative_other_pnl": 0.0,
+        }
+
+    # Wed–Fri so weekend skip does not drop the marks.
+    rows = [
+        _row(date(2026, 7, 15), buy_qty=10.0, buy_cost=100.0, close=11.0),
+        _row(date(2026, 7, 16), close=20.0),
+        _row(date(2026, 7, 17), close=20.0),
+    ]
+    strategy_of = {("t1", "KALU"): "Buy and Hold"}
+    out = _build_account_chart_from_daily_pnl(
+        pd.DataFrame(rows), pd.DataFrame(), strategy_of=strategy_of,
+    )
+    series = out["series"]["Buy and Hold"]
+    assert series[0] == 0.0
+    assert series[1] == round(10.0 * 11.0 - 100.0, 2) == 10.0
+    assert series[2] == round(10.0 * 20.0 - 100.0, 2) == 100.0
+    assert series == out["total"]
+    # The dump-on-today bug would leave the first mark at 0 and cliff at the end.
+    assert series[1] != 0.0
+
+
+def test_daily_strategy_series_splits_dividend_symbol_from_buy_and_hold():
+    from app.pnl_charts import _build_account_chart_from_daily_pnl
+
+    def _row(d, symbol, *, buy_qty=0.0, buy_cost=0.0, close=0.0, divs=0.0):
+        return {
+            "account": "Schwab Account",
+            "user_id": 9,
+            "tenant_id": "t1",
+            "symbol": symbol,
+            "date": d,
+            "options_amount": 0.0,
+            "dividends_amount": divs,
+            "equity_buy_qty": buy_qty,
+            "equity_buy_cost": buy_cost,
+            "equity_sell_qty": 0.0,
+            "equity_sell_proceeds": 0.0,
+            "other_amount": 0.0,
+            "close_price": close,
+            "has_trade": buy_qty > 0,
+            "cumulative_options_pnl": 0.0,
+            "open_options_unrealized_pnl": 0.0,
+            "cumulative_dividends_pnl": 0.0,
+            "cumulative_other_pnl": 0.0,
+        }
+
+    rows = [
+        _row(date(2026, 7, 15), "UFO", buy_qty=10.0, buy_cost=100.0, close=11.0),
+        _row(date(2026, 7, 15), "SCHD", buy_qty=10.0, buy_cost=100.0, close=10.5, divs=5.0),
+        _row(date(2026, 7, 16), "UFO", close=12.0),
+        _row(date(2026, 7, 16), "SCHD", close=10.5),
+    ]
+    strategy_of = {("t1", "UFO"): "Buy and Hold", ("t1", "SCHD"): "Dividend"}
+    out = _build_account_chart_from_daily_pnl(
+        pd.DataFrame(rows), pd.DataFrame(), strategy_of=strategy_of,
+    )
+    assert set(out["series"]) == {"Buy and Hold", "Dividend"}
+    # UFO: 10 shares, cost 100 → +10 then +20.
+    assert out["series"]["Buy and Hold"][1:] == [10.0, 20.0]
+    # SCHD: +5 equity + $5 coupon on day 1, then held.
+    assert out["series"]["Dividend"][1] == 10.0
+    assert out["series"]["Dividend"][2] == 10.0
+    for i, total in enumerate(out["total"]):
+        parts = sum(out["series"][s][i] for s in out["series"])
+        assert parts == pytest.approx(total, abs=0.02)

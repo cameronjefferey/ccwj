@@ -13,6 +13,13 @@
     Error severity from day 1 — there is no "transition lenient" mode
     under v2 because the migration deliberately truncates all seeds.
 
+    The uuid half is opaque. SnapTrade UUIDs are hex+hyphens; CSV uploads
+    stamp ``manual:manual:<account name>`` and account names routinely
+    contain spaces (``manual:manual:Emmory Investment``). Require
+    ``<slug>:<nonempty>`` — do not restrict the uuid charset, or a
+    legitimate upload fails the warehouse rebuild and the user sits on
+    the processing page.
+
     The demo is intentionally NOT covered here. It is no longer seed data
     at all: since Aug 2026 it is a relabeled MIRROR of a real tenant
     (dbt/models/staging/demo/stg_demo_history.sql), synthesized downstream
@@ -46,4 +53,4 @@ select src, tenant_id, n
 from combined
 where tenant_id is null
    or trim(tenant_id) = ''
-   or not regexp_contains(tenant_id, r'^[a-z_]+:[A-Za-z0-9:.\-]+$')
+   or not regexp_contains(tenant_id, r'^[a-z_]+:.+$')
