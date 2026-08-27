@@ -480,7 +480,11 @@ Symbol links in the drill-down table preserve the selected account filter (`?acc
 **Status: Working. One surface for per-account performance AND value/composition.**
 
 **Performance** (default, `app/accounts_page.py`): per-account KPI cards,
-P&L-earned charts, windowed breakdown tables, Net deposits KPI.
+P&L-earned charts, windowed KPI cards, Net deposits KPI.
+Breakdown tables list positions active in the selected range with
+**lifetime** Stock/Option/Dividend/capital (do not feed Daily Review's
+``week_start`` into attribution — that mixed full-to-date open P&L with
+lifetime dividends under a 1M/3M label).
 The **P&L by Strategy Over Time** chart is the same daily mark-to-market
 walk as Cumulative P&L (`_build_account_chart_from_daily_pnl`), bucketed
 by primary strategy per `(tenant_id, symbol)`. Do not attribute open

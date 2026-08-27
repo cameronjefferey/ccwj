@@ -123,6 +123,22 @@ def test_account_deletion_fails_closed_on_stripe_error(
     assert "cancel" in error.lower()
 
 
+def test_account_deletion_fails_closed_when_billing_state_is_unreadable(
+    monkeypatch, stripe_config
+):
+    monkeypatch.setattr(billing, "billing_row", lambda _uid: None)
+    monkeypatch.setattr(
+        billing,
+        "_stripe",
+        lambda: pytest.fail("Stripe must not be consulted without billing state"),
+    )
+
+    ok, error = billing.cancel_subscription_for_account_deletion(9)
+
+    assert ok is False
+    assert "verify" in error.lower()
+
+
 def test_account_deletion_refuses_foreign_subscription(
     monkeypatch, stripe_config
 ):
