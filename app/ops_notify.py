@@ -109,7 +109,8 @@ def notify(kind: str, text: str, *, username=None) -> bool:
         if not event_enabled(kind):
             return False
         uname = (username or "").strip().lower()
-        if uname == DEMO_USERNAME:
+        # Demo signups/syncs are noise; demo feedback is not — testers use that seat.
+        if uname == DEMO_USERNAME and kind != "feedback":
             return False
         # Pytest must never fire a real Telegram ping just because .env has
         # the bot token. Tests that want a send set OPS_NOTIFY_SYNC=1 and
