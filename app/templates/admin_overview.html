@@ -44,7 +44,7 @@
     .ov-bar-row .name { min-width: 10rem; color: var(--ht-ink, #1c1917); }
     .ov-bar-track { flex: 1; height: .45rem; background: #f5f5f4; border-radius: 99px; overflow: hidden; }
     .ov-bar-fill { height: 100%; background: #0f3460; border-radius: 99px; }
-    .ov-bar-row .n { min-width: 2rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--ht-muted, #57534e); }
+    .ov-bar-row .n { min-width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--ht-muted, #57534e); }
     .ov-note { font-size: .8rem; color: var(--ht-muted, #78716c); margin: 0 0 .75rem; }
     [data-bs-theme="dark"] .ov-stat,
     [data-bs-theme="dark"] .ov-card { border-color: #334155; }
@@ -80,7 +80,7 @@
     <div class="ov-stat">
         <div class="lbl">Last 7 days</div>
         <div class="val">{% if has_usage %}{{ unique_7d }}{% else %}—{% endif %}</div>
-        <div class="sub">{% if has_usage %}unique visitors · {{ hits_7d }} page loads{% else %}page views start after this deploy{% endif %}</div>
+        <div class="sub">{% if has_usage %}unique visitors · {{ hits_7d }} page loads{% else %}no customer page views yet{% endif %}</div>
     </div>
     <div class="ov-stat">
         <div class="lbl">HappyTrader AI</div>
@@ -122,12 +122,40 @@
     </div>
 </div>
 
+<div class="ov-card">
+    <h2>What people open</h2>
+    <p class="ov-note">Last 7 days, ranked by unique people then views. Demo traffic is excluded. Home / Pricing / FAQ count even when the visitor is signed out.</p>
+    {% if views_7d %}
+    {% for row in views_7d %}
+    <div class="ov-bar-row">
+        <span class="name">{{ row.label }}</span>
+        <div class="ov-bar-track">
+            <div class="ov-bar-fill" style="width: {{ row.pct }}%;"></div>
+        </div>
+        <span class="n">{{ row.users }} · {{ row.hits }}</span>
+    </div>
+    {% endfor %}
+    <p class="ov-muted mt-1 mb-0" style="font-size:.75rem;">People · views</p>
+    {% if symbols_7d %}
+    <p class="ov-muted mt-3 mb-2">Symbols they drilled into</p>
+    {% for row in symbols_7d %}
+    <div class="ov-bar-row">
+        <span class="name"><a href="{{ url_for('position_detail', symbol=row.symbol) }}">{{ row.symbol }}</a></span>
+        <div class="ov-bar-track">
+            <div class="ov-bar-fill" style="width: {{ row.pct }}%;background:#1d4ed8;"></div>
+        </div>
+        <span class="n">{{ row.users }} · {{ row.hits }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% else %}
+    <p class="ov-muted mb-0">No page views yet. They start as soon as someone opens a page (your own Daily Review counts; the shared demo seat does not).</p>
+    {% endif %}
+</div>
+
 <div class="ov-grid">
     <div class="ov-card">
         <h2>Last 7 days of use</h2>
-        {% if not has_usage %}
-        <p class="ov-note">Page-level usage starts recording after this ships. Logins and uploads below are already live.</p>
-        {% endif %}
         <table class="ov-table">
             <tbody>
                 <tr><td>Successful logins</td><td class="text-end fw-bold">{{ logins_7d }}</td></tr>
@@ -135,21 +163,6 @@
                 <tr><td>Ask AI questions</td><td class="text-end fw-bold">{{ insights_7d }}</td></tr>
             </tbody>
         </table>
-        {% if views_7d %}
-        <p class="ov-muted mt-3 mb-2">Pages opened</p>
-        <table class="ov-table">
-            <thead><tr><th>Page</th><th class="text-end">Views</th><th class="text-end">People</th></tr></thead>
-            <tbody>
-            {% for row in views_7d %}
-            <tr>
-                <td>{{ row.label }}</td>
-                <td class="text-end">{{ row.hits }}</td>
-                <td class="text-end">{{ row.users }}</td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% endif %}
     </div>
 
     <div class="ov-card">

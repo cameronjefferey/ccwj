@@ -582,7 +582,9 @@ broken connections, open feedback, 7-day page use (`usage_events` — logged
 from authenticated HTML navigations only, no query strings), broker mix,
 weekly signups, newest people. Drill-downs stay at `/admin/users`,
 `/admin/audit`, `/admin/feedback`. Postgres-only so it still loads when
-the warehouse is unhappy. Non-admins get 404.
+the warehouse is unhappy. Page views (`usage_events`) rank what people
+open in the last 7 days (unique people, then views; demo excluded;
+logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working.** Checklist while the user is connecting/waiting for
