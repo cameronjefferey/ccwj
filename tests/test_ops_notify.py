@@ -44,12 +44,32 @@ def test_notify_skips_when_unset(monkeypatch):
     assert on.notify("signup", "HappyTrader: new signup @x", username="x") is False
 
 
-def test_notify_skips_demo(monkeypatch):
+def test_notify_skips_demo_except_feedback(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
     monkeypatch.setenv("OPS_NOTIFY_SYNC", "1")
     monkeypatch.delenv("OPS_NOTIFY_EVENTS", raising=False)
     assert on.notify("signup", "nope", username="demo") is False
+
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return json.dumps({"ok": True}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=12):
+        captured["ok"] = True
+        return _Resp()
+
+    monkeypatch.setattr(on.urllib.request, "urlopen", fake_urlopen)
+    assert on.notify("feedback", "HappyTrader: feedback from @demo\nbug", username="demo") is True
+    assert captured.get("ok") is True
 
 
 def test_notify_sends_when_configured(monkeypatch):
