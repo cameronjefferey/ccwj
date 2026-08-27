@@ -82,6 +82,8 @@ def test_action_map_captures_unambiguous_cash_movements():
     assert SNAPTRADE_ACTIVITY_TO_ACTION["DEPOSIT"] == "Deposit"
     assert SNAPTRADE_ACTIVITY_TO_ACTION["CONTRIBUTION"] == "Deposit"
     assert SNAPTRADE_ACTIVITY_TO_ACTION["WITHDRAWAL"] == "Withdrawal"
+    assert SNAPTRADE_ACTIVITY_TO_ACTION["INTERNAL_CASH_TRANSFER_IN"] == "Deposit"
+    assert SNAPTRADE_ACTIVITY_TO_ACTION["INTERNAL_CASH_TRANSFER_OUT"] == "Withdrawal"
 
 
 def test_action_map_still_drops_ambiguous_or_share_movements():
@@ -308,6 +310,25 @@ def test_history_df_contribution_maps_to_deposit_cash_in():
     )
     assert df.iloc[0]["Action"] == "Deposit"
     assert float(df.iloc[0]["Amount"]) == 250.0
+
+
+def test_history_df_internal_cash_transfer_maps_to_deposit_and_withdrawal():
+    """Cash moving between the trader's own accounts is a deposit on the
+    receiving side and a withdrawal on the sending side. Dropping these
+    as unknown types made the exclude-transfers toggle a no-op."""
+    df = activities_to_history_df(
+        [
+            {"type": "INTERNAL_CASH_TRANSFER_IN", "amount": 200, "trade_date": "2026-05-11"},
+            {"type": "INTERNAL_CASH_TRANSFER_OUT", "amount": 200, "trade_date": "2026-05-11"},
+        ],
+        account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert len(df) == 2
+    dep = df[df["Action"] == "Deposit"]
+    wd = df[df["Action"] == "Withdrawal"]
+    assert len(dep) == 1 and len(wd) == 1
+    assert float(dep.iloc[0]["Amount"]) == 200.0
+    assert float(wd.iloc[0]["Amount"]) == -200.0
 
 
 def test_history_df_emits_osi_for_options():

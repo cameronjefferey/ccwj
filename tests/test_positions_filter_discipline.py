@@ -231,6 +231,104 @@ def test_hero_chips_track_filter_account(routed_app):
     assert sum(chips.values()) == _positions_kpi(html)
 
 
+def _hero_block(html):
+    """The rendered hero card, not the `.pos-hero` CSS rule."""
+    marker = 'class="pos-hero"'
+    start = html.find(marker)
+    assert start != -1, "hero card missing from rendered page"
+    return html[start: html.find("filter-bar", start)]
+
+
+def test_hero_subtitle_tracks_filter_account(routed_app):
+    """Filtering to one account must change the hero 'Across N accounts'
+    line to that account. Pre-fix the chips and KPIs honored the filter
+    but the subtitle still listed every linked account."""
+    r = routed_app.get("/positions?account=Cameron%20Investment")
+    assert r.status_code == 200
+    hero = _hero_block(r.data.decode())
+    assert "Across " not in hero
+    assert "Sara Investment" not in hero
+    assert "Cameron Investment" in hero
+
+
+def test_hero_subtitle_all_accounts_lists_both(routed_app):
+    r = routed_app.get("/positions")
+    assert r.status_code == 200
+    hero = _hero_block(r.data.decode())
+    assert "Across 2 accounts:" in hero
+    assert "Cameron Investment" in hero
+    assert "Sara Investment" in hero
+
+
+def test_hero_subtitle_tracks_strategy_accounts(routed_app):
+    """Long Call exists only on Cameron. The hero must not still say
+    Across 2 accounts while the KPIs are Cameron-only."""
+    r = routed_app.get("/positions?strategy=Long%20Call")
+    assert r.status_code == 200
+    hero = _hero_block(r.data.decode())
+    assert "Across " not in hero
+    assert "Sara Investment" not in hero
+    assert "Cameron Investment" in hero
+
+
+def test_strategy_chart_payload_is_realized_unrealized(routed_app):
+    html = routed_app.get("/positions").data.decode()
+    assert "Realized vs unrealized" in html
+    assert '"realized"' in html
+    assert '"unrealized"' in html
+    assert 'label: \'Realized\'' in html or 'label: "Realized"' in html
+
+
+def test_quick_stats_accounts_in_view_counts_colliding_broker_labels():
+    """Five Schwab tenants share the display label 'Schwab Account'. Unique
+    ``account`` strings would say 2 (Schwab + Coinbase); Accounts in view
+    must count tenants, matching the hero."""
+    import re
+    from app import app
+    import app.positions_page as routes
+
+    t_a, t_b, t_c = "snaptrade:aaa", "snaptrade:bbb", "snaptrade:ccc"
+    book = pd.DataFrame([
+        _summary_row(account="Schwab Account", tenant_id=t_a, symbol="ORCL"),
+        _summary_row(account="Schwab Account", tenant_id=t_b, symbol="QTUM"),
+        _summary_row(account="Coinbase Account", tenant_id=t_c, symbol="BTC"),
+    ])
+    labels = {
+        t_a: "Schwab Account (·aaa)",
+        t_b: "Schwab Account (·bbb)",
+        t_c: "Coinbase Account",
+    }
+    user = _stub_user(user_id=42)
+
+    class _StubClient:
+        def query(self, _sql, **_kw):
+            class _Job:
+                def to_dataframe(self_inner):
+                    return book.copy()
+            return _Job()
+
+    with patch.object(routes, "current_user", user), \
+         patch("flask_login.utils._get_user", lambda: user), \
+         patch.object(routes, "_redirect_if_no_accounts", lambda: None), \
+         patch.object(routes, "_user_account_list", lambda: list(labels.values())), \
+         patch.object(routes, "_tenants_for_scope", lambda selected=None: [t_a, t_b, t_c]), \
+         patch.object(routes, "_tenant_label_map_for_user", lambda uid: labels), \
+         patch.object(routes, "is_admin", lambda u: False), \
+         patch.object(routes, "get_bigquery_client", lambda: _StubClient()):
+        with app.test_client() as c:
+            r = c.get("/positions")
+    assert r.status_code == 200, r.data[:300]
+    html = r.data.decode()
+    m = re.search(
+        r"Accounts in view</td>\s*<td[^>]*>\s*(\d+)",
+        html,
+    )
+    assert m, "Quick Stats Accounts in view row missing"
+    assert m.group(1) == "3", html[m.start(): m.end() + 40]
+    hero = _hero_block(html)
+    assert "Across 3 accounts:" in hero
+
+
 def test_hero_chips_track_filter_status(routed_app):
     """Status=Open → chips must show only the Open count, never closed."""
     r = routed_app.get("/positions?status=Open")
@@ -457,6 +555,29 @@ def test_date_filtered_at_full_window_matches_mart():
         check_dtype=False,
         atol=0.01,
     )
+
+
+def test_strategy_chart_rows_splits_realized_unrealized_and_folds_dividends():
+    from app.positions_page import _strategy_chart_rows
+
+    df = pd.DataFrame([
+        {"strategy": "Covered Call", "realized_pnl": 100.0, "unrealized_pnl": 50.0,
+         "total_dividend_income": 0.0},
+        {"strategy": "Covered Call", "realized_pnl": 20.0, "unrealized_pnl": -10.0,
+         "total_dividend_income": 5.0},
+        {"strategy": "Long Call", "realized_pnl": -80.0, "unrealized_pnl": 200.0,
+         "total_dividend_income": 0.0},
+        {"strategy": "Dividend", "realized_pnl": 0.0, "unrealized_pnl": 10.0,
+         "total_dividend_income": 400.0},
+    ])
+    rows = _strategy_chart_rows(df)
+    by_name = {r["strategy"]: r for r in rows}
+    assert by_name["Covered Call"]["realized"] == 125.0
+    assert by_name["Covered Call"]["unrealized"] == 40.0
+    assert by_name["Dividend"]["realized"] == 400.0
+    assert by_name["Dividend"]["unrealized"] == 10.0
+    # Sorted by net total ascending: Covered Call 165, Long Call 120, Dividend 410
+    assert [r["strategy"] for r in rows] == ["Long Call", "Covered Call", "Dividend"]
 
 
 if __name__ == "__main__":

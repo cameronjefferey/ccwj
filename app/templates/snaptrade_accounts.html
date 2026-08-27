@@ -34,6 +34,7 @@
         gap: 1rem;
         padding: .9rem 0;
         border-bottom: 1px solid #f1f5f9;
+        scroll-margin-top: 5rem;
     }
     .broker-row:last-child { border-bottom: none; padding-bottom: 0; }
     .broker-row:first-child { padding-top: 0; }
@@ -135,31 +136,19 @@
     <div class="broker-mgr-hero">
         <div class="text-uppercase small fw-semibold opacity-75 mb-2" style="letter-spacing:.08em">Multi-broker</div>
         <h1>Connected brokerages</h1>
-        <p>Add Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers
-            through SnapTrade. Each connection appears below — sync the
-            ones you want to mirror, leave the rest alone.</p>
+        <p>Connect a brokerage, then sync the accounts you want to mirror.</p>
     </div>
+
+    {% include "_early_broker_note.html" %}
 
     <div class="broker-card">
         <h2>Connected accounts</h2>
-        <p class="empty-hint mb-3">
-            Add a nickname (e.g. <em>Roth IRA</em>, <em>Joint brokerage</em>) so you
-            can tell your accounts apart. The nickname is just for display —
-            your synced data stays linked to the same account underneath.
-            <strong>Tip:</strong> save each nickname before you sync, so the
-            cleaner labels appear everywhere downstream.
-        </p>
 
         <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
-            <div class="mb-1"><strong>About the data lag &mdash; please read once:</strong></div>
-            SnapTrade pulls <strong>positions and balances in real time</strong>
-            (within seconds of a sync). <strong>Trade history</strong> is a
-            separate ingestion that SnapTrade runs against each broker on its
-            own schedule &mdash; <strong>typically a few hours, sometimes up
-            to 24 hours</strong> for a brand-new connection or for a trade you
-            just placed. If you see "0 trades" right after connecting or
-            placing a trade, that's <strong>SnapTrade still indexing</strong>,
-            not data loss. Sync again later &mdash; the trades will appear.
+            <strong>Trades can lag.</strong>
+            Positions and balances update when you sync. New trades often
+            take a few hours, and sometimes up to a day, to appear.
+            If a trade you just placed isn't here, check back later.
         </div>
 
         {% if any_reconnect_needed %}
@@ -197,14 +186,13 @@
                            name="full_history_again" id="snaptrade_mgr_sync_all_full"
                            value="1"{% if _any_first_pending %} checked{% endif %}>
                     <label class="form-check-label small" for="snaptrade_mgr_sync_all_full">
-                        Pull full history on every account
+                        Pull the longest history the broker still has on file
                     </label>
                 </div>
                 <p class="empty-hint mb-0 mt-1" style="font-size:.75rem">
-                    Leave unchecked for the routine refresh. (Some brokers via
-                    SnapTrade only return 90 days; we ask for the longest window
-                    they support.) <strong>Tip:</strong> add nicknames below and
-                    save them before syncing for cleaner labels everywhere.
+                    Unchecked is a routine refresh. Brokers only send the
+                    history they still have.
+                    Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.
                 </p>
                 <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Pulling from your brokers. This can take a minute or two — keep this tab open.</p>
             </form>
@@ -213,6 +201,9 @@
         {# Accounts are grouped by BROKER CONNECTION. One broker grant backs
            many accounts, and reconnection is a connection-level action — so
            "Reconnect" lives once per broker (not on every account row). #}
+        <p class="empty-hint mb-2" style="font-size:.8rem">
+            Nicknames are only for the UI, so you can tell accounts apart.
+        </p>
         {% for g in connection_groups %}
         <div class="broker-group{% if g.needs_reconnect %} is-broken{% endif %}">
             <div class="broker-group-head">
@@ -245,7 +236,7 @@
             {% for c in g.accounts %}
             {% set heading = c.display_nickname or c.account_name %}
             {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
-            <div class="broker-row">
+            <div class="broker-row" id="acct-{{ c.snaptrade_account_id }}">
                 <div class="who">
                     <div class="name">{{ heading }}</div>
                     {% if show_label %}
@@ -320,11 +311,8 @@
         <h2>Add a broker or another account</h2>
         {% if snaptrade_enabled %}
         <p class="empty-hint mb-3">
-            Opens the SnapTrade connection portal. Use this for a new
-            brokerage <em>or</em> another account at a broker you already
-            use (a second Schwab household account, IBKR, TD Direct).
-            Sign in there, select the extra account, and you'll land back
-            here ready to sync.
+            Opens the connection portal. Use this for a new brokerage, or
+            another account at a broker you already use.
         </p>
 
         <form method="POST" action="{{ url_for('snaptrade_connect') }}">

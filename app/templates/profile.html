@@ -283,9 +283,13 @@
                                    name="full_history_again" id="snaptrade_sync_all_full_o"
                                    value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
                             <label class="form-check-label small" for="snaptrade_sync_all_full_o">
-                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days) on every account
+                                Pull the longest history the broker still has on file
                             </label>
                         </div>
+                        <p class="small text-body-secondary mb-2">
+                            Not a 5-year archive. Schwab typically returns about 1&ndash;2 years.
+                            Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.
+                        </p>
                         <div class="sync-actions">
                             <button type="submit" class="btn-sync-primary">Sync all accounts</button>
                             <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage accounts</a>
@@ -297,8 +301,9 @@
                     {% elif snaptrade_enabled %}
                     <p class="atlas-hint mb-3">
                         Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 other brokers
-                        through SnapTrade. We mirror trade history and positions into the same
-                        pipeline as manual CSV upload.
+                        through SnapTrade. This is not a lifetime archive &mdash;
+                        older years only arrive if you
+                        <a href="{{ url_for('upload') }}">upload a CSV</a>.
                     </p>
                     <div class="qa-grid">
                         <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
@@ -499,7 +504,7 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Subscriptions</div>
                 <div class="atlas-card-b">
-                    <p class="atlas-hint mb-0">Paid plans aren't switched on yet. See the <a href="{{ url_for('pricing') }}">pricing page</a> for what's coming.</p>
+                    <p class="atlas-hint mb-0">Paid plans aren't switched on in this environment. See the <a href="{{ url_for('pricing') }}">pricing page</a>.</p>
                 </div>
             </div>
             {% endif %}
@@ -543,20 +548,21 @@
                 <div class="atlas-card-b">
                     <p class="atlas-hint">
                         Schwab, Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
-                        through the SnapTrade Connection Portal. Connect once per broker; we handle
-                        history and daily refresh from then on.
+                        through the SnapTrade Connection Portal. Connect once per broker; we refresh
+                        from then on. This is not a lifetime archive of the account.
                     </p>
                     <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
-                        <strong>What to expect after you connect:</strong>
+                        <strong>What broker sync actually includes:</strong>
                         <ul class="mb-0 ps-3 mt-1">
-                            <li><strong>Within minutes:</strong> your current positions, cash balance, and account total.</li>
-                            <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync of a new connection).</li>
+                            <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
+                            <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync).</li>
+                            <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days }} days; each broker only returns what it still has on file. Schwab typically sends about 1&ndash;2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
                         </ul>
                         <div class="mt-2">
-                            SnapTrade pulls trade history from each broker on its own schedule — we
-                            can't speed that up. If trades aren't visible right away, sync again
-                            later. They will appear; we've never seen a connected broker fail to
-                            backfill.
+                            If trades aren't visible right away, sync again later &mdash; the broker
+                            still posts them on its own schedule. Years the aggregator never sent
+                            only arrive if you
+                            <a href="{{ url_for('upload') }}" class="fw-semibold">upload a CSV of older history</a>.
                         </div>
                     </div>
                     {% if _snaptrade_accounts %}
@@ -593,12 +599,13 @@
                                    name="full_history_again" id="snaptrade_sync_all_full"
                                    value="1"{% if _any_first_pending_st %} checked{% endif %}>
                             <label class="form-check-label small" for="snaptrade_sync_all_full">
-                                Pull full history (up to {{ snaptrade_full_history_lookback_days }} days, ~5 years) on every account
+                                Pull the longest history the broker still has on file
                             </label>
                         </div>
                         <p class="atlas-hint small mb-0 mt-1">
-                            Leave unchecked for the routine {{ snaptrade_routine_lookback_days }}-day refresh.
-                            Each broker only returns what it carries on file &mdash; SnapTrade clamps to the broker's actual depth.
+                            Unchecked is a routine {{ snaptrade_routine_lookback_days }}-day refresh.
+                            Brokers only send the history they still have.
+                            Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.
                         </p>
                         <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
                             Pulling from each account. This can take a minute or two &mdash; keep this tab open.

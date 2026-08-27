@@ -154,16 +154,16 @@
     <h1>Account value &amp; composition</h1>
     <p class="lede">
         Daily account value over time, broken into cash, equity, and option positions.
-        Snapshots come from your end-of-day balances; days without a snapshot are simply not plotted.
+        Days without a snapshot are simply not plotted.
     </p>
 </div>
 
 {# View switch — one Accounts surface, two lenses. #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Accounts view">
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('accounts', account=selected_account or none) }}">Performance</a>
+       href="{{ url_for('accounts', account=selected_account or none, tenant=request.args.get('tenant') or none) }}">Performance</a>
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('accounts', view='value', account=selected_account or none) }}">Value &amp; composition</a>
+       href="{{ url_for('accounts', view='value', account=selected_account or none, tenant=request.args.get('tenant') or none) }}">Value &amp; composition</a>
 </div>
 
 {% if error %}
@@ -217,6 +217,10 @@
 </div>
 {% else %}
 
+{% if selected_range == 'all' %}
+{% include "_history_window_note.html" %}
+{% endif %}
+
 {# ── Filters ──────────────────────────────────────────────────────── #}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
     {% if wealth_account_choices and wealth_account_choices|length > 0 %}
@@ -254,12 +258,6 @@
             </label>
         </div>
     </form>
-    {% if not ever_has_transfers %}
-    <div class="small text-muted" style="flex-basis:100%;">
-        No deposits or withdrawals recorded since we started reading your broker's cash-movement feed.
-        Funding from before that isn't in this number, so excluding transfers doesn't change the chart.
-    </div>
-    {% endif %}
 
     <div class="range-toggle">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
@@ -359,12 +357,14 @@
     <h2>Account value over time</h2>
     <p class="chart-sub">
         Stacked: cash, equity, options. The black line is total account value.
-        {% if exclude_transfers and summary.has_transfers %}
-        The dashed line removes your deposits &amp; withdrawals — the gap
-        between the two lines is money you moved in or out. Hover for daily numbers.
+        {% if exclude_transfers and ever_has_transfers %}
+        The dashed line removes deposits &amp; withdrawals — including the
+        money that was already in the account on day 1. The gap between
+        the two lines is funding, not trading. Hover for daily numbers.
         {% elif ever_has_transfers %}
         Toggle <em>Exclude deposits &amp; withdrawals</em> to see the balance
-        driven by the market and income only. Hover for daily numbers.
+        driven by the market and income only (day-1 funding counts as a
+        deposit). Hover for daily numbers.
         {% else %}
         Hover for daily numbers.
         {% endif %}

@@ -126,8 +126,24 @@ def _inject_feature_flags():
     except Exception:
         plan_status = None
 
+    # Date the scoped brokerage account was connected — used by the
+    # dismissible history-window note on all-time surfaces.
+    history_since = None
+    try:
+        if current_user.is_authenticated:
+            from flask import g
+            history_since = getattr(g, "_history_since", "__unset__")
+            if history_since == "__unset__":
+                from app.accounts_page import _account_created_for_scope
+                from app.routes import _tenants_for_scope
+                history_since = _account_created_for_scope(_tenants_for_scope())
+                g._history_since = history_since
+    except Exception:
+        history_since = None
+
     # Stripe is only offered when fully configured (keys + both price IDs);
-    # otherwise the pricing page falls back to the Pro waitlist form.
+    # checkout routes refuse otherwise so a half-configured deploy cannot
+    # charge. The pricing page still shows live signup copy either way.
     try:
         from app.billing import (
             PRICE_AI_MONTHLY_DISPLAY,
@@ -158,6 +174,7 @@ def _inject_feature_flags():
         "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
         "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
         "plan_status": plan_status,
+        "history_since": history_since,
         "billing_enabled": billing_enabled,
         "price_monthly": price_monthly,
         "price_annual": price_annual,

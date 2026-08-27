@@ -32,6 +32,21 @@ from app.seed_store import (
 SEED_WRITE_LOCK_KEY = 8274013
 _seed_write_lock_state = threading.local()
 
+# CSV export guides on /upload. Only Schwab has steps today; every other
+# row is a collapsed "request this brokerage" that posts to /feedback.
+# Add a ready=True entry (and the matching template branch) when a new
+# parser/export guide ships. Keep this list aligned with the brokers we
+# already name in product copy (SnapTrade connect supports more).
+CSV_EXPORT_BROKERS = (
+    {"slug": "schwab", "name": "Charles Schwab", "ready": True},
+    {"slug": "fidelity", "name": "Fidelity", "ready": False},
+    {"slug": "vanguard", "name": "Vanguard", "ready": False},
+    {"slug": "robinhood", "name": "Robinhood", "ready": False},
+    {"slug": "interactive", "name": "Interactive Brokers", "ready": False},
+    {"slug": "alpaca", "name": "Alpaca", "ready": False},
+    {"slug": "wealthsimple", "name": "Wealthsimple", "ready": False},
+)
+
 
 @contextmanager
 def seed_write_lock():
@@ -1452,6 +1467,7 @@ def upload():
             accounts=accounts,
             recent_uploads=recent_uploads,
             github_upload_enabled=seed_writes_enabled,
+            csv_export_brokers=CSV_EXPORT_BROKERS,
         )
 
     # ------------------------------------------------------------------
@@ -1779,6 +1795,7 @@ def sync_processing():
         is_first and get_onboarding_response(current_user.id) is None
     )
 
+    from app.early_broker import early_broker_notice_for_user
     return render_template(
         "sync_processing.html",
         title="Processing Schwab sync",
@@ -1786,6 +1803,7 @@ def sync_processing():
         head_sha=head_sha,
         done_url=done_url,
         show_onboarding=show_onboarding,
+        early_broker=early_broker_notice_for_user(current_user.id),
     )
 
 

@@ -337,6 +337,7 @@ def init_db():
             holdings_last_successful_sync TIMESTAMPTZ,
             last_sync_error             TEXT,
             connection_broken_at        TIMESTAMPTZ,
+            early_broker_cohort         BOOLEAN NOT NULL DEFAULT FALSE,
             created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             UNIQUE (user_id, snaptrade_account_id)
@@ -510,6 +511,7 @@ def init_db():
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
     _migrate_snaptrade_holdings_sync_column()
+    _migrate_snaptrade_early_broker_cohort()
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
@@ -860,6 +862,32 @@ def _migrate_snaptrade_holdings_sync_column():
         _log.warning(
             "snaptrade_accounts holdings_last_successful_sync migration skipped: %s", e,
         )
+
+
+def _migrate_snaptrade_early_broker_cohort():
+    """Idempotent: first-N users of an unmodeled SnapTrade brokerage.
+
+    Dedicated dbt adapters cover schwab/alpaca/fidelity/interactive;
+    everything else is catch-all. The flag is stamped at first connect
+    (and backfilled here for people who connected before the note shipped)
+    so the thank-you still shows after the 11th user of that broker arrives.
+    """
+    try:
+        execute(
+            "ALTER TABLE snaptrade_accounts "
+            "ADD COLUMN IF NOT EXISTS early_broker_cohort "
+            "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    except Exception as e:
+        _log.warning("snaptrade_accounts early_broker_cohort migration skipped: %s", e)
+        return
+    try:
+        from app.early_broker import backfill_early_broker_cohort
+        n = backfill_early_broker_cohort()
+        if n:
+            _log.info("early_broker_cohort backfill stamped %s account row(s)", n)
+    except Exception as e:
+        _log.warning("early_broker_cohort backfill skipped: %s", e)
 
 
 def _migrate_schwab_display_nickname_column():
@@ -1938,7 +1966,7 @@ def get_snaptrade_accounts(user_id):
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
         "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
-        "last_force_refresh_at, created_at "
+        "last_force_refresh_at, early_broker_cohort, created_at "
         "FROM snaptrade_accounts WHERE user_id = %s "
         "ORDER BY created_at",
         (user_id,),
@@ -1952,7 +1980,7 @@ def get_snaptrade_account(user_id, snaptrade_account_id):
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
         "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
-        "last_force_refresh_at "
+        "last_force_refresh_at, early_broker_cohort "
         "FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
         (user_id, snaptrade_account_id),
     )

@@ -172,6 +172,12 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     "DEPOSIT": "Deposit",
     "WITHDRAWAL": "Withdrawal",
     "CONTRIBUTION": "Deposit",   # e.g. IRA / 401k contribution — cash in.
+    # Cash moving between the trader's own accounts. Per-account wealth
+    # should net these out (they cancel across the All-accounts view).
+    # Previously unmapped → logged as unknown and dropped, so the
+    # exclude-transfers toggle never saw them.
+    "INTERNAL_CASH_TRANSFER_IN": "Deposit",
+    "INTERNAL_CASH_TRANSFER_OUT": "Withdrawal",
     # Still DROPPED — ambiguous direction or asset kind, so mislabeling
     # them as cash flow would corrupt the net-deposits number:
     #   TRANSFER / JOURNAL  — often SHARE transfers between accounts, not cash.

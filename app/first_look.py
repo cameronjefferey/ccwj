@@ -6,7 +6,7 @@ narrative profile of the trader. Designed to deliver at least one
 genuine insight on day one.
 """
 from flask import render_template, redirect, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.routes import (
@@ -385,10 +385,14 @@ def render_first_look_view():
         profile = _build_profile(client, where, tenant_and)
         if not profile:
             return None
+        from app.early_broker import early_broker_notice_for_user
         return render_template(
             "first_look.html",
             title="Your Trading Profile",
             profile=profile,
+            early_broker=early_broker_notice_for_user(
+                getattr(current_user, "id", None)
+            ),
         )
     except Exception as exc:
         app.logger.warning("first-look profile build failed: %s", exc)

@@ -888,7 +888,7 @@
             {{ _tt.count }} fill{{ 's' if _tt.count != 1 }}{% if _tt.roll_count %} · {{ _tt.roll_count }} roll{{ 's' if _tt.roll_count != 1 }}{% endif %}{% if _tt.symbols %} · {{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}{% endif %}
             {% if _tt.net_cash %}
             <span class="trades-pnl {% if _tt.net_cash > 0 %}text-positive{% elif _tt.net_cash < 0 %}text-negative{% endif %}">
-                · {{ "+" if _tt.net_cash > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_cash|abs) }} cash
+                · {{ "+" if _tt.net_cash > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_cash|abs) }} G/L
             </span>
             {% endif %}
         </span>

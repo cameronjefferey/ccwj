@@ -117,25 +117,19 @@
 <details class="gs-export">
     <summary>How to export CSVs from your broker</summary>
     <div class="step-block">
-        <strong>Trade history</strong>
-        <ol>
-            <li>Log in to your broker &rarr; find <strong>Transactions</strong> or <strong>History</strong></li>
-            <li>Select your account and a date range</li>
-            <li>Export as CSV</li>
-        </ol>
-    </div>
-    <div class="step-block">
-        <strong>Current positions</strong>
-        <ol>
-            <li>Log in to your broker &rarr; open <strong>Positions</strong></li>
-            <li>Export as CSV</li>
-        </ol>
+        Schwab has step-by-step export instructions. Other brokers can be
+        requested from the same page.
+        <div class="mt-2">
+            <a href="{{ url_for('upload') }}">Open Upload &rarr; pick your brokerage</a>
+        </div>
     </div>
 </details>
 {% endmacro %}
 
 <div class="row justify-content-center">
     <div class="{% if snaptrade_enabled and not has_uploaded %}col-lg-11 col-xl-10{% else %}col-lg-8{% endif %}">
+
+        {% include "_early_broker_note.html" %}
 
         {% if has_uploaded and has_data %}
         <div class="gs-done">
@@ -181,7 +175,7 @@
                     <h6>Connect your broker</h6>
                     <p class="pitch">Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 others via SnapTrade.</p>
                     <ul class="checklist">
-                        <li>Up to <strong>{{ snaptrade_full_history_days|int }} days</strong> of history at first connection</li>
+                        <li>As far back as the broker still has on file &mdash; often <strong>1&ndash;2 years for Schwab</strong>, not the life of the account</li>
                         <li>Then a <strong>{{ snaptrade_routine_days|int }}&ndash;day</strong> rolling sync &mdash; no daily upload chore</li>
                         <li>Read-only access &mdash; removable anytime</li>
                     </ul>
@@ -203,11 +197,11 @@
                 <div class="gs-path">
                     <div class="gs-label">Manual</div>
                     <h6>Upload CSVs</h6>
-                    <p class="pitch">Export trade history and positions from your broker and drop them here.</p>
+                    <p class="pitch">Use this when broker sync didn't go back far enough &mdash; or if you don't want to connect a broker.</p>
                     <ul class="checklist">
+                        <li>Schwab's own export can include years the aggregator never sent</li>
                         <li>Works without enabling broker sync</li>
-                        <li>Re-upload weekly (or daily) to stay current</li>
-                        <li>Good for one-off historical imports</li>
+                        <li>Re-upload to stay current if you aren't connected</li>
                     </ul>
                     <div class="cta-row">
                         <a class="btn {% if featured %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('upload') }}">Upload CSVs</a>

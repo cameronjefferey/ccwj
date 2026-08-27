@@ -447,6 +447,7 @@ def snaptrade_callback():
         masked = (acc.get("number") or acc.get("account_number") or "").strip() or None
         account_name = _stable_account_name(broker_slug, masked)
 
+        existed = get_snaptrade_account(user_id, snaptrade_account_id)
         upsert_snaptrade_account(
             user_id,
             snaptrade_account_id,
@@ -454,6 +455,11 @@ def snaptrade_callback():
             account_number_masked=masked,
             account_name=account_name,
         )
+        if not existed:
+            from app.early_broker import maybe_stamp_early_broker_cohort
+            maybe_stamp_early_broker_cohort(
+                user_id, snaptrade_account_id, broker_slug,
+            )
         # Stash the brokerage_authorization UUID on the row so the
         # "Refresh from broker" button doesn't have to spend an extra
         # ``get_user_account_details`` round-trip on first press. The
@@ -629,6 +635,7 @@ def snaptrade_accounts_page():
     """
     rows = get_snaptrade_accounts(current_user.id) or []
     groups = _group_accounts_by_connection(rows)
+    from app.early_broker import early_broker_notice_for_user
     return render_template(
         "snaptrade_accounts.html",
         title="Connected brokerages",
@@ -636,6 +643,7 @@ def snaptrade_accounts_page():
         connection_groups=groups,
         any_reconnect_needed=any(g["needs_reconnect"] for g in groups),
         snaptrade_enabled=snaptrade_enabled(),
+        early_broker=early_broker_notice_for_user(current_user.id),
     )
 
 
@@ -698,7 +706,10 @@ def snaptrade_account_nickname():
         return redirect(url_for("snaptrade_accounts_page"))
     update_snaptrade_account_nickname(current_user.id, snaptrade_account_id, nickname)
     flash("Nickname saved.", "success")
-    return redirect(url_for("snaptrade_accounts_page"))
+    return redirect(url_for(
+        "snaptrade_accounts_page",
+        _anchor=f"acct-{snaptrade_account_id}",
+    ))
 
 
 @app.route("/snaptrade/accounts/disconnect", methods=["POST"])

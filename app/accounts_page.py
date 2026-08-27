@@ -435,6 +435,51 @@ def _accounts_scope_query(args):
     return ""
 
 
+def _account_created_label(tenant_rows):
+    """Format the earliest broker-tenant created_at as 'Mon D, YYYY'.
+
+    That's when the account was created in HappyTrader (connected), not
+    the first warehouse snapshot and not the brokerage open date.
+    """
+    from app.wealth import _fmt_as_of
+
+    dates = []
+    for row in tenant_rows or []:
+        val = row.get("created_at") if isinstance(row, dict) else None
+        if val is not None:
+            dates.append(val)
+    if not dates:
+        return None
+    return _fmt_as_of(min(dates))
+
+
+def _account_created_for_scope(tenant_ids):
+    """Account-creation date for the current /accounts scope."""
+    from app.models import get_broker_tenant, get_broker_tenants_for_user
+
+    if tenant_ids is None:
+        return None
+    if tenant_ids == []:
+        return None
+    try:
+        rows = get_broker_tenants_for_user(current_user.id) or []
+    except Exception:
+        rows = []
+    wanted = set(tenant_ids)
+    scoped = [r for r in rows if r.get("tenant_id") in wanted]
+    have = {r.get("tenant_id") for r in scoped}
+    for tid in tenant_ids:
+        if tid in have:
+            continue
+        try:
+            extra = get_broker_tenant(tid)
+        except Exception:
+            extra = None
+        if extra:
+            scoped.append(extra)
+    return _account_created_label(scoped)
+
+
 @app.route("/accounts")
 @login_required
 @skeleton_page
@@ -533,6 +578,7 @@ def accounts():
             account_scope_query=account_scope_query,
             selected_range="ALL",
             period_kpis=None,
+            history_since=None,
         )
 
     # ------------------------------------------------------------------
@@ -650,6 +696,7 @@ def accounts():
     # ------------------------------------------------------------------
     net_deposits_lifetime = 0.0
     net_deposit_events = []
+    nd_df = None
     try:
         nd_df = _filter_df_by_tenant_ids(net_deposits_df, tenant_ids)
         if nd_df is not None and not nd_df.empty and "net_deposit_today" in nd_df.columns:
@@ -670,6 +717,8 @@ def accounts():
                 net_deposit_events.append([d_iso, round(amt, 2)])
     except Exception as exc:
         app.logger.warning("Account net-deposits rollup failed: %s", exc)
+
+    history_since = _account_created_for_scope(tenant_ids)
 
     kpis = {
         "account_value": account_value,
@@ -840,6 +889,7 @@ def accounts():
         account_scope_query=account_scope_query,
         selected_range=selected_range,
         period_kpis=period_kpis,
+        history_since=history_since,
     )
 
 

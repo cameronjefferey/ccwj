@@ -232,5 +232,16 @@ select
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
 from amount_signed
-where underlying_symbol != 'CURRENCY_USD'
-  and not regexp_contains(underlying_symbol, r'^[A-Z0-9]{8}[0-9]$')
+-- CURRENCY_USD / CUSIP-shaped tickers are FX conversion noise, not trades.
+-- Deposits and withdrawals ship with a NULL Symbol. ``NULL !=
+-- 'CURRENCY_USD'`` is UNKNOWN in SQL, so the old predicate silently
+-- dropped every cash_transfer (warehouse-wide 0 rows while the raw seed
+-- held 15 IBKR Withdrawals) and made the exclude-transfers toggle a
+-- no-op. Keep cash_transfer regardless of ticker; keep the FX/CUSIP
+-- drop only for other rows.
+where action = 'cash_transfer'
+    or (
+        underlying_symbol is not null
+        and underlying_symbol != 'CURRENCY_USD'
+        and not regexp_contains(underlying_symbol, r'^[A-Z0-9]{8}[0-9]$')
+    )

@@ -11,7 +11,21 @@
         margin-bottom: 1.5rem;
     }
     .pos-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .15rem; }
-    .pos-hero .hero-sub { color: rgba(255,255,255,.8); font-size: .9rem; }
+    .pos-hero .hero-sub { color: rgba(255,255,255,.8); font-size: .9rem; overflow-wrap: anywhere; }
+    .pos-hero .hero-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1.25rem 1.75rem;
+        align-items: start;
+    }
+    .pos-hero .hero-copy { min-width: 0; }
+    .pos-hero .hero-kpis {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        flex-shrink: 0;
+    }
     .pos-hero .hero-chip {
         display: inline-flex; align-items: center; gap: .35rem;
         padding: .25rem .6rem; border-radius: 999px;
@@ -79,6 +93,8 @@
         .pos-hero .hero-sub { font-size: .82rem; }
         .pos-hero .hero-kpi .value { font-size: 1.05rem; }
         .pos-hero .hero-kpi .label { font-size: .58rem; }
+        .pos-hero .hero-main { grid-template-columns: 1fr; }
+        .pos-hero .hero-kpis { justify-content: flex-start; }
     }
 </style>
 {% endblock %}
@@ -87,30 +103,35 @@
 
 {# ── Hero ─────────────────────────────────────────────────────────── #}
 {# `user_accounts` is the auth list (every account the user has linked).
-   `accounts` is the data list (accounts that have positions in the
-   current view). Use `user_accounts` for "are you connected?" decisions
-   so a too-narrow filter doesn't trigger the connect-Schwab onboarding
-   copy when the user actually has 5 accounts wired up. #}
+   Use it for "are you connected?" so a too-narrow filter doesn't trigger
+   the connect-broker onboarding copy when the user actually has accounts
+   wired up. `view_accounts` is the accounts in the CURRENT (filtered)
+   view — same grain as the headline KPIs. `accounts` is the data list
+   used as a dropdown fallback. #}
 {% set _auth_acct_count = user_accounts|length if user_accounts else 0 %}
+{% set _view_accts = view_accounts if view_accounts is defined else user_accounts %}
+{% set _view_acct_count = _view_accts|length if _view_accts else 0 %}
 {% set _data_acct_count = accounts|length if accounts else 0 %}
 {% set _open_ct    = status_counts.Open    if status_counts else 0 %}
 {% set _closed_ct  = status_counts.Closed  if status_counts else 0 %}
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
 <div class="pos-hero">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-        <div>
+    <div class="hero-main">
+        <div class="hero-copy">
             <h1>Your Positions</h1>
             <div class="hero-sub">
                 {% if _auth_acct_count == 0 %}
                     No accounts linked yet &mdash;
                     <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-white text-decoration-underline">connect your broker</a>
                     or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
-                {% elif _auth_acct_count == 1 %}
-                    {{ user_accounts[0] | account_label }}
+                {% elif _view_acct_count == 1 %}
+                    {{ _view_accts[0] | account_label }}
                     &middot; your current and historical options strategies.
+                {% elif _view_acct_count > 1 %}
+                    Across {{ _view_acct_count }} account{{ '' if _view_acct_count == 1 else 's' }}:
+                    {{ _view_accts | map('account_label') | join(', ') }}.
                 {% else %}
-                    Across {{ _auth_acct_count }} account{{ '' if _auth_acct_count == 1 else 's' }}:
-                    {{ user_accounts | map('account_label') | join(', ') }}.
+                    No positions in this view.
                 {% endif %}
             </div>
             {% if _auth_acct_count > 0 %}
@@ -138,7 +159,7 @@
         </div>
 
         {% if kpis and _auth_acct_count > 0 %}
-        <div class="d-flex gap-4 flex-wrap">
+        <div class="hero-kpis">
             <div class="hero-kpi">
                 <div class="label">Total Return</div>
                 <div class="value {{ 'pos' if kpis.total_return >= 0 else 'neg' }}">
@@ -225,6 +246,9 @@
                  and selected_start_date == today.replace(month=1, day=1).strftime('%Y-%m-%d')
                  and selected_end_date == today.strftime('%Y-%m-%d') %}
 {% set _is_alltime = (not selected_start_date) and (not selected_end_date) %}
+{% if _is_alltime %}
+{% include "_history_window_note.html" %}
+{% endif %}
 
 {# On phones the six stacked filter groups push the actual content a full
    screen down — collapse them behind a toggle (always expanded on lg+). #}
@@ -397,8 +421,9 @@
 <div class="row mb-4">
     <div class="col-lg-8">
         <div class="chart-wrapper">
-            <h6 class="fw-bold mb-3">P&amp;L by Strategy</h6>
-            <div style="height: 260px;">
+            <h6 class="fw-bold mb-1">P&amp;L by Strategy</h6>
+            <p class="text-muted small mb-3">Realized vs unrealized (dividends count as realized).</p>
+            <div style="height: {{ [280, 36 * (strategy_chart | length) + 56] | max }}px;">
                 <canvas id="strategyChart"></canvas>
             </div>
         </div>
@@ -422,7 +447,7 @@
                 </tr>
                 <tr>
                     <td class="text-muted">Accounts in view</td>
-                    <td class="fw-bold text-end">{{ accounts | length }}</td>
+                    <td class="fw-bold text-end">{{ _view_acct_count }}</td>
                 </tr>
             </table>
         </div>
@@ -710,37 +735,62 @@
     {% if strategy_chart %}
     var chartData = {{ strategy_chart | tojson }};
     var labels = chartData.map(function(d){ return d.strategy; });
-    var values = chartData.map(function(d){ return d.pnl; });
-    var barColors = values.map(function(v){ return v >= 0 ? '#198754' : '#dc3545'; });
+    var realized = chartData.map(function(d){ return d.realized; });
+    var unrealized = chartData.map(function(d){ return d.unrealized; });
+    var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    var realizedColor = dark ? '#60a5fa' : '#1d4ed8';
+    var unrealizedColor = dark ? '#fbbf24' : '#d97706';
 
     new Chart(document.getElementById('strategyChart'), {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Total P&L',
-                data: values,
-                backgroundColor: barColors,
-                borderRadius: 6,
-                barThickness: 28
-            }]
+            datasets: [
+                {
+                    label: 'Realized',
+                    data: realized,
+                    backgroundColor: realizedColor,
+                    borderRadius: 4,
+                    maxBarThickness: 22,
+                    stack: 'pnl'
+                },
+                {
+                    label: 'Unrealized',
+                    data: unrealized,
+                    backgroundColor: unrealizedColor,
+                    borderRadius: 4,
+                    maxBarThickness: 22,
+                    stack: 'pnl'
+                }
+            ]
         },
         options: {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'end',
+                    labels: { boxWidth: 12, boxHeight: 12, padding: 12 }
+                },
                 tooltip: {
                     callbacks: {
                         label: function(ctx) {
-                            return '$' + ctx.parsed.x.toLocaleString(undefined, {minimumFractionDigits:2});
+                            var n = ctx.parsed.x;
+                            return ctx.dataset.label + '  $' + n.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
+                        },
+                        footer: function(items) {
+                            var t = items.reduce(function(s, i) { return s + i.parsed.x; }, 0);
+                            return 'Net  $' + t.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
                         }
                     }
                 }
             },
             scales: {
                 x: {
+                    stacked: true,
                     ticks: {
                         callback: function(v) {
                             return '$' + (v >= 1000 || v <= -1000
@@ -754,7 +804,7 @@
                         }
                     }
                 },
-                y: { grid: { display: false } }
+                y: { stacked: true, grid: { display: false } }
             }
         }
     });

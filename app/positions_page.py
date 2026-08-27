@@ -330,7 +330,79 @@ ERROR_DEFAULTS = dict(
     per_page=25,
     today=date.today(),
     timedelta=timedelta,
+    view_accounts=[],
 )
+
+
+def _accounts_in_view(filtered, *, selected_account, user_accounts, tenant_labels):
+    """Display labels for accounts represented in the current positions view.
+
+    Headline KPIs / chips read ``filtered``. The hero subtitle must list
+    the same accounts — ``user_accounts`` is the auth list (every linked
+    account) and is the wrong source once a filter is on. Fallback to the
+    auth list only when the view is empty and unfiltered, so connected-but-
+    empty copy still has names.
+    """
+    selected_account = (selected_account or "").strip()
+    if selected_account:
+        return [selected_account]
+    user_accounts = list(user_accounts or [])
+    if filtered is None or getattr(filtered, "empty", True):
+        return user_accounts
+    tenant_labels = tenant_labels or {}
+    cols = [c for c in ("tenant_id", "account") if c in filtered.columns]
+    if not cols:
+        return user_accounts
+    labels = []
+    seen = set()
+    for rec in filtered[cols].drop_duplicates().to_dict(orient="records"):
+        tid = rec.get("tenant_id")
+        acct = rec.get("account")
+        label = (tenant_labels.get(tid) if tid else None) or _norm_account_label(acct)
+        # Count physical accounts (tenant_id), not colliding broker labels
+        # like five "Schwab Account" rows. Display still prefers the
+        # disambiguated nickname from tenant_labels.
+        key = tid if tid not in (None, "") else label
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        labels.append(label)
+    labels.sort(key=lambda s: str(s).lower())
+    return labels
+
+
+def _strategy_chart_rows(filtered):
+    """Per-strategy stacked bars: realized (incl. dividends) vs unrealized.
+
+    ``positions_summary.total_pnl`` folds attributed dividends into the
+    headline number while ``realized_pnl`` / ``unrealized_pnl`` stay
+    trade-only. Folding dividends into the realized series keeps the
+    stacked total equal to that headline without a third color.
+    """
+    if filtered is None or getattr(filtered, "empty", True):
+        return []
+    if "strategy" not in filtered.columns:
+        return []
+    cols = [c for c in ("realized_pnl", "unrealized_pnl", "total_dividend_income")
+            if c in filtered.columns]
+    if "realized_pnl" not in cols or "unrealized_pnl" not in cols:
+        return []
+    g = filtered.groupby("strategy", dropna=False)[cols].sum()
+    div = g["total_dividend_income"] if "total_dividend_income" in g.columns else 0
+    g = g.assign(
+        realized=g["realized_pnl"] + div,
+        unrealized=g["unrealized_pnl"],
+    )
+    g["total"] = g["realized"] + g["unrealized"]
+    g = g.sort_values("total", ascending=True)
+    return [
+        {
+            "strategy": (idx if idx is not None else "Unknown"),
+            "realized": float(row["realized"]),
+            "unrealized": float(row["unrealized"]),
+        }
+        for idx, row in g.iterrows()
+    ]
 
 
 # Trade-group grain (one row per equity session / option contract) used to
@@ -562,6 +634,7 @@ def positions():
         # the right "you have N accounts but couldn't load data" message
         # rather than the generic "no accounts linked" copy.
         ctx["user_accounts"] = user_accounts or []
+        ctx["view_accounts"] = user_accounts or []
         return render_template("positions.html", **ctx)
 
     # ------------------------------------------------------------------
@@ -658,6 +731,18 @@ def positions():
         if selected_sector and "sector" in filtered.columns:
             filtered = filtered[filtered["sector"] == selected_sector]
 
+    # Accounts in THIS view (post every filter) so the hero subtitle
+    # matches the headline KPIs. Distinct from user_accounts (auth /
+    # onboarding) and from `accounts` (dropdown options from the
+    # tenant-scoped but pre-strategy frame).
+    _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
+    view_accounts = _accounts_in_view(
+        filtered,
+        selected_account=selected_account,
+        user_accounts=user_accounts,
+        tenant_labels=_tenant_labels,
+    )
+
     # Status counts for hero chips. Must read from `filtered`, NOT `df`,
     # so the chips agree with the body. Reading from `df` was a long-
     # standing UI lie: the chip said "12 open" even when the user had
@@ -704,16 +789,9 @@ def positions():
     }
 
     # ------------------------------------------------------------------
-    # 6. Chart data: total P&L by strategy
+    # 6. Chart data: realized vs unrealized by strategy
     # ------------------------------------------------------------------
-    strategy_chart = (
-        filtered.groupby("strategy")["total_pnl"]
-        .sum()
-        .sort_values(ascending=True)
-        .reset_index()
-        .rename(columns={"total_pnl": "pnl"})
-        .to_dict(orient="records")
-    )
+    strategy_chart = _strategy_chart_rows(filtered)
 
     # ------------------------------------------------------------------
     # 7. Symbol-level summary (grouped by account + symbol)
@@ -810,8 +888,6 @@ def positions():
     # ...) rather than the colliding broker `account` string. Falls back to
     # the raw account label when a row carries no tenant_id (admin browsing
     # or pre-grain frames).
-    _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
-
     def _label_rows(_rows):
         for _r in _rows:
             _tid = _r.get("tenant_id")
@@ -836,13 +912,13 @@ def positions():
         subsectors=subsectors,
         sectors=sectors,
         tags=tags,
-        # `user_accounts` is the auth list (every account the user has
-        # linked), used by the hero to decide between "you haven't
-        # connected anything yet" and "your filter just returned nothing".
-        # `accounts` is the data list (accounts that have positions in the
-        # current view) and powers the Account dropdown. Distinct names
-        # because they answer different questions.
+        # `user_accounts` is the auth list (every linked account) — onboarding
+        # and the Account dropdown. `view_accounts` is the accounts in the
+        # current filtered view and drives the hero subtitle so it matches
+        # the headline KPIs. `accounts` is the data-derived unique labels
+        # from the tenant-scoped (pre-strategy) frame.
         user_accounts=user_accounts,
+        view_accounts=view_accounts,
         status_counts=status_counts,
         selected_account=selected_account,
         selected_strategy=selected_strategy,
