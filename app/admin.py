@@ -1,18 +1,22 @@
 """
-Admin tooling — user list + impersonation + diagnostic audit page.
+Admin tooling — overview dashboard + user list + impersonation + audit.
 
-Three features live here:
+Four features live here:
 
-1. /admin/users
+1. /admin  (and /admin/)
+       Operator pulse: plan mix, broken connections, 7-day usage, newest
+       people. Postgres-only so it still loads when BigQuery is unhappy.
+
+2. /admin/users
        Listing of every Flask user with linked broker accounts, profile
        info, and per-row Impersonate / Audit buttons.
 
-2. /admin/impersonate/<username>  +  /admin/impersonate/stop
+3. /admin/impersonate/<username>  +  /admin/impersonate/stop
        Lets a user listed in ADMIN_USERS log in as another user for support.
        Original admin id is stashed in flask.session under _impersonator_id
        so the /stop route can switch back without forcing a re-login.
 
-3. /admin/audit
+4. /admin/audit
        Side-by-side view of every stg_history row, every leg in
        int_strategy_classification, and the rolled-up positions_summary
        row for a given (account, symbol). Lets the admin verify whether
@@ -79,6 +83,19 @@ def _admin_only(view):
 # ---------------------------------------------------------------------------
 # Impersonation
 # ---------------------------------------------------------------------------
+
+@app.route("/admin")
+@app.route("/admin/")
+@_admin_only
+def admin_overview():
+    """How the site is doing: users, plans, broken connections, usage."""
+    from app.admin_overview import build_admin_overview
+    return render_template(
+        "admin_overview.html",
+        title="Admin: overview",
+        **build_admin_overview(),
+    )
+
 
 @app.route("/admin/impersonate/<username>", methods=["POST", "GET"])
 @_admin_only

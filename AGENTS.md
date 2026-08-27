@@ -576,6 +576,14 @@ Users pick a model from the dropdown: **Included** (Flash, Haiku) vs
 `MODEL_CATALOG`). Paid rows appear when the vendor key is set; the add-on
 is the spend gate. Add a model by appending a catalog row.
 
+### Admin overview (`/admin`)
+**Status: Working.** Operator pulse for “how is the site doing”: plan mix,
+broken connections, open feedback, 7-day page use (`usage_events` — logged
+from authenticated HTML navigations only, no query strings), broker mix,
+weekly signups, newest people. Drill-downs stay at `/admin/users`,
+`/admin/audit`, `/admin/feedback`. Postgres-only so it still loads when
+the warehouse is unhappy. Non-admins get 404.
+
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working.** Checklist while the user is connecting/waiting for
 data; once warehouse rows exist it flips to the former `/first-look`
@@ -1078,6 +1086,7 @@ Use `--prices` flag to skip git pull and first dbt pass (prices only).
 - **Reconcile audit** (`.github/workflows/reconcile.yml`): nightly + manual; runs `scripts/audit/reconcile.py` and fails the job on any FAIL check.
 - **Evening prices** (`.github/workflows/prices_refresh.yml`): snaps equities to the official close after the bell.
 - **Ops alert** (`.github/workflows/ops_alert.yml`): Telegram ping on a real **failure** of the warehouse rebuild, evening prices, or reconcile audit. Cancelled overlapping rebuilds do not fire. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` GitHub secrets; no-ops if unset.
+- **Product Telegram pings** (`app/ops_notify.py`): signup, Pro / AI subscribe, cancel, first data (trial clock), feedback, broken broker connection. Same bot token/chat id on the **Render web service** (GitHub secrets only cover CI). Early-stage default is all of those; quiet later with `OPS_NOTIFY_EVENTS=none` or a subset (`subscribe,cancel`). Never blocks a user request.
 
 Note: the warehouse workflow runs two full `dbt build`s vs local targeted selects. These could be aligned.
 

@@ -117,7 +117,7 @@
 {% block content %}
 <div class="au-hero">
     <h1>Users <span style="color:rgba(255,255,255,.55);font-weight:500;font-size:1rem;">— {{ users|length }}</span></h1>
-    <p>Every user in the production database, with their linked broker accounts. Use Impersonate to see exactly what they see.</p>
+    <p>Every user in the production database, with their linked broker accounts. Use Impersonate to see exactly what they see. <a href="{{ url_for('admin_overview') }}" style="color:#fef08a;">Overview →</a></p>
 </div>
 
 <div class="au-section">

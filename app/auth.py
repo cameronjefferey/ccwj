@@ -271,6 +271,11 @@ def signup():
         User.create(username, password, email=email)
         user = User.get_by_username(username)
         login_user(user, remember=False)
+        try:
+            from app.ops_notify import notify
+            notify("signup", f"HappyTrader: new signup @{username}", username=username)
+        except Exception:
+            pass
         _send_welcome_verification(user)
         flash("Welcome! You're signed in. Check your inbox to confirm your email.", "success")
         accounts = get_accounts_for_user(user.id)

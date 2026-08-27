@@ -70,6 +70,113 @@ PRICE_AI_MONTHLY_DISPLAY = "9.99"
 PAYING_STATUSES = frozenset({"active", "trialing", "past_due", "incomplete"})
 
 
+def _user_notify_row(user_id):
+    """Best-effort snapshot before a plan write. None means skip notify
+    (do not guess a transition — that would ping on every renewal)."""
+    try:
+        return fetch_one(
+            "SELECT username, plan, subscription_cancel_at_period_end, "
+            "ai_subscription_status FROM users WHERE id = %s",
+            (user_id,),
+        )
+    except Exception:
+        return None
+
+
+def _pro_interval_label(stripe_price_id):
+    pid = str(stripe_price_id or "")
+    if pid and pid == (os.environ.get("STRIPE_PRICE_MONTHLY") or "").strip():
+        return "monthly"
+    if pid and pid == (os.environ.get("STRIPE_PRICE_ANNUAL") or "").strip():
+        return "annual"
+    return "Pro"
+
+
+def _notify_pro_activation(user_id, *, before, stripe_price_id, cancel_at_period_end):
+    if before is None:
+        return
+    try:
+        from app.ops_notify import notify, user_label
+        who = user_label(user_id, username=before.get("username"))
+        was_plan = (before.get("plan") or "").strip()
+        was_paying = was_plan == PLAN_ACTIVE
+        was_canceling = bool(before.get("subscription_cancel_at_period_end"))
+        kind = _pro_interval_label(stripe_price_id)
+        if not was_paying:
+            notify(
+                "subscribe",
+                f"HappyTrader: Pro {kind} — {who} (was {was_plan or 'unknown'})",
+                username=before.get("username"),
+            )
+        elif cancel_at_period_end and not was_canceling:
+            notify(
+                "canceling",
+                f"HappyTrader: Pro canceling at period end — {who}",
+                username=before.get("username"),
+            )
+        elif was_canceling and not cancel_at_period_end:
+            notify(
+                "subscribe",
+                f"HappyTrader: Pro resumed (pending cancel lifted) — {who}",
+                username=before.get("username"),
+            )
+    except Exception as exc:
+        _log.debug("pro activation notify skipped: %s", exc)
+
+
+def _notify_pro_ended(user_id, *, before, status):
+    if before is None:
+        return
+    try:
+        from app.ops_notify import notify, user_label
+        if (before.get("plan") or "").strip() != PLAN_ACTIVE:
+            return
+        who = user_label(user_id, username=before.get("username"))
+        notify(
+            "cancel",
+            f"HappyTrader: Pro ended ({status or 'canceled'}) — {who}",
+            username=before.get("username"),
+        )
+    except Exception as exc:
+        _log.debug("pro ended notify skipped: %s", exc)
+
+
+def _notify_ai_activation(user_id, *, before):
+    if before is None:
+        return
+    try:
+        from app.ops_notify import notify, user_label
+        was = (before.get("ai_subscription_status") or "").strip().lower()
+        if was in PAYING_STATUSES:
+            return
+        who = user_label(user_id, username=before.get("username"))
+        notify(
+            "subscribe_ai",
+            f"HappyTrader: AI add-on — {who}",
+            username=before.get("username"),
+        )
+    except Exception as exc:
+        _log.debug("AI activation notify skipped: %s", exc)
+
+
+def _notify_ai_ended(user_id, *, before, status):
+    if before is None:
+        return
+    try:
+        from app.ops_notify import notify, user_label
+        was = (before.get("ai_subscription_status") or "").strip().lower()
+        if was not in PAYING_STATUSES:
+            return
+        who = user_label(user_id, username=before.get("username"))
+        notify(
+            "cancel_ai",
+            f"HappyTrader: AI add-on ended ({status or 'canceled'}) — {who}",
+            username=before.get("username"),
+        )
+    except Exception as exc:
+        _log.debug("AI ended notify skipped: %s", exc)
+
+
 def _with_early_broker_trial(subscription_data: dict, user_id) -> dict:
     """Attach a Pro-only trial for the early-broker cohort.
 
@@ -280,6 +387,7 @@ def activate_subscription(
     """
     # NOTE: app.db.execute coerces params to a tuple, so these must be
     # POSITIONAL placeholders — named (%(name)s) params silently fail.
+    before = _user_notify_row(user_id)
     try:
         execute(
             """
@@ -321,6 +429,12 @@ def activate_subscription(
             ),
         )
         _log.info("Stripe: user_id=%s activated (status=%s)", user_id, status)
+        _notify_pro_activation(
+            user_id,
+            before=before,
+            stripe_price_id=stripe_price_id,
+            cancel_at_period_end=cancel_at_period_end,
+        )
         return True
     except Exception as exc:
         _log.exception("activate_subscription(%s) failed: %s", user_id, exc)
@@ -347,6 +461,7 @@ def deactivate_subscription(user_id, *, status="canceled", subscription_id=None)
     # makes a delayed cancellation for sub_A a no-op after sub_B has already
     # activated; without it, that stale event freezes a currently-paying user.
     # Positional placeholders only — see the note in activate_subscription.
+    before = _user_notify_row(user_id)
     try:
         execute(
             """
@@ -380,6 +495,7 @@ def deactivate_subscription(user_id, *, status="canceled", subscription_id=None)
             ),
         )
         _log.info("Stripe: user_id=%s subscription ended (status=%s)", user_id, status)
+        _notify_pro_ended(user_id, before=before, status=status)
         return True
     except Exception as exc:
         _log.exception("deactivate_subscription(%s) failed: %s", user_id, exc)
@@ -421,6 +537,7 @@ def activate_ai_addon(
     The subscription-id predicate keeps a delayed event for an old AI sub
     from overwriting a newer one.
     """
+    before = _user_notify_row(user_id)
     try:
         execute(
             """
@@ -449,6 +566,7 @@ def activate_ai_addon(
             ),
         )
         _log.info("Stripe: user_id=%s AI add-on activated (status=%s)", user_id, status)
+        _notify_ai_activation(user_id, before=before)
         return True
     except Exception as exc:
         _log.exception("activate_ai_addon(%s) failed: %s", user_id, exc)
@@ -457,6 +575,7 @@ def activate_ai_addon(
 
 def deactivate_ai_addon(user_id, *, status="canceled", subscription_id=None):
     """AI add-on is gone. Leaves ``users.plan`` and the Pro subscription alone."""
+    before = _user_notify_row(user_id)
     try:
         execute(
             """
@@ -478,6 +597,7 @@ def deactivate_ai_addon(user_id, *, status="canceled", subscription_id=None):
             ),
         )
         _log.info("Stripe: user_id=%s AI add-on ended (status=%s)", user_id, status)
+        _notify_ai_ended(user_id, before=before, status=status)
         return True
     except Exception as exc:
         _log.exception("deactivate_ai_addon(%s) failed: %s", user_id, exc)

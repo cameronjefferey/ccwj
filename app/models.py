@@ -498,6 +498,26 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_position_leg_tags_user
         ON position_leg_tags (user_id)
         """,
+        # Operator usage log — authenticated HTML navigations only.
+        # Feeds /admin overview. No query strings, IPs, or bodies.
+        """
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            endpoint     TEXT,
+            path         TEXT NOT NULL,
+            status_code  INTEGER,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_usage_events_created
+        ON usage_events (created_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_usage_events_user_created
+        ON usage_events (user_id, created_at DESC)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -2176,6 +2196,17 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
             "WHERE user_id = %s AND snaptrade_account_id = %s",
             (user_id, snaptrade_account_id),
         )
+        if not was_broken:
+            try:
+                from app.ops_notify import notify, user_label
+                who = user_label(user_id)
+                notify(
+                    "broken",
+                    f"HappyTrader: broker connection broken — {who} "
+                    f"({snaptrade_account_id})",
+                )
+            except Exception:
+                pass
         return not was_broken
     except Exception as exc:
         _log.warning("mark_snaptrade_connection_broken failed: %s", exc)

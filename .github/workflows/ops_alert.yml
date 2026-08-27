@@ -17,6 +17,12 @@ name: Ops alert (Telegram)
 # If the secrets are unset the job no-ops so a missing bot cannot fail CI.
 # This workflow file must live on the default branch — workflow_run
 # listeners only fire from master/main.
+#
+# The Flask app also pings this chat for early product events (signups,
+# Pro/AI subscribe, first data, feedback, broken connections). Those
+# use the SAME two env vars on the Render web service `ccwj`, not these
+# GitHub secrets. Quiet them later with OPS_NOTIFY_EVENTS=none (or a
+# subset). See app/ops_notify.py.
 
 on:
   workflow_run:
