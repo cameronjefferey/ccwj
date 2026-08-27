@@ -718,12 +718,16 @@
                 </li>
                 {% endif %}
                 {% if is_admin_user %}
-                {% set in_admin = ep in ('admin_users', 'admin_audit', 'admin_feedback') %}
+                {% set in_admin = ep in ('admin_overview', 'admin_users', 'admin_audit', 'admin_feedback') %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_admin %}active{% endif %}" href="#"
                        id="navAdmin" data-bs-toggle="dropdown" aria-expanded="false"
                        style="color: #fef08a;">Admin</a>
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navAdmin">
+                        <li>
+                            <a class="dropdown-item {% if ep == 'admin_overview' %}active{% endif %}"
+                               href="{{ url_for('admin_overview') }}">Overview</a>
+                        </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'admin_users' %}active{% endif %}"
                                href="{{ url_for('admin_users') }}">Users</a>

@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from flask import flash, redirect, request, url_for, jsonify
 from flask_login import current_user
 
-from app.db import execute, fetch_one
+from app.db import execute, execute_returning, fetch_one
 
 _log = logging.getLogger(__name__)
 
@@ -159,11 +159,23 @@ def start_trial_clock(user_id):
     sync or first CSV upload). Once-only by construction (WHERE ... IS NULL)
     and a no-op for beta/active users. Best-effort — never raises."""
     try:
-        execute(
+        row = execute_returning(
             "UPDATE users SET trial_started_at = NOW() "
-            "WHERE id = %s AND trial_started_at IS NULL AND plan = %s",
+            "WHERE id = %s AND trial_started_at IS NULL AND plan = %s "
+            "RETURNING username",
             (user_id, PLAN_TRIAL),
         )
+        if row:
+            try:
+                from app.ops_notify import notify
+                uname = (row.get("username") or "").strip()
+                notify(
+                    "first_data",
+                    f"HappyTrader: first data landed for @{uname}. Trial clock started.",
+                    username=uname,
+                )
+            except Exception:
+                pass
     except Exception as exc:
         _log.warning("start_trial_clock(%s) failed: %s", user_id, exc)
 

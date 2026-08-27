@@ -348,6 +348,16 @@ def _after_request_touch_session_activity(response):
     return response
 
 
+@app.after_request
+def _after_request_usage_event(response):
+    try:
+        from app.admin_overview import record_page_view
+        record_page_view(response)
+    except Exception:
+        pass
+    return response
+
+
 import logging as _logging
 import sys as _sys
 

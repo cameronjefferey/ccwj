@@ -97,14 +97,16 @@ def test_user_sync_allowed_states(monkeypatch):
 def test_start_trial_clock_sql_guard(monkeypatch):
     captured = {}
 
-    def fake_execute(sql, params=None):
+    def fake_returning(sql, params=None):
         captured["sql"] = sql
         captured["params"] = params
+        return None
 
-    monkeypatch.setattr(plan_mod, "execute", fake_execute)
+    monkeypatch.setattr(plan_mod, "execute_returning", fake_returning)
     plan_mod.start_trial_clock(42)
     assert "trial_started_at IS NULL" in captured["sql"]
     assert "plan = %s" in captured["sql"]
+    assert "RETURNING username" in captured["sql"]
     assert captured["params"] == (42, "trial")
 
 

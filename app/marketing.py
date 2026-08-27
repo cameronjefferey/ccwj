@@ -262,6 +262,18 @@ def submit_feedback():
         flash("We couldn't save that just now. Try again in a minute.", "danger")
         return redirect(request.referrer or url_for("index"))
 
+    try:
+        from app.ops_notify import notify
+        who = f"@{username}" if username else "anonymous"
+        snippet = " ".join((body or "").split())[:180]
+        notify(
+            "feedback",
+            f"HappyTrader: feedback from {who}\n{snippet}",
+            username=username,
+        )
+    except Exception:
+        pass
+
     if wants_json:
         return {"ok": True, "id": new_id}
     flash("Thanks — feedback received. We read every message.", "success")

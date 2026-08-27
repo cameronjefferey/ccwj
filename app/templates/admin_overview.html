@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .ov-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        color: #fff; padding: 1.4rem 1.6rem; border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .ov-hero h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+    .ov-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; }
+    .ov-statbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1.15rem; }
+    @media (max-width: 768px) { .ov-statbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .ov-stat {
+        background: var(--ht-surface, #fff); border: 1px solid #e7e5e4;
+        border-radius: 12px; padding: .85rem 1rem;
+    }
+    .ov-stat .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ht-muted, #78716c); font-weight: 700; }
+    .ov-stat .val { font-size: 1.55rem; font-weight: 700; color: var(--ht-ink, #1c1917); line-height: 1.2; margin-top: .15rem; }
+    .ov-stat .sub { font-size: .75rem; color: var(--ht-muted, #78716c); }
+    .ov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 900px) { .ov-grid { grid-template-columns: 1fr; } }
+    .ov-card { background: var(--ht-surface, #fff); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+    .ov-card h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ht-label, #44403c); font-weight: 700; margin: 0 0 .75rem; }
+    .ov-attn { display: flex; gap: .75rem; padding: .7rem .8rem; border-radius: 10px; margin-bottom: .5rem; align-items: flex-start; }
+    .ov-attn.ok { background: #ecfdf5; }
+    .ov-attn.warn { background: #fff7ed; }
+    .ov-attn.bad { background: #fef2f2; }
+    .ov-attn.info { background: #eff6ff; }
+    .ov-attn .t { font-weight: 700; font-size: .88rem; color: var(--ht-ink, #1c1917); }
+    .ov-attn .d { font-size: .8rem; color: var(--ht-muted, #57534e); margin-top: .1rem; }
+    .ov-attn a { font-size: .75rem; font-weight: 700; }
+    .ov-table { width: 100%; font-size: .85rem; border-collapse: collapse; }
+    .ov-table th { text-transform: uppercase; font-size: .65rem; letter-spacing: .04em; color: #57534e; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #e7e5e4; }
+    .ov-table td { padding: .45rem .5rem; border-bottom: 1px solid #f5f5f4; }
+    .ov-pill { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .ov-pill.ok { background: #dcfce7; color: #166534; }
+    .ov-pill.info { background: #dbeafe; color: #1e40af; }
+    .ov-pill.warn { background: #ffedd5; color: #9a3412; }
+    .ov-pill.bad { background: #fee2e2; color: #991b1b; }
+    .ov-pill.muted { background: #f5f5f4; color: #57534e; }
+    .ov-muted { color: var(--ht-muted, #78716c); font-size: .82rem; }
+    .ov-bar-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; font-size: .82rem; }
+    .ov-bar-row .name { min-width: 10rem; color: var(--ht-ink, #1c1917); }
+    .ov-bar-track { flex: 1; height: .45rem; background: #f5f5f4; border-radius: 99px; overflow: hidden; }
+    .ov-bar-fill { height: 100%; background: #0f3460; border-radius: 99px; }
+    .ov-bar-row .n { min-width: 2rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--ht-muted, #57534e); }
+    .ov-note { font-size: .8rem; color: var(--ht-muted, #78716c); margin: 0 0 .75rem; }
+    [data-bs-theme="dark"] .ov-stat,
+    [data-bs-theme="dark"] .ov-card { border-color: #334155; }
+    [data-bs-theme="dark"] .ov-bar-track { background: #1e293b; }
+    [data-bs-theme="dark"] .ov-attn.ok { background: #052e16; }
+    [data-bs-theme="dark"] .ov-attn.warn { background: #431407; }
+    [data-bs-theme="dark"] .ov-attn.bad { background: #450a0a; }
+    [data-bs-theme="dark"] .ov-attn.info { background: #172554; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ov-hero">
+    <h1>How the site is doing</h1>
+    <p>
+        Users, plans, broken connections, and what people actually open.
+        {% if generated_at %}Snapshot {{ generated_at.strftime('%b %-d, %Y %-I:%M %p') }} UTC.{% endif %}
+        <a href="{{ url_for('admin_users') }}" style="color:#fef08a;">All users →</a>
+    </p>
+</div>
+
+<div class="ov-statbar">
+    <div class="ov-stat">
+        <div class="lbl">People</div>
+        <div class="val">{{ real_users }}</div>
+        <div class="sub">{{ total_users }} accounts including admin/demo</div>
+    </div>
+    <div class="ov-stat">
+        <div class="lbl">Paying</div>
+        <div class="val">{{ paying }}</div>
+        <div class="sub">{% if canceling %}{{ canceling }} canceling at period end{% else %}Pro subscribers{% endif %}</div>
+    </div>
+    <div class="ov-stat">
+        <div class="lbl">Last 7 days</div>
+        <div class="val">{% if has_usage %}{{ unique_7d }}{% else %}—{% endif %}</div>
+        <div class="sub">{% if has_usage %}unique visitors · {{ hits_7d }} page loads{% else %}page views start after this deploy{% endif %}</div>
+    </div>
+    <div class="ov-stat">
+        <div class="lbl">HappyTrader AI</div>
+        <div class="val">{{ ai_addon }}</div>
+        <div class="sub">paid add-on subscribers</div>
+    </div>
+</div>
+
+<div class="ov-grid">
+    <div class="ov-card">
+        <h2>What needs attention</h2>
+        {% for item in attention %}
+        <div class="ov-attn {{ item.tone }}">
+            <div>
+                <div class="t">{{ item.title }}</div>
+                <div class="d">{{ item.detail }}</div>
+                {% if item.href %}
+                <a href="{{ url_for(item.href) }}">Open →</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="ov-card">
+        <h2>Who they are</h2>
+        {% for row in mix_rows %}
+        <div class="ov-bar-row">
+            <span class="name">{{ row.label }}</span>
+            <div class="ov-bar-track">
+                <div class="ov-bar-fill" style="width: {{ row.pct }}%;{% if row.tone == 'bad' %}background:#b91c1c;{% elif row.tone == 'warn' %}background:#c2410c;{% elif row.tone == 'ok' %}background:#15803d;{% elif row.tone == 'info' %}background:#1d4ed8;{% endif %}"></div>
+            </div>
+            <span class="n">{{ row.n }}</span>
+        </div>
+        {% endfor %}
+        {% if not mix_rows %}
+        <p class="ov-muted mb-0">No users yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="ov-grid">
+    <div class="ov-card">
+        <h2>Last 7 days of use</h2>
+        {% if not has_usage %}
+        <p class="ov-note">Page-level usage starts recording after this ships. Logins and uploads below are already live.</p>
+        {% endif %}
+        <table class="ov-table">
+            <tbody>
+                <tr><td>Successful logins</td><td class="text-end fw-bold">{{ logins_7d }}</td></tr>
+                <tr><td>CSV uploads</td><td class="text-end fw-bold">{{ uploads_7d }}</td></tr>
+                <tr><td>Ask AI questions</td><td class="text-end fw-bold">{{ insights_7d }}</td></tr>
+            </tbody>
+        </table>
+        {% if views_7d %}
+        <p class="ov-muted mt-3 mb-2">Pages opened</p>
+        <table class="ov-table">
+            <thead><tr><th>Page</th><th class="text-end">Views</th><th class="text-end">People</th></tr></thead>
+            <tbody>
+            {% for row in views_7d %}
+            <tr>
+                <td>{{ row.label }}</td>
+                <td class="text-end">{{ row.hits }}</td>
+                <td class="text-end">{{ row.users }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    <div class="ov-card">
+        <h2>Brokers connected</h2>
+        {% if brokers %}
+        <table class="ov-table">
+            <thead><tr><th>Broker</th><th class="text-end">Accounts</th><th class="text-end">People</th></tr></thead>
+            <tbody>
+            {% for row in brokers %}
+            <tr>
+                <td>{{ (row.broker or '—')|replace('_', ' ')|title }}</td>
+                <td class="text-end">{{ row.accounts }}</td>
+                <td class="text-end">{{ row.users }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="ov-muted mb-0">No SnapTrade accounts yet.</p>
+        {% endif %}
+
+        {% if signups %}
+        <p class="ov-muted mt-3 mb-2">Signups by week</p>
+        <table class="ov-table">
+            <tbody>
+            {% for row in signups %}
+            <tr>
+                <td>{% if row.week %}{{ row.week.strftime('%b %-d, %Y') }}{% else %}—{% endif %}</td>
+                <td class="text-end fw-bold">{{ row.n }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+
+{% if broken %}
+<div class="ov-card">
+    <h2>Broken connections</h2>
+    <table class="ov-table">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Account</th>
+                <th>Broker</th>
+                <th>Since</th>
+                <th>Last error</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in broken %}
+        <tr>
+            <td>
+                <a href="{{ url_for('admin_impersonate', username=row.username) }}">{{ row.username }}</a>
+            </td>
+            <td>{{ row.account_name }}</td>
+            <td>{{ row.broker_slug }}</td>
+            <td class="ov-muted">{% if row.connection_broken_at %}{{ row.connection_broken_at.strftime('%b %-d') }}{% else %}—{% endif %}</td>
+            <td class="ov-muted">{{ (row.last_sync_error or '—')|truncate(80) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="ov-card">
+    <h2>Newest people</h2>
+    {% if recent %}
+    <table class="ov-table">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Status</th>
+                <th>Trial day</th>
+                <th>Signed up</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in recent %}
+        <tr>
+            <td>
+                <strong>{{ row.username }}</strong>
+                {% if row.display_name %}<div class="ov-muted">{{ row.display_name }}</div>{% endif %}
+            </td>
+            <td><span class="ov-pill {{ row.tone }}">{{ row.plan_label }}</span></td>
+            <td class="ov-muted">{% if row.trial_days is not none %}{{ row.trial_days }}{% else %}—{% endif %}</td>
+            <td class="ov-muted">{% if row.signed_up_at %}{{ row.signed_up_at.strftime('%b %-d, %Y') }}{% else %}—{% endif %}</td>
+            <td class="text-end">
+                <a class="small" href="{{ url_for('admin_impersonate', username=row.username) }}">Impersonate</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p class="ov-muted mt-2 mb-0"><a href="{{ url_for('admin_users') }}">Everyone →</a></p>
+    {% else %}
+    <p class="ov-muted mb-0">No customer accounts yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
