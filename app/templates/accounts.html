@@ -49,6 +49,10 @@
        href="{{ url_for('accounts', view='value', account=selected_account or none, tenant=request.args.get('tenant') or none) }}">Value &amp; composition</a>
 </div>
 
+{% if kpis and (selected_range or 'ALL') == 'ALL' %}
+{% include "_history_window_note.html" %}
+{% endif %}
+
 {% if accounts is defined and accounts|length == 0 and not selected_account %}
 <div class="alert alert-info">
     <strong>No account data yet.</strong>
@@ -512,6 +516,16 @@
         document.querySelectorAll('.timeframe-group .js-range-btn').forEach(function (b) {
             b.classList.toggle('active', b.dataset.range === key);
         });
+        var note = document.getElementById('ht-history-note');
+        if (note) {
+            if (key === 'ALL') {
+                var dismissed = false;
+                try { dismissed = !!localStorage.getItem('ht-history-note-dismissed'); } catch (e) {}
+                if (!dismissed) note.removeAttribute('hidden');
+            } else {
+                note.setAttribute('hidden', '');
+            }
+        }
     }
 
     /* ── KPI cards (client-side windowing) ─────────────────────────────

@@ -68,6 +68,30 @@
 
             <div class="faq-item">
                 <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-history-depth" aria-expanded="false" aria-controls="faq-history-depth">
+                    How far back does broker sync go?
+                </h3>
+                <div id="faq-history-depth" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Not the life of the account, and not 5 years. We request the longest
+                        window the aggregator allows (up to 1825 days); each broker only returns
+                        what it still has on file. For Schwab that is typically about 1&ndash;2 years
+                        of trades. Daily account-value charts start even later &mdash; the first day
+                        we captured an end-of-day balance, which is after you connected, not when
+                        the account opened.
+                        <br><br>
+                        That gap changes how an account looks: P&amp;L, positions, and the value
+                        chart only cover the window we actually received. To fill in older trades
+                        and cost basis, export from schwab.com
+                        (Accounts → History → Transactions, date range as far back as you can)
+                        and <a href="{{ url_for('upload') }}">upload the CSV</a>. A CSV cannot
+                        recreate daily balances before we started snapshotting.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                     data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">
                     Is my data secure?
                 </h3>
@@ -86,7 +110,17 @@
                 </h3>
                 <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Right now we support Charles Schwab (schwab.com export, not thinkorswim). Additional brokers are planned for the future.
+                        Right now CSV upload parses Charles Schwab's web export
+                        (schwab.com, not thinkorswim). You can connect other brokers
+                        (Fidelity, Vanguard, Robinhood, Interactive Brokers, Alpaca,
+                        Wealthsimple, and more) via SnapTrade. If we haven't fitted
+                        a given brokerage into our models yet, SnapTrade still
+                        connects it. The first handful of users get six months of
+                        Pro included free if they subscribe, while we calibrate.
+                        <br><br>
+                        Per-broker CSV export steps live on
+                        <a href="{{ url_for('upload') }}">Upload</a> &mdash; Schwab
+                        is ready; request any other brokerage from that page.
                     </div>
                 </div>
             </div>
@@ -98,9 +132,14 @@
                 </h3>
                 <div id="faq-schwab-connect" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        No. Once you've done one upload to get started, you can connect Schwab via OAuth from your <strong>Account</strong> page and we'll pull new transactions on a schedule &mdash; no daily export needed.
+                        No. Once you've done one upload to get started, you can connect your broker
+                        via SnapTrade from your <strong>Account</strong> page and we'll pull new
+                        transactions on a schedule &mdash; no daily export needed.
                         <br><br>
-                        We never see your Schwab password. The OAuth handshake happens on Schwab's site; Schwab gives us a short-lived, read-only permission to read your activity. You can revoke it at any time.
+                        Broker sync is not a lifetime archive. If the aggregator didn't send years
+                        you still have in schwab.com, export those and
+                        <a href="{{ url_for('upload') }}">upload the CSV</a> once.
+                        We never see your broker password.
                     </div>
                 </div>
             </div>

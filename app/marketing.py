@@ -99,11 +99,8 @@ def pricing():
     """Plans page: reverse trial, the frozen free tier, and Pro checkout.
 
     ``subscription`` lets the Pro card show "Manage subscription" instead of a
-    second Subscribe button for someone who already pays. The Pro waitlist is
-    only consulted when Stripe isn't configured (``billing_enabled`` false),
-    which is the pre-launch / local-dev shape.
+    second Subscribe button for someone who already pays.
     """
-    waitlisted = False
     subscription = None
     try:
         if current_user.is_authenticated:
@@ -111,16 +108,11 @@ def pricing():
 
             if stripe_enabled():
                 subscription = subscription_summary(current_user.id)
-            else:
-                from app.models import is_user_on_pro_waitlist
-                waitlisted = is_user_on_pro_waitlist(current_user.id)
     except Exception:
-        waitlisted = False
         subscription = None
     return render_template(
         "pricing.html",
         title="Pricing",
-        pro_waitlisted=waitlisted,
         subscription=subscription,
     )
 
@@ -165,6 +157,47 @@ def pro_waitlist():
 # ------------------------------------------------------------------
 
 
+def compose_feedback_body(
+    notes: str,
+    *,
+    topic: str = "",
+    broker: str = "",
+    username: str = "",
+    offer_samples: bool | None = None,
+) -> str:
+    """Join a structured request (topic + broker) with free-text notes.
+
+    The upload-page "request this brokerage's CSV export" form sends
+    ``topic`` / ``broker`` so the admin inbox gets a labeled request even
+    when the user leaves the notes blank. The footer Send-Feedback modal
+    never sends those fields, so this is a no-op and returns ``notes``.
+    ``offer_samples`` is the upload-page checkbox (willing to send the first
+    real export files so we can write a parser); ignored for footer feedback.
+    """
+    notes = (notes or "").strip()
+    topic = (topic or "").strip()
+    broker = (broker or "").strip()
+    username = (username or "").strip()
+    if not topic and not broker:
+        return notes
+    parts = []
+    if topic:
+        parts.append(topic)
+    if broker:
+        parts.append(f"Broker: {broker}")
+    if username:
+        parts.append(f"HappyTrader user: {username}")
+    if offer_samples is not None:
+        parts.append(
+            "Willing to provide sample CSVs: yes"
+            if offer_samples
+            else "Willing to provide sample CSVs: no"
+        )
+    if notes:
+        parts.extend(["", "Additional notes:", notes])
+    return "\n".join(parts).strip()
+
+
 @app.route("/feedback", methods=["POST"])
 @limiter.limit("5 per minute; 30 per hour")
 def submit_feedback():
@@ -181,11 +214,27 @@ def submit_feedback():
     """
     from app.models import save_feedback
 
-    body = (request.form.get("body") or request.form.get("message") or "").strip()
+    notes = (request.form.get("body") or request.form.get("message") or "").strip()
+    topic = (request.form.get("topic") or "").strip()
+    broker = (request.form.get("broker") or "").strip()
     page_path = (request.form.get("page_path") or request.referrer or "")[:512]
 
     user_id = current_user.id if current_user.is_authenticated else None
     username = current_user.username if current_user.is_authenticated else None
+
+    offer_samples = None
+    if topic or broker:
+        offer_samples = (request.form.get("offer_samples") or "").strip().lower() in (
+            "1", "on", "true", "yes",
+        )
+
+    body = compose_feedback_body(
+        notes,
+        topic=topic,
+        broker=broker,
+        username=username or "",
+        offer_samples=offer_samples,
+    )
 
     wants_json = (
         request.accept_mimetypes.best == "application/json"
@@ -524,6 +573,7 @@ def get_started():
             current_user.id, exc,
         )
 
+    from app.early_broker import early_broker_notice_for_user
     return render_template(
         "get_started.html",
         title="Get Started",
@@ -533,6 +583,7 @@ def get_started():
         snaptrade_connected=snaptrade_connected,
         snaptrade_full_history_days=snaptrade_full_history_days,
         snaptrade_routine_days=snaptrade_routine_days,
+        early_broker=early_broker_notice_for_user(current_user.id),
     )
 
 

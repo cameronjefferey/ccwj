@@ -88,6 +88,19 @@ WHERE 1=1 {tenant_filter}
 ORDER BY date, account
 """
 
+# Fill-history span for the "broker sync is not a lifetime archive" banner.
+# tenant_id is projected so the DataFrame filter can fail closed.
+HISTORY_SPAN_QUERY = """
+SELECT
+    tenant_id,
+    MIN(trade_date) AS first_fill,
+    MAX(trade_date) AS last_fill,
+    COUNT(*) AS n_fills
+FROM `ccwj-dbt.analytics.stg_history`
+WHERE 1=1 {tenant_filter}
+GROUP BY tenant_id
+"""
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -155,8 +168,8 @@ def _resolve_range(arg_value, default_days):
     end = date.today()
     raw = (arg_value or "").strip().lower()
     if raw == "all":
-        # mart_wealth_daily covers ~5y of history at most; a 10y window
-        # is comfortably larger than the data and avoids a special path.
+        # Snapshot spines are months-to-a-couple-years, not a lifetime
+        # archive. A 10y window is larger than any spine we have.
         return end - timedelta(days=365 * 10), end
     if raw.isdigit():
         n = max(1, min(int(raw), 365 * 10))
@@ -182,14 +195,91 @@ def _fmt_as_of(val):
     return str(val)
 
 
+def _build_history_coverage(wealth_df, fills_df=None):
+    """Facts for the value-view disclosure: when snapshots start, when
+    fills start, and the inferred opening cash (first snapshot value).
+
+    Broker sync is not a lifetime archive. This payload exists so the
+    page can say that in numbers, then point at CSV upload.
+    """
+    if wealth_df is None or wealth_df.empty or "date" not in wealth_df.columns:
+        return None
+    work = wealth_df.copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce")
+    work = work[work["date"].notna()]
+    if work.empty:
+        return None
+
+    if "tenant_id" in work.columns and work["tenant_id"].notna().any():
+        keys = ["tenant_id"]
+    elif "account" in work.columns:
+        keys = ["account"]
+    else:
+        keys = None
+
+    if keys:
+        firsts = work.sort_values("date").groupby(keys, as_index=False).first()
+        opening = float(
+            pd.to_numeric(firsts["account_value"], errors="coerce").fillna(0).sum()
+        )
+    else:
+        opening = float(
+            pd.to_numeric(work.sort_values("date")["account_value"], errors="coerce")
+            .fillna(0)
+            .iloc[0]
+        )
+
+    first_fill = last_fill = None
+    n_fills = 0
+    if fills_df is not None and not fills_df.empty:
+        n_fills = int(
+            pd.to_numeric(fills_df.get("n_fills"), errors="coerce").fillna(0).sum()
+        )
+        if "first_fill" in fills_df.columns:
+            ff = pd.to_datetime(fills_df["first_fill"], errors="coerce")
+            if ff.notna().any():
+                first_fill = ff.min()
+        if "last_fill" in fills_df.columns:
+            lf = pd.to_datetime(fills_df["last_fill"], errors="coerce")
+            if lf.notna().any():
+                last_fill = lf.max()
+
+    snap_min = work["date"].min()
+    first_fill_fmt = (
+        _fmt_as_of(first_fill)
+        if first_fill is not None and pd.notna(first_fill) else None
+    )
+    last_fill_fmt = (
+        _fmt_as_of(last_fill)
+        if last_fill is not None and pd.notna(last_fill) else None
+    )
+    fills_predate = bool(
+        first_fill is not None
+        and pd.notna(first_fill)
+        and pd.Timestamp(first_fill).normalize() < pd.Timestamp(snap_min).normalize()
+    )
+    return {
+        "snapshot_start": _fmt_as_of(snap_min),
+        "snapshot_end": _fmt_as_of(work["date"].max()),
+        "first_fill": first_fill_fmt,
+        "last_fill": last_fill_fmt,
+        "n_fills": n_fills,
+        "opening_deposit": round(opening, 2),
+        "fills_predate_snapshots": fills_predate,
+    }
+
+
 def _net_deposits_by_date(df):
     """Return a date-indexed Series of cumulative net deposits (summed
-    across accounts in scope), rebased so the FIRST day in the window is
-    0. Rebasing to the window start means a deposit that happened BEFORE
-    the window is a constant offset that cancels out (it doesn't distort
-    the shape), while a deposit INSIDE the window shows up as the step it
-    really is. Returns ``None`` when the mart predates transfer capture
-    (column missing) so callers degrade to a no-op.
+    across accounts in scope). This is the lifetime running total through
+    each day — not rebased to the window start.
+
+    Rebasing used to zero out transfers that landed before the snapshot
+    spine (or before the selected range). The exclude-transfers line then
+    sat on top of the raw line and the toggle looked broken. Change-over-
+    time KPIs still subtract the *delta* of this series between two days
+    (in-window only). Returns ``None`` when the mart predates transfer
+    capture (column missing) so callers degrade to a no-op.
     """
     if df is None or df.empty or "cumulative_net_deposits" not in df.columns:
         return None
@@ -202,9 +292,7 @@ def _net_deposits_by_date(df):
     )
     if cum.empty:
         return None
-    base = float(cum["cumulative_net_deposits"].iloc[0])
-    cum["net_since_start"] = cum["cumulative_net_deposits"].astype(float) - base
-    return cum.set_index("date")["net_since_start"]
+    return cum.set_index("date")["cumulative_net_deposits"].astype(float)
 
 
 def _build_chart_payload(df, exclude_transfers=False):
@@ -436,10 +524,10 @@ def render_wealth_view():
 
     Process-first: the chart and hero exist so a user can see *how*
     their balance moved (composition, income, drawdowns), not as a
-    competitive scoreboard. Schwab API sync only emits TRADE rows,
-    and the export taxonomy doesn't tag deposits separately, so we
-    deliberately avoid claiming a precise "organic vs deposits"
-    number — see ``mart_wealth_daily.sql`` for the reasoning.
+    competitive scoreboard. Broker sync is not a lifetime archive —
+    the page discloses the first snapshot date, the first fill date,
+    and inferred opening cash, then points at CSV upload for years
+    the aggregator never sent.
     """
     bounce = _redirect_if_no_accounts()
     if bounce:
@@ -494,11 +582,14 @@ def render_wealth_view():
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "ever_has_transfers": False,
+        "history_coverage": None,
+        "history_since": None,
         "error": None,
     }
 
     try:
         df = None
+        fills_df = pd.DataFrame()
         if not wealth_no_match:
             client = get_bigquery_client()
             from app.query_cache import cached_query_df
@@ -520,6 +611,13 @@ def render_wealth_view():
             # row whose ``user_id`` doesn't match the signed-in user.
             df = _filter_df_by_tenant_ids(df, tenant_ids)
             df = _collapse_wealth_daily_duplicate_grain(df)
+
+            try:
+                span_sql = HISTORY_SPAN_QUERY.format(tenant_filter=tenant_filter)
+                fills_df = cached_query_df(client, span_sql, label="wealth_history_span")
+                fills_df = _filter_df_by_tenant_ids(fills_df, tenant_ids)
+            except Exception as span_exc:
+                app.logger.warning("Wealth history-span query failed: %s", span_exc)
 
         if df is None:
             df = pd.DataFrame()
@@ -553,6 +651,9 @@ def render_wealth_view():
                 .any()
             )
         context["ever_has_transfers"] = ever_has_transfers
+        context["history_coverage"] = _build_history_coverage(df, fills_df)
+        from app.accounts_page import _account_created_for_scope
+        context["history_since"] = _account_created_for_scope(tenant_ids)
         context["summary"] = _build_summary(
             range_df, exclude_transfers, lookback_df=df,
         )

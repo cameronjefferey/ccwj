@@ -405,6 +405,8 @@
        href="{{ url_for('strategies', view='fit', account=selected_account or none) }}">Fit matrix</a>
 </div>
 
+{% include "_history_window_note.html" %}
+
 <div class="fit-hero">
     <h1>Strategy fit</h1>
     <p class="lede">Which of your strategies actually have edge across {{ dim_label_plural or 'sectors' }}? Each cell shows how your real trades performed.</p>

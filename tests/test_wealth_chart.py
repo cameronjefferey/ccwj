@@ -124,9 +124,8 @@ def test_chart_payload_emits_deposit_adjusted_line():
     out = _build_chart_payload(_deposit_scenario(), exclude_transfers=True)
     # Raw account value climbs through the $5k deposit.
     assert out["account_value"] == [1000.0, 1100.0, 6100.0, 6200.0]
-    # Deposit-adjusted line strips the $5k step (rebased to window start).
+    # Deposit-adjusted line strips the $5k step.
     assert out["account_value_ex_transfers"] == [1000.0, 1100.0, 1100.0, 1200.0]
-    # Net deposits rebased to 0 on day one, jumping on the deposit day.
     assert out["net_deposits"] == [0.0, 0.0, 5000.0, 5000.0]
     assert out["has_transfers"] is True
     assert out["exclude_transfers"] is True
@@ -139,6 +138,62 @@ def test_chart_payload_no_transfer_column_is_graceful_noop():
     assert out["account_value_ex_transfers"] == out["account_value"]
     assert out["net_deposits"] == [0.0, 0.0, 0.0, 0.0]
     assert out["has_transfers"] is False
+
+
+def test_chart_payload_opening_capital_starts_exclude_at_zero():
+    """The first snapshot's account value is inferred opening cash.
+    Exclude must start at $0 (as if that funding hadn't been deposited)
+    and then track only market + income + later explicit transfers."""
+    rows = []
+    spec = [
+        ("2026-06-08", 16335.40, 16335.40),
+        ("2026-06-09", 16200.00, 16335.40),
+        ("2026-08-26", 15372.18, 16335.40),
+    ]
+    for d, av, cum in spec:
+        rows.append({
+            "tenant_id": "snaptrade:emmory",
+            "account": "Schwab Account",
+            "user_id": 9,
+            "date": pd.Timestamp(d),
+            "account_value": av,
+            "cash_value": 28.0,
+            "equity_value": av - 28.0,
+            "option_value": 0.0,
+            "cumulative_net_deposits": cum,
+        })
+    out = _build_chart_payload(pd.DataFrame(rows), exclude_transfers=True)
+    assert out["has_transfers"] is True
+    assert out["account_value"] == [16335.40, 16200.00, 15372.18]
+    assert out["account_value_ex_transfers"] == [0.0, -135.40, -963.22]
+
+
+def test_chart_payload_pre_spine_withdrawals_shift_the_exclude_line():
+    """Withdrawals that landed before the snapshot window used to rebase
+    to 0 (constant offset cancelled) so the toggle drew two identical
+    lines. Lifetime cumulative must still move the exclude line."""
+    rows = []
+    for d, av in (
+        ("2026-08-18", 10000.0),
+        ("2026-08-19", 10100.0),
+        ("2026-08-20", 10200.0),
+    ):
+        rows.append({
+            "tenant_id": "snaptrade:ibkr",
+            "account": "Interactive Brokers",
+            "user_id": 18,
+            "date": pd.Timestamp(d),
+            "account_value": av,
+            "cash_value": av,
+            "equity_value": 0.0,
+            "option_value": 0.0,
+            "cumulative_net_deposits": -25500.0,
+        })
+    out = _build_chart_payload(pd.DataFrame(rows), exclude_transfers=True)
+    assert out["has_transfers"] is True
+    assert out["net_deposits"] == [-25500.0, -25500.0, -25500.0]
+    # Exclude line is "as if you hadn't withdrawn" — $25.5k above actual.
+    assert out["account_value_ex_transfers"] == [35500.0, 35600.0, 35700.0]
 
 
 def test_summary_change_in_range_excludes_deposits_when_toggled():
@@ -232,4 +287,58 @@ def test_slice_keeps_only_the_requested_window():
     assert sliced["date"].min() >= pd.Timestamp("2026-07-01")
     assert sliced["date"].max() <= pd.Timestamp("2026-07-31")
     assert len(sliced) == 30
+
+
+def test_history_coverage_reports_first_snapshot_and_opening_cash():
+    from app.wealth import _build_history_coverage
+
+    wealth = _value_curve("2026-06-08", 3, start_val=16335.40)
+    fills = pd.DataFrame([{
+        "tenant_id": "snaptrade:abc",
+        "first_fill": pd.Timestamp("2025-01-06"),
+        "last_fill": pd.Timestamp("2026-08-20"),
+        "n_fills": 78,
+    }])
+    cov = _build_history_coverage(wealth, fills)
+    assert cov["snapshot_start"].startswith("Jun")
+    assert "2026" in cov["snapshot_start"]
+    assert cov["first_fill"].startswith("Jan")
+    assert "2025" in cov["first_fill"]
+    assert cov["n_fills"] == 78
+    assert cov["opening_deposit"] == 16335.40
+    assert cov["fills_predate_snapshots"] is True
+
+
+def test_history_coverage_sums_opening_cash_across_tenants():
+    from app.wealth import _build_history_coverage
+
+    a = _value_curve("2026-06-08", 2, start_val=1000.0)
+    b = _value_curve("2026-06-10", 2, start_val=500.0)
+    b["tenant_id"] = "snaptrade:def"
+    b["account"] = "Other"
+    cov = _build_history_coverage(pd.concat([a, b], ignore_index=True), None)
+    assert cov["opening_deposit"] == 1500.0
+    assert cov["first_fill"] is None
+    assert cov["fills_predate_snapshots"] is False
+
+
+def test_account_created_label_uses_earliest_tenant_created_at():
+    from datetime import datetime
+    from app.accounts_page import _account_created_label
+
+    rows = [
+        {"tenant_id": "snaptrade:a", "created_at": datetime(2026, 8, 15, 12, 0, 0)},
+        {"tenant_id": "snaptrade:b", "created_at": datetime(2026, 7, 1, 9, 0, 0)},
+    ]
+    label = _account_created_label(rows)
+    assert "Jul" in label
+    assert "2026" in label
+    assert "Aug" not in label
+
+
+def test_account_created_label_empty_rows():
+    from app.accounts_page import _account_created_label
+
+    assert _account_created_label([]) is None
+    assert _account_created_label(None) is None
 

@@ -4464,6 +4464,7 @@ def day_detail(day_str):
         total_delta_pct=total_delta_pct,
         trade_rows=trade_rows,
         cash_rows=cash_rows,
+        net_cash=fills.get("net_cash") or 0,
         option_rows=option_rows,
         dividend_rows=dividend_rows,
         market_rows=market_rows,

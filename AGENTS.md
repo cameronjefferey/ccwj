@@ -104,8 +104,9 @@ Subscribing also queues an immediate catch-up sync through the webhook's
 existing debounce queue (`queue_resume_sync` → `_queue_snaptrade_sync`) so
 "Resume my mirror" means now — called only AFTER the plan flips, since
 `user_sync_allowed` would refuse otherwise. `stripe_enabled()` is
-all-or-nothing (secret key + BOTH price IDs) so an unconfigured deploy shows
-the waitlist instead of a broken checkout. Admin `/admin/users` keeps the
+all-or-nothing (secret key + BOTH price IDs) so an unconfigured deploy
+refuses checkout instead of charging; the Pro card still shows signup.
+Admin `/admin/users` keeps the
 manual set-plan / +30d levers for comps. Pinned by `tests/test_billing.py`.
 
 **HappyTrader AI is a second Stripe subscription** (`STRIPE_PRICE_AI_MONTHLY`,
@@ -333,7 +334,10 @@ share count per (tenant, account, user, symbol) with provable arithmetic
 split-adjusted; symbols with `equity_sell_short` fills or no history rows are
 skipped) and prices it on a confidence ladder: broker cost basis when the
 position is still held (exact, keeps the open-session realized formula
-consistent) → market close at the window start → first-fill price. **`int_equity_fills`**
+consistent) → market close at the window start → first-fill price.
+**`int_opening_cash`** is the account-grain sibling: day-1
+`account_value` is the missing deposit (wealth exclude-transfers), not a
+synthetic `stg_history` fill. **`int_equity_fills`**
 is the canonical equity fill stream — real fills UNION synthetic openings with
 split adjustment applied CENTRALLY (today's share-units) — and every
 running-quantity consumer reads it: `int_equity_sessions`,
@@ -407,7 +411,8 @@ Lists all positions with strategy tags, P&L, status. Links to position detail.
 Pagination in Python (`per_page = 25`).
 
 What's working:
-- Hero "X open / Y closed" chips honor every active filter (account,
+- Hero "X open / Y closed" chips **and** the "Across N accounts" line honor
+  every active filter (account,
   strategy, symbol, status, subsector, sector, date range). Pre-fix the
   chips read off the unfiltered df and lied about the body.
 - Pagination + symbol-cell links preserve all 7 filter dimensions.
@@ -416,6 +421,8 @@ What's working:
   message instead.
 - Quick Stats Winners shows raw `num_winners`, not the buggy
   `total_trades * win_rate` derivation that over-reported by 2-3x.
+- P&amp;L by Strategy is a stacked realized vs unrealized bar (dividends
+  count as realized so the stack still equals headline total P&amp;L).
 - Date-filtered view (DATE_FILTERED_QUERY) uses the same realized /
   unrealized split and same status logic as the positions_summary mart;
   pre-fix the date view emitted a 3rd "Mixed" status the all-time view
@@ -481,27 +488,46 @@ equity / options per day, plus cumulative dividends / interest / fees).
 Stacked-area chart of composition with a total line; hero shows allocation
 + change-over-time.
 
+**History gap is disclosed, not hidden (Aug 2026).** Broker sync is not a
+lifetime or 5-year archive: we *request* up to 1825 days; SnapTrade clamps
+to whatever the broker still has on file (often ~1–2 years of trades).
+Daily values start even later — the first SCD2 snapshot after connect.
+Accounts Performance (All range) and Value (All range) share a quiet,
+dismissible note with Positions (All time), Position Detail, Strategies,
+Strategy fit, Sectors, Trader Profile, and Insights
+(``_history_window_note.html``, localStorage key `ht-history-note-dismissed`)
+that the record is complete from account creation (the date the account
+was connected), with a CSV link for earlier years. Sync copy on
+profile / get-started / snaptrade_accounts must not say "~5 years". CSV
+fills in *trades*; it cannot recreate daily balances before snapshots started.
+
 **Deposits & withdrawals toggle (Aug 2026).** Deposits/withdrawals move
 account value without being trading gains, which distorts "how am I doing"
 on balance-based surfaces. External cash movements are now CAPTURED (they
 were previously dropped): SnapTrade `DEPOSIT` / `WITHDRAWAL` / `CONTRIBUTION`
-activities map to `action = 'cash_transfer'` / `instrument_type = 'Cash Event'`
-in `stg_history` (deposit +, withdrawal −; `TRANSFER` / `JOURNAL` /
+/ `INTERNAL_CASH_TRANSFER_IN` / `INTERNAL_CASH_TRANSFER_OUT` activities map
+to `action = 'cash_transfer'` / `instrument_type = 'Cash Event'` in
+`stg_history` (deposit +, withdrawal −; `TRANSFER` / `JOURNAL` /
 `DISTRIBUTION` stay dropped — they can be SHARE transfers or ambiguous
-income). `mart_wealth_daily` exposes `net_deposit_today` +
+income). Cash events often have a NULL ticker; `stg_history` must keep
+those rows (do not filter with `underlying_symbol != 'CURRENCY_USD'` —
+NULL comparisons drop them and the toggle becomes a warehouse-wide no-op). `mart_wealth_daily` exposes `net_deposit_today` +
 `cumulative_net_deposits`. The value view's **"Exclude deposits &
-withdrawals"** toggle (`?exclude_transfers=1`) subtracts net cash flow
-(rebased to the window start) from the account-value line and the
-change-over-time numbers, so the curve reflects market + income only; the
-gap between the raw and adjusted lines is the money moved in/out.
+withdrawals"** toggle (`?exclude_transfers=1`) subtracts lifetime
+``cumulative_net_deposits`` from the account-value line (as-if-you-hadn't-
+moved-money) and strips in-window cash flow from the change-over-time
+numbers. Day-1 account value is inferred opening cash
+(``int_opening_cash`` — the money already in the account when snapshots
+started; SnapTrade never sent that deposit). Explicit `cash_transfer`
+rows after that first snapshot stack on top. Transfers on or before
+day 1 are already inside the opening value and must not be added again.
 `/accounts` adds a **Net deposits** KPI card (its P&L chart was already
 deposit-free by construction) that re-windows client-side like Realized.
 
-**FORWARD-ONLY.** Only transfers ingested since capture shipped are counted
-(SnapTrade activities are a short T+1 window and were dropped before), so
-accounts funded earlier keep their baseline and only NEW transfers net out.
-Both mart columns are 0 where no transfers were captured, so the toggle is a
-graceful no-op (and the Net deposits card hides itself).
+**Opening cash + later transfers.** Broker activity feeds are a short T+1
+window and cash movements were dropped before capture shipped, so most
+accounts start mid-life. The first snapshot's `account_value` *is* the
+missing deposit. Both mart columns are 0 only for a $0 first snapshot.
 
 **Dedup caveat (accepted).** Transfer rows go through the same
 `_dedup_history_rows` contract as every other history row: two
@@ -548,8 +574,29 @@ data; once warehouse rows exist it flips to the former `/first-look`
 `app/first_look.py`; `/first-look` 301s here). The post-upload and
 post-sync processing pages land here on first data.
 
+After SnapTrade connect, the first 10 users of a brokerage we have not
+modeled yet (anything outside schwab / alpaca / fidelity / interactive —
+the `stg_broker_other_*` catch-all) see a note: if they choose to
+subscribe, six months of Pro is included free, plus a thank-you for
+patience while we calibrate. Applied
+at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional `EARLY_BROKER_PROMO_CODE`
+if a matching Stripe promotion code exists. The trial is Pro-checkout-only
+so it cannot apply to sibling products on the shared Stripe account.
+The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
+first insert (`app/early_broker.py`) so the note still shows after the
+11th user of that broker arrives. Surfaces: `/snaptrade/accounts`,
+`/sync/processing`, `/get-started` / first look. Create the matching
+Stripe promotion code before setting the env var (Checkout already
+allows promo codes).
+
 ### Upload (`/upload`)
 **Status: Working. CSV upload + SnapTrade sync entry points.**
+CSV upload parses Schwab's web export. The page lists a collapsed section
+per brokerage; Schwab's section (open by default) holds export steps plus
+the history / positions file drop, account picker, and submit — copy that
+branch when another parser ships. Every other broker is a request
+that posts to `/feedback` (prepopulated topic, optional sample-CSV offer,
+free-text notes).
 
 ### Removed pages (do not resurrect without a product decision)
 - **Journal** (2025) — conflicted with "works fully without user input."

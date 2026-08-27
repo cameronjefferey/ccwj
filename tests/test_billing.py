@@ -11,8 +11,8 @@ gives away the product:
   returns to 'beta' instead of a lapsed trial
 - webhook signature verification is mandatory, and replays are idempotent
 - a checkout session id from a URL can't be replayed against another account
-- ``stripe_enabled()`` is all-or-nothing, so a half-configured deploy shows
-  the waitlist instead of a broken checkout
+- ``stripe_enabled()`` is all-or-nothing, so a half-configured deploy refuses
+  checkout instead of charging; the Pro card still shows signup copy
 - the resume sync fires only AFTER the plan flips to active (the
   ``user_sync_allowed`` chokepoint would refuse otherwise)
 """
@@ -1088,3 +1088,27 @@ def test_account_deletion_cancels_ai_addon_too(monkeypatch, ai_stripe_config):
     assert ("cancel", "sub_live") in calls
     assert ("retrieve", "sub_ai") in calls
     assert ("cancel", "sub_ai") in calls
+
+
+def test_early_broker_checkout_gets_six_month_pro_trial(monkeypatch):
+    monkeypatch.setattr(
+        "app.early_broker.pro_trial_days_for_user", lambda uid: 180,
+    )
+    data = billing._with_early_broker_trial({"metadata": {"user_id": "7"}}, 7)
+    assert data["trial_period_days"] == 180
+
+
+def test_non_early_broker_checkout_has_no_trial(monkeypatch):
+    monkeypatch.setattr(
+        "app.early_broker.pro_trial_days_for_user", lambda uid: None,
+    )
+    data = billing._with_early_broker_trial({"metadata": {"user_id": "7"}}, 7)
+    assert "trial_period_days" not in data
+
+
+def test_early_broker_trial_does_not_apply_to_ai_checkout():
+    """Guard: AI checkout must not grow a trial_period_days path."""
+    import inspect
+    source = inspect.getsource(billing.billing_checkout_ai)
+    assert "trial_period_days" not in source
+    assert "_with_early_broker_trial" not in source

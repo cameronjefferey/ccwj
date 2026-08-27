@@ -1,0 +1,112 @@
+{# Thank-you for the first ~10 users of a SnapTrade brokerage we have
+   not fitted into dedicated dbt adapters yet. Hidden until JS confirms
+   it hasn't been dismissed (per brokerage), so a returning visitor
+   never sees a flash. #}
+{% if early_broker %}
+<style>
+    .early-broker-note {
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+        background: var(--ht-surface, #f8fafc);
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        color: var(--ht-ink, #0f172a);
+        padding: .75rem .9rem .75rem 1rem;
+        font-size: .85rem;
+        line-height: 1.45;
+    }
+    .early-broker-note[hidden] { display: none !important; }
+    .early-broker-note .note-body { flex: 1; min-width: 0; }
+    .early-broker-note .note-kicker {
+        display: block;
+        font-weight: 700;
+        color: var(--ht-ink, #0f172a);
+        margin: 0 0 .3rem;
+        font-size: .95rem;
+        line-height: 1.3;
+    }
+    .early-broker-note .btn-close {
+        flex-shrink: 0;
+        width: .6rem;
+        height: .6rem;
+        margin-top: .2rem;
+        opacity: .45;
+    }
+    .early-broker-note .btn-close:hover { opacity: .8; }
+    .early-broker-note .promo-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        margin-top: .45rem;
+        padding: .2rem .55rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .8rem;
+        letter-spacing: .04em;
+        background: #fff;
+        border: 1px dashed #cbd5e1;
+        border-radius: 6px;
+        color: var(--ht-ink, #0f172a);
+        cursor: pointer;
+    }
+    .early-broker-note .promo-chip:hover { border-color: #94a3b8; }
+    [data-bs-theme="dark"] .early-broker-note {
+        background: var(--ht-surface);
+        border-color: rgba(255,255,255,.12);
+    }
+    [data-bs-theme="dark"] .early-broker-note .promo-chip {
+        background: transparent;
+        border-color: rgba(255,255,255,.25);
+        color: var(--ht-ink);
+    }
+</style>
+<div id="ht-early-broker-note" class="early-broker-note mb-3" role="note" hidden
+     data-broker="{{ early_broker.broker_key }}">
+    <div class="note-body">
+        {% if early_broker.trial_months %}
+        <span class="note-kicker">If you choose to subscribe, {{ early_broker.trial_months }} months of Pro will be included free.</span>
+        You're one of the first handful of users to bring in {{ early_broker.broker_name }} data.
+        As we calibrate our systems, thank you for your patience.
+        {% elif early_broker.promo_code %}
+        <span class="note-kicker">A thank-you for bringing {{ early_broker.broker_name }} in.</span>
+        You're one of the first handful of users. Use
+        <button type="button" class="promo-chip" id="ht-early-promo"
+                title="Copy code" aria-label="Copy promo code {{ early_broker.promo_code }}">
+            {{ early_broker.promo_code }}
+        </button>
+        at checkout. As we calibrate our systems, thank you for your patience.
+        {% else %}
+        <span class="note-kicker">Thank you for bringing {{ early_broker.broker_name }} in.</span>
+        You're one of the first handful of users. As we calibrate our systems,
+        thank you for your patience.
+        {% endif %}
+    </div>
+    <button type="button" class="btn-close" aria-label="Dismiss this note"></button>
+</div>
+<script>
+(function () {
+    var el = document.getElementById("ht-early-broker-note");
+    if (!el) return;
+    var key = "ht-early-broker-note-dismissed:" + (el.getAttribute("data-broker") || "broker");
+    try { if (localStorage.getItem(key)) return; } catch (e) {}
+    el.removeAttribute("hidden");
+    var btn = el.querySelector(".btn-close");
+    if (btn) {
+        btn.addEventListener("click", function () {
+            el.setAttribute("hidden", "");
+            try { localStorage.setItem(key, "1"); } catch (e) {}
+        });
+    }
+    var chip = document.getElementById("ht-early-promo");
+    if (chip) {
+        chip.addEventListener("click", function () {
+            var code = (chip.textContent || "").trim();
+            if (!code || !navigator.clipboard) return;
+            navigator.clipboard.writeText(code).then(function () {
+                chip.setAttribute("title", "Copied");
+            }).catch(function () {});
+        });
+    }
+})();
+</script>
+{% endif %}

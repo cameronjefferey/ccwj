@@ -120,3 +120,6 @@ def test_pricing_page_offers_ai_addon():
     assert "<h3>Full-access trial</h3>" in body
     assert "<h3>Pro</h3>" in body
     assert "<h3>Free</h3>" not in body
+    assert "launching soon" not in body
+    assert "Notify me at launch" not in body
+    assert "Start free, subscribe later" in body

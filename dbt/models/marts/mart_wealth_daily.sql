@@ -20,18 +20,26 @@
         history. Lets the page render "where the growth came from"
         without a second BQ round-trip.
       - net_deposit_today, cumulative_net_deposits — external cash the
-        trader moved IN (+) or OUT (−) of the account on/through this day
-        (``stg_history.action = 'cash_transfer'``: deposits +, withdrawals
-        −). These are NOT trading P&L; they move account_value without any
-        market activity. The /wealth + /accounts "exclude deposits &
-        withdrawals" toggle subtracts ``cumulative_net_deposits`` from
-        ``account_value`` so the curve reflects investment + income growth
-        only. FORWARD-ONLY: only cash transfers ingested since deposit
-        capture shipped are counted (SnapTrade activities are a short T+1
-        window and were previously dropped), so on accounts funded before
-        that the baseline balance is unchanged and only NEW transfers net
-        out. Both columns are 0 for every account with no captured
-        transfers, so the toggle is a graceful no-op there.
+        trader moved IN (+) or OUT (−) of the account on/through this day.
+        TWO sources, stacked, no double count:
+
+          1. Opening cash (``int_opening_cash``): the first snapshot's
+             account_value. That money was already in the account on
+             day 1 — it got there via deposits we never saw (SnapTrade's
+             activity window is short; cash movements were dropped
+             until capture shipped). Treating it as a deposit is what
+             makes "Exclude deposits & withdrawals" work on accounts
+             like Emmory that have $0 broker Withdrawal/Deposit rows.
+          2. Explicit ``stg_history.action = 'cash_transfer'`` rows
+             with trade_date AFTER the first snapshot. Transfers on or
+             before day 1 are already inside opening_deposit.
+
+        ``cumulative_net_deposits`` ASOF-joins (2) onto the spine so a
+        weekend withdrawal still counts on the next snapshot. Day-1
+        cumulative equals account_value by construction (exclude line
+        starts at $0). ``net_deposit_today`` is the day-over-day
+        difference of that cumulative (opening lands on the first
+        snapshot date as one event).
 
     The /wealth page can answer:
       - "How much do I have today and how is it allocated?" — top row
@@ -42,15 +50,7 @@
         account_value.
       - "Where did the growth come from?" — cumulative_dividends +
         cumulative_interest_net + cumulative_fees vs the residual
-        change in account_value over the same window. The residual
-        is *not* a clean "deposits" number because Schwab API sync
-        only emits TRADE rows (see app/schwab.py
-        _schwab_trade_rows) and the export-side actions taxonomy
-        (see stg_history) doesn't tag deposits/withdrawals
-        explicitly — anything that isn't a trade, dividend,
-        interest, or fee lands in `action='other'` or never reaches
-        history at all. Treat the residual as "everything else"
-        rather than as a precise deposit metric.
+        change in account_value over the same window.
 
     Tenant safety: every join, partition, and group-by is keyed on
     (account, user_id) and uses ``IS NOT DISTINCT FROM`` so a user_id
@@ -71,6 +71,16 @@ with equity as (
     from {{ ref('mart_account_equity_daily') }}
 ),
 
+opening as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        first_date,
+        opening_deposit
+    from {{ ref('int_opening_cash') }}
+),
+
 -- Daily history aggregates. Bucketed by trade_date so the join below
 -- is a tight equi-join; rows where no history exists for the day stay
 -- NULL and get coalesced to 0 at the final select.
@@ -89,13 +99,44 @@ history_by_day as (
         sum(case when action = 'credit_interest' then amount else 0 end)
             + sum(case when action = 'margin_interest' then amount else 0 end)
             as interest_net_today,
-        sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today,
-        -- External cash flow: deposits (+) / withdrawals (−). The seed
-        -- already carries the signed amount, so a plain sum nets the day.
-        sum(case when action = 'cash_transfer'   then amount else 0 end) as net_deposit_today
+        sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today
     from {{ ref('stg_history') }}
-    where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee', 'cash_transfer')
+    where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee')
     group by 1, 2, 3, 4
+),
+
+-- Explicit cash transfers AFTER the opening snapshot. Anything dated
+-- on or before first_date is already inside opening_deposit.
+transfers_after_opening as (
+    select
+        t.account,
+        t.user_id,
+        t.tenant_id,
+        t.trade_date as date,
+        sum(t.amount) as net_deposit_today
+    from {{ ref('stg_history') }} t
+    inner join opening o
+      on o.account = t.account
+     and (o.user_id is not distinct from t.user_id)
+     and (o.tenant_id is not distinct from t.tenant_id)
+     and t.trade_date > o.first_date
+    where t.action = 'cash_transfer'
+    group by 1, 2, 3, 4
+),
+
+transfer_running as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        date,
+        net_deposit_today,
+        sum(net_deposit_today) over (
+            partition by tenant_id, account, user_id
+            order by date
+            rows between unbounded preceding and current row
+        ) as post_opening_cum
+    from transfers_after_opening
 ),
 
 joined as (
@@ -111,13 +152,27 @@ joined as (
         coalesce(h.dividend_today, 0)      as dividend_today,
         coalesce(h.interest_net_today, 0)  as interest_net_today,
         coalesce(h.fees_today, 0)          as fees_today,
-        coalesce(h.net_deposit_today, 0)   as net_deposit_today
+        coalesce(o.opening_deposit, 0)
+            + coalesce(tr.post_opening_cum, 0) as cumulative_net_deposits
     from equity e
+    left join opening o
+      on o.account = e.account
+     and (o.user_id is not distinct from e.user_id)
+     and (o.tenant_id is not distinct from e.tenant_id)
     left join history_by_day h
       on h.account = e.account
      and (h.user_id is not distinct from e.user_id)
      and (h.tenant_id is not distinct from e.tenant_id)
      and h.date    = e.date
+    left join transfer_running tr
+      on tr.account = e.account
+     and (tr.user_id is not distinct from e.user_id)
+     and (tr.tenant_id is not distinct from e.tenant_id)
+     and tr.date <= e.date
+    qualify row_number() over (
+        partition by e.tenant_id, e.account, e.user_id, e.date
+        order by tr.date desc nulls last
+    ) = 1
 )
 
 select
@@ -141,7 +196,16 @@ select
     dividend_today,
     interest_net_today,
     fees_today,
-    net_deposit_today,
+
+    -- Opening deposit on day 1; later explicit transfers (including
+    -- those that landed between snapshot days) as the cumulative delta.
+    coalesce(
+        cumulative_net_deposits - lag(cumulative_net_deposits) over (
+            partition by tenant_id, account, user_id
+            order by date
+        ),
+        cumulative_net_deposits
+    ) as net_deposit_today,
 
     -- Running totals scoped to (tenant_id, account, user_id) so two
     -- physical accounts sharing a display label never have their tallies
@@ -152,15 +216,7 @@ select
         rows between unbounded preceding and current row
     ) as cumulative_dividends,
 
-    -- Cumulative net external cash flow (deposits − withdrawals) from the
-    -- start of each account's history through this day. The /wealth +
-    -- /accounts toggle subtracts this from account_value to strip out
-    -- money the trader added/removed.
-    sum(net_deposit_today) over (
-        partition by tenant_id, account, user_id
-        order by date
-        rows between unbounded preceding and current row
-    ) as cumulative_net_deposits,
+    cumulative_net_deposits,
 
     sum(interest_net_today) over (
         partition by tenant_id, account, user_id

@@ -1,0 +1,64 @@
+{# Quiet, dismissible history-window note on all-time surfaces. Hidden
+   until JS confirms it hasn't been dismissed (localStorage), so a
+   returning visitor never sees a flash. Same key everywhere so one X
+   covers every page. #}
+{% if history_since %}
+<style>
+    .history-window-note {
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+        background: var(--ht-surface, #f8fafc);
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        color: var(--ht-ink, #0f172a);
+        padding: .7rem .9rem .7rem 1rem;
+        font-size: .85rem;
+        line-height: 1.45;
+    }
+    .history-window-note[hidden] { display: none !important; }
+    .history-window-note .note-body { flex: 1; min-width: 0; }
+    .history-window-note .note-kicker {
+        font-weight: 600;
+        color: var(--ht-label, #334155);
+        margin-right: .2rem;
+    }
+    .history-window-note .btn-close {
+        flex-shrink: 0;
+        width: .6rem;
+        height: .6rem;
+        margin-top: .2rem;
+        opacity: .45;
+    }
+    .history-window-note .btn-close:hover { opacity: .8; }
+    [data-bs-theme="dark"] .history-window-note {
+        background: var(--ht-surface);
+        border-color: rgba(255,255,255,.12);
+    }
+</style>
+<div id="ht-history-note" class="history-window-note mb-3" role="note" hidden>
+    <div class="note-body">
+        <span class="note-kicker">A note on the window.</span>
+        Brokers don't always send a complete past. From account creation
+        on <strong>{{ history_since }}</strong>, the numbers here are the
+        real record.
+        <a href="{{ url_for('upload') }}">Have earlier years?</a>
+    </div>
+    <button type="button" class="btn-close" aria-label="Dismiss this note"></button>
+</div>
+<script>
+(function () {
+    var KEY = "ht-history-note-dismissed";
+    var el = document.getElementById("ht-history-note");
+    if (!el) return;
+    try { if (localStorage.getItem(KEY)) return; } catch (e) {}
+    el.removeAttribute("hidden");
+    var btn = el.querySelector(".btn-close");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+        el.setAttribute("hidden", "");
+        try { localStorage.setItem(KEY, "1"); } catch (e) {}
+    });
+})();
+</script>
+{% endif %}

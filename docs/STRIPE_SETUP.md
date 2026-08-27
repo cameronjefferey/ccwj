@@ -134,9 +134,8 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 **All four are required together.** `stripe_enabled()` is deliberately
 all-or-nothing: with anything missing, the checkout routes refuse (503 /
-redirect), the Pro card falls back to the waitlist form, and the profile
-Billing tab says paid plans aren't switched on. A half-configured deploy shows
-a coherent pre-launch page instead of a checkout that 500s.
+redirect) and the profile Billing tab says paid plans aren't switched on
+in this environment. The public Pro card still shows live signup copy.
 
 No Stripe env vars are needed by any cron — the lifecycle cron only ever
 looks at `plan = 'trial'` users, so subscribers are never disconnected.
@@ -191,6 +190,22 @@ saved card and invoice history.
 3. Swap all four env vars on Render to the live values, then redeploy.
 4. Subscribe once with a real card, confirm the Billing tab and the invoice
    email, then cancel and confirm the pending-cancellation banner.
+
+## Early-broker thank-you (6 months of Pro free)
+
+The first 10 users of a SnapTrade brokerage we have not modeled yet get
+**6 months of HappyTrader Pro free**. That is a Checkout
+`subscription_data.trial_period_days` of 180, applied only on *this* app's
+Pro Checkout (`app/billing.py` → `_with_early_broker_trial`). It does **not**
+use an account-wide coupon: this Stripe account is shared with EarningsFollower
+and Job Glow, and a 100% off coupon without product restriction would be
+redeemable there too.
+
+Stripe `trialing` already maps to `users.plan='active'`, so the mirror stays
+unfrozen for those 6 months; the card is collected at checkout and billed when
+the trial ends. Override the length with `EARLY_BROKER_TRIAL_DAYS` (set `0` to
+disable). Checkout still has `allow_promotion_codes: True` if you later create
+a matching Stripe promotion code and set `EARLY_BROKER_PROMO_CODE`.
 
 ## Related
 

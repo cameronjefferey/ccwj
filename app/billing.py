@@ -35,9 +35,9 @@ Design notes worth keeping:
   optimistic fast path over the same activation function.
 * **Webhook is idempotent** via ``stripe_events``: Stripe retries, and
   every handler writes plan state.
-* **`stripe_enabled()` gates the whole surface.** With no keys configured
-  (tests, local dev, the pre-launch site) the routes 404-equivalent out and
-  the pricing page falls back to the waitlist form, so nothing half-works.
+* **`stripe_enabled()` gates checkout.** With no keys configured the
+  subscribe routes refuse so nothing half-charges. The pricing page still
+  shows live signup / Subscribe copy rather than a waitlist.
 """
 from __future__ import annotations
 
@@ -70,6 +70,23 @@ PRICE_AI_MONTHLY_DISPLAY = "9.99"
 PAYING_STATUSES = frozenset({"active", "trialing", "past_due", "incomplete"})
 
 
+def _with_early_broker_trial(subscription_data: dict, user_id) -> dict:
+    """Attach a Pro-only trial for the early-broker cohort.
+
+    Uses Checkout ``trial_period_days`` (not an account-wide coupon) so
+    Job Glow / EarningsFollower on the shared Stripe account cannot
+    redeem the thank-you.
+    """
+    try:
+        from app.early_broker import pro_trial_days_for_user
+        days = pro_trial_days_for_user(user_id)
+    except Exception:
+        days = None
+    if days:
+        subscription_data["trial_period_days"] = int(days)
+    return subscription_data
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -86,7 +103,7 @@ def price_id(period: str) -> str:
 def stripe_enabled() -> bool:
     """True only when a secret key AND both price IDs are configured. Anything
     less is a misconfiguration, and a half-configured checkout that 500s is
-    worse than a pricing page that still shows the waitlist."""
+    worse than a pricing page that still shows signup copy."""
     return bool(_env("STRIPE_SECRET_KEY") and price_id("monthly") and price_id("annual"))
 
 
@@ -793,6 +810,10 @@ def billing_checkout():
             "subscription_data": {"metadata": {"user_id": str(current_user.id)}},
             "metadata": {"user_id": str(current_user.id)},
         }
+        _with_early_broker_trial(kwargs["subscription_data"], current_user.id)
+        if kwargs["subscription_data"].get("trial_period_days"):
+            # Don't stack a typed coupon on top of the 6-month thank-you.
+            kwargs["allow_promotion_codes"] = False
         if customer_id:
             kwargs["customer"] = customer_id
             kwargs["customer_update"] = {"address": "auto", "name": "auto"}
