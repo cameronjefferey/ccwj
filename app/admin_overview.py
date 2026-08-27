@@ -55,7 +55,6 @@ PAGE_LABELS = {
     "positions": "Positions",
     "position_detail": "Position detail",
     "accounts": "Accounts",
-    "accounts_breakdown_fragment": "Accounts (tables)",
     "trader_story": "Trader Profile",
     "strategies": "Strategies",
     "sectors": "Sectors",
@@ -68,11 +67,16 @@ PAGE_LABELS = {
     "snaptrade_accounts": "Connected accounts",
     "pricing": "Pricing",
     "faq": "FAQ",
-    "admin_overview": "Admin overview",
-    "admin_users": "Admin users",
-    "admin_audit": "Position audit",
-    "admin_feedback": "Feedback inbox",
+    "signup": "Sign up",
+    "index": "Home",
+    "feature_detail": "Feature page",
+    "contact": "Contact",
 }
+
+# Logged-out HTML pages worth counting (interest before signup).
+_PUBLIC_ENDPOINTS = frozenset({
+    "index", "pricing", "faq", "signup", "feature_detail", "contact",
+})
 
 _SKIP_ENDPOINTS = frozenset({
     "static",
@@ -127,21 +131,34 @@ def should_record_page_view(req, response) -> bool:
     ep = req.endpoint or ""
     if not ep or ep in _SKIP_ENDPOINTS or ep.startswith("static") or ep.startswith("admin_"):
         return False
+    if ep.endswith("_fragment"):
+        return False
     return True
+
+
+def should_insert_page_view(req, response, *, authenticated: bool, username=None) -> bool:
+    """Whether this request should land in usage_events."""
+    if not should_record_page_view(req, response):
+        return False
+    uname = (username or "").strip().lower()
+    if uname == DEMO_USERNAME:
+        return False
+    if authenticated:
+        return True
+    return (req.endpoint or "") in _PUBLIC_ENDPOINTS
 
 
 def record_page_view(response) -> None:
     """Best-effort insert. Never raises; never delays the response on failure."""
     try:
         from flask_login import current_user
-        if not should_record_page_view(request, response):
+        authenticated = bool(getattr(current_user, "is_authenticated", False))
+        username = getattr(current_user, "username", None) if authenticated else None
+        if not should_insert_page_view(
+            request, response, authenticated=authenticated, username=username,
+        ):
             return
-        if not getattr(current_user, "is_authenticated", False):
-            return
-        uname = (getattr(current_user, "username", None) or "").strip().lower()
-        if uname == DEMO_USERNAME or uname in _admin_usernames():
-            return
-        uid = getattr(current_user, "id", None)
+        uid = getattr(current_user, "id", None) if authenticated else None
         execute(
             "INSERT INTO usage_events (user_id, endpoint, path, status_code) "
             "VALUES (%s, %s, %s, %s)",
@@ -239,6 +256,32 @@ def _mix_rows(mix):
             "tone": PLAN_TONE.get(key, "muted"),
         })
     return out
+
+
+def _demo_sql():
+    """Exclude the shared demo seat from interest rankings."""
+    return "COALESCE(LOWER(u.username), '') <> %s", [DEMO_USERNAME]
+
+
+def _with_interest_bars(rows):
+    """Bar width from unique people when anyone is signed in, else raw views."""
+    if not rows:
+        return rows
+    peak_people = max(int(r.get("users") or 0) for r in rows)
+    use = "users" if peak_people else "hits"
+    peak = max(int(r.get(use) or 0) for r in rows) or 1
+    for r in rows:
+        r["label"] = PAGE_LABELS.get(r.get("endpoint") or "", r.get("endpoint") or "—")
+        r["pct"] = round(100.0 * int(r.get(use) or 0) / peak, 1)
+    return rows
+
+
+def _symbol_from_position_path(path):
+    raw = (path or "").strip()
+    if not raw.startswith("/position/"):
+        return None
+    rest = raw[len("/position/"):].split("/")[0].strip()
+    return rest.upper() if rest else None
 
 
 def _attention(classified, broken, open_feedback, failed_syncs, pending_first_sync):
@@ -343,31 +386,76 @@ def build_admin_overview():
     )
     pending_first_sync = int((pending or {}).get("n") or 0)
 
-    views_7d = _q(
-        """
-        SELECT endpoint, COUNT(*) AS hits,
-               COUNT(DISTINCT user_id) AS users
-        FROM usage_events
-        WHERE created_at > NOW() - INTERVAL '7 days'
-        GROUP BY endpoint
-        ORDER BY hits DESC
-        LIMIT 12
-        """
+    demo_sql, demo_params = _demo_sql()
+    views_7d = _with_interest_bars(_q(
+        f"""
+        SELECT e.endpoint, COUNT(*) AS hits,
+               COUNT(DISTINCT e.user_id) AS users
+        FROM usage_events e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.created_at > NOW() - INTERVAL '7 days'
+          AND {demo_sql}
+        GROUP BY e.endpoint
+        ORDER BY users DESC, hits DESC
+        LIMIT 15
+        """,
+        tuple(demo_params),
+    ))
+    symbol_rows = _q(
+        f"""
+        SELECT e.path, COUNT(*) AS hits,
+               COUNT(DISTINCT e.user_id) AS users
+        FROM usage_events e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.created_at > NOW() - INTERVAL '7 days'
+          AND e.endpoint = 'position_detail'
+          AND e.path LIKE '/position/%%'
+          AND {demo_sql}
+        GROUP BY e.path
+        ORDER BY users DESC, hits DESC
+        LIMIT 8
+        """,
+        tuple(demo_params),
     )
-    for row in views_7d:
-        row["label"] = PAGE_LABELS.get(row.get("endpoint") or "", row.get("endpoint") or "—")
+    symbols_7d = []
+    peak_sym = 0
+    for row in symbol_rows:
+        sym = _symbol_from_position_path(row.get("path"))
+        if not sym:
+            continue
+        users_n = int(row.get("users") or 0)
+        hits_n = int(row.get("hits") or 0)
+        peak_sym = max(peak_sym, users_n or hits_n)
+        symbols_7d.append({
+            "symbol": sym,
+            "hits": hits_n,
+            "users": users_n,
+        })
+    peak_sym = peak_sym or 1
+    for row in symbols_7d:
+        bar_n = row["users"] or row["hits"]
+        row["pct"] = round(100.0 * bar_n / peak_sym, 1)
 
     unique_7d = _q1(
-        """
-        SELECT COUNT(DISTINCT user_id) AS n FROM usage_events
-        WHERE created_at > NOW() - INTERVAL '7 days' AND user_id IS NOT NULL
-        """
+        f"""
+        SELECT COUNT(DISTINCT e.user_id) AS n
+        FROM usage_events e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.created_at > NOW() - INTERVAL '7 days'
+          AND e.user_id IS NOT NULL
+          AND {demo_sql}
+        """,
+        tuple(demo_params),
     )
     hits_7d = _q1(
-        """
-        SELECT COUNT(*) AS n FROM usage_events
-        WHERE created_at > NOW() - INTERVAL '7 days'
-        """
+        f"""
+        SELECT COUNT(*) AS n
+        FROM usage_events e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.created_at > NOW() - INTERVAL '7 days'
+          AND {demo_sql}
+        """,
+        tuple(demo_params),
     )
     logins_7d = _q1(
         """
@@ -443,6 +531,7 @@ def build_admin_overview():
         "broken": broken,
         "open_feedback": open_feedback,
         "views_7d": views_7d,
+        "symbols_7d": symbols_7d,
         "unique_7d": int((unique_7d or {}).get("n") or 0),
         "hits_7d": int((hits_7d or {}).get("n") or 0),
         "logins_7d": int((logins_7d or {}).get("n") or 0),

@@ -6,6 +6,9 @@ from app.admin_overview import (
     _attention,
     _classify_users,
     _mix_rows,
+    _symbol_from_position_path,
+    _with_interest_bars,
+    should_insert_page_view,
     should_record_page_view,
 )
 from app.plan import STATE_ACTIVE, STATE_FROZEN, STATE_NO_DATA, STATE_TRIALING
@@ -84,8 +87,54 @@ def test_should_record_skips_api_redirect_and_skeleton_refetch():
     )
     assert should_record_page_view(admin, ok_resp) is False
 
+    frag = SimpleNamespace(
+        method="GET", path="/accounts/breakdown", endpoint="accounts_breakdown_fragment",
+        headers={},
+    )
+    assert should_record_page_view(frag, ok_resp) is False
+
     redir = SimpleNamespace(status_code=302)
     assert should_record_page_view(ok_req, redir) is False
+
+
+def test_insert_skips_demo_and_anonymous_app_pages():
+    ok_req = SimpleNamespace(
+        method="GET", path="/daily-review", endpoint="weekly_review",
+        headers={},
+    )
+    ok_resp = SimpleNamespace(status_code=200)
+    assert should_insert_page_view(
+        ok_req, ok_resp, authenticated=True, username="alice",
+    ) is True
+    assert should_insert_page_view(
+        ok_req, ok_resp, authenticated=True, username="demo",
+    ) is False
+    assert should_insert_page_view(
+        ok_req, ok_resp, authenticated=False, username=None,
+    ) is False
+    pricing = SimpleNamespace(
+        method="GET", path="/pricing", endpoint="pricing",
+        headers={},
+    )
+    assert should_insert_page_view(
+        pricing, ok_resp, authenticated=False, username=None,
+    ) is True
+
+
+def test_interest_bars_follow_unique_people():
+    rows = _with_interest_bars([
+        {"endpoint": "weekly_review", "users": 4, "hits": 20},
+        {"endpoint": "positions", "users": 2, "hits": 50},
+    ])
+    assert rows[0]["label"] == "Daily Review"
+    assert rows[0]["pct"] == 100.0
+    assert rows[1]["pct"] == 50.0
+
+
+def test_symbol_from_position_path():
+    assert _symbol_from_position_path("/position/JEPI") == "JEPI"
+    assert _symbol_from_position_path("/position/jepi") == "JEPI"
+    assert _symbol_from_position_path("/accounts") is None
 
 
 def test_admin_overview_hidden_from_anonymous():
