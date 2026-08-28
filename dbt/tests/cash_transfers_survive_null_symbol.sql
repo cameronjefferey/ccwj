@@ -20,7 +20,7 @@ with raw_cash as (
         nullif(trim(cast(tenant_id as string)), '') as tenant_id,
         safe.parse_date(
             '%m/%d/%Y',
-            regexp_extract(cast(Date as string), r'(\d{1,2}/\d{1,2}/\d{4})$')
+            regexp_extract(cast(Date as string), r'(\d{1,2}/\d{1,2}/\d{4})')
         ) as trade_date,
         coalesce(safe_cast(Amount as float64), 0) as amount,
         trim(cast(Action as string)) as action_raw

@@ -10,11 +10,37 @@ from __future__ import annotations
 import os
 import sys
 
+import pandas as pd
 from google.cloud import bigquery
 
 PROJECT = os.environ.get("BQ_PROJECT", "ccwj-dbt").strip()
 DATASET = (os.environ.get("BQ_DATASET") or "analytics").strip()
 TABLE = f"{PROJECT}.{DATASET}.stg_history"
+
+
+def _as_bq_date(value):
+    """DATE query param: pandas NaT / 'NaT' → None (NULL date groups).
+
+    Run 33141412571 printed the 41 NULL-date groups then crashed:
+    ``Invalid date: 'NaT'``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() in ("", "NaT", "nat", "None", "nan"):
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    if hasattr(value, "date") and callable(value.date):
+        try:
+            return value.date()
+        except (ValueError, OverflowError):
+            return None
+    return value
 
 
 def main() -> int:
@@ -68,7 +94,7 @@ def main() -> int:
             query_parameters=[
                 bigquery.ScalarQueryParameter("tid", "STRING", g["tenant_id"]),
                 bigquery.ScalarQueryParameter("action", "STRING", g["action"]),
-                bigquery.ScalarQueryParameter("dte", "DATE", g["trade_date"]),
+                bigquery.ScalarQueryParameter("dte", "DATE", _as_bq_date(g["trade_date"])),
                 bigquery.ScalarQueryParameter("sym", "STRING", g["trade_symbol"]),
             ]
         )

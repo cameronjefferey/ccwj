@@ -100,16 +100,25 @@ cleaned as (
         -- demo data.
         nullif(trim(tenant_id), '') as tenant_id,
 
+        -- Extract MDY / ISO from ANYWHERE in the cell — same as
+        -- ``app.upload._canonicalize_date_mdy`` (``.search()``, not
+        -- end-anchored). Schwab's web CSV writes
+        -- ``05/14/2024 as of 08:30 PM`` / ``5/14/2024 12:00:00 AM``.
+        -- A trailing ``$`` / leading ``^`` left those trade_date NULL,
+        -- and CHECK 1 of ``stg_history_no_duplicate_fills_per_tenant``
+        -- then fused every same-(tenant, action, symbol, amount) row
+        -- into one NULL-date group (run 33141412571: 41 groups, all
+        -- ``manual:manual:Schwab Account``).
         coalesce(
             safe.parse_date(
                 '%m/%d/%Y',
-                regexp_extract(trim(date), r'(\d{1,2}/\d{1,2}/\d{4})$')
+                regexp_extract(trim(date), r'(\d{1,2}/\d{1,2}/\d{4})')
             ),
             -- pandas read_csv (CSV upload without dtype=str) rewrites Date
             -- as ISO ``YYYY-MM-DD``. SnapTrade writes zero-padded MDY.
             safe.parse_date(
                 '%Y-%m-%d',
-                regexp_extract(trim(date), r'^(\d{4}-\d{2}-\d{2})')
+                regexp_extract(trim(date), r'(\d{4}-\d{2}-\d{2})')
             )
         ) as trade_date,
 
