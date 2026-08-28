@@ -4,10 +4,12 @@ name: Ops alert (Telegram)
 # cloud agent to investigate, land a hotfix PR, merge, and re-run the job.
 # Follow-up Telegrams: "hotfix started" when the agent launches, "hotfix
 # merged" when a cursor/* PR lands on master. Auto-agents are capped at
-# TWO consecutive [cursor-hotfix] attempts; after that Telegram still
-# pages FAILED but no new agent is launched. Cancelled runs
-# (cancel-in-progress on overlapping warehouse rebuilds) do NOT fire —
-# those are expected. GitHub already emails watchers; Telegram
+# TWO [cursor-hotfix] commits in 48 hours (not consecutive-from-tip —
+# a human commit between auto-fixes used to reset the streak and spawn
+# a third agent). Skip if a Hotfix agent for this job is already ACTIVE.
+# After the cap Telegram still pages FAILED but no new agent is launched.
+# Cancelled runs (cancel-in-progress on overlapping warehouse rebuilds)
+# do NOT fire — those are expected. GitHub already emails watchers; Telegram
 # is the "look at this now" channel, and the agent is the hands.
 #
 # Telegram setup (once):
@@ -66,12 +68,17 @@ jobs:
   alert:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure')
     runs-on: ubuntu-latest
+    # One in-flight launch per failed workflow. Parallel warehouse failures
+    # used to each spawn a Cursor agent before the 409/cap could fire.
+    concurrency:
+      group: ops-hotfix-${{ github.event.workflow_run.name || 'manual' }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
-          # Need enough history to count consecutive [cursor-hotfix] commits
-          # (cap auto-agents at two). Default fetch-depth: 1 would under-count.
-          fetch-depth: 20
+          # Need enough history to count [cursor-hotfix] commits in the
+          # 48h window. Default fetch-depth: 1 would under-count.
+          fetch-depth: 50
 
       # Real workflow_run failures, or a manual dispatch that named a run.
       # An empty dispatch is the Telegram test ping and must not spawn an agent.
@@ -104,7 +111,7 @@ jobs:
         run: python scripts/ops_telegram.py
 
       - name: Send Telegram hotfix-started
-        if: steps.cursor.outputs.agent_url != ''
+        if: steps.cursor.outputs.agent_url != '' && steps.cursor.outputs.skip_reason == ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
