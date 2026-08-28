@@ -957,6 +957,61 @@ def test_canonicalize_seed_cell_collapses_known_drift_forms():
     assert c("Buy to Close") == "Buy to Close"
     assert c("CFLT  241220C00030000") == "CFLT  241220C00030000"
     assert c(" 11/14/2024 ") == "11/14/2024"
+    # Schwab CSV currency formatting keys with SnapTrade's bare float.
+    assert c("$1,150.00") == c(1150) == "1150"
+    assert c("($26.99)") == c(-26.99) == "-26.99"
+
+
+def test_canonicalize_date_mdy_zero_pads_and_accepts_iso():
+    """CSV ``5/14/2024`` and SnapTrade ``05/14/2024`` must be one key."""
+    d = _upload._canonicalize_date_mdy
+    assert d("5/14/2024") == d("05/14/2024") == "05/14/2024"
+    assert d("8/5/2026") == d("08/05/2026") == "08/05/2026"
+    assert d("2024-05-14") == "05/14/2024"
+    assert d("05/14/2024 as of 08:30 PM") == "05/14/2024"
+    assert d("") == ""
+    assert d(None) == ""
+
+
+def test_dedup_collapses_csv_unpadded_date_vs_snaptrade_padded():
+    """Run 33132317666: Schwab CSV Date ``5/14/2024`` + SnapTrade
+    ``05/14/2024`` parsed to the same trade_date in stg_history and
+    tripped stg_history_no_duplicate_fills_per_tenant (153 groups)
+    because the merge key compared the raw strings."""
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Buy", "IYW",
+             20, 131.96, -2639.2,
+             tenant_id="snaptrade:emmory",
+             desc="ISHARES US TECHNOLOGY ETF"),
+        _row("Emmory", 9, "5/14/2024", "Buy", "IYW",
+             20, 131.96, -2639.2,
+             tenant_id="snaptrade:emmory",
+             desc="IYW"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"padded vs unpadded Date must collapse, got {len(out)}"
+    assert str(out.iloc[0]["Description"]) == "ISHARES US TECHNOLOGY ETF"
+
+
+def test_merge_collapses_csv_date_padding_across_existing_seed(monkeypatch):
+    """Same grain as test_dedup_collapses_csv_unpadded_date_vs_snaptrade_padded
+    but through the full merge path (existing SnapTrade row + new CSV row)."""
+    existing = _csv_from_rows([
+        _row("Emmory", 9, "05/14/2024", "Buy", "IYW", 20, 131.96, -2639.2,
+             tenant_id="snaptrade:emmory", desc="ISHARES US TECHNOLOGY ETF"),
+    ])
+    _stub_existing(monkeypatch, existing)
+    new_df = pd.DataFrame([
+        _row("Emmory", 9, "5/14/2024", "Buy", "IYW", 20, 131.96, -2639.2,
+             tenant_id="snaptrade:emmory", desc="IYW"),
+    ])
+    out_csv = _upload._merge_seed_with_existing(
+        HISTORY_PATH, "Emmory", new_df, HISTORY_SEED_COLUMNS,
+        tenant_id="snaptrade:emmory",
+    )
+    out = _parse(out_csv)
+    iyw = out[out["Symbol"] == "IYW"]
+    assert len(iyw) == 1, out.to_dict("records")
 
 
 # ---------------------------------------------------------------------------
