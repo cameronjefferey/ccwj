@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 """Collapse already-landed history fills that the merge key missed.
 
-Warehouse run 33132317666 (2026-08-28) failed
+Warehouse run 33132317666 / 33140422151 (2026-08-28) failed
 ``stg_history_no_duplicate_fills_per_tenant`` with 153 groups after a
-Schwab CSV upload landed on a SnapTrade tenant. A first repair keyed
-only on date-padding (``5/14/2024`` vs ``05/14/2024``) and dropped 0 of
-11,219 raw rows — the overlapping coupon is CSV ``Qualified Dividend``
-vs SnapTrade ``Cash Dividend``, which ``stg_history`` maps to the same
-``dividend`` action.
+Schwab CSV upload landed on a SnapTrade tenant. Date-padding dropped 0;
+Qualified vs Cash Dividend dropped 1 of 11,274. Leftover pairs still
+differ in the raw seed by CSV ``--`` / ``N/A`` Quantity-Price (BQ
+``safe_cast`` → NULL) and Amount ``""`` vs ``0`` (``coalesce`` → 0).
 
 This script re-runs the same per-tenant fill grain as
 ``app.upload._dedup_history_rows`` (date pad + staging action + CHECK 1
@@ -56,6 +55,12 @@ HISTORY_SEED_COLUMNS = [
 ]
 
 
+# Mirrors app.upload._BLANK_NUMERIC_SENTINELS (run 33140422151).
+_BLANK_NUMERIC_SENTINELS = frozenset({
+    "--", "---", "—", "–", "n/a", "#n/a", "na", "#na", "null",
+})
+
+
 def _canonicalize_seed_cell(value):
     if value is None:
         return ""
@@ -63,6 +68,8 @@ def _canonicalize_seed_cell(value):
         return ""
     s = str(value).strip()
     if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    if s.lower() in _BLANK_NUMERIC_SENTINELS:
         return ""
     s_num = s.replace(",", "").strip()
     if s_num.startswith("$"):
@@ -168,11 +175,11 @@ def _normalize_history_action(value):
 def _canonicalize_stg_amount(action, amount):
     base = _canonicalize_seed_cell(amount)
     if base == "":
-        return ""
+        return "0"
     try:
         f = float(base)
     except (TypeError, ValueError):
-        return base
+        return "0"
     norm = _normalize_history_action(action)
     if norm in _STG_CASH_OUT_ACTIONS:
         f = -abs(f)
@@ -336,6 +343,10 @@ def _log_remaining_staging_dups(df: pd.DataFrame, limit: int = 8) -> None:
     print(f"WARNING: {len(dups)} staging-grain groups still collide after repair")
     for key, n in list(dups.items())[:limit]:
         print(f"  n={int(n)} key={key}")
+        sample = work[work["__k"] == key][
+            ["Action", "Symbol", "Quantity", "Price", "Amount", "Description"]
+        ].head(4)
+        print(sample.to_string(index=False))
 
 
 def _client():
@@ -383,9 +394,9 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
         return 1
+    _log_remaining_staging_dups(cleaned)
     if dropped == 0:
         print("Already clean — no write.")
-        _log_remaining_staging_dups(cleaned)
         return 0
     if args.dry_run:
         print("Dry run — not writing.")

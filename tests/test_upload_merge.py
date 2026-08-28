@@ -63,7 +63,12 @@ def _row(account, user_id, date, action, symbol, qty, price, amount, *, tenant_i
     column on read. Tests must match that to exercise dedup correctly.
     """
     def _f(v):
-        return "" if v == "" else float(v)
+        if v == "" or v is None:
+            return ""
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return v
     return {
         "Account": account,
         "user_id": user_id,
@@ -960,6 +965,8 @@ def test_canonicalize_seed_cell_collapses_known_drift_forms():
     # Schwab CSV currency formatting keys with SnapTrade's bare float.
     assert c("$1,150.00") == c(1150) == "1150"
     assert c("($26.99)") == c(-26.99) == "-26.99"
+    # Schwab CSV blank sentinels (Quantity/Price on coupons / expiries).
+    assert c("--") == c("N/A") == c("#N/A") == ""
 
 
 def test_canonicalize_date_mdy_zero_pads_and_accepts_iso():
@@ -1026,6 +1033,43 @@ def test_dedup_collapses_buy_vs_buy_case_on_same_fill():
     ])
     out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
     assert len(out) == 1, f"Buy vs BUY must collapse, got {len(out)}"
+
+
+def test_dedup_collapses_csv_dash_qty_vs_snaptrade_blank_on_dividend():
+    """Run 33140422151: action-alias repair dropped 1 of 11274 and the
+    warehouse test still saw 153 groups. Schwab CSV writes ``--`` in
+    Quantity/Price on coupons; SnapTrade writes a true blank. stg_history
+    ``safe_cast`` turns both into NULL, so CHECK 1 groups them."""
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Cash Dividend", "JEPI",
+             "", "", 42.50,
+             tenant_id="snaptrade:emmory",
+             desc="JPMorgan Equity Premium Income ETF"),
+        _row("Emmory", 9, "5/14/2024", "Qualified Dividend", "JEPI",
+             "--", "--", 42.50,
+             tenant_id="snaptrade:emmory",
+             desc="JEPI"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"-- vs blank qty/price must collapse, got {len(out)}"
+    assert str(out.iloc[0]["Description"]) == "JPMorgan Equity Premium Income ETF"
+
+
+def test_dedup_collapses_blank_amount_vs_zero_on_dividend():
+    """stg_history ``coalesce(safe_cast(amount), 0)`` makes Amount ``""``
+    and ``0`` the same CHECK 1 value."""
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Cash Dividend", "SCHD",
+             "", "", 0,
+             tenant_id="snaptrade:emmory",
+             desc="Schwab US Dividend Equity ETF"),
+        _row("Emmory", 9, "05/14/2024", "Qualified Dividend", "SCHD",
+             "", "", "",
+             tenant_id="snaptrade:emmory",
+             desc="SCHD"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"blank vs 0 Amount must collapse, got {len(out)}"
 
 
 def test_dedup_keeps_distinct_dividends_of_different_amounts():

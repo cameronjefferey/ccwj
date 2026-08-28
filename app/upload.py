@@ -435,11 +435,23 @@ def _normalize_tid(value) -> str:
 # Date is handled separately by ``_canonicalize_date_mdy`` (CSV vs SnapTrade
 # zero-padding). Currency-formatted Amount/Price ("$1,150.00", "($26.99)")
 # from a Schwab web export is treated as numeric so it keys with SnapTrade's
-# bare float.
+# bare float. Broker blank sentinels (``--``, ``N/A``) are empty: Schwab's
+# CSV writes them in Quantity/Price on dividends and expiries, SnapTrade
+# writes a true blank, and ``stg_history`` ``safe_cast`` turns both into
+# NULL so CHECK 1 groups them. Run 33140422151: action-alias repair
+# dropped 1 of 11,274 raw rows and the warehouse test still saw 153
+# groups — the leftover pairs differ by these sentinels / Amount ``""``
+# vs ``0`` (``coalesce(amount, 0)``).
+_BLANK_NUMERIC_SENTINELS = frozenset({
+    "--", "---", "—", "–", "n/a", "#n/a", "na", "#na", "null",
+})
+
+
 def _canonicalize_seed_cell(value):
     """Normalize a seed cell for the merge dedup key.
 
-    - ``None`` / NaN / ``"nan"`` / ``"None"`` / ``"<NA>"`` → empty string.
+    - ``None`` / NaN / ``"nan"`` / ``"None"`` / ``"<NA>"`` / broker blank
+      sentinels (``--``, ``N/A``) → empty string.
     - Numeric-looking cells → ``"%.6f"`` (trailing-zero stripped) so float
       precision drift across syncs does not break dedup. ``$``, thousands
       commas, and accounting ``(123.45)`` negatives are stripped first.
@@ -451,6 +463,8 @@ def _canonicalize_seed_cell(value):
         return ""
     s = str(value).strip()
     if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    if s.lower() in _BLANK_NUMERIC_SENTINELS:
         return ""
     s_num = s.replace(",", "").strip()
     if s_num.startswith("$"):
@@ -583,14 +597,20 @@ def _normalize_history_action(value):
 
 
 def _canonicalize_stg_amount(action, amount):
-    """Amount as ``stg_history.amount_signed`` would emit it."""
+    """Amount as ``stg_history.amount_signed`` would emit it.
+
+    Empty / unparseable Amount becomes ``0`` to match
+    ``coalesce(safe_cast(amount), 0)`` in ``stg_history`` — CSV expiries
+    and some coupons land with a blank Amount while SnapTrade writes
+    ``0`` / ``0.0``.
+    """
     base = _canonicalize_seed_cell(amount)
     if base == "":
-        return ""
+        return "0"
     try:
         f = float(base)
     except (TypeError, ValueError):
-        return base
+        return "0"
     norm = _normalize_history_action(action)
     if norm in _STG_CASH_OUT_ACTIONS:
         f = -abs(f)
