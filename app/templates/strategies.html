@@ -112,9 +112,9 @@
    page is the "Fit matrix" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', account=selected_account or none, groups=groups_query) }}">Performance</a>
+       href="{{ url_for('strategies', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Performance</a>
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none, groups=groups_query) }}">Fit matrix</a>
+       href="{{ url_for('strategies', view='fit', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
@@ -122,23 +122,11 @@
 {# ── Account / group filter ── #}
 {% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar">
-    {% if accounts and accounts|length > 1 %}
-    <div>
-        <label class="lblh">Account</label>
-        <select name="account" class="form-select form-select-sm"
-                onchange="this.form.submit()">
-            <option value="">All Accounts</option>
-            {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% endif %}
     {# Preserve the strategy drill-in selection across account changes
        so the user doesn't lose context when scoping by account. #}
     {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
-    {% include "_account_group_filter.html" %}
-    {% if selected_account or selected_group_ids %}
+    {% include "_account_scope_filters.html" %}
+    {% if scope_is_filtered %}
     <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
     {% endif %}
 </form>

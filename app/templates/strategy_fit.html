@@ -400,9 +400,9 @@
 {# View switch — one Strategies surface, two lenses. #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', account=selected_account or none, groups=groups_query) }}">Performance</a>
+       href="{{ url_for('strategies', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Performance</a>
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none, groups=groups_query) }}">Fit matrix</a>
+       href="{{ url_for('strategies', view='fit', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
@@ -588,22 +588,11 @@
     </div>
 
     {% if (accounts and accounts|length > 1) or account_groups %}
-    <form method="get" class="d-flex gap-2 align-items-end flex-wrap" style="margin: 0;">
+    <form method="get" class="filter-bar" style="margin: 0;">
         <input type="hidden" name="view" value="fit">
         <input type="hidden" name="sector" value="{{ drill_sector }}">
         <input type="hidden" name="dim" value="{{ dim }}">
-        {% if accounts and accounts|length > 1 %}
-        <div>
-            <label class="lblh">Account</label>
-            <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
-                <option value="">All Accounts</option>
-                {% for a in accounts %}
-                <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a | account_label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        {% endif %}
-        {% include "_account_group_filter.html" %}
+        {% include "_account_scope_filters.html" %}
     </form>
     {% endif %}
 

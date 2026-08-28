@@ -258,15 +258,44 @@
         }
         .filter-bar .filter-reset:hover { color: #0f172a; text-decoration: underline; }
 
-        .ht-group-chips { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
-        .ht-group-chip {
-            display: inline-flex; align-items: center; gap: .3rem;
-            margin: 0; font-size: .75rem; font-weight: 600; color: #334155;
-            background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 999px;
-            padding: .22rem .7rem; cursor: pointer; user-select: none;
+        .ht-ms-hint {
+            display: inline-flex;
+            align-items: center;
+            min-height: calc(1.5em + .5rem + 2px);
+            font-size: .78rem;
+            font-weight: 500;
+            color: var(--ht-muted);
+            text-decoration: none;
+            white-space: nowrap;
         }
-        .ht-group-chip input { margin: 0; accent-color: #0f172a; }
-        .ht-group-chip.is-on { background: #0f172a; color: #fafaf9; border-color: #0f172a; }
+        .ht-ms-hint:hover { color: var(--ht-ink); text-decoration: underline; }
+
+        .ht-ms-dd { display: flex; flex-direction: column; }
+        .ht-ms-btn {
+            min-width: 11rem; max-width: 16rem;
+            text-align: left;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            background-image: none;
+            padding-right: 2rem;
+        }
+        .ht-ms-menu { min-width: 14rem; padding: .25rem 0 0; }
+        .ht-ms-list { max-height: 14rem; overflow-y: auto; }
+        .ht-ms-item {
+            display: flex; align-items: center; gap: .5rem;
+            font-size: .82rem; cursor: pointer;
+        }
+        .ht-ms-item input { margin: 0; flex: 0 0 auto; accent-color: var(--ht-ink); }
+        .ht-ms-item span {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ht-ms-apply-row {
+            position: sticky; bottom: 0;
+            display: flex; gap: .4rem;
+            padding: .5rem .75rem .6rem;
+            border-top: 1px solid #e2e8f0;
+            background: var(--ht-surface, #fff);
+        }
+        .ht-ms-apply-row .btn { flex: 1; }
 
         /* Pill segmented toggle. Used for "Slice by", "View metric",
            "Status", and date presets. Active state is dark-navy on cream
@@ -553,9 +582,12 @@
         [data-bs-theme="dark"] .row-meta,
         [data-bs-theme="dark"] .cal-rolling-header,
         [data-bs-theme="dark"] .cal-rolling-week-label,
-        [data-bs-theme="dark"] .filter-bar .lblh,
-        [data-bs-theme="dark"] .ht-group-chip { color: var(--ht-ink); background: var(--ht-surface); border-color: #3f3f46; }
-        [data-bs-theme="dark"] .ht-group-chip.is-on { background: #e7e5e4; color: #1c1917; border-color: #e7e5e4; }
+        [data-bs-theme="dark"] .filter-bar .lblh { color: var(--ht-muted); }
+        [data-bs-theme="dark"] .ht-ms-hint { color: var(--ht-muted); }
+        [data-bs-theme="dark"] .ht-ms-hint:hover { color: var(--ht-ink); }
+        [data-bs-theme="dark"] .ht-ms-apply-row {
+            border-top-color: #3f3f46; background: var(--ht-surface);
+        }
         [data-bs-theme="dark"] .since-section-label,
         [data-bs-theme="dark"] .trades-title,
         [data-bs-theme="dark"] .scorecard .sc-label,
@@ -681,8 +713,8 @@
             {% set ep = request.endpoint or '' %}
             {# Carry account / tenant / groups across nav. url_for skips
                None-valued params, so unscoped pages get clean URLs. #}
-            {% set selected_account = request.args.get('account') or None %}
-            {% set selected_tenant = request.args.get('tenant') or None %}
+            {% set selected_account = none if tenants_query else (request.args.get('account') or none) %}
+            {% set selected_tenant = none if tenants_query else (request.args.get('tenant') or none) %}
             {% set in_portfolio = ep in ('positions', 'accounts', 'strategies', 'sectors') %}
             {% set in_review = ep in ('weekly_review', 'today_view', 'day_detail') %}
             <ul class="navbar-nav me-auto">
@@ -694,17 +726,17 @@
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navReview">
                         <li>
                             <a class="dropdown-item {% if ep == 'weekly_review' %}active{% endif %}"
-                               href="{{ url_for('weekly_review', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Overview</a>
+                               href="{{ url_for('weekly_review', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Overview</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'today_view' %}active{% endif %}"
-                               href="{{ url_for('today_view', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Today</a>
+                               href="{{ url_for('today_view', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Today</a>
                         </li>
                     </ul>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'trader_story' %}active{% endif %}"
-                       href="{{ url_for('trader_story', account=selected_account, groups=groups_query) }}">Trader Profile</a>
+                       href="{{ url_for('trader_story', account=selected_account, tenants=tenants_query, groups=groups_query) }}">Trader Profile</a>
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_portfolio %}active{% endif %}" href="#"
@@ -712,32 +744,32 @@
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navPortfolio">
                         <li>
                             <a class="dropdown-item {% if ep == 'positions' %}active{% endif %}"
-                               href="{{ url_for('positions', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Positions</a>
+                               href="{{ url_for('positions', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Positions</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'accounts' %}active{% endif %}"
-                               href="{{ url_for('accounts', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Accounts</a>
+                               href="{{ url_for('accounts', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Accounts</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'strategies' %}active{% endif %}"
-                               href="{{ url_for('strategies', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Strategies</a>
+                               href="{{ url_for('strategies', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Strategies</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'sectors' %}active{% endif %}"
-                               href="{{ url_for('sectors', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Sectors</a>
+                               href="{{ url_for('sectors', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Sectors</a>
                         </li>
                     </ul>
                 </li>
                 {% if earnings_follower_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'earnings_watch' %}active{% endif %}"
-                       href="{{ url_for('earnings_watch', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">Earnings</a>
+                       href="{{ url_for('earnings_watch', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Earnings</a>
                 </li>
                 {% endif %}
                 {% if insights_enabled %}
                 <li class="nav-item">
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
-                       href="{{ url_for('insights', account=selected_account, tenant=selected_tenant, groups=groups_query) }}">AI Insights</a>
+                       href="{{ url_for('insights', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">AI Insights</a>
                 </li>
                 {% endif %}
                 {% if is_admin_user %}

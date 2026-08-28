@@ -10,20 +10,8 @@
 
 {% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar">
-    {% if accounts and accounts|length > 1 %}
-    <div>
-        <label class="lblh">Account</label>
-        <select name="account" class="form-select form-select-sm"
-                onchange="this.form.submit()">
-            <option value="">All Accounts</option>
-            {% for a in accounts %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% endif %}
-    {% include "_account_group_filter.html" %}
-    {% if selected_account or selected_group_ids %}
+    {% include "_account_scope_filters.html" %}
+    {% if scope_is_filtered %}
     <a class="filter-reset" href="{{ url_for('today_view') }}">Reset</a>
     {% endif %}
 </form>
@@ -35,7 +23,7 @@
     <strong>{{ delay.shared if delay else 'These numbers can lag your broker.' }}</strong>
     {{ delay.extra if delay }}
     Official close is on
-    <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, groups=groups_query) }}">Overview</a>.
+    <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Overview</a>.
 </div>
 
 <div class="review-hero">

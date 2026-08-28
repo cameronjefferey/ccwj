@@ -324,6 +324,38 @@ def _apply_account_labels(target, user_id, col: str = "account"):
     return target
 
 
+def _requested_csv_values(args, key):
+    """Parse ``?key=a,b`` or repeated ``?key=a&key=b`` into unique strings."""
+    if args is None:
+        try:
+            args = request.args
+        except Exception:
+            return []
+    raw = []
+    getlist = getattr(args, "getlist", None)
+    if callable(getlist):
+        raw.extend(getlist(key) or [])
+    if not raw:
+        try:
+            val = args.get(key)
+        except Exception:
+            val = None
+        if isinstance(val, (list, tuple)):
+            raw.extend(val)
+        elif val:
+            raw.append(val)
+    out = []
+    seen = set()
+    for item in raw:
+        for part in str(item or "").split(","):
+            part = part.strip()
+            if not part or part in seen:
+                continue
+            seen.add(part)
+            out.append(part)
+    return out
+
+
 def _requested_group_ids(args=None):
     """Parse ``?groups=1,2`` or repeated ``?groups=1&groups=2`` into int ids."""
     if args is None:
@@ -363,6 +395,108 @@ def _groups_query_value(args=None):
     """Comma-joined group ids for ``url_for(..., groups=...)``, or None."""
     ids = _requested_group_ids(args)
     return ",".join(str(i) for i in ids) if ids else None
+
+
+def _scope_filter_options(
+    account_groups,
+    selected_group_ids,
+    selected_tenant_ids,
+    account_choices,
+):
+    """Picker rows: groups stay complete; accounts narrow to selected groups.
+
+    Selecting an account must NOT hide other groups — that traps the user
+    after Groups → pick one account. Groups always lists every group.
+    Accounts lists every account unless groups are applied, in which case
+    only members (plus any already-selected tenant so a stale URL can be
+    cleared). ``account_choices`` is ``[{tenant_id, label}, ...]``.
+    """
+    groups = list(account_groups or [])
+    choices = list(account_choices or [])
+    selected_set = set()
+    for raw in selected_group_ids or []:
+        try:
+            selected_set.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    selected_tid_set = set()
+    for raw in selected_tenant_ids or []:
+        tid = str(raw or "").strip()
+        if tid:
+            selected_tid_set.add(tid)
+
+    if not selected_set:
+        return groups, choices
+
+    allowed_tids = set()
+    for g in groups:
+        try:
+            gid = int(g.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if gid in selected_set:
+            allowed_tids.update(g.get("tenant_ids") or [])
+    visible_accounts = []
+    seen = set()
+    for c in choices:
+        tid = str(c.get("tenant_id") or "").strip()
+        if not tid or tid in seen:
+            continue
+        if tid in allowed_tids or tid in selected_tid_set:
+            seen.add(tid)
+            visible_accounts.append(c)
+    return groups, visible_accounts
+
+
+def _picker_tenant_ids(args, owned_rows, label_map):
+    """Tenant ids the account picker has applied. Empty = all accounts."""
+    owned_ids = set()
+    for row in owned_rows or []:
+        tid = (row.get("tenant_id") or "").strip()
+        if tid:
+            owned_ids.add(tid)
+    if not owned_ids:
+        owned_ids = set((label_map or {}).keys())
+
+    tids = _requested_csv_values(args, "tenants")
+    if tids:
+        return [t for t in tids if t in owned_ids]
+
+    tenant = ""
+    try:
+        tenant = (args.get("tenant") or "").strip()
+    except Exception:
+        tenant = ""
+    if tenant and tenant in owned_ids:
+        return [tenant]
+
+    account = ""
+    try:
+        account = (args.get("account") or "").strip()
+    except Exception:
+        account = ""
+    if not account:
+        return []
+    want = _norm_account_label(account).lower()
+    label_map = label_map or {}
+    matched = []
+    seen = set()
+    for row in owned_rows or []:
+        tid = (row.get("tenant_id") or "").strip()
+        if not tid or tid in seen:
+            continue
+        labels = (
+            row.get("display_nickname"),
+            row.get("account_name"),
+            label_map.get(tid),
+        )
+        if any(
+            lab and _norm_account_label(lab).lower() == want
+            for lab in labels
+        ):
+            seen.add(tid)
+            matched.append(tid)
+    return matched
 
 
 def _user_tenant_list():
@@ -422,26 +556,22 @@ def _tenants_for_scope(selected_account=None):
             return _apply_group_scope([requested_tenant], uid)
         # Not owned → ignore the param and fall through to safe defaults.
 
-    # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles.
-    #     Encodes "show these accounts, hide the rest". Same never-widen
-    #     validation as ?tenant=; intersect with owned for non-admins.
-    try:
-        requested_tenants_raw = (request.args.get("tenants") or "").strip()
-    except Exception:
-        requested_tenants_raw = ""
-    if requested_tenants_raw:
-        requested = [t.strip() for t in requested_tenants_raw.split(",") if t.strip()]
-        if requested:
-            if admin:
-                return _apply_group_scope(list(dict.fromkeys(requested)), uid)
-            owned = [
-                row["tenant_id"]
-                for row in (get_broker_tenants_for_user(current_user.id) or [])
-            ]
-            allowed = [t for t in requested if t in owned]
-            if allowed:
-                return _apply_group_scope(list(dict.fromkeys(allowed)), uid)
-            # None owned → ignore the param and fall through to safe defaults.
+    # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles
+    #     and the account-filter multi-select. Encodes "show these
+    #     accounts, hide the rest". Same never-widen validation as
+    #     ?tenant=; intersect with owned for non-admins.
+    requested = _requested_csv_values(None, "tenants")
+    if requested:
+        if admin:
+            return _apply_group_scope(list(dict.fromkeys(requested)), uid)
+        owned = [
+            row["tenant_id"]
+            for row in (get_broker_tenants_for_user(current_user.id) or [])
+        ]
+        allowed = [t for t in requested if t in owned]
+        if allowed:
+            return _apply_group_scope(list(dict.fromkeys(allowed)), uid)
+        # None owned → ignore the param and fall through to safe defaults.
 
     if admin and not selected:
         return _apply_group_scope(None, uid)

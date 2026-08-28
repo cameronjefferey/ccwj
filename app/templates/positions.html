@@ -256,7 +256,7 @@
                           selected_subsector, selected_tag,
                           (selected_statuses if not _all_statuses else None),
                           (selected_start_date or selected_end_date),
-                          selected_group_ids]
+                          selected_group_ids, selected_tenant_ids]
                          | select | list | length %}
 <button class="btn btn-sm btn-outline-secondary d-lg-none mb-2" type="button"
         data-bs-toggle="collapse" data-bs-target="#posFilters"
@@ -268,20 +268,9 @@
        physical accounts sharing a base label (e.g. multiple "Schwab
        Account"s) are each independently selectable. ``user_accounts`` is
        the auth list; admin (None) falls back to the data-derived list. #}
-    {% set _acct_options = user_accounts if user_accounts else accounts %}
-    {% if _acct_options and _acct_options|length > 1 %}
-    <div>
-        <label class="lblh">Account</label>
-        <select name="account" class="form-select form-select-sm"
-                onchange="this.form.submit()">
-            <option value="">All Accounts</option>
-            {% for a in _acct_options %}
-            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% endif %}
-    {% include "_account_group_filter.html" %}
+    {% with scope_account_options = user_accounts if user_accounts else accounts %}
+    {% include "_account_scope_filters.html" %}
+    {% endwith %}
     <div>
         <label class="lblh">Symbol</label>
         <select name="symbol" class="form-select form-select-sm"
@@ -376,7 +365,7 @@
                    value="{{ selected_end_date }}" onchange="this.form.submit()" style="min-width: 8.5rem;">
         </div>
     </div>
-    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date %}
+    {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date or selected_group_ids or selected_tenant_ids %}
     <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
     {% endif %}
 </form>
