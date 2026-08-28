@@ -107,18 +107,7 @@
 
 {% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar mb-3">
-    {% if accounts and accounts|length > 1 %}
-    <div>
-        <label class="lblh">Account</label>
-        <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
-            <option value="">All Accounts</option>
-            {% for a in accounts %}
-            <option value="{{ a }}" {% if a == selected_account %}selected{% endif %}>{{ a | account_label }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% endif %}
-    {% include "_account_group_filter.html" %}
+    {% include "_account_scope_filters.html" %}
 </form>
 {% endif %}
 

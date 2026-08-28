@@ -695,7 +695,14 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-Never key groups on the SnapTrade `"Schwab Account"` label.
+The Groups and Account controls are multi-select dropdowns to the left of
+other filters, each with Apply and Reset. Account values are `tenant_id`
+(`?tenants=`). Groups always lists every group (picking an account must not
+hide the others). Selecting groups limits the account list to members.
+With two or more accounts and no groups yet, the Groups slot is a quiet
+"Group accounts" link to Settings → Accounts & data (`#account-groups`) —
+not an empty dropdown. Never key groups on the SnapTrade `"Schwab Account"`
+label.
 
 ### 4. Performance Rules
 

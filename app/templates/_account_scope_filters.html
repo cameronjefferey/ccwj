@@ -1,0 +1,208 @@
+{# Groups then Accounts — both multi-select with Apply + Reset.
+   Checkboxes have no name so Symbol/Strategy auto-submits keep the last
+   *applied* hidden fields. Apply copies the boxes into ?groups= / ?tenants=.
+   Groups always lists every group (account selection must not trap you).
+   Accounts lists members of applied groups, or every account if none. #}
+{% set _g_names = namespace(items=[]) %}
+{% for g in account_groups %}
+    {% if g.id in selected_group_ids %}
+        {% set _g_names.items = _g_names.items + [g.name] %}
+    {% endif %}
+{% endfor %}
+{% set _a_names = namespace(items=[]) %}
+{% for c in scope_account_choices %}
+    {% if c.tenant_id in selected_tenant_ids %}
+        {% set _a_names.items = _a_names.items + [c.label] %}
+    {% endif %}
+{% endfor %}
+
+{% if account_groups %}
+<div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="groups">
+    <label class="lblh">Groups</label>
+    <div class="dropdown">
+        <button type="button"
+                class="form-select form-select-sm ht-ms-btn dropdown-toggle {{ account_select_extra_class|default('') }}"
+                {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
+                data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                aria-expanded="false">
+            {% if not _g_names.items %}
+            All groups
+            {% elif _g_names.items|length == 1 %}
+            {{ _g_names.items[0] }}
+            {% elif _g_names.items|length == 2 %}
+            {{ _g_names.items[0] }}, {{ _g_names.items[1] }}
+            {% else %}
+            {{ _g_names.items|length }} groups
+            {% endif %}
+        </button>
+        <div class="dropdown-menu ht-ms-menu">
+            <div class="ht-ms-list">
+                {% for g in account_groups %}
+                <label class="dropdown-item ht-ms-item">
+                    <input type="checkbox" value="{{ g.id }}"
+                           data-members="{{ g.tenant_ids|join(',') }}"
+                           {% if g.id in selected_group_ids %}checked{% endif %}>
+                    <span>{{ g.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="ht-ms-apply-row">
+                <button type="button" class="btn btn-sm btn-outline-secondary ht-ms-reset">Reset</button>
+                <button type="button" class="btn btn-sm btn-dark ht-ms-apply">Apply</button>
+            </div>
+        </div>
+    </div>
+    {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
+</div>
+{% elif scope_account_choices|length > 1 %}
+{# Same Groups slot, no fake dropdown. Only if they have accounts to group. #}
+<div class="ht-ms-dd">
+    <span class="lblh">Groups</span>
+    <a class="ht-ms-hint" href="{{ url_for('profile', tab='account') }}#account-groups">Group accounts</a>
+</div>
+{% endif %}
+
+{% set _show_acct = account_filter_always|default(false) %}
+{% if visible_account_choices and (visible_account_choices|length > 1 or _show_acct or selected_tenant_ids) %}
+<div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="tenants">
+    <label class="lblh">Account</label>
+    <div class="dropdown">
+        <button type="button"
+                class="form-select form-select-sm ht-ms-btn dropdown-toggle {{ account_select_extra_class|default('') }}"
+                {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
+                data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                aria-expanded="false">
+            {% if not _a_names.items %}
+            All accounts
+            {% elif _a_names.items|length == 1 %}
+            {{ _a_names.items[0] }}
+            {% elif _a_names.items|length == 2 %}
+            {{ _a_names.items[0] }}, {{ _a_names.items[1] }}
+            {% else %}
+            {{ _a_names.items|length }} accounts
+            {% endif %}
+        </button>
+        <div class="dropdown-menu ht-ms-menu">
+            <div class="ht-ms-list">
+                {% for c in visible_account_choices %}
+                <label class="dropdown-item ht-ms-item">
+                    <input type="checkbox" value="{{ c.tenant_id }}"
+                           {% if c.tenant_id in selected_tenant_ids %}checked{% endif %}>
+                    <span>{{ c.label | account_label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="ht-ms-apply-row">
+                <button type="button" class="btn btn-sm btn-outline-secondary ht-ms-reset">Reset</button>
+                <button type="button" class="btn btn-sm btn-dark ht-ms-apply">Apply</button>
+            </div>
+        </div>
+    </div>
+    {% if tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
+</div>
+{% elif scope_account_options is defined and scope_account_options and (scope_account_options|length > 1 or _show_acct) %}
+<div>
+    <label class="lblh">Account</label>
+    <select name="account" class="form-select form-select-sm {{ account_select_extra_class|default('') }}"
+            {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
+            onchange="this.form.submit()">
+        <option value="">All Accounts</option>
+        {% for a in scope_account_options %}
+        <option value="{{ a }}" {{ 'selected' if a == selected_account }}{% if account_select_extra_style %} style="color:#000"{% endif %}>{{ a | account_label }}</option>
+        {% endfor %}
+    </select>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    function appliedValue(form, param) {
+        var el = form && form.querySelector('input[type="hidden"][name="' + param + '"]');
+        return el ? el.value : "";
+    }
+    function setApplied(form, param, csv) {
+        var el = form.querySelector('input[type="hidden"][name="' + param + '"]');
+        if (!csv) {
+            if (el) el.remove();
+            return;
+        }
+        if (!el) {
+            el = document.createElement("input");
+            el.type = "hidden";
+            el.name = param;
+            form.appendChild(el);
+        }
+        el.value = csv;
+    }
+    function syncBoxes(wrap) {
+        var form = wrap.closest("form");
+        var param = wrap.getAttribute("data-ht-ms-param");
+        var have = {};
+        appliedValue(form, param).split(",").forEach(function (v) {
+            if (v) have[v] = true;
+        });
+        wrap.querySelectorAll(".ht-ms-list input[type=checkbox]").forEach(function (box) {
+            box.checked = !!have[box.value];
+        });
+    }
+    function pruneTenantsToGroups(form, groupWrap) {
+        var allowed = {};
+        var any = false;
+        groupWrap.querySelectorAll(".ht-ms-list input[type=checkbox]").forEach(function (box) {
+            if (!box.checked) return;
+            any = true;
+            (box.getAttribute("data-members") || "").split(",").forEach(function (t) {
+                if (t) allowed[t] = true;
+            });
+        });
+        if (!any) return;
+        var cur = appliedValue(form, "tenants");
+        if (!cur) return;
+        var kept = cur.split(",").filter(function (t) { return t && allowed[t]; });
+        setApplied(form, "tenants", kept.join(","));
+    }
+    function applyFrom(wrap, reset) {
+        var form = wrap.closest("form");
+        var param = wrap.getAttribute("data-ht-ms-param");
+        if (!form) return;
+        var boxes = wrap.querySelectorAll(".ht-ms-list input[type=checkbox]");
+        var checked = [];
+        if (!reset) {
+            boxes.forEach(function (box) { if (box.checked) checked.push(box.value); });
+        }
+        var csv = "";
+        if (!reset) {
+            if (param === "tenants") {
+                if (checked.length && checked.length < boxes.length) csv = checked.join(",");
+            } else if (checked.length) {
+                csv = checked.join(",");
+            }
+        }
+        setApplied(form, param, csv);
+        if (param === "tenants") {
+            ["account", "tenant"].forEach(function (k) {
+                form.querySelectorAll('[name="' + k + '"]').forEach(function (n) { n.remove(); });
+            });
+        }
+        if (param === "groups") pruneTenantsToGroups(form, wrap);
+        form.submit();
+    }
+    document.querySelectorAll("[data-ht-ms-dd]").forEach(function (wrap) {
+        if (wrap.dataset.bound) return;
+        wrap.dataset.bound = "1";
+        wrap.addEventListener("hidden.bs.dropdown", function () { syncBoxes(wrap); });
+        var apply = wrap.querySelector(".ht-ms-apply");
+        var reset = wrap.querySelector(".ht-ms-reset");
+        if (apply) apply.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            applyFrom(wrap, false);
+        });
+        if (reset) reset.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            applyFrom(wrap, true);
+        });
+    });
+})();
+</script>

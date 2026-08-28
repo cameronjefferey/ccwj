@@ -144,18 +144,63 @@ def _inject_feature_flags():
     account_groups = []
     selected_group_ids = []
     groups_query = None
+    visible_account_groups = []
+    visible_account_choices = []
+    scope_account_choices = []
+    selected_tenant_ids = []
+    tenants_query = None
+    scope_is_filtered = False
     try:
         if current_user.is_authenticated:
-            from app.models import list_account_groups as _list_account_groups
-            from app.routes import _groups_query_value, _requested_group_ids
+            from flask import request as _req
+            from app.models import (
+                get_broker_tenants_for_user as _get_broker_tenants_for_user,
+                list_account_groups as _list_account_groups,
+            )
+            from app.routes import (
+                _groups_query_value,
+                _picker_tenant_ids,
+                _requested_group_ids,
+                _scope_filter_options,
+                _tenant_label_map_for_user,
+            )
 
             account_groups = _list_account_groups(current_user.id) or []
             selected_group_ids = _requested_group_ids()
             groups_query = _groups_query_value()
+            _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
+            _label_map = _tenant_label_map_for_user(current_user.id) or {}
+            scope_account_choices = [
+                {"tenant_id": tid, "label": lab}
+                for tid, lab in sorted(
+                    _label_map.items(), key=lambda kv: (kv[1] or "").lower()
+                )
+            ]
+            try:
+                _args = _req.args
+            except Exception:
+                _args = {}
+            selected_tenant_ids = _picker_tenant_ids(_args, _owned_rows, _label_map)
+            tenants_query = ",".join(selected_tenant_ids) if selected_tenant_ids else None
+            visible_account_groups, visible_account_choices = _scope_filter_options(
+                account_groups, selected_group_ids, selected_tenant_ids,
+                scope_account_choices,
+            )
+            scope_is_filtered = bool(
+                selected_group_ids or selected_tenant_ids
+                or (_args.get("account") or "").strip()
+                or (_args.get("tenant") or "").strip()
+            )
     except Exception:
         account_groups = []
         selected_group_ids = []
         groups_query = None
+        visible_account_groups = []
+        visible_account_choices = []
+        scope_account_choices = []
+        selected_tenant_ids = []
+        tenants_query = None
+        scope_is_filtered = False
 
     # Stripe is only offered when fully configured (keys + both price IDs);
     # checkout routes refuse otherwise so a half-configured deploy cannot
@@ -194,6 +239,12 @@ def _inject_feature_flags():
         "account_groups": account_groups,
         "selected_group_ids": selected_group_ids,
         "groups_query": groups_query,
+        "visible_account_groups": visible_account_groups,
+        "visible_account_choices": visible_account_choices,
+        "scope_account_choices": scope_account_choices,
+        "selected_tenant_ids": selected_tenant_ids,
+        "tenants_query": tenants_query,
+        "scope_is_filtered": scope_is_filtered,
         "billing_enabled": billing_enabled,
         "price_monthly": price_monthly,
         "price_annual": price_annual,

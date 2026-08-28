@@ -17,7 +17,13 @@ from app.models import (
     set_account_group_members,
     tenant_ids_for_groups,
 )
-from app.routes import _requested_group_ids, _tenants_for_scope
+from app.routes import (
+    _picker_tenant_ids,
+    _requested_csv_values,
+    _requested_group_ids,
+    _scope_filter_options,
+    _tenants_for_scope,
+)
 from app.accounts_page import _accounts_scope_query
 
 
@@ -44,6 +50,48 @@ def test_requested_group_ids_comma_and_repeated():
     assert _requested_group_ids({"groups": ["2", "5"]}) == [2, 5]
     assert _requested_group_ids({}) == []
     assert _requested_group_ids({"groups": "nope"}) == []
+
+
+_CHOICES = [
+    {"tenant_id": "snaptrade:aaa", "label": "Cameron 401k"},
+    {"tenant_id": "snaptrade:bbb", "label": "Sara IRA"},
+    {"tenant_id": "snaptrade:ccc", "label": "Kids Roth"},
+]
+_GROUPS = [
+    {"id": 1, "name": "Kids", "tenant_ids": ["snaptrade:ccc"]},
+    {"id": 2, "name": "Retirement", "tenant_ids": ["snaptrade:aaa"]},
+    {"id": 3, "name": "Crypto", "tenant_ids": ["snaptrade:bbb"]},
+]
+
+
+def test_account_selection_does_not_hide_groups():
+    """Picking an account must not trap the Groups menu on that account's groups."""
+    groups, accts = _scope_filter_options(_GROUPS, [], ["snaptrade:bbb"], _CHOICES)
+    assert [g["name"] for g in groups] == ["Kids", "Retirement", "Crypto"]
+    assert [a["label"] for a in accts] == ["Cameron 401k", "Sara IRA", "Kids Roth"]
+
+
+def test_account_dropdown_filters_to_selected_groups():
+    groups, accts = _scope_filter_options(_GROUPS, [1, 2], [], _CHOICES)
+    assert [g["name"] for g in groups] == ["Kids", "Retirement", "Crypto"]
+    assert [a["label"] for a in accts] == ["Cameron 401k", "Kids Roth"]
+
+
+def test_group_filter_still_lists_every_member_account():
+    """One selected account inside the group set does not hide sibling members."""
+    groups, accts = _scope_filter_options(
+        _GROUPS, [1, 2], ["snaptrade:aaa"], _CHOICES,
+    )
+    assert [g["name"] for g in groups] == ["Kids", "Retirement", "Crypto"]
+    assert [a["label"] for a in accts] == ["Cameron 401k", "Kids Roth"]
+
+
+def test_stale_account_outside_group_stays_visible():
+    groups, accts = _scope_filter_options(
+        _GROUPS, [1], ["snaptrade:bbb"], _CHOICES,
+    )
+    assert [g["name"] for g in groups] == ["Kids", "Retirement", "Crypto"]
+    assert [a["label"] for a in accts] == ["Sara IRA", "Kids Roth"]
 
 
 def _resolve(query_string, admin=False, owned=OWNED, selected_account="", group_map=None):
@@ -83,7 +131,7 @@ def test_groups_union_is_additive():
 
 
 def test_groups_intersect_selected_account():
-    """Account picker + group chips AND together (group does not widen)."""
+    """Account picker + group filter AND together (group does not widen)."""
     scope = _resolve(
         "?groups=1",
         selected_account="Sara IRA",
@@ -117,6 +165,23 @@ def test_accounts_scope_query_appends_groups():
         {"account": "Cameron 401k", "groups": "1,2"}
     ) == "account=Cameron+401k&groups=1%2C2"
     assert _accounts_scope_query({"tenant": "snaptrade:aaa"}) == "tenant=snaptrade%3Aaaa"
+    assert _accounts_scope_query(
+        {"tenants": "snaptrade:aaa,snaptrade:bbb", "groups": "1"}
+    ) == "tenants=snaptrade%3Aaaa%2Csnaptrade%3Abbb&groups=1"
+
+
+def test_picker_tenant_ids_from_tenants_param():
+    labels = {r["tenant_id"]: r["display_nickname"] for r in OWNED}
+    assert _picker_tenant_ids(
+        {"tenants": "snaptrade:bbb,snaptrade:HACK"}, OWNED, labels,
+    ) == ["snaptrade:bbb"]
+    assert _picker_tenant_ids({"account": "Sara IRA"}, OWNED, labels) == ["snaptrade:bbb"]
+    assert _picker_tenant_ids({}, OWNED, labels) == []
+
+
+def test_requested_csv_values_comma_and_repeated():
+    assert _requested_csv_values({"tenants": "a,b,a"}, "tenants") == ["a", "b"]
+    assert _requested_csv_values({"tenants": ["x", "y"]}, "tenants") == ["x", "y"]
 
 
 class _FakeGroupDB:
