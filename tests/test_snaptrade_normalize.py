@@ -90,8 +90,9 @@ def test_action_map_still_drops_ambiguous_or_share_movements():
     """TRANSFER / JOURNAL can be SHARE transfers (not cash), DISTRIBUTION is
     ambiguous (fund distribution income vs. account withdrawal), and SPLIT is
     handled out-of-band by current_position_stock_price.py + stg_split_events.
-    Mislabeling any of these as cash flow would corrupt the net-deposits
-    number, so they stay dropped (None)."""
+    Mislabeling TRANSFER / DISTRIBUTION / SPLIT as cash flow would corrupt
+    the net-deposits number, so they stay dropped (None). Cash-only JOURNAL
+    is promoted at read time, not via this map."""
     for cash_kind in ("TRANSFER", "JOURNAL", "DISTRIBUTION", "SPLIT", "STOCKSPLIT"):
         assert SNAPTRADE_ACTIVITY_TO_ACTION[cash_kind] is None
 
@@ -275,7 +276,7 @@ def test_history_df_captures_deposits_and_withdrawals_with_signed_amount():
     """Deposits/withdrawals now land in the seed as Deposit/Withdrawal rows
     (folded to ``cash_transfer`` in stg_history) with a sign-correct Amount:
     deposits cash IN (+), withdrawals cash OUT (−). Share-movement/ambiguous
-    types (JOURNAL) still drop silently."""
+    types (JOURNAL with no cash) still drop silently."""
     activities = [
         _buy_activity(),
         {"type": "DEPOSIT", "amount": 1000, "trade_date": "2026-05-11"},
@@ -291,6 +292,26 @@ def test_history_df_captures_deposits_and_withdrawals_with_signed_amount():
     assert float(dep.iloc[0]["Amount"]) == 1000.0
     # Withdrawal is cash OUT regardless of the broker-reported sign.
     assert float(wd.iloc[0]["Amount"]) == -500.0
+
+
+def test_history_df_cash_only_journal_maps_to_deposit():
+    df = activities_to_history_df(
+        [{"type": "JOURNAL", "amount": 500, "trade_date": "2025-01-06",
+          "description": "JOURNAL FRM ...852"}],
+        account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert len(df) == 1
+    assert df.iloc[0]["Action"] == "Deposit"
+    assert float(df.iloc[0]["Amount"]) == 500.0
+
+
+def test_history_df_share_journal_still_drops():
+    df = activities_to_history_df(
+        [{"type": "JOURNAL", "amount": 500, "units": 10, "trade_date": "2025-01-06",
+          "symbol": {"symbol": "IYW", "raw_symbol": "IYW"}}],
+        account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.empty
 
 
 def test_history_df_withdrawal_negative_even_if_broker_reports_positive():

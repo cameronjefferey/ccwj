@@ -21,25 +21,29 @@
         without a second BQ round-trip.
       - net_deposit_today, cumulative_net_deposits — external cash the
         trader moved IN (+) or OUT (−) of the account on/through this day.
-        TWO sources, stacked, no double count:
 
-          1. Opening cash (``int_opening_cash``): the first snapshot's
-             account_value. That money was already in the account on
-             day 1 — it got there via deposits we never saw (SnapTrade's
-             activity window is short; cash movements were dropped
-             until capture shipped). Treating it as a deposit is what
-             makes "Exclude deposits & withdrawals" work on accounts
-             like Emmory that have $0 broker Withdrawal/Deposit rows.
-          2. Explicit ``stg_history.action = 'cash_transfer'`` rows
-             with trade_date AFTER the first snapshot. Transfers on or
-             before day 1 are already inside opening_deposit.
+        Two modes, never stacked on the same tenant:
 
-        ``cumulative_net_deposits`` ASOF-joins (2) onto the spine so a
-        weekend withdrawal still counts on the next snapshot. Day-1
-        cumulative equals account_value by construction (exclude line
-        starts at $0). ``net_deposit_today`` is the day-over-day
-        difference of that cumulative (opening lands on the first
-        snapshot date as one event).
+          1. ITEMIZED — the tenant has at least one ``cash_transfer``
+             dated on or before the first snapshot (a CSV backfill of
+             Schwab ``Funds Received`` / ``MoneyLink Transfer`` / cash
+             ``Journal``, or a broker feed that actually sent deposits). Cumulative is
+             the running sum of ALL those rows ASOF onto the snapshot
+             spine. Day-1 exclude line is
+             ``account_value − Σ deposits through day 1`` (pre-snapshot
+             trading P&L stays). Do NOT also add ``int_opening_cash``
+             — that lump already contains those deposits.
+          2. FALLBACK — no pre-snapshot cash_transfer rows. Opening
+             cash (``int_opening_cash`` = first snapshot account_value)
+             is the missing deposit, plus explicit transfers AFTER
+             day 1. Day-1 cumulative equals account_value (exclude
+             line starts at $0). This is every account funded before
+             capture that has no CSV cash history.
+
+        ``cumulative_net_deposits`` ASOF-joins onto the spine so a
+        weekend withdrawal still counts on the next snapshot.
+        ``net_deposit_today`` is the day-over-day difference of that
+        cumulative.
 
     The /wealth page can answer:
       - "How much do I have today and how is it allocated?" — top row
@@ -105,8 +109,50 @@ history_by_day as (
     group by 1, 2, 3, 4
 ),
 
--- Explicit cash transfers AFTER the opening snapshot. Anything dated
--- on or before first_date is already inside opening_deposit.
+-- Every explicit cash_transfer, including those dated before the first
+-- snapshot. Used when a CSV/broker backfill actually itemized deposits.
+transfers_all as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        trade_date as date,
+        sum(amount) as net_deposit_today
+    from {{ ref('stg_history') }}
+    where action = 'cash_transfer'
+    group by 1, 2, 3, 4
+),
+
+transfer_running_all as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        date,
+        net_deposit_today,
+        sum(net_deposit_today) over (
+            partition by tenant_id, account, user_id
+            order by date
+            rows between unbounded preceding and current row
+        ) as itemized_cum
+    from transfers_all
+),
+
+itemized_tenants as (
+    select distinct
+        o.tenant_id,
+        o.account,
+        o.user_id
+    from opening o
+    inner join {{ ref('stg_history') }} t
+      on (o.tenant_id is not distinct from t.tenant_id)
+     and o.account = t.account
+     and (o.user_id is not distinct from t.user_id)
+     and t.action = 'cash_transfer'
+     and t.trade_date <= o.first_date
+),
+
+-- Fallback path: transfers AFTER the opening snapshot only.
 transfers_after_opening as (
     select
         t.account,
@@ -139,6 +185,22 @@ transfer_running as (
     from transfers_after_opening
 ),
 
+equity_with_itemized as (
+    select
+        e.*,
+        coalesce(ar.itemized_cum, 0) as itemized_cum
+    from equity e
+    left join transfer_running_all ar
+      on ar.account = e.account
+     and (ar.user_id is not distinct from e.user_id)
+     and (ar.tenant_id is not distinct from e.tenant_id)
+     and ar.date <= e.date
+    qualify row_number() over (
+        partition by e.tenant_id, e.account, e.user_id, e.date
+        order by ar.date desc nulls last
+    ) = 1
+),
+
 joined as (
     select
         e.account,
@@ -152,9 +214,12 @@ joined as (
         coalesce(h.dividend_today, 0)      as dividend_today,
         coalesce(h.interest_net_today, 0)  as interest_net_today,
         coalesce(h.fees_today, 0)          as fees_today,
-        coalesce(o.opening_deposit, 0)
-            + coalesce(tr.post_opening_cum, 0) as cumulative_net_deposits
-    from equity e
+        case
+            when i.tenant_id is not null then e.itemized_cum
+            else coalesce(o.opening_deposit, 0)
+                + coalesce(tr.post_opening_cum, 0)
+        end as cumulative_net_deposits
+    from equity_with_itemized e
     left join opening o
       on o.account = e.account
      and (o.user_id is not distinct from e.user_id)
@@ -169,6 +234,10 @@ joined as (
      and (tr.user_id is not distinct from e.user_id)
      and (tr.tenant_id is not distinct from e.tenant_id)
      and tr.date <= e.date
+    left join itemized_tenants i
+      on (i.tenant_id is not distinct from e.tenant_id)
+     and i.account = e.account
+     and (i.user_id is not distinct from e.user_id)
     qualify row_number() over (
         partition by e.tenant_id, e.account, e.user_id, e.date
         order by tr.date desc nulls last
@@ -197,8 +266,8 @@ select
     interest_net_today,
     fees_today,
 
-    -- Opening deposit on day 1; later explicit transfers (including
-    -- those that landed between snapshot days) as the cumulative delta.
+    -- Day-1: either the inferred opening lump (fallback) or the
+    -- running sum of itemized transfers through that date.
     coalesce(
         cumulative_net_deposits - lag(cumulative_net_deposits) over (
             partition by tenant_id, account, user_id

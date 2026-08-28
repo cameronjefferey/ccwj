@@ -153,6 +153,22 @@ cleaned as (
             when 'deposit'              then 'cash_transfer'
             when 'withdrawal'           then 'cash_transfer'
             when 'cash transfer'        then 'cash_transfer'
+            -- Schwab web-export labels (CSV upload). SnapTrade writes
+            -- Deposit/Withdrawal; the CSV uses these instead. Cash-only
+            -- Journal (no ticker, non-zero amount) is mapped just below.
+            when 'funds received'       then 'cash_transfer'
+            when 'moneylink transfer'   then 'cash_transfer'
+            -- Schwab CSV ``Journal`` is cash when there is no ticker and a
+            -- non-zero Amount (Emmory 2025-01-06 $500 FRM …852). Share
+            -- journals carry a symbol/qty and stay ``other``.
+            when 'journal' then
+                case
+                    when nullif(trim(symbol), '') is null
+                     and abs(coalesce({{ parse_seed_number('amount') }}, 0)) > 0.005
+                     and abs(coalesce({{ parse_seed_number('quantity') }}, 0)) < 1e-9
+                    then 'cash_transfer'
+                    else 'other'
+                end
             else 'other'
         end as action,
 
@@ -203,8 +219,12 @@ cleaned as (
             ) then 'Dividend'
             when lower(trim(action)) in (
                 'margin interest', 'credit interest', 'adr mgmt fee',
-                'deposit', 'withdrawal', 'cash transfer'
+                'deposit', 'withdrawal', 'cash transfer',
+                'funds received', 'moneylink transfer'
             ) then 'Cash Event'
+            when lower(trim(action)) = 'journal'
+             and nullif(trim(symbol), '') is null
+            then 'Cash Event'
             else 'Equity'
         end as instrument_type,
 

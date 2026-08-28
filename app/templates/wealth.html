@@ -358,13 +358,13 @@
     <p class="chart-sub">
         Stacked: cash, equity, options. The black line is total account value.
         {% if exclude_transfers and ever_has_transfers %}
-        The dashed line removes deposits &amp; withdrawals — including the
-        money that was already in the account on day 1. The gap between
-        the two lines is funding, not trading. Hover for daily numbers.
+        The dashed line removes deposits &amp; withdrawals. When those
+        rows are in trade history, trading P&amp;L from before snapshots
+        stays; when they aren't, day-1 account value counts as the
+        missing deposit. Hover for daily numbers.
         {% elif ever_has_transfers %}
         Toggle <em>Exclude deposits &amp; withdrawals</em> to see the balance
-        driven by the market and income only (day-1 funding counts as a
-        deposit). Hover for daily numbers.
+        driven by the market and income only. Hover for daily numbers.
         {% else %}
         Hover for daily numbers.
         {% endif %}

@@ -522,27 +522,36 @@ on balance-based surfaces. External cash movements are now CAPTURED (they
 were previously dropped): SnapTrade `DEPOSIT` / `WITHDRAWAL` / `CONTRIBUTION`
 / `INTERNAL_CASH_TRANSFER_IN` / `INTERNAL_CASH_TRANSFER_OUT` activities map
 to `action = 'cash_transfer'` / `instrument_type = 'Cash Event'` in
-`stg_history` (deposit +, withdrawal −; `TRANSFER` / `JOURNAL` /
+`stg_history` (deposit +, withdrawal −; `TRANSFER` /
 `DISTRIBUTION` stay dropped — they can be SHARE transfers or ambiguous
-income). Cash events often have a NULL ticker; `stg_history` must keep
+income). Cash-only **`JOURNAL`** (no ticker, non-zero amount) is a
+deposit — Schwab CSV `Journal` and SnapTrade `JOURNAL` both map that
+way (Emmory `$500` `JOURNAL FRM …852`). Share journals keep a symbol/qty
+and stay dropped. Schwab CSV uploads also use **`Funds Received`** and **`MoneyLink
+Transfer`** for external cash — those map to `cash_transfer` in
+`stg_history` (and the upload merge key) so a CSV backfill actually
+itemizes deposits. Cash events often have a NULL ticker; `stg_history` must keep
 those rows (do not filter with `underlying_symbol != 'CURRENCY_USD'` —
 NULL comparisons drop them and the toggle becomes a warehouse-wide no-op). `mart_wealth_daily` exposes `net_deposit_today` +
 `cumulative_net_deposits`. The value view's **"Exclude deposits &
 withdrawals"** toggle (`?exclude_transfers=1`) subtracts lifetime
 ``cumulative_net_deposits`` from the account-value line (as-if-you-hadn't-
 moved-money) and strips in-window cash flow from the change-over-time
-numbers. Day-1 account value is inferred opening cash
-(``int_opening_cash`` — the money already in the account when snapshots
-started; SnapTrade never sent that deposit). Explicit `cash_transfer`
-rows after that first snapshot stack on top. Transfers on or before
-day 1 are already inside the opening value and must not be added again.
-`/accounts` adds a **Net deposits** KPI card (its P&L chart was already
+numbers. Two modes, never stacked on one tenant: **itemized** (at least
+one `cash_transfer` on or before the first snapshot — e.g. Emmory CSV)
+uses Σ those rows, so the exclude line on day 1 is account value minus
+real deposits (pre-snapshot trading P&L stays); **fallback** (no such
+rows) treats day-1 account value as inferred opening cash
+(``int_opening_cash``) so the exclude line starts at $0, then stacks
+explicit transfers after that date. `/accounts` adds a **Net deposits** KPI card (its P&L chart was already
 deposit-free by construction) that re-windows client-side like Realized.
 
 **Opening cash + later transfers.** Broker activity feeds are a short T+1
 window and cash movements were dropped before capture shipped, so most
 accounts start mid-life. The first snapshot's `account_value` *is* the
-missing deposit. Both mart columns are 0 only for a $0 first snapshot.
+missing deposit **unless** a CSV (or a long broker window) already
+itemized the cash-ins. Both mart columns are 0 only for a $0 first snapshot
+with no cash_transfer rows.
 
 **Dedup caveat (accepted).** Transfer rows go through the same
 `_dedup_history_rows` contract as every other history row: two

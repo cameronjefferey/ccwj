@@ -168,6 +168,9 @@ _STG_HISTORY_ACTION = {
     "deposit": "cash_transfer",
     "withdrawal": "cash_transfer",
     "cash transfer": "cash_transfer",
+    "funds received": "cash_transfer",
+    "moneylink transfer": "cash_transfer",
+    "journal": "cash_transfer",
 }
 _STG_CASH_OUT_ACTIONS = {
     "equity_buy", "option_buy_to_open", "option_buy_to_close",

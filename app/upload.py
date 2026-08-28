@@ -592,6 +592,9 @@ _STG_HISTORY_ACTION = {
     "deposit": "cash_transfer",
     "withdrawal": "cash_transfer",
     "cash transfer": "cash_transfer",
+    "funds received": "cash_transfer",
+    "moneylink transfer": "cash_transfer",
+    "journal": "cash_transfer",
 }
 _STG_CASH_OUT_ACTIONS = {
     "equity_buy", "option_buy_to_open", "option_buy_to_close",
@@ -811,7 +814,7 @@ def _dedup_history_rows(df, seed_columns):
         keep_mask2 = [i not in drop_positions for i in range(len(df))]
         df = df.loc[keep_mask2].reset_index(drop=True)
 
-    # ---- Third pass: staging CHECK 1 grain (symbol present) ----------------
+    # ---- Third pass: staging CHECK 1 grain --------------------------------
     # Dividend / interest rows usually have a ticker and a BLANK Price, so
     # the fill pass above skips them. CSV ``Qualified Dividend`` vs
     # SnapTrade ``Cash Dividend`` then survive until stg_history maps both
@@ -819,6 +822,8 @@ def _dedup_history_rows(df, seed_columns):
     # Symbol so blank-symbol expiries / fee lines (distinguished only by
     # Description) are never fused — same guard as the fill pass, Price
     # allowed blank. Amount is re-signed the way stg_history does.
+    # cash_transfer is the exception: Schwab CSV ``Funds Received`` /
+    # ``MoneyLink Transfer`` vs SnapTrade ``Deposit`` have a NULL Symbol.
     amount_col = next((c for c in seed_columns if str(c).lower() == "amount"), None)
     date_col = next((c for c in seed_columns if str(c).lower() == "date"), None)
     action_col = next((c for c in seed_columns if str(c).lower() == "action"), None)
@@ -829,7 +834,12 @@ def _dedup_history_rows(df, seed_columns):
         return df
 
     df = df.reset_index(drop=True)
-    eligible3 = df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+    eligible3 = (
+        df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+        | df[action_col].map(
+            lambda v: _normalize_history_action(v) == "cash_transfer"
+        )
+    )
     desc_lens3 = df["Description"].fillna("").astype(str).str.len()
     order3 = (-desc_lens3.to_numpy()).argsort(kind="stable")
     seen3: set = set()
