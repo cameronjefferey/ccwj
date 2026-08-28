@@ -158,8 +158,10 @@ def _inject_feature_flags():
                 list_account_groups as _list_account_groups,
             )
             from app.routes import (
+                _blank_query_text,
                 _groups_query_value,
                 _picker_tenant_ids,
+                _requested_account,
                 _requested_group_ids,
                 _scope_filter_options,
                 _tenant_label_map_for_user,
@@ -188,8 +190,8 @@ def _inject_feature_flags():
             )
             scope_is_filtered = bool(
                 selected_group_ids or selected_tenant_ids
-                or (_args.get("account") or "").strip()
-                or (_args.get("tenant") or "").strip()
+                or _requested_account(_args)
+                or _blank_query_text(_args.get("tenant"))
             )
     except Exception:
         account_groups = []

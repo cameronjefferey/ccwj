@@ -234,7 +234,7 @@
        range. #}
     <form method="get" class="d-inline-flex align-items-center mb-0 ms-auto">
         <input type="hidden" name="view" value="value">
-        <input type="hidden" name="account" value="{{ selected_account }}">
+        {% if selected_account %}<input type="hidden" name="account" value="{{ selected_account }}">{% endif %}
         <input type="hidden" name="range" value="{{ selected_range }}">
         {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
         {% if tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
@@ -252,7 +252,7 @@
     <div class="range-toggle">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('all', 'All')] %}
         {% for value, label in ranges %}
-        <a href="{{ url_for('accounts', view='value', account=selected_account, range=value, groups=groups_query, tenants=tenants_query, exclude_transfers='1' if exclude_transfers else none) }}"
+        <a href="{{ url_for('accounts', view='value', account=selected_account or none, range=value, groups=groups_query, tenants=tenants_query, exclude_transfers='1' if exclude_transfers else none) }}"
            class="{{ 'active' if selected_range == value }}">{{ label }}</a>
         {% endfor %}
     </div>
