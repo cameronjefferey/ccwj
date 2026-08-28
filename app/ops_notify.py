@@ -62,9 +62,16 @@ def event_enabled(kind: str) -> bool:
 
 
 def user_label(user_id, username=None) -> str:
-    """How we name a person in a ping — ``@alice``, else ``user 9``."""
+    """How we name a person in a ping — ``@alice``, else ``user 9``.
+
+    DB lookup runs only when ``username is None`` (caller omitted it).
+    An explicit empty string means "no handle" and must not pick up a
+    leftover ``users.id`` from another test (CI: ``test_data_isolation``
+    creates ``share_legit_*`` as id=9, then
+    ``test_user_label_uses_passed_username`` expected ``user 9``).
+    """
     name = (username or "").strip()
-    if not name and user_id is not None:
+    if username is None and not name and user_id is not None:
         try:
             from app.db import fetch_one
             row = fetch_one("SELECT username FROM users WHERE id = %s", (user_id,))

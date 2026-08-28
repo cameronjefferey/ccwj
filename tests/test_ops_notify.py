@@ -170,6 +170,17 @@ def test_ai_activation_skips_already_paying(monkeypatch):
 def test_user_label_uses_passed_username():
     assert on.user_label(9, username="pat") == "@pat"
     assert on.user_label(None, username="") == "someone"
+    # Explicit empty string = no handle. Must not SELECT users.id=9
+    # (CI creates share_legit_* as that id in test_data_isolation).
+    assert on.user_label(9, username="") == "user 9"
+
+
+def test_user_label_looks_up_db_only_when_username_omitted(monkeypatch):
+    monkeypatch.setattr(
+        "app.db.fetch_one",
+        lambda *_a, **_k: {"username": "fromdb"},
+    )
+    assert on.user_label(9) == "@fromdb"
     assert on.user_label(9, username="") == "user 9"
 
 
