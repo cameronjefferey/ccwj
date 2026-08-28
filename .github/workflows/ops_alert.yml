@@ -2,8 +2,10 @@ name: Ops alert (Telegram)
 
 # Phone ping when a data-pipeline job actually FAILS, then launch a Cursor
 # cloud agent to investigate, land a hotfix PR, merge, and re-run the job.
-# Cancelled runs (cancel-in-progress on overlapping warehouse rebuilds) do
-# NOT fire — those are expected. GitHub already emails watchers; Telegram
+# Follow-up Telegrams: "hotfix started" when the agent launches, "hotfix
+# merged" when a cursor/* PR lands on master. Cancelled runs
+# (cancel-in-progress on overlapping warehouse rebuilds) do NOT fire —
+# those are expected. GitHub already emails watchers; Telegram
 # is the "look at this now" channel, and the agent is the hands.
 #
 # Telegram setup (once):
@@ -49,6 +51,8 @@ on:
       - Warehouse reconcile audit
     types:
       - completed
+  pull_request:
+    types: [closed]
   workflow_dispatch:
     inputs:
       failed_run_url:
@@ -58,7 +62,7 @@ on:
 
 jobs:
   alert:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,4 +94,30 @@ jobs:
           ALERT_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
           ALERT_URL: ${{ github.event.workflow_run.html_url || inputs.failed_run_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
           ALERT_AGENT_URL: ${{ steps.cursor.outputs.agent_url }}
+        run: python scripts/ops_telegram.py
+
+      - name: Send Telegram hotfix-started
+        if: steps.cursor.outputs.agent_url != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_KIND: started
+          ALERT_NAME: ${{ github.event.workflow_run.name || 'Manual hotfix' }}
+          ALERT_URL: ${{ github.event.workflow_run.html_url || inputs.failed_run_url }}
+          ALERT_AGENT_URL: ${{ steps.cursor.outputs.agent_url }}
+        run: python scripts/ops_telegram.py
+
+  hotfix-merged:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'cursor/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send Telegram hotfix-merged
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_KIND: merged
+          ALERT_NAME: ${{ github.event.pull_request.title }}
+          ALERT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          ALERT_URL: ${{ github.event.pull_request.html_url }}
         run: python scripts/ops_telegram.py

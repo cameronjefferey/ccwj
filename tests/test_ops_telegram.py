@@ -34,6 +34,60 @@ def test_compose_failure_includes_cursor_agent_url():
     assert "Cursor agent: https://cursor.com/agents/bc-abc" in text
 
 
+def test_compose_hotfix_started():
+    text = ot.compose_hotfix_started(
+        name="Update Daily Position Performance",
+        agent_url="https://cursor.com/agents/bc-abc",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
+    )
+    assert text.startswith("HappyTrader: hotfix started")
+    assert "Update Daily Position Performance" in text
+    assert "https://cursor.com/agents/bc-abc" in text
+    assert "actions/runs/1" in text
+    assert "FAILED" not in text
+
+
+def test_compose_hotfix_merged():
+    text = ot.compose_hotfix_merged(
+        name="Hotfix warehouse dupes",
+        pr_url="https://github.com/cameronjefferey/ccwj/pull/65",
+        branch="cursor/hotfix-dupes",
+    )
+    assert text.startswith("HappyTrader: hotfix merged")
+    assert "pull/65" in text
+    assert "cursor/hotfix-dupes" in text
+    assert "FAILED" not in text
+
+
+def test_is_cursor_hotfix_branch():
+    assert ot.is_cursor_hotfix_branch("cursor/hotfix-update-daily-position-performance-dde6")
+    assert ot.is_cursor_hotfix_branch("refs/heads/cursor/foo")
+    assert not ot.is_cursor_hotfix_branch("master")
+    assert not ot.is_cursor_hotfix_branch("fix/cursor-typo")
+
+
+def test_compose_message_kind_started_and_merged():
+    started = ot.compose_message(
+        name="Warehouse",
+        conclusion="failure",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://example/run",
+        agent_url="https://cursor.com/agents/bc-x",
+        kind="started",
+    )
+    assert started.startswith("HappyTrader: hotfix started")
+    merged = ot.compose_message(
+        name="the pr",
+        conclusion="failure",
+        event="pull_request",
+        branch="cursor/x",
+        url="https://example/pull/1",
+        kind="merged",
+    )
+    assert merged.startswith("HappyTrader: hotfix merged")
+
+
 def test_compose_test_ping_is_short():
     text = ot.compose_message(
         name="Ops alert",
@@ -85,6 +139,36 @@ def test_main_sends_when_configured(monkeypatch, capsys):
     assert captured["url"].endswith("/bottok/sendMessage")
     assert "chat_id=123" in captured["body"]
     assert "Warehouse+reconcile" in captured["body"] or "Warehouse reconcile" in captured["body"]
+
+
+def test_main_sends_hotfix_started(monkeypatch, capsys):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+    monkeypatch.setenv("ALERT_KIND", "started")
+    monkeypatch.setenv("ALERT_NAME", "Update Daily Position Performance")
+    monkeypatch.setenv("ALERT_AGENT_URL", "https://cursor.com/agents/bc-abc")
+    monkeypatch.setenv("ALERT_URL", "https://example/run")
+
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return json.dumps({"ok": True}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=20):
+        captured["body"] = req.data.decode()
+        return _Resp()
+
+    monkeypatch.setattr(ot.urllib.request, "urlopen", fake_urlopen)
+    assert ot.main() == 0
+    assert "hotfix+started" in captured["body"] or "hotfix started" in captured["body"]
+    assert "sent" in capsys.readouterr().out
 
 
 def test_main_nonzero_on_network_error(monkeypatch):

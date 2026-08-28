@@ -18,6 +18,48 @@ import urllib.request
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def compose_hotfix_started(
+    *,
+    name: str,
+    agent_url: str,
+    url: str = "",
+) -> str:
+    lines = [
+        "HappyTrader: hotfix started",
+        name or "ops job",
+        (agent_url or "").strip(),
+    ]
+    run = (url or "").strip()
+    if run:
+        lines.append(run)
+    return "\n".join(line for line in lines if line)
+
+
+def compose_hotfix_merged(
+    *,
+    name: str,
+    pr_url: str,
+    branch: str = "",
+) -> str:
+    lines = [
+        "HappyTrader: hotfix merged",
+        name or "ops job",
+    ]
+    b = (branch or "").strip()
+    if b:
+        lines.append(f"branch: {b}")
+    lines.append((pr_url or "").strip())
+    return "\n".join(line for line in lines if line)
+
+
+def is_cursor_hotfix_branch(ref: str) -> bool:
+    """Cursor cloud agents push to ``cursor/...`` branches."""
+    b = (ref or "").strip()
+    if b.startswith("refs/heads/"):
+        b = b[len("refs/heads/") :]
+    return b.startswith("cursor/")
+
+
 def compose_message(
     *,
     name: str,
@@ -26,7 +68,13 @@ def compose_message(
     branch: str,
     url: str,
     agent_url: str = "",
+    kind: str = "",
 ) -> str:
+    k = (kind or "").strip().lower()
+    if k == "started":
+        return compose_hotfix_started(name=name, agent_url=agent_url, url=url)
+    if k == "merged":
+        return compose_hotfix_merged(name=name, pr_url=url, branch=branch)
     if (conclusion or "").strip().lower() == "test":
         return "HappyTrader ops alert test ping. Telegram is wired."
     status = (conclusion or "failed").strip().lower()
@@ -77,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         branch=os.environ.get("ALERT_BRANCH") or "",
         url=os.environ.get("ALERT_URL") or "",
         agent_url=os.environ.get("ALERT_AGENT_URL") or "",
+        kind=os.environ.get("ALERT_KIND") or "",
     )
     try:
         send_telegram(text, token=token, chat_id=chat_id)

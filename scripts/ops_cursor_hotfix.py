@@ -59,7 +59,7 @@ job failed. Investigate, land a minimal hotfix, and get the job green again.
    vs missing secret. Read the code the log points at.
 3. If it is a **code/model bug you can prove**, make the smallest safe fix:
    - Open a PR from a `cursor/...` branch (do NOT push straight to master).
-   - Commit message includes `[cursor-hotfix]` and the failed run id.
+   - Commit message AND PR title include `[cursor-hotfix]` and the failed run id.
    - Merge the PR once you are confident (squash is fine). Never force-push.
    - Re-run the failed workflow on master:
      * Warehouse (`Update Daily Position Performance`): a push that touches
