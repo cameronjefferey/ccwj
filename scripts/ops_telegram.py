@@ -69,6 +69,7 @@ def compose_message(
     url: str,
     agent_url: str = "",
     kind: str = "",
+    hotfix_skip: str = "",
 ) -> str:
     k = (kind or "").strip().lower()
     if k == "started":
@@ -88,6 +89,8 @@ def compose_message(
     agent = (agent_url or "").strip()
     if agent:
         lines.append(f"Cursor agent: {agent}")
+    if (hotfix_skip or "").strip() == "retries_exhausted":
+        lines.append("Cursor hotfix retries exhausted (2/2). No new agent.")
     return "\n".join(lines).rstrip()
 
 
@@ -126,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         url=os.environ.get("ALERT_URL") or "",
         agent_url=os.environ.get("ALERT_AGENT_URL") or "",
         kind=os.environ.get("ALERT_KIND") or "",
+        hotfix_skip=os.environ.get("ALERT_HOTFIX_SKIP") or "",
     )
     try:
         send_telegram(text, token=token, chat_id=chat_id)

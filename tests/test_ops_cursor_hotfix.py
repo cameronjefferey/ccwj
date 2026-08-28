@@ -13,6 +13,9 @@ def test_agent_id_is_stable_for_the_same_run():
     assert a == b
     assert a.startswith("bc-")
     assert a != och.agent_id_for_run("1")
+    assert och.agent_id_for_failure(sha="abc", run_id="1") == och.agent_id_for_failure(
+        sha="abc", run_id="999"
+    )
 
 
 def test_compose_prompt_includes_run_and_guardrails():
@@ -29,6 +32,7 @@ def test_compose_prompt_includes_run_and_guardrails():
     assert "snapshot_guard" in text
     assert "_dedup_history_rows" in text
     assert "[cursor-hotfix]" in text
+    assert "attempt 1 of 2" in text
     assert "Do NOT weaken" in text
 
 
@@ -42,19 +46,53 @@ def test_compose_launch_body_opens_a_pr_off_master():
         repo="cameronjefferey/ccwj",
         repo_url="https://github.com/cameronjefferey/ccwj",
         run_id="1",
+        attempt=2,
     )
     assert body["autoCreatePR"] is True
     assert body["workOnCurrentBranch"] is False
     assert body["skipReviewerRequest"] is True
     assert body["repos"][0]["startingRef"] == "master"
-    assert body["agentId"] == och.agent_id_for_run("1")
+    assert body["agentId"] == och.agent_id_for_failure(sha="abc", run_id="1")
     assert "Hotfix:" in body["name"]
+    assert "attempt 2 of 2" in body["prompt"]["text"]
+
+
+def test_count_consecutive_hotfix_commits(monkeypatch):
+    def fake_check_output(cmd, **kwargs):
+        return (
+            "fix dupes [cursor-hotfix] 3313\n"
+            "fix dupes again [cursor-hotfix] 3314\n"
+            "Merge pull request #64\n"
+        )
+
+    monkeypatch.setattr(och.subprocess, "check_output", fake_check_output)
+    assert och.count_consecutive_hotfix_commits("abc") == 2
+
+
+def test_count_consecutive_stops_at_human_commit(monkeypatch):
+    def fake_check_output(cmd, **kwargs):
+        return "human fix\nfix [cursor-hotfix]\n"
+
+    monkeypatch.setattr(och.subprocess, "check_output", fake_check_output)
+    assert och.count_consecutive_hotfix_commits("HEAD") == 0
 
 
 def test_should_skip_cursor_branch_and_repeat_sha():
     assert och.should_skip_loop(branch="cursor/fix-dbt", sha="aaa", skip_sha="")
     assert och.should_skip_loop(branch="master", sha="abc", skip_sha="abc")
     assert och.should_skip_loop(branch="master", sha="abc", skip_sha="zzz") is None
+    assert (
+        och.should_skip_loop(
+            branch="master", sha="abc", skip_sha="", consecutive_hotfixes=2
+        )
+        == och.SKIP_RETRIES_EXHAUSTED
+    )
+    assert (
+        och.should_skip_loop(
+            branch="master", sha="abc", skip_sha="", consecutive_hotfixes=1
+        )
+        is None
+    )
 
 
 def test_main_skips_without_key(monkeypatch, capsys):
@@ -66,8 +104,29 @@ def test_main_skips_without_key(monkeypatch, capsys):
 def test_main_skips_cursor_branch(monkeypatch, capsys):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "cursor/hotfix-dupes")
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
     assert och.main() == 0
     assert "cursor agent branch" in capsys.readouterr().out
+
+
+def test_main_skips_after_two_hotfix_commits(monkeypatch, capsys, tmp_path):
+    out = tmp_path / "github_output"
+    monkeypatch.setenv("CURSOR_API_KEY", "key")
+    monkeypatch.setenv("ALERT_BRANCH", "master")
+    monkeypatch.setenv("ALERT_SHA", "deadbeef")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 2)
+    launched = {"n": 0}
+
+    def fake_launch(body, *, api_key, timeout=30):
+        launched["n"] += 1
+        return {"status": 201, "data": {}}
+
+    monkeypatch.setattr(och, "launch_agent", fake_launch)
+    assert och.main() == 0
+    assert launched["n"] == 0
+    assert "retries_exhausted" in capsys.readouterr().out
+    assert "skip_reason=retries_exhausted" in out.read_text()
 
 
 def test_main_launches_and_writes_output(monkeypatch, capsys, tmp_path):
@@ -82,6 +141,7 @@ def test_main_launches_and_writes_output(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("ALERT_RUN_ID", "1")
     monkeypatch.setenv("GITHUB_REPOSITORY", "cameronjefferey/ccwj")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
 
     captured = {}
 
@@ -109,10 +169,15 @@ def test_main_launches_and_writes_output(monkeypatch, capsys, tmp_path):
     assert written.startswith("agent_url=https://cursor.com/agents/")
 
 
-def test_main_treats_409_as_already_launched(monkeypatch, capsys):
+def test_main_treats_409_as_already_launched_without_started_ping(
+    monkeypatch, capsys, tmp_path
+):
+    out = tmp_path / "github_output"
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_RUN_ID", "99")
     monkeypatch.setenv("ALERT_BRANCH", "master")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
 
     def fake_launch(body, *, api_key, timeout=30):
         return {"status": 409, "data": {"error": "agent_id_conflict"}}
@@ -120,11 +185,13 @@ def test_main_treats_409_as_already_launched(monkeypatch, capsys):
     monkeypatch.setattr(och, "launch_agent", fake_launch)
     assert och.main() == 0
     assert "already launched" in capsys.readouterr().out
+    assert not out.exists()
 
 
 def test_main_nonzero_on_api_error(monkeypatch):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "master")
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
 
     def fake_launch(body, *, api_key, timeout=30):
         return {"status": 401, "data": {"message": "unauthorized"}}
@@ -137,6 +204,7 @@ def test_main_nonzero_on_api_error(monkeypatch):
 def test_main_nonzero_on_network_error(monkeypatch):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "master")
+    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
 
     def boom(*a, **k):
         raise URLError("down")

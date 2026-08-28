@@ -4,6 +4,10 @@ Used by ``.github/workflows/ops_alert.yml`` after a warehouse / prices /
 reconcile job fails. POSTs to the Cloud Agents API so a cloud agent can
 read the failed run, land a minimal fix, and re-run the job.
 
+Caps auto-launches at two consecutive ``[cursor-hotfix]`` attempts so a
+red rebuild cannot spawn agents forever. Same SHA is one agent (re-dispatch
+is a 409, not a second bot).
+
 No-op (exit 0) when ``CURSOR_API_KEY`` is unset so a missing key cannot
 fail the alert job. Setup is in the workflow file header.
 
@@ -17,6 +21,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import subprocess
 import sys
 import uuid
 import urllib.error
@@ -25,10 +30,41 @@ import urllib.request
 CURSOR_AGENTS_API = "https://api.cursor.com/v1/agents"
 CURSOR_AGENT_URL = "https://cursor.com/agents/{agent_id}"
 DEFAULT_REPO_URL = "https://github.com/cameronjefferey/ccwj"
-def agent_id_for_run(run_id: str) -> str:
-    """Stable ``bc-<uuid>`` so a double-fire of the same run is a 409, not two agents."""
-    raw = str(uuid.uuid5(uuid.NAMESPACE_URL, f"ccwj-ops-hotfix:{run_id}"))
+HOTFIX_MARKER = "[cursor-hotfix]"
+MAX_HOTFIX_ATTEMPTS = 2
+SKIP_RETRIES_EXHAUSTED = "retries_exhausted"
+
+
+def agent_id_for_failure(*, sha: str = "", run_id: str = "") -> str:
+    """Stable ``bc-<uuid>``. Keyed by SHA so a re-dispatch of the same code is one agent."""
+    key = (sha or "").strip() or (run_id or "").strip() or "unknown"
+    raw = str(uuid.uuid5(uuid.NAMESPACE_URL, f"ccwj-ops-hotfix:{key}"))
     return f"bc-{raw}"
+
+
+def agent_id_for_run(run_id: str) -> str:
+    return agent_id_for_failure(run_id=run_id)
+
+
+def count_consecutive_hotfix_commits(sha: str = "", *, limit: int = 20) -> int:
+    """How many ``[cursor-hotfix]`` commits sit at the tip of ``sha`` (or HEAD)."""
+    rev = (sha or "").strip() or "HEAD"
+    try:
+        out = subprocess.check_output(
+            ["git", "log", f"-{limit}", "--format=%s", rev],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return 0
+    n = 0
+    for line in out.splitlines():
+        if HOTFIX_MARKER in line:
+            n += 1
+        else:
+            break
+    return n
 
 
 def compose_prompt(
@@ -39,10 +75,15 @@ def compose_prompt(
     url: str,
     sha: str,
     repo: str,
+    attempt: int = 1,
+    max_attempts: int = MAX_HOTFIX_ATTEMPTS,
 ) -> str:
     run_url = (url or "").strip() or "(missing run URL)"
     return f"""You are the HappyTrader (ccwj) on-call fixer. A production GitHub Actions
 job failed. Investigate, land a minimal hotfix, and get the job green again.
+
+This is auto-hotfix attempt {attempt} of {max_attempts}. Ops will not launch
+another agent if this still fails after you merge — Telegram will page a human.
 
 ## Failed run
 - Workflow: {name or "unknown"}
@@ -75,7 +116,8 @@ job failed. Investigate, land a minimal hotfix, and get the job green again.
 4. If it is **infra, credentials, quota, yfinance, or a flake**, do not "fix"
    it with code. Comment on a PR or leave a short summary and stop.
 5. If a previous `[cursor-hotfix]` for this SAME failure already merged and
-   this is a repeat, STOP. Do not loop. Summarize why the first fix missed.
+   this is attempt {max_attempts}, still try once more, then STOP. Do not
+   open a follow-up agent yourself.
 
 ## Hard no's (HappyTrader invariants)
 - Do NOT weaken, skip, or delete `scripts/snapshot_guard.py`, dbt uniqueness /
@@ -108,6 +150,7 @@ def compose_launch_body(
     repo: str,
     repo_url: str,
     run_id: str,
+    attempt: int = 1,
 ) -> dict:
     display = f"Hotfix: {name or 'ops job'}"
     if len(display) > 100:
@@ -122,10 +165,11 @@ def compose_launch_body(
                 url=url,
                 sha=sha,
                 repo=repo,
+                attempt=attempt,
             )
         },
         "name": display,
-        "agentId": agent_id_for_run(run_id),
+        "agentId": agent_id_for_failure(sha=sha, run_id=run_id),
         "repos": [
             {
                 "url": repo_url,
@@ -138,13 +182,22 @@ def compose_launch_body(
     }
 
 
-def should_skip_loop(*, branch: str, sha: str, skip_sha: str) -> str | None:
+def should_skip_loop(
+    *,
+    branch: str,
+    sha: str,
+    skip_sha: str,
+    consecutive_hotfixes: int = 0,
+    max_attempts: int = MAX_HOTFIX_ATTEMPTS,
+) -> str | None:
     """Return a skip reason if this failure is already a cursor-hotfix loop."""
     b = (branch or "").strip()
     if b.startswith("cursor/"):
         return f"head branch {b} is already a cursor agent branch"
     if skip_sha and sha and skip_sha.strip() == sha.strip():
         return "this SHA was already auto-hotfixed (loop guard)"
+    if consecutive_hotfixes >= max_attempts:
+        return SKIP_RETRIES_EXHAUSTED
     return None
 
 
@@ -219,14 +272,19 @@ def main(argv: list[str] | None = None) -> int:
     sha = os.environ.get("ALERT_SHA") or ""
     run_id = os.environ.get("ALERT_RUN_ID") or url or "unknown"
     repo = os.environ.get("GITHUB_REPOSITORY") or "cameronjefferey/ccwj"
+    consecutive = count_consecutive_hotfix_commits(sha)
+    attempt = consecutive + 1
 
     skip = should_skip_loop(
         branch=branch,
         sha=sha,
         skip_sha=os.environ.get("HOTFIX_SKIP_SHA") or "",
+        consecutive_hotfixes=consecutive,
     )
     if skip:
         print(f"ops_cursor_hotfix: skipped ({skip})")
+        if skip == SKIP_RETRIES_EXHAUSTED:
+            _write_github_output("skip_reason", SKIP_RETRIES_EXHAUSTED)
         return 0
 
     body = compose_launch_body(
@@ -238,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         repo=repo,
         repo_url=repo_url_from_env(),
         run_id=str(run_id),
+        attempt=attempt,
     )
     fallback_id = body["agentId"]
     try:
@@ -249,12 +308,12 @@ def main(argv: list[str] | None = None) -> int:
     status = int(result.get("status") or 0)
     agent_url = agent_url_from_response(result, fallback_id)
     if status in (200, 201):
-        print(f"ops_cursor_hotfix: launched {agent_url}")
+        print(f"ops_cursor_hotfix: launched {agent_url} (attempt {attempt}/{MAX_HOTFIX_ATTEMPTS})")
         _write_github_output("agent_url", agent_url)
         return 0
     if status == 409:
+        # Same SHA already has an agent — do not ping "hotfix started" again.
         print(f"ops_cursor_hotfix: already launched {agent_url}")
-        _write_github_output("agent_url", agent_url)
         return 0
 
     print(

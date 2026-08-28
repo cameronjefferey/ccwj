@@ -34,6 +34,19 @@ def test_compose_failure_includes_cursor_agent_url():
     assert "Cursor agent: https://cursor.com/agents/bc-abc" in text
 
 
+def test_compose_failure_retries_exhausted():
+    text = ot.compose_message(
+        name="Update Daily Position Performance",
+        conclusion="failure",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
+        hotfix_skip="retries_exhausted",
+    )
+    assert "retries exhausted (2/2)" in text
+    assert "No new agent" in text
+
+
 def test_compose_hotfix_started():
     text = ot.compose_hotfix_started(
         name="Update Daily Position Performance",

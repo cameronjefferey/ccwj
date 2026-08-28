@@ -177,7 +177,12 @@ profile, upload, admin, etc. don't break.
 What's working (May 2026 rebuild):
 - Today hero: account total + day delta + market context line + today's fill count
 - Trades today: every fill dated the **review session** from `stg_history`
- (`DAY_TRADES_QUERY`, shared with the time-machine day page). Before the
+ (`DAY_TRADES_QUERY`, shared with the time-machine day page). The dollar
+ column is **realized G/L** (equity: `int_closed_equity_legs.realized_pnl`
+ = sale vs average cost; option: `int_option_contracts.realized_pnl` on
+ `realized_close_date`), not fill cash/proceeds. Opens and closes that
+ have not yet matched a warehouse realized row render as an em dash.
+ Before the
  U.S. open (and on weekends) that session is the last completed ET
  weekday — calendar-today has no fills yet, and the snapshot spine has
  already forward-filled a $0-delta row for UTC "tomorrow" / this morning.
@@ -186,9 +191,10 @@ What's working (May 2026 rebuild):
  even though **Trades this week** only lists groups that opened or closed
  this ISO week. Same-day close + open of the same option type (same
  symbol + tenant, different strike/expiry) is grouped as one **Rolled**
- row (`_group_day_rolls`); a short roll "meets the roll" on a credit
- (or flat) **or** a strike that moved in the covered direction (calls
- up, puts down). Pairing keys on `tenant_id` so colliding "Schwab
+ row (`_group_day_rolls`); the dollar is the closed leg's G/L; a short
+ roll "meets the roll" on a credit (or flat) **or** a strike that moved
+ in the covered direction (calls up, puts down). Pairing keys on
+ `tenant_id` so colliding "Schwab
  Account" labels cannot fuse two physical accounts. Lives in
  `build_daily_review_batch` as `today_trades` so the cache warmer
  replays it (same `trades_as_of`). Empty state uses the session date,
@@ -1093,7 +1099,7 @@ Use `--prices` flag to skip git pull and first dbt pass (prices only).
   ```
 - **Reconcile audit** (`.github/workflows/reconcile.yml`): nightly + manual; runs `scripts/audit/reconcile.py` and fails the job on any FAIL check.
 - **Evening prices** (`.github/workflows/prices_refresh.yml`): snaps equities to the official close after the bell.
-- **Ops alert** (`.github/workflows/ops_alert.yml`): Telegram ping on a real **failure** of the warehouse rebuild, evening prices, or reconcile audit, then a Cursor cloud agent (`scripts/ops_cursor_hotfix.py` → `POST /v1/agents`) to hotfix, merge, and re-run the job. A second Telegram fires when the agent actually launches (**hotfix started**) and a third when a `cursor/*` PR merges to master (**hotfix merged**). Cancelled overlapping rebuilds do not fire. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (Telegram) and `CURSOR_API_KEY` (agent launch, no-ops if unset). Lives in GHA rather than a Cursor Automation because Automations' workflow-run trigger only fires for *push*-started runs — production warehouse rebuilds are `workflow_dispatch` / `schedule`. The key owner's Cursor account must have GitHub connected to this repo. Pinned by `tests/test_ops_cursor_hotfix.py` and `tests/test_ops_telegram.py`.
+- **Ops alert** (`.github/workflows/ops_alert.yml`): Telegram ping on a real **failure** of the warehouse rebuild, evening prices, or reconcile audit, then a Cursor cloud agent (`scripts/ops_cursor_hotfix.py` → `POST /v1/agents`) to hotfix, merge, and re-run the job. A second Telegram fires when the agent actually launches (**hotfix started**) and a third when a `cursor/*` PR merges to master (**hotfix merged**). Auto-agents are capped at **two** consecutive `[cursor-hotfix]` attempts; after that Telegram still pages FAILED but no new agent is launched. Cancelled overlapping rebuilds do not fire. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (Telegram) and `CURSOR_API_KEY` (agent launch, no-ops if unset). Lives in GHA rather than a Cursor Automation because Automations' workflow-run trigger only fires for *push*-started runs — production warehouse rebuilds are `workflow_dispatch` / `schedule`. The key owner's Cursor account must have GitHub connected to this repo. Pinned by `tests/test_ops_cursor_hotfix.py` and `tests/test_ops_telegram.py`.
 - **Product Telegram pings** (`app/ops_notify.py`): signup, Pro / AI subscribe, cancel, first data (trial clock), feedback, broken broker connection. Same bot token/chat id on the **Render web service** (GitHub secrets only cover CI). Early-stage default is all of those; quiet later with `OPS_NOTIFY_EVENTS=none` or a subset (`subscribe,cancel`). Never blocks a user request.
 
 Note: the warehouse workflow runs two full `dbt build`s vs local targeted selects. These could be aligned.
