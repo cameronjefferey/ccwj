@@ -140,6 +140,24 @@ def test_ambiguous_schwab_account_label_is_rejected():
     assert created == []
 
 
+def test_create_new_ambiguous_schwab_account_does_not_mint():
+    """Create new + typed 'Schwab Account' must not mint a 6th copy.
+
+    Unique-match is None when every SnapTrade tenant shares that broker
+    label, so the old __new__ path fell through to create_manual.
+    """
+    created = []
+
+    name, tid, err = _resolve_csv_upload_target(
+        9, "__new__", "Schwab Account",
+        tenants=_HOUSEHOLD,
+        create_manual=lambda uid, n: created.append(n) or f"manual:manual:{n}",
+    )
+    assert name is None and tid is None
+    assert err and "more than one linked account" in err
+    assert created == []
+
+
 def test_csv_account_column_cannot_override_selected_tenant():
     """Schwab Positions often has Account='Emmory' even when the form
     selected Emmory Investment / the SnapTrade tenant."""

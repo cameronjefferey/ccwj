@@ -656,6 +656,13 @@ def _canonicalize_stg_amount(action, amount):
 # is omitted from the cross-source key. (Known boundary: a broker whose
 # activities feed reported Price at <4dp would need this coarsened further.)
 _CROSS_SOURCE_PRICE_DP = 4
+# Schwab's web CSV prints equity Price at cents (``$58.97``) while SnapTrade
+# keeps the fill Price (``58.965``). Those miss the 4dp Price key and both
+# survive → doubled shares / phantom unrealized (jefflsmith JEPQ IRA, Aug
+# 2026). Amount is the same cent proceeds; rounding it to 2dp is the
+# CSV-vs-SnapTrade collapse. Distinct option fills a few tenths of a cent
+# apart have different Amounts and stay separate.
+_CROSS_SOURCE_AMOUNT_DP = 2
 
 
 def _canonicalize_cross_source_price(value):
@@ -674,6 +681,21 @@ def _canonicalize_cross_source_price(value):
     if out in ("", "-", "-0"):
         return "0"
     return out
+
+
+def _canonicalize_cross_source_amount(action, amount):
+    """Amount for the CSV-vs-SnapTrade fill key: stg-signed, then 2dp.
+
+    Absorbs Schwab CSV cent-rounded Price vs SnapTrade's extra decimals
+    when Quantity × Price proceeds already agree. Non-numeric cells follow
+    :func:`_canonicalize_stg_amount` (blank → ``0``).
+    """
+    base = _canonicalize_stg_amount(action, amount)
+    try:
+        f = round(float(base), _CROSS_SOURCE_AMOUNT_DP)
+    except (TypeError, ValueError):
+        return base
+    return _canonicalize_seed_cell(f)
 
 
 def _dedup_history_rows(df, seed_columns):
@@ -861,10 +883,47 @@ def _dedup_history_rows(df, seed_columns):
             drop3.add(pos)
         else:
             seen3.add(key3)
-    if not drop3:
+    if drop3:
+        keep_mask3 = [i not in drop3 for i in range(len(df))]
+        df = df.loc[keep_mask3].reset_index(drop=True)
+
+    # ---- Fourth pass: CSV cent Price vs SnapTrade fill Price -------------
+    # Pass 2 keys Price at 4dp (orders vs activities). Schwab's CSV prints
+    # equity Price at 2dp (``$58.97``) against SnapTrade ``58.965`` — those
+    # miss pass 2 and pass 3 (Price is in that key too). Amount is the same
+    # cent proceeds. Key (Date, Action, Symbol, Quantity, Amount@2dp) on
+    # fills with a Quantity so blank-qty coupons stay on pass 3. Two real
+    # option fills a few tenths of a cent apart have different Amounts.
+    df = df.reset_index(drop=True)
+    qty_blank = df[qty_col].map(lambda v: _canonicalize_seed_cell(v) == "")
+    eligible4 = (
+        df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+        & ~qty_blank
+    )
+    desc_lens4 = df["Description"].fillna("").astype(str).str.len()
+    order4 = (-desc_lens4.to_numpy()).argsort(kind="stable")
+    seen4: set = set()
+    drop4: set = set()
+    for pos in order4:
+        if not bool(eligible4.iloc[pos]):
+            continue
+        key4 = (
+            _canonicalize_date_mdy(df.iloc[pos][date_col]),
+            _normalize_history_action(df.iloc[pos][action_col]),
+            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_seed_cell(df.iloc[pos][qty_col]),
+            _canonicalize_cross_source_amount(
+                df.iloc[pos][action_col], df.iloc[pos][amount_col],
+            ),
+        )
+        if key4 in seen4:
+            drop4.add(pos)
+        else:
+            seen4.add(key4)
+    if not drop4:
         return df
-    keep_mask3 = [i not in drop3 for i in range(len(df))]
-    return df.loc[keep_mask3].reset_index(drop=True)
+    keep_mask4 = [i not in drop4 for i in range(len(df))]
+    return df.loc[keep_mask4].reset_index(drop=True)
 
 
 # Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
@@ -1223,17 +1282,13 @@ def _norm_upload_label(val) -> str:
     return " ".join(str(val or "").strip().split()).lower()
 
 
-def _unique_tenant_for_upload_label(tenants, label):
-    """Return the one owned tenant whose name, nickname, or picker label matches.
-
-    Ambiguous matches (two tenants nicknamed similarly) return None — the
-    caller must pick by tenant_id rather than invent a new account.
-    """
+def _tenants_matching_upload_label(tenants, label):
+    """Owned tenants whose name, nickname, or picker label equals ``label``."""
     from app.routes import _disambiguated_tenant_labels, _tenant_display_label
 
     want = _norm_upload_label(label)
     if not want:
-        return None
+        return []
     labels = _disambiguated_tenant_labels(tenants)
     hits = {}
     for row in tenants or []:
@@ -1248,8 +1303,19 @@ def _unique_tenant_for_upload_label(tenants, label):
         )
         if any(_norm_upload_label(c) == want for c in candidates if c):
             hits[tid] = row
+    return list(hits.values())
+
+
+def _unique_tenant_for_upload_label(tenants, label):
+    """Return the one owned tenant whose name, nickname, or picker label matches.
+
+    Ambiguous matches (two tenants nicknamed similarly, or several Schwab
+    accounts that all ship as ``Schwab Account``) return None — the caller
+    must pick by tenant_id rather than invent a new account.
+    """
+    hits = _tenants_matching_upload_label(tenants, label)
     if len(hits) == 1:
-        return next(iter(hits.values()))
+        return hits[0]
     return None
 
 
@@ -1303,9 +1369,17 @@ def _resolve_csv_upload_target(
     if select == "__new__":
         if not custom:
             return None, None, "Please enter a new account name."
-        match = _unique_tenant_for_upload_label(tenants, custom)
-        if match:
-            return _use(match)
+        matches = _tenants_matching_upload_label(tenants, custom)
+        if len(matches) == 1:
+            return _use(matches[0])
+        if len(matches) > 1:
+            # Jeff's IRA/General/Coco/… are all account_name "Schwab Account".
+            # Unique-match returned None, and the old mint path created
+            # manual:manual:Schwab Account beside them.
+            return None, None, (
+                "That name matches more than one linked account. "
+                "Pick the specific account from the list instead of creating a new one."
+            )
         tenant_id = create_manual(user_id, custom)
         return custom, tenant_id, None
 

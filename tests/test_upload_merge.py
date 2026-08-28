@@ -1303,6 +1303,33 @@ def test_dedup_keeps_distinct_option_fills_priced_sub_penny():
     assert len(out) == 2, "distinct sub-penny option prices must not collapse"
 
 
+def test_dedup_collapses_csv_cent_price_vs_snaptrade_fill_price():
+    """jefflsmith JEPQ IRA, Aug 2026. Schwab CSV prints Price at cents
+    (``$58.97``) while SnapTrade keeps ``58.965``; Amount is the same
+    ``-$5,896.50``. The 4dp Price key misses this pair and both survive
+    → doubled shares / phantom unrealized. Amount@2dp collapses them.
+    Two-digit CSV dates (``4/24/26``) must key with padded SnapTrade dates.
+    """
+    df = pd.DataFrame([
+        _row("Schwab Account", 18, "04/24/2026", "Buy", "JEPQ",
+             "100.0", "58.965", "-5896.5",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+        _row("Schwab Account", 18, "4/24/26", "Buy", "JEPQ",
+             "100", "$58.97 ", "($5,896.50)",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+        _row("Schwab Account", 18, "05/01/2026", "Buy", "JEPQ",
+             "1000.0", "58.835", "-58835.0",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+        _row("Schwab Account", 18, "5/1/26", "Buy", "JEPQ",
+             "1,000", "$58.84 ", "($58,835.00)",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2, f"CSV vs SnapTrade JEPQ fills must collapse, got {len(out)}"
+    qtys = sorted(float(q) for q in out["Quantity"])
+    assert qtys == [100.0, 1000.0]
+
+
 def test_dedup_collapses_when_price_has_trailing_zero_drift():
     """Same trade, but orders-source string-parses Price as
     ``234.0264290000`` (10 chars from the broker) while activities

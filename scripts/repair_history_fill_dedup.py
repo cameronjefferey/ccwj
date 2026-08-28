@@ -7,6 +7,9 @@ Schwab CSV upload landed on a SnapTrade tenant. Date-padding dropped 0;
 Qualified vs Cash Dividend dropped 1 of 11,274. Leftover pairs still
 differ in the raw seed by CSV ``--`` / ``N/A`` Quantity-Price (BQ
 ``safe_cast`` → NULL) and Amount ``""`` vs ``0`` (``coalesce`` → 0).
+A later pass also collapses Schwab CSV cent-rounded Price (``$58.97``)
+vs SnapTrade fill Price (``58.965``) when Amount proceeds match
+(jefflsmith JEPQ IRA, Aug 2026).
 
 This script re-runs the same per-tenant fill grain as
 ``app.upload._dedup_history_rows`` (date pad + staging action + CHECK 1
@@ -41,6 +44,7 @@ _DATE_ISO_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _DATE_ISO_SLASH_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})")
 _DATE_MDY_YY_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})(?:\s|$)")
 _CROSS_SOURCE_PRICE_DP = 4
+_CROSS_SOURCE_AMOUNT_DP = 2
 
 PROJECT = os.environ.get("BQ_RAW_PROJECT", "ccwj-dbt").strip()
 DATASET = (os.environ.get("BQ_RAW_DATASET") or "analytics_raw").strip()
@@ -223,6 +227,15 @@ def _canonicalize_cross_source_price(value):
     return out
 
 
+def _canonicalize_cross_source_amount(action, amount):
+    base = _canonicalize_stg_amount(action, amount)
+    try:
+        f = round(float(base), _CROSS_SOURCE_AMOUNT_DP)
+    except (TypeError, ValueError):
+        return base
+    return _canonicalize_seed_cell(f)
+
+
 def _dedup_history_rows(df, seed_columns):
     """Same grain as ``app.upload._dedup_history_rows`` (staging action)."""
     if df is None or df.empty:
@@ -310,10 +323,40 @@ def _dedup_history_rows(df, seed_columns):
             drop3.add(pos)
         else:
             seen3.add(key3)
-    if not drop3:
+    if drop3:
+        keep_mask3 = [i not in drop3 for i in range(len(df))]
+        df = df.loc[keep_mask3].reset_index(drop=True)
+
+    df = df.reset_index(drop=True)
+    qty_blank = df[qty_col].map(lambda v: _canonicalize_seed_cell(v) == "")
+    eligible4 = (
+        df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+        & ~qty_blank
+    )
+    desc_lens4 = df["Description"].fillna("").astype(str).str.len()
+    order4 = (-desc_lens4.to_numpy()).argsort(kind="stable")
+    seen4: set = set()
+    drop4: set = set()
+    for pos in order4:
+        if not bool(eligible4.iloc[pos]):
+            continue
+        key4 = (
+            _canonicalize_date_mdy(df.iloc[pos][date_col]),
+            _normalize_history_action(df.iloc[pos][action_col]),
+            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_seed_cell(df.iloc[pos][qty_col]),
+            _canonicalize_cross_source_amount(
+                df.iloc[pos][action_col], df.iloc[pos][amount_col],
+            ),
+        )
+        if key4 in seen4:
+            drop4.add(pos)
+        else:
+            seen4.add(key4)
+    if not drop4:
         return df
-    keep_mask3 = [i not in drop3 for i in range(len(df))]
-    return df.loc[keep_mask3].reset_index(drop=True)
+    keep_mask4 = [i not in drop4 for i in range(len(df))]
+    return df.loc[keep_mask4].reset_index(drop=True)
 
 
 def dedup_history_by_tenant(df: pd.DataFrame) -> pd.DataFrame:
