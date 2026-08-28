@@ -1,0 +1,32 @@
+name: Ops purge manual tenant
+
+# One-shot operator path: call the already-deployed
+# POST /internal/purge-tenant with CACHE_FLUSH_TOKEN (Render + this secret).
+# Only ``manual:`` tenant_ids are accepted by the endpoint.
+on:
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "manual: tenant_id to drop from seeds + broker_tenants"
+        required: true
+        type: string
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Purge tenant on production
+        env:
+          TOKEN: ${{ secrets.CACHE_FLUSH_TOKEN }}
+          TENANT: ${{ github.event.inputs.tenant_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOKEN" ]; then
+            echo "CACHE_FLUSH_TOKEN secret is empty"
+            exit 1
+          fi
+          curl -sfS -X POST "https://happytrader.me/internal/purge-tenant" \
+            -H "X-Cache-Flush-Token: ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            --max-time 180 \
+            -d "{\"tenant_id\":\"${TENANT}\"}"
