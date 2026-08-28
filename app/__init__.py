@@ -141,6 +141,22 @@ def _inject_feature_flags():
     except Exception:
         history_since = None
 
+    account_groups = []
+    selected_group_ids = []
+    groups_query = None
+    try:
+        if current_user.is_authenticated:
+            from app.models import list_account_groups as _list_account_groups
+            from app.routes import _groups_query_value, _requested_group_ids
+
+            account_groups = _list_account_groups(current_user.id) or []
+            selected_group_ids = _requested_group_ids()
+            groups_query = _groups_query_value()
+    except Exception:
+        account_groups = []
+        selected_group_ids = []
+        groups_query = None
+
     # Stripe is only offered when fully configured (keys + both price IDs);
     # checkout routes refuse otherwise so a half-configured deploy cannot
     # charge. The pricing page still shows live signup copy either way.
@@ -175,6 +191,9 @@ def _inject_feature_flags():
         "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
         "plan_status": plan_status,
         "history_since": history_since,
+        "account_groups": account_groups,
+        "selected_group_ids": selected_group_ids,
+        "groups_query": groups_query,
         "billing_enabled": billing_enabled,
         "price_monthly": price_monthly,
         "price_annual": price_annual,

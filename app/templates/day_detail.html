@@ -88,19 +88,22 @@
             <a href="{{ url_for('day_detail', day_str=prev_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+                                tenants=selected_tenants,
+                                groups=groups_query) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
             <span class="mx-1" style="color:#475569;">|</span>
             <a href="{{ url_for('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+                                tenants=selected_tenants,
+                                groups=groups_query) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
                 <a href="{{ url_for('weekly_review',
                                     account=selected_account or None,
                                     tenant=selected_tenant,
-                                    tenants=selected_tenants) }}">Back to Daily Review</a>
+                                    tenants=selected_tenants,
+                                    groups=groups_query) }}">Back to Overview</a>
             </div>
         </div>
     </div>
@@ -130,9 +133,9 @@
     <div class="col-12 col-lg-7">
         <div class="card dd-card mb-4">
             <div class="card-body p-3 p-md-4">
-                <h2>Trades that day{% if net_cash %}
+                <h2>Trades that day{% if net_gl %}
                 <span class="dd-muted" style="text-transform:none; letter-spacing:0; font-weight:600; float:right;">
-                    {{ "+" if net_cash > 0 else "-" }}${{ "{:,.0f}".format(net_cash|abs) }} G/L
+                    {{ "+" if net_gl > 0 else "-" }}${{ "{:,.0f}".format(net_gl|abs) }} G/L
                 </span>
                 {% endif %}</h2>
                 {% if trade_rows %}
@@ -162,8 +165,8 @@
                             {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
                             {% endif %}
                         </td>
-                        <td class="dd-money {{ 'pos' if t.amount > 0 else 'neg' if t.amount < 0 else '' }}">
-                            {% if t.amount %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                        <td class="dd-money {{ 'pos' if t.amount is not none and t.amount > 0 else 'neg' if t.amount is not none and t.amount < 0 else '' }}">
+                            {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
                         </td>
                     </tr>
                     {% endfor %}

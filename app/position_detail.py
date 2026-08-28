@@ -2590,6 +2590,7 @@ def position_detail(symbol):
             splits_df=splits_df,
             seed_trades_df=story_seed_trades,
             exit_notes=_exit_notes,
+            label_map=_tenant_label_map,
         )
         # The mirror prologue: how this position was traded + where it
         # sits in the trader's book. Rank comes from the tab-strip rollup

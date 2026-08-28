@@ -22,7 +22,7 @@ def test_base_defines_paired_theme_tokens():
 
 
 def test_daily_review_identity_text_uses_tokens():
-    src = (ROOT / "app/templates/weekly_review.html").read_text()
+    src = (ROOT / "app/templates/_review_styles.html").read_text()
     for needle in (
         ".snapshot-table .acct-name { font-weight: 700; color: var(--ht-ink);",
         ".snapshot-table .acct-meta { font-size: .68rem; color: var(--ht-muted);",

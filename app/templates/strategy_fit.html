@@ -400,9 +400,9 @@
 {# View switch — one Strategies surface, two lenses. #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', account=selected_account or none) }}">Performance</a>
+       href="{{ url_for('strategies', account=selected_account or none, groups=groups_query) }}">Performance</a>
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none) }}">Fit matrix</a>
+       href="{{ url_for('strategies', view='fit', account=selected_account or none, groups=groups_query) }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
@@ -551,14 +551,14 @@
     <div>
         <label class="lblh">Slice by</label>
         <div class="metric-toggle" id="dimSwitcher">
-            <a href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account) }}"
+            <a href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account, groups=groups_query) }}"
                class="{% if dim == 'sector' %}active{% endif %}">Sector</a>
             {% if dim == 'subsector' %}
             <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
-            <a href="{{ url_for('strategies', view='fit', dim='dte', account=selected_account) }}"
+            <a href="{{ url_for('strategies', view='fit', dim='dte', account=selected_account, groups=groups_query) }}"
                class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
-            <a href="{{ url_for('strategies', view='fit', dim='moneyness', account=selected_account) }}"
+            <a href="{{ url_for('strategies', view='fit', dim='moneyness', account=selected_account, groups=groups_query) }}"
                class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
         </div>
     </div>
@@ -587,10 +587,12 @@
         </div>
     </div>
 
-    {% if accounts and accounts|length > 1 %}
-    <form method="get" class="d-flex gap-2 align-items-end" style="margin: 0;">
+    {% if (accounts and accounts|length > 1) or account_groups %}
+    <form method="get" class="d-flex gap-2 align-items-end flex-wrap" style="margin: 0;">
+        <input type="hidden" name="view" value="fit">
         <input type="hidden" name="sector" value="{{ drill_sector }}">
         <input type="hidden" name="dim" value="{{ dim }}">
+        {% if accounts and accounts|length > 1 %}
         <div>
             <label class="lblh">Account</label>
             <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -600,12 +602,14 @@
                 {% endfor %}
             </select>
         </div>
+        {% endif %}
+        {% include "_account_group_filter.html" %}
     </form>
     {% endif %}
 
     {% if dim == 'subsector' %}
     <a class="btn btn-sm btn-outline-secondary"
-       href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account) }}">
+       href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account, groups=groups_query) }}">
         ← Back to all sectors
     </a>
     <span class="text-muted small">Drilled into <strong>{{ drill_sector }}</strong>.</span>

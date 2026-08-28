@@ -354,7 +354,7 @@
         <section class="ob-section" data-step="4">
             <h2 class="ob-section-title">What would you love this to tell you?</h2>
             <p class="ob-section-sub">
-                Last few. We'll lean on these to shape your first Daily Review.
+                Last few. We'll lean on these to shape your first Overview.
             </p>
 
             <div class="ob-question" data-required="help_most" data-multi="1">
@@ -434,16 +434,16 @@
         <p class="small text-muted mb-{% if show_onboarding %}0{% else %}3{% endif %}" id="pipelineStateLabel" aria-live="polite">Just a sec…</p>
         {% if not show_onboarding %}
         <a href="{{ url_for('weekly_review', from_sync=1) }}" class="btn btn-outline-primary">
-            Open Daily Review
+            Open Overview
         </a>
         <p class="processing-sub small mt-3 mb-0">
-            We’ll take you to Daily Review when it’s ready, or you can open it anytime.
+            We’ll take you to Overview when it’s ready, or you can open it anytime.
         </p>
         {% endif %}
     </div>
     {% if show_onboarding %}
     <a class="secondary-link text-decoration-none"
-       href="{{ url_for('weekly_review', from_sync=1) }}">Open Daily Review →</a>
+       href="{{ url_for('weekly_review', from_sync=1) }}">Open Overview →</a>
     {% endif %}
 </div>
 {% endblock %}
@@ -622,7 +622,7 @@
                         '<div class="ob-thanks-emoji" aria-hidden="true">✨</div>' +
                         '<div class="ob-thanks-title">Thanks — got it.</div>' +
                         '<div class="ob-thanks-sub">' +
-                        'We\'ll use this to shape your first Daily Review. ' +
+                        'We\'ll use this to shape your first Overview. ' +
                         'Hang tight, we\'re almost done crunching your data.' +
                         '</div></div>';
                     var sync = document.getElementById("syncCard");

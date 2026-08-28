@@ -15,9 +15,15 @@ from app import app
 from app.utils import demo_block_writes
 from app.models import (
     User,
+    create_account_group,
+    delete_account_group,
     get_accounts_for_user,
+    get_broker_tenants_for_user,
     get_uploads_for_user,
     get_user_profile,
+    list_account_groups,
+    rename_account_group,
+    set_account_group_members,
     update_user_profile,
 )
 
@@ -25,6 +31,13 @@ _ALLOWED_ACCENTS = frozenset({"violet", "teal", "amber", "rose", "slate"})
 _ALLOWED_DEFAULT_ROUTE = frozenset({
     "weekly_review", "positions", "strategies", "insights", "accounts",
 })
+_DEFAULT_ROUTE_LABELS = {
+    "weekly_review": "Overview",
+    "positions": "Positions",
+    "strategies": "Strategies",
+    "insights": "AI Insights",
+    "accounts": "Accounts",
+}
 
 
 @app.route("/profile", methods=["GET", "POST"])
@@ -89,6 +102,37 @@ def profile():
             flash("Password updated successfully.", "success")
             return redirect(url_for("profile", tab="security"))
 
+        if action == "save_account_group":
+            name = request.form.get("group_name", "")
+            tids = request.form.getlist("tenant_id")
+            raw_gid = (request.form.get("group_id") or "").strip()
+            try:
+                if raw_gid:
+                    gid = int(raw_gid)
+                    rename_account_group(current_user.id, gid, name)
+                    set_account_group_members(current_user.id, gid, tids)
+                    flash("Group saved.", "success")
+                else:
+                    if not tids:
+                        raise ValueError("Click at least one account, then name the group.")
+                    created = create_account_group(current_user.id, name)
+                    set_account_group_members(current_user.id, created["id"], tids)
+                    flash("Group saved.", "success")
+            except (TypeError, ValueError) as exc:
+                flash(str(exc), "danger")
+            return redirect(url_for("profile", tab="account") + "#account-groups")
+
+        if action == "delete_account_group":
+            try:
+                gid = int(request.form.get("group_id") or 0)
+            except (TypeError, ValueError):
+                gid = 0
+            if delete_account_group(current_user.id, gid):
+                flash("Group removed.", "success")
+            else:
+                flash("That group isn't on your account.", "danger")
+            return redirect(url_for("profile", tab="account") + "#account-groups")
+
         if action == "save_profile":
             settings_tab = (request.form.get("settings_tab") or "").strip().lower()
             if settings_tab == "notifications":
@@ -142,6 +186,39 @@ def profile():
     accounts = get_accounts_for_user(current_user.id)
     recent_uploads = get_uploads_for_user(current_user.id)
 
+    group_tenant_choices = []
+    try:
+        from app.routes import _disambiguated_tenant_labels
+
+        tenant_rows = get_broker_tenants_for_user(current_user.id) or []
+        labels = _disambiguated_tenant_labels(tenant_rows)
+        group_tenant_choices = [
+            {
+                "tenant_id": row.get("tenant_id"),
+                "label": labels.get(row.get("tenant_id"))
+                or row.get("display_nickname")
+                or row.get("account_name")
+                or row.get("tenant_id"),
+            }
+            for row in tenant_rows
+            if row.get("tenant_id")
+        ]
+        group_tenant_choices.sort(key=lambda r: (r["label"] or "").lower())
+    except Exception:
+        group_tenant_choices = []
+
+    editing_group = None
+    try:
+        edit_raw = (request.args.get("edit") or "").strip()
+        if edit_raw.isdigit():
+            edit_id = int(edit_raw)
+            for g in list_account_groups(current_user.id):
+                if g["id"] == edit_id:
+                    editing_group = g
+                    break
+    except Exception:
+        editing_group = None
+
     snaptrade_enabled = False
     snaptrade_accounts = []
     snaptrade_routine_lookback_days = 60
@@ -190,10 +267,13 @@ def profile():
         profile_row=profile_row,
         accounts=accounts,
         recent_uploads=recent_uploads,
+        group_tenant_choices=group_tenant_choices,
+        editing_group=editing_group,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_accounts=snaptrade_accounts,
         snaptrade_routine_lookback_days=snaptrade_routine_lookback_days,
         snaptrade_full_history_lookback_days=snaptrade_full_history_lookback_days,
         accent_presets=sorted(_ALLOWED_ACCENTS),
         default_routes=routes,
+        default_route_labels=_DEFAULT_ROUTE_LABELS,
     )

@@ -255,7 +255,8 @@
 {% set _active_filters = [selected_account, selected_symbol, selected_strategy,
                           selected_subsector, selected_tag,
                           (selected_statuses if not _all_statuses else None),
-                          (selected_start_date or selected_end_date)]
+                          (selected_start_date or selected_end_date),
+                          selected_group_ids]
                          | select | list | length %}
 <button class="btn btn-sm btn-outline-secondary d-lg-none mb-2" type="button"
         data-bs-toggle="collapse" data-bs-target="#posFilters"
@@ -280,6 +281,7 @@
         </select>
     </div>
     {% endif %}
+    {% include "_account_group_filter.html" %}
     <div>
         <label class="lblh">Symbol</label>
         <select name="symbol" class="form-select form-select-sm"

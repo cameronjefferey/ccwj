@@ -12,7 +12,7 @@ function __ghaSafeRedirect(url, label) {
         return;
     }
     if (label) {
-        label.textContent = "Ready when you are — finish your answer or open Daily Review.";
+        label.textContent = "Ready when you are — finish your answer or open Overview.";
     }
     var iv = setInterval(function () {
         if (!window.__onboardingHoldRedirect) {
@@ -55,25 +55,25 @@ function __ghaSafeRedirect(url, label) {
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (!d) {
-                    if (label) label.textContent = "Couldn’t check progress — taking you to Daily Review shortly, or go now.";
+                    if (label) label.textContent = "Couldn’t check progress — taking you to Overview shortly, or go now.";
                     stopSpinner();
                     leaveSoon(8000);
                     return;
                 }
                 if (d.state === "error" && d.error) {
-                    if (label) label.textContent = "We’ll take you to Daily Review in a few minutes, or you can go there now.";
+                    if (label) label.textContent = "We’ll take you to Overview in a few minutes, or you can go there now.";
                     leaveSoon(3 * 60 * 1000);
                     if (n < 120) setTimeout(tick, 8000);
                     return;
                 }
                 if (!d.ok) {
-                    if (label) label.textContent = "Couldn’t read progress — taking you to Daily Review shortly, or go now.";
+                    if (label) label.textContent = "Couldn’t read progress — taking you to Overview shortly, or go now.";
                     leaveSoon(8000);
                     if (n < 120) setTimeout(tick, 8000);
                     return;
                 }
                 if (d.state === "success") {
-                    if (label) label.textContent = "All set—bringing you to Daily Review…";
+                    if (label) label.textContent = "All set—bringing you to Overview…";
                     __ghaSafeRedirect(doneUrl, label);
                     return;
                 }
@@ -81,7 +81,7 @@ function __ghaSafeRedirect(url, label) {
                     stopSpinner();
                     setHeading("This update didn’t finish");
                     hideReadyCopy();
-                    if (label) label.textContent = "Your files are saved. Taking you to Daily Review — the new numbers may not be in yet. Try Upload again in a little while if they’re missing.";
+                    if (label) label.textContent = "Your files are saved. Taking you to Overview — the new numbers may not be in yet. Try Upload again in a little while if they’re missing.";
                     leaveSoon(4000);
                     return;
                 }
@@ -96,7 +96,7 @@ function __ghaSafeRedirect(url, label) {
                     setTimeout(tick, 8000);
                 } else {
                     stopSpinner();
-                    if (label) label.textContent = "Still going — taking you to Daily Review. Your new data might already be there.";
+                    if (label) label.textContent = "Still going — taking you to Overview. Your new data might already be there.";
                     leaveSoon(4000);
                 }
             })
@@ -106,7 +106,7 @@ function __ghaSafeRedirect(url, label) {
                     setTimeout(tick, 10000);
                 } else {
                     stopSpinner();
-                    if (label) label.textContent = "Couldn’t confirm the update — taking you to Daily Review.";
+                    if (label) label.textContent = "Couldn’t confirm the update — taking you to Overview.";
                     leaveSoon(4000);
                 }
             });
@@ -119,7 +119,7 @@ function __ghaSafeRedirect(url, label) {
 (function () {
     var doneUrl = {{ _done|tojson }};
     var label = document.getElementById("pipelineStateLabel");
-    if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Daily Review in a few minutes, or you can go there now."; }
+    if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Overview in a few minutes, or you can go there now."; }
     setTimeout(function () { __ghaSafeRedirect(doneUrl, label); }, 3 * 60 * 1000);
 })();
 </script>

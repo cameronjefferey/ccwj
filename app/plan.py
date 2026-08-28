@@ -167,13 +167,9 @@ def start_trial_clock(user_id):
         )
         if row:
             try:
-                from app.ops_notify import notify
+                from app.ops_notify import notify_event
                 uname = (row.get("username") or "").strip()
-                notify(
-                    "first_data",
-                    f"HappyTrader: first data landed for @{uname}. Trial clock started.",
-                    username=uname,
-                )
+                notify_event("first_data", username=uname)
             except Exception:
                 pass
     except Exception as exc:

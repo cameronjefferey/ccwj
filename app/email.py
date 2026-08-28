@@ -458,7 +458,7 @@ def send_welcome_verify_email(
         "Welcome to HappyTrader — your trading mirror. Confirm your email so "
         "we can send you password resets and (if you opt in) your weekly recap:\n\n"
         f"{verify_url}\n\n"
-        "Next, connect a brokerage so we can build your Daily Review.\n\n"
+        "Next, connect a brokerage so we can build your Overview.\n\n"
         "— HappyTrader\n"
     )
     html_body = _wrap_html(
@@ -472,7 +472,7 @@ def send_welcome_verify_email(
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
             'border-radius:8px;font-weight:600;display:inline-block;">Confirm my email</a></p>'
             '<p style="color:#9aa0a6;font-size:13px;">Then connect a brokerage and we\'ll '
-            "build your Daily Review automatically.</p>"
+            "build your Overview automatically.</p>"
             '<p style="color:#9aa0a6;font-size:13px;">If the button doesn\'t work, paste this '
             f'link into your browser:<br><a href="{verify_url}" style="color:{_ACCENT};">{verify_url}</a></p>'
         ),
@@ -492,7 +492,7 @@ def send_data_ready_email(
     body = (
         f"Hi {username},\n\n"
         "Good news — we finished pulling your brokerage data. Your positions, "
-        "trades, and P&L are now in your Daily Review.\n\n"
+        "trades, and P&L are now in your Overview.\n\n"
         f"Take a look: {dashboard_url}\n\n"
         "— HappyTrader\n"
     )
@@ -501,10 +501,10 @@ def send_data_ready_email(
         inner_html=(
             f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
             '<p style="color:#3c4043;font-size:15px;">Good news — we finished pulling your '
-            "brokerage data. Your positions, trades, and P&amp;L are now in your Daily Review.</p>"
+            "brokerage data. Your positions, trades, and P&amp;L are now in your Overview.</p>"
             f'<p style="margin:24px 0;"><a href="{dashboard_url}" '
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
-            'border-radius:8px;font-weight:600;display:inline-block;">Open your Daily Review</a></p>'
+            'border-radius:8px;font-weight:600;display:inline-block;">Open Overview</a></p>'
         ),
     )
     send_email(to=to, subject=subject, body=body, html_body=html_body)
@@ -636,7 +636,7 @@ def send_weekly_preview_email(
     lines += _txt_block("Projected ex-dividends (≤30d)", ex_divs)
     if not (earnings or expirations or ex_divs):
         lines += ["Nothing major on the calendar — a quiet stretch ahead.", ""]
-    lines += [f"Open your Daily Review: {dashboard_url}", "", "— HappyTrader", ""]
+    lines += [f"Open Overview: {dashboard_url}", "", "— HappyTrader", ""]
     body = "\n".join(lines)
 
     def _html_block(title, items):
@@ -663,7 +663,7 @@ def send_weekly_preview_email(
             f"{blocks}"
             f'<p style="margin:20px 0 0;"><a href="{dashboard_url}" '
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
-            'border-radius:8px;font-weight:600;display:inline-block;">Open your Daily Review</a></p>'
+            'border-radius:8px;font-weight:600;display:inline-block;">Open Overview</a></p>'
         ),
         unsubscribe_url=unsubscribe_url,
     )
@@ -840,7 +840,7 @@ def send_reengagement_email(
         f"Hi {username},\n\n"
         f"It's been about {days_away} days since you last checked in. Your "
         "positions kept moving while you were away — opens, closes, dividends, "
-        "and expirations are all waiting in your Daily Review.\n\n"
+        "and expirations are all waiting in your Overview.\n\n"
         f"Pick up where you left off: {dashboard_url}\n\n"
         "— HappyTrader\n"
     )
@@ -850,7 +850,7 @@ def send_reengagement_email(
             f'<p style="color:#3c4043;font-size:15px;">Hi {username},</p>'
             f'<p style="color:#3c4043;font-size:15px;">It\'s been about <strong>{days_away} days</strong> '
             "since you last checked in. Your positions kept moving while you were away — opens, "
-            "closes, dividends, and expirations are all waiting in your Daily Review.</p>"
+            "closes, dividends, and expirations are all waiting in your Overview.</p>"
             f'<p style="margin:24px 0;"><a href="{dashboard_url}" '
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
             'border-radius:8px;font-weight:600;display:inline-block;">Pick up where you left off</a></p>'

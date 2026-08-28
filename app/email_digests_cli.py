@@ -210,7 +210,7 @@ def run_weekly_summary(client, bigquery):
             to=rec["email"],
             username=rec["username"],
             summary=summary,
-            dashboard_url=f"{app_base_url()}/daily-review",
+            dashboard_url=f"{app_base_url()}/overview",
             unsubscribe_url=unsub,
         )
         sent += 1
@@ -391,7 +391,7 @@ def run_weekly_preview(client, bigquery):
             to=rec["email"],
             username=rec["username"],
             preview=preview,
-            dashboard_url=f"{app_base_url()}/daily-review",
+            dashboard_url=f"{app_base_url()}/overview",
             unsubscribe_url=unsub,
         )
         sent += 1
@@ -426,7 +426,7 @@ def run_reengagement(client, bigquery):
             to=rec["email"],
             username=rec["username"],
             days_away=int(rec.get("days_away") or REENGAGE_MIN_DAYS),
-            dashboard_url=f"{app_base_url()}/daily-review",
+            dashboard_url=f"{app_base_url()}/overview",
             unsubscribe_url=unsub,
         )
         sent += 1

@@ -28,12 +28,14 @@ def test_heatmap_day_link_preserves_tenant_scope():
     today = date(2024, 1, 3)
     context = {
         "current_user": SimpleNamespace(is_authenticated=False),
-        "title": "Daily Review",
+        "title": "Overview",
         "mode": "daily",
         "week_start": date(2024, 1, 1),
         "week_end": date(2024, 1, 5),
         "user_timezone": "UTC",
         "today": today,
+        "review_date": today,
+        "review_is_today": False,
         "accounts": [],
         "selected_account": "",
         "selected_tenant": TENANT,
@@ -73,10 +75,11 @@ def test_heatmap_day_link_preserves_tenant_scope():
             "trades": [{
                 "verb": "Bought", "action": "equity_buy", "symbol": "AAPL",
                 "trade_symbol": "AAPL", "description": "", "quantity": 100,
-                "price": 185.2, "amount": -18520.0, "account": "Schwab",
+                "price": 185.2, "amount": None, "account": "Schwab",
                 "is_option": False,
             }],
             "cash": [], "count": 1, "net_cash": -18520.0,
+            "net_gl": 0.0,
             "symbols": ["AAPL"], "has_any": True,
         },
         "all_user_tags": [],
@@ -95,10 +98,12 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert queries[0]["tenants"] == [TENANTS]
     assert "1 open position is adding to your track record" in rendered
     assert "of your stories" not in rendered
-    assert "Trades Today" in rendered
+    assert "Trades — Wed Jan 3" in rendered
     assert "Bought" in rendered
-    assert "1 fill today" in rendered
+    assert "1 fill Wed" in rendered
     assert "AAPL" in rendered
+    assert "Trades Today" not in rendered
+    assert "Today's Biggest" not in rendered
 
     story_queries = _queries_for_path(rendered, "/story")
     assert story_queries
@@ -137,7 +142,7 @@ def test_day_navigation_and_back_link_preserve_tenant_scope():
     paths = (
         "/daily-review/day/2024-01-02",
         "/daily-review/day/2024-01-04",
-        "/daily-review",
+        "/overview",
     )
     for path in paths:
         queries = _queries_for_path(rendered, path)
@@ -159,5 +164,6 @@ def test_future_day_redirect_preserves_tenant_scope():
         response = weekly_review.day_detail.__wrapped__("2999-01-01")
 
     query = parse_qs(urlparse(response.location).query)
+    assert urlparse(response.location).path == "/today"
     assert query["tenant"] == [TENANT]
     assert query["tenants"] == [TENANTS]

@@ -128,6 +128,7 @@ def test_pro_activation_notifies_only_on_transition(monkeypatch):
         7, before=before, stripe_price_id="price_m", cancel_at_period_end=False,
     )
     assert pings and pings[0][0] == "subscribe"
+    assert "subscribed to Pro" in pings[0][1]
     pings.clear()
     already = {"username": "alice", "plan": PLAN_ACTIVE, "subscription_cancel_at_period_end": False}
     _notify_pro_activation(
@@ -168,4 +169,29 @@ def test_ai_activation_skips_already_paying(monkeypatch):
 
 def test_user_label_uses_passed_username():
     assert on.user_label(9, username="pat") == "@pat"
-    assert on.user_label(None, username="") == "user_id=None"
+    assert on.user_label(None, username="") == "someone"
+    assert on.user_label(9, username="") == "user 9"
+
+
+def test_compose_product_pings_are_sentences():
+    assert on.compose("signup", who="@pat") == "HappyTrader — @pat signed up."
+    assert "trial clock started" in on.compose("first_data", who="@pat")
+    assert on.compose("subscribe", who="@pat", interval="monthly", was_plan="trial") == (
+        "HappyTrader — @pat subscribed to Pro (monthly). They were on trial."
+    )
+    assert "kept Pro" in on.compose("subscribe", who="@pat", resumed=True)
+    assert "stays on until the period ends" in on.compose("canceling", who="@pat")
+    assert on.compose("cancel", who="@pat", status="canceled") == (
+        "HappyTrader — @pat's Pro ended (canceled)."
+    )
+    assert on.compose("subscribe_ai", who="@pat") == (
+        "HappyTrader — @pat added HappyTrader AI."
+    )
+    assert "HappyTrader AI ended" in on.compose("cancel_ai", who="@pat", status="canceled")
+    fb = on.compose("feedback", who="@pat", snippet="the chart is blank")
+    assert fb.startswith("HappyTrader — @pat sent feedback.")
+    assert "the chart is blank" in fb
+    br = on.compose("broken", who="@pat", account_id="abc-123")
+    assert br.startswith("HappyTrader — @pat's broker connection broke.")
+    assert "Account:" in br
+    assert "abc-123" in br

@@ -485,13 +485,21 @@ def _accounts_scope_query(args):
 
     Keep the same precedence as ``_tenants_for_scope``.  In particular, a
     direct ``?tenant=`` deep-link identifies one physical account even when
-    several accounts share the same display label.
+    several accounts share the same display label. Group ids ride along
+    so a range click doesn't drop the label filter.
     """
+    from app.routes import _requested_group_ids
+
+    parts = []
     for key in ("tenant", "tenants", "account"):
         value = (args.get(key) or "").strip()
         if value:
-            return f"{key}={quote_plus(value)}"
-    return ""
+            parts.append(f"{key}={quote_plus(value)}")
+            break
+    group_ids = _requested_group_ids(args)
+    if group_ids:
+        parts.append("groups=" + quote_plus(",".join(str(g) for g in group_ids)))
+    return "&".join(parts)
 
 
 def _account_created_label(tenant_rows):

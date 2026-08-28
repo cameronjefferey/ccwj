@@ -272,8 +272,8 @@ def signup():
         user = User.get_by_username(username)
         login_user(user, remember=False)
         try:
-            from app.ops_notify import notify
-            notify("signup", f"HappyTrader: new signup @{username}", username=username)
+            from app.ops_notify import notify_event
+            notify_event("signup", username=username)
         except Exception:
             pass
         _send_welcome_verification(user)
