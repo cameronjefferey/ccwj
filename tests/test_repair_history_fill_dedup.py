@@ -56,6 +56,18 @@ def test_repair_collapses_qualified_vs_cash_dividend_within_one_tenant():
     assert out.iloc[0]["Description"] == "JPMorgan Equity Premium Income ETF"
 
 
+def test_repair_persists_stripped_csv_currency_amount():
+    df = pd.DataFrame([
+        _row("Emmory", "5/14/2024", "Buy", "IYW", "20", "$131.96", "($2,639.20)",
+             tenant_id="snaptrade:a", desc="IYW"),
+    ], columns=HISTORY_SEED_COLUMNS)
+    out = dedup_history_by_tenant(df)
+    assert len(out) == 1
+    assert out.iloc[0]["Price"] == "131.96"
+    assert out.iloc[0]["Amount"] == "-2639.2"
+    assert out.iloc[0]["Date"] == "05/14/2024"
+
+
 def test_repair_never_collapses_across_tenants():
     df = pd.DataFrame([
         _row("Emmory", "05/14/2024", "Buy", "IYW", "20", "131.96", "-2639.2",
