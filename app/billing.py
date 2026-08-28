@@ -96,29 +96,32 @@ def _notify_pro_activation(user_id, *, before, stripe_price_id, cancel_at_period
     if before is None:
         return
     try:
-        from app.ops_notify import notify, user_label
-        who = user_label(user_id, username=before.get("username"))
+        from app.ops_notify import notify_event
+        uname = before.get("username")
         was_plan = (before.get("plan") or "").strip()
         was_paying = was_plan == PLAN_ACTIVE
         was_canceling = bool(before.get("subscription_cancel_at_period_end"))
         kind = _pro_interval_label(stripe_price_id)
         if not was_paying:
-            notify(
+            notify_event(
                 "subscribe",
-                f"HappyTrader: Pro {kind} — {who} (was {was_plan or 'unknown'})",
-                username=before.get("username"),
+                user_id=user_id,
+                username=uname,
+                interval=kind,
+                was_plan=was_plan,
             )
         elif cancel_at_period_end and not was_canceling:
-            notify(
+            notify_event(
                 "canceling",
-                f"HappyTrader: Pro canceling at period end — {who}",
-                username=before.get("username"),
+                user_id=user_id,
+                username=uname,
             )
         elif was_canceling and not cancel_at_period_end:
-            notify(
+            notify_event(
                 "subscribe",
-                f"HappyTrader: Pro resumed (pending cancel lifted) — {who}",
-                username=before.get("username"),
+                user_id=user_id,
+                username=uname,
+                resumed=True,
             )
     except Exception as exc:
         _log.debug("pro activation notify skipped: %s", exc)
@@ -128,14 +131,14 @@ def _notify_pro_ended(user_id, *, before, status):
     if before is None:
         return
     try:
-        from app.ops_notify import notify, user_label
+        from app.ops_notify import notify_event
         if (before.get("plan") or "").strip() != PLAN_ACTIVE:
             return
-        who = user_label(user_id, username=before.get("username"))
-        notify(
+        notify_event(
             "cancel",
-            f"HappyTrader: Pro ended ({status or 'canceled'}) — {who}",
+            user_id=user_id,
             username=before.get("username"),
+            status=status or "canceled",
         )
     except Exception as exc:
         _log.debug("pro ended notify skipped: %s", exc)
@@ -145,14 +148,13 @@ def _notify_ai_activation(user_id, *, before):
     if before is None:
         return
     try:
-        from app.ops_notify import notify, user_label
+        from app.ops_notify import notify_event
         was = (before.get("ai_subscription_status") or "").strip().lower()
         if was in PAYING_STATUSES:
             return
-        who = user_label(user_id, username=before.get("username"))
-        notify(
+        notify_event(
             "subscribe_ai",
-            f"HappyTrader: AI add-on — {who}",
+            user_id=user_id,
             username=before.get("username"),
         )
     except Exception as exc:
@@ -163,15 +165,15 @@ def _notify_ai_ended(user_id, *, before, status):
     if before is None:
         return
     try:
-        from app.ops_notify import notify, user_label
+        from app.ops_notify import notify_event
         was = (before.get("ai_subscription_status") or "").strip().lower()
         if was not in PAYING_STATUSES:
             return
-        who = user_label(user_id, username=before.get("username"))
-        notify(
+        notify_event(
             "cancel_ai",
-            f"HappyTrader: AI add-on ended ({status or 'canceled'}) — {who}",
+            user_id=user_id,
             username=before.get("username"),
+            status=status or "canceled",
         )
     except Exception as exc:
         _log.debug("AI ended notify skipped: %s", exc)

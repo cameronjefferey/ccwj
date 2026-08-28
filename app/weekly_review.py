@@ -1,22 +1,15 @@
 """
-Daily Review — single-mode end-of-day pulse page.
+Overview (close-based last-session recap) and Today (live last-trade).
 
-The page used to fork into Friday Review / Monday Check / Mid-Week Check.
-That made it three different products glued together: behavior-baseline
-narrative on Friday, exposure tables on Monday, "today" framing in the
-middle. Users actually want the same answer EVERY day at the close:
+The page used to fork into Friday Review / Monday Check / Mid-Week Check,
+then collapsed to one "Daily Review" that mixed last-close numbers with
+the word "today". Those are now two routes:
 
-    1. What happened today — including the fills I placed, not just MTM.
-    2. What's coming that I need to watch (earnings, expiries, ex-div).
-    3. How are my positions doing in total (G/L stock vs option vs div).
-    4. Same breakdown rolled up by strategy.
-    5. Same breakdown rolled up by sector / subsector.
+    /overview  (endpoint weekly_review) — last completed session only.
+    /today     (endpoint today_view)    — in-session last-trade, delay banner.
 
-So we collapsed to one mode. The old mode-pills, behavioral baseline,
-coaching-take, and Mon-Fri "diary" sections were removed from render. The
-helper functions that produced them are kept in this module — tests pin
-them and we don't want to thrash CI — but they aren't called from the
-view. Future cleanup may delete them entirely once the daily shape settles.
+/overview never uses the word "today". Live fills, in-session movers,
+after-hours drift, and open-contract marks live on /today.
 
 Tenancy: every BQ read passes through `_tenant_sql_and` (SQL-level) and
 every DataFrame is filtered via `_filter_df_by_tenant_ids` BEFORE any
@@ -710,6 +703,7 @@ recent_prices AS (
         ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+      AND date <= @as_of
       AND close_price IS NOT NULL AND close_price > 0
 ),
 pair AS (
@@ -760,6 +754,7 @@ WITH close_as_of AS (
         MAX(date) AS as_of_date
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+      AND date <= @as_of
       AND close_price IS NOT NULL
       AND close_price > 0
     GROUP BY symbol
@@ -2617,18 +2612,47 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
     return {"rows": rows, "totals": totals, "basis": basis}
 
 
+TODAY_MOVERS_PER_SIDE = 5
+# Tiles render whole dollars; skip noise that would show as $0.
+TODAY_MOVERS_MIN_ABS = 1.0
+
+
+def _rank_today_mover_tiles(items):
+    """Up/down lists by $ impact. Stocks and options share the same slots."""
+    items = [i for i in items if abs(i.get("dollar_impact") or 0) >= TODAY_MOVERS_MIN_ABS]
+    winners = sorted(
+        [i for i in items if i["dollar_impact"] > 0],
+        key=lambda x: x["dollar_impact"], reverse=True)[:TODAY_MOVERS_PER_SIDE]
+    losers = sorted(
+        [i for i in items if i["dollar_impact"] < 0],
+        key=lambda x: x["dollar_impact"])[:TODAY_MOVERS_PER_SIDE]
+    return winners, losers
+
+
+def _option_mover_tile(opt):
+    return {
+        "symbol": opt["symbol"],
+        "kind": "option",
+        "dollar_impact": opt["dollar_impact"],
+        "shares": None,
+        "current_value": None,
+        "price_change": None,
+        "price_change_pct": None,
+        "today_close": None,
+    }
+
+
 def _build_today_movers(today_moves_df, account_total_value=None,
                         options_moves_df=None, dividends_df=None):
-    """Today's biggest stock moves on currently-held symbols.
+    """Today's biggest $ moves on currently-held symbols.
 
-    Returns at most 8 winners and 8 losers, sorted by absolute $ impact.
+    Stocks (price × shares) and options (MTM drift + same-day realizations)
+    share one Up / Down list, at most ``TODAY_MOVERS_PER_SIDE`` each.
+    Header ``combined_impact`` still sums every equity + option + dividend
+    row, not just the tiles on the card.
 
-    Also folds in (when provided) the two long-missing pieces of "today's
-    $ impact": per-symbol OPTION P&L day-moves (MTM drift + today's
-    realizations, from mart_daily_pnl) and DIVIDENDS actually paid today
-    (int_dividend_events). ``combined_impact`` = equity + options +
-    dividends; the equity-only ``total_impact`` is kept for the movers
-    list header so the winners/losers rows still reconcile to it.
+    Dividends stay a separate paid-today strip — they are cash received,
+    not a price move.
     """
     empty = {
         "winners": [], "losers": [], "total_impact": 0.0, "as_of": None,
@@ -2639,53 +2663,54 @@ def _build_today_movers(today_moves_df, account_total_value=None,
         # defaults keep direct callers/tests rendering the "today" voice.
         "is_today": True, "as_of_label": None,
     }
-    if today_moves_df is None or today_moves_df.empty:
-        base = dict(empty)
-        # Options/dividends can still exist without equity price rows
-        # (options-only accounts) — build them off their own frames.
-        base.update(_today_options_and_divs(options_moves_df, dividends_df, None))
-        base["as_of"] = base.pop("options_as_of", None)
-        base["combined_impact"] = round(
-            base["options_impact"] + base["dividends_impact"], 2)
-        return base
-    df = today_moves_df.copy()
-    for col in ["shares", "today_close", "prev_close", "price_change",
-                "price_change_pct", "dollar_impact", "current_value"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    total_impact = float(df["dollar_impact"].sum()) if "dollar_impact" in df.columns else 0.0
-    items = []
+    equity_items = []
     as_of = None
-    for _, r in df.iterrows():
-        td = r.get("today_date")
-        if as_of is None and td is not None:
-            as_of = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
-        items.append({
-            "symbol": str(r.get("symbol") or ""),
-            "shares": float(r.get("shares") or 0),
-            "current_value": round(float(r.get("current_value") or 0), 2),
-            "price_change": round(float(r.get("price_change") or 0), 2),
-            "price_change_pct": round(float(r.get("price_change_pct") or 0), 2),
-            "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
-            "today_close": round(float(r.get("today_close") or 0), 2),
-        })
+    total_impact = 0.0
+    if today_moves_df is not None and not today_moves_df.empty:
+        df = today_moves_df.copy()
+        for col in ["shares", "today_close", "prev_close", "price_change",
+                    "price_change_pct", "dollar_impact", "current_value"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    winners = sorted([i for i in items if i["dollar_impact"] > 0],
-                     key=lambda x: x["dollar_impact"], reverse=True)[:8]
-    losers = sorted([i for i in items if i["dollar_impact"] < 0],
-                    key=lambda x: x["dollar_impact"])[:8]
+        total_impact = float(df["dollar_impact"].sum()) if "dollar_impact" in df.columns else 0.0
+        for _, r in df.iterrows():
+            td = r.get("today_date")
+            if as_of is None and td is not None:
+                as_of = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
+            equity_items.append({
+                "symbol": str(r.get("symbol") or ""),
+                "kind": "stock",
+                "shares": float(r.get("shares") or 0),
+                "current_value": round(float(r.get("current_value") or 0), 2),
+                "price_change": round(float(r.get("price_change") or 0), 2),
+                "price_change_pct": round(float(r.get("price_change_pct") or 0), 2),
+                "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
+                "today_close": round(float(r.get("today_close") or 0), 2),
+            })
+
+    extras = _today_options_and_divs(options_moves_df, dividends_df, as_of)
+    as_of = as_of or extras.pop("options_as_of", None)
+    extras.pop("options_as_of", None)
+
+    tiles = list(equity_items)
+    tiles.extend(_option_mover_tile(o) for o in extras.get("options") or [])
+    winners, losers = _rank_today_mover_tiles(tiles)
+
     out = {
+        **empty,
         "winners": winners,
         "losers": losers,
         "total_impact": round(total_impact, 2),
         "as_of": as_of,
         "is_today": True,
         "as_of_label": None,
+        "options": extras["options"],
+        "options_impact": extras["options_impact"],
+        "dividends": extras["dividends"],
+        "dividends_impact": extras["dividends_impact"],
     }
-    out.update(_today_options_and_divs(options_moves_df, dividends_df, as_of))
-    out["as_of"] = out["as_of"] or out.pop("options_as_of", None)
-    out.pop("options_as_of", None)
     out["combined_impact"] = round(
         out["total_impact"] + out["options_impact"] + out["dividends_impact"], 2)
     return out
@@ -2721,7 +2746,7 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
                 "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
             })
         opts.sort(key=lambda x: abs(x["dollar_impact"]), reverse=True)
-        out["options"] = opts[:8]
+        out["options"] = opts
         out["options_impact"] = round(sum(o["dollar_impact"] for o in opts), 2)
         out["options_as_of"] = opt_as_of
 
@@ -3037,7 +3062,8 @@ def _group_day_rolls(trade_rows):
         occ = _parse_occ(closed.get("trade_symbol"))
         row = closed  # labels / amounts read from the close below
         o_occ = _parse_occ(opened.get("trade_symbol"))
-        net = float(row.get("amount") or 0) + float(opened.get("amount") or 0)
+        cash_net = float(row.get("cash_amount") or 0) + float(opened.get("cash_amount") or 0)
+        net = _finite_or_none(closed.get("realized_pnl"))
         if o_occ["strike"] > occ["strike"]:
             strike_dir = "up"
         elif o_occ["strike"] < occ["strike"]:
@@ -3051,7 +3077,7 @@ def _group_day_rolls(trade_rows):
         else:
             expiry_dir = "same"
         success_bits = []
-        if net >= -0.005:
+        if cash_net >= -0.005:
             success_bits.append("credit")
         if short_side and occ["option_type"] == "Call" and strike_dir == "up":
             success_bits.append("strike")
@@ -3067,7 +3093,10 @@ def _group_day_rolls(trade_rows):
             "description": "",
             "quantity": None,
             "price": None,
-            "amount": round(net, 2),
+            "amount": None if net is None else round(net, 2),
+            "cash_amount": round(cash_net, 2),
+            "realized_pnl": None if net is None else round(net, 2),
+            "tenant_id": row.get("tenant_id") or opened.get("tenant_id") or "",
             "account": row.get("account") or "",
             "is_option": True,
             "short_side": short_side,
@@ -3301,10 +3330,12 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
 
 
 def _today_headline(today_pulse, today_movers, equity_snapshot):
-    """One-liner that anchors the page: '"Today: -$2,134 (-0.11%)"`.
+    """One-liner that anchors Overview: ``"Thu Aug 27: -$2,134 (-0.11%)"``.
 
     Falls back gracefully when the broker snapshot isn't there yet
-    (cold-start, mid-day, weekend)."""
+    (cold-start, mid-day, weekend). Never says "today" — that word lives
+    on the live ``/today`` page.
+    """
     if not today_pulse:
         return None
     delta = float(today_pulse.get("delta") or 0)
@@ -3315,22 +3346,30 @@ def _today_headline(today_pulse, today_movers, equity_snapshot):
         if base > 0:
             pct = round(delta / base * 100, 2)
     pct_str = f" ({'+' if pct is not None and pct >= 0 else ''}{pct:.2f}%)" if pct is not None else ""
-    return f"Today: {sign}${abs(delta):,.0f}{pct_str}"
+    label = today_pulse.get("date_label") or "Last close"
+    return f"{label}: {sign}${abs(delta):,.0f}{pct_str}"
 
 
-def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None):
-    """The tenant-scoped core of the Daily Review parallel batch.
+def _moves_job_config(as_of):
+    return bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
+    ])
+
+
+def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
+                             moves_as_of=None):
+    """The tenant-scoped core of the Overview (close-based) parallel batch.
 
     Shared by the ``weekly_review`` view and the post-rebuild cache warmer
     (``app/cache_ops.py``). The warmer replays EXACTLY these SQL strings and
     job configs so the cache keys it populates are the ones a real page
     load will look up — any drift between the two and warming silently
-    stops helping. The view adds the conditional ``after_hours`` query on
-    top (session/state-dependent, deliberately not warmed).
+    stops helping. After-hours and live in-session movers live on ``/today``
+    (``build_today_batch``), not here.
 
-    ``trades_as_of`` is the fill date for ``today_trades`` (last completed
-    ET session before the open; calendar today once the session is open).
-    Defaults to ``today`` so existing callers/tests keep their meaning.
+    ``trades_as_of`` / ``moves_as_of`` are the last completed session
+    (snapshot cutoff). Defaults to ``today`` so existing callers/tests keep
+    their meaning.
     """
     cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
     cal_end = this_week + timedelta(days=4)
@@ -3352,14 +3391,21 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None)
         bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
     ])
 
+    as_of = moves_as_of or trades_as_of or today
+    moves_cfg = _moves_job_config(as_of)
+
     return {
         "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
         "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
         "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
         "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
         "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
-        "today_moves": TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter),
-        "today_options_moves": TODAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter),
+        "today_moves": (
+            TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter), moves_cfg),
+        "today_options_moves": (
+            TODAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter),
+            _moves_job_config(as_of),
+        ),
         "today_dividends": TODAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "upcoming_divs": UPCOMING_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
         "ex_div_calendar": EX_DIV_CALENDAR_QUERY.format(tenant_filter=tenant_filter),
@@ -3385,31 +3431,72 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None)
         # open loop. Windowing happens in Python; the frame is small.
         "exit_verdicts": _EXECUTION_REVIEW_QUERY.format(
             tenant_filter=tenant_filter),
-        # Live open-option record: premium captured so far / mark vs cost
-        # on open contracts — the strictly-observational daily numbers.
+    }
+
+
+def build_today_batch(tenant_filter, today):
+    """Live-session queries for ``/today``.
+
+    Caps price pairs at calendar ``today`` (includes in-session last-trade
+    bars). Cache warmer must call this with the same ``today`` the view
+    uses. After-hours is session-gated in the view, not here.
+    """
+    moves_cfg = _moves_job_config(today)
+    return {
+        "today_moves": (
+            TODAY_MOVES_QUERY.format(tenant_filter=tenant_filter), moves_cfg),
+        "today_options_moves": (
+            TODAY_OPTIONS_MOVES_QUERY.format(tenant_filter=tenant_filter),
+            _moves_job_config(today),
+        ),
+        "today_dividends": TODAY_DIVIDENDS_QUERY.format(tenant_filter=tenant_filter),
+        "today_trades": (
+            DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
+            bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("day", "DATE", today),
+            ]),
+        ),
         "open_options": _OPEN_OPTION_RECORD_QUERY.format(
             tenant_filter=tenant_filter),
     }
 
 
-# Decorator order is intentional: ``/daily-review`` is the inner (applied
-# first) so Flask registers it first in the url_map, and ``url_for(
-# 'weekly_review')`` returns ``/daily-review``. ``/weekly-review`` stays
-# attached as a legacy alias so external bookmarks keep working.
+def _today_delay_copy(market_session):
+    """Always-on disclaimer for the live /today page."""
+    state = (market_session or {}).get("state") or "open"
+    shared = (
+        "These numbers are from the current session and can lag your broker. "
+        "They are not the official close."
+    )
+    if state == "open":
+        extra = "U.S. market is open. Last-trade prices and the last sync may be minutes behind."
+    elif state == "after_hours":
+        extra = (
+            "Regular session has closed. After-hours marks can keep moving "
+            "until the next open."
+        )
+    elif state == "pre_market":
+        extra = "U.S. market is not open yet. Figures below can be from overnight last-trade."
+    else:
+        extra = "U.S. market is closed. Figures below can be stale."
+    return {"shared": shared, "extra": extra, "state": state}
+
+
+# Decorator order is intentional: ``/overview`` is the innermost (applied
+# first) so ``url_for('weekly_review')`` returns ``/overview``.
+# ``/daily-review`` and ``/weekly-review`` stay as aliases for bookmarks.
 @app.route("/weekly-review")
 @app.route("/daily-review")
+@app.route("/overview")
 @login_required
 @skeleton_page
 def weekly_review():
-    """Daily Review — end-of-day pulse: today, watch list, position /
-    strategy / sector breakdowns. Single mode (the old friday / monday /
-    midweek toggle was removed in favor of a consistent daily shape).
+    """Overview — close-based recap of the last completed session.
 
     Endpoint name kept as ``weekly_review`` so the 30+ ``url_for()``
-    callsites across templates, auth, profile, upload, admin etc.
-    continue to work without a coordinated cross-cut rename. The URL
-    is exposed under both ``/daily-review`` (canonical) and
-    ``/weekly-review`` (legacy alias for bookmarks).
+    callsites continue to work. Canonical URL is ``/overview``;
+    ``/daily-review`` and ``/weekly-review`` are aliases. Live / in-session
+    numbers live on ``today_view`` (``/today``).
     """
     user_accounts = _user_account_list()
 
@@ -3442,7 +3529,7 @@ def weekly_review():
     since_anchor_dt = prior_visit.get("last_visit_at") if prior_visit else None
 
     context = {
-        "title": "Daily Review",
+        "title": "Overview",
         # `mode` stays in the context so legacy templates that reference
         # it during the rebuild don't KeyError. Always "daily" now.
         "mode": "daily",
@@ -3485,7 +3572,7 @@ def weekly_review():
                              "closed_count": 0, "realized_pnl": 0.0,
                              "unrealized_pnl": 0.0, "has_any": False},
         "trades_today": {"trades": [], "cash": [], "count": 0, "net_cash": 0.0,
-                         "symbols": [], "has_any": False},
+                         "net_gl": 0.0, "symbols": [], "has_any": False},
         # Distinct user tags for the "Trades this week" tag autocomplete.
         "all_user_tags": [],
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
@@ -3503,42 +3590,15 @@ def weekly_review():
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
-        trades_as_of = _trades_as_of_date(today, market_session)
-        context["review_date"] = trades_as_of
-        context["review_is_today"] = trades_as_of == today
+        # Overview is close-based: last completed session, never an
+        # in-session last-trade bar. During Friday's open that is Thursday.
+        session_date = _snapshot_as_of_date(today, market_session)
+        context["review_date"] = session_date
+        context["review_is_today"] = False
 
         batch_queries = build_daily_review_batch(
-            tenant_filter, today, this_week, trades_as_of=trades_as_of)
-        # After-hours drift compares the broker mark to today's *official*
-        # close. Two conditions must hold or the reading is noise/wrong:
-        #   1) the bell has rung (state == after_hours) so the close exists;
-        #   2) the broker mark itself was captured AFTER the close — else we'd
-        #      compare a mid-session mark to the close and show the intraday
-        #      move backwards. We have no per-row capture time in the warehouse,
-        #      so we ask SnapTrade's holdings_last_successful_sync WHICH accounts
-        #      are post-close and scope the query to exactly those tenants. An
-        #      account that hasn't re-synced since the close (or is broken) is
-        #      dropped rather than hiding the whole section for the others.
-        from app.snaptrade import post_close_broker_tenant_ids
-        ah_tenants = post_close_broker_tenant_ids(current_user.id)
-        if tenant_ids is not None:
-            # Respect the active account filter (?account= / ?tenant=).
-            ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
-        # Strict, correct gate — NEVER show stale/incorrect after-hours numbers
-        # (they erode trust in the whole page). All three must hold:
-        #   1) it's after hours (state == after_hours),
-        #   2) the broker mark is genuinely post-close (ah_tenants non-empty),
-        #   3) today's official close is published (enforced by the query's
-        #      JOIN to stg_daily_prices on CURRENT_DATE('America/New_York')).
-        # If any is missing (e.g. dev has no live post-close sync), the section
-        # stays hidden rather than rendering an intraday/stale mark as "drift".
-        after_hours_ready = (
-            market_session.get("state") == "after_hours"
-            and bool(ah_tenants)
-        )
-        if after_hours_ready:
-            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(
-                tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
+            tenant_filter, today, this_week,
+            trades_as_of=session_date, moves_as_of=session_date)
 
         try:
             batch = _bq_parallel(client, batch_queries)
@@ -3551,7 +3611,7 @@ def weekly_review():
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
                  "today_moves", "weekly_trades", "today_trades", "attribution",
-                 "exit_verdicts", "open_options"):
+                 "exit_verdicts"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -3895,30 +3955,18 @@ def weekly_review():
             # When the as-of date isn't the user's today, the template
             # renders the actual date instead of the word "today".
             _tm = context["today_movers"]
+            # Overview never uses the word "today" — always the session date.
+            _tm["is_today"] = False
             if _tm.get("as_of"):
-                _tm["is_today"] = (_tm["as_of"] == today.isoformat())
                 try:
                     _tm["as_of_label"] = datetime.strptime(
                         _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
                 except ValueError:
                     _tm["as_of_label"] = _tm["as_of"]
         except Exception as e:
-            app.logger.warning("Today movers processing failed: %s", e)
+            app.logger.warning("Session movers processing failed: %s", e)
 
-        # ── After-hours movers (broker mark vs official close) ─────────
-        # Only built when after_hours_ready (bell has rung AND the broker mark
-        # is post-close per SnapTrade's holdings_last_successful_sync). Before
-        # the close, and whenever the last broker sync predates the close, the
-        # "drift vs close" is noise or the intraday move shown backwards, so
-        # the query wasn't run and we leave the section hidden.
-        try:
-            if after_hours_ready:
-                ah_df = batch.get("after_hours", pd.DataFrame())
-                context["after_hours_movers"] = _build_after_hours_movers(ah_df)
-            else:
-                context["after_hours_movers"] = None
-        except Exception as e:
-            app.logger.warning("After-hours movers processing failed: %s", e)
+        context["after_hours_movers"] = None
 
         # ── Projected ex-dividend dates ───────────────────────────────
         try:
@@ -3944,11 +3992,8 @@ def weekly_review():
             context["exit_verdicts_pending"] = _verdicts_pending(ev_df, today)
         except Exception as e:
             app.logger.warning("Execution verdicts processing failed: %s", e)
-        try:
-            oo_df = batch.get("open_options", pd.DataFrame())
-            context["open_option_record"] = _open_option_record(oo_df, today)
-        except Exception as e:
-            app.logger.warning("Open option record processing failed: %s", e)
+        # Live open-contract marks live on /today, not the close-based recap.
+        context["open_option_record"] = None
 
         # ── Trades opened / closed this week ──────────────────────────
         try:
@@ -4012,13 +4057,13 @@ def weekly_review():
         except Exception as e:
             app.logger.warning("Account breakdown processing failed: %s", e)
 
-        # ── Since you last looked (daily-pull diff) ───────────────────
+        # ── Since you last looked (through last close, not the live session)
         try:
             context["since_last_looked"] = _since_last_looked(
                 client=client,
                 tenant_filter=tenant_filter,
                 prev_visit_dt=since_anchor_dt,
-                today=today,
+                today=session_date,
                 today_strip=context.get("today_strip", []),
                 expiring_options=context.get("expiring_options", []),
                 user_tz=user_tz,
@@ -4115,6 +4160,108 @@ def weekly_review():
     return render_template("weekly_review.html", **context)
 
 
+@app.route("/today")
+@login_required
+@skeleton_page
+def today_view():
+    """Live session: last-trade / last-sync numbers with a delay disclaimer.
+
+    Official close lives on Overview (``weekly_review``). This page is the
+    only surface that may describe an unfinished session as "today".
+    """
+    from app.routes import _redirect_if_no_accounts
+    from app.snaptrade import post_close_broker_tenant_ids
+
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
+
+    user_accounts = _user_account_list()
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+
+    prof = get_user_profile(current_user.id) or {}
+    user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
+    today = _date_in_user_tz(user_tz)
+    market_session = _us_market_session()
+
+    context = {
+        "title": "Today",
+        "today": today,
+        "review_date": today,
+        "review_is_today": True,
+        "user_timezone": user_tz,
+        "accounts": user_accounts or [],
+        "selected_account": selected_account,
+        "selected_tenant": request.args.get("tenant") or None,
+        "selected_tenants": request.args.get("tenants") or None,
+        "error": None,
+        "market_session": market_session,
+        "delay": _today_delay_copy(market_session),
+        "today_movers": None,
+        "after_hours_movers": None,
+        "trades_today": {
+            "trades": [], "cash": [], "count": 0, "net_cash": 0.0,
+            "net_gl": 0.0, "symbols": [], "has_any": False,
+        },
+        "open_option_record": None,
+    }
+
+    try:
+        client = get_bigquery_client()
+        batch_queries = build_today_batch(tenant_filter, today)
+
+        ah_tenants = post_close_broker_tenant_ids(current_user.id)
+        if tenant_ids is not None:
+            ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
+        after_hours_ready = (
+            market_session.get("state") == "after_hours"
+            and bool(ah_tenants)
+        )
+        if after_hours_ready:
+            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(
+                tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
+
+        batch = _bq_parallel(client, batch_queries)
+
+        for k in ("today_trades", "open_options"):
+            df = batch.get(k)
+            if df is not None and not df.empty:
+                batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
+
+        context["today_movers"] = _build_today_movers(
+            batch.get("today_moves", pd.DataFrame()),
+            options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
+            dividends_df=batch.get("today_dividends", pd.DataFrame()),
+        )
+        _tm = context["today_movers"]
+        if _tm.get("as_of"):
+            _tm["is_today"] = (_tm["as_of"] == today.isoformat())
+            try:
+                _tm["as_of_label"] = datetime.strptime(
+                    _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
+            except ValueError:
+                _tm["as_of_label"] = _tm["as_of"]
+        else:
+            _tm["is_today"] = True
+
+        if after_hours_ready:
+            context["after_hours_movers"] = _build_after_hours_movers(
+                batch.get("after_hours", pd.DataFrame()))
+
+        label_map = _tenant_label_map_for_user(current_user.id)
+        context["trades_today"] = _split_day_fills(
+            batch.get("today_trades", pd.DataFrame()), label_map=label_map)
+        context["open_option_record"] = _open_option_record(
+            batch.get("open_options", pd.DataFrame()), today)
+    except Exception as e:
+        app.logger.warning("Today page failed: %s", e)
+        context["error"] = str(e)
+
+    return render_template("today.html", **context)
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # Time-machine: day detail (/daily-review/day/<YYYY-MM-DD>)
 #
@@ -4155,14 +4302,57 @@ WHERE date = @day
 # day page AND Daily Review (`today_trades` in build_daily_review_batch)
 # so today's fills and a past day's page can never drift.
 DAY_TRADES_QUERY = """
+WITH fills AS (
+    SELECT
+        tenant_id, account, user_id, trade_date, action, trade_symbol,
+        underlying_symbol, description, quantity, price, amount,
+        instrument_type
+    FROM `ccwj-dbt.analytics.stg_history`
+    WHERE trade_date = @day
+      AND action != 'dividend'  -- dividends render from int_dividend_events
+      {tenant_filter}
+),
+equity_gl AS (
+    SELECT
+        tenant_id, account, user_id, symbol,
+        quantity AS sell_qty, sell_proceeds, realized_pnl
+    FROM `ccwj-dbt.analytics.int_closed_equity_legs`
+    WHERE close_date = @day
+      AND description = 'Equity Sold'
+      {tenant_filter}
+),
+option_gl AS (
+    SELECT tenant_id, trade_symbol, realized_pnl
+    FROM `ccwj-dbt.analytics.int_option_contracts`
+    WHERE realized_close_date = @day
+      {tenant_filter}
+)
 SELECT
-    tenant_id, account, user_id, trade_date, action, trade_symbol,
-    underlying_symbol, description, quantity, price, amount, instrument_type
-FROM `ccwj-dbt.analytics.stg_history`
-WHERE trade_date = @day
-  AND action != 'dividend'  -- dividends render from int_dividend_events
-  {tenant_filter}
-ORDER BY underlying_symbol, ABS(amount) DESC
+    f.tenant_id, f.account, f.user_id, f.trade_date, f.action, f.trade_symbol,
+    f.underlying_symbol, f.description, f.quantity, f.price, f.amount,
+    f.instrument_type,
+    CASE
+        WHEN f.action IN ('equity_sell', 'equity_sell_short')
+            THEN e.realized_pnl
+        WHEN f.action IN (
+            'option_buy_to_close', 'option_sell_to_close',
+            'option_expired', 'option_assigned', 'option_exercised'
+        )
+            THEN o.realized_pnl
+        ELSE CAST(NULL AS FLOAT64)
+    END AS realized_pnl
+FROM fills f
+LEFT JOIN equity_gl e
+    ON (f.tenant_id IS NOT DISTINCT FROM e.tenant_id)
+    AND f.account = e.account
+    AND (f.user_id IS NOT DISTINCT FROM e.user_id)
+    AND f.underlying_symbol = e.symbol
+    AND ABS(COALESCE(f.quantity, 0) - COALESCE(e.sell_qty, 0)) < 0.011
+    AND ABS(COALESCE(f.amount, 0) - COALESCE(e.sell_proceeds, 0)) < 1.0
+LEFT JOIN option_gl o
+    ON (f.tenant_id IS NOT DISTINCT FROM o.tenant_id)
+    AND f.trade_symbol = o.trade_symbol
+ORDER BY f.underlying_symbol, ABS(f.amount) DESC
 """
 
 # Same shape as TODAY_OPTIONS_MOVES_QUERY but anchored on @day: option day
@@ -4277,6 +4467,26 @@ _TRADE_ACTIONS = {
     "option_expired", "option_assigned", "option_exercised",
 }
 
+_CLOSE_ACTIONS = {
+    "equity_sell", "equity_sell_short",
+    "option_buy_to_close", "option_sell_to_close",
+    "option_expired", "option_assigned", "option_exercised",
+}
+
+
+def _finite_or_none(val):
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
 
 def _split_day_fills(trades_df, label_map=None):
     """Turn a ``DAY_TRADES_QUERY`` frame into fill rows.
@@ -4285,12 +4495,14 @@ def _split_day_fills(trades_df, label_map=None):
     actions (buys/sells/option lifecycle) go in ``trades``; interest,
     fees, and cash transfers go in ``cash``. ``count`` / ``net_cash``
     cover the trade fills only — a deposit shouldn't look like a trade.
+    The dollar column is realized G/L (sale vs cost), not fill cash.
+    Opens and unmatched closes render as ``None`` (em dash).
 
-    Returns ``{trades, cash, count, net_cash, symbols, has_any}``.
+    Returns ``{trades, cash, count, net_cash, net_gl, symbols, has_any}``.
     """
     empty = {
         "trades": [], "cash": [], "count": 0, "roll_count": 0,
-        "net_cash": 0.0, "symbols": [], "has_any": False,
+        "net_cash": 0.0, "net_gl": 0.0, "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
         return empty
@@ -4304,6 +4516,10 @@ def _split_day_fills(trades_df, label_map=None):
         qty = r.get("quantity")
         price = r.get("price")
         amount = float(r.get("amount") or 0)
+        realized = (
+            _finite_or_none(r.get("realized_pnl"))
+            if action in _CLOSE_ACTIONS else None
+        )
         symbol = str(r.get("underlying_symbol") or "").strip()
         tenant_id = str(r.get("tenant_id") or "").strip()
         row = {
@@ -4314,7 +4530,9 @@ def _split_day_fills(trades_df, label_map=None):
             "description": str(r.get("description") or "").strip(),
             "quantity": float(qty) if pd.notna(qty) else None,
             "price": float(price) if pd.notna(price) else None,
-            "amount": amount,
+            "cash_amount": amount,
+            "realized_pnl": realized,
+            "amount": realized if action in _TRADE_ACTIONS else amount,
             "tenant_id": tenant_id,
             "account": label_map.get(tenant_id, str(r.get("account") or "")),
             "is_option": action.startswith("option_"),
@@ -4329,12 +4547,18 @@ def _split_day_fills(trades_df, label_map=None):
         else:
             cash_rows.append(row)
     grouped = _group_day_rolls(trade_rows)
+    net_gl = 0.0
+    for row in grouped:
+        gl = _finite_or_none(row.get("realized_pnl"))
+        if gl is not None:
+            net_gl += gl
     return {
         "trades": grouped,
         "cash": cash_rows,
         "count": len(trade_rows),
         "roll_count": sum(1 for r in grouped if r.get("is_roll")),
         "net_cash": round(net_cash, 2),
+        "net_gl": round(net_gl, 2),
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),
     }
@@ -4367,9 +4591,9 @@ def day_detail(day_str):
     user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
     today = _date_in_user_tz(user_tz)
     if day >= today:
-        # Today and the future belong to the live Daily Review.
+        # Calendar today (and the future) belong on the live /today page.
         return redirect(url_for(
-            "weekly_review",
+            "today_view",
             account=request.args.get("account") or None,
             tenant=request.args.get("tenant") or None,
             tenants=request.args.get("tenants") or None,
@@ -4466,6 +4690,7 @@ def day_detail(day_str):
         trade_rows=trade_rows,
         cash_rows=cash_rows,
         net_cash=fills.get("net_cash") or 0,
+        net_gl=fills.get("net_gl") or 0,
         option_rows=option_rows,
         dividend_rows=dividend_rows,
         market_rows=market_rows,

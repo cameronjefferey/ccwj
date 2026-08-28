@@ -324,6 +324,47 @@ def _apply_account_labels(target, user_id, col: str = "account"):
     return target
 
 
+def _requested_group_ids(args=None):
+    """Parse ``?groups=1,2`` or repeated ``?groups=1&groups=2`` into int ids."""
+    if args is None:
+        try:
+            args = request.args
+        except Exception:
+            return []
+    raw = []
+    getlist = getattr(args, "getlist", None)
+    if callable(getlist):
+        raw.extend(getlist("groups") or [])
+    if not raw:
+        try:
+            val = args.get("groups")
+        except Exception:
+            val = None
+        if isinstance(val, (list, tuple)):
+            raw.extend(val)
+        elif val:
+            raw.append(val)
+    out = []
+    seen = set()
+    for item in raw:
+        for part in str(item or "").split(","):
+            part = part.strip()
+            if not part.isdigit():
+                continue
+            gid = int(part)
+            if gid <= 0 or gid in seen:
+                continue
+            seen.add(gid)
+            out.append(gid)
+    return out
+
+
+def _groups_query_value(args=None):
+    """Comma-joined group ids for ``url_for(..., groups=...)``, or None."""
+    ids = _requested_group_ids(args)
+    return ",".join(str(i) for i in ids) if ids else None
+
+
 def _user_tenant_list():
     """Return tenant_ids the current user may read, or None for admin bypass."""
     if is_admin(current_user.username):
@@ -352,11 +393,18 @@ def _tenants_for_scope(selected_account=None):
 
     Unknown selections fall back to all of the user's tenants (same safe
     default as the v2 design doc).
+
+    ``?groups=<id>,<id>`` is an additive label filter (union of members)
+    applied after the account/tenant resolution above. Unknown group ids
+    are ignored; a valid group with no members scopes to an empty list
+    (fail-closed). Membership is always intersected with owned tenants.
     """
     from app.db import fetch_all
 
     admin = is_admin(current_user.username)
     selected = (selected_account or "").strip()
+
+    uid = getattr(current_user, "id", None)
 
     # 1. Direct tenant addressing (?tenant=) wins over label matching.
     try:
@@ -365,13 +413,13 @@ def _tenants_for_scope(selected_account=None):
         requested_tenant = ""
     if requested_tenant:
         if admin:
-            return [requested_tenant]
+            return _apply_group_scope([requested_tenant], uid)
         owned = [
             row["tenant_id"]
             for row in (get_broker_tenants_for_user(current_user.id) or [])
         ]
         if requested_tenant in owned:
-            return [requested_tenant]
+            return _apply_group_scope([requested_tenant], uid)
         # Not owned → ignore the param and fall through to safe defaults.
 
     # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles.
@@ -385,18 +433,18 @@ def _tenants_for_scope(selected_account=None):
         requested = [t.strip() for t in requested_tenants_raw.split(",") if t.strip()]
         if requested:
             if admin:
-                return list(dict.fromkeys(requested))
+                return _apply_group_scope(list(dict.fromkeys(requested)), uid)
             owned = [
                 row["tenant_id"]
                 for row in (get_broker_tenants_for_user(current_user.id) or [])
             ]
             allowed = [t for t in requested if t in owned]
             if allowed:
-                return list(dict.fromkeys(allowed))
+                return _apply_group_scope(list(dict.fromkeys(allowed)), uid)
             # None owned → ignore the param and fall through to safe defaults.
 
     if admin and not selected:
-        return None
+        return _apply_group_scope(None, uid)
 
     def _match_label(row, want_lower: str) -> bool:
         for label in (row.get("display_nickname"), row.get("account_name")):
@@ -417,12 +465,12 @@ def _tenants_for_scope(selected_account=None):
             for row in rows
             if _match_label(row, want)
         ]
-        return sorted(set(matched))
+        return _apply_group_scope(sorted(set(matched)), uid)
 
     tenants = get_broker_tenants_for_user(current_user.id) or []
     all_ids = [row["tenant_id"] for row in tenants]
     if not selected:
-        return all_ids
+        return _apply_group_scope(all_ids, uid)
 
     want = _norm_account_label(selected).lower()
     label_map = _disambiguated_tenant_labels(tenants)
@@ -435,7 +483,29 @@ def _tenants_for_scope(selected_account=None):
         dis = label_map.get(tid)
         if dis and _norm_account_label(dis).lower() == want:
             matched.append(tid)
-    return matched if matched else all_ids
+    base = matched if matched else all_ids
+    return _apply_group_scope(base, uid)
+
+
+def _apply_group_scope(base_ids, user_id):
+    """Intersect resolved tenant ids with the union of selected groups.
+
+    No ``?groups=`` (or only unknown ids) → ``base_ids`` unchanged.
+    Admin unscoped (``base_ids is None``) becomes the group union so a
+    group filter never widens past the operator's own memberships.
+    """
+    group_ids = _requested_group_ids()
+    if not group_ids:
+        return base_ids
+    from app.models import tenant_ids_for_groups
+
+    matched, group_tids = tenant_ids_for_groups(user_id, group_ids)
+    if not matched:
+        return base_ids
+    allowed = set(group_tids)
+    if base_ids is None:
+        return list(dict.fromkeys(group_tids))
+    return [t for t in base_ids if t in allowed]
 
 
 def _user_account_list():

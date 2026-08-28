@@ -161,8 +161,9 @@
 
         {% include "_history_window_note.html" %}
 
-        {% if accounts and accounts|length > 1 %}
+        {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar">
+            {% if accounts and accounts|length > 1 %}
             <div>
                 <label class="lblh">Account</label>
                 <select name="account" class="form-select form-select-sm"
@@ -173,7 +174,9 @@
                     {% endfor %}
                 </select>
             </div>
-            {% if selected_account %}
+            {% endif %}
+            {% include "_account_group_filter.html" %}
+            {% if selected_account or selected_group_ids %}
             <a class="filter-reset" href="{{ url_for('insights') }}">Reset</a>
             {% endif %}
         </form>

@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{# Live session. Last-trade / last-sync numbers. Official close is Overview. #}
+
+{% block head %}
+{% include '_review_styles.html' %}
+{% endblock %}
+
+{% block content %}
+
+{% if (accounts and accounts|length > 1) or account_groups %}
+<form method="get" class="filter-bar">
+    {% if accounts and accounts|length > 1 %}
+    <div>
+        <label class="lblh">Account</label>
+        <select name="account" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+            <option value="">All Accounts</option>
+            {% for a in accounts %}
+            <option value="{{ a }}" {{ 'selected' if a == selected_account }}>{{ a | account_label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    {% include "_account_group_filter.html" %}
+    {% if selected_account or selected_group_ids %}
+    <a class="filter-reset" href="{{ url_for('today_view') }}">Reset</a>
+    {% endif %}
+</form>
+{% endif %}
+
+{% if error %}<div class="alert alert-danger small">We're having trouble loading the live session right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
+
+<div class="alert alert-warning small mb-3" role="status" style="border-radius:12px;">
+    <strong>{{ delay.shared if delay else 'These numbers can lag your broker.' }}</strong>
+    {{ delay.extra if delay }}
+    Official close is on
+    <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, groups=groups_query) }}">Overview</a>.
+</div>
+
+<div class="review-hero">
+    <div class="hero-kicker">Today &middot; {{ today.strftime('%A, %b %-d') }} &middot; live session</div>
+    {% if today_movers and today_movers.combined_impact is not none %}
+    {% set ti = today_movers.combined_impact %}
+    {% set _pos = ti >= 0 %}
+    <p class="hero-headline">
+        Session so far:
+        <span class="delta-num {% if _pos %}text-positive{% else %}text-negative{% endif %}"
+              style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
+            {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(ti|abs) }}
+        </span>
+        <span style="font-size:.85rem; color: rgba(255,255,255,.55); font-weight:500;">
+            (stocks {{ "+" if today_movers.total_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}{%
+            if today_movers.options %} · options {{ "+" if today_movers.options_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}{% endif %}{%
+            if today_movers.dividends %} · dividends +${{ "{:,.0f}".format(today_movers.dividends_impact) }}{% endif %})
+        </span>
+    </p>
+    {% else %}
+    <p class="hero-headline">Today</p>
+    {% endif %}
+    <p class="hero-subtitle">
+        Last-trade prices and last broker sync — not the official close.
+        Same-day fills appear after the next sync.
+    </p>
+    <div class="hero-meta">
+        {% if market_session %}
+        <span class="badge {% if market_session.state == 'open' %}bg-success{% elif market_session.state == 'weekend' %}bg-secondary{% else %}bg-info text-dark{% endif %}" title="{{ market_session.label }}">
+            U.S. market: {{ market_session.state|replace('_', ' ') }}
+        </span>
+        {% endif %}
+        {% if trades_today and trades_today.count %}
+        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }} today</span>
+        {% endif %}
+        <span style="color: rgba(255,255,255,.4);">Times in {{ user_timezone|replace('_', ' ') }}</span>
+    </div>
+</div>
+
+{% set _tt = trades_today or {} %}
+<div class="review-section">
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>Trades Today</span>
+        {% if _tt.count %}
+        <span style="text-transform:none; letter-spacing:0; font-size:.8rem; color:#64748b;">
+            {{ _tt.count }} fill{{ 's' if _tt.count != 1 }}{% if _tt.roll_count %} · {{ _tt.roll_count }} roll{{ 's' if _tt.roll_count != 1 }}{% endif %}
+            {% if _tt.net_gl %}
+            <span class="trades-pnl {% if _tt.net_gl > 0 %}text-positive{% elif _tt.net_gl < 0 %}text-negative{% endif %}">
+                · {{ "+" if _tt.net_gl > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} G/L
+            </span>
+            {% endif %}
+        </span>
+        {% endif %}
+    </div>
+    <p class="section-sub">
+        Fills dated {{ today.strftime('%a %b %-d') }}. Same-day trades often land after the next sync (activities are T+1; orders can show sooner).
+    </p>
+    {% if _tt.trades %}
+    <div class="breakdown-wrap">
+        <table class="tt-table">
+            {% for t in _tt.trades %}
+            <tr>
+                <td>
+                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                </td>
+                <td>
+                    {% if t.symbol %}<a class="tt-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                    {% if t.is_roll %}
+                    <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
+                    {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
+                    <div class="tt-muted">{{ t.trade_symbol }}</div>
+                    {% endif %}
+                    {% if t.account and accounts and accounts|length > 1 %}
+                    <div class="tt-muted">{{ t.account }}</div>
+                    {% endif %}
+                </td>
+                <td class="tt-muted d-none d-sm-table-cell">
+                    {% if t.is_roll %}
+                    {% if t.successful %}
+                    <span class="tt-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
+                    {% elif t.successful is sameas false %}
+                    <span class="tt-roll-miss">{% if t.strike_dir == 'same' %}Debit roll, strike unchanged{% else %}Did not meet the roll{% endif %}</span>
+                    {% endif %}
+                    {% else %}
+                    {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
+                    {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
+                    {% endif %}
+                </td>
+                <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
+                    {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <div class="tt-empty">No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.</div>
+    {% endif %}
+</div>
+
+{% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
+<div class="review-section">
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span>Today's Biggest Movers (your holdings)</span>
+        {% if today_movers.combined_impact %}
+        {% set ti = today_movers.combined_impact %}
+        <span style="font-size: .8rem; color: {% if ti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
+            Today's $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+            <span class="text-muted" style="font-weight:400;">
+                (stocks {{ "+" if today_movers.total_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}{%
+                if today_movers.options %} · options {{ "+" if today_movers.options_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}{% endif %}{%
+                if today_movers.dividends %} · dividends +${{ "{:,.0f}".format(today_movers.dividends_impact) }}{% endif %})
+            </span>
+        </span>
+        {% endif %}
+    </div>
+    <p class="section-sub">
+        Last-trade vs the prior close on positions you hold{% if today_movers.dividends %} — plus dividends paid today{% endif %}.
+        Price impact on holdings, not full account value (cash, crypto, and deposits sit on Overview).
+        {% if today_movers.as_of_label and not today_movers.is_today %}
+        Latest bar in the warehouse is {{ today_movers.as_of_label }}.
+        {% endif %}
+    </p>
+    <div class="movers-grid">
+        <div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up today</div>
+            <div class="movers-list">
+                {% for m in today_movers.winners %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    {% if m.kind == 'option' %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-kind">Option</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">P&amp;L on contracts</div>
+                        <div class="mover-meta">Marks + closes</div>
+                    </div>
+                    {% else %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
+                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    {% endif %}
+                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No green names today.</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div>
+            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down today</div>
+            <div class="movers-list">
+                {% for m in today_movers.losers %}
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    {% if m.kind == 'option' %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-kind">Option</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">P&amp;L on contracts</div>
+                        <div class="mover-meta">Marks + closes</div>
+                    </div>
+                    {% else %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
+                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                    </div>
+                    {% endif %}
+                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                </a>
+                {% else %}
+                <div class="text-muted small">No red names today.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% if today_movers.dividends %}
+    <div style="margin-top:.9rem;">
+        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
+            Dividends paid today
+            <span style="color:#15803d;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
+            {% for d in today_movers.dividends %}
+            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
+               style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
+                {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% include '_after_hours_movers.html' %}
+
+{% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
+<div class="review-section">
+    <div class="section-label">Open Contracts</div>
+    <p class="section-sub">Live marks on open options — last broker sync, not the official close.</p>
+    <div class="watch-list">
+        {% for s in open_option_record.shorts[:12] %}
+        <a href="{{ url_for('position_detail', symbol=s.symbol) }}" class="watch-item exec">
+            <div>
+                <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
+                <div class="watch-days-label">captured</div>
+            </div>
+            <div>
+                <div class="watch-sym">{{ s.symbol }}</div>
+                <div class="watch-meta">{{ s.label }} · collected ${{ "{:,.0f}".format(s.premium) }} · {{ s.days_left }}d left</div>
+            </div>
+            <div class="watch-aux {% if s.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if s.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(s.unrealized|abs) }}
+            </div>
+        </a>
+        {% endfor %}
+        {% for l in open_option_record.longs[:12] %}
+        <a href="{{ url_for('position_detail', symbol=l.symbol) }}" class="watch-item exec">
+            <div>
+                <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
+                <div class="watch-days-label">vs paid</div>
+            </div>
+            <div>
+                <div class="watch-sym">{{ l.symbol }}</div>
+                <div class="watch-meta">{{ l.label }} · paid ${{ "{:,.0f}".format(l.paid) }} → ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }}d left</div>
+            </div>
+            <div class="watch-aux {% if l.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "+" if l.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(l.unrealized|abs) }}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

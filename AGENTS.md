@@ -161,84 +161,65 @@ It reflects behavior back to the trader.
 
 ## Page-by-Page Status
 
-### Daily Review (`/daily-review` — endpoint still named `weekly_review` for url_for() compat) — PRIMARY EXPERIENCE
-**Status: Rebuilt May 2026. End-of-day pulse page; mode-switching removed.**
+### Overview (`/overview` — endpoint still named `weekly_review` for url_for() compat) — PRIMARY EXPERIENCE
+**Status: Close-based recap. Nav dropdown with Today. Never uses the word "today".**
 
-This is the page a paying customer opens at market close every day. It should answer:
-> "What just happened (including what I traded today), what should I watch, and how is every position / strategy / sector
-> doing in total?"
+Canonical URL is `/overview` (`/daily-review` and `/weekly-review` are aliases).
+This is the page a paying customer opens for the **last completed session**. It should answer:
+> "What happened at the last close (including what I traded that session), what should I watch, and how is every position / strategy / sector doing in total?"
 
-The previous Friday / Monday / Mid-week mode toggle was deleted. Users want the same answer
-every day — the modes were three pages glued together. The endpoint name is still
-`weekly_review` (route URL is `/daily-review` with `/weekly-review` kept as a legacy alias for
-bookmarks) so the 30+ `url_for('weekly_review', ...)` callers across templates, auth,
-profile, upload, admin, etc. don't break.
+Live / in-session last-trade numbers live on **Today** (`/today`, endpoint `today_view`).
+Overview movers, trades, and snapshots all cap at `_snapshot_as_of_date` (during Friday's
+open that is Thursday). Copy always names the session date.
 
-What's working (May 2026 rebuild):
-- Today hero: account total + day delta + market context line + today's fill count
-- Trades today: every fill dated the **review session** from `stg_history`
+The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
+callers don't break.
+
+What's working:
+- Session hero: last-close account delta + market context + that session's fill count
+- Session trades: every fill dated the **review session** from `stg_history`
  (`DAY_TRADES_QUERY`, shared with the time-machine day page). The dollar
  column is **realized G/L** (equity: `int_closed_equity_legs.realized_pnl`
  = sale vs average cost; option: `int_option_contracts.realized_pnl` on
  `realized_close_date`), not fill cash/proceeds. Opens and closes that
  have not yet matched a warehouse realized row render as an em dash.
- Before the
- U.S. open (and on weekends) that session is the last completed ET
- weekday — calendar-today has no fills yet, and the snapshot spine has
- already forward-filled a $0-delta row for UTC "tomorrow" / this morning.
- Once the regular session is open, the query flips to calendar today so
- same-day fills appear. Adds and trims on a long-held position show here
- even though **Trades this week** only lists groups that opened or closed
- this ISO week. Same-day close + open of the same option type (same
- symbol + tenant, different strike/expiry) is grouped as one **Rolled**
- row (`_group_day_rolls`); the dollar is the closed leg's G/L; a short
- roll "meets the roll" on a credit (or flat) **or** a strike that moved
- in the covered direction (calls up, puts down). Pairing keys on
- `tenant_id` so colliding "Schwab
- Account" labels cannot fuse two physical accounts. Lives in
- `build_daily_review_batch` as `today_trades` so the cache warmer
- replays it (same `trades_as_of`). Empty state uses the session date,
- not the word "today", when the two differ.
+ The session is always the last completed ET weekday (`_snapshot_as_of_date`)
+ — never calendar-today while the regular session is still open. Adds and
+ trims on a long-held position show here even though **Trades this week**
+ only lists groups that opened or closed this ISO week. Same-day close +
+ open of the same option type (same symbol + tenant, different strike/expiry)
+ is grouped as one **Rolled** row (`_group_day_rolls`). Pairing keys on
+ `tenant_id`. Lives in `build_daily_review_batch` as `today_trades` (same
+ `trades_as_of` as `moves_as_of`) so the cache warmer replays it.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
-- Account snapshot row: today / vs yesterday / vs 1w / vs 1m (per-account and total)
-- Today's biggest movers: $ price-impact on currently-held shares, sorted up/down
-- After-hours movers: broker mark (as of last sync) vs today's official close,
- per held equity — surfaces post-close drift without polluting the
- close-based core numbers (reads `stg_current` mark deliberately; the only
- user-facing surface that intentionally shows the broker after-hours mark).
- Only rendered once the U.S. regular session has closed (`_us_market_session()`
- state == `after_hours`) AND the broker mark itself is post-close. The
- warehouse has no per-row capture time (`stg_current.snapshot_date` is just
- `current_date()`), so `post_close_broker_tenant_ids` in `app/snaptrade.py`
- reads SnapTrade's authoritative per-account `holdings_last_successful_sync`
- (falling back to `last_sync_at` when a broker never reports the former) and
- returns the SET of tenant_ids that synced at/after today's 4pm ET close;
- the query is SCOPED to exactly those tenants (`tenant_id = snaptrade:<uuid>`).
- A mid-session/stale sync would otherwise compare a pre-close intraday mark to
- the official close and render the day's move BACKWARDS (real case 2026-07-07:
- BE synced ~$295 mid-session, closed $269.57 → a bogus +$25.88/sh "after-hours"
- gain). Per-tenant scoping (NOT an all-or-nothing weakest-link gate) so one
- stale/broken account is dropped from the aggregate instead of hiding the whole
- section from the healthy post-close accounts. During the open session/pre-market
- the query is skipped entirely. NOTE the query anchors the close on
- `CURRENT_DATE('America/New_York')`, not bare `CURRENT_DATE()` (UTC) — the
- latter rolls to "tomorrow" at 8pm ET and made the section silently empty every
- evening (the window it's most useful). The gate is STRICT and never softened
- to "just render something": showing a stale/intraday mark as after-hours drift
- erodes trust in the whole page, so if there is no genuine post-close sync the
- section stays hidden. DEV NOTE: local dev is built from mirrored raw seed
- tables (no live syncs of its own for prod tenants) so sync timestamps are
- NULL and the section will not appear in dev — that is expected, not a bug;
- it renders in prod once a real post-close sync lands and today's close is
- published.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Daily Review drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI.
+- Account snapshot row: close / vs prior session / vs 1w / vs 1m (per-account and total)
+- Session movers: $ price-impact on currently-held shares for that close
+  (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff)
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
-- Position breakdown table: per-symbol G/L Stock | G/L Option | Dividend | Net |
-  Capital | Days | %Return | Annualized — same shape as the trader's external Excel
-- Strategy breakdown: same shape rolled up by classified strategy
-- Sector breakdown: same shape rolled up by yfinance sector
-- Subsector breakdown: same shape by yfinance industry
+- Position / strategy / sector / subsector scorecards (performance by account)
+
+### Today (`/today`, endpoint `today_view`) — LIVE SESSION
+**Status: In-session last-trade / last-sync page with an always-on delay disclaimer.**
+
+This is the only surface allowed to say "today". Banner: numbers can lag the
+broker; they are not the official close (that's Overview). Nav sits in the
+same Overview dropdown.
+
+- Calendar-today fills (`DAY_TRADES_QUERY` with `@day` = user today). Same-day
+  trades often land after the next sync (activities are T+1).
+- Movers use the two newest `stg_daily_prices` rows with `date <=` calendar
+  today — includes in-session last-trade bars. Header is holdings price impact,
+  not full account value.
+- After-hours movers: broker mark vs official close (moved here from Overview).
+  Only rendered once `_us_market_session()` is `after_hours` AND the broker mark
+  is post-close (`post_close_broker_tenant_ids` in `app/snaptrade.py`). Gate is
+  STRICT. Query anchors close on `CURRENT_DATE('America/New_York')`. Dev mirror
+  has NULL sync timestamps so the section stays hidden locally — expected.
+- Open-contract live marks (`OPEN_OPTION_RECORD_QUERY`).
+
+Batch: `build_today_batch`. Cache warmer replays it with calendar today.
 
 What was removed in the rebuild:
 - Friday / Monday / Mid-week mode pill toggle
@@ -385,9 +366,9 @@ Known issues:
   routes.py split.
 
 ### Home (`/`, `/index`)
-**Status: Working. Public landing page; logged-in users redirect to Daily Review.**
+**Status: Working. Public landing page; logged-in users redirect to Overview.**
 
-There is no separate dashboard page — Daily Review is the authenticated home.
+There is no separate dashboard page — Overview is the authenticated home.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. The mirror across every symbol.**
@@ -598,7 +579,8 @@ from authenticated HTML navigations only, no query strings), broker mix,
 weekly signups, newest people. Drill-downs stay at `/admin/users`,
 `/admin/audit`, `/admin/feedback`. Postgres-only so it still loads when
 the warehouse is unhappy. Page views (`usage_events`) rank what people
-open in the last 7 days (unique people, then views; demo excluded;
+open in the last 7 days (ranked unique people then views; bars are views;
+demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
@@ -706,9 +688,14 @@ If logic is found in Flask that belongs in dbt: flag it, move it, document it.
 ### 3. Multi-Account Is Required
 
 Users trade multiple accounts. All logic must:
-- Scope by `account_id`
+- Scope by `tenant_id` (the isolation key; display `account` labels collide)
 - Support "All Accounts" view
 - Avoid assuming single-account structure
+
+Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
+Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
+groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
+Never key groups on the SnapTrade `"Schwab Account"` label.
 
 ### 4. Performance Rules
 
@@ -728,7 +715,7 @@ when the data actually changes: `bigquery_update.yml` and
 (`X-Cache-Flush-Token` = `CACHE_FLUSH_TOKEN` secret, set both as a GitHub
 secret and a Render env var). The endpoint (`app/cache_ops.py`) clears the
 cache and warms the hottest per-user query sets in a background thread —
-the Daily Review core batch (`build_daily_review_batch` in
+the Overview core batch (`build_daily_review_batch` in
 `app/weekly_review.py`, shared with the view so warmed keys are EXACTLY the
 keys a request looks up) plus the positions-list default query, per user
 with linked tenants plus one unscoped (admin) pass. If you change any of
@@ -756,7 +743,7 @@ extended-hours marks, so every "current value" disagreed with the close
 the trader actually traded against). We flipped it for **equities/ETFs**:
 reporting now anchors on the **official daily close**, and the broker mark
 is used only as the intraday "right now" price before the close publishes.
-The after-hours drift is surfaced separately (Daily Review → After-hours
+The after-hours drift is surfaced separately (Today → After-hours
 movers), never in the core numbers.
 
 **The rule, anywhere a UI surface displays "current value":**
@@ -986,7 +973,7 @@ phrasing pinned by `tests/test_execution_quality.py`.
 lifetime card alone is read-once; three surfaces make the grading
 RECURRING: (1) **Verdict maturation** — a verdict "lands" on the closed
 contract's `option_expiry` (the day the counterfactual becomes knowable).
-Daily Review's "Execution Review" section (`weekly_review.html`) shows
+Overview's "Execution Review" section (`weekly_review.html`) shows
 verdicts landed in the trailing 7 days (`verdicts_landed`) plus the
 pending open loop ("N verdicts pending — next lands Fri …",
 `verdicts_pending`); the weekly summary EMAIL carries the same landed
@@ -1005,9 +992,9 @@ contract vs the lifetime baseline before the window. (3) **Live
 open-contract record** — `OPEN_OPTION_RECORD_QUERY` (int_option_contracts
 Open rows) + `open_option_record`: shorts show % of premium captured so
 far, longs show mark vs paid, both with days-left; strictly
-observational, never advice. Both new Daily Review queries live inside
-`build_daily_review_batch` so the cache warmer replays them; windowing
-is client-side (no dates in SQL) so cached frames stay valid across
+observational, never advice. Verdicts live in `build_daily_review_batch`
+(Overview); the open-contract record lives in `build_today_batch` (Today).
+Windowing is client-side (no dates in SQL) so cached frames stay valid across
 days.
 
 ---
@@ -1376,7 +1363,7 @@ The product succeeds if:
 ## Internal Design Check
 
 Before shipping a change, ask:
-1. Does this make the Daily Review stronger?
+1. Does this make Overview stronger?
 2. Does this move logic out of Flask and into dbt?
 3. Does this increase clarity?
 4. Does this reduce cognitive noise?

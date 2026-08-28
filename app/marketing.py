@@ -263,13 +263,13 @@ def submit_feedback():
         return redirect(request.referrer or url_for("index"))
 
     try:
-        from app.ops_notify import notify
-        who = f"@{username}" if username else "anonymous"
+        from app.ops_notify import notify_event
         snippet = " ".join((body or "").split())[:180]
-        notify(
+        notify_event(
             "feedback",
-            f"HappyTrader: feedback from {who}\n{snippet}",
             username=username,
+            who=f"@{username}" if username else "someone",
+            snippet=snippet,
         )
     except Exception:
         pass

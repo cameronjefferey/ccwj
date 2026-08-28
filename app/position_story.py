@@ -237,7 +237,7 @@ class _AccountState:
 
 
 def _day_headline(day_fills, state_by_account, multi_account, stats,
-                  exit_notes=None):
+                  exit_notes=None, label_map=None):
     """Compose the plain-English sentences for one day's fills.
 
     Mutates per-account state as it consumes fills and accumulates the
@@ -255,6 +255,7 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
     sentences = []
     kinds = []
     exit_notes = exit_notes or {}
+    label_map = label_map or {}
 
     def _note_for(fill):
         trade_symbol = (fill.get("trade_symbol") or "").strip()
@@ -285,7 +286,8 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         return f"{sentence} — {account}"
 
     for state_key, fills in by_account.items():
-        account = fills[0]["account"]
+        raw_account = fills[0]["account"]
+        account = label_map.get(state_key) or raw_account
         st = state_by_account.setdefault(state_key, _AccountState())
         sentences_before = len(sentences)
 
@@ -821,6 +823,7 @@ def build_position_story(
     splits_df=None,
     seed_trades_df=None,
     exit_notes=None,
+    label_map=None,
 ):
     """Return ``(story_items, story_markers)``.
 
@@ -851,6 +854,11 @@ def build_position_story(
     sentence} from the execution-review layer; appended to the completing
     close's headline (see _day_headline). Seed replay never narrates, so it
     never receives the notes.
+
+    ``label_map`` — optional ``{tenant_id: display label}`` (the same map
+    Position Detail uses for pills / Strategy Breakdown). Multi-account
+    sentences append the nickname, not the colliding SnapTrade base
+    label ("Schwab Account").
     """
     fills = _normalize_fills(trades_df)
     seed_fills = _normalize_fills(seed_trades_df)
@@ -966,7 +974,7 @@ def build_position_story(
         day_fills = fills_by_day.get(d, [])
         headlines, dominant = ([], "income") if not day_fills else _day_headline(
             day_fills, state_by_account, multi_account, stats,
-            exit_notes=exit_notes)
+            exit_notes=exit_notes, label_map=label_map)
         if split_headlines:
             headlines = split_headlines + headlines
             if not day_fills:

@@ -121,14 +121,14 @@ def test_insert_skips_demo_and_anonymous_app_pages():
     ) is True
 
 
-def test_interest_bars_follow_unique_people():
+def test_interest_bars_follow_views_not_people():
     rows = _with_interest_bars([
         {"endpoint": "weekly_review", "users": 4, "hits": 20},
         {"endpoint": "positions", "users": 2, "hits": 50},
     ])
-    assert rows[0]["label"] == "Daily Review"
-    assert rows[0]["pct"] == 100.0
-    assert rows[1]["pct"] == 50.0
+    assert rows[0]["label"] == "Overview"
+    assert rows[0]["pct"] == 40.0
+    assert rows[1]["pct"] == 100.0
 
 
 def test_symbol_from_position_path():

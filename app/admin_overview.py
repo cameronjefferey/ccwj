@@ -50,7 +50,8 @@ PLAN_TONE = {
 }
 
 PAGE_LABELS = {
-    "weekly_review": "Daily Review",
+    "weekly_review": "Overview",
+    "today_view": "Today",
     "day_detail": "Day review",
     "positions": "Positions",
     "position_detail": "Position detail",
@@ -264,15 +265,13 @@ def _demo_sql():
 
 
 def _with_interest_bars(rows):
-    """Bar width from unique people when anyone is signed in, else raw views."""
+    """Bar width from views (hits). Ranking stays unique people, then views."""
     if not rows:
         return rows
-    peak_people = max(int(r.get("users") or 0) for r in rows)
-    use = "users" if peak_people else "hits"
-    peak = max(int(r.get(use) or 0) for r in rows) or 1
+    peak = max(int(r.get("hits") or 0) for r in rows) or 1
     for r in rows:
         r["label"] = PAGE_LABELS.get(r.get("endpoint") or "", r.get("endpoint") or "—")
-        r["pct"] = round(100.0 * int(r.get(use) or 0) / peak, 1)
+        r["pct"] = round(100.0 * int(r.get("hits") or 0) / peak, 1)
     return rows
 
 
@@ -425,7 +424,7 @@ def build_admin_overview():
             continue
         users_n = int(row.get("users") or 0)
         hits_n = int(row.get("hits") or 0)
-        peak_sym = max(peak_sym, users_n or hits_n)
+        peak_sym = max(peak_sym, hits_n)
         symbols_7d.append({
             "symbol": sym,
             "hits": hits_n,
@@ -433,8 +432,7 @@ def build_admin_overview():
         })
     peak_sym = peak_sym or 1
     for row in symbols_7d:
-        bar_n = row["users"] or row["hits"]
-        row["pct"] = round(100.0 * bar_n / peak_sym, 1)
+        row["pct"] = round(100.0 * row["hits"] / peak_sym, 1)
 
     unique_7d = _q1(
         f"""

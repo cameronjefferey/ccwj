@@ -518,6 +518,33 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_usage_events_user_created
         ON usage_events (user_id, created_at DESC)
         """,
+        # Account groups — user-defined labels (kids / sara / 401ks).
+        # Membership is tenant-addressed so colliding "Schwab Account"
+        # labels don't fuse. An account can sit in many groups; the
+        # filter is the UNION of selected groups' members.
+        """
+        CREATE TABLE IF NOT EXISTS account_groups (
+            id         SERIAL PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_account_groups_user_lower_name
+        ON account_groups (user_id, LOWER(name))
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS account_group_members (
+            group_id  INTEGER NOT NULL REFERENCES account_groups(id) ON DELETE CASCADE,
+            tenant_id TEXT NOT NULL REFERENCES broker_tenants(tenant_id) ON DELETE CASCADE,
+            PRIMARY KEY (group_id, tenant_id)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_account_group_members_tenant
+        ON account_group_members (tenant_id)
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -1529,6 +1556,186 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     return fetch_all(sql, (int(user_id),))
 
 
+ACCOUNT_GROUP_NAME_MAX = 40
+
+
+def _norm_account_group_name(name):
+    """Trim/collapse whitespace. Raises ValueError on empty or too-long."""
+    cleaned = " ".join((name or "").split())
+    if not cleaned:
+        raise ValueError("Give the group a name.")
+    if len(cleaned) > ACCOUNT_GROUP_NAME_MAX:
+        raise ValueError(
+            f"Group names can be at most {ACCOUNT_GROUP_NAME_MAX} characters."
+        )
+    return cleaned
+
+
+def list_account_groups(user_id):
+    """Groups for one user, each with member ``tenant_id``s. Ordered by name."""
+    if user_id is None:
+        return []
+    rows = fetch_all(
+        "SELECT g.id, g.name, "
+        "COALESCE(ARRAY_AGG(m.tenant_id) FILTER (WHERE m.tenant_id IS NOT NULL), "
+        "'{}') AS tenant_ids "
+        "FROM account_groups g "
+        "LEFT JOIN account_group_members m ON m.group_id = g.id "
+        "WHERE g.user_id = %s "
+        "GROUP BY g.id, g.name "
+        "ORDER BY LOWER(g.name), g.id",
+        (int(user_id),),
+    ) or []
+    out = []
+    for row in rows:
+        tids = row.get("tenant_ids") or []
+        if isinstance(tids, str):
+            tids = [tids] if tids else []
+        else:
+            tids = [str(t) for t in list(tids) if t]
+        out.append({
+            "id": int(row["id"]),
+            "name": row.get("name") or "",
+            "tenant_ids": tids,
+        })
+    return out
+
+
+def create_account_group(user_id, name):
+    """Insert a group. Returns the new row. Raises ValueError on bad/dup name."""
+    cleaned = _norm_account_group_name(name)
+    existing = fetch_one(
+        "SELECT id FROM account_groups "
+        "WHERE user_id = %s AND LOWER(name) = LOWER(%s)",
+        (int(user_id), cleaned),
+    )
+    if existing:
+        raise ValueError("You already have a group with that name.")
+    row = execute_returning(
+        "INSERT INTO account_groups (user_id, name) VALUES (%s, %s) "
+        "RETURNING id, name",
+        (int(user_id), cleaned),
+    )
+    if not row:
+        raise ValueError("Could not create the group.")
+    return {"id": int(row["id"]), "name": row.get("name") or cleaned, "tenant_ids": []}
+
+
+def rename_account_group(user_id, group_id, name):
+    """Rename a group the user owns. Raises ValueError on bad/dup name."""
+    cleaned = _norm_account_group_name(name)
+    owned = fetch_one(
+        "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
+        (int(group_id), int(user_id)),
+    )
+    if not owned:
+        raise ValueError("That group isn't on your account.")
+    clash = fetch_one(
+        "SELECT id FROM account_groups "
+        "WHERE user_id = %s AND LOWER(name) = LOWER(%s) AND id <> %s",
+        (int(user_id), cleaned, int(group_id)),
+    )
+    if clash:
+        raise ValueError("You already have a group with that name.")
+    execute(
+        "UPDATE account_groups SET name = %s WHERE id = %s AND user_id = %s",
+        (cleaned, int(group_id), int(user_id)),
+    )
+    return cleaned
+
+
+def delete_account_group(user_id, group_id):
+    """Drop a group the user owns (members cascade). Returns True if a row died."""
+    owned = fetch_one(
+        "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
+        (int(group_id), int(user_id)),
+    )
+    if not owned:
+        return False
+    execute(
+        "DELETE FROM account_groups WHERE id = %s AND user_id = %s",
+        (int(group_id), int(user_id)),
+    )
+    return True
+
+
+def set_account_group_members(user_id, group_id, tenant_ids):
+    """Replace membership. Unknown / unowned tenant_ids are dropped."""
+    owned = fetch_one(
+        "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
+        (int(group_id), int(user_id)),
+    )
+    if not owned:
+        raise ValueError("That group isn't on your account.")
+    allowed = set(get_tenant_ids_for_user(user_id) or [])
+    wanted = []
+    seen = set()
+    for tid in tenant_ids or []:
+        t = str(tid or "").strip()
+        if not t or t in seen or t not in allowed:
+            continue
+        seen.add(t)
+        wanted.append(t)
+    execute(
+        "DELETE FROM account_group_members WHERE group_id = %s",
+        (int(group_id),),
+    )
+    for tid in wanted:
+        execute(
+            "INSERT INTO account_group_members (group_id, tenant_id) "
+            "VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (int(group_id), tid),
+        )
+    return wanted
+
+
+def tenant_ids_for_groups(user_id, group_ids):
+    """Union of member tenant_ids for groups this user owns.
+
+    Returns ``(matched_group_ids, tenant_ids)``. Unknown ids are dropped
+    (``matched_group_ids`` empty → caller should ignore the param). Members
+    are intersected with currently-active owned tenants so a disconnected
+    account never leaks into scope.
+    """
+    ids = []
+    seen = set()
+    for raw in group_ids or []:
+        try:
+            gid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if gid <= 0 or gid in seen:
+            continue
+        seen.add(gid)
+        ids.append(gid)
+    if not ids or user_id is None:
+        return [], []
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = fetch_all(
+        f"SELECT g.id, m.tenant_id FROM account_groups g "
+        f"LEFT JOIN account_group_members m ON m.group_id = g.id "
+        f"WHERE g.user_id = %s AND g.id IN ({placeholders})",
+        (int(user_id), *ids),
+    ) or []
+    matched = []
+    matched_seen = set()
+    tids = []
+    tid_seen = set()
+    for row in rows:
+        gid = int(row["id"])
+        if gid not in matched_seen:
+            matched_seen.add(gid)
+            matched.append(gid)
+        tid = (row.get("tenant_id") or "").strip()
+        if tid and tid not in tid_seen:
+            tid_seen.add(tid)
+            tids.append(tid)
+    owned = set(get_tenant_ids_for_user(user_id) or [])
+    tids = [t for t in tids if t in owned]
+    return matched, tids
+
+
 def mark_tenant_connection_broken(tenant_id):
     """Flag a broker tenant as needing re-auth.
 
@@ -2227,12 +2434,11 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
         )
         if not was_broken:
             try:
-                from app.ops_notify import notify, user_label
-                who = user_label(user_id)
-                notify(
+                from app.ops_notify import notify_event
+                notify_event(
                     "broken",
-                    f"HappyTrader: broker connection broken — {who} "
-                    f"({snaptrade_account_id})",
+                    user_id=user_id,
+                    account_id=snaptrade_account_id,
                 )
             except Exception:
                 pass

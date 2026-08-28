@@ -478,7 +478,7 @@ def earnings_follower_bridge(symbol=None):
     # "What HappyTrader does" shown as doors into the live account rather
     # than described in prose — this is a bridge, not a features page.
     highlights = [
-        ("Daily Review", "Close-of-day pulse on every position",
+        ("Overview", "Close-of-day recap on every position",
          _demo_link(url_for("weekly_review"))),
         ("Positions", "Every trade classified and scored",
          _demo_link(url_for("positions"))),

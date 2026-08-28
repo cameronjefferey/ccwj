@@ -112,16 +112,17 @@
    page is the "Fit matrix" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', account=selected_account or none) }}">Performance</a>
+       href="{{ url_for('strategies', account=selected_account or none, groups=groups_query) }}">Performance</a>
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none) }}">Fit matrix</a>
+       href="{{ url_for('strategies', view='fit', account=selected_account or none, groups=groups_query) }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
 
-{# ── Account filter ── #}
-{% if accounts and accounts|length > 1 %}
+{# ── Account / group filter ── #}
+{% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar">
+    {% if accounts and accounts|length > 1 %}
     <div>
         <label class="lblh">Account</label>
         <select name="account" class="form-select form-select-sm"
@@ -132,10 +133,12 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
     {# Preserve the strategy drill-in selection across account changes
        so the user doesn't lose context when scoping by account. #}
     {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
-    {% if selected_account %}
+    {% include "_account_group_filter.html" %}
+    {% if selected_account or selected_group_ids %}
     <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
     {% endif %}
 </form>
@@ -508,7 +511,7 @@
 <p class="small text-muted">
     Based on your full history.
     For this week&rsquo;s breakdown, see
-    <a href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Daily Review</a>.
+    <a href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Overview</a>.
 </p>
 
 {% endif %}{# end strategies block #}

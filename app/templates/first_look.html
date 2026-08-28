@@ -59,7 +59,7 @@
     <a href="{{ url_for('weekly_review') }}"
        class="position-absolute top-0 end-0 m-3 small text-decoration-none"
        style="color:rgba(255,255,255,.7);">
-       Skip to Daily Review &rarr;
+       Skip to Overview &rarr;
     </a>
     <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
     <h1 class="display-5 fw-bold mb-2">Here's what we found.</h1>
@@ -238,7 +238,7 @@
         <a href="{{ url_for('weekly_review') }}" class="btn btn-primary btn-lg">Go to Home</a>
     </div>
     <div class="mt-3">
-        <a href="{{ url_for('weekly_review') }}" class="text-muted small">Daily Review</a>
+        <a href="{{ url_for('weekly_review') }}" class="text-muted small">Overview</a>
         {% if insights_enabled %}
         <span class="text-muted mx-2">&middot;</span>
         <a href="{{ url_for('insights') }}" class="text-muted small">AI Insights</a>

@@ -181,6 +181,28 @@ def test_multi_account_sentences_are_tagged():
     assert "— Sara IRA." in text
 
 
+def test_colliding_schwab_labels_use_tenant_nicknames():
+    """SnapTrade ships every Schwab tenant as 'Schwab Account'. The review
+    must tag sentences with the disambiguated nickname, not that base label."""
+    label = "Schwab Account"
+    df = _trades([
+        (date(2024, 6, 10), "option_buy_to_open", "Call",
+         "X 240719C00124000", 5, 6.45, -3228.30, label, "snaptrade:cam"),
+        (date(2024, 7, 8), "option_sell_to_close", "Call",
+         "X 240719C00124000", 5, 6.77, 3386.60, label, "snaptrade:cam"),
+        (date(2024, 8, 15), "option_buy_to_open", "Call",
+         "X 240920C00130000", 2, 4.10, -820.0, label, "snaptrade:emm"),
+    ])
+    items, _, _stats = build_position_story(df, None, label_map={
+        "snaptrade:cam": "Cameron Investment",
+        "snaptrade:emm": "Emmory",
+    })
+    text = _headlines(items)
+    assert "— Cameron Investment." in text
+    assert "— Emmory." in text
+    assert "— Schwab Account." not in text
+
+
 def test_colliding_account_labels_keep_tenant_state_separate():
     label = "Schwab Account"
     tenant_a = "snaptrade:tenant-a"

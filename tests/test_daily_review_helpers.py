@@ -380,6 +380,10 @@ class TestBuildTodayMovers:
         assert result["dividends"] == [{"symbol": "JEPI", "amount": 88.10}]
         assert result["dividends_impact"] == 88.10
         assert result["combined_impact"] == round(300.0 - 75.0 + 88.10, 2)
+        assert [(w["symbol"], w["kind"]) for w in result["winners"]] == [
+            ("AAPL", "stock"), ("SPY", "option")]
+        assert [(l["symbol"], l["kind"]) for l in result["losers"]] == [
+            ("AAPL", "option")]
 
     def test_options_only_scope_without_equity_rows(self):
         # An options-only account has no equity price rows but still has a
@@ -388,7 +392,10 @@ class TestBuildTodayMovers:
             {"symbol": "SPY", "today_date": date(2026, 5, 18), "dollar_impact": 210.0},
         ])
         result = _build_today_movers(None, options_moves_df=opt)
-        assert result["winners"] == []
+        assert result["winners"][0]["symbol"] == "SPY"
+        assert result["winners"][0]["kind"] == "option"
+        assert result["winners"][0]["dollar_impact"] == 210.0
+        assert result["losers"] == []
         assert result["options_impact"] == 210.0
         assert result["combined_impact"] == 210.0
         # With no equity rows the card's as-of anchors on the option-mart
@@ -436,9 +443,54 @@ class TestBuildTodayMovers:
         assert len(result["winners"]) == 1
         assert len(result["losers"]) == 1
         assert result["winners"][0]["symbol"] == "AAPL"
+        assert result["winners"][0]["kind"] == "stock"
         assert result["losers"][0]["symbol"] == "TSLA"
+        assert result["losers"][0]["kind"] == "stock"
         assert result["total_impact"] == 50.0
         assert result["as_of"] == "2026-05-18"
+
+    def test_stocks_and_options_share_five_slots_per_side(self):
+        # Six small stock winners plus a larger option winner: the option
+        # tile must take a slot, and the list caps at 5.
+        stocks = pd.DataFrame([
+            {"symbol": f"S{i}", "shares": 1, "current_value": 10,
+             "today_close": 10, "prev_close": 9,
+             "price_change": 1.0, "price_change_pct": 11.0,
+             "dollar_impact": 10.0 + i, "today_date": date(2026, 5, 18)}
+            for i in range(6)
+        ])
+        opt = pd.DataFrame([
+            {"symbol": "MRVL", "today_date": date(2026, 5, 18), "dollar_impact": 1000.0},
+            {"symbol": "SMTC", "today_date": date(2026, 5, 18), "dollar_impact": -250.0},
+        ])
+        result = _build_today_movers(stocks, options_moves_df=opt)
+        assert len(result["winners"]) == 5
+        assert result["winners"][0]["symbol"] == "MRVL"
+        assert result["winners"][0]["kind"] == "option"
+        assert all(w["kind"] == "stock" for w in result["winners"][1:])
+        assert result["losers"] == [{
+            "symbol": "SMTC", "kind": "option", "dollar_impact": -250.0,
+            "shares": None, "current_value": None, "price_change": None,
+            "price_change_pct": None, "today_close": None,
+        }]
+        # Header still totals every row, not just the displayed 5.
+        assert result["options_impact"] == 750.0
+
+    def test_sub_dollar_moves_do_not_take_a_tile(self):
+        df = pd.DataFrame([
+            {"symbol": "USDC", "shares": 1814, "current_value": 1814,
+             "today_close": 1.0, "prev_close": 1.0,
+             "price_change": 0.0, "price_change_pct": 0.0,
+             "dollar_impact": -0.4, "today_date": date(2026, 5, 18)},
+            {"symbol": "FN", "shares": 1, "current_value": 430,
+             "today_close": 430, "prev_close": 435,
+             "price_change": -5.0, "price_change_pct": -1.16,
+             "dollar_impact": -5.0, "today_date": date(2026, 5, 18)},
+        ])
+        result = _build_today_movers(df)
+        assert [l["symbol"] for l in result["losers"]] == ["FN"]
+        # Full-book header still includes the dust.
+        assert result["total_impact"] == -5.4
 
 
 class TestBuildAfterHoursMovers:
@@ -1085,8 +1137,10 @@ class TestSplitDayFills:
         assert r["symbol"] == "AAPL"
         assert r["is_option"] is False
         assert r["account"] == "Sara Investment"
-        assert r["amount"] == -18520.0
+        assert r["cash_amount"] == -18520.0
+        assert r["amount"] is None  # opens have no realized G/L
         assert out["net_cash"] == -18520.0
+        assert out["net_gl"] == 0.0
         assert out["symbols"] == ["AAPL"]
         assert out["cash"] == []
 
@@ -1102,9 +1156,12 @@ class TestSplitDayFills:
         assert out["count"] == 1
         assert out["trades"][0]["verb"] == "Sold to open"
         assert out["trades"][0]["is_option"] is True
+        assert out["trades"][0]["amount"] is None
         assert out["net_cash"] == 120.0  # deposit is not a trade
+        assert out["net_gl"] == 0.0
         assert len(out["cash"]) == 1
         assert out["cash"][0]["verb"] == "Cash transfer"
+        assert out["cash"][0]["amount"] == 5000.0
         assert out["symbols"] == ["ASTS"]
 
     def test_unknown_action_is_cash_not_a_trade(self):
@@ -1137,7 +1194,8 @@ class TestSplitDayFills:
         g = out["trades"][0]
         assert g["is_roll"] is True
         assert g["verb"] == "Rolled"
-        assert g["amount"] == 60
+        assert g["cash_amount"] == 60
+        assert g["amount"] is None  # no warehouse realized row in this fixture
         assert g["successful"] is True
         assert g["success_bits"] == ["credit", "strike"]
         assert "300" in g["close_label"]
@@ -1150,7 +1208,7 @@ class TestSplitDayFills:
         ])
         out = _split_day_fills(df)
         assert out["roll_count"] == 1
-        assert out["trades"][0]["amount"] == 60
+        assert out["trades"][0]["cash_amount"] == 60
         assert out["trades"][0]["successful"] is True
 
     def test_put_roll_succeeds_on_strike_down(self):
@@ -1184,6 +1242,7 @@ class TestSplitDayFills:
         out = _split_day_fills(df)
         assert out["roll_count"] == 0
         assert out["trades"][0]["verb"] == "Sold to open"
+        assert out["trades"][0]["amount"] is None
         assert out["trades"][0].get("is_roll") is not True
 
     def test_fill_count_stays_raw_when_grouped(self):
@@ -1212,6 +1271,60 @@ class TestSplitDayFills:
         assert len(out["trades"]) == 2
         assert {t["verb"] for t in out["trades"]} == {"Bought to close", "Sold to open"}
 
+    def test_equity_sell_shows_realized_not_proceeds(self):
+        # The screenshot bug: 50 DELL @ $469.75 is +$23,487.50 of CASH,
+        # not G/L. The dollar column must be sale vs cost.
+        df = pd.DataFrame([self._row(
+            action="equity_sell", trade_symbol="DELL",
+            underlying_symbol="DELL", quantity=50, price=469.75,
+            amount=23487.50, realized_pnl=412.18,
+        )])
+        out = _split_day_fills(df)
+        r = out["trades"][0]
+        assert r["verb"] == "Sold"
+        assert r["cash_amount"] == 23487.50
+        assert r["amount"] == 412.18
+        assert r["realized_pnl"] == 412.18
+        assert out["net_cash"] == 23487.50
+        assert out["net_gl"] == 412.18
+
+    def test_unmatched_close_is_dash_not_proceeds(self):
+        df = pd.DataFrame([self._row(
+            action="equity_sell", trade_symbol="DELL",
+            underlying_symbol="DELL", quantity=50, price=469.75,
+            amount=23487.50,
+        )])
+        out = _split_day_fills(df)
+        assert out["trades"][0]["amount"] is None
+        assert out["net_gl"] == 0.0
+        assert out["net_cash"] == 23487.50
+
+    def test_option_stc_uses_contract_realized(self):
+        df = pd.DataFrame([self._row(
+            action="option_sell_to_close",
+            trade_symbol="MRVL  260904C00242500",
+            underlying_symbol="MRVL", quantity=10, price=17.75,
+            amount=17742.97, realized_pnl=2100.0, instrument_type="Call",
+        )])
+        out = _split_day_fills(df)
+        r = out["trades"][0]
+        assert r["verb"] == "Sold to close"
+        assert r["cash_amount"] == 17742.97
+        assert r["amount"] == 2100.0
+        assert out["net_gl"] == 2100.0
+
+    def test_roll_dollar_is_closed_leg_gl_not_net_credit(self):
+        btc = self._jpm("option_buy_to_close", "JPM   260821C00300000", -120)
+        btc["realized_pnl"] = 80.0
+        sto = self._jpm("option_sell_to_open", "JPM   260828C00305000", 180)
+        out = _split_day_fills(pd.DataFrame([btc, sto]))
+        g = out["trades"][0]
+        assert g["is_roll"] is True
+        assert g["amount"] == 80.0
+        assert g["cash_amount"] == 60
+        assert g["successful"] is True
+        assert out["net_gl"] == 80.0
+
 
 class TestDailyReviewBatchIncludesTodayTrades:
     def test_today_trades_reuses_day_query_with_today_param(self):
@@ -1221,6 +1334,9 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "today_trades" in batch
         sql, cfg = batch["today_trades"]
         assert "stg_history" in sql
+        assert "int_closed_equity_legs" in sql
+        assert "int_option_contracts" in sql
+        assert "realized_pnl" in sql
         assert "trade_date = @day" in sql
         params = {p.name: p.value for p in cfg.query_parameters}
         assert params["day"] == today
@@ -1236,6 +1352,28 @@ class TestDailyReviewBatchIncludesTodayTrades:
         params = {p.name: p.value
                   for p in batch["today_trades"][1].query_parameters}
         assert params["day"] == thursday
+
+    def test_movers_bind_as_of_so_in_session_bars_cannot_leak_into_overview(self):
+        friday = date(2026, 8, 28)
+        thursday = date(2026, 8, 27)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            friday, date(2026, 8, 24),
+            trades_as_of=thursday, moves_as_of=thursday)
+        sql, cfg = batch["today_moves"]
+        assert "date <= @as_of" in sql
+        assert {p.name: p.value for p in cfg.query_parameters}["as_of"] == thursday
+        opt_sql, opt_cfg = batch["today_options_moves"]
+        assert "date <= @as_of" in opt_sql
+        assert {p.name: p.value for p in opt_cfg.query_parameters}["as_of"] == thursday
+
+    def test_batch_defaults_as_of_to_today_for_existing_callers(self):
+        today = date(2026, 8, 13)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')", today, date(2026, 8, 10))
+        params = {p.name: p.value
+                  for p in batch["today_moves"][1].query_parameters}
+        assert params["as_of"] == today
 
     def test_batch_includes_ex_div_calendar_query(self):
         batch = build_daily_review_batch(
@@ -1413,4 +1551,37 @@ class TestDropStaleOptionRows:
         out = _drop_stale_option_rows(
             pd.DataFrame([live]), self.today, open_contracts_df=open_df)
         assert len(out) == 1
+
+
+class TestTodayPageBatch:
+    def test_today_batch_uses_calendar_today_for_moves_and_fills(self):
+        from app.weekly_review import build_today_batch
+        friday = date(2026, 8, 28)
+        batch = build_today_batch("AND tenant_id IN ('snaptrade:abc')", friday)
+        assert {p.name: p.value for p in batch["today_moves"][1].query_parameters}["as_of"] == friday
+        assert {p.name: p.value for p in batch["today_trades"][1].query_parameters}["day"] == friday
+        assert "open_options" in batch
+
+    def test_delay_copy_always_warns(self):
+        from app.weekly_review import _today_delay_copy
+        copy = _today_delay_copy({"state": "open"})
+        assert "not the official close" in copy["shared"].lower()
+        assert "open" in copy["extra"].lower()
+
+
+class TestOverviewVoice:
+    def test_overview_template_does_not_say_today(self):
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[1]
+               / "app/templates/weekly_review.html").read_text()
+        assert "Trades Today" not in src
+        assert "Today's Biggest" not in src
+        assert "{% if _pulse_is_today %}Today:" not in src
+
+    def test_weekly_review_url_is_overview(self):
+        from app import app
+        with app.test_request_context():
+            from flask import url_for
+            assert url_for("weekly_review") == "/overview"
+            assert url_for("today_view") == "/today"
 

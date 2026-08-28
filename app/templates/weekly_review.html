@@ -1,558 +1,34 @@
 {% extends "base.html" %}
 
 {# ════════════════════════════════════════════════════════════════════════
-   Daily Review — end-of-day pulse for an active options trader.
+   Overview — close-based recap of the last completed session.
 
-   The page used to fork into Friday / Monday / Mid-Week modes; that's
-   collapsed to a single daily flow focused on what changed today / this
-   week. Sections, top to bottom:
+   Live / in-session numbers (last-trade, after-hours, calendar-today
+   fills) live on /today. This page never uses the word "today".
 
-     1. Today hero        — account total today + day delta + market + fill count
-     2. Since you last looked — diff vs prior visit (kept from master)
-     3. Account snapshot   — per-account today / vs day / week / month
-     4. Trades today       — every fill dated today (adds/trims included)
-     5. Today's movers     — biggest $ impact from stock moves on holdings
+   Sections, top to bottom:
+
+     1. Session hero       — last-close account delta + market + fill count
+     2. Since you last looked — diff vs prior visit
+     3. Account snapshot   — per-account close / vs prior / week / month
+     4. Session trades     — every fill dated the review session
+     5. Session movers     — $ impact on holdings that session
      6. Watch list         — earnings, expiring options, projected ex-div
      7. Daily account Δ    — rolling 12-week heatmap
-     8. Performance by account — summarized scorecard, one row per account
-                            (stock / options / dividend / total / G/L % /
-                            annualized), links to /accounts for the full
-                            per-symbol / strategy / sector breakdown
+     8. Performance by account — summarized scorecard
      9. Trades this week   — one row per group opened or closed this week
-
-   Lifetime per-symbol / strategy / sector / industry breakdowns and the
-   "your positions right now" card grid were removed from this page (June
-   2026): the full tables now live on /accounts (reachable from the
-   "Performance by account" rows) and on /positions and /strategies.
-   The "Numbers" disclosure / mode-pills / behavioral-baseline / coaching-
-   take / Mon-Fri diary sections were removed earlier — mode-specific
-   pieces of a temporal hub that no longer exists. The dbt models that fed
-   them (mart_weekly_summary, mart_weekly_behavior_enriched, etc.) are
-   still in the warehouse for other surfaces (Mirror Score, Insights).
    ════════════════════════════════════════════════════════════════════════ #}
 
 {% block head %}
-<style>
-    .review-hero {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        border-radius: 16px;
-        padding: 2rem 2rem;
-        color: #fff;
-        margin-bottom: 1.5rem;
-    }
-    .review-hero .hero-kicker {
-        font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
-        color: rgba(255,255,255,.5); font-weight: 700; margin-bottom: .35rem;
-    }
-    .review-hero .hero-headline {
-        font-size: 1.65rem; font-weight: 700; line-height: 1.2; margin: 0 0 .35rem;
-    }
-    .review-hero .hero-headline .delta-num { font-variant-numeric: tabular-nums; }
-    .review-hero .hero-subtitle {
-        font-size: .9rem; color: rgba(255,255,255,.65); margin: 0;
-    }
-    .review-hero .hero-meta {
-        margin-top: .85rem; font-size: .76rem; color: rgba(255,255,255,.4);
-        display: flex; flex-wrap: wrap; gap: .65rem; align-items: center;
-    }
-    .review-hero .badge { font-size: .65rem; padding: .2rem .55rem; }
-
-    /* Section card. Ink/surface colors are --ht-* tokens from base.html
-       so they flip with data-bs-theme. Hardcoded #0f172a / #94a3b8 each
-       work in only one theme. */
-    .review-section {
-        background: var(--ht-surface);
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.5rem 1.75rem;
-        margin-bottom: 1.25rem;
-    }
-    .section-label {
-        font-size: .72rem;
-        text-transform: uppercase;
-        letter-spacing: 1.1px;
-        color: var(--ht-label);
-        font-weight: 700;
-        margin-bottom: 1rem;
-    }
-    .section-sub {
-        font-size: .82rem; color: var(--ht-muted); margin: -.5rem 0 1rem;
-        max-width: 56rem;
-    }
-    /* Collapsed methodology fine print — keeps section intros to ONE
-       line (Aug 2026 readability pass); the "how" lives behind a click. */
-    details.section-fine { margin-top: .6rem; }
-    details.section-fine summary {
-        font-size: .75rem; color: var(--ht-faint); cursor: pointer;
-        user-select: none; width: fit-content;
-    }
-    details.section-fine summary:hover { color: var(--ht-muted); }
-    details.section-fine p {
-        font-size: .8rem; color: var(--ht-muted); margin: .4rem 0 0;
-        max-width: 56rem;
-    }
-
-    .text-positive { color: #15803d; }
-    .text-negative { color: #b91c1c; }
-
-    /* ── Filter bar ── */
-    .filter-bar {
-        display: flex; align-items: center; flex-wrap: wrap;
-        gap: .85rem; margin-bottom: 1rem;
-    }
-    .filter-bar .lblh {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--ht-label); display: block; margin-bottom: .15rem;
-    }
-    .filter-reset {
-        font-size: .75rem; color: var(--ht-muted); text-decoration: none;
-        padding: .3rem .6rem; border-radius: 6px; border: 1px solid var(--ht-line);
-    }
-    .filter-reset:hover { color: var(--ht-ink); border-color: var(--ht-muted); text-decoration: none; }
-
-    /* ── Since you last looked ── */
-    .since-card {
-        background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
-        border: 1px solid #fde68a;
-        border-radius: 14px;
-        padding: 1.1rem 1.4rem;
-        margin-bottom: 1.25rem;
-        box-shadow: 0 1px 8px rgba(234, 179, 8, .08);
-    }
-    .since-kicker {
-        font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
-        color: #b45309; font-weight: 700; margin-bottom: .2rem;
-        display: flex; align-items: center; gap: .4rem;
-    }
-    .since-kicker .since-dot {
-        width: 7px; height: 7px; border-radius: 50%;
-        background: #f59e0b;
-        animation: since-pulse 2.2s infinite;
-    }
-    @keyframes since-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
-    .since-headline {
-        font-size: 1rem; font-weight: 700; color: var(--ht-ink); margin: 0 0 .65rem;
-    }
-    .since-row {
-        display: flex; flex-wrap: wrap; gap: .5rem .9rem;
-        font-size: .85rem; margin-bottom: .35rem;
-    }
-    .since-row:last-child { margin-bottom: 0; }
-    .since-chip {
-        display: inline-flex; align-items: center; gap: .35rem;
-        padding: .25rem .65rem; border-radius: 14px;
-        background: #fff; border: 1px solid #e5e7eb;
-        font-size: .8rem; text-decoration: none; color: inherit;
-        white-space: nowrap;
-    }
-    .since-chip:hover { border-color: #cbd5e1; color: inherit; text-decoration: none; }
-    .since-chip .sym { font-weight: 700; }
-    .since-chip.up   { border-color: rgba(25,135,84,.3);  background: rgba(25,135,84,.05); }
-    .since-chip.down { border-color: rgba(220,53,69,.3);  background: rgba(220,53,69,.05); }
-    .since-chip.warn { border-color: rgba(234,179,8,.4);  background: rgba(234,179,8,.08); }
-    .since-section-label {
-        font-size: .68rem; text-transform: uppercase; letter-spacing: .6px;
-        color: var(--ht-label); font-weight: 600; margin-right: .25rem; align-self: center;
-    }
-
-    /* ── Snapshot section ── */
-    .snapshot-section { padding: 1.25rem 1.75rem; }
-    .snapshot-row {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 0;
-    }
-    .snap-cell {
-        padding: .25rem .75rem .25rem 0;
-        border-right: 1px solid #f0f0f0;
-        margin-right: .75rem;
-    }
-    .snap-cell:last-child { border-right: none; margin-right: 0; }
-    .snap-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: var(--ht-label); margin-bottom: .2rem; }
-    .snap-value { font-size: 1.1rem; font-weight: 700; line-height: 1.2; }
-    .snap-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
-    @media (max-width: 600px) {
-        .snapshot-row { grid-template-columns: repeat(2, 1fr); gap: .75rem 0; }
-        .snap-cell { border-right: none; margin-right: 0; padding: .25rem 0; }
-        .snap-cell:nth-child(odd) { border-right: 1px solid #f0f0f0; padding-right: .75rem; margin-right: .75rem; }
-        .snap-cell:nth-child(5) { border-right: none; }
-    }
-    .snapshot-table {
-        display: grid;
-        grid-template-columns: minmax(140px, 1.4fr) repeat(4, 1fr);
-        gap: 0; align-items: baseline;
-    }
-    .snapshot-table-head, .snapshot-table-row { display: contents; }
-    .snapshot-table-head > div {
-        font-size: .68rem; text-transform: uppercase; letter-spacing: .4px;
-        color: var(--ht-label); font-weight: 700;
-        padding: 0 .6rem .5rem 0;
-        border-bottom: 1px solid var(--ht-line);
-    }
-    .snapshot-table-row > div {
-        padding: .65rem .6rem .65rem 0;
-        border-bottom: 1px solid var(--ht-line);
-    }
-    .snapshot-table-row.total > div {
-        border-top: 2px solid var(--ht-line);
-        border-bottom: none;
-        background: var(--ht-surface-2);
-        padding-top: .85rem; padding-bottom: .85rem;
-    }
-    .snapshot-table .acct-name { font-weight: 700; color: var(--ht-ink); font-size: .9rem; line-height: 1.25; }
-    .snapshot-table a.acct-link { display: block; text-decoration: none; }
-    .snapshot-table a.acct-link:hover { color: #2563eb; }
-    .snapshot-table .acct-meta { font-size: .68rem; color: var(--ht-muted); margin-top: .1rem; }
-    .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
-    .snapshot-table .snap-cell-val { font-weight: 700; font-size: .98rem; line-height: 1.15; }
-    .snapshot-table-row.total .snap-cell-val { font-size: 1.1rem; }
-    .snapshot-table .snap-cell-pct { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; }
-    .snapshot-table .snap-cell-dash { color: var(--ht-faint); font-weight: 600; }
-    .snapshot-table-row.benchmark > div {
-        border-bottom: none;
-        background: var(--ht-surface-2);
-        padding-top: .5rem; padding-bottom: .5rem;
-    }
-    .snapshot-table-row.benchmark .acct-name { font-weight: 600; font-style: italic; color: var(--ht-muted); font-size: .82rem; }
-    .snapshot-table-row.benchmark .snap-cell-pct { font-weight: 700; font-size: .82rem; margin-top: 0; }
-    .snap-bench { font-size: .68rem; color: var(--ht-faint); margin-top: .25rem; font-style: italic; }
-    .snap-bench span { font-style: normal; }
-    @media (max-width: 720px) {
-        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, 1fr); }
-        .snapshot-table .snap-col-month { display: none; }
-    }
-    @media (max-width: 480px) {
-        /* Phone: every horizontal pixel counts — tighter gutters so the
-           value + vs-yesterday + vs-1w columns fit unclipped at 390px. */
-        .snapshot-section { padding: .9rem .75rem; }
-        .snapshot-table { grid-template-columns: minmax(88px, 1.1fr) repeat(3, minmax(0, 1fr)); }
-        .snapshot-table-head > div { padding-right: .35rem; font-size: .62rem; }
-        .snapshot-table-row > div { padding-right: .35rem; }
-        .snapshot-table .acct-name { font-size: .82rem; }
-        .snapshot-table .snap-cell-val { font-size: .88rem; }
-        .snapshot-table-row.total .snap-cell-val { font-size: .95rem; }
-    }
-
-    /* ── Today's movers ── */
-    .movers-grid {
-        display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;
-    }
-    @media (max-width: 700px) { .movers-grid { grid-template-columns: 1fr; } }
-    .movers-list { display: flex; flex-direction: column; gap: .35rem; }
-    .mover-row {
-        display: grid; grid-template-columns: 4rem 1fr auto;
-        gap: .75rem; align-items: center;
-        padding: .55rem .65rem;
-        border-radius: 10px;
-        border: 1px solid var(--ht-line);
-        background: var(--ht-surface-2);
-        text-decoration: none;
-        color: inherit;
-    }
-    .mover-row:hover { background: var(--ht-hover); color: inherit; text-decoration: none; }
-    .mover-sym { font-weight: 700; font-size: .9rem; }
-    .mover-pct { font-size: .72rem; color: var(--ht-muted); }
-    .mover-dollar {
-        font-weight: 700; font-size: .9rem;
-        font-variant-numeric: tabular-nums; text-align: right;
-    }
-    .mover-meta { font-size: .68rem; color: var(--ht-muted); }
-
-    /* ── Watch list ── */
-    .watch-grid {
-        display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1rem;
-    }
-    .watch-block { background: var(--ht-surface-2); border-radius: 12px; padding: 1rem 1.1rem; }
-    .watch-block .wb-title {
-        font-size: .78rem; text-transform: uppercase; letter-spacing: .6px;
-        color: var(--ht-label); font-weight: 700; margin-bottom: .65rem;
-        display: flex; justify-content: space-between; align-items: center;
-    }
-    .watch-block .wb-empty { font-size: .9rem; color: var(--ht-muted); font-style: italic; }
-    /* Scroll the item list once it exceeds a comfortable height so a long
-       radar (many earnings / expiries / ex-divs) doesn't stretch the page.
-       The block title and footer link stay put outside this container. */
-    .watch-list { max-height: 21rem; overflow-y: auto; }
-    .watch-list::-webkit-scrollbar { width: 8px; }
-    .watch-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-    .watch-list { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-    .watch-item {
-        display: grid; grid-template-columns: 3.4rem 1fr auto;
-        gap: .65rem; padding: .6rem .15rem;
-        border-bottom: 1px solid #eef2f7;
-        text-decoration: none; color: inherit;
-        align-items: center;
-    }
-    .watch-item:last-child { border-bottom: none; }
-    /* Execution-review rows lead with a dollar/percent figure, wider than
-       the 2-digit day counts the base grid was sized for. */
-    .watch-item.exec { grid-template-columns: 5rem 1fr auto; }
-    .watch-item.exec .watch-days { font-size: 1rem; }
-    .watch-item:hover { background: var(--ht-hover); color: inherit; text-decoration: none; border-radius: 8px; padding-left: .5rem; padding-right: .5rem; }
-    .watch-days {
-        font-weight: 700; font-size: 1.3rem;
-        text-align: center; line-height: 1;
-        font-variant-numeric: tabular-nums;
-    }
-    .watch-days-label {
-        font-size: .62rem; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--ht-label); text-align: center; margin-top: .15rem;
-    }
-    .watch-sym { font-weight: 700; font-size: 1rem; color: var(--ht-ink); }
-    .watch-meta { font-size: .82rem; color: var(--ht-muted); margin-top: .12rem; }
-    .watch-aux { text-align: right; font-size: .82rem; color: var(--ht-muted); font-variant-numeric: tabular-nums; }
-    .watch-badge {
-        display: inline-block; padding: .12rem .45rem; border-radius: 10px;
-        font-size: .7rem; font-weight: 700; margin-left: .3rem;
-        background: var(--ht-line); color: var(--ht-label);
-    }
-    .watch-badge.itm { background: rgba(220,53,69,.1); color: #b91c1c; }
-    .watch-badge.atm { background: rgba(234,179,8,.12); color: #854d0e; }
-    .watch-badge.otm { background: rgba(25,135,84,.08); color: #15803d; }
-    /* EarningsFollower deep-link pill (earnings rows). Sits in the aux cell
-       under the report date; a real, visible affordance — not fine print. */
-    .watch-ef {
-        display: inline-block; margin-top: .3rem;
-        padding: .2rem .6rem; border-radius: 999px;
-        font-size: .72rem; font-weight: 700; white-space: nowrap;
-        background: #1e3a8a; color: #fff !important; text-decoration: none;
-    }
-    .watch-ef:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
-    @media (max-width: 480px) {
-        /* Phone: the subsector chips ("Communication Equipment") were
-           pushing the date + EF pill off the card edge. Moneyness badges
-           (ITM/ATM/OTM) are a signal, not decoration — they stay. */
-        .watch-block { padding: .8rem .7rem; }
-        .watch-item { grid-template-columns: 2.6rem 1fr auto; gap: .5rem; }
-        .watch-sym .watch-badge:not(.itm):not(.atm):not(.otm) { display: none; }
-        .watch-ef { font-size: .66rem; padding: .18rem .45rem; }
-        .watch-aux { font-size: .76rem; }
-    }
-
-    /* ── Today strip (open positions cards) ── */
-    .today-strip {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: .75rem;
-    }
-    .strip-card {
-        padding: .85rem 1rem;
-        background: var(--ht-surface-2);
-        border-radius: 10px;
-        text-decoration: none;
-        color: inherit;
-        border: 1px solid var(--ht-line);
-        transition: all .15s;
-    }
-    .strip-card:hover { background: var(--ht-hover); color: inherit; text-decoration: none; border-color: var(--ht-muted); box-shadow: 0 1px 6px rgba(0,0,0,.05); }
-    .strip-sym { font-weight: 700; font-size: 1rem; color: var(--ht-ink); }
-    .strip-price { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
-    .strip-pnl { font-size: .95rem; font-weight: 700; margin-top: .35rem; font-variant-numeric: tabular-nums; }
-    .strip-pct { font-size: .75rem; margin-top: .1rem; font-variant-numeric: tabular-nums; }
-    .strip-legs { font-size: .65rem; color: var(--ht-faint); text-transform: uppercase; letter-spacing: .4px; margin-top: .25rem; }
-
-    /* ── Calendar heatmap ── */
-    .cal-section-head {
-        display: flex; align-items: baseline; justify-content: space-between;
-        gap: 1rem; max-width: 36rem; margin-bottom: .5rem;
-    }
-    .cal-grid-rolling {
-        display: grid;
-        grid-template-columns: 5rem repeat(5, 1fr);
-        gap: 4px;
-        max-width: 36rem;
-    }
-    .cal-rolling-header {
-        font-size: .6rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: .5px; color: var(--ht-label); text-align: center;
-        padding: .2rem 0;
-    }
-    .cal-rolling-week-label {
-        font-size: .68rem; color: var(--ht-muted); text-transform: uppercase;
-        letter-spacing: .4px; align-self: center; padding-left: .25rem;
-    }
-    .cal-grid-rolling .cal-extra { display: none; }
-    .cal-grid-rolling.is-expanded .cal-extra { display: flex; }
-    .cal-grid-rolling.is-expanded .cal-rolling-week-label.cal-extra { display: block; }
-    .cal-day {
-        border-radius: 6px;
-        padding: .4rem .25rem;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        min-height: 2.6rem;
-        font-variant-numeric: tabular-nums;
-    }
-    .cal-day .cal-day-num { font-size: .68rem; color: inherit; opacity: .8; line-height: 1; }
-    .cal-day .cal-day-pnl { font-size: .68rem; font-weight: 700; margin-top: .15rem; line-height: 1; }
-    .cal-day.today { outline: 2px solid #2563eb; }
-    /* Time-machine: past cells are links to the day-detail page. */
-    a.cal-day-link { text-decoration: none; }
-    a.cal-day-link:hover { outline: 2px solid #94a3b8; cursor: pointer; }
-    /* Cell colors are inline styles built in Jinja — routed through CSS
-       variables so dark mode can restyle the flat (no-data / zero /
-       future) cells without touching the green/red intensity ramp,
-       which reads fine on both themes. */
-    .cal-grid-rolling {
-        --cal-blank-bg: #f9fafb; --cal-blank-fg: #cbd5e1;
-        --cal-zero-bg: #f9fafb;  --cal-zero-fg: #6b7280;
-        --cal-nodata-bg: #f3f4f6; --cal-nodata-fg: #d1d5db;
-        --cal-pos-fg: #166534;   --cal-neg-fg: #991b1b;
-    }
-    [data-bs-theme="dark"] .cal-grid-rolling {
-        --cal-blank-bg: #10192b; --cal-blank-fg: #33415e;
-        --cal-zero-bg: #10192b;  --cal-zero-fg: #64748b;
-        --cal-nodata-bg: #0e1626; --cal-nodata-fg: #33415e;
-        --cal-pos-fg: #4ade80;   --cal-neg-fg: #f87171;
-    }
-    .cal-toggle-btn {
-        background: transparent; border: 0; padding: .25rem 0;
-        font-size: .68rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: .4px;
-        color: #2563eb; cursor: pointer; white-space: nowrap;
-    }
-    .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
-
-    /* ── Breakdown table (positions / strategies / sectors) ── */
-    .breakdown-wrap { overflow-x: auto; }
-    .breakdown-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: .87rem;
-        font-variant-numeric: tabular-nums;
-    }
-    .breakdown-table th, .breakdown-table td {
-        padding: .55rem .65rem;
-        border-bottom: 1px solid var(--ht-line);
-        text-align: right;
-        white-space: nowrap;
-    }
-    .breakdown-table th {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--ht-label); font-weight: 700;
-        border-bottom: 2px solid var(--ht-line);
-        background: var(--ht-surface-2);
-        position: sticky; top: 0; z-index: 1;
-    }
-    .breakdown-table th.left, .breakdown-table td.left { text-align: left; }
-    @media (max-width: 480px) {
-        /* Phone: tighter gutters + wrappable identity column so the
-           Stock | Options | Total money columns fit unclipped
-           (low-priority columns are already hidden via data-m). */
-        .breakdown-table { font-size: .8rem; }
-        .breakdown-table th, .breakdown-table td { padding: .45rem .35rem; }
-        .breakdown-table th.left, .breakdown-table td.left { white-space: normal; }
-    }
-    .breakdown-table tbody tr:hover { background: var(--ht-hover); }
-    .breakdown-table .row-symbol {
-        font-weight: 700; color: var(--ht-ink); text-decoration: none;
-    }
-    .breakdown-table .row-symbol:hover { color: #2563eb; }
-    .breakdown-table .row-company {
-        font-size: .7rem; color: var(--ht-muted); font-weight: 400; margin-top: .1rem;
-    }
-    .breakdown-table .row-meta {
-        font-size: .68rem; color: var(--ht-muted); margin-top: .1rem;
-    }
-    .breakdown-table tr.totals-row td {
-        border-top: 2px solid var(--ht-line);
-        border-bottom: none;
-        font-weight: 700;
-        background: var(--ht-surface-2);
-        padding-top: .75rem; padding-bottom: .75rem;
-    }
-    .breakdown-table tr.benchmark-row td {
-        font-style: italic;
-        color: var(--ht-muted);
-        background: var(--ht-surface-2);
-        border-bottom: none;
-    }
-    .breakdown-table tr.benchmark-row .row-meta { font-style: normal; }
-    .breakdown-table tr.benchmark-row .bench-na { color: #cbd5e1; }
-    .pill-status {
-        display: inline-block; font-size: .65rem; padding: .15rem .5rem;
-        border-radius: 10px; text-transform: uppercase; letter-spacing: .4px;
-        font-weight: 700;
-    }
-    .pill-status.open { background: rgba(25,135,84,.08); color: #15803d; }
-    .pill-status.closed { background: rgba(100,116,139,.12); color: var(--ht-label); }
-    .pill-status.today { background: rgba(37,99,235,.12); color: #1d4ed8; margin-left: .35rem; }
-
-    /* Trades today — fill-level rows (not weekly groups) */
-    .tt-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
-    .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-    .tt-table tr:last-child td { border-bottom: 0; }
-    .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
-    .tt-muted { color: var(--ht-muted); font-size: .8rem; }
-    .tt-roll-ok { color: #166534; font-size: .75rem; font-weight: 600; }
-    .tt-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
-    .tt-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
-    .tt-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .tt-verb.sell { background: #fef2f2; color: #b91c1c; }
-    .tt-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
-    .tt-sym { font-weight: 700; color: var(--ht-ink); text-decoration: none; }
-    .tt-sym:hover { color: #2563eb; }
-    .tt-empty { color: var(--ht-faint); font-size: .9rem; padding: .15rem 0; }
-    @media (max-width: 480px) {
-        .tt-table { font-size: .84rem; table-layout: fixed; }
-        .tt-table td { padding: .4rem .3rem; }
-        .tt-table td:first-child { width: 30%; }
-        .tt-table td:last-child { width: 32%; }
-        .tt-muted { word-break: break-all; }
-        .tt-verb { white-space: normal; }
-    }
-    [data-bs-theme="dark"] .tt-table td { border-bottom-color: #1f2a3f; }
-    [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
-    [data-bs-theme="dark"] .tt-verb.sell { background: #450a0a; color: #fca5a5; }
-    [data-bs-theme="dark"] .tt-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
-    [data-bs-theme="dark"] .tt-sym { color: var(--ht-ink); }
-    [data-bs-theme="dark"] .pill-status.today { background: rgba(96,165,250,.18); color: #93c5fd; }
-
-    /* Trades this week — discrete open/close events */
-    .trades-block { margin-top: 1rem; }
-    .trades-block + .trades-block { margin-top: 1.5rem; }
-    .trades-head {
-        display: flex; align-items: baseline; justify-content: space-between;
-        gap: .75rem; margin-bottom: .4rem;
-    }
-    .trades-title {
-        font-size: .8rem; font-weight: 700; color: var(--ht-label);
-        text-transform: uppercase; letter-spacing: .4px;
-    }
-    .trades-pnl { font-size: .85rem; font-weight: 700; }
-
-    /* Profitability scorecard (Excel-style footer card) */
-    .scorecard {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 1.25rem;
-        margin-top: 1.25rem;
-        padding: 1rem 1.25rem;
-        background: var(--ht-surface-2);
-        border-radius: 12px;
-        border: 1px solid var(--ht-line);
-    }
-    @media (max-width: 600px) { .scorecard { grid-template-columns: 1fr; } }
-    .scorecard .sc-cell { text-align: left; }
-    .scorecard .sc-label {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--ht-muted); font-weight: 700; margin-bottom: .25rem;
-    }
-    .scorecard .sc-line {
-        font-size: .85rem; color: var(--ht-label); font-variant-numeric: tabular-nums;
-        line-height: 1.6;
-    }
-    .scorecard .sc-pct {
-        font-size: 1.4rem; font-weight: 700; color: var(--ht-ink);
-        line-height: 1; margin-top: .3rem;
-    }
-</style>
+{% include '_review_styles.html' %}
 {% endblock %}
 
 {% block content %}
 
-{# ── Account filter ── #}
-{% if accounts and accounts|length > 1 %}
+{# ── Account / group filter ── #}
+{% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar">
+    {% if accounts and accounts|length > 1 %}
     <div>
         <label class="lblh">Account</label>
         <select name="account" class="form-select form-select-sm"
@@ -563,13 +39,15 @@
             {% endfor %}
         </select>
     </div>
-    {% if selected_account %}
+    {% endif %}
+    {% include "_account_group_filter.html" %}
+    {% if selected_account or selected_group_ids %}
     <a class="filter-reset" href="{{ url_for('weekly_review') }}">Reset</a>
     {% endif %}
 </form>
 {% endif %}
 
-{% if error %}<div class="alert alert-danger small">We're having trouble loading your daily review right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
+{% if error %}<div class="alert alert-danger small">We're having trouble loading your overview right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% if from_upload %}
 <div class="alert alert-info small mb-3">
@@ -578,15 +56,14 @@
 {% endif %}
 
 {# ════════════════════════════════════
-   HERO — today's pulse
+   HERO — last completed session
    ════════════════════════════════════ #}
 <div class="review-hero">
-    <div class="hero-kicker">Daily Review &middot; {{ (review_date or today).strftime('%A, %b %-d') }}</div>
+    <div class="hero-kicker">Overview &middot; {{ (review_date or today).strftime('%A, %b %-d') }} close</div>
     {% if today_pulse %}
     {% set _pos = today_pulse.delta >= 0 %}
-    {% set _pulse_is_today = today_pulse.date is none or (today and today_pulse.date == today.isoformat()) %}
     <p class="hero-headline">
-        {% if _pulse_is_today %}Today:{% elif today_pulse.date_label %}{{ today_pulse.date_label }}:{% else %}Today:{% endif %}
+        {{ today_pulse.date_label or (review_date.strftime('%a %b %-d') if review_date else 'Last close') }}:
         <span class="delta-num {% if _pos %}text-positive{% else %}text-negative{% endif %}"
               style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
             {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(today_pulse.delta|abs) }}
@@ -604,11 +81,13 @@
         {% endif %}
     </p>
     {% else %}
-    <p class="hero-headline">Daily Review</p>
+    <p class="hero-headline">Overview</p>
     {% endif %}
 
     <p class="hero-subtitle">
-        End of day: one place to see what you traded, what moved, and what to watch tomorrow.
+        Last close: what you traded, what moved, and what to watch next.
+        <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}"
+           style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
     </p>
 
     <div class="hero-meta">
@@ -618,7 +97,7 @@
         </span>
         {% endif %}
         {% if trades_today and trades_today.count %}
-        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }}{% if review_is_today or review_is_today is not defined %} today{% elif review_date %} {{ review_date.strftime('%a') }}{% endif %}</span>
+        <span class="badge bg-light text-dark">{{ trades_today.count }} fill{{ 's' if trades_today.count != 1 }} {{ (review_date or today).strftime('%a') }}</span>
         {% endif %}
         {% if market_neutral_line %}
         <span style="color: rgba(255,255,255,.65);">{{ market_neutral_line }}</span>
@@ -877,25 +356,24 @@
    ════════════════════════════════════ #}
 {% set _tt = trades_today or {} %}
 {% set _tt_day = review_date or today %}
-{% set _tt_is_today = review_is_today if review_is_today is defined else true %}
 {% set _tt_weekday = _tt_day and _tt_day.weekday() < 5 %}
 {% if _tt.has_any or _tt_weekday %}
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>{% if _tt_is_today %}Trades Today{% else %}Trades — {{ _tt_day.strftime('%a %b %-d') }}{% endif %}</span>
+        <span>Trades — {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'last close' }}</span>
         {% if _tt.count %}
         <span style="text-transform:none; letter-spacing:0; font-size:.8rem; color:#64748b;">
             {{ _tt.count }} fill{{ 's' if _tt.count != 1 }}{% if _tt.roll_count %} · {{ _tt.roll_count }} roll{{ 's' if _tt.roll_count != 1 }}{% endif %}{% if _tt.symbols %} · {{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}{% endif %}
-            {% if _tt.net_cash %}
-            <span class="trades-pnl {% if _tt.net_cash > 0 %}text-positive{% elif _tt.net_cash < 0 %}text-negative{% endif %}">
-                · {{ "+" if _tt.net_cash > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_cash|abs) }} G/L
+            {% if _tt.net_gl %}
+            <span class="trades-pnl {% if _tt.net_gl > 0 %}text-positive{% elif _tt.net_gl < 0 %}text-negative{% endif %}">
+                · {{ "+" if _tt.net_gl > 0 else "-" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} G/L
             </span>
             {% endif %}
         </span>
         {% endif %}
     </div>
     <p class="section-sub">
-        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'today' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll.{% if not _tt_is_today %} Today's session has not started yet — this is the last completed session.{% endif %}
+        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -928,15 +406,15 @@
                     {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
                     {% endif %}
                 </td>
-                <td class="tt-money {% if t.amount > 0 %}text-positive{% elif t.amount < 0 %}text-negative{% endif %}">
-                    {% if t.amount %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
+                    {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
                 </td>
             </tr>
             {% endfor %}
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">No fills recorded for {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'today' }}{% if _tt_is_today and market_session and market_session.state == 'open' %} yet{% endif %}.</div>
+    <div class="tt-empty">No fills recorded for {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}.</div>
     {% endif %}
     {% if _tt.cash %}
     <div class="tt-muted" style="margin-top:.85rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:.7rem;">Cash &amp; fees</div>
@@ -958,33 +436,33 @@
             (broker history dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the session' }}).
             This is not the weekly table below: a covered-call write on a
             stock you've held for months shows here even though that group
-            didn't newly open this week. A same-day close + open of the
-            same call or put is one roll; a short roll meets the bar on a
-            credit (or flat) or a strike that moved in the covered
-            direction (calls up, puts down). Same-day trades appear after
-            the next sync.
+            didn't newly open this week.
+            The dollar is realized G/L on that close — what you sold it
+            for minus what you paid (equity: sale vs average cost; option:
+            the contract's net of opens and closes). Opens and unmatched
+            closes show an em dash, not cash in or out. A same-day close
+            + open of the same call or put is one roll; the dollar is the
+            closed leg's G/L, and a short roll meets the bar on a credit
+            (or flat) or a strike that moved in the covered direction
+            (calls up, puts down). Same-day trades appear after the next
+            sync.
         </p>
     </details>
 </div>
 {% endif %}
 
 {# ════════════════════════════════════
-   TODAY'S MOVERS — biggest stock $ impact on holdings
+   SESSION MOVERS — biggest stock $ impact on holdings (last close)
    ════════════════════════════════════ #}
 {% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
-{# DATE-HONEST: on weekends / Monday pre-close the movers pair is still
-   Friday's close, so everything here must say the DATE, not "today" —
-   a Friday options realization labeled "today" on Monday reads as a
-   position the user knows they no longer hold. #}
-{% set tm_is_today = today_movers.is_today if today_movers.is_today is defined else true %}
-{% set tm_day = 'today' if tm_is_today else (today_movers.as_of_label or 'latest close') %}
+{% set tm_day = today_movers.as_of_label or (review_date.strftime('%a %b %-d') if review_date else 'last close') %}
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>{% if tm_is_today %}Today's Biggest Movers (your holdings){% else %}Biggest Movers — {{ tm_day }} (your holdings){% endif %}</span>
+        <span>Biggest Movers — {{ tm_day }} (your holdings)</span>
         {% if today_movers.combined_impact %}
         {% set ti = today_movers.combined_impact %}
         <span style="font-size: .8rem; color: {% if ti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
-            {% if tm_is_today %}Today's{% else %}{{ tm_day }}{% endif %} $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
+            {{ tm_day }} $ impact: {{ "+" if ti >= 0 else "-" }}${{ "{:,.0f}".format(ti|abs) }}
             <span class="text-muted" style="font-weight:400;">
                 (stocks {{ "+" if today_movers.total_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}{%
                 if today_movers.options %} · options {{ "+" if today_movers.options_impact >= 0 else "-" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}{% endif %}{%
@@ -994,7 +472,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Stock-price moves {{ tm_day }} on shares you hold{% if today_movers.options or today_movers.dividends %} — plus option P&amp;L moves and dividends paid that day{% endif %}.{% if not tm_is_today %} Nothing has settled for today yet — this updates when today's close publishes.{% endif %}
+        Stock and option P&amp;L moves on {{ tm_day }} for positions you hold{% if today_movers.dividends %} — plus dividends paid that day{% endif %}. Top 5 up and top 5 down by dollar impact. Live last-trade figures are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
     </p>
     <div class="movers-grid">
         <div>
@@ -1002,6 +480,16 @@
             <div class="movers-list">
                 {% for m in today_movers.winners %}
                 <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    {% if m.kind == 'option' %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-kind">Option</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">P&amp;L on contracts</div>
+                        <div class="mover-meta">Marks + closes</div>
+                    </div>
+                    {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
                         <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
@@ -1010,6 +498,7 @@
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
                     </div>
+                    {% endif %}
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
                 </a>
                 {% else %}
@@ -1022,6 +511,16 @@
             <div class="movers-list">
                 {% for m in today_movers.losers %}
                 <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                    {% if m.kind == 'option' %}
+                    <div>
+                        <div class="mover-sym">{{ m.symbol }}</div>
+                        <div class="mover-kind">Option</div>
+                    </div>
+                    <div>
+                        <div class="mover-meta">P&amp;L on contracts</div>
+                        <div class="mover-meta">Marks + closes</div>
+                    </div>
+                    {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
                         <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
@@ -1030,6 +529,7 @@
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
                     </div>
+                    {% endif %}
                     <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
                 </a>
                 {% else %}
@@ -1038,26 +538,6 @@
             </div>
         </div>
     </div>
-    {% if today_movers.options %}
-    <div style="margin-top:.9rem;">
-        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
-            Options P&amp;L {{ tm_day }}
-            {% set oi = today_movers.options_impact %}
-            <span style="color: {% if oi >= 0 %}#15803d{% else %}#b91c1c{% endif %};">{{ "+" if oi >= 0 else "-" }}${{ "{:,.0f}".format(oi|abs) }}</span>
-        </div>
-        <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
-            {% for o in today_movers.options %}
-            <a href="{{ url_for('position_detail', symbol=o.symbol) }}" class="badge rounded-pill text-decoration-none"
-               style="font-size:.75rem; padding:.45em .8em; background: {% if o.dollar_impact >= 0 %}#dcfce7; color:#15803d{% else %}#fee2e2; color:#b91c1c{% endif %};">
-                {{ o.symbol }} {{ "+" if o.dollar_impact >= 0 else "-" }}${{ "{:,.0f}".format(o.dollar_impact|abs) }}
-            </a>
-            {% endfor %}
-        </div>
-        <div class="text-muted" style="font-size:.72rem; margin-top:.3rem;">
-            Mark-to-market drift on open contracts, plus P&amp;L realized {{ 'today' if tm_is_today else 'that day' }} by closes and expiries — a contract you closed {{ 'today' if tm_is_today else tm_day }} shows its full realized P&amp;L here even though it's no longer open.
-        </div>
-    </div>
-    {% endif %}
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
@@ -1074,71 +554,6 @@
         </div>
     </div>
     {% endif %}
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   AFTER-HOURS MOVERS — broker mark vs official close
-   Reporting above is close-based (the price you traded against during the
-   day). This shows the post-close drift your broker last captured, so it
-   informs without polluting the core numbers.
-   ════════════════════════════════════ #}
-{% if after_hours_movers and (after_hours_movers.winners or after_hours_movers.losers) %}
-<div class="review-section">
-    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>After-Hours Movers (vs today's close)</span>
-        {% if after_hours_movers.total_impact %}
-        {% set ahti = after_hours_movers.total_impact %}
-        <span style="font-size: .8rem; color: {% if ahti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
-            Net after-hours drift: {{ "+" if ahti >= 0 else "-" }}${{ "{:,.0f}".format(ahti|abs) }}
-        </span>
-        {% endif %}
-    </div>
-    <p class="section-sub">
-        Extended-hours movement since today's close{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %} &mdash; not counted in the numbers above.
-    </p>
-    <div class="movers-grid">
-        <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up after hours</div>
-            <div class="movers-list">
-                {% for m in after_hours_movers.winners %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
-                    <div>
-                        <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
-                    </div>
-                    <div>
-                        <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
-                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
-                    </div>
-                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
-                </a>
-                {% else %}
-                <div class="text-muted small">No green names after hours.</div>
-                {% endfor %}
-            </div>
-        </div>
-        <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down after hours</div>
-            <div class="movers-list">
-                {% for m in after_hours_movers.losers %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
-                    <div>
-                        <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
-                    </div>
-                    <div>
-                        <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
-                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
-                    </div>
-                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
-                </a>
-                {% else %}
-                <div class="text-muted small">No red names after hours.</div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
 </div>
 {% endif %}
 
@@ -1414,7 +829,8 @@
                    href="{{ url_for('day_detail', day_str=c.date.isoformat(),
                                     account=selected_account or None,
                                     tenant=selected_tenant,
-                                    tenants=selected_tenants) }}"
+                                    tenants=selected_tenants,
+                                    groups=groups_query) }}"
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
@@ -1452,8 +868,8 @@
     {% if daily_calendar_no_query_rows %}
     <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
         {% if building_history %}
-        Your calendar starts today &mdash; one square fills in per trading day as your
-        account snapshots accumulate. Check back tomorrow for your first daily G/L.
+        Your calendar starts with this close &mdash; one square fills in per trading day as your
+        account snapshots accumulate. Check back after the next session for your first daily G/L.
         {% else %}
         Daily account snapshots haven&rsquo;t arrived yet. New syncs and uploads take a few minutes to show up.
         {% endif %}
@@ -1473,7 +889,8 @@
     <a href="{{ url_for('trader_story',
                         account=selected_account,
                         tenant=selected_tenant,
-                        tenants=selected_tenants) }}"
+                        tenants=selected_tenants,
+                        groups=groups_query) }}"
        style="display:block; text-decoration:none; color:inherit;
               border-left:3px solid #6366f1; border-radius:0 10px 10px 0;
               background:linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
@@ -1639,7 +1056,7 @@
         Opened or closed since
         {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
-        One row per symbol. Fills today on a position you already held are listed under Trades Today above.
+        One row per symbol. Fills on the session above (adds and trims on a position you already held) are listed under Trades — not only groups that opened or closed this week.
     </p>
     <details class="section-fine" style="margin:-.4rem 0 .8rem;">
         <summary>How this is computed</summary>
@@ -1681,7 +1098,7 @@
                         {% else %}
                         <span class="pill-status open">Open</span>
                         {% endif %}
-                        {% if r.traded_today %}<span class="pill-status today">Today</span>{% endif %}
+                        {% if r.traded_today %}<span class="pill-status today">{{ (review_date or today).strftime('%a') }}</span>{% endif %}
                     </td>
                     <td data-val="{{ r.result_pnl }}" class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
                         {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>

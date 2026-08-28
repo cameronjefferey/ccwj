@@ -62,6 +62,7 @@ def event_enabled(kind: str) -> bool:
 
 
 def user_label(user_id, username=None) -> str:
+    """How we name a person in a ping — ``@alice``, else ``user 9``."""
     name = (username or "").strip()
     if not name and user_id is not None:
         try:
@@ -72,7 +73,70 @@ def user_label(user_id, username=None) -> str:
             name = ""
     if name:
         return f"@{name}"
-    return f"user_id={user_id}"
+    if user_id is not None:
+        return f"user {user_id}"
+    return "someone"
+
+
+def compose(kind: str, *, who: str, **extra) -> str:
+    """Same voice as the warehouse ops pings: one sentence, then a labeled detail."""
+    kind = (kind or "").strip().lower()
+    who = (who or "someone").strip() or "someone"
+    if kind == "signup":
+        return f"HappyTrader — {who} signed up."
+    if kind == "first_data":
+        return (
+            f"HappyTrader — {who} connected their first account. "
+            "The trial clock started."
+        )
+    if kind == "subscribe":
+        if extra.get("resumed"):
+            return (
+                f"HappyTrader — {who} kept Pro. "
+                "The pending cancel was lifted."
+            )
+        interval = (extra.get("interval") or "").strip()
+        if interval and interval.lower() != "pro":
+            line = f"HappyTrader — {who} subscribed to Pro ({interval})."
+        else:
+            line = f"HappyTrader — {who} subscribed to Pro."
+        was = (extra.get("was_plan") or "").strip()
+        if was and was not in ("active", "unknown"):
+            line += f" They were on {was}."
+        return line
+    if kind == "canceling":
+        return (
+            f"HappyTrader — {who} canceled Pro. "
+            "It stays on until the period ends."
+        )
+    if kind == "cancel":
+        status = (extra.get("status") or "canceled").strip() or "canceled"
+        return f"HappyTrader — {who}'s Pro ended ({status})."
+    if kind == "subscribe_ai":
+        return f"HappyTrader — {who} added HappyTrader AI."
+    if kind == "cancel_ai":
+        status = (extra.get("status") or "canceled").strip() or "canceled"
+        return f"HappyTrader — {who}'s HappyTrader AI ended ({status})."
+    if kind == "feedback":
+        snippet = " ".join(str(extra.get("snippet") or "").split())
+        lines = [f"HappyTrader — {who} sent feedback."]
+        if snippet:
+            lines.append(snippet)
+        return "\n\n".join(lines)
+    if kind == "broken":
+        lines = [f"HappyTrader — {who}'s broker connection broke."]
+        acct = (extra.get("account_id") or "").strip()
+        if acct:
+            lines.append(f"Account:\n{acct}")
+        return "\n\n".join(lines)
+    return f"HappyTrader — {who}: {kind}."
+
+
+def notify_event(kind: str, *, user_id=None, username=None, **extra) -> bool:
+    """Compose the shared-voice sentence and queue it."""
+    who = extra.pop("who", None) or user_label(user_id, username=username)
+    text = compose(kind, who=who, **extra)
+    return notify(kind, text, username=username)
 
 
 def _configured():

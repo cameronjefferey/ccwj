@@ -126,6 +126,24 @@
     .pill-muted { background: #f1f5f9; color: #475569; }
     .pill-danger { background: #fee2e2; color: #991b1b; }
 
+    .ht-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
+    .ht-pick-chip {
+        display: inline-flex; align-items: center; margin: 0;
+        padding: .4rem .85rem; border-radius: 8px; cursor: pointer;
+        background: #f1f5f9; border: 1px solid #e2e8f0;
+        font-size: .85rem; font-weight: 600; color: #0f172a; user-select: none;
+    }
+    .ht-pick-chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .ht-pick-chip:hover { border-color: #94a3b8; }
+    .ht-pick-chip.is-on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .ht-group-card {
+        border: 1px solid #e2e8f0; border-radius: 10px; padding: .85rem 1rem;
+        margin-bottom: .65rem;
+    }
+    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: #0f172a; }
+    .ht-group-card .members { font-size: .82rem; color: #475569; }
+    .ht-group-card .actions { margin-top: .55rem; display: flex; gap: .75rem; align-items: center; }
+
     /* At-a-glance stat tiles */
     .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .75rem; }
     .stat-tile {
@@ -370,7 +388,7 @@
                                 <label class="atlas-label">After sign-in, land on</label>
                                 <select class="form-select" name="default_route">
                                     {% for r in default_routes %}
-                                    <option value="{{ r }}" {% if profile_row.default_route == r %}selected{% endif %}>{{ r.replace('_', ' ')|title }}</option>
+                                    <option value="{{ r }}" {% if profile_row.default_route == r %}selected{% endif %}>{{ default_route_labels.get(r, r) }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -646,6 +664,85 @@
                 </div>
             </div>
             {% endif %}
+
+            <div class="atlas-card" id="account-groups">
+                <div class="atlas-card-h">Account groups</div>
+                <div class="atlas-card-b">
+                    <p class="atlas-hint">
+                        Click the accounts that belong together, then name the group.
+                        One account can be in several groups. On Overview and the rest,
+                        picking more than one group shows all of them.
+                    </p>
+                    {% if group_tenant_choices %}
+                    {% set _picked = editing_group.tenant_ids if editing_group else [] %}
+                    <form method="POST" action="{{ url_for('profile', tab='account') }}" class="mt-3 mb-3" id="group-composer">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="save_account_group">
+                        {% if editing_group %}
+                        <input type="hidden" name="group_id" value="{{ editing_group.id }}">
+                        {% endif %}
+                        <div class="atlas-label">{% if editing_group %}Editing {{ editing_group.name }}{% else %}New group{% endif %}</div>
+                        <div class="ht-pick">
+                            {% for acct in group_tenant_choices %}
+                            <label class="ht-pick-chip{% if acct.tenant_id in _picked %} is-on{% endif %}">
+                                <input type="checkbox" name="tenant_id" value="{{ acct.tenant_id }}"
+                                       {% if acct.tenant_id in _picked %}checked{% endif %}
+                                       {% if is_demo_user %}disabled{% endif %}>
+                                {{ acct.label }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 align-items-end">
+                            <div class="flex-grow-1" style="min-width:12rem;">
+                                <label class="atlas-label" for="group_name">Name</label>
+                                <input type="text" class="form-control" id="group_name" name="group_name"
+                                       maxlength="40" placeholder="kids, sara, 401ks…"
+                                       value="{{ editing_group.name if editing_group else '' }}"
+                                       {% if is_demo_user %}disabled{% endif %}>
+                            </div>
+                            <button type="submit" class="btn btn-primary"
+                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                                {% if editing_group %}Save{% else %}Save group{% endif %}
+                            </button>
+                            {% if editing_group %}
+                            <a class="btn btn-outline-secondary" href="{{ url_for('profile', tab='account') }}#account-groups">Cancel</a>
+                            {% endif %}
+                        </div>
+                    </form>
+                    <script>
+                    (function () {
+                        document.querySelectorAll('#group-composer .ht-pick-chip input').forEach(function (inp) {
+                            inp.addEventListener('change', function () {
+                                inp.closest('.ht-pick-chip').classList.toggle('is-on', inp.checked);
+                            });
+                        });
+                    })();
+                    </script>
+                    {% else %}
+                    <p class="atlas-hint mb-0 mt-3">Connect or upload an account first, then you can group them.</p>
+                    {% endif %}
+                    {% if account_groups %}
+                    <div class="atlas-label mt-4">Your groups</div>
+                    {% for g in account_groups %}
+                    <div class="ht-group-card">
+                        <h3>{{ g.name }}</h3>
+                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
+                        <div class="actions">
+                            <a href="{{ url_for('profile', tab='account', edit=g.id) }}#group-composer">Edit</a>
+                            <form method="POST" action="{{ url_for('profile', tab='account') }}" class="m-0"
+                                  onsubmit="return confirm('Remove the {{ g.name }} group? Accounts stay; only the label is deleted.');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="delete_account_group">
+                                <input type="hidden" name="group_id" value="{{ g.id }}">
+                                <button type="submit" class="btn btn-link btn-sm text-danger p-0"
+                                        {% if is_demo_user %}disabled{% endif %}>Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
 
             <div class="atlas-card">
                 <div class="atlas-card-h">Account labels</div>

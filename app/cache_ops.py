@@ -101,9 +101,10 @@ def _warm_one_scope(client, uid, tenant_ids):
         _bq_parallel,
         _date_in_user_tz,
         _iso_week_start,
-        _trades_as_of_date,
+        _snapshot_as_of_date,
         _us_market_session,
         build_daily_review_batch,
+        build_today_batch,
     )
     from app.positions_page import DEFAULT_QUERY as POSITIONS_DEFAULT_QUERY
     from app.trader_story import story_query_batch
@@ -116,12 +117,17 @@ def _warm_one_scope(client, uid, tenant_ids):
         tz = (prof.get("timezone") or tz).strip() or tz
     today = _date_in_user_tz(tz)
     this_week = _iso_week_start(today)
-    trades_as_of = _trades_as_of_date(today, _us_market_session())
+    market_session = _us_market_session()
+    session_date = _snapshot_as_of_date(today, market_session)
 
-    # Daily Review core batch (the primary landing page).
+    # Overview (close-based landing page).
     batch = build_daily_review_batch(
-        tenant_filter, today, this_week, trades_as_of=trades_as_of)
+        tenant_filter, today, this_week,
+        trades_as_of=session_date, moves_as_of=session_date)
     _bq_parallel(client, batch)
+
+    # Live /today page (calendar-today last-trade bars).
+    _bq_parallel(client, build_today_batch(tenant_filter, today))
 
     # Positions list default (all-time) query.
     cached_query_df(

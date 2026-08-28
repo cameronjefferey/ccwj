@@ -105,8 +105,9 @@
 <div class="alert alert-danger">{{ error }} Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>
 {% endif %}
 
-{% if accounts and accounts|length > 1 %}
+{% if (accounts and accounts|length > 1) or account_groups %}
 <form method="get" class="filter-bar mb-3">
+    {% if accounts and accounts|length > 1 %}
     <div>
         <label class="lblh">Account</label>
         <select name="account" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -116,6 +117,8 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
+    {% include "_account_group_filter.html" %}
 </form>
 {% endif %}
 
