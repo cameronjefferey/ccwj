@@ -1030,6 +1030,51 @@ def test_dedup_collapses_csv_qualified_dividend_vs_snaptrade_cash_dividend():
     assert str(out.iloc[0]["Description"]) == "JPMorgan Equity Premium Income ETF"
 
 
+def test_dedup_collapses_csv_funds_received_vs_snaptrade_deposit():
+    df = pd.DataFrame([
+        _row("Emmory", 9, "01/06/2025", "Deposit", "",
+             "", "", 1000.0,
+             tenant_id="snaptrade:emmory",
+             desc="FUNDS RECEIVED"),
+        _row("Emmory", 9, "1/6/2025", "Funds Received", "",
+             "", "", 1000.0,
+             tenant_id="snaptrade:emmory",
+             desc="FUNDS RECEIVED"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"Funds Received vs Deposit must collapse, got {len(out)}"
+
+
+def test_dedup_collapses_csv_journal_vs_snaptrade_deposit():
+    df = pd.DataFrame([
+        _row("Emmory", 9, "01/06/2025", "Deposit", "",
+             "", "", 500.0,
+             tenant_id="snaptrade:emmory", desc="JOURNAL FRM ...852"),
+        _row("Emmory", 9, "1/6/2025", "Journal", "",
+             "", "", 500.0,
+             tenant_id="snaptrade:emmory", desc="JOURNAL FRM ...852"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"Journal vs Deposit must collapse, got {len(out)}"
+
+
+def test_dedup_keeps_distinct_funds_received_of_different_amounts():
+    df = pd.DataFrame([
+        _row("Emmory", 9, "07/10/2025", "Funds Received", "",
+             "", "", 1000.0, tenant_id="snaptrade:emmory", desc="FUNDS RECEIVED"),
+        _row("Emmory", 9, "07/10/2025", "Funds Received", "",
+             "", "", 5000.0, tenant_id="snaptrade:emmory", desc="FUNDS RECEIVED"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2, "same-day deposits of different amounts stay distinct"
+
+
+def test_normalize_history_action_maps_schwab_csv_cash_ins():
+    assert _upload._normalize_history_action("Funds Received") == "cash_transfer"
+    assert _upload._normalize_history_action("MoneyLink Transfer") == "cash_transfer"
+    assert _upload._normalize_history_action("Journal") == "cash_transfer"
+
+
 def test_dedup_collapses_buy_vs_buy_case_on_same_fill():
     df = pd.DataFrame([
         _row("Emmory", 9, "05/14/2024", "Buy", "IYW",

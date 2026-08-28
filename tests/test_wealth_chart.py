@@ -168,6 +168,32 @@ def test_chart_payload_opening_capital_starts_exclude_at_zero():
     assert out["account_value_ex_transfers"] == [0.0, -135.40, -963.22]
 
 
+def test_chart_payload_itemized_deposits_keep_pre_snapshot_trading_pnl():
+    """CSV Funds Received before the first snapshot: subtract those
+    dollars, not the whole day-1 account value, so trading P&L stays."""
+    rows = []
+    spec = [
+        ("2026-06-08", 16335.40, 11000.00),
+        ("2026-06-09", 16200.00, 11000.00),
+        ("2026-08-26", 15372.18, 11000.00),
+    ]
+    for d, av, cum in spec:
+        rows.append({
+            "tenant_id": "snaptrade:emmory",
+            "account": "Schwab Account",
+            "user_id": 9,
+            "date": pd.Timestamp(d),
+            "account_value": av,
+            "cash_value": 28.0,
+            "equity_value": av - 28.0,
+            "option_value": 0.0,
+            "cumulative_net_deposits": cum,
+        })
+    out = _build_chart_payload(pd.DataFrame(rows), exclude_transfers=True)
+    assert out["has_transfers"] is True
+    assert out["account_value_ex_transfers"] == [5335.40, 5200.00, 4372.18]
+
+
 def test_chart_payload_pre_spine_withdrawals_shift_the_exclude_line():
     """Withdrawals that landed before the snapshot window used to rebase
     to 0 (constant offset cancelled) so the toggle drew two identical

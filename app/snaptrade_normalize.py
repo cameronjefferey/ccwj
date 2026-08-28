@@ -180,7 +180,10 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     "INTERNAL_CASH_TRANSFER_OUT": "Withdrawal",
     # Still DROPPED — ambiguous direction or asset kind, so mislabeling
     # them as cash flow would corrupt the net-deposits number:
-    #   TRANSFER / JOURNAL  — often SHARE transfers between accounts, not cash.
+    #   TRANSFER            — often SHARE transfers between accounts, not cash.
+    #   JOURNAL             — share journals stay dropped; cash-only journals
+    #                         (no ticker, non-zero amount) are promoted at
+    #                         read time to Deposit/Withdrawal.
     #   DISTRIBUTION        — could be a fund/cap-gains distribution (income)
     #                         OR a retirement account withdrawal (cash out).
     "TRANSFER": None,
@@ -280,6 +283,25 @@ def _safe_float(value, default=0.0) -> float:
     except (TypeError, ValueError):
         pass
     return default
+
+
+def _is_cash_only_journal(act: Mapping) -> bool:
+    """Schwab-via-SnapTrade JOURNAL of money, not shares.
+
+    Cash journals have a non-zero amount, no ticker, and no share qty
+    (Emmory CSV ``JOURNAL FRM …852`` / $500). Share journals keep a
+    symbol and units — those stay dropped so they cannot inflate
+    net-deposits.
+    """
+    if act.get("option_symbol"):
+        return False
+    symbol_obj = act.get("symbol") if isinstance(act.get("symbol"), Mapping) else {}
+    ticker = _underlying_from_symbol(symbol_obj) if symbol_obj else ""
+    if str(ticker or "").strip():
+        return False
+    units = abs(_safe_float(act.get("units"), 0.0))
+    amount = abs(_safe_float(act.get("amount"), 0.0))
+    return units < 1e-9 and amount > 0.005
 
 
 def _format_date_mdy(value) -> str:
@@ -477,6 +499,9 @@ def activities_to_history_df(
         if not atype:
             continue
         action_label = SNAPTRADE_ACTIVITY_TO_ACTION.get(atype, "__UNKNOWN__")
+        if action_label is None and atype == "JOURNAL" and _is_cash_only_journal(act):
+            amt = _safe_float(act.get("amount"), 0.0)
+            action_label = "Deposit" if amt >= 0 else "Withdrawal"
         if action_label is None:
             continue
         if action_label == "__UNKNOWN__":

@@ -1,9 +1,10 @@
 /*
     Deposit / withdrawal survival (2026-08).
 
-    Raw seed rows with Action in ('Deposit', 'Withdrawal', 'Cash Transfer')
-    MUST land in stg_history as action='cash_transfer'. They often ship
-    with a NULL Symbol (IBKR DISBURSEMENT withdrawals). The final WHERE
+    Raw seed rows with Action in ('Deposit', 'Withdrawal', 'Cash Transfer',
+    'Funds Received', 'MoneyLink Transfer', 'Journal') MUST land in stg_history as
+    action='cash_transfer'. They often ship with a NULL Symbol (IBKR
+    DISBURSEMENT withdrawals; Schwab CSV Funds Received). The final WHERE
     in stg_history used to drop them because ``NULL != 'CURRENCY_USD'``
     is UNKNOWN. That left mart_wealth_daily.cumulative_net_deposits at 0
     for every tenant and made the "exclude deposits & withdrawals"
@@ -18,14 +19,23 @@
 with raw_cash as (
     select
         nullif(trim(cast(tenant_id as string)), '') as tenant_id,
-        safe.parse_date(
-            '%m/%d/%Y',
-            regexp_extract(cast(Date as string), r'(\d{1,2}/\d{1,2}/\d{4})')
+        coalesce(
+            safe.parse_date(
+                '%m/%d/%Y',
+                regexp_extract(cast(Date as string), r'(\d{1,2}/\d{1,2}/\d{4})')
+            ),
+            safe.parse_date(
+                '%Y-%m-%d',
+                regexp_extract(cast(Date as string), r'^(\d{4}-\d{2}-\d{2})')
+            )
         ) as trade_date,
-        coalesce(safe_cast(Amount as float64), 0) as amount,
+        coalesce({{ parse_seed_number('Amount') }}, 0) as amount,
         trim(cast(Action as string)) as action_raw
     from {{ source('raw_broker', 'trade_history') }}
-    where lower(trim(cast(Action as string))) in ('deposit', 'withdrawal', 'cash transfer')
+    where lower(trim(cast(Action as string))) in (
+        'deposit', 'withdrawal', 'cash transfer',
+        'funds received', 'moneylink transfer', 'journal'
+    )
 ),
 
 stg_cash as (
