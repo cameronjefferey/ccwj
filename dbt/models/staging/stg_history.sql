@@ -100,9 +100,17 @@ cleaned as (
         -- demo data.
         nullif(trim(tenant_id), '') as tenant_id,
 
-        safe.parse_date(
-            '%m/%d/%Y',
-            regexp_extract(date, r'(\d{1,2}/\d{1,2}/\d{4})$')
+        coalesce(
+            safe.parse_date(
+                '%m/%d/%Y',
+                regexp_extract(trim(date), r'(\d{1,2}/\d{1,2}/\d{4})$')
+            ),
+            -- pandas read_csv (CSV upload without dtype=str) rewrites Date
+            -- as ISO ``YYYY-MM-DD``. SnapTrade writes zero-padded MDY.
+            safe.parse_date(
+                '%Y-%m-%d',
+                regexp_extract(trim(date), r'^(\d{4}-\d{2}-\d{2})')
+            )
         ) as trade_date,
 
         trim(action) as action_raw,
@@ -192,10 +200,10 @@ cleaned as (
         end as instrument_type,
 
         trim(description) as description,
-        safe_cast(quantity as float64) as quantity,
-        safe_cast(price as float64) as price,
-        coalesce(safe_cast(fees_and_comm as float64), 0) as fees,
-        coalesce(safe_cast(amount as float64), 0) as amount_raw
+        {{ parse_seed_number('quantity') }} as quantity,
+        {{ parse_seed_number('price') }} as price,
+        coalesce({{ parse_seed_number('fees_and_comm') }}, 0) as fees,
+        coalesce({{ parse_seed_number('amount') }}, 0) as amount_raw
 
     from osi_split
 ),
