@@ -80,6 +80,23 @@ def test_repair_persists_stripped_csv_currency_amount():
     assert out.iloc[0]["Date"] == "05/14/2024"
 
 
+def test_repair_persists_minus_then_dollar_amount():
+    """Schwab debit ``-$4,600.00`` must canonicalize like ``($4,600.00)``.
+
+    Leading-only ``$`` strip left these cells non-numeric (run 33141412571).
+    """
+    df = pd.DataFrame([
+        _row("Emmory", "11/14/2024", "Buy to Close", "CFLT  241220C00030000",
+             "40", "$1.15", "-$4,600.00",
+             tenant_id="snaptrade:a", desc="CONFLUENT INC 12/20/2024 $30 Call"),
+    ], columns=HISTORY_SEED_COLUMNS)
+    out = dedup_history_by_tenant(df)
+    assert len(out) == 1
+    assert out.iloc[0]["Price"] == "1.15"
+    assert out.iloc[0]["Amount"] == "-4600"
+    assert out.iloc[0]["Date"] == "11/14/2024"
+
+
 def test_repair_never_collapses_across_tenants():
     df = pd.DataFrame([
         _row("Emmory", "05/14/2024", "Buy", "IYW", "20", "131.96", "-2639.2",
