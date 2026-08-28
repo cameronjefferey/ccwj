@@ -3,7 +3,10 @@
 
 Runs the same grain as ``stg_history_no_duplicate_fills_per_tenant`` and
 dumps member rows for the first groups so a red build shows WHY, not
-just a count. Flask-free; uses the warehouse job's ADC.
+just a count. Also dumps raw ``trade_history.Date`` samples when any
+group has a NULL trade_date (run 33141412571: printer crashed on
+``DATE 'NaT'`` before showing members). Flask-free; uses the warehouse
+job's ADC.
 """
 from __future__ import annotations
 
@@ -15,7 +18,9 @@ from google.cloud import bigquery
 
 PROJECT = os.environ.get("BQ_PROJECT", "ccwj-dbt").strip()
 DATASET = (os.environ.get("BQ_DATASET") or "analytics").strip()
+RAW_DATASET = (os.environ.get("BQ_RAW_DATASET") or "analytics_raw").strip()
 TABLE = f"{PROJECT}.{DATASET}.stg_history"
+RAW_TABLE = f"{PROJECT}.{RAW_DATASET}.trade_history"
 
 
 def _as_bq_date(value):
@@ -77,6 +82,30 @@ def main() -> int:
     if groups.empty:
         return 0
     print(groups.head(20).to_string(index=False))
+
+    null_date_tids = (
+        groups.loc[groups["trade_date"].isna(), "tenant_id"].dropna().unique().tolist()
+    )
+    if null_date_tids:
+        print("--- raw Date samples (NULL trade_date tenants) ---")
+        raw_sql = f"""
+        select tenant_id, Date as raw_date, count(*) as n
+        from `{RAW_TABLE}`
+        where tenant_id in unnest(@tids)
+        group by tenant_id, Date
+        order by n desc
+        limit 30
+        """
+        raw = client.query(
+            raw_sql,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter("tids", "STRING", null_date_tids),
+                ]
+            ),
+        ).to_dataframe()
+        print(raw.to_string(index=False))
+
     print("--- member rows (first 5 groups) ---")
     for _, g in groups.head(5).iterrows():
         members_sql = f"""

@@ -965,6 +965,10 @@ def test_canonicalize_seed_cell_collapses_known_drift_forms():
     # Schwab CSV currency formatting keys with SnapTrade's bare float.
     assert c("$1,150.00") == c(1150) == "1150"
     assert c("($26.99)") == c(-26.99) == "-26.99"
+    # Minus-then-dollar (Schwab debit) — leading-only ``$`` strip missed these
+    # (run 33141412571: Price parsed, Amount stayed 0 → option 100x test).
+    assert c("-$4,600.00") == c(-4600) == "-4600"
+    assert c("$-4,600.00") == c(-4600) == "-4600"
     # Schwab CSV blank sentinels (Quantity/Price on coupons / expiries).
     assert c("--") == c("N/A") == c("#N/A") == ""
 
@@ -975,6 +979,10 @@ def test_canonicalize_date_mdy_zero_pads_and_accepts_iso():
     assert d("5/14/2024") == d("05/14/2024") == "05/14/2024"
     assert d("8/5/2026") == d("08/05/2026") == "08/05/2026"
     assert d("2024-05-14") == "05/14/2024"
+    assert d("2024-05-14 00:00:00") == "05/14/2024"
+    assert d("05/14/2024 00:00:00") == "05/14/2024"
+    assert d("2024/05/14") == "05/14/2024"
+    assert d("5/14/24") == "05/14/2024"
     assert d("05/14/2024 as of 08:30 PM") == "05/14/2024"
     assert d("") == ""
     assert d(None) == ""

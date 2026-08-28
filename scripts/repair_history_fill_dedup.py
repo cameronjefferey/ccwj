@@ -38,6 +38,8 @@ import re
 
 _DATE_MDY_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 _DATE_ISO_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+_DATE_ISO_SLASH_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})")
+_DATE_MDY_YY_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})(?:\s|$)")
 _CROSS_SOURCE_PRICE_DP = 4
 
 PROJECT = os.environ.get("BQ_RAW_PROJECT", "ccwj-dbt").strip()
@@ -71,11 +73,12 @@ def _canonicalize_seed_cell(value):
         return ""
     if s.lower() in _BLANK_NUMERIC_SENTINELS:
         return ""
-    s_num = s.replace(",", "").strip()
-    if s_num.startswith("$"):
-        s_num = s_num[1:].strip()
+    # Strip every ``$`` (not just a leading one). Schwab debits write
+    # ``-$4,600.00``; leading-only strip left those cells non-numeric
+    # (warehouse run 33141412571).
+    s_num = s.replace(",", "").replace("$", "").strip()
     if len(s_num) >= 2 and s_num[0] == "(" and s_num[-1] == ")":
-        s_num = "-" + s_num[1:-1].replace("$", "").strip()
+        s_num = "-" + s_num[1:-1].strip()
     try:
         f = float(s_num)
     except (TypeError, ValueError):
@@ -112,6 +115,21 @@ def _canonicalize_date_mdy(value):
     m = _DATE_ISO_RE.search(s)
     if m:
         year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(year, month, day).strftime("%m/%d/%Y")
+        except ValueError:
+            return s
+    m = _DATE_ISO_SLASH_RE.search(s)
+    if m:
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(year, month, day).strftime("%m/%d/%Y")
+        except ValueError:
+            return s
+    m = _DATE_MDY_YY_RE.search(s)
+    if m:
+        month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        year += 2000 if year < 100 else 0
         try:
             return date(year, month, day).strftime("%m/%d/%Y")
         except ValueError:

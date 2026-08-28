@@ -10,6 +10,14 @@
     merge-key repair dropped 1 of 11274 raw rows. The remaining collisions
     are created at this cast, not in the raw seed grain.
 
+    Run 33141412571: stripping only a LEADING ``$`` left ``-$4,600.00``
+    (minus-then-dollar, the Schwab debit form) unparseable → Amount 0,
+    while Price ``$1.15`` now parsed. Those rows entered
+    ``stg_history_option_amount_has_contract_multiplier`` (price > 0)
+    with a $0 amount → 893 failures. The original run (33139304912)
+    PASSed that test because ``$`` Price was NULL and excluded. Strip
+    every ``$``, not just a leading one.
+
     Mirrors ``app.upload._canonicalize_seed_cell`` ($ / commas / accounting
     negatives) so staging and the merge key agree.
 #}
@@ -17,11 +25,7 @@
 safe_cast(
     nullif(
         regexp_replace(
-            regexp_replace(
-                replace(trim(cast({{ expr }} as string)), ',', ''),
-                r'^\$',
-                ''
-            ),
+            replace(replace(trim(cast({{ expr }} as string)), ',', ''), '$', ''),
             r'^\((.*)\)$',
             r'-\1'
         ),
