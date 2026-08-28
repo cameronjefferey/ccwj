@@ -32,4 +32,10 @@ where tenant_id is not null
   )
   and quantity > 0
   and price > 0
+  -- Expiries / assignments / Schwab CSV ``$0.00`` / ``--`` Amount land as
+  -- 0 after ``coalesce(amount, 0)``. They are not per-share premiums.
+  -- ``parse_seed_number`` (#67) made ``$`` Price non-NULL so these rows
+  -- newly entered the test and 893 amount-0 contracts failed on
+  -- run 33141412571. The header comment already excluded them.
+  and abs(amount) > 0
   and abs(amount) < quantity * price * 10

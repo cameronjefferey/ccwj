@@ -286,9 +286,8 @@ def _format_date_mdy(value) -> str:
     """Coerce SnapTrade's various date/datetime shapes into ``MM/DD/YYYY``.
 
     stg_history parses dates with ``parse_date('%m/%d/%Y', regexp_extract(date,
-    r'(\\d{1,2}/\\d{1,2}/\\d{4})$'))`` so any string with a trailing
-    MM/DD/YYYY token works; we emit the bare form so the regex anchor is
-    irrelevant.
+    r'(\\d{1,2}/\\d{1,2}/\\d{4})'))`` (MDY token anywhere in the cell, matching
+    ``_canonicalize_date_mdy``). We emit the bare ``MM/DD/YYYY`` form.
     """
     if value is None or value == "":
         return ""
