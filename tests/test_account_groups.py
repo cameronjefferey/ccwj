@@ -18,7 +18,9 @@ from app.models import (
     tenant_ids_for_groups,
 )
 from app.routes import (
+    _blank_query_text,
     _picker_tenant_ids,
+    _requested_account,
     _requested_csv_values,
     _requested_group_ids,
     _scope_filter_options,
@@ -182,6 +184,24 @@ def test_picker_tenant_ids_from_tenants_param():
 def test_requested_csv_values_comma_and_repeated():
     assert _requested_csv_values({"tenants": "a,b,a"}, "tenants") == ["a", "b"]
     assert _requested_csv_values({"tenants": ["x", "y"]}, "tenants") == ["x", "y"]
+
+
+def test_blank_query_text_drops_none_sentinel():
+    assert _blank_query_text(None) == ""
+    assert _blank_query_text("None") == ""
+    assert _blank_query_text("null") == ""
+    assert _blank_query_text("Emmory") == "Emmory"
+    assert _requested_account({"account": "None"}) == ""
+    assert _requested_account({"account": " Emmory "}) == "Emmory"
+
+
+def test_picker_ignores_account_none_when_tenants_set():
+    """Exclude-transfers used to POST account=None next to a real ?tenants=."""
+    labels = {r["tenant_id"]: r["display_nickname"] for r in OWNED}
+    assert _picker_tenant_ids({"account": "None"}, OWNED, labels) == []
+    assert _picker_tenant_ids(
+        {"account": "None", "tenants": "snaptrade:bbb"}, OWNED, labels,
+    ) == ["snaptrade:bbb"]
 
 
 class _FakeGroupDB:

@@ -24,11 +24,14 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.models import is_admin
 from app.routes import (
+    _blank_query_text,
+    _filter_df_by_tenant_ids,
     _norm_account_label,
+    _redirect_if_no_accounts,
+    _requested_account,
+    _requested_csv_values,
     _tenants_for_scope,
     _tenant_sql_and,
-    _filter_df_by_tenant_ids,
-    _redirect_if_no_accounts,
     _user_account_list,
 )
 
@@ -119,6 +122,19 @@ def _match_linked_account(user_accounts, requested: str):
         if _norm_account_label(a).lower() == want:
             return a
     return None
+
+
+def _wealth_no_match(selected_raw, user_accounts, tenant_ids, has_tenant_param):
+    """True when ``?account=`` names nothing the user owns.
+
+    ``?tenants=`` / ``?tenant=`` already scope the page, so a leftover
+    ``account=None`` (Jinja rendering of a missing label) is ignored.
+    """
+    if not selected_raw or has_tenant_param:
+        return False
+    if user_accounts is not None:
+        return _match_linked_account(user_accounts, selected_raw) is None
+    return tenant_ids == []
 
 
 def _collapse_wealth_daily_duplicate_grain(df: pd.DataFrame) -> pd.DataFrame:
@@ -513,7 +529,7 @@ def wealth():
     """Legacy URL — permanently moved to /accounts?view=value."""
     args = {"view": "value"}
     for key in ("account", "tenant", "range", "exclude_transfers"):
-        val = (request.args.get(key) or "").strip()
+        val = _blank_query_text(request.args.get(key))
         if val:
             args[key] = val
     return redirect(url_for("accounts", **args), code=301)
@@ -534,12 +550,18 @@ def render_wealth_view():
         return bounce
 
     user_accounts = _user_account_list()
-    selected_raw = (request.args.get("account") or "").strip()
+    selected_raw = _requested_account()
     range_arg = request.args.get("range", "")
     # Toggle: strip the trader's own deposits / withdrawals out of the
     # change-over-time numbers and the chart's headline line so the page
     # shows growth from the market + income, not from money moved in/out.
     exclude_transfers = request.args.get("exclude_transfers") in ("1", "true", "on")
+    # Tenant params already name the account; a leftover ``account=None``
+    # (Jinja hidden field) must not trip the unknown-account banner.
+    has_tenant_param = bool(
+        _requested_csv_values(None, "tenants")
+        or _blank_query_text(request.args.get("tenant"))
+    )
 
     selected_account = selected_raw
     if selected_raw and user_accounts is not None:
@@ -548,13 +570,9 @@ def render_wealth_view():
             selected_account = matched
 
     tenant_ids = _tenants_for_scope(selected_account or None)
-    if selected_raw and user_accounts is not None:
-        matched = _match_linked_account(user_accounts, selected_raw)
-        wealth_no_match = matched is None
-    elif selected_raw and user_accounts is None:
-        wealth_no_match = tenant_ids == []
-    else:
-        wealth_no_match = False
+    wealth_no_match = _wealth_no_match(
+        selected_raw, user_accounts, tenant_ids, has_tenant_param,
+    )
 
     start_date, end_date = _resolve_range(range_arg, default_days=180)
     tenant_filter = _tenant_sql_and(tenant_ids)

@@ -324,6 +324,32 @@ def _apply_account_labels(target, user_id, col: str = "account"):
     return target
 
 
+# Jinja ``{{ none }}`` and some ``url_for`` calls serialize as the literal
+# string "None". That is not an account name and must not 404 the page.
+_QUERY_SENTINELS = frozenset({"none", "null", "undefined"})
+
+
+def _blank_query_text(val):
+    """Strip a query value; treat None-serialization as empty."""
+    text = str(val or "").strip()
+    if not text or text.lower() in _QUERY_SENTINELS:
+        return ""
+    return text
+
+
+def _requested_account(args=None):
+    """``?account=`` label, or '' if missing / a None sentinel."""
+    if args is None:
+        try:
+            args = request.args
+        except Exception:
+            return ""
+    try:
+        return _blank_query_text(args.get("account"))
+    except Exception:
+        return ""
+
+
 def _requested_csv_values(args, key):
     """Parse ``?key=a,b`` or repeated ``?key=a&key=b`` into unique strings."""
     if args is None:
@@ -464,17 +490,13 @@ def _picker_tenant_ids(args, owned_rows, label_map):
 
     tenant = ""
     try:
-        tenant = (args.get("tenant") or "").strip()
+        tenant = _blank_query_text(args.get("tenant"))
     except Exception:
         tenant = ""
     if tenant and tenant in owned_ids:
         return [tenant]
 
-    account = ""
-    try:
-        account = (args.get("account") or "").strip()
-    except Exception:
-        account = ""
+    account = _requested_account(args)
     if not account:
         return []
     want = _norm_account_label(account).lower()
@@ -536,13 +558,13 @@ def _tenants_for_scope(selected_account=None):
     from app.db import fetch_all
 
     admin = is_admin(current_user.username)
-    selected = (selected_account or "").strip()
+    selected = _blank_query_text(selected_account)
 
     uid = getattr(current_user, "id", None)
 
     # 1. Direct tenant addressing (?tenant=) wins over label matching.
     try:
-        requested_tenant = (request.args.get("tenant") or "").strip()
+        requested_tenant = _blank_query_text(request.args.get("tenant"))
     except Exception:
         requested_tenant = ""
     if requested_tenant:

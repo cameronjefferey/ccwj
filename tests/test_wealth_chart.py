@@ -10,6 +10,7 @@ from app.wealth import (
     _build_summary,
     _collapse_wealth_daily_duplicate_grain,
     _slice_wealth_to_range,
+    _wealth_no_match,
 )
 
 
@@ -367,4 +368,14 @@ def test_account_created_label_empty_rows():
 
     assert _account_created_label([]) is None
     assert _account_created_label(None) is None
+
+
+def test_wealth_no_match_ignores_account_none_when_tenants_set():
+    """The exclude-transfers toggle used to submit account=None next to ?tenants=."""
+    assert _wealth_no_match("", ["Emmory"], ["snaptrade:x"], False) is False
+    assert _wealth_no_match("None", ["Emmory"], ["snaptrade:x"], True) is False
+    assert _wealth_no_match("Nope", ["Emmory"], [], False) is True
+    assert _wealth_no_match("Emmory", ["Emmory"], ["snaptrade:x"], False) is False
+    assert _wealth_no_match("Nope", None, [], False) is True
+    assert _wealth_no_match("Nope", None, ["snaptrade:x"], True) is False
 
