@@ -127,7 +127,10 @@ jobs:
       - name: Run DBT build (seeds + models, excluding price-dependent)
         run: |
           cd dbt
-          dbt build --exclude "stg_daily_prices+"
+          if ! dbt build --exclude "stg_daily_prices+"; then
+            python ../scripts/print_stg_history_dup_groups.py || true
+            exit 1
+          fi
         env:
           DBT_PROJECT_ID: ${{ secrets.DBT_PROJECT_ID }}
           DBT_GCS_BUCKET: ${{ secrets.DBT_GCS_BUCKET }}

@@ -4,9 +4,10 @@ Used by ``.github/workflows/ops_alert.yml`` after a warehouse / prices /
 reconcile job fails. POSTs to the Cloud Agents API so a cloud agent can
 read the failed run, land a minimal fix, and re-run the job.
 
-Caps auto-launches at two consecutive ``[cursor-hotfix]`` attempts so a
-red rebuild cannot spawn agents forever. Same SHA is one agent (re-dispatch
-is a 409, not a second bot).
+Caps auto-launches at two ``[cursor-hotfix]`` commits in 48 hours (a
+human commit between auto-fixes must not reset the cap). Same SHA is one
+agent (re-dispatch is a 409). An already-ACTIVE Hotfix agent for the same
+workflow is reused, not duplicated.
 
 No-op (exit 0) when ``CURSOR_API_KEY`` is unset so a missing key cannot
 fail the alert job. Setup is in the workflow file header.
@@ -32,7 +33,10 @@ CURSOR_AGENT_URL = "https://cursor.com/agents/{agent_id}"
 DEFAULT_REPO_URL = "https://github.com/cameronjefferey/ccwj"
 HOTFIX_MARKER = "[cursor-hotfix]"
 MAX_HOTFIX_ATTEMPTS = 2
+HOTFIX_WINDOW = "48 hours ago"
 SKIP_RETRIES_EXHAUSTED = "retries_exhausted"
+SKIP_IN_FLIGHT = "hotfix_in_flight"
+HOTFIX_NAME_PREFIX = "Hotfix:"
 
 
 def agent_id_for_failure(*, sha: str = "", run_id: str = "") -> str:
@@ -46,8 +50,29 @@ def agent_id_for_run(run_id: str) -> str:
     return agent_id_for_failure(run_id=run_id)
 
 
+def count_hotfix_commits_since(*, since: str = HOTFIX_WINDOW, rev: str = "HEAD") -> int:
+    """How many ``[cursor-hotfix]`` commits landed on ``rev`` in the window.
+
+    Consecutive-from-tip is the wrong cap: a human commit between two
+    auto-fixes resets the streak to 0, so the next warehouse failure
+    looks like attempt 1 and launches another agent (three agents in
+    one evening, Aug 2026). Count the marker in a rolling window on
+    master instead.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "log", f"--since={since}", "--format=%s", rev],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return 0
+    return sum(1 for line in out.splitlines() if HOTFIX_MARKER in line)
+
+
 def count_consecutive_hotfix_commits(sha: str = "", *, limit: int = 20) -> int:
-    """How many ``[cursor-hotfix]`` commits sit at the tip of ``sha`` (or HEAD)."""
+    """Legacy tip-streak counter. Prefer ``count_hotfix_commits_since``."""
     rev = (sha or "").strip() or "HEAD"
     try:
         out = subprocess.check_output(
@@ -140,6 +165,13 @@ your final message.
 """
 
 
+def hotfix_display_name(name: str) -> str:
+    display = f"{HOTFIX_NAME_PREFIX} {name or 'ops job'}"
+    if len(display) > 100:
+        display = display[:97] + "..."
+    return display
+
+
 def compose_launch_body(
     *,
     name: str,
@@ -152,9 +184,7 @@ def compose_launch_body(
     run_id: str,
     attempt: int = 1,
 ) -> dict:
-    display = f"Hotfix: {name or 'ops job'}"
-    if len(display) > 100:
-        display = display[:97] + "..."
+    display = hotfix_display_name(name)
     starting_ref = (branch or "master").strip() or "master"
     return {
         "prompt": {
@@ -232,6 +262,41 @@ def launch_agent(body: dict, *, api_key: str, timeout: int = 30) -> dict:
         return {"status": exc.code, "data": data}
 
 
+def list_agents(*, api_key: str, limit: int = 20, timeout: int = 20) -> list:
+    """Newest-first. Empty on any error so a list blip cannot block a launch."""
+    url = f"{CURSOR_AGENTS_API}?limit={int(limit)}&includeArchived=false"
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": _basic_auth_header(api_key),
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw) if raw else {}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return []
+    items = data.get("items") if isinstance(data, dict) else None
+    return items if isinstance(items, list) else []
+
+
+def find_active_hotfix_agent(items: list, *, workflow_name: str) -> dict | None:
+    """An already-running Hotfix agent for this workflow, if any."""
+    want = hotfix_display_name(workflow_name)
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if (item.get("status") or "").upper() != "ACTIVE":
+            continue
+        if (item.get("name") or "") != want:
+            continue
+        return item
+    return None
+
+
 def agent_url_from_response(result: dict, fallback_id: str) -> str:
     data = result.get("data") or {}
     agent = data.get("agent") if isinstance(data, dict) else None
@@ -272,19 +337,29 @@ def main(argv: list[str] | None = None) -> int:
     sha = os.environ.get("ALERT_SHA") or ""
     run_id = os.environ.get("ALERT_RUN_ID") or url or "unknown"
     repo = os.environ.get("GITHUB_REPOSITORY") or "cameronjefferey/ccwj"
-    consecutive = count_consecutive_hotfix_commits(sha)
-    attempt = consecutive + 1
+    recent = count_hotfix_commits_since()
+    attempt = min(recent + 1, MAX_HOTFIX_ATTEMPTS)
 
     skip = should_skip_loop(
         branch=branch,
         sha=sha,
         skip_sha=os.environ.get("HOTFIX_SKIP_SHA") or "",
-        consecutive_hotfixes=consecutive,
+        consecutive_hotfixes=recent,
     )
     if skip:
         print(f"ops_cursor_hotfix: skipped ({skip})")
         if skip == SKIP_RETRIES_EXHAUSTED:
             _write_github_output("skip_reason", SKIP_RETRIES_EXHAUSTED)
+        return 0
+
+    existing = find_active_hotfix_agent(list_agents(api_key=api_key), workflow_name=name)
+    if existing:
+        existing_url = str(existing.get("url") or "") or CURSOR_AGENT_URL.format(
+            agent_id=existing.get("id") or "unknown"
+        )
+        print(f"ops_cursor_hotfix: skipped ({SKIP_IN_FLIGHT}) {existing_url}")
+        _write_github_output("skip_reason", SKIP_IN_FLIGHT)
+        _write_github_output("agent_url", existing_url)
         return 0
 
     body = compose_launch_body(

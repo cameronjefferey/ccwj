@@ -313,6 +313,11 @@ def dedup_history_by_tenant(df: pd.DataFrame) -> pd.DataFrame:
             cleaned["Date"] = cleaned["Date"].map(
                 lambda v: _canonicalize_date_mdy(v) or v
             )
+        # Persist stripped numerics so stg_history safe_cast sees 42.5
+        # not ``$42.50`` (which becomes NULL then coalesce 0).
+        for col in ("Quantity", "Price", "Amount", "fees_and_comm"):
+            if col in cleaned.columns:
+                cleaned[col] = cleaned[col].map(_canonicalize_seed_cell)
         parts.append(cleaned)
     if not parts:
         return df
