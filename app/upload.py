@@ -1,20 +1,22 @@
 import os
 import re
+import hmac
 import threading
 from contextlib import contextmanager
 from functools import wraps
 import requests
 import pandas as pd
 from io import StringIO
-from flask import render_template, request, flash, redirect, url_for, jsonify
+from flask import render_template, request, flash, redirect, url_for, jsonify, abort
 from flask_login import login_required, current_user
 from app import app
-from app.extensions import limiter
+from app.extensions import csrf, limiter
 from app.models import (
     get_accounts_for_user, add_account_for_user,
-    remove_account_for_user, is_admin,
+    remove_account_for_user,
     record_upload, get_uploads_for_user, count_uploads_for_user,
-    get_or_create_broker_tenant, MANUAL_BROKER_SLUG,
+    get_or_create_broker_tenant, get_broker_tenants_for_user,
+    delete_broker_tenant, MANUAL_BROKER_SLUG,
 )
 from app.utils import demo_block_writes
 from app.seed_store import (
@@ -960,22 +962,150 @@ def _commit_git_paths(path_contents, message):
     return True, None, marker, False
 
 
-EXISTING_ACCOUNTS_QUERY = """
-    SELECT DISTINCT account
-    FROM `ccwj-dbt.analytics.positions_summary`
-    ORDER BY account
-"""
+def _csv_upload_account_choices(tenants):
+    """Build the CSV upload picker: ``{tenant_id, label}`` in display order.
+
+    Labels match Positions (nickname, disambiguated when several physical
+    accounts share a broker label). Values are tenant_ids so picking an
+    existing row can never mint a second ``manual:`` tenant from a nickname.
+    """
+    from app.routes import _disambiguated_tenant_labels
+
+    labels = _disambiguated_tenant_labels(tenants)
+    choices = []
+    for row in tenants or []:
+        tid = (row.get("tenant_id") or "").strip()
+        if not tid:
+            continue
+        label = (labels.get(tid) or row.get("account_name") or tid).strip()
+        choices.append({"tenant_id": tid, "label": label})
+    choices.sort(key=lambda c: (c["label"] or "").lower())
+    return choices
 
 
-def _get_existing_accounts():
-    """Fetch existing account names from BigQuery for the dropdown."""
-    try:
-        from app.bigquery_client import get_bigquery_client
-        client = get_bigquery_client()
-        df = client.query(EXISTING_ACCOUNTS_QUERY).to_dataframe()
-        return sorted(df["account"].dropna().unique().tolist())
-    except Exception:
-        return []
+def _norm_upload_label(val) -> str:
+    return " ".join(str(val or "").strip().split()).lower()
+
+
+def _unique_tenant_for_upload_label(tenants, label):
+    """Return the one owned tenant whose name, nickname, or picker label matches.
+
+    Ambiguous matches (two tenants nicknamed similarly) return None — the
+    caller must pick by tenant_id rather than invent a new account.
+    """
+    from app.routes import _disambiguated_tenant_labels, _tenant_display_label
+
+    want = _norm_upload_label(label)
+    if not want:
+        return None
+    labels = _disambiguated_tenant_labels(tenants)
+    hits = {}
+    for row in tenants or []:
+        tid = (row.get("tenant_id") or "").strip()
+        if not tid:
+            continue
+        candidates = (
+            row.get("account_name"),
+            row.get("display_nickname"),
+            labels.get(tid),
+            _tenant_display_label(row),
+        )
+        if any(_norm_upload_label(c) == want for c in candidates if c):
+            hits[tid] = row
+    if len(hits) == 1:
+        return next(iter(hits.values()))
+    return None
+
+
+def _create_manual_csv_tenant(user_id, account_name):
+    return get_or_create_broker_tenant(
+        user_id=int(user_id),
+        broker_slug=MANUAL_BROKER_SLUG,
+        broker_uuid=f"manual:{account_name}",
+        account_name=account_name,
+        broker_label="CSV Upload",
+    )
+
+
+def _resolve_csv_upload_target(
+    user_id, account_select, account_custom, *,
+    tenants=None, create_manual=None,
+):
+    """Map the upload form to ``(account_name, tenant_id, error)``.
+
+    Existing picker values are ``tenant_id``. ``__new__`` mints a manual
+    tenant only when the typed name does not uniquely match an owned
+    tenant's account_name / nickname / picker label. A bare legacy label
+    (pre-tenant picker) is resolved the same way and otherwise rejected —
+    never used as a new ``manual:manual:<label>`` key, which is how
+    picking "Emmory Investment" created a second account next to the
+    SnapTrade tenant nicknamed Emmory.
+    """
+    select = (account_select or "").strip()
+    custom = (account_custom or "").strip()
+    if tenants is None:
+        tenants = get_broker_tenants_for_user(user_id) or []
+    if create_manual is None:
+        create_manual = _create_manual_csv_tenant
+
+    by_tid = {
+        (row.get("tenant_id") or "").strip(): row
+        for row in tenants
+        if (row.get("tenant_id") or "").strip()
+    }
+
+    def _use(row):
+        name = (row.get("account_name") or "").strip()
+        tid = (row.get("tenant_id") or "").strip()
+        if not (name and tid):
+            return None, None, "That account is missing a tenant id. Pick another, or create a new one."
+        return name, tid, None
+
+    if not select:
+        return None, None, "Please select or enter an account name."
+
+    if select == "__new__":
+        if not custom:
+            return None, None, "Please enter a new account name."
+        match = _unique_tenant_for_upload_label(tenants, custom)
+        if match:
+            return _use(match)
+        tenant_id = create_manual(user_id, custom)
+        return custom, tenant_id, None
+
+    if select in by_tid:
+        return _use(by_tid[select])
+
+    match = _unique_tenant_for_upload_label(tenants, select)
+    if match:
+        return _use(match)
+
+    return None, None, (
+        "That account is not in your linked accounts. "
+        "Pick one from the list, or use “Create new account”."
+    )
+
+
+def _restamp_seed_identity(df, account_name, user_id, tenant_id, account_col="Account"):
+    """Force tenant columns after any CSV rename/slice.
+
+    Brokerage exports often carry an Account / nickname column (Schwab
+    Positions: "Emmory"). Drop+insert is not enough if a later rename
+    produces a duplicate Account column — the CSV nickname would win and
+    mint a second warehouse account. Collapse duplicates then overwrite.
+    """
+    if df is None:
+        return df
+    out = df.copy()
+    if out.columns.duplicated().any():
+        out = out.loc[:, ~out.columns.duplicated()].copy()
+    if account_col in out.columns:
+        out[account_col] = account_name
+    if "user_id" in out.columns:
+        out["user_id"] = "" if user_id is None else int(user_id)
+    if "tenant_id" in out.columns:
+        out["tenant_id"] = "" if tenant_id is None else str(tenant_id).strip()
+    return out
 
 
 def _upload_github_config_ok():
@@ -1026,7 +1156,9 @@ def _prepare_seed_df(
     for col in columns:
         if col not in out.columns:
             out[col] = ""
-    return out[columns]
+    return _restamp_seed_identity(
+        out[columns], account_name, user_id, tenant_id, account_col=account_col,
+    )
 
 
 def _normalize_account_seed_frames(
@@ -1074,7 +1206,10 @@ def _normalize_account_seed_frames(
         for col in HISTORY_SEED_COLUMNS:
             if col not in history_df.columns:
                 history_df[col] = ""
-        history_df = history_df[HISTORY_SEED_COLUMNS]
+        history_df = _restamp_seed_identity(
+            history_df[HISTORY_SEED_COLUMNS],
+            account_name, user_id_int, tenant_id_str,
+        )
 
     if current_df is not None:
         # Schwab API uses cost_basis; seed column is cost_bases
@@ -1091,7 +1226,10 @@ def _normalize_account_seed_frames(
         for seed_col in CURRENT_SEED_COLUMNS:
             if seed_col not in current_df.columns:
                 current_df[seed_col] = ""
-        current_df = current_df[CURRENT_SEED_COLUMNS]
+        current_df = _restamp_seed_identity(
+            current_df[CURRENT_SEED_COLUMNS],
+            account_name, user_id_int, tenant_id_str,
+        )
 
     specs = []
     if not skip_history and history_df is not None:
@@ -1433,6 +1571,128 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     return True, None, rows_removed, head_sha
 
 
+@_serialized_seed_write
+def purge_tenant_ids_from_seeds(tenant_ids, *, commit_message):
+    """Strip raw-seed rows for specific ``tenant_id``s (not a whole user).
+
+    Same read → filter → WRITE_TRUNCATE path as ``purge_user_id_from_seeds``,
+    but the predicate is only ``tenant_id IN (...)``. Does not fall back to
+    informational ``user_id`` — that would yank unrelated tenants that
+    happen to share a numeric id. Use this to undo a stray CSV upload
+    tenant without touching the SnapTrade account it was meant to merge
+    into.
+    """
+    ok, err = _upload_github_config_ok()
+    if not ok:
+        return False, err, {}, None
+
+    wanted = {
+        str(tid).strip()
+        for tid in (tenant_ids or [])
+        if str(tid or "").strip()
+    }
+    if not wanted:
+        return False, "tenant_id is required.", {}, None
+
+    seed_specs = [
+        (HISTORY_PATH, HISTORY_SEED_COLUMNS),
+        (CURRENT_PATH, CURRENT_SEED_COLUMNS),
+        (BALANCE_SEED_PATH, BALANCE_SEED_COLUMNS),
+    ]
+
+    path_contents = []
+    rows_removed = {}
+
+    for path, columns in seed_specs:
+        existing_content = _get_file_content(path)
+        if not existing_content or not existing_content.strip():
+            rows_removed[path] = 0
+            continue
+        try:
+            df = pd.read_csv(StringIO(existing_content), dtype=str, keep_default_na=False)
+        except Exception as exc:
+            return False, f"Could not parse {path}: {exc}", rows_removed, None
+        if df.empty:
+            rows_removed[path] = 0
+            continue
+
+        tenant_col = None
+        for c in df.columns:
+            if str(c).strip().lower() == "tenant_id":
+                tenant_col = c
+                break
+        if tenant_col is None:
+            rows_removed[path] = 0
+            continue
+
+        before = len(df)
+        keep_mask = ~df[tenant_col].astype(str).str.strip().isin(wanted)
+        cleaned = df.loc[keep_mask].copy()
+        removed = before - len(cleaned)
+        if removed == 0:
+            rows_removed[path] = 0
+            continue
+
+        for col in columns:
+            if col not in cleaned.columns:
+                cleaned[col] = ""
+        cleaned = cleaned[columns]
+        path_contents.append((path, cleaned.to_csv(index=False)))
+        rows_removed[path] = removed
+
+    if not path_contents:
+        return True, None, rows_removed, None
+
+    try:
+        ok, err, head_sha, _no_changes = _commit_git_paths(path_contents, commit_message)
+    except Exception as exc:
+        return False, str(exc), rows_removed, None
+    if not ok:
+        return False, err or "Seed store write failed.", rows_removed, None
+    return True, None, rows_removed, head_sha
+
+
+@app.route("/internal/purge-tenant", methods=["POST"])
+@csrf.exempt
+@limiter.limit("10 per hour")
+def internal_purge_tenant():
+    """Operator purge of one manual CSV tenant (seeds + broker_tenants).
+
+    Auth: same ``X-Cache-Flush-Token`` / ``CACHE_FLUSH_TOKEN`` as cache
+    flush. Only ``manual:`` tenant_ids are accepted so a token leak cannot
+    drop a SnapTrade connection.
+    """
+    expected = (os.environ.get("CACHE_FLUSH_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Cache-Flush-Token") or "").strip()
+    if not expected or not hmac.compare_digest(provided, expected):
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    tenant_id = (data.get("tenant_id") or request.form.get("tenant_id") or "").strip()
+    if not tenant_id.startswith("manual:"):
+        return jsonify({"ok": False, "error": "only manual CSV tenants can be purged this way"}), 400
+
+    pg_row = delete_broker_tenant(tenant_id)
+    ok, err, removed, marker = purge_tenant_ids_from_seeds(
+        [tenant_id],
+        commit_message=f"ops: purge stray CSV tenant {tenant_id}",
+    )
+    if not ok:
+        return jsonify({
+            "ok": False,
+            "error": err,
+            "postgres_deleted": bool(pg_row),
+            "rows_removed": removed,
+        }), 500
+    return jsonify({
+        "ok": True,
+        "postgres_deleted": bool(pg_row),
+        "account_name": (pg_row or {}).get("account_name"),
+        "rows_removed": removed,
+        "build_marker": marker,
+    })
+
+
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 @limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
@@ -1454,17 +1714,19 @@ def upload():
 
     if request.method == "GET":
         user_accounts = get_accounts_for_user(current_user.id)
-        # Admins see every account in BigQuery; regular users see only
-        # their linked accounts plus any BigQuery accounts they own.
-        if is_admin(current_user.username):
-            all_bq = _get_existing_accounts()
-            accounts = sorted(set(all_bq))
-        else:
-            accounts = sorted(set(user_accounts))
+        # Picker is tenant-addressed (same nicknames as Positions). Do not
+        # list unscoped BigQuery account labels — picking a nickname/label
+        # used to mint a new manual tenant instead of attaching to the
+        # SnapTrade account the user thought they selected.
+        account_choices = _csv_upload_account_choices(
+            get_broker_tenants_for_user(current_user.id) or [],
+        )
+        accounts = sorted(set(user_accounts))
         recent_uploads = get_uploads_for_user(current_user.id)
         return render_template(
             "upload.html", title="Upload Data",
             accounts=accounts,
+            account_choices=account_choices,
             recent_uploads=recent_uploads,
             github_upload_enabled=seed_writes_enabled,
             csv_export_brokers=CSV_EXPORT_BROKERS,
@@ -1521,15 +1783,11 @@ def upload():
     # ------------------------------------------------------------------
     account_select = request.form.get("account_name", "").strip()
     account_custom = request.form.get("account_name_custom", "").strip()
-
-    # Use the custom name only when the user chose "+ Create new account..."
-    if account_select == "__new__":
-        account_name = account_custom
-    else:
-        account_name = account_select
-
-    if not account_name:
-        flash("Please select or enter an account name.", "danger")
+    account_name, tenant_id, acct_err = _resolve_csv_upload_target(
+        current_user.id, account_select, account_custom,
+    )
+    if acct_err:
+        flash(acct_err, "danger")
         return redirect(url_for("upload"))
 
     # ------------------------------------------------------------------
@@ -1568,17 +1826,11 @@ def upload():
     except Exception:
         is_first_upload = False
 
-    # Manual upload: derive tenant_id from a synthetic but stable
-    # (broker_slug='manual', broker_uuid='manual:<account>') pair.
-    # account_name is unique per user (user_accounts PK), so successive
-    # uploads to the same account label reuse the same tenant_id.
-    # See docs/V2_TENANT_KEY_DESIGN.md.
-    tenant_id = get_or_create_broker_tenant(
-        user_id=current_user.id,
-        broker_slug=MANUAL_BROKER_SLUG,
-        broker_uuid=f"manual:{account_name}",
-        account_name=account_name,
-    )
+    # tenant_id comes from _resolve_csv_upload_target: an existing
+    # SnapTrade/manual tenant the user picked, or a newly minted
+    # ``manual:manual:<name>`` only when they chose Create new and the
+    # name does not already match an owned account. See
+    # docs/V2_TENANT_KEY_DESIGN.md.
 
     ok, err, history_rows, current_rows, head_sha, no_changes = merge_and_push_seeds(
         account_name,

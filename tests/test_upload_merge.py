@@ -140,6 +140,44 @@ def test_purge_user_removes_owned_tenants_even_with_null_or_stale_user_id(
     assert set(kept["tenant_id"]) == {other_tenant}
 
 
+def test_purge_tenant_ids_drops_only_that_tenant(monkeypatch):
+    """CSV-upload undo: drop one manual tenant, leave SnapTrade siblings."""
+    stray = "manual:manual:Emmory Investment"
+    keep = "snaptrade:emmory-uuid"
+    existing = _csv_from_rows([
+        _row("Emmory Investment", 9, "01/01/2026", "Buy", "IYW", 1, 100, -100,
+             tenant_id=stray),
+        _row("Schwab Account", 9, "01/02/2026", "Buy", "AAPL", 1, 110, -110,
+             tenant_id=keep),
+        _row("Other", 7, "01/03/2026", "Buy", "MSFT", 1, 200, -200,
+             tenant_id="snaptrade:other"),
+    ])
+    monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
+    monkeypatch.setattr(
+        _upload,
+        "_get_file_content",
+        lambda path: existing if path == HISTORY_PATH else None,
+    )
+    committed = {}
+
+    def _commit(path_contents, _message):
+        committed.update(dict(path_contents))
+        return True, None, "dispatch:123", False
+
+    monkeypatch.setattr(_upload, "_commit_git_paths", _commit)
+
+    ok, err, removed, marker = _upload.purge_tenant_ids_from_seeds(
+        [stray], commit_message="purge stray Emmory Investment",
+    )
+    assert ok is True and err is None and marker == "dispatch:123"
+    assert removed[HISTORY_PATH] == 1
+    kept = pd.read_csv(
+        io.StringIO(committed[HISTORY_PATH]), dtype=str, keep_default_na=False
+    )
+    assert set(kept["tenant_id"]) == {keep, "snaptrade:other"}
+    assert "Emmory Investment" not in set(kept["Account"])
+
+
 def _parse(csv_text):
     """Round-trip the merged CSV the way dbt reads it.
 
