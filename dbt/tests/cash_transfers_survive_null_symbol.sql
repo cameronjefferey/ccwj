@@ -19,16 +19,7 @@
 with raw_cash as (
     select
         nullif(trim(cast(tenant_id as string)), '') as tenant_id,
-        coalesce(
-            safe.parse_date(
-                '%m/%d/%Y',
-                regexp_extract(cast(Date as string), r'(\d{1,2}/\d{1,2}/\d{4})')
-            ),
-            safe.parse_date(
-                '%Y-%m-%d',
-                regexp_extract(cast(Date as string), r'^(\d{4}-\d{2}-\d{2})')
-            )
-        ) as trade_date,
+        {{ parse_seed_date('Date') }} as trade_date,
         coalesce({{ parse_seed_number('Amount') }}, 0) as amount,
         trim(cast(Action as string)) as action_raw
     from {{ source('raw_broker', 'trade_history') }}
