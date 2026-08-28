@@ -15,14 +15,15 @@ def test_compose_failure_includes_run_url():
         branch="master",
         url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
     )
-    assert "FAILED" in text
-    assert "Update Daily Position Performance" in text
+    assert text.startswith("HappyTrader — warehouse rebuild failed.")
     assert "https://github.com/cameronjefferey/ccwj/actions/runs/1" in text
-    assert "workflow_dispatch" in text
-    assert "Cursor agent" not in text
+    assert "Failed run:" in text
+    assert "workflow_dispatch" not in text
+    assert "branch:" not in text
+    assert "looking at it" not in text
 
 
-def test_compose_failure_includes_cursor_agent_url():
+def test_compose_failure_mentions_agent_without_dumping_its_url():
     text = ot.compose_message(
         name="Update Daily Position Performance",
         conclusion="failure",
@@ -31,7 +32,8 @@ def test_compose_failure_includes_cursor_agent_url():
         url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
         agent_url="https://cursor.com/agents/bc-abc",
     )
-    assert "Cursor agent: https://cursor.com/agents/bc-abc" in text
+    assert "A Cursor agent is looking at it." in text
+    assert "cursor.com/agents/bc-abc" not in text
 
 
 def test_compose_failure_retries_exhausted():
@@ -43,8 +45,23 @@ def test_compose_failure_retries_exhausted():
         url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
         hotfix_skip="retries_exhausted",
     )
-    assert "retries exhausted (2/2)" in text
-    assert "No new agent" in text
+    assert "already tried twice" in text
+    assert "needs a person" in text
+
+
+def test_compose_failure_hotfix_in_flight():
+    text = ot.compose_message(
+        name="Update Daily Position Performance",
+        conclusion="failure",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
+        agent_url="https://cursor.com/agents/bc-live",
+        hotfix_skip="hotfix_in_flight",
+    )
+    assert "already working on it" in text
+    assert "looking at it" not in text
+    assert "cursor.com/agents/bc-live" not in text
 
 
 def test_compose_hotfix_started():
@@ -53,22 +70,25 @@ def test_compose_hotfix_started():
         agent_url="https://cursor.com/agents/bc-abc",
         url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
     )
-    assert text.startswith("HappyTrader: hotfix started")
-    assert "Update Daily Position Performance" in text
+    assert text.startswith("HappyTrader — a Cursor agent is working on the warehouse rebuild.")
+    assert "Watch it:" in text
     assert "https://cursor.com/agents/bc-abc" in text
-    assert "actions/runs/1" in text
+    assert "actions/runs/1" not in text
     assert "FAILED" not in text
 
 
 def test_compose_hotfix_merged():
     text = ot.compose_hotfix_merged(
-        name="Hotfix warehouse dupes",
+        name="[cursor-hotfix] Collapse CSV vs SnapTrade date-padding history dupes",
         pr_url="https://github.com/cameronjefferey/ccwj/pull/65",
         branch="cursor/hotfix-dupes",
     )
-    assert text.startswith("HappyTrader: hotfix merged")
+    assert text.startswith("HappyTrader — the hotfix is live.")
+    assert "Collapse CSV vs SnapTrade date-padding history dupes" in text
+    assert "[cursor-hotfix]" not in text
+    assert "See the change:" in text
     assert "pull/65" in text
-    assert "cursor/hotfix-dupes" in text
+    assert "cursor/hotfix-dupes" not in text
     assert "FAILED" not in text
 
 
@@ -89,7 +109,7 @@ def test_compose_message_kind_started_and_merged():
         agent_url="https://cursor.com/agents/bc-x",
         kind="started",
     )
-    assert started.startswith("HappyTrader: hotfix started")
+    assert started.startswith("HappyTrader — a Cursor agent is working on the warehouse.")
     merged = ot.compose_message(
         name="the pr",
         conclusion="failure",
@@ -98,7 +118,7 @@ def test_compose_message_kind_started_and_merged():
         url="https://example/pull/1",
         kind="merged",
     )
-    assert merged.startswith("HappyTrader: hotfix merged")
+    assert merged.startswith("HappyTrader — the hotfix is live.")
 
 
 def test_compose_test_ping_is_short():
@@ -151,7 +171,9 @@ def test_main_sends_when_configured(monkeypatch, capsys):
     assert "sent" in capsys.readouterr().out
     assert captured["url"].endswith("/bottok/sendMessage")
     assert "chat_id=123" in captured["body"]
-    assert "Warehouse+reconcile" in captured["body"] or "Warehouse reconcile" in captured["body"]
+    from urllib.parse import unquote_plus
+    body = unquote_plus(captured["body"])
+    assert "warehouse audit failed" in body
 
 
 def test_main_sends_hotfix_started(monkeypatch, capsys):
@@ -180,7 +202,9 @@ def test_main_sends_hotfix_started(monkeypatch, capsys):
 
     monkeypatch.setattr(ot.urllib.request, "urlopen", fake_urlopen)
     assert ot.main() == 0
-    assert "hotfix+started" in captured["body"] or "hotfix started" in captured["body"]
+    from urllib.parse import unquote_plus
+    body = unquote_plus(captured["body"])
+    assert "a Cursor agent is working on the warehouse rebuild" in body
     assert "sent" in capsys.readouterr().out
 
 

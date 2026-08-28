@@ -57,6 +57,11 @@ def test_compose_launch_body_opens_a_pr_off_master():
     assert "attempt 2 of 2" in body["prompt"]["text"]
 
 
+def _no_in_flight(monkeypatch, recent=0):
+    monkeypatch.setattr(och, "count_hotfix_commits_since", lambda **k: recent)
+    monkeypatch.setattr(och, "list_agents", lambda **k: [])
+
+
 def test_count_consecutive_hotfix_commits(monkeypatch):
     def fake_check_output(cmd, **kwargs):
         return (
@@ -75,6 +80,50 @@ def test_count_consecutive_stops_at_human_commit(monkeypatch):
 
     monkeypatch.setattr(och.subprocess, "check_output", fake_check_output)
     assert och.count_consecutive_hotfix_commits("HEAD") == 0
+
+
+def test_count_hotfix_commits_since_includes_across_human_commits(monkeypatch):
+    def fake_check_output(cmd, **kwargs):
+        assert any(str(part).startswith("--since=") for part in cmd)
+        return (
+            "[cursor-hotfix] Collapse CSV Qualified vs SnapTrade Cash Dividend\n"
+            "Cap auto-hotfix agents at two consecutive attempts.\n"
+            "[cursor-hotfix] Collapse CSV vs SnapTrade date-padding history dupes\n"
+        )
+
+    monkeypatch.setattr(och.subprocess, "check_output", fake_check_output)
+    assert och.count_hotfix_commits_since() == 2
+
+
+def test_find_active_hotfix_agent_matches_same_workflow():
+    items = [
+        {
+            "id": "bc-idle",
+            "name": "Hotfix: Update Daily Position Performance",
+            "status": "IDLE",
+            "url": "https://cursor.com/agents/bc-idle",
+        },
+        {
+            "id": "bc-live",
+            "name": "Hotfix: Update Daily Position Performance",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+        },
+        {
+            "id": "bc-other",
+            "name": "Hotfix: Evening price refresh (snap equities to official close)",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-other",
+        },
+    ]
+    found = och.find_active_hotfix_agent(
+        items, workflow_name="Update Daily Position Performance"
+    )
+    assert found["id"] == "bc-live"
+    assert (
+        och.find_active_hotfix_agent(items, workflow_name="Warehouse reconcile audit")
+        is None
+    )
 
 
 def test_should_skip_cursor_branch_and_repeat_sha():
@@ -104,7 +153,7 @@ def test_main_skips_without_key(monkeypatch, capsys):
 def test_main_skips_cursor_branch(monkeypatch, capsys):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "cursor/hotfix-dupes")
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
+    _no_in_flight(monkeypatch)
     assert och.main() == 0
     assert "cursor agent branch" in capsys.readouterr().out
 
@@ -115,7 +164,7 @@ def test_main_skips_after_two_hotfix_commits(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("ALERT_BRANCH", "master")
     monkeypatch.setenv("ALERT_SHA", "deadbeef")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 2)
+    _no_in_flight(monkeypatch, recent=2)
     launched = {"n": 0}
 
     def fake_launch(body, *, api_key, timeout=30):
@@ -127,6 +176,42 @@ def test_main_skips_after_two_hotfix_commits(monkeypatch, capsys, tmp_path):
     assert launched["n"] == 0
     assert "retries_exhausted" in capsys.readouterr().out
     assert "skip_reason=retries_exhausted" in out.read_text()
+
+
+def test_main_skips_when_hotfix_agent_already_active(monkeypatch, capsys, tmp_path):
+    out = tmp_path / "github_output"
+    monkeypatch.setenv("CURSOR_API_KEY", "key")
+    monkeypatch.setenv("ALERT_NAME", "Update Daily Position Performance")
+    monkeypatch.setenv("ALERT_BRANCH", "master")
+    monkeypatch.setenv("ALERT_SHA", "newsha")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(och, "count_hotfix_commits_since", lambda **k: 1)
+    monkeypatch.setattr(
+        och,
+        "list_agents",
+        lambda **k: [
+            {
+                "id": "bc-live",
+                "name": "Hotfix: Update Daily Position Performance",
+                "status": "ACTIVE",
+                "url": "https://cursor.com/agents/bc-live",
+            }
+        ],
+    )
+    launched = {"n": 0}
+
+    def fake_launch(body, *, api_key, timeout=30):
+        launched["n"] += 1
+        return {"status": 201, "data": {}}
+
+    monkeypatch.setattr(och, "launch_agent", fake_launch)
+    assert och.main() == 0
+    assert launched["n"] == 0
+    printed = capsys.readouterr().out
+    assert "hotfix_in_flight" in printed
+    written = out.read_text()
+    assert "skip_reason=hotfix_in_flight" in written
+    assert "agent_url=https://cursor.com/agents/bc-live" in written
 
 
 def test_main_launches_and_writes_output(monkeypatch, capsys, tmp_path):
@@ -141,7 +226,7 @@ def test_main_launches_and_writes_output(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("ALERT_RUN_ID", "1")
     monkeypatch.setenv("GITHUB_REPOSITORY", "cameronjefferey/ccwj")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
+    _no_in_flight(monkeypatch)
 
     captured = {}
 
@@ -177,7 +262,7 @@ def test_main_treats_409_as_already_launched_without_started_ping(
     monkeypatch.setenv("ALERT_RUN_ID", "99")
     monkeypatch.setenv("ALERT_BRANCH", "master")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
+    _no_in_flight(monkeypatch)
 
     def fake_launch(body, *, api_key, timeout=30):
         return {"status": 409, "data": {"error": "agent_id_conflict"}}
@@ -191,7 +276,7 @@ def test_main_treats_409_as_already_launched_without_started_ping(
 def test_main_nonzero_on_api_error(monkeypatch):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "master")
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
+    _no_in_flight(monkeypatch)
 
     def fake_launch(body, *, api_key, timeout=30):
         return {"status": 401, "data": {"message": "unauthorized"}}
@@ -204,7 +289,7 @@ def test_main_nonzero_on_api_error(monkeypatch):
 def test_main_nonzero_on_network_error(monkeypatch):
     monkeypatch.setenv("CURSOR_API_KEY", "key")
     monkeypatch.setenv("ALERT_BRANCH", "master")
-    monkeypatch.setattr(och, "count_consecutive_hotfix_commits", lambda sha="": 0)
+    _no_in_flight(monkeypatch)
 
     def boom(*a, **k):
         raise URLError("down")

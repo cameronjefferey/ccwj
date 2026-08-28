@@ -10,12 +10,47 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+
+# Internal Actions names → the sentence a human would say.
+_JOB_ALIASES = {
+    "Update Daily Position Performance": "Warehouse rebuild",
+    "Evening price refresh (snap equities to official close)": "Evening price refresh",
+    "Warehouse reconcile audit": "Warehouse audit",
+    "Manual hotfix": "That job",
+    "Ops alert": "Ops",
+}
+
+
+def friendly_job_name(name: str) -> str:
+    n = " ".join((name or "").split())
+    return _JOB_ALIASES.get(n, n or "A job")
+
+
+def _the_job(name: str) -> str:
+    job = friendly_job_name(name)
+    if not job:
+        return "the job"
+    return job[0].lower() + job[1:]
+
+
+def _clean_pr_title(title: str) -> str:
+    t = " ".join((title or "").split())
+    t = re.sub(r"^\[cursor-hotfix\]\s*", "", t, flags=re.I)
+    return t
+
+
+def _labeled(label: str, url: str) -> str:
+    u = (url or "").strip()
+    if not u:
+        return ""
+    return f"{label}\n{u}"
 
 
 def compose_hotfix_started(
@@ -24,15 +59,13 @@ def compose_hotfix_started(
     agent_url: str,
     url: str = "",
 ) -> str:
+    # Failed-run URL lives on the failure ping; this one is just the agent.
+    _ = url
     lines = [
-        "HappyTrader: hotfix started",
-        name or "ops job",
-        (agent_url or "").strip(),
+        f"HappyTrader — a Cursor agent is working on the {_the_job(name)}.",
+        _labeled("Watch it:", agent_url),
     ]
-    run = (url or "").strip()
-    if run:
-        lines.append(run)
-    return "\n".join(line for line in lines if line)
+    return "\n\n".join(line for line in lines if line)
 
 
 def compose_hotfix_merged(
@@ -41,15 +74,16 @@ def compose_hotfix_merged(
     pr_url: str,
     branch: str = "",
 ) -> str:
-    lines = [
-        "HappyTrader: hotfix merged",
-        name or "ops job",
-    ]
-    b = (branch or "").strip()
-    if b:
-        lines.append(f"branch: {b}")
-    lines.append((pr_url or "").strip())
-    return "\n".join(line for line in lines if line)
+    # cursor/hotfix-… branch names are not worth reading.
+    _ = branch
+    lines = ["HappyTrader — the hotfix is live."]
+    title = _clean_pr_title(name)
+    if title:
+        lines.append(title)
+    link = _labeled("See the change:", pr_url)
+    if link:
+        lines.append(link)
+    return "\n\n".join(lines)
 
 
 def is_cursor_hotfix_branch(ref: str) -> bool:
@@ -58,6 +92,28 @@ def is_cursor_hotfix_branch(ref: str) -> bool:
     if b.startswith("refs/heads/"):
         b = b[len("refs/heads/") :]
     return b.startswith("cursor/")
+
+
+def compose_failure(
+    *,
+    name: str,
+    url: str,
+    agent_url: str = "",
+    hotfix_skip: str = "",
+) -> str:
+    job = friendly_job_name(name)
+    lines = [f"HappyTrader — {_the_job(name)} failed."]
+    skip = (hotfix_skip or "").strip()
+    if skip == "retries_exhausted":
+        lines.append("A Cursor agent already tried twice. This needs a person.")
+    elif skip == "hotfix_in_flight":
+        lines.append("A Cursor agent is already working on it.")
+    elif (agent_url or "").strip():
+        lines.append("A Cursor agent is looking at it.")
+    link = _labeled("Failed run:", url)
+    if link:
+        lines.append(link)
+    return "\n\n".join(lines)
 
 
 def compose_message(
@@ -71,27 +127,28 @@ def compose_message(
     kind: str = "",
     hotfix_skip: str = "",
 ) -> str:
+    # event/branch stay in the signature (workflow env) but are not
+    # dumped into the ping — workflow_dispatch / master is noise.
+    _ = event
     k = (kind or "").strip().lower()
     if k == "started":
         return compose_hotfix_started(name=name, agent_url=agent_url, url=url)
     if k == "merged":
         return compose_hotfix_merged(name=name, pr_url=url, branch=branch)
     if (conclusion or "").strip().lower() == "test":
-        return "HappyTrader ops alert test ping. Telegram is wired."
+        return "HappyTrader — Telegram is wired. This was a test ping."
     status = (conclusion or "failed").strip().lower()
-    verb = "FAILED" if status in ("failure", "failed") else status.upper()
-    lines = [
-        f"HappyTrader: {name} {verb}",
-        f"event: {event or '?'}",
-        f"branch: {branch or '?'}",
-        url or "",
-    ]
-    agent = (agent_url or "").strip()
-    if agent:
-        lines.append(f"Cursor agent: {agent}")
-    if (hotfix_skip or "").strip() == "retries_exhausted":
-        lines.append("Cursor hotfix retries exhausted (2/2). No new agent.")
-    return "\n".join(lines).rstrip()
+    if status not in ("failure", "failed"):
+        return (
+            f"HappyTrader — {friendly_job_name(name)} ended ({status}).\n\n"
+            + (_labeled("Run:", url) or "")
+        ).rstrip()
+    return compose_failure(
+        name=name,
+        url=url,
+        agent_url=agent_url,
+        hotfix_skip=hotfix_skip,
+    )
 
 
 def send_telegram(text: str, *, token: str, chat_id: str, timeout: int = 20) -> None:
