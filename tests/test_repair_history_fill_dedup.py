@@ -107,3 +107,18 @@ def test_repair_never_collapses_across_tenants():
     out = dedup_history_by_tenant(df)
     assert len(out) == 2
     assert set(out["tenant_id"]) == {"snaptrade:parent", "snaptrade:child"}
+
+
+def test_repair_collapses_csv_cent_price_vs_snaptrade_fill_price():
+    df = pd.DataFrame([
+        _row("Schwab Account", "04/24/2026", "Buy", "JEPQ",
+             "100.0", "58.965", "-5896.5",
+             tenant_id="snaptrade:ira",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+        _row("Schwab Account", "4/24/26", "Buy", "JEPQ",
+             "100", "$58.97 ", "($5,896.50)",
+             tenant_id="snaptrade:ira",
+             desc="JPMORGAN NASDAQ EQUITY PREMIUM INCOME ETF"),
+    ], columns=HISTORY_SEED_COLUMNS)
+    out = dedup_history_by_tenant(df)
+    assert len(out) == 1

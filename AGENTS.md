@@ -632,7 +632,12 @@ files are both optional (upload either or both). The account picker is
 it must not mint a new `manual:manual:<label>` from a nickname. “Create
 new account” is the only path that creates a manual tenant, and even
 then a typed name that uniquely matches an owned nickname/account_name
-attaches instead of duplicating. The page lists a collapsed section
+attaches instead of duplicating. An ambiguous shared broker label
+(several SnapTrade tenants all named `Schwab Account`) is rejected —
+it must not mint `manual:manual:Schwab Account` beside them. Schwab CSV
+equity Price is cents (`$58.97`) while SnapTrade keeps the fill Price
+(`58.965`); `_dedup_history_rows` collapses those on Amount@2dp so the
+same buy is not counted twice. The page lists a collapsed section
 per brokerage; Schwab's section (open by default) holds export steps plus
 the history / positions file drop, account picker, and submit — copy that
 branch when another parser ships. Every other broker is a request
