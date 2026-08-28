@@ -285,14 +285,15 @@
                         <div class="mb-3">
                             <h6 class="fw-bold mb-2">Account Name <span class="text-danger">*</span></h6>
                             <p class="text-muted small mb-2">
-                                Select an existing account or create a new one. This will be applied to all
-                                rows in the files you upload.
+                                Pick the same account you see on Positions. The CSV is added to
+                                that account — a new account is created only if you choose
+                                “Create new account”.
                             </p>
                             <select class="form-select mb-2" name="account_name" id="accountSelect"
                                     {% if not upload_cfg_ok %}disabled{% endif %}>
                                 <option value="" selected>-- Select an account --</option>
-                                {% for acct in accounts %}
-                                <option value="{{ acct }}">{{ acct | account_label }}</option>
+                                {% for choice in account_choices|default([]) %}
+                                <option value="{{ choice.tenant_id }}">{{ choice.label }}</option>
                                 {% endfor %}
                                 <option value="__new__">+ Create new account...</option>
                             </select>

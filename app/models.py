@@ -1457,6 +1457,35 @@ def get_broker_tenant(tenant_id):
     )
 
 
+def delete_broker_tenant(tenant_id):
+    """Remove one ``broker_tenants`` row. Returns the deleted row, or None.
+
+    If no other tenant for that user still uses the same ``account_name``,
+    also drop the ``user_accounts`` label so the upload sidebar does not
+    keep a ghost name. Shared labels (several ``Schwab Account`` tenants)
+    are left in ``user_accounts``.
+    """
+    tid = (tenant_id or "").strip()
+    if not tid:
+        return None
+    row = get_broker_tenant(tid)
+    if not row:
+        return None
+    execute("DELETE FROM broker_tenants WHERE tenant_id = %s", (tid,))
+    uid = row.get("user_id")
+    name = (row.get("account_name") or "").strip()
+    if uid is not None and name:
+        sibling = fetch_one(
+            "SELECT tenant_id FROM broker_tenants "
+            "WHERE user_id = %s AND account_name = %s AND tenant_id <> %s "
+            "LIMIT 1",
+            (int(uid), name, tid),
+        )
+        if sibling is None:
+            remove_account_for_user(int(uid), name)
+    return row
+
+
 def get_tenant_ids_for_user(user_id):
     """Active tenant_ids the user can see.
 

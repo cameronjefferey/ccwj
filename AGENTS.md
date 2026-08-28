@@ -611,7 +611,13 @@ allows promo codes).
 ### Upload (`/upload`)
 **Status: Working. CSV upload + SnapTrade sync entry points.**
 CSV upload parses Schwab's web export. History and current-positions
-files are both optional (upload either or both). The page lists a collapsed section
+files are both optional (upload either or both). The account picker is
+**tenant-addressed** (same nicknames as Positions, `option value` is
+`tenant_id`) so picking an existing account merges into that tenant —
+it must not mint a new `manual:manual:<label>` from a nickname. “Create
+new account” is the only path that creates a manual tenant, and even
+then a typed name that uniquely matches an owned nickname/account_name
+attaches instead of duplicating. The page lists a collapsed section
 per brokerage; Schwab's section (open by default) holds export steps plus
 the history / positions file drop, account picker, and submit — copy that
 branch when another parser ships. Every other broker is a request
