@@ -3,6 +3,7 @@ import re
 import hmac
 import threading
 from contextlib import contextmanager
+from datetime import date, datetime
 from functools import wraps
 import requests
 import pandas as pd
@@ -429,14 +430,19 @@ def _normalize_tid(value) -> str:
 # but value-identical dupes; CURRENCY_USD rows show the drift directly:
 # ``-16.189999999999998``, ``-27.000000000000004``, ``-26.990000000000002``).
 # Canonicalizing numeric-looking cells to a fixed precision before the dedup
-# collapses these. Non-numeric cells (Date, Action, Symbol, Description) are
+# collapses these. Non-numeric cells (Action, Symbol, Description) are
 # returned unchanged so we don't accidentally normalize away semantic content.
+# Date is handled separately by ``_canonicalize_date_mdy`` (CSV vs SnapTrade
+# zero-padding). Currency-formatted Amount/Price ("$1,150.00", "($26.99)")
+# from a Schwab web export is treated as numeric so it keys with SnapTrade's
+# bare float.
 def _canonicalize_seed_cell(value):
     """Normalize a seed cell for the merge dedup key.
 
     - ``None`` / NaN / ``"nan"`` / ``"None"`` / ``"<NA>"`` → empty string.
     - Numeric-looking cells → ``"%.6f"`` (trailing-zero stripped) so float
-      precision drift across syncs does not break dedup.
+      precision drift across syncs does not break dedup. ``$``, thousands
+      commas, and accounting ``(123.45)`` negatives are stripped first.
     - Everything else → ``str(value).strip()``.
     """
     if value is None:
@@ -446,8 +452,13 @@ def _canonicalize_seed_cell(value):
     s = str(value).strip()
     if not s or s.lower() in ("nan", "none", "<na>"):
         return ""
+    s_num = s.replace(",", "").strip()
+    if s_num.startswith("$"):
+        s_num = s_num[1:].strip()
+    if len(s_num) >= 2 and s_num[0] == "(" and s_num[-1] == ")":
+        s_num = "-" + s_num[1:-1].replace("$", "").strip()
     try:
-        f = float(s)
+        f = float(s_num)
     except (TypeError, ValueError):
         return s
     if pd.isna(f):
@@ -462,6 +473,59 @@ def _canonicalize_seed_cell(value):
     if out == "-0":
         return "0"
     return out
+
+
+# SnapTrade writes Date via ``strftime('%m/%d/%Y')`` (zero-padded). Schwab's
+# web CSV export omits the leading zero (``5/14/2024``). stg_history parses
+# both with ``parse_date('%m/%d/%Y', …)`` so they become the SAME trade_date
+# and trip ``stg_history_no_duplicate_fills_per_tenant`` unless the merge
+# key treats them as one fill. ISO ``YYYY-MM-DD`` (pandas datetime
+# round-trip) is accepted too. Production: run 33132317666, 2026-08-28 —
+# a CSV upload onto a SnapTrade tenant grew stg_history 6.9k → 10.0k and
+# failed the test with 153 groups.
+_DATE_MDY_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+_DATE_ISO_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def _canonicalize_date_mdy(value):
+    """Normalize a Date cell to zero-padded ``MM/DD/YYYY``.
+
+    Unrecognized values fall through to ``str.strip()`` so a weird broker
+    date still keys as itself instead of collapsing into ``""``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%m/%d/%Y")
+    if isinstance(value, date):
+        return value.strftime("%m/%d/%Y")
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    m = _DATE_MDY_RE.search(s)
+    if m:
+        month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(year, month, day).strftime("%m/%d/%Y")
+        except ValueError:
+            return s
+    m = _DATE_ISO_RE.search(s)
+    if m:
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(year, month, day).strftime("%m/%d/%Y")
+        except ValueError:
+            return s
+    return s
+
+
+def _canonicalize_key_cell(col, value):
+    """Dedup-key canonicalizer: Date → MM/DD/YYYY, everything else as usual."""
+    if str(col).lower() == "date":
+        return _canonicalize_date_mdy(value)
+    return _canonicalize_seed_cell(value)
 
 
 # Cross-source Price precision. SnapTrade's two feeds report a fill's Price at
@@ -537,7 +601,7 @@ def _dedup_history_rows(df, seed_columns):
     canon = df[key_cols].copy()
     for c in key_cols:
         if c in canon.columns:
-            canon[c] = canon[c].map(_canonicalize_seed_cell)
+            canon[c] = canon[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
     df = df.loc[keep_mask].reset_index(drop=True)
 
@@ -614,7 +678,7 @@ def _dedup_history_rows(df, seed_columns):
             # activities 4dp) — round it in the key so the same fill collides.
             canon2[c] = canon2[c].map(_canonicalize_cross_source_price)
         else:
-            canon2[c] = canon2[c].map(_canonicalize_seed_cell)
+            canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     desc_lens = df["Description"].fillna("").astype(str).str.len()
     # Visit longer-description rows first so the richer one wins its group.
     order = (-desc_lens.to_numpy()).argsort(kind="stable")
@@ -699,7 +763,9 @@ def _merge_seed_with_existing(
     # human needs to look at, not something a sync should paper over by
     # destroying every other tenant's data.
     try:
-        existing_df = pd.read_csv(StringIO(existing_content))
+        existing_df = pd.read_csv(
+            StringIO(existing_content), dtype=str, keep_default_na=False,
+        )
     except Exception as exc:
         raise SeedFetchError(
             f"Existing seed at {path} failed to parse: {exc}. "
@@ -810,7 +876,9 @@ def _merge_seed_with_existing(
                         if _normalize_tid(v) == "" else _normalize_tid(v)
                     )
                 else:
-                    canon[c] = combined[c].map(_canonicalize_seed_cell)
+                    canon[c] = combined[c].map(
+                        lambda v, _c=c: _canonicalize_key_cell(_c, v)
+                    )
 
         combined = combined.sort_values("__src", kind="stable")  # 0 first, 1 last
         keep_mask = ~canon.duplicated(subset=key_cols, keep="last")
