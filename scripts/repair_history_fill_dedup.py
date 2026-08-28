@@ -3,17 +3,17 @@
 
 Warehouse run 33132317666 (2026-08-28) failed
 ``stg_history_no_duplicate_fills_per_tenant`` with 153 groups after a
-Schwab CSV upload landed on a SnapTrade tenant. stg_history grew
-6.9k → 10.0k. Root cause: SnapTrade writes zero-padded ``05/14/2024``
-while Schwab's CSV export writes ``5/14/2024``. ``stg_history`` parses
-both to the same DATE; ``_dedup_history_rows`` compared the raw strings
-and kept both.
+Schwab CSV upload landed on a SnapTrade tenant. A first repair keyed
+only on date-padding (``5/14/2024`` vs ``05/14/2024``) and dropped 0 of
+11,219 raw rows — the overlapping coupon is CSV ``Qualified Dividend``
+vs SnapTrade ``Cash Dividend``, which ``stg_history`` maps to the same
+``dividend`` action.
 
 This script re-runs the same per-tenant fill grain as
-``app.upload._dedup_history_rows`` (after the date-padding fix) against
-the raw ``trade_history`` seed and WRITE_TRUNCATEs if anything changed.
-The warehouse workflow calls it before the first dbt build so the test
-sees a clean seed. No-op when already clean.
+``app.upload._dedup_history_rows`` (date pad + staging action + CHECK 1
+amount) against the raw ``trade_history`` seed and WRITE_TRUNCATEs if
+anything changed. The warehouse workflow calls it before the first dbt
+build so the test sees a clean seed. No-op when already clean.
 
 Flask-free: the warehouse job has BigQuery credentials but not
 SECRET_KEY / Postgres. Helpers are inlined from ``app/upload.py`` and
@@ -118,6 +118,69 @@ def _canonicalize_key_cell(col, value):
     return _canonicalize_seed_cell(value)
 
 
+# Mirrors stg_history.sql cleaned.action — must stay in lockstep with
+# app.upload._STG_HISTORY_ACTION (run 33139304912: date-padding repair
+# dropped 0 because CSV Qualified Dividend ≠ SnapTrade Cash Dividend).
+_STG_HISTORY_ACTION = {
+    "buy": "equity_buy",
+    "sell": "equity_sell",
+    "sell short": "equity_sell_short",
+    "sell to open": "option_sell_to_open",
+    "buy to close": "option_buy_to_close",
+    "buy to open": "option_buy_to_open",
+    "sell to close": "option_sell_to_close",
+    "expired": "option_expired",
+    "assigned": "option_assigned",
+    "exchange or exercise": "option_exercised",
+    "qualified dividend": "dividend",
+    "cash dividend": "dividend",
+    "special dividend": "dividend",
+    "special qual div": "dividend",
+    "pr yr cash div": "dividend",
+    "margin interest": "margin_interest",
+    "credit interest": "credit_interest",
+    "adr mgmt fee": "adr_fee",
+    "deposit": "cash_transfer",
+    "withdrawal": "cash_transfer",
+    "cash transfer": "cash_transfer",
+}
+_STG_CASH_OUT_ACTIONS = {
+    "equity_buy", "option_buy_to_open", "option_buy_to_close",
+    "margin_interest", "adr_fee",
+}
+_STG_CASH_IN_ACTIONS = {
+    "equity_sell", "equity_sell_short", "option_sell_to_open",
+    "option_sell_to_close", "dividend", "credit_interest",
+}
+
+
+def _normalize_history_action(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    return _STG_HISTORY_ACTION.get(s.lower(), "other")
+
+
+def _canonicalize_stg_amount(action, amount):
+    base = _canonicalize_seed_cell(amount)
+    if base == "":
+        return ""
+    try:
+        f = float(base)
+    except (TypeError, ValueError):
+        return base
+    norm = _normalize_history_action(action)
+    if norm in _STG_CASH_OUT_ACTIONS:
+        f = -abs(f)
+    elif norm in _STG_CASH_IN_ACTIONS:
+        f = abs(f)
+    return _canonicalize_seed_cell(f)
+
+
 def _canonicalize_cross_source_price(value):
     base = _canonicalize_seed_cell(value)
     if base == "":
@@ -133,7 +196,7 @@ def _canonicalize_cross_source_price(value):
 
 
 def _dedup_history_rows(df, seed_columns):
-    """Same grain as ``app.upload._dedup_history_rows`` (date-padded)."""
+    """Same grain as ``app.upload._dedup_history_rows`` (staging action)."""
     if df is None or df.empty:
         return df
     key_cols = [
@@ -168,6 +231,8 @@ def _dedup_history_rows(df, seed_columns):
     for c in cross_key_cols:
         if c == price_col:
             canon2[c] = canon2[c].map(_canonicalize_cross_source_price)
+        elif str(c).lower() == "action":
+            canon2[c] = df[c].map(_normalize_history_action)
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     desc_lens = df["Description"].fillna("").astype(str).str.len()
@@ -183,10 +248,44 @@ def _dedup_history_rows(df, seed_columns):
             drop_positions.add(pos)
         else:
             seen.add(key)
-    if not drop_positions:
+    if drop_positions:
+        keep_mask2 = [i not in drop_positions for i in range(len(df))]
+        df = df.loc[keep_mask2].reset_index(drop=True)
+
+    amount_col = next((c for c in seed_columns if str(c).lower() == "amount"), None)
+    date_col = next((c for c in seed_columns if str(c).lower() == "date"), None)
+    action_col = next((c for c in seed_columns if str(c).lower() == "action"), None)
+    qty_col = next((c for c in seed_columns if str(c).lower() == "quantity"), None)
+    if not all([amount_col, date_col, action_col, qty_col, sym_col, price_col]):
         return df
-    keep_mask2 = [i not in drop_positions for i in range(len(df))]
-    return df.loc[keep_mask2].reset_index(drop=True)
+
+    df = df.reset_index(drop=True)
+    eligible3 = df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+    desc_lens3 = df["Description"].fillna("").astype(str).str.len()
+    order3 = (-desc_lens3.to_numpy()).argsort(kind="stable")
+    seen3: set = set()
+    drop3: set = set()
+    for pos in order3:
+        if not bool(eligible3.iloc[pos]):
+            continue
+        key3 = (
+            _canonicalize_date_mdy(df.iloc[pos][date_col]),
+            _normalize_history_action(df.iloc[pos][action_col]),
+            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_seed_cell(df.iloc[pos][qty_col]),
+            _canonicalize_seed_cell(df.iloc[pos][price_col]),
+            _canonicalize_stg_amount(
+                df.iloc[pos][action_col], df.iloc[pos][amount_col],
+            ),
+        )
+        if key3 in seen3:
+            drop3.add(pos)
+        else:
+            seen3.add(key3)
+    if not drop3:
+        return df
+    keep_mask3 = [i not in drop3 for i in range(len(df))]
+    return df.loc[keep_mask3].reset_index(drop=True)
 
 
 def dedup_history_by_tenant(df: pd.DataFrame) -> pd.DataFrame:
@@ -211,6 +310,32 @@ def dedup_history_by_tenant(df: pd.DataFrame) -> pd.DataFrame:
     if not parts:
         return df
     return pd.concat(parts, ignore_index=True)[HISTORY_SEED_COLUMNS]
+
+
+def _log_remaining_staging_dups(df: pd.DataFrame, limit: int = 8) -> None:
+    """If the Python grain still misses a stg_history collision, print it."""
+    if df is None or df.empty:
+        return
+    work = df.copy()
+    work["__k"] = list(zip(
+        work["tenant_id"].map(lambda v: str(v).strip()),
+        work["Date"].map(_canonicalize_date_mdy),
+        work["Action"].map(_normalize_history_action),
+        work["Symbol"].map(_canonicalize_seed_cell),
+        work["Quantity"].map(_canonicalize_seed_cell),
+        work["Price"].map(_canonicalize_seed_cell),
+        [
+            _canonicalize_stg_amount(a, amt)
+            for a, amt in zip(work["Action"], work["Amount"])
+        ],
+    ))
+    sized = work.groupby("__k").size()
+    dups = sized[sized > 1]
+    if dups.empty:
+        return
+    print(f"WARNING: {len(dups)} staging-grain groups still collide after repair")
+    for key, n in list(dups.items())[:limit]:
+        print(f"  n={int(n)} key={key}")
 
 
 def _client():
@@ -260,6 +385,7 @@ def main(argv=None) -> int:
         return 1
     if dropped == 0:
         print("Already clean — no write.")
+        _log_remaining_staging_dups(cleaned)
         return 0
     if args.dry_run:
         print("Dry run — not writing.")

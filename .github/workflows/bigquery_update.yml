@@ -116,10 +116,11 @@ jobs:
         continue-on-error: true
 
       # Re-run history fill dedup on the raw seed before dbt tests.
-      # Needed when a merge-grain fix (CSV vs SnapTrade date padding)
-      # lands after the dirty rows are already in analytics_raw —
-      # without this, stg_history_no_duplicate_fills_per_tenant stays
-      # red until every tenant re-syncs. No-op when the seed is clean.
+      # Needed when a merge-grain fix (CSV vs SnapTrade date padding
+      # or Qualified Dividend vs Cash Dividend) lands after the dirty
+      # rows are already in analytics_raw — without this,
+      # stg_history_no_duplicate_fills_per_tenant stays red until every
+      # tenant re-syncs. No-op when the seed is clean.
       - name: Collapse already-landed duplicate history fills
         run: python scripts/repair_history_fill_dedup.py
 

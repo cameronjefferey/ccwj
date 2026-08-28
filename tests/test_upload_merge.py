@@ -993,6 +993,52 @@ def test_dedup_collapses_csv_unpadded_date_vs_snaptrade_padded():
     assert str(out.iloc[0]["Description"]) == "ISHARES US TECHNOLOGY ETF"
 
 
+def test_dedup_collapses_csv_qualified_dividend_vs_snaptrade_cash_dividend():
+    """Run 33139304912: date-padding repair dropped 0 of 11219 raw rows.
+    Schwab CSV writes ``Qualified Dividend``; SnapTrade type=DIVIDEND
+    writes ``Cash Dividend``. stg_history maps both to ``dividend``, so
+    the warehouse test saw 153 groups. Price is blank (not a fill), so
+    the cross-source pass must not be the only path that collapses them.
+    """
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Cash Dividend", "JEPI",
+             "", "", 42.50,
+             tenant_id="snaptrade:emmory",
+             desc="JPMorgan Equity Premium Income ETF"),
+        _row("Emmory", 9, "5/14/2024", "Qualified Dividend", "JEPI",
+             "", "", 42.50,
+             tenant_id="snaptrade:emmory",
+             desc="JEPI"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"dividend action aliases must collapse, got {len(out)}"
+    assert str(out.iloc[0]["Description"]) == "JPMorgan Equity Premium Income ETF"
+
+
+def test_dedup_collapses_buy_vs_buy_case_on_same_fill():
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Buy", "IYW",
+             20, 131.96, -2639.2, tenant_id="snaptrade:emmory",
+             desc="ISHARES US TECHNOLOGY ETF"),
+        _row("Emmory", 9, "05/14/2024", "BUY", "IYW",
+             20, 131.96, -2639.2, tenant_id="snaptrade:emmory",
+             desc="IYW"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1, f"Buy vs BUY must collapse, got {len(out)}"
+
+
+def test_dedup_keeps_distinct_dividends_of_different_amounts():
+    df = pd.DataFrame([
+        _row("Emmory", 9, "05/14/2024", "Cash Dividend", "JEPI",
+             "", "", 42.50, tenant_id="snaptrade:emmory", desc="a"),
+        _row("Emmory", 9, "05/14/2024", "Qualified Dividend", "JEPI",
+             "", "", 17.00, tenant_id="snaptrade:emmory", desc="b"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2, "different coupon amounts are distinct events"
+
+
 def test_merge_collapses_csv_date_padding_across_existing_seed(monkeypatch):
     """Same grain as test_dedup_collapses_csv_unpadded_date_vs_snaptrade_padded
     but through the full merge path (existing SnapTrade row + new CSV row)."""

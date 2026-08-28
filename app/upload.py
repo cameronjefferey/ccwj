@@ -528,6 +528,77 @@ def _canonicalize_key_cell(col, value):
     return _canonicalize_seed_cell(value)
 
 
+# Mirrors ``stg_history.sql`` ``cleaned.action`` (lower(trim(action)) CASE).
+# SnapTrade writes ``Cash Dividend`` for type=DIVIDEND and ``Qualified
+# Dividend`` for type=QUALIFIEDDIVIDEND; Schwab's CSV export uses
+# ``Qualified Dividend`` for the same coupon. The warehouse test groups
+# on this normalized action, so the merge key must too — otherwise a CSV
+# upload onto a SnapTrade tenant rematerializes every overlapping
+# dividend (run 33139304912: 153 groups; date-padding repair dropped 0).
+# Unmapped non-empty labels become ``other`` (same as dbt); blank stays
+# blank so we never fuse empty-action rows into that bucket.
+_STG_HISTORY_ACTION = {
+    "buy": "equity_buy",
+    "sell": "equity_sell",
+    "sell short": "equity_sell_short",
+    "sell to open": "option_sell_to_open",
+    "buy to close": "option_buy_to_close",
+    "buy to open": "option_buy_to_open",
+    "sell to close": "option_sell_to_close",
+    "expired": "option_expired",
+    "assigned": "option_assigned",
+    "exchange or exercise": "option_exercised",
+    "qualified dividend": "dividend",
+    "cash dividend": "dividend",
+    "special dividend": "dividend",
+    "special qual div": "dividend",
+    "pr yr cash div": "dividend",
+    "margin interest": "margin_interest",
+    "credit interest": "credit_interest",
+    "adr mgmt fee": "adr_fee",
+    "deposit": "cash_transfer",
+    "withdrawal": "cash_transfer",
+    "cash transfer": "cash_transfer",
+}
+_STG_CASH_OUT_ACTIONS = {
+    "equity_buy", "option_buy_to_open", "option_buy_to_close",
+    "margin_interest", "adr_fee",
+}
+_STG_CASH_IN_ACTIONS = {
+    "equity_sell", "equity_sell_short", "option_sell_to_open",
+    "option_sell_to_close", "dividend", "credit_interest",
+}
+
+
+def _normalize_history_action(value):
+    """Map a seed Action cell to ``stg_history.action``."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none", "<na>"):
+        return ""
+    return _STG_HISTORY_ACTION.get(s.lower(), "other")
+
+
+def _canonicalize_stg_amount(action, amount):
+    """Amount as ``stg_history.amount_signed`` would emit it."""
+    base = _canonicalize_seed_cell(amount)
+    if base == "":
+        return ""
+    try:
+        f = float(base)
+    except (TypeError, ValueError):
+        return base
+    norm = _normalize_history_action(action)
+    if norm in _STG_CASH_OUT_ACTIONS:
+        f = -abs(f)
+    elif norm in _STG_CASH_IN_ACTIONS:
+        f = abs(f)
+    return _canonicalize_seed_cell(f)
+
+
 # Cross-source Price precision. SnapTrade's two feeds report a fill's Price at
 # DIFFERENT precision: the ``recent_orders`` feed derives it at full float
 # precision (e.g. 131.960622, 0.486667, 351.43513) while ``activities`` carries
@@ -677,6 +748,10 @@ def _dedup_history_rows(df, seed_columns):
             # Price drifts across sources by trailing precision (orders 6dp vs
             # activities 4dp) — round it in the key so the same fill collides.
             canon2[c] = canon2[c].map(_canonicalize_cross_source_price)
+        elif str(c).lower() == "action":
+            # Buy/BUY and Cash Dividend/Qualified Dividend are one action
+            # after stg_history parse — key them that way here too.
+            canon2[c] = df[c].map(_normalize_history_action)
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     desc_lens = df["Description"].fillna("").astype(str).str.len()
@@ -693,10 +768,54 @@ def _dedup_history_rows(df, seed_columns):
             drop_positions.add(pos)
         else:
             seen.add(key)
-    if not drop_positions:
+    if drop_positions:
+        keep_mask2 = [i not in drop_positions for i in range(len(df))]
+        df = df.loc[keep_mask2].reset_index(drop=True)
+
+    # ---- Third pass: staging CHECK 1 grain (symbol present) ----------------
+    # Dividend / interest rows usually have a ticker and a BLANK Price, so
+    # the fill pass above skips them. CSV ``Qualified Dividend`` vs
+    # SnapTrade ``Cash Dividend`` then survive until stg_history maps both
+    # to ``dividend`` and the warehouse test fails. Eligibility requires a
+    # Symbol so blank-symbol expiries / fee lines (distinguished only by
+    # Description) are never fused — same guard as the fill pass, Price
+    # allowed blank. Amount is re-signed the way stg_history does.
+    amount_col = next((c for c in seed_columns if str(c).lower() == "amount"), None)
+    date_col = next((c for c in seed_columns if str(c).lower() == "date"), None)
+    action_col = next((c for c in seed_columns if str(c).lower() == "action"), None)
+    qty_col = next((c for c in seed_columns if str(c).lower() == "quantity"), None)
+    if not all([amount_col, date_col, action_col, qty_col, sym_col, price_col]):
         return df
-    keep_mask2 = [i not in drop_positions for i in range(len(df))]
-    return df.loc[keep_mask2].reset_index(drop=True)
+    if "Description" not in df.columns:
+        return df
+
+    df = df.reset_index(drop=True)
+    eligible3 = df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+    desc_lens3 = df["Description"].fillna("").astype(str).str.len()
+    order3 = (-desc_lens3.to_numpy()).argsort(kind="stable")
+    seen3: set = set()
+    drop3: set = set()
+    for pos in order3:
+        if not bool(eligible3.iloc[pos]):
+            continue
+        key3 = (
+            _canonicalize_date_mdy(df.iloc[pos][date_col]),
+            _normalize_history_action(df.iloc[pos][action_col]),
+            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_seed_cell(df.iloc[pos][qty_col]),
+            _canonicalize_seed_cell(df.iloc[pos][price_col]),
+            _canonicalize_stg_amount(
+                df.iloc[pos][action_col], df.iloc[pos][amount_col],
+            ),
+        )
+        if key3 in seen3:
+            drop3.add(pos)
+        else:
+            seen3.add(key3)
+    if not drop3:
+        return df
+    keep_mask3 = [i not in drop3 for i in range(len(df))]
+    return df.loc[keep_mask3].reset_index(drop=True)
 
 
 # Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
