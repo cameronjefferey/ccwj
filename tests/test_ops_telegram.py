@@ -19,6 +19,19 @@ def test_compose_failure_includes_run_url():
     assert "Update Daily Position Performance" in text
     assert "https://github.com/cameronjefferey/ccwj/actions/runs/1" in text
     assert "workflow_dispatch" in text
+    assert "Cursor agent" not in text
+
+
+def test_compose_failure_includes_cursor_agent_url():
+    text = ot.compose_message(
+        name="Update Daily Position Performance",
+        conclusion="failure",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
+        agent_url="https://cursor.com/agents/bc-abc",
+    )
+    assert "Cursor agent: https://cursor.com/agents/bc-abc" in text
 
 
 def test_compose_test_ping_is_short():

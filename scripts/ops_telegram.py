@@ -25,17 +25,22 @@ def compose_message(
     event: str,
     branch: str,
     url: str,
+    agent_url: str = "",
 ) -> str:
     if (conclusion or "").strip().lower() == "test":
         return "HappyTrader ops alert test ping. Telegram is wired."
     status = (conclusion or "failed").strip().lower()
     verb = "FAILED" if status in ("failure", "failed") else status.upper()
-    return (
-        f"HappyTrader: {name} {verb}\n"
-        f"event: {event or '?'}\n"
-        f"branch: {branch or '?'}\n"
-        f"{url}"
-    )
+    lines = [
+        f"HappyTrader: {name} {verb}",
+        f"event: {event or '?'}",
+        f"branch: {branch or '?'}",
+        url or "",
+    ]
+    agent = (agent_url or "").strip()
+    if agent:
+        lines.append(f"Cursor agent: {agent}")
+    return "\n".join(lines).rstrip()
 
 
 def send_telegram(text: str, *, token: str, chat_id: str, timeout: int = 20) -> None:
@@ -71,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         event=os.environ.get("ALERT_EVENT") or "",
         branch=os.environ.get("ALERT_BRANCH") or "",
         url=os.environ.get("ALERT_URL") or "",
+        agent_url=os.environ.get("ALERT_AGENT_URL") or "",
     )
     try:
         send_telegram(text, token=token, chat_id=chat_id)

@@ -1,11 +1,12 @@
 name: Ops alert (Telegram)
 
-# Phone ping when a data-pipeline job actually FAILS. Cancelled runs
-# (cancel-in-progress on overlapping warehouse rebuilds) do NOT fire —
-# those are expected. GitHub already emails watchers; this is the
-# "look at this now" channel for the operator.
+# Phone ping when a data-pipeline job actually FAILS, then launch a Cursor
+# cloud agent to investigate, land a hotfix PR, merge, and re-run the job.
+# Cancelled runs (cancel-in-progress on overlapping warehouse rebuilds) do
+# NOT fire — those are expected. GitHub already emails watchers; Telegram
+# is the "look at this now" channel, and the agent is the hands.
 #
-# Setup (once):
+# Telegram setup (once):
 #   1. Telegram → @BotFather → /newbot → copy the token
 #   2. Message the bot once, then
 #      curl "https://api.telegram.org/bot<TOKEN>/getUpdates"
@@ -14,9 +15,25 @@ name: Ops alert (Telegram)
 #      gh secret set TELEGRAM_CHAT_ID
 #   4. Actions → "Ops alert (Telegram)" → Run workflow  (test ping)
 #
-# If the secrets are unset the job no-ops so a missing bot cannot fail CI.
-# This workflow file must live on the default branch — workflow_run
-# listeners only fire from master/main.
+# Cursor hotfix setup (once):
+#   1. Cursor Dashboard → API Keys → generate a user API key
+#      https://cursor.com/dashboard/api
+#   2. That Cursor account must have GitHub connected to this repo
+#      (cloud agents clone with the key owner's GitHub credentials)
+#   3. gh secret set CURSOR_API_KEY
+#   Missing key → launch no-ops; Telegram still fires.
+#   To send an already-failed run to Cursor without waiting for the next
+#   one: Run workflow → paste the Actions run URL into failed_run_url.
+#
+# Why this lives in GitHub Actions instead of a Cursor Automation: Cursor's
+# "workflow run completed" trigger only fires for *push*-started runs.
+# Production warehouse rebuilds are almost always workflow_dispatch (app
+# seed write via _dispatch_warehouse_rebuild) or schedule — they would
+# never start an automation. This workflow_run listener sees all of them.
+#
+# If the secrets are unset the matching step no-ops so a missing bot/key
+# cannot fail CI. This workflow file must live on the default branch —
+# workflow_run listeners only fire from master/main.
 #
 # The Flask app also pings this chat for early product events (signups,
 # Pro/AI subscribe, first data, feedback, broken connections). Those
@@ -33,20 +50,44 @@ on:
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      failed_run_url:
+        description: "Failed Actions run URL to hotfix (leave empty for a Telegram test ping only)"
+        required: false
+        type: string
 
 jobs:
-  telegram:
+  alert:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Real workflow_run failures, or a manual dispatch that named a run.
+      # An empty dispatch is the Telegram test ping and must not spawn an agent.
+      - name: Launch Cursor hotfix agent
+        id: cursor
+        if: github.event_name == 'workflow_run' || inputs.failed_run_url != ''
+        continue-on-error: true
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ALERT_NAME: ${{ github.event.workflow_run.name || 'Manual hotfix' }}
+          ALERT_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'failure' }}
+          ALERT_EVENT: ${{ github.event.workflow_run.event || 'workflow_dispatch' }}
+          ALERT_BRANCH: ${{ github.event.workflow_run.head_branch || 'master' }}
+          ALERT_URL: ${{ github.event.workflow_run.html_url || inputs.failed_run_url }}
+          ALERT_SHA: ${{ github.event.workflow_run.head_sha }}
+          ALERT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: python scripts/ops_cursor_hotfix.py
+
       - name: Send Telegram alert
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ALERT_NAME: ${{ github.event.workflow_run.name || 'Ops alert' }}
-          ALERT_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'test' }}
+          ALERT_NAME: ${{ github.event.workflow_run.name || (inputs.failed_run_url != '' && 'Manual hotfix') || 'Ops alert' }}
+          ALERT_CONCLUSION: ${{ github.event.workflow_run.conclusion || (inputs.failed_run_url != '' && 'failure') || 'test' }}
           ALERT_EVENT: ${{ github.event.workflow_run.event || 'workflow_dispatch' }}
           ALERT_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
-          ALERT_URL: ${{ github.event.workflow_run.html_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
+          ALERT_URL: ${{ github.event.workflow_run.html_url || inputs.failed_run_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
+          ALERT_AGENT_URL: ${{ steps.cursor.outputs.agent_url }}
         run: python scripts/ops_telegram.py
