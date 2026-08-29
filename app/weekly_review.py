@@ -1701,6 +1701,15 @@ def _trades_as_of_date(user_today, market_session, et_today=None):
     return session
 
 
+def _session_is_live(market_session):
+    """True while a U.S. cash regular session is in progress or after-hours.
+
+    Weekend and pre-market are not a live session — last close belongs on
+    Overview, not on /today.
+    """
+    return (market_session or {}).get("state") in ("open", "after_hours")
+
+
 def _snapshot_as_of_date(user_today, market_session, close_as_of=None,
                          et_today=None):
     """Latest snapshot date that is a real session, not a UTC forward-fill.
@@ -1712,15 +1721,19 @@ def _snapshot_as_of_date(user_today, market_session, close_as_of=None,
     moment UTC rolled. Cap at the last official close when we have one,
     else at the last completed ET session (today only counts after the
     bell). Never return a date after the user's local today.
+
+    ``close_as_of`` may rewind only the same evening (after-hours, yfinance
+    has not published today's close yet). Once ET has moved on — weekend,
+    Monday pre-market — Friday is done and must not snap back to Thursday.
     """
     et_today = et_today or _date_in_user_tz("America/New_York")
     state = (market_session or {}).get("state")
     if state == "after_hours":
         cutoff = et_today
+        if close_as_of is not None and close_as_of < cutoff:
+            cutoff = close_as_of
     else:
         cutoff = _adjacent_weekday(et_today, -1)
-    if close_as_of is not None and close_as_of < cutoff:
-        cutoff = close_as_of
     if cutoff > user_today:
         cutoff = user_today
     return cutoff
@@ -3464,21 +3477,27 @@ def build_today_batch(tenant_filter, today):
 def _today_delay_copy(market_session):
     """Always-on disclaimer for the live /today page."""
     state = (market_session or {}).get("state") or "open"
+    if not _session_is_live({"state": state}):
+        shared = (
+            "There is no live U.S. session right now. "
+            "The official close is on Overview."
+        )
+        if state == "pre_market":
+            extra = "This page fills in once the regular session starts (9:30 ET)."
+        else:
+            extra = "U.S. market is closed for the weekend."
+        return {"shared": shared, "extra": extra, "state": state}
     shared = (
         "These numbers are from the current session and can lag your broker. "
         "They are not the official close."
     )
     if state == "open":
         extra = "U.S. market is open. Last-trade prices and the last sync may be minutes behind."
-    elif state == "after_hours":
+    else:
         extra = (
             "Regular session has closed. After-hours marks can keep moving "
             "until the next open."
         )
-    elif state == "pre_market":
-        extra = "U.S. market is not open yet. Figures below can be from overnight last-trade."
-    else:
-        extra = "U.S. market is closed. Figures below can be stale."
     return {"shared": shared, "extra": extra, "state": state}
 
 
@@ -4198,6 +4217,8 @@ def today_view():
         "selected_tenants": request.args.get("tenants") or None,
         "error": None,
         "market_session": market_session,
+        "session_is_live": _session_is_live(market_session),
+        "last_close_date": _snapshot_as_of_date(today, market_session),
         "delay": _today_delay_copy(market_session),
         "today_movers": None,
         "after_hours_movers": None,
@@ -4210,18 +4231,30 @@ def today_view():
 
     try:
         client = get_bigquery_client()
-        batch_queries = build_today_batch(tenant_filter, today)
-
-        ah_tenants = post_close_broker_tenant_ids(current_user.id)
-        if tenant_ids is not None:
-            ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
-        after_hours_ready = (
-            market_session.get("state") == "after_hours"
-            and bool(ah_tenants)
-        )
-        if after_hours_ready:
-            batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(
-                tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
+        live = context["session_is_live"]
+        if live:
+            batch_queries = build_today_batch(tenant_filter, today)
+            ah_tenants = post_close_broker_tenant_ids(current_user.id)
+            if tenant_ids is not None:
+                ah_tenants = {t for t in ah_tenants if t in set(tenant_ids)}
+            after_hours_ready = (
+                market_session.get("state") == "after_hours"
+                and bool(ah_tenants)
+            )
+            if after_hours_ready:
+                batch_queries["after_hours"] = AFTER_HOURS_MOVERS_QUERY.format(
+                    tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
+        else:
+            # Weekend / pre-market: do not replay last session as "today".
+            after_hours_ready = False
+            batch_queries = {
+                "today_trades": (
+                    DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
+                    bigquery.QueryJobConfig(query_parameters=[
+                        bigquery.ScalarQueryParameter("day", "DATE", today),
+                    ]),
+                ),
+            }
 
         batch = _bq_parallel(client, batch_queries)
 
@@ -4230,31 +4263,32 @@ def today_view():
             if df is not None and not df.empty:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
 
-        context["today_movers"] = _build_today_movers(
-            batch.get("today_moves", pd.DataFrame()),
-            options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
-            dividends_df=batch.get("today_dividends", pd.DataFrame()),
-        )
-        _tm = context["today_movers"]
-        if _tm.get("as_of"):
-            _tm["is_today"] = (_tm["as_of"] == today.isoformat())
-            try:
-                _tm["as_of_label"] = datetime.strptime(
-                    _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
-            except ValueError:
-                _tm["as_of_label"] = _tm["as_of"]
-        else:
-            _tm["is_today"] = True
+        if live:
+            context["today_movers"] = _build_today_movers(
+                batch.get("today_moves", pd.DataFrame()),
+                options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
+                dividends_df=batch.get("today_dividends", pd.DataFrame()),
+            )
+            _tm = context["today_movers"]
+            if _tm.get("as_of"):
+                _tm["is_today"] = (_tm["as_of"] == today.isoformat())
+                try:
+                    _tm["as_of_label"] = datetime.strptime(
+                        _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
+                except ValueError:
+                    _tm["as_of_label"] = _tm["as_of"]
+            else:
+                _tm["is_today"] = True
 
-        if after_hours_ready:
-            context["after_hours_movers"] = _build_after_hours_movers(
-                batch.get("after_hours", pd.DataFrame()))
+            if after_hours_ready:
+                context["after_hours_movers"] = _build_after_hours_movers(
+                    batch.get("after_hours", pd.DataFrame()))
+            context["open_option_record"] = _open_option_record(
+                batch.get("open_options", pd.DataFrame()), today)
 
         label_map = _tenant_label_map_for_user(current_user.id)
         context["trades_today"] = _split_day_fills(
             batch.get("today_trades", pd.DataFrame()), label_map=label_map)
-        context["open_option_record"] = _open_option_record(
-            batch.get("open_options", pd.DataFrame()), today)
     except Exception as e:
         app.logger.warning("Today page failed: %s", e)
         context["error"] = str(e)
