@@ -27,8 +27,10 @@
 </div>
 
 <div class="review-hero">
-    <div class="hero-kicker">Today &middot; {{ today.strftime('%A, %b %-d') }} &middot; live session</div>
-    {% if today_movers and today_movers.combined_impact is not none %}
+    <div class="hero-kicker">Today &middot; {{ today.strftime('%A, %b %-d') }}{% if session_is_live %} &middot; live session{% endif %}</div>
+    {% if not session_is_live %}
+    <p class="hero-headline">No live session</p>
+    {% elif today_movers and today_movers.combined_impact is not none %}
     {% set ti = today_movers.combined_impact %}
     {% set _pos = ti >= 0 %}
     <p class="hero-headline">
@@ -47,8 +49,19 @@
     <p class="hero-headline">Today</p>
     {% endif %}
     <p class="hero-subtitle">
+        {% if not session_is_live %}
+        U.S. markets are closed.
+        {% if last_close_date %}
+        {{ last_close_date.strftime('%A, %b %-d') }}'s close is on
+        {% else %}
+        Last close is on
+        {% endif %}
+        <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}"
+           style="color: rgba(255,255,255,.75);">Overview</a>.
+        {% else %}
         Last-trade prices and last broker sync — not the official close.
         Same-day fills appear after the next sync.
+        {% endif %}
     </p>
     <div class="hero-meta">
         {% if market_session %}
@@ -79,7 +92,12 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Fills dated {{ today.strftime('%a %b %-d') }}. Same-day trades often land after the next sync (activities are T+1; orders can show sooner).
+        Fills dated {{ today.strftime('%a %b %-d') }}.
+        {% if not session_is_live %}
+        No U.S. cash session today.
+        {% else %}
+        Same-day trades often land after the next sync (activities are T+1; orders can show sooner).
+        {% endif %}
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -120,7 +138,7 @@
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.</div>
+    <div class="tt-empty">{% if not session_is_live %}No session today.{% else %}No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.{% endif %}</div>
     {% endif %}
 </div>
 

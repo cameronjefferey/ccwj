@@ -170,7 +170,9 @@ This is the page a paying customer opens for the **last completed session**. It 
 
 Live / in-session last-trade numbers live on **Today** (`/today`, endpoint `today_view`).
 Overview movers, trades, and snapshots all cap at `_snapshot_as_of_date` (during Friday's
-open that is Thursday). Copy always names the session date.
+open that is Thursday). After the bell — and all weekend — that date is Friday.
+Copy always names the session date. A stale warehouse close must not rewind
+Overview back to Thursday once Saturday has started.
 
 The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
 callers don't break.
@@ -205,13 +207,17 @@ What's working:
 
 This is the only surface allowed to say "today". Banner: numbers can lag the
 broker; they are not the official close (that's Overview). Nav sits in the
-same Overview dropdown.
+same Overview dropdown. Weekend and pre-market are **not** a live session:
+do not replay Friday's close (or 24/7 crypto bars) as "today" — Overview
+already has the last completed session. `/today` then shows an empty
+"no live session" state.
 
 - Calendar-today fills (`DAY_TRADES_QUERY` with `@day` = user today). Same-day
   trades often land after the next sync (activities are T+1).
-- Movers use the two newest `stg_daily_prices` rows with `date <=` calendar
-  today — includes in-session last-trade bars. Header is holdings price impact,
-  not full account value.
+- Movers (only while `_session_is_live`: open or after-hours) use the two
+  newest `stg_daily_prices` rows with `date <=` calendar today — includes
+  in-session last-trade bars. Header is holdings price impact, not full
+  account value.
 - After-hours movers: broker mark vs official close (moved here from Overview).
   Only rendered once `_us_market_session()` is `after_hours` AND the broker mark
   is post-close (`post_close_broker_tenant_ids` in `app/snaptrade.py`). Gate is

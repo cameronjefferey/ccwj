@@ -1433,6 +1433,27 @@ class TestReviewSessionDates:
             self.friday, {"state": "after_hours"}, et_today=self.friday
         ) == self.friday
 
+    def test_snapshot_cutoff_weekend_is_friday(self):
+        saturday = date(2026, 8, 15)
+        assert _snapshot_as_of_date(
+            saturday, {"state": "weekend"}, et_today=saturday
+        ) == self.friday
+
+    def test_snapshot_cutoff_weekend_does_not_rewind_to_thursday(self):
+        """Stale warehouse close must not hide Friday once the weekend starts."""
+        saturday = date(2026, 8, 15)
+        assert _snapshot_as_of_date(
+            saturday, {"state": "weekend"},
+            close_as_of=self.thursday, et_today=saturday
+        ) == self.friday
+
+    def test_session_is_live_only_open_or_after_hours(self):
+        from app.weekly_review import _session_is_live
+        assert _session_is_live({"state": "open"}) is True
+        assert _session_is_live({"state": "after_hours"}) is True
+        assert _session_is_live({"state": "weekend"}) is False
+        assert _session_is_live({"state": "pre_market"}) is False
+
     def test_snapshot_cutoff_prefers_official_close_when_older(self):
         # Friday after-hours but yfinance hasn't published Friday's close
         # yet — the spine row is still Thursday's balance copied forward.
@@ -1567,6 +1588,13 @@ class TestTodayPageBatch:
         copy = _today_delay_copy({"state": "open"})
         assert "not the official close" in copy["shared"].lower()
         assert "open" in copy["extra"].lower()
+
+    def test_delay_copy_weekend_points_at_overview(self):
+        from app.weekly_review import _today_delay_copy
+        copy = _today_delay_copy({"state": "weekend"})
+        assert "overview" in copy["shared"].lower()
+        assert "weekend" in copy["extra"].lower()
+        assert "current session" not in copy["shared"].lower()
 
 
 class TestOverviewVoice:
