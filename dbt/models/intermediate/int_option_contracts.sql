@@ -414,12 +414,27 @@ flagged as (
         -- Effective realization date for the CLOSED portion (unchanged
         -- precedence from the old final SELECT): history closing-action date
         -- (capped at expiry for late-booked settlements) → past-expiry
-        -- calendar → OTM-at-expiry inference. NULL only when nothing has
-        -- closed and the contract has not expired.
+        -- calendar → OTM-at-expiry inference → snapshot-drop close.
+        -- NULL only when the contract is still Open (live snapshot, or a
+        -- same-day open that beat the snapshot).
+        --
+        -- Snapshot-drop close (Aug 2026 CHECK 12): status already flips
+        -- to Closed when the broker drops a pre-today contract
+        -- (`open_date < current_date` + no snapshot). Leaving
+        -- close_date NULL made int_option_exit_analysis skip the row
+        -- (`close_date is not null`) so mart_coaching_signals.total_closed
+        -- lagged classification Closed counts (run 33301622998).
+        -- Date it to today — the moment we accepted snapshot truth —
+        -- until a real settlement fill / expiry date arrives.
         coalesce(
             case when cur_trade_symbol is null then _activity_flat_close_date end,
             close_date,
-            case when inferred_otm_today then option_expiry end
+            case when inferred_otm_today then option_expiry end,
+            case
+                when cur_trade_symbol is null
+                 and open_date < current_date('America/New_York')
+                then current_date('America/New_York')
+            end
         ) as eff_close_date
     from joined
 ),
