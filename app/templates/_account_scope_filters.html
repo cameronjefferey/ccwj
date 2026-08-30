@@ -3,16 +3,16 @@
    *applied* hidden fields. Apply copies the boxes into ?groups= / ?tenants=.
    Groups always lists every group (account selection must not trap you).
    Accounts lists members of applied groups, or every account if none. #}
-{% set _g_names = namespace(items=[]) %}
+{% set _g_names = namespace(names=[]) %}
 {% for g in account_groups %}
     {% if g.id in selected_group_ids %}
-        {% set _g_names.items = _g_names.items + [g.name] %}
+        {% set _g_names.names = _g_names.names + [g.name] %}
     {% endif %}
 {% endfor %}
-{% set _a_names = namespace(items=[]) %}
+{% set _a_names = namespace(names=[]) %}
 {% for c in scope_account_choices %}
     {% if c.tenant_id in selected_tenant_ids %}
-        {% set _a_names.items = _a_names.items + [c.label] %}
+        {% set _a_names.names = _a_names.names + [c.label] %}
     {% endif %}
 {% endfor %}
 
@@ -25,14 +25,14 @@
                 {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
                 data-bs-toggle="dropdown" data-bs-auto-close="outside"
                 aria-expanded="false">
-            {% if not _g_names.items %}
+            {% if not _g_names.names %}
             All groups
-            {% elif _g_names.items|length == 1 %}
-            {{ _g_names.items[0] }}
-            {% elif _g_names.items|length == 2 %}
-            {{ _g_names.items[0] }}, {{ _g_names.items[1] }}
+            {% elif _g_names.names|length == 1 %}
+            {{ _g_names.names[0] }}
+            {% elif _g_names.names|length == 2 %}
+            {{ _g_names.names[0] }}, {{ _g_names.names[1] }}
             {% else %}
-            {{ _g_names.items|length }} groups
+            {{ _g_names.names|length }} groups
             {% endif %}
         </button>
         <div class="dropdown-menu ht-ms-menu">
@@ -72,14 +72,14 @@
                 {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
                 data-bs-toggle="dropdown" data-bs-auto-close="outside"
                 aria-expanded="false">
-            {% if not _a_names.items %}
+            {% if not _a_names.names %}
             All accounts
-            {% elif _a_names.items|length == 1 %}
-            {{ _a_names.items[0] }}
-            {% elif _a_names.items|length == 2 %}
-            {{ _a_names.items[0] }}, {{ _a_names.items[1] }}
+            {% elif _a_names.names|length == 1 %}
+            {{ _a_names.names[0] }}
+            {% elif _a_names.names|length == 2 %}
+            {{ _a_names.names[0] }}, {{ _a_names.names[1] }}
             {% else %}
-            {{ _a_names.items|length }} accounts
+            {{ _a_names.names|length }} accounts
             {% endif %}
         </button>
         <div class="dropdown-menu ht-ms-menu">
