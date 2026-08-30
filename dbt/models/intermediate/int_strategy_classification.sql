@@ -626,15 +626,24 @@ equity_classified as (
         e.last_trade_date                      as close_date,
         e.days_held                            as days_in_trade,
         e.net_cash_flow,
-        e.total_pnl,
-        -- Realized vs unrealized for equity sessions:
-        --   Closed session: every share has been sold → all P&L is realized
-        --   Open session:   realized = sum of int_closed_equity_legs for any
-        --                   interim sells; unrealized = total_pnl − realized
+        -- Closed-session total/realized come from int_closed_equity_legs
+        -- (sells + residual writeoffs that model actually emits).
+        -- e.total_pnl uses a different transfer/writeoff ladder that
+        -- treats leftover cost on a superseded session as realized
+        -- while the legs suppress that writeoff when the symbol is
+        -- still held on the account (a later snapshot / opening-balance
+        -- session owns those shares). CHECK 2 failed on DXCM / PL /
+        -- ARCC / NVO / PEAK for 12 days (run 33301622998) because the
+        -- positions list summed classification.realized (= e.total_pnl)
+        -- while Position Detail summed the legs. Align on the legs
+        -- grain — that's what Breakdown by Type renders.
+        -- Open sessions keep e.total_pnl (mark-to-market) and take
+        -- realized from the same legs sum (interim sells).
         case
-            when e.status = 'Closed' then e.total_pnl
-            else coalesce(sr.realized_pnl, 0)
-        end as realized_pnl,
+            when e.status = 'Closed' then coalesce(sr.realized_pnl, 0)
+            else e.total_pnl
+        end as total_pnl,
+        coalesce(sr.realized_pnl, 0) as realized_pnl,
         case
             when e.status = 'Closed' then 0
             else e.total_pnl - coalesce(sr.realized_pnl, 0)
@@ -723,7 +732,10 @@ equity_classified as (
             else 'Buy and Hold'
         end as strategy,
 
-        case when e.total_pnl > 0 then true else false end as is_winner
+        case
+            when e.status = 'Closed' then coalesce(sr.realized_pnl, 0) > 0
+            else e.total_pnl > 0
+        end as is_winner
 
     from equity_sessions e
     left join equity_options_summary eos

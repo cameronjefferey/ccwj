@@ -140,8 +140,11 @@ def main():
     # ====================================================================
     # CHECK 2: Per-symbol — positions list vs position_detail realized P&L
     #   positions list: SUM(positions_summary.realized_pnl) per (account,symbol)
-    #   position_detail: SUM(int_strategy_classification (option_contract,Closed))
+    #   position_detail: SUM(int_strategy_classification.realized_pnl
+    #                        for every option_contract — closed + partial)
     #                  + SUM(int_closed_equity_legs.realized_pnl)
+    #   Classification closed-equity realized is the legs sum (see
+    #   equity_classified); do not re-sum e.total_pnl here.
     # ====================================================================
     section("CHECK 2: Per-symbol realized P&L — list vs detail page")
     sql2_list = f"""
@@ -151,20 +154,20 @@ def main():
         FROM {DS}.positions_summary
         GROUP BY tkey, symbol
     """
-    # JOIN on tenant_id, NOT the account label — label-grained joins fan
-    # out N× when several tenants share "Schwab Account".
+    # No JOIN to int_option_contracts: classification already is that
+    # grain, and COALESCE(tenant_id, account) dropped rows when one
+    # side's tenant_id was NULL. No status='Closed' filter: the list
+    # includes oc.realized_pnl on still-Open partial closes, and the
+    # position page adds the same wedge via option_realized_pnl
+    # (run 33301622998).
     sql2_detail_opt = f"""
         SELECT
-          COALESCE(sc.tenant_id, sc.account) AS tkey,
-          sc.symbol,
-          ROUND(SUM(sc.total_pnl), 2) AS realized_opt
-        FROM {DS}.int_strategy_classification sc
-        JOIN {DS}.int_option_contracts oc
-          ON COALESCE(sc.tenant_id, sc.account) = COALESCE(oc.tenant_id, oc.account)
-         AND sc.trade_symbol = oc.trade_symbol
-        WHERE sc.status = 'Closed'
-          AND sc.trade_group_type = 'option_contract'
-        GROUP BY tkey, sc.symbol
+          COALESCE(tenant_id, account) AS tkey,
+          symbol,
+          ROUND(SUM(realized_pnl), 2) AS realized_opt
+        FROM {DS}.int_strategy_classification
+        WHERE trade_group_type = 'option_contract'
+        GROUP BY tkey, symbol
     """
     sql2_detail_eq = f"""
         SELECT
