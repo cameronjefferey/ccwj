@@ -179,13 +179,23 @@ def _notify_ai_ended(user_id, *, before, status):
         _log.debug("AI ended notify skipped: %s", exc)
 
 
-def _with_early_broker_trial(subscription_data: dict, user_id) -> dict:
-    """Attach a Pro-only trial for the early-broker cohort.
+def _with_early_broker_trial(
+    subscription_data: dict,
+    user_id,
+    *,
+    prior_subscription_status,
+) -> dict:
+    """Attach a one-time Pro trial for the early-broker cohort.
 
     Uses Checkout ``trial_period_days`` (not an account-wide coupon) so
     Job Glow / EarningsFollower on the shared Stripe account cannot
-    redeem the thank-you.
+    redeem the thank-you. Any prior Pro subscription status means Stripe
+    already created a subscription for this user; terminal webhooks clear
+    ``stripe_subscription_id``, so status is the durable local signal that
+    prevents cancel/re-checkout from granting another six free months.
     """
+    if str(prior_subscription_status or "").strip():
+        return subscription_data
     try:
         from app.early_broker import pro_trial_days_for_user
         days = pro_trial_days_for_user(user_id)
@@ -917,7 +927,18 @@ def billing_checkout():
         return _billing_off_response()
 
     period = "annual" if (request.form.get("period") or "").strip() == "annual" else "monthly"
-    row = billing_row(current_user.id) or {}
+    row = billing_row(current_user.id)
+    if row is None:
+        app.logger.error(
+            "Stripe checkout refused: billing state unreadable for user_id=%s",
+            current_user.id,
+        )
+        flash(
+            "Couldn't verify your subscription status just now. Nothing was "
+            "charged — try again in a moment.",
+            "danger",
+        )
+        return redirect(url_for("pricing"))
 
     # Already paying: send them to the portal to switch plans instead of
     # stacking a second subscription on the same customer.
@@ -943,7 +964,11 @@ def billing_checkout():
             "subscription_data": {"metadata": {"user_id": str(current_user.id)}},
             "metadata": {"user_id": str(current_user.id)},
         }
-        _with_early_broker_trial(kwargs["subscription_data"], current_user.id)
+        _with_early_broker_trial(
+            kwargs["subscription_data"],
+            current_user.id,
+            prior_subscription_status=row.get("subscription_status"),
+        )
         if kwargs["subscription_data"].get("trial_period_days"):
             # Don't stack a typed coupon on top of the 6-month thank-you.
             kwargs["allow_promotion_codes"] = False

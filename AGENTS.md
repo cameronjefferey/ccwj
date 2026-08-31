@@ -602,8 +602,10 @@ the `stg_broker_other_*` catch-all) see a note: if they choose to
 subscribe, six months of Pro is included free, plus a thank-you for
 patience while we calibrate. Applied
 at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional `EARLY_BROKER_PROMO_CODE`
-if a matching Stripe promotion code exists. The trial is Pro-checkout-only
-so it cannot apply to sibling products on the shared Stripe account.
+if a matching Stripe promotion code exists. The trial applies only to the
+user's first Pro subscription and is Pro-checkout-only, so it cannot be
+regranted after cancellation or apply to sibling products on the shared
+Stripe account.
 The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
 first insert (`app/early_broker.py`) so the note still shows after the
 11th user of that broker arrives. Surfaces: `/snaptrade/accounts`,
