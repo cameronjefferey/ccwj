@@ -44,8 +44,14 @@
     Consumers:
       - `int_dividend_events` joins to use broker-actual amounts in
         place of yfinance synthetic estimates
-      - `app/routes.py POSITION_TRADES_QUERY` joins to surface DRIP
-        rows as their own action type in the Raw Transaction Log
+      - `int_equity_sessions.num_trades` EXCLUDES these rows (DRIPs
+        stay in running qty / cost basis; they are not trades placed)
+      - `mart_daily_trading_metrics` drops them from daily activity
+      - `app/position_detail.py POSITION_TRADES_QUERY` (and the
+        all-symbol STORY_TRADES_QUERY twin) joins so the Raw
+        Transaction Log / position review badge DRIPs
+      - `app/weekly_review.py DAY_TRADES_QUERY` drops them from the
+        Overview / Today session fill list
 */
 
 with ex_div_dates as (

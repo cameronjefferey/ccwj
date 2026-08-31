@@ -15,8 +15,12 @@ prices model preserves the CI workflow's two-pass build invariant).
 `int_drip_fills` feeds:
   * `int_dividend_events.source = 'drip'` so the broker-actual amount
     overrides the yfinance synthetic estimate when the user has DRIP
-  * `app/routes.py POSITION_TRADES_QUERY` joins so the Raw Transaction
-    Log shows DRIPs with their own action badge
+  * `int_equity_sessions.num_trades` EXCLUDES drip rows (they stay in
+    lots / cost basis; they are not trades the user placed)
+  * `app/position_detail.py POSITION_TRADES_QUERY` joins so the Raw
+    Transaction Log shows DRIPs with their own action badge
+  * `app/weekly_review.py DAY_TRADES_QUERY` drops them from Overview /
+    Today session fill lists
 
 The integration tests below pin the contract against live BigQuery.
 They're skipped by default (set RUN_BQ_TESTS=1 to enable).

@@ -1125,6 +1125,37 @@ class TestSplitDayFills:
         assert out["count"] == 0
         assert _split_day_fills(pd.DataFrame())["has_any"] is False
 
+    def test_drip_reinvestment_is_not_a_session_trade(self):
+        df = pd.DataFrame([self._row(
+            quantity=0.1334, price=56.58, amount=-7.55,
+            is_dividend_reinvestment=True,
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+        assert out["has_any"] is False
+        assert out["net_cash"] == 0.0
+
+    def test_drip_action_alias_is_not_a_session_trade(self):
+        df = pd.DataFrame([self._row(
+            action="dividend_reinvest", quantity=0.12, amount=-7.06,
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+
+    def test_real_buy_on_payable_day_still_counts(self):
+        df = pd.DataFrame([
+            self._row(quantity=1.0, price=60.17, amount=-60.17,
+                      is_dividend_reinvestment=False),
+            self._row(quantity=0.1146, price=60.12, amount=-6.89,
+                      is_dividend_reinvestment=True),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        assert out["trades"][0]["quantity"] == 1.0
+        assert out["net_cash"] == -60.17
+
     def test_add_to_existing_position_is_a_trade(self):
         # The product gap: this fill would never appear in Trades this week
         # because the AAPL group opened months ago and is still open.

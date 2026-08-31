@@ -4348,7 +4348,9 @@ WHERE date = @day
 # day page AND Daily Review (`today_trades` in build_daily_review_batch)
 # so today's fills and a past day's page can never drift.
 DAY_TRADES_QUERY = """
-WITH fills AS (
+WITH raw AS (
+    -- Filter history first so {tenant_filter} stays unambiguous (the
+    -- DRIP join also has tenant_id).
     SELECT
         tenant_id, account, user_id, trade_date, action, trade_symbol,
         underlying_symbol, description, quantity, price, amount,
@@ -4357,6 +4359,21 @@ WITH fills AS (
     WHERE trade_date = @day
       AND action != 'dividend'  -- dividends render from int_dividend_events
       {tenant_filter}
+),
+fills AS (
+    -- DRIP reinvestments are not trades the user placed. Quantity is
+    -- in the join so a same-day real buy next to a fractional DRIP
+    -- is not dropped.
+    SELECT r.*
+    FROM raw r
+    LEFT JOIN `ccwj-dbt.analytics.int_drip_fills` d
+        ON  (r.tenant_id IS NOT DISTINCT FROM d.tenant_id)
+        AND r.account = d.account
+        AND (r.user_id IS NOT DISTINCT FROM d.user_id)
+        AND r.trade_date = d.trade_date
+        AND r.underlying_symbol = d.underlying_symbol
+        AND ABS(COALESCE(r.quantity, 0) - COALESCE(d.quantity, 0)) < 1e-9
+    WHERE d.matched_ex_div_date IS NULL
 ),
 equity_gl AS (
     SELECT
@@ -4534,6 +4551,19 @@ def _finite_or_none(val):
         return None
 
 
+def _is_drip_fill(row):
+    """True when this fill is a broker dividend reinvestment, not a placed trade."""
+    if str(row.get("action") or "") == "dividend_reinvest":
+        return True
+    flag = row.get("is_dividend_reinvestment")
+    try:
+        if pd.isna(flag):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(flag)
+
+
 def _split_day_fills(trades_df, label_map=None):
     """Turn a ``DAY_TRADES_QUERY`` frame into fill rows.
 
@@ -4558,6 +4588,8 @@ def _split_day_fills(trades_df, label_map=None):
     seen_sym = set()
     net_cash = 0.0
     for _, r in trades_df.iterrows():
+        if _is_drip_fill(r):
+            continue
         action = str(r.get("action") or "")
         qty = r.get("quantity")
         price = r.get("price")

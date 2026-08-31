@@ -25,6 +25,7 @@ with equity_trades as (
         action,
         signed_quantity,
         quantity,
+        quantity_raw,            -- fill-date units; join key to int_drip_fills
         amount,
         is_synthetic_opening
     from {{ ref('int_equity_fills') }}
@@ -95,6 +96,26 @@ sessions as (
     from with_prev
 ),
 
+-- DRIP buys stay in running qty / cash / session dates (they are real
+-- shares). They are not trades the user placed — flag them here so
+-- num_trades matches "fills I decided to make". EXISTS (not a join)
+-- so a same-day real buy + DRIP cannot fan the session grain out.
+sessions_flagged as (
+    select
+        s.*,
+        exists (
+            select 1
+            from {{ ref('int_drip_fills') }} d
+            where (s.tenant_id is not distinct from d.tenant_id)
+              and s.account = d.account
+              and (s.user_id is not distinct from d.user_id)
+              and s.symbol = d.underlying_symbol
+              and s.trade_date = d.trade_date
+              and abs(coalesce(s.quantity_raw, 0) - coalesce(d.quantity, 0)) < 1e-9
+        ) as is_drip
+    from sessions s
+),
+
 -- Aggregate each session (trade-derived only). We track buy_qty / sell_qty
 -- separately so the closed-session P&L logic below can spot transfer-out
 -- residuals (buy_qty > sell_qty AND no current holdings in this account)
@@ -118,10 +139,11 @@ trade_session_summary as (
         sum(case when action in ('equity_sell','equity_sell_short')
                  then quantity else 0 end)
                          as total_sell_qty,
-        -- Synthetic opening-balance rows are position state, not trades the
-        -- user placed — keep them out of the visible trade count.
-        countif(not is_synthetic_opening) as num_trades
-    from sessions
+        -- Synthetic openings and DRIP reinvestments are position state,
+        -- not trades the user placed — keep them out of the visible count.
+        -- Win/loss stays at the closed-session grain (unaffected).
+        countif(not is_synthetic_opening and not is_drip) as num_trades
+    from sessions_flagged
     where session_id > 0   -- exclude orphan trades outside any session (e.g. naked shorts)
     group by 1, 2, 3, 4, 5
 ),
