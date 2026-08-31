@@ -301,7 +301,15 @@ def _dedup_history_rows(df, seed_columns):
         return df
 
     df = df.reset_index(drop=True)
-    eligible3 = df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+    # Match app.upload pass 3 exactly. Cash transfers often have no symbol
+    # (SnapTrade Deposit vs CSV Funds Received / cash-only Journal), but are
+    # still cross-source aliases at the same date+amount grain.
+    eligible3 = (
+        df[sym_col].map(lambda v: _canonicalize_seed_cell(v) != "")
+        | df[action_col].map(
+            lambda v: _normalize_history_action(v) == "cash_transfer"
+        )
+    )
     desc_lens3 = df["Description"].fillna("").astype(str).str.len()
     order3 = (-desc_lens3.to_numpy()).argsort(kind="stable")
     seen3: set = set()
