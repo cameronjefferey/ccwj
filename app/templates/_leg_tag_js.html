@@ -1,0 +1,119 @@
+<datalist id="userTags">
+    {% for t in all_user_tags or [] %}<option value="{{ t }}">{% endfor %}
+</datalist>
+<script>
+// Inline leg tagging — add/remove without a full page reload, and add several
+// at once (comma-separated). Progressive enhancement: if JS fails the forms
+// still POST normally and the server flashes + redirects.
+(function () {
+    var datalist = document.getElementById('userTags');
+
+    function ensureDatalistOptions(tags) {
+        if (!datalist || !tags) return;
+        var have = {};
+        Array.prototype.forEach.call(datalist.options, function (o) {
+            have[o.value] = true;
+        });
+        tags.forEach(function (t) {
+            if (!have[t]) {
+                var opt = document.createElement('option');
+                opt.value = t;
+                datalist.appendChild(opt);
+            }
+        });
+    }
+
+    function makeChip(cell, tag) {
+        var chip = document.createElement('span');
+        chip.className = 'tw-tag-chip';
+        chip.setAttribute('data-tag', tag);
+        chip.textContent = tag;
+        var x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'tw-tag-x';
+        x.setAttribute('data-remove-tag', tag);
+        x.title = 'Remove tag';
+        x.setAttribute('aria-label', 'Remove tag ' + tag);
+        x.innerHTML = '&times;';
+        chip.appendChild(x);
+        return chip;
+    }
+
+    function flashCell(cell, ok) {
+        cell.classList.remove('tw-tag-err', 'tw-tag-ok');
+        cell.classList.add(ok ? 'tw-tag-ok' : 'tw-tag-err');
+        setTimeout(function () {
+            cell.classList.remove('tw-tag-ok', 'tw-tag-err');
+        }, ok ? 500 : 1600);
+    }
+
+    function post(url, cell, extra) {
+        var body = new URLSearchParams();
+        var form = cell.querySelector('[data-tag-add-form]');
+        body.set('csrf_token', form.querySelector('[name=csrf_token]').value);
+        body.set('tenant_id', cell.getAttribute('data-tenant-id'));
+        body.set('leg_open_date', cell.getAttribute('data-leg-open-date'));
+        Object.keys(extra).forEach(function (k) { body.set(k, extra[k]); });
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            credentials: 'same-origin',
+            body: body.toString()
+        }).then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw j; }); });
+    }
+
+    document.querySelectorAll('[data-tag-cell]').forEach(function (cell) {
+        var chips = cell.querySelector('[data-tag-chips]');
+        var form  = cell.querySelector('[data-tag-add-form]');
+        var input = form.querySelector('input[name=tag]');
+        var addBtn = form.querySelector('button[type=submit]');
+
+        function existingTags() {
+            return Array.prototype.map.call(
+                chips.querySelectorAll('[data-tag]'),
+                function (c) { return c.getAttribute('data-tag'); }
+            );
+        }
+
+        form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var raw = (input.value || '').trim();
+            if (!raw) { input.focus(); return; }
+            addBtn.disabled = true;
+            post(cell.getAttribute('data-add-action'), cell, { tag: raw })
+                .then(function (data) {
+                    var have = existingTags();
+                    (data.tags || []).forEach(function (t) {
+                        if (have.indexOf(t) === -1) {
+                            chips.appendChild(makeChip(cell, t));
+                            have.push(t);
+                        }
+                    });
+                    ensureDatalistOptions(data.all_tags);
+                    input.value = '';
+                    flashCell(cell, true);
+                })
+                .catch(function () { flashCell(cell, false); })
+                .then(function () {
+                    addBtn.disabled = false;
+                    input.focus();
+                });
+        });
+
+        chips.addEventListener('click', function (ev) {
+            var btn = ev.target.closest('[data-remove-tag]');
+            if (!btn) return;
+            ev.preventDefault();
+            var tag = btn.getAttribute('data-remove-tag');
+            var chip = btn.closest('[data-tag]');
+            post(cell.getAttribute('data-remove-action'), cell, { tag: tag })
+                .then(function () { if (chip) chip.remove(); })
+                .catch(function () { flashCell(cell, false); });
+        });
+    });
+})();
+</script>

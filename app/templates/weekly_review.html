@@ -11,6 +11,7 @@
      1. Session hero       — last-close account delta + market + fill count
      2. Since you last looked — diff vs prior visit
      3. Account snapshot   — per-account close / vs prior / week / month
+                             (blank dated column while this session is withheld)
      4. Session trades     — every fill dated the review session
      5. Session movers     — $ impact on holdings that session
      6. Watch list         — earnings, expiring options, projected ex-div
@@ -77,6 +78,11 @@
         <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}"
            style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
     </p>
+    {% if overview_pending_date %}
+    <p class="hero-subtitle" style="margin-top:.35rem; opacity:.88;">
+        {{ overview_pending_date.strftime('%A') }}'s close isn't on Overview yet — it lands tomorrow, once every account has settled.
+    </p>
+    {% endif %}
 
     <div class="hero-meta">
         {% if market_session %}
@@ -225,7 +231,8 @@
             {% elif snap.today_is_live %}<div class="snap-meta">as of last sync</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
-        {% for key, label in [('day', 'vs Yesterday'), ('week', 'vs 1 Week'), ('month', 'vs 1 Month')] %}
+        {% set _vs_prior = ('vs ' + overview_prior_date.strftime('%a %-d')) if overview_prior_date else 'vs prior close' %}
+        {% for key, label in [('day', _vs_prior), ('week', 'vs 1 Week'), ('month', 'vs 1 Month')] %}
         {% set c = snap.comparisons[key] %}
         <div class="snap-cell">
             <div class="snap-label">{{ label }}</div>
@@ -275,13 +282,16 @@
     {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
 {% endmacro %}
 <div class="review-section snapshot-section">
-    <div class="snapshot-table">
+    <div class="snapshot-table{% if overview_pending_date %} has-pending{% endif %}">
         <div class="snapshot-table-head">
             <div>Account</div>
             <div>Value</div>
-            <div>vs Yesterday</div>
-            <div>vs 1 Week</div>
+            <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">{% if overview_prior_date %}vs {{ overview_prior_date.strftime('%a %-d') }}{% else %}vs prior close{% endif %}</div>
+            <div class="snap-col-week">vs 1 Week</div>
             <div class="snap-col-month">vs 1 Month</div>
+            {% if overview_pending_date %}
+            <div class="snap-col-pending" title="{{ overview_pending_date.strftime('%A') }}'s close isn't on Overview yet. It lands tomorrow, once every account has settled.">{{ overview_pending_date.strftime('%a %-d') }}</div>
+            {% endif %}
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
@@ -300,8 +310,11 @@
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(snap.comparisons.day) }}</div>
-            <div>{{ money_cell(snap.comparisons.week) }}</div>
+            <div class="snap-col-week">{{ money_cell(snap.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
+            {% if overview_pending_date %}
+            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
+            {% endif %}
         </div>
         {% endfor %}
         {% if today_snapshots_total %}
@@ -316,8 +329,11 @@
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
-            <div>{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
+            <div class="snap-col-week">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
+            {% if overview_pending_date %}
+            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
+            {% endif %}
         </div>
         {% endif %}
         {% for b in benchmark_snapshot or [] %}
@@ -328,8 +344,11 @@
             </div>
             <div><div class="snap-cell-val snap-cell-dash">—</div></div>
             <div>{{ bench_pct_cell(b.day_pct) }}</div>
-            <div>{{ bench_pct_cell(b.week_pct) }}</div>
+            <div class="snap-col-week">{{ bench_pct_cell(b.week_pct) }}</div>
             <div class="snap-col-month">{{ bench_pct_cell(b.month_pct) }}</div>
+            {% if overview_pending_date %}
+            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
@@ -361,7 +380,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. Expiries and assignments belong on the expiry session, even when the broker posts them the next trading day. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
+        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. A same-day open that expires or is assigned is one row. Expiries and assignments belong on the expiry session, even when the broker posts them the next trading day. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -396,6 +415,11 @@
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
                     {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
+                    {% include "_leg_tag_cell.html" %}
+                    {% endwith %}
                 </td>
             </tr>
             {% endfor %}
@@ -589,10 +613,6 @@
             </div>
             {% else %}
             <div class="wb-empty">Nothing in the next 14 days.</div>
-            {% endif %}
-            {% if earnings_follower_enabled %}
-            <a href="{{ url_for('earnings_watch', account=selected_account) if selected_account else url_for('earnings_watch') }}"
-               class="small" style="display:block; text-align:right; text-decoration:none; margin-top:.5rem;">Earnings Watch &rarr;</a>
             {% endif %}
         </div>
 
@@ -1006,29 +1026,9 @@
 {% endmacro %}
 {% if trades_this_week and trades_this_week.has_any %}
 {% set tw = trades_this_week %}
-<style>
-  .tw-tag-cell { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
-  .tw-tag-chips { display:flex; flex-wrap:wrap; gap:3px; }
-  .tw-tag-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 7px;
-      font-size:.68rem; font-weight:600; border-radius:999px;
-      background:rgba(99,102,241,.12); color:#4f46e5; }
-  .tw-tag-x { border:none; background:none; color:#4f46e5; cursor:pointer;
-      font-size:.8rem; line-height:1; padding:0; }
-  .tw-tag-x:hover { color:#dc2626; }
-  .tw-tag-add { display:inline-flex; align-items:center; gap:4px; }
-  .tw-tag-input { width:112px; height:26px; font-size:.72rem; padding:2px 6px; }
-  .tw-tag-btn { height:26px; padding:0 8px; font-size:.72rem; line-height:1; }
-  .tw-tag-cell { border-radius:6px; transition:background-color .2s ease; padding:2px; }
-  .tw-tag-cell.tw-tag-ok  { background:rgba(34,197,94,.14); }
-  .tw-tag-cell.tw-tag-err { background:rgba(220,38,38,.14); }
-  .tw-tag-chip { transition:opacity .15s ease; }
-</style>
-<datalist id="userTags">
-    {% for t in all_user_tags %}<option value="{{ t }}">{% endfor %}
-</datalist>
 <div class="review-section">
     <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>Trades This Week</span>
+        <span>{% if trades_week_is_prior %}Trades Last Week{% else %}Trades This Week{% endif %}</span>
         <span style="display:flex; gap:14px; text-transform:none; letter-spacing:0;">
         {% if tw.realized_pnl or tw.closed_count %}
         <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}">
@@ -1044,7 +1044,7 @@
     </div>
     <p class="section-sub">
         Opened or closed since
-        {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }}
+        {{ (trades_week_start or week_start).strftime('%a %b %-d') if (trades_week_start or week_start) else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
         One row per symbol. Fills on the session above (adds and trims on a position you already held) are listed under Trades — not only groups that opened or closed this week.
     </p>
@@ -1069,7 +1069,7 @@
                     <th class="sortable" data-sort="str" data-m="hide">Opened</th>
                     <th class="left sortable" data-sort="str">Status</th>
                     <th class="sortable" data-sort="num">Result</th>
-                    <th class="left" data-m="hide">Tags</th>
+                    <th class="left">Tags</th>
                 </tr>
             </thead>
             <tbody>
@@ -1096,32 +1096,9 @@
                         <div class="row-meta">{{ r.result_kind }}</div>
                     </td>
                     <td class="left" data-no-row-nav>
-                        {% if r.open_date %}
-                        <div class="tw-tag-cell"
-                             data-tag-cell
-                             data-add-action="{{ url_for('add_position_tag', symbol=r.symbol) }}"
-                             data-remove-action="{{ url_for('remove_position_tag', symbol=r.symbol) }}"
-                             data-tenant-id="{{ r.tenant_id }}"
-                             data-leg-open-date="{{ r.open_date.strftime('%Y-%m-%d') }}">
-                            <div class="tw-tag-chips" data-tag-chips>
-                                {% for tg in r.tags %}
-                                <span class="tw-tag-chip" data-tag="{{ tg }}">{{ tg }}<button type="button" class="tw-tag-x" data-remove-tag="{{ tg }}" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button></span>
-                                {% endfor %}
-                            </div>
-                            <form method="POST" action="{{ url_for('add_position_tag', symbol=r.symbol) }}" class="tw-tag-add" data-tag-add-form>
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="next" value="{{ request.full_path }}">
-                                <input type="hidden" name="tenant_id" value="{{ r.tenant_id }}">
-                                <input type="hidden" name="leg_open_date" value="{{ r.open_date.strftime('%Y-%m-%d') }}">
-                                <input type="text" name="tag" list="userTags" maxlength="120" placeholder="+ tag"
-                                       class="form-control form-control-sm tw-tag-input" autocomplete="off"
-                                       title="Type a tag and press Enter. Separate several with commas.">
-                                <button type="submit" class="btn btn-outline-primary btn-sm tw-tag-btn">Add</button>
-                            </form>
-                        </div>
-                        {% else %}
-                        <span class="text-muted">—</span>
-                        {% endif %}
+                        {% with symbol=r.symbol, tenant_id=r.tenant_id, open_date=r.open_date, tags=r.tags %}
+                        {% include "_leg_tag_cell.html" %}
+                        {% endwith %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -1129,125 +1106,9 @@
         </table>
     </div>
 </div>
-
-<script>
-// Inline leg tagging — add/remove without a full page reload, and add several
-// at once (comma-separated). Progressive enhancement: if JS fails the forms
-// still POST normally and the server flashes + redirects.
-(function () {
-    var datalist = document.getElementById('userTags');
-
-    function ensureDatalistOptions(tags) {
-        if (!datalist || !tags) return;
-        var have = {};
-        Array.prototype.forEach.call(datalist.options, function (o) {
-            have[o.value] = true;
-        });
-        tags.forEach(function (t) {
-            if (!have[t]) {
-                var opt = document.createElement('option');
-                opt.value = t;
-                datalist.appendChild(opt);
-            }
-        });
-    }
-
-    function makeChip(cell, tag) {
-        var chip = document.createElement('span');
-        chip.className = 'tw-tag-chip';
-        chip.setAttribute('data-tag', tag);
-        chip.textContent = tag;
-        var x = document.createElement('button');
-        x.type = 'button';
-        x.className = 'tw-tag-x';
-        x.setAttribute('data-remove-tag', tag);
-        x.title = 'Remove tag';
-        x.setAttribute('aria-label', 'Remove tag ' + tag);
-        x.innerHTML = '&times;';
-        chip.appendChild(x);
-        return chip;
-    }
-
-    function flashCell(cell, ok) {
-        cell.classList.remove('tw-tag-err', 'tw-tag-ok');
-        cell.classList.add(ok ? 'tw-tag-ok' : 'tw-tag-err');
-        setTimeout(function () {
-            cell.classList.remove('tw-tag-ok', 'tw-tag-err');
-        }, ok ? 500 : 1600);
-    }
-
-    function post(url, cell, extra) {
-        var body = new URLSearchParams();
-        var form = cell.querySelector('[data-tag-add-form]');
-        body.set('csrf_token', form.querySelector('[name=csrf_token]').value);
-        body.set('tenant_id', cell.getAttribute('data-tenant-id'));
-        body.set('leg_open_date', cell.getAttribute('data-leg-open-date'));
-        Object.keys(extra).forEach(function (k) { body.set(k, extra[k]); });
-        return fetch(url, {
-            method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json',
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            credentials: 'same-origin',
-            body: body.toString()
-        }).then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw j; }); });
-    }
-
-    document.querySelectorAll('[data-tag-cell]').forEach(function (cell) {
-        var chips = cell.querySelector('[data-tag-chips]');
-        var form  = cell.querySelector('[data-tag-add-form]');
-        var input = form.querySelector('input[name=tag]');
-        var addBtn = form.querySelector('button[type=submit]');
-
-        function existingTags() {
-            return Array.prototype.map.call(
-                chips.querySelectorAll('[data-tag]'),
-                function (c) { return c.getAttribute('data-tag'); }
-            );
-        }
-
-        form.addEventListener('submit', function (ev) {
-            ev.preventDefault();
-            var raw = (input.value || '').trim();
-            if (!raw) { input.focus(); return; }
-            addBtn.disabled = true;
-            post(cell.getAttribute('data-add-action'), cell, { tag: raw })
-                .then(function (data) {
-                    var have = existingTags();
-                    (data.tags || []).forEach(function (t) {
-                        if (have.indexOf(t) === -1) {
-                            chips.appendChild(makeChip(cell, t));
-                            have.push(t);
-                        }
-                    });
-                    ensureDatalistOptions(data.all_tags);
-                    input.value = '';
-                    flashCell(cell, true);
-                })
-                .catch(function () { flashCell(cell, false); })
-                .then(function () {
-                    addBtn.disabled = false;
-                    input.focus();  // keep focus so several tags in a row is fast
-                });
-        });
-
-        chips.addEventListener('click', function (ev) {
-            var btn = ev.target.closest('[data-remove-tag]');
-            if (!btn) return;
-            ev.preventDefault();
-            var tag = btn.getAttribute('data-remove-tag');
-            var chip = btn.closest('[data-tag]');
-            post(cell.getAttribute('data-remove-action'), cell, { tag: tag })
-                .then(function () { if (chip) chip.remove(); })
-                .catch(function () { flashCell(cell, false); });
-        });
-    });
-})();
-</script>
 {% endif %}
 
+{% include "_leg_tag_js.html" %}
 {% include "_position_peek.html" %}
 
 {% endblock %}

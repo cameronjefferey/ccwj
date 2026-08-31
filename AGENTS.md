@@ -172,10 +172,14 @@ This is the page a paying customer opens for the **last completed session**. It 
 > "What happened at the last close (including what I traded that session), what should I watch, and how is every position / strategy / sector doing in total?"
 
 Live / in-session last-trade numbers live on **Today** (`/today`, endpoint `today_view`).
-Overview movers, trades, and snapshots all cap at `_snapshot_as_of_date` (during Friday's
-open that is Thursday). After the bell — and all weekend — that date is Friday.
-Copy always names the session date. A stale warehouse close must not rewind
-Overview back to Thursday once Saturday has started.
+Overview movers, trades, and snapshots all cap at `_snapshot_as_of_date`, which
+**never publishes calendar-today** — a same-evening warehouse row can mix a
+yfinance close with an incomplete broker sync (or a spine copy-forward) and
+look like a finished recap. During Friday's open *and* after the bell that is
+Thursday; Saturday morning is when Friday lands. Copy always names the session
+date. A stale warehouse close must not rewind Overview back to Thursday once
+Saturday has started. While a live session is being withheld, the snapshot
+table adds a blank dated column (dashes) so the close does not look missing.
 
 The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
 callers don't break.
@@ -191,16 +195,24 @@ What's working:
  = sale vs average cost; option: `int_option_contracts.realized_pnl` on
  `realized_close_date`), not fill cash/proceeds. Opens and closes that
  have not yet matched a warehouse realized row render as an em dash.
- The session is always the last completed ET weekday (`_snapshot_as_of_date`)
- — never calendar-today while the regular session is still open. Adds and
+ The session is always a settled ET weekday (`_snapshot_as_of_date`) —
+ never calendar-today, even after the bell. Same-evening warehouse rows
+ can mix a yfinance close with a partial broker sync; live numbers stay
+ on Today until the next morning. Adds and
  trims on a long-held position show here even though **Trades this week**
  only lists groups that opened or closed this ISO week. Same-day close +
  open of the same option type (same symbol + tenant, different strike/expiry)
  is grouped as one **Rolled** row (`_group_day_rolls`). Pairing keys on
- `tenant_id`. Lives in `build_daily_review_batch` as `today_trades` (same
+ `tenant_id`. Same-day open + expiry/assignment/exercise of the **same**
+ contract is one row (`_group_day_open_and_settle`) — a Friday 0DTE is not
+ Sold-to-open plus Expired. Session fills (and Trades this week) can be tagged inline —
+ same `+ tag` control as Position Detail, keyed on the matching chapter
+ `open_date` from `int_position_legs`. If this ISO week has no open/close
+ groups yet, Overview keeps last week's table so Monday tagging does not
+ vanish. Lives in `build_daily_review_batch` as `today_trades` (same
  `trades_as_of` as `moves_as_of`) so the cache warmer replays it.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
-- Account snapshot row: close / vs prior session / vs 1w / vs 1m (per-account and total)
+- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). While the current session is still being withheld, a blank dated column sits at the end so the unfinished close is visible as dashes, not as a wrong number.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.
@@ -222,7 +234,8 @@ already has the last completed session. `/today` then shows an empty
 - Calendar-today fills (`DAY_TRADES_QUERY` with `@day` = user today). Same-day
   trades often land after the next sync (activities are T+1). Friday-expiry
   `option_expired` / assigned / exercised lines that the broker posts Monday
-  are ignored here and attributed to Friday's session instead.
+  are ignored here and attributed to Friday's session instead. Fills can be
+  tagged inline (same control as Overview session trades / Trades this week).
 - Movers (only while `_session_is_live`: open or after-hours) use the two
   newest `stg_daily_prices` rows with `date <=` calendar today — includes
   in-session last-trade bars. Header is holdings price impact, not full
@@ -230,8 +243,9 @@ already has the last completed session. `/today` then shows an empty
   right-side position drawer (same motion as Strategy Fit's cell panel)
   with lifetime P&amp;L, open lots, and a link to the full position page;
   cmd/ctrl-click still goes straight there. Covered Call names that
-  currently hold ≥100 shares with no open short call are noted under
-  Trades Today (observational — stock only, not a prompt to write).
+  currently hold ≥100 shares with no open short call are listed under
+  Trades Today as a numbered inventory (symbol + share count) — observational,
+  not a prompt to write.
 - After-hours movers: broker mark vs official close (moved here from Overview).
   Only rendered once `_us_market_session()` is `after_hours` AND the broker mark
   is post-close (`post_close_broker_tenant_ids` in `app/snaptrade.py`). Gate is
@@ -476,11 +490,11 @@ One "Strategies" surface with a view switch (Aug 2026 surface audit):
 strategy × sector/DTE/moneyness, `app/strategy_fit.py` +
 `render_strategy_fit_view`). `/strategy-fit` 301s to `/strategies?view=fit`.
 
-Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. When you click a strategy, you now get a **Breakdown by Type** table (equity sessions vs option contracts vs attributed dividends): equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label.
+Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. When you click a strategy, you now get a **Breakdown by Type** table (equity sessions vs option contracts vs attributed dividends): equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label. Drill-in also shows last-12-month P&L, DTE buckets (options), and **what moves this strategy** — top contributors / drags by share of that strategy's P&L, lots collapsed to one row per symbol. The old per-lot symbol table duplicated Positions (`?strategy=`).
 
 Tenant isolation: row-level query results go through `_filter_df_by_accounts(...)` before any pandas work, same as `/positions`. Pure `SUM(...) ...` aggregates without an account column rely on SQL `_account_sql_and` only. Failed `mart_strategy_trend` reads are logged instead of silently swallowed.
 
-Symbol links in the drill-down table preserve the selected account filter (`?account=`).
+Symbol links in the concentration list preserve the selected account filter (`?account=`).
 
 **Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
 ### Accounts (`/accounts`) — two views

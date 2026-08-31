@@ -92,11 +92,11 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Fills dated {{ today.strftime('%a %b %-d') }}.
+        Trades dated {{ today.strftime('%a %b %-d') }}.
         {% if not session_is_live %}
         No U.S. cash session today.
         {% else %}
-        Same-day trades often land after the next sync (activities are T+1; orders can show sooner). Expiries and assignments are dated to the expiry session, not the next-day broker posting.
+        Today's trades usually show up after the next sync. An option that expired or was assigned is listed on that day, not the next morning.
         {% endif %}
     </p>
     {% if _tt.trades %}
@@ -133,18 +133,32 @@
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
                     {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
                 </td>
+                <td>
+                    {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
+                    {% include "_leg_tag_cell.html" %}
+                    {% endwith %}
+                </td>
             </tr>
             {% endfor %}
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">{% if not session_is_live %}No session today.{% else %}No fills recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.{% endif %}</div>
+    <div class="tt-empty">{% if not session_is_live %}No session today.{% else %}No trades recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.{% endif %}</div>
     {% endif %}
     {% set _ccu = covered_call_unwritten %}
     {% if session_is_live and _ccu and _ccu.rows %}
-    <p class="tt-note">Covered Call:{% for r in _ccu.rows %}{% if loop.first %} {% elif loop.last %} and {% else %}, {% endif %}<a class="tt-sym" href="{{ url_for('position_detail', symbol=r.symbol) }}" data-peek-symbol="{{ r.symbol }}">{{ r.symbol }}</a>{% endfor %}
-        currently hold{{ 's' if _ccu.rows|length == 1 else '' }} shares with no short call open.
-    </p>
+    <div class="tt-cc">
+        <p class="tt-cc-label">Here are your covered call positions with no short call open:</p>
+        <ol class="tt-cc-list">
+            {% for r in _ccu.rows %}
+            <li>
+                <a class="tt-sym" href="{{ url_for('position_detail', symbol=r.symbol) }}"
+                   data-peek-symbol="{{ r.symbol }}">{{ r.symbol }}</a>
+                <span class="tt-cc-shares">({{ "{:,.0f}".format(r.shares) }} share{{ 's' if r.shares != 1 }})</span>
+            </li>
+            {% endfor %}
+        </ol>
+    </div>
     {% endif %}
 </div>
 
@@ -296,6 +310,7 @@
 </div>
 {% endif %}
 
+{% include "_leg_tag_js.html" %}
 {% include "_position_peek.html" %}
 
 {% endblock %}
