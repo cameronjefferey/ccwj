@@ -1110,7 +1110,11 @@ def test_early_broker_checkout_gets_six_month_pro_trial(monkeypatch):
     monkeypatch.setattr(
         "app.early_broker.pro_trial_days_for_user", lambda uid: 180,
     )
-    data = billing._with_early_broker_trial({"metadata": {"user_id": "7"}}, 7)
+    data = billing._with_early_broker_trial(
+        {"metadata": {"user_id": "7"}},
+        7,
+        prior_subscription_status=None,
+    )
     assert data["trial_period_days"] == 180
 
 
@@ -1118,7 +1122,26 @@ def test_non_early_broker_checkout_has_no_trial(monkeypatch):
     monkeypatch.setattr(
         "app.early_broker.pro_trial_days_for_user", lambda uid: None,
     )
-    data = billing._with_early_broker_trial({"metadata": {"user_id": "7"}}, 7)
+    data = billing._with_early_broker_trial(
+        {"metadata": {"user_id": "7"}},
+        7,
+        prior_subscription_status=None,
+    )
+    assert "trial_period_days" not in data
+
+
+def test_early_broker_trial_is_not_regranted_after_subscription_ends(monkeypatch):
+    monkeypatch.setattr(
+        "app.early_broker.pro_trial_days_for_user",
+        lambda _uid: pytest.fail("a prior subscriber must not be re-checked"),
+    )
+    data = billing._with_early_broker_trial(
+        {"metadata": {"user_id": "7"}},
+        7,
+        # deactivate_subscription clears stripe_subscription_id but keeps
+        # this terminal status, so it is the durable redemption marker.
+        prior_subscription_status="canceled",
+    )
     assert "trial_period_days" not in data
 
 

@@ -1320,10 +1320,16 @@ def _unique_tenant_for_upload_label(tenants, label):
 
 
 def _create_manual_csv_tenant(user_id, account_name):
+    # Manual account labels are user-chosen and routinely collide ("IRA",
+    # "Schwab Account"). Include the owner in the deterministic broker UUID;
+    # the old ``manual:<label>`` value produced one globally shared tenant_id,
+    # so a second user's same-named upload could be written into the first
+    # user's warehouse partition.
+    manual_uuid = f"manual:{int(user_id)}:{account_name}"
     return get_or_create_broker_tenant(
         user_id=int(user_id),
         broker_slug=MANUAL_BROKER_SLUG,
-        broker_uuid=f"manual:{account_name}",
+        broker_uuid=manual_uuid,
         account_name=account_name,
         broker_label="CSV Upload",
     )
@@ -1339,7 +1345,7 @@ def _resolve_csv_upload_target(
     tenant only when the typed name does not uniquely match an owned
     tenant's account_name / nickname / picker label. A bare legacy label
     (pre-tenant picker) is resolved the same way and otherwise rejected —
-    never used as a new ``manual:manual:<label>`` key, which is how
+    never used as a new manual tenant key, which is how
     picking "Emmory Investment" created a second account next to the
     SnapTrade tenant nicknamed Emmory.
     """
@@ -1375,7 +1381,7 @@ def _resolve_csv_upload_target(
         if len(matches) > 1:
             # Jeff's IRA/General/Coco/… are all account_name "Schwab Account".
             # Unique-match returned None, and the old mint path created
-            # manual:manual:Schwab Account beside them.
+            # a manual Schwab Account beside them.
             return None, None, (
                 "That name matches more than one linked account. "
                 "Pick the specific account from the list instead of creating a new one."
@@ -2138,8 +2144,8 @@ def upload():
 
     # tenant_id comes from _resolve_csv_upload_target: an existing
     # SnapTrade/manual tenant the user picked, or a newly minted
-    # ``manual:manual:<name>`` only when they chose Create new and the
-    # name does not already match an owned account. See
+    # owner-scoped ``manual:manual:<user_id>:<name>`` only when they chose
+    # Create new and the name does not already match an owned account. See
     # docs/V2_TENANT_KEY_DESIGN.md.
 
     ok, err, history_rows, current_rows, head_sha, no_changes = merge_and_push_seeds(

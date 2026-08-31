@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 
+import app.models as models
 from app.models import build_tenant_id
 
 
@@ -86,3 +87,50 @@ def test_build_tenant_id_no_double_colon_when_uuid_has_colon():
     out = build_tenant_id("snaptrade", weird_uuid)
     assert out == "snaptrade:abc:def"
     assert out.split(":", 1) == ["snaptrade", "abc:def"]
+
+
+def test_get_or_create_tenant_refuses_existing_other_user(monkeypatch):
+    monkeypatch.setattr(
+        models,
+        "fetch_one",
+        lambda *_a, **_k: {
+            "tenant_id": "manual:manual:Family IRA",
+            "user_id": 7,
+            "account_name": "Family IRA",
+            "account_mask": None,
+            "broker_label": "CSV Upload",
+            "snaptrade_connection_id": None,
+        },
+    )
+    monkeypatch.setattr(
+        models,
+        "execute",
+        lambda *_a, **_k: pytest.fail("must not mutate another user's tenant"),
+    )
+
+    with pytest.raises(ValueError, match="owned by another user"):
+        models.get_or_create_broker_tenant(
+            9, "manual", "manual:Family IRA", "Family IRA",
+        )
+
+
+def test_get_or_create_tenant_closes_cross_user_insert_race(monkeypatch):
+    reads = iter([
+        None,
+        {"user_id": 7},
+    ])
+    writes = []
+    monkeypatch.setattr(models, "fetch_one", lambda *_a, **_k: next(reads))
+    monkeypatch.setattr(
+        models,
+        "execute",
+        lambda sql, params=(): writes.append((sql, params)),
+    )
+
+    with pytest.raises(ValueError, match="ownership could not be established"):
+        models.get_or_create_broker_tenant(
+            9, "manual", "manual:Family IRA", "Family IRA",
+        )
+
+    assert len(writes) == 1
+    assert "broker_tenants.user_id = EXCLUDED.user_id" in writes[0][0]

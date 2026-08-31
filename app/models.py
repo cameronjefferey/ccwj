@@ -1371,7 +1371,10 @@ def get_or_create_broker_tenant(
     across all users, all brokers, all time. The same physical broker
     account always resolves to the same tenant_id, even after a
     Postgres drop+recreate (because broker_uuid is broker-issued, not
-    ours).
+    ours). A key already owned by another user is rejected: ownership
+    can never move implicitly through an upsert. SnapTrade registrations
+    issue distinct account UUIDs per HappyTrader user; manual CSV keys
+    include the owner id explicitly.
 
     ``account_name``/``account_mask``/``broker_label`` are captured on
     first insert and refreshed only if a non-empty new value differs
@@ -1392,11 +1395,16 @@ def get_or_create_broker_tenant(
     snap_conn = (snaptrade_connection_id or "").strip() or None
 
     row = fetch_one(
-        "SELECT tenant_id, account_name, account_mask, broker_label, "
+        "SELECT tenant_id, user_id, account_name, account_mask, broker_label, "
         "snaptrade_connection_id FROM broker_tenants WHERE tenant_id = %s",
         (tenant_id,),
     )
     if row:
+        if int(row["user_id"]) != int(user_id):
+            raise ValueError(
+                "tenant_id is already owned by another user; refusing to "
+                "reuse a cross-user warehouse boundary"
+            )
         updates = []
         params = []
         if label and label != (row.get("account_name") or ""):
@@ -1427,12 +1435,26 @@ def get_or_create_broker_tenant(
         "(tenant_id, user_id, broker_slug, broker_uuid, account_name, "
         " account_mask, broker_label, snaptrade_connection_id) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-        "ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW()",
+        "ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW() "
+        "WHERE broker_tenants.user_id = EXCLUDED.user_id",
         (
             tenant_id, int(user_id), slug, uuid_part, label,
             mask, broker_lbl, snap_conn,
         ),
     )
+    # Close the SELECT→INSERT race: a concurrent different user may have
+    # inserted this globally-unique tenant_id after our first lookup. The
+    # guarded conflict clause leaves that row untouched; verify ownership
+    # before any caller stamps or writes warehouse rows with this key.
+    owner = fetch_one(
+        "SELECT user_id FROM broker_tenants WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    if not owner or int(owner["user_id"]) != int(user_id):
+        raise ValueError(
+            "tenant_id ownership could not be established; refusing to "
+            "write user data"
+        )
     return tenant_id
 
 
