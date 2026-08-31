@@ -434,9 +434,12 @@ SELECT
   current_market_value,
   current_unrealized_pnl,
   total_pnl,
-  num_trades
+  num_trades,
+  week_start
 FROM `ccwj-dbt.analytics.mart_weekly_trades`
-WHERE week_start = @week_start
+WHERE week_start IN (
+      @week_start,
+      DATE_SUB(@week_start, INTERVAL 7 DAY))
   {tenant_filter}
 ORDER BY close_date DESC NULLS LAST, open_date DESC
 """
@@ -1712,31 +1715,51 @@ def _session_is_live(market_session):
 
 def _snapshot_as_of_date(user_today, market_session, close_as_of=None,
                          et_today=None):
-    """Latest snapshot date that is a real session, not a UTC forward-fill.
+    """Latest snapshot date Overview can publish as a finished recap.
 
-    ``mart_account_equity_daily`` spines through ``CURRENT_DATE()`` (UTC).
-    After 8pm ET that is already tomorrow, and the new row is yesterday's
-    balance copied forward — ``delta_1d = $0``. Flask used to take the
-    latest row per tenant, so every "vs yesterday" tile went to zero the
-    moment UTC rolled. Cap at the last official close when we have one,
-    else at the last completed ET session (today only counts after the
-    bell). Never return a date after the user's local today.
+    Overview never publishes calendar-today. Same-evening warehouse rows
+    mix a yfinance close with an incomplete broker sync (or a spine
+    copy-forward repriced to today's close) and look like a finished
+    recap — the Mon Aug 31 −$13k hero vs a real ~−$1k. Live / unfinished
+    numbers belong on /today.
 
-    ``close_as_of`` may rewind only the same evening (after-hours, yfinance
-    has not published today's close yet). Once ET has moved on — weekend,
-    Monday pre-market — Friday is done and must not snap back to Thursday.
+    After the bell, during the open, and pre-market all cap at the
+    previous ET weekday. Weekend is Friday and must not snap back to
+    Thursday if the warehouse close is stale. ``close_as_of`` may rewind
+    a weekday recap when yfinance is behind, never a weekend Friday.
+    Never return a date after the user's local today.
     """
     et_today = et_today or _date_in_user_tz("America/New_York")
     state = (market_session or {}).get("state")
-    if state == "after_hours":
-        cutoff = et_today
-        if close_as_of is not None and close_as_of < cutoff:
-            cutoff = close_as_of
-    else:
-        cutoff = _adjacent_weekday(et_today, -1)
+    cutoff = _adjacent_weekday(et_today, -1)
+    if (
+        state != "weekend"
+        and close_as_of is not None
+        and close_as_of < cutoff
+    ):
+        cutoff = close_as_of
     if cutoff > user_today:
         cutoff = user_today
     return cutoff
+
+
+def _overview_pending_session(user_today, market_session, session_date,
+                              et_today=None):
+    """Date of the live U.S. session Overview is withholding, or None.
+
+    Used to render a blank snapshot column so the table does not look
+    like it already includes this session's close. Weekend / pre-market
+    have no live session — Today is empty then, and the column stays off.
+    """
+    et_today = et_today or _date_in_user_tz("America/New_York")
+    state = (market_session or {}).get("state")
+    if state not in ("open", "after_hours"):
+        return None
+    if session_date is None or session_date >= et_today:
+        return None
+    if et_today > user_today:
+        return None
+    return et_today
 
 
 def _us_market_session():
@@ -3120,7 +3143,91 @@ def _group_day_rolls(trade_rows):
             "expiry_dir": expiry_dir,
             "successful": bool(success_bits) if short_side else None,
             "success_bits": success_bits,
+            "leg_open_date": row.get("leg_open_date") or opened.get("leg_open_date"),
+            "trade_date": row.get("trade_date") or opened.get("trade_date"),
         })
+    return out
+
+
+def _same_day_contract_key(row):
+    """Tenant + underlying + OCC identity, or None if not a parseable option."""
+    occ = _parse_occ(row.get("trade_symbol"))
+    if not occ:
+        return None
+    tid = str(row.get("tenant_id") or "").strip()
+    scope = ("t", tid) if tid else ("a", str(row.get("account") or ""))
+    return (
+        scope,
+        (row.get("symbol") or "").upper(),
+        occ["option_type"],
+        occ["strike"],
+        occ["expiry"],
+    )
+
+
+_OPEN_OPTION_ACTIONS = frozenset({
+    "option_sell_to_open", "option_buy_to_open",
+})
+
+
+def _group_day_open_and_settle(trade_rows):
+    """Same-day open + expiry/assignment/exercise of one contract → one row.
+
+    A Friday 0DTE covered call is one event (wrote it, it expired), not
+    Sold-to-open then a second Expired line. Rolls already grouped
+    different-strike pairs; this catches the same-OCC remainder.
+    """
+    if not trade_rows:
+        return trade_rows
+    settle = _SETTLEMENT_ACTIONS
+    used = set()
+    out = []
+    for i, row in enumerate(trade_rows):
+        if i in used:
+            continue
+        action = row.get("action")
+        if action in _OPEN_OPTION_ACTIONS:
+            want = settle
+        elif action in settle:
+            want = _OPEN_OPTION_ACTIONS
+        else:
+            out.append(row)
+            continue
+        key = _same_day_contract_key(row)
+        if not key:
+            out.append(row)
+            continue
+        match_idx = None
+        for j in range(i + 1, len(trade_rows)):
+            if j in used:
+                continue
+            cand = trade_rows[j]
+            if cand.get("action") not in want:
+                continue
+            if _same_day_contract_key(cand) != key:
+                continue
+            match_idx = j
+            break
+        if match_idx is None:
+            out.append(row)
+            continue
+        other = trade_rows[match_idx]
+        used.add(match_idx)
+        opened = row if action in _OPEN_OPTION_ACTIONS else other
+        closed = other if action in _OPEN_OPTION_ACTIONS else row
+        merged = dict(closed)
+        if opened.get("price") is not None:
+            merged["price"] = opened["price"]
+        if merged.get("quantity") is None:
+            merged["quantity"] = opened.get("quantity")
+        merged["cash_amount"] = round(
+            float(opened.get("cash_amount") or 0)
+            + float(closed.get("cash_amount") or 0),
+            2,
+        )
+        if not merged.get("leg_open_date"):
+            merged["leg_open_date"] = opened.get("leg_open_date")
+        out.append(merged)
     return out
 
 
@@ -3338,8 +3445,32 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
         "closed_count": closed_count,
         "realized_pnl": round(realized_pnl, 2),
         "unrealized_pnl": round(unrealized_pnl, 2),
-        "has_any": bool(trades),
+            "has_any": bool(trades),
     }
+
+
+def _pick_trades_week_frame(df, this_week):
+    """Prefer this ISO week's groups; if none, last week.
+
+    Monday of a new week used to blank Trades this week (and its +tag
+    controls) even though Friday's closes were still the trades worth
+    tagging. Last-week fallback keeps that table until this week has a
+    row of its own.
+    """
+    if df is None or df.empty:
+        return df, this_week, False
+    if "week_start" not in df.columns:
+        return df, this_week, False
+    ws = pd.to_datetime(df["week_start"], errors="coerce")
+    ws = ws.dt.date
+    this = df[ws == this_week]
+    if not this.empty:
+        return this, this_week, False
+    prior = this_week - timedelta(days=7)
+    prev = df[ws == prior]
+    if not prev.empty:
+        return prev, prior, True
+    return df.iloc[0:0], this_week, False
 
 
 def _today_headline(today_pulse, today_movers, equity_snapshot):
@@ -3560,6 +3691,8 @@ def weekly_review():
         "today": today,
         "review_date": today,
         "review_is_today": True,
+        "overview_pending_date": None,
+        "overview_prior_date": None,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
         # Preserve broker-stable URL scope when a heatmap cell opens the
@@ -3592,6 +3725,8 @@ def weekly_review():
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
                              "closed_count": 0, "realized_pnl": 0.0,
                              "unrealized_pnl": 0.0, "has_any": False},
+        "trades_week_is_prior": False,
+        "trades_week_start": this_week,
         "trades_today": {"trades": [], "cash": [], "count": 0, "net_cash": 0.0,
                          "net_gl": 0.0, "symbols": [], "has_any": False},
         # Distinct user tags for the "Trades this week" tag autocomplete.
@@ -3611,16 +3746,19 @@ def weekly_review():
         # Compute the market session up front so we can skip queries whose
         # results are only meaningful once the regular session has closed.
         market_session = _us_market_session()
-        # Overview is close-based: last completed session, never an
-        # in-session last-trade bar. During Friday's open that is Thursday.
-        session_date = _snapshot_as_of_date(today, market_session)
-        context["review_date"] = session_date
-        context["review_is_today"] = False
+        # Overview is close-based: last *settled* session, never
+        # calendar-today (a same-evening warehouse row can mix a full
+        # prior close with a partial broker sync). During Friday's open
+        # AND after the bell that is Thursday until Saturday.
         # Option expiries and U.S. session facts are dated in New York, not
         # the viewer's profile timezone. A Tokyo user is already on
         # Saturday during Friday's U.S. session; using ``today`` would hide
         # every still-live Friday expiry before the closing bell.
         market_today = _date_in_user_tz("America/New_York")
+        session_date = _snapshot_as_of_date(
+            today, market_session, et_today=market_today)
+        context["review_date"] = session_date
+        context["review_is_today"] = False
 
         batch_queries = build_daily_review_batch(
             tenant_filter, today, this_week,
@@ -3658,6 +3796,12 @@ def weekly_review():
         snap_cutoff = _snapshot_as_of_date(
             today, market_session, close_as_of=close_as_of,
             et_today=market_today)
+        context["review_date"] = snap_cutoff
+        context["overview_pending_date"] = _overview_pending_session(
+            today, market_session, snap_cutoff, et_today=market_today)
+        context["overview_prior_date"] = (
+            _adjacent_weekday(snap_cutoff, -1) if snap_cutoff else None
+        )
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -4028,37 +4172,29 @@ def weekly_review():
         context["open_option_record"] = None
 
         # ── Trades opened / closed this week ──────────────────────────
+        _wk_tag_rows, context["all_user_tags"] = _user_leg_tags(
+            current_user.id, tenant_ids)
         try:
-            wt_df = batch.get("weekly_trades", pd.DataFrame())
             label_map = _tenant_label_map_for_user(current_user.id)
-            # User-defined leg tags (Postgres), scoped to in-scope tenants.
-            # Attached to each (tenant_id, symbol) row by date-containment
-            # against the legs active this week (see _build_trades_this_week).
-            try:
-                from app.models import (
-                    get_all_leg_tags_for_user as _get_all_leg_tags_for_user,
-                    get_distinct_tags_for_user as _get_distinct_tags_for_user,
-                )
-                _wk_tag_rows = _get_all_leg_tags_for_user(current_user.id, tenant_ids)
-                # Distinct tags power the "+ tag" autocomplete datalist so the
-                # user reuses existing labels (e.g. earningsfollower) instead of
-                # coining near-duplicates that wouldn't roll up together.
-                context["all_user_tags"] = _get_distinct_tags_for_user(current_user.id)
-            except Exception:
-                _wk_tag_rows = []
-                context["all_user_tags"] = []
+            wt_df, tw_start, tw_is_prior = _pick_trades_week_frame(
+                batch.get("weekly_trades", pd.DataFrame()), this_week)
+            context["trades_week_is_prior"] = tw_is_prior
+            context["trades_week_start"] = tw_start
             context["trades_this_week"] = _build_trades_this_week(
-                wt_df, this_week, week_end, label_map=label_map,
+                wt_df, tw_start, tw_start + timedelta(days=6),
+                label_map=label_map,
                 tag_rows=_wk_tag_rows,
             )
         except Exception as e:
             app.logger.warning("Trades-this-week processing failed: %s", e)
 
-        # ── Fills dated today (adds/trims, not just new groups) ───────
+        # ── Fills dated the review session (adds/trims, not just new groups)
         try:
             label_map = _tenant_label_map_for_user(current_user.id)
             fills = _split_day_fills(
-                batch.get("today_trades", pd.DataFrame()), label_map=label_map,
+                batch.get("today_trades", pd.DataFrame()),
+                label_map=label_map,
+                tag_rows=_wk_tag_rows,
             )
             context["trades_today"] = fills
             today_syms = {s.upper() for s in fills.get("symbols") or [] if s}
@@ -4241,6 +4377,7 @@ def today_view():
         },
         "open_option_record": None,
         "covered_call_unwritten": None,
+        "all_user_tags": [],
     }
 
     try:
@@ -4302,8 +4439,11 @@ def today_view():
                 _date_in_user_tz("America/New_York"))
 
         label_map = _tenant_label_map_for_user(current_user.id)
+        _tag_rows, context["all_user_tags"] = _user_leg_tags(
+            current_user.id, tenant_ids)
         context["trades_today"] = _split_day_fills(
-            batch.get("today_trades", pd.DataFrame()), label_map=label_map)
+            batch.get("today_trades", pd.DataFrame()),
+            label_map=label_map, tag_rows=_tag_rows)
         if live:
             context["covered_call_unwritten"] = _covered_calls_without_short(
                 batch.get("cc_unwritten", pd.DataFrame()), label_map)
@@ -4530,13 +4670,36 @@ combined AS (
     SELECT * FROM history_rows
     UNION ALL
     SELECT * FROM settlements
+),
+-- Chapter open_date so session fills can carry the same +tag control as
+-- Trades this week (tags are keyed on tenant + symbol + leg_open_date).
+-- last_activity_date is today for Open legs, so a Friday fill still
+-- matches the live chapter when Overview is rendered on Monday.
+legs AS (
+    SELECT
+        tenant_id,
+        symbol,
+        open_date,
+        ROW_NUMBER() OVER (
+            PARTITION BY tenant_id, symbol
+            ORDER BY open_date DESC
+        ) AS rn
+    FROM `ccwj-dbt.analytics.int_position_legs`
+    WHERE open_date <= @day
+      AND last_activity_date >= @day
+      {tenant_filter}
 )
 SELECT
-    tenant_id, account, user_id, trade_date, action, trade_symbol,
-    underlying_symbol, description, quantity, price, amount,
-    instrument_type, option_expiry, realized_pnl
-FROM combined
-ORDER BY underlying_symbol, ABS(amount) DESC
+    c.tenant_id, c.account, c.user_id, c.trade_date, c.action, c.trade_symbol,
+    c.underlying_symbol, c.description, c.quantity, c.price, c.amount,
+    c.instrument_type, c.option_expiry, c.realized_pnl,
+    l.open_date AS leg_open_date
+FROM combined c
+LEFT JOIN legs l
+    ON (c.tenant_id IS NOT DISTINCT FROM l.tenant_id)
+   AND UPPER(TRIM(c.underlying_symbol)) = UPPER(TRIM(l.symbol))
+   AND l.rn = 1
+ORDER BY c.underlying_symbol, ABS(c.amount) DESC
 """
 
 # Same shape as TODAY_OPTIONS_MOVES_QUERY but anchored on @day: option day
@@ -4748,7 +4911,36 @@ def _covered_calls_without_short(df, label_map=None, limit=_CC_UNWRITTEN_LIMIT):
     return {"rows": rows}
 
 
-def _split_day_fills(trades_df, label_map=None):
+def _user_leg_tags(user_id, tenant_ids):
+    """Postgres leg tags + distinct names for the +tag autocomplete."""
+    try:
+        from app.models import (
+            get_all_leg_tags_for_user,
+            get_distinct_tags_for_user,
+        )
+        return (
+            get_all_leg_tags_for_user(user_id, tenant_ids) or [],
+            get_distinct_tags_for_user(user_id) or [],
+        )
+    except Exception:
+        return [], []
+
+
+def _attach_fill_tags(trades, tag_rows):
+    """Stamp each fill with tags on the matching position chapter."""
+    from app.routes import _tags_for_leg_range
+    for row in trades or []:
+        od = row.get("leg_open_date")
+        if not od or not row.get("tenant_id") or not row.get("symbol"):
+            row["tags"] = []
+            continue
+        hi = row.get("trade_date") or od
+        row["tags"] = _tags_for_leg_range(
+            tag_rows or [], row.get("tenant_id"), od, hi,
+            symbol=row.get("symbol"))
+
+
+def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     """Turn a ``DAY_TRADES_QUERY`` frame into fill rows.
 
     Shared by Daily Review (today) and the time-machine day page. Trade
@@ -4800,6 +4992,8 @@ def _split_day_fills(trades_df, label_map=None):
             "tenant_id": tenant_id,
             "account": label_map.get(tenant_id, str(r.get("account") or "")),
             "is_option": action.startswith("option_"),
+            "leg_open_date": _coerce_date(r.get("leg_open_date")),
+            "trade_date": _coerce_date(r.get("trade_date")),
         }
         if action in _TRADE_ACTIONS:
             trade_rows.append(row)
@@ -4810,7 +5004,8 @@ def _split_day_fills(trades_df, label_map=None):
                 symbols.append(symbol)
         else:
             cash_rows.append(row)
-    grouped = _group_day_rolls(trade_rows)
+    grouped = _group_day_open_and_settle(_group_day_rolls(trade_rows))
+    _attach_fill_tags(grouped, tag_rows)
     net_gl = 0.0
     for row in grouped:
         gl = _finite_or_none(row.get("realized_pnl"))

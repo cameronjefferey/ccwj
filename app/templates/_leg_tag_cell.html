@@ -1,0 +1,27 @@
+{# Inline +tag control. Expects: symbol, tenant_id, open_date, tags. #}
+{% if open_date and tenant_id and symbol %}
+<div class="tw-tag-cell"
+     data-tag-cell
+     data-add-action="{{ url_for('add_position_tag', symbol=symbol) }}"
+     data-remove-action="{{ url_for('remove_position_tag', symbol=symbol) }}"
+     data-tenant-id="{{ tenant_id }}"
+     data-leg-open-date="{{ open_date.strftime('%Y-%m-%d') if open_date.strftime is defined else open_date }}">
+    <div class="tw-tag-chips" data-tag-chips>
+        {% for tg in tags or [] %}
+        <span class="tw-tag-chip" data-tag="{{ tg }}">{{ tg }}<button type="button" class="tw-tag-x" data-remove-tag="{{ tg }}" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button></span>
+        {% endfor %}
+    </div>
+    <form method="POST" action="{{ url_for('add_position_tag', symbol=symbol) }}" class="tw-tag-add" data-tag-add-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <input type="hidden" name="tenant_id" value="{{ tenant_id }}">
+        <input type="hidden" name="leg_open_date" value="{{ open_date.strftime('%Y-%m-%d') if open_date.strftime is defined else open_date }}">
+        <input type="text" name="tag" list="userTags" maxlength="120" placeholder="+ tag"
+               class="form-control form-control-sm tw-tag-input" autocomplete="off"
+               title="Type a tag and press Enter. Separate several with commas.">
+        <button type="submit" class="btn btn-outline-primary btn-sm tw-tag-btn">Add</button>
+    </form>
+</div>
+{% else %}
+<span class="text-muted">—</span>
+{% endif %}

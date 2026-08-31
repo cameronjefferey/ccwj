@@ -228,6 +228,67 @@ def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, div
     return out_rows
 
 
+def _strategy_concentration(pos_df, top_n=5):
+    """Which symbols drive this strategy's P&L — one row per name.
+
+    Positions already lists every (account, symbol, strategy) lot. This
+    answers a different question: how concentrated is the book. Duplicate
+    QTUM rows collapse; share is % of this strategy's net P&L.
+    """
+    empty = {
+        "contributors": [], "drags": [], "symbol_count": 0, "book_total": 0.0,
+    }
+    if pos_df is None or pos_df.empty or "symbol" not in pos_df.columns:
+        return empty
+    work = pos_df.copy()
+    work["total_return"] = pd.to_numeric(work["total_return"], errors="coerce").fillna(0)
+    trade_col = (
+        "num_individual_trades" if "num_individual_trades" in work.columns
+        else "num_trades" if "num_trades" in work.columns
+        else None
+    )
+    if trade_col:
+        work[trade_col] = pd.to_numeric(work[trade_col], errors="coerce").fillna(0)
+    work["symbol"] = work["symbol"].fillna("").astype(str).str.strip()
+    work = work[work["symbol"] != ""]
+    if work.empty:
+        return empty
+    if "status" not in work.columns:
+        work["status"] = ""
+
+    rows = []
+    for sym, chunk in work.groupby("symbol", sort=False):
+        pnl = float(chunk["total_return"].sum())
+        trades = int(chunk[trade_col].sum()) if trade_col else 0
+        open_any = (chunk["status"].astype(str) == "Open").any()
+        rows.append({
+            "symbol": sym,
+            "total_return": round(pnl, 2),
+            "num_trades": trades,
+            "status": "Open" if open_any else "Closed",
+        })
+    book = sum(r["total_return"] for r in rows)
+    for r in rows:
+        r["share_pct"] = (
+            round(r["total_return"] / book * 100.0, 1) if abs(book) > 1e-6 else None
+        )
+    contributors = sorted(
+        [r for r in rows if r["total_return"] > 0],
+        key=lambda r: r["total_return"],
+        reverse=True,
+    )[:top_n]
+    drags = sorted(
+        [r for r in rows if r["total_return"] < 0],
+        key=lambda r: r["total_return"],
+    )[:top_n]
+    return {
+        "contributors": contributors,
+        "drags": drags,
+        "symbol_count": len(rows),
+        "book_total": round(book, 2),
+    }
+
+
 def _strategy_narrative(summary, strategies_list, trend_data):
     """Process-focused narrative: trend-aware, not just lifetime scoreboard."""
     if not summary or not strategies_list:
@@ -363,7 +424,7 @@ def strategies():
         "focus_strategy": None,
         "focus_insights": [],
         "focus_accounts": None,
-        "focus_symbols": None,
+        "focus_concentration": None,
         "focus_breakdown_rows": [],
         "focus_trend_months": [],
         "focus_dte_breakdown": [],
@@ -711,22 +772,7 @@ def strategies():
                     pos_df = cached_query_df(client, pos_query, job_config=job_config)
                     pos_df = _filter_df_by_tenant_ids(pos_df, tenant_ids)
                     if not pos_df.empty:
-                        sym_rows = []
-                        for _, r in pos_df.iterrows():
-                            sym_rows.append({
-                                "account": _acct_label(r),
-                                "symbol": r.get("symbol"),
-                                "status": r.get("status"),
-                                "total_return": float(r.get("total_return") or 0),
-                                "realized_pnl": float(r.get("realized_pnl") or 0),
-                                "unrealized_pnl": float(r.get("unrealized_pnl") or 0),
-                                "num_trades": int(r.get("num_individual_trades") or 0),
-                                "win_rate": float(r.get("win_rate") or 0),
-                                "avg_pnl": float(r.get("avg_pnl_per_trade") or 0),
-                                "avg_days": float(r.get("avg_days_in_trade") or 0),
-                                "premium": float(r.get("total_premium_received") or 0),
-                            })
-                        context["focus_symbols"] = sym_rows
+                        context["focus_concentration"] = _strategy_concentration(pos_df)
                 except Exception:
                     app.logger.exception("strategy positions_summary drill-in failed")
 

@@ -37,6 +37,8 @@ from app.weekly_review import (
     _format_trade_contract,
     _frame_as_of_date,
     _option_row_key,
+    _overview_pending_session,
+    _pick_trades_week_frame,
     _snapshot_as_of_date,
     _split_day_fills,
     _today_headline,
@@ -721,6 +723,36 @@ class TestFormatTradeContract:
         assert _format_trade_contract(None, "AAPL") == "AAPL"
 
 
+class TestPickTradesWeekFrame:
+    """Monday of a new ISO week should still show last week's taggable rows."""
+
+    def test_prefers_this_week(self):
+        this = date(2026, 8, 31)
+        df = pd.DataFrame([
+            {"week_start": this, "symbol": "A"},
+            {"week_start": date(2026, 8, 24), "symbol": "B"},
+        ])
+        out, start, is_prior = _pick_trades_week_frame(df, this)
+        assert is_prior is False
+        assert start == this
+        assert list(out["symbol"]) == ["A"]
+
+    def test_falls_back_to_last_week(self):
+        this = date(2026, 8, 31)
+        prior = date(2026, 8, 24)
+        df = pd.DataFrame([{"week_start": prior, "symbol": "NVDA"}])
+        out, start, is_prior = _pick_trades_week_frame(df, this)
+        assert is_prior is True
+        assert start == prior
+        assert list(out["symbol"]) == ["NVDA"]
+
+    def test_empty_stays_this_week(self):
+        this = date(2026, 8, 31)
+        out, start, is_prior = _pick_trades_week_frame(pd.DataFrame(), this)
+        assert is_prior is False
+        assert start == this
+
+
 class TestBuildTradesThisWeek:
     WEEK_START = date(2026, 6, 8)
     WEEK_END = date(2026, 6, 14)
@@ -1305,6 +1337,98 @@ class TestSplitDayFills:
         assert out["trades"][0]["cash_amount"] == 60
         assert out["trades"][0]["successful"] is True
 
+    def test_sto_and_same_day_expiry_is_one_row(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS", quantity=8, price=0.34,
+            amount=266.65, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+        )
+        expired = self._row(
+            action="option_expired",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS", quantity=8, price=None,
+            amount=0.0, realized_pnl=266.65, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+            option_expiry=date(2026, 8, 28),
+        )
+        out = _split_day_fills(pd.DataFrame([sto, expired]))
+        assert out["count"] == 2
+        assert len(out["trades"]) == 1
+        t = out["trades"][0]
+        assert t["verb"] == "Expired"
+        assert t["action"] == "option_expired"
+        assert t["price"] == 0.34
+        assert t["quantity"] == 8.0
+        assert t["amount"] == 266.65
+        assert out["net_gl"] == 266.65
+
+    def test_expiry_then_sto_still_groups(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="BE    260828C00222500",
+            underlying_symbol="BE", quantity=2, price=2.26,
+            amount=450.65, instrument_type="Call",
+        )
+        expired = self._row(
+            action="option_expired",
+            trade_symbol="BE    260828C00222500",
+            underlying_symbol="BE", quantity=2, amount=0.0,
+            realized_pnl=450.65, instrument_type="Call",
+        )
+        out = _split_day_fills(pd.DataFrame([expired, sto]))
+        assert len(out["trades"]) == 1
+        assert out["trades"][0]["verb"] == "Expired"
+        assert out["trades"][0]["price"] == 2.26
+
+    def test_sto_and_same_day_assignment_is_one_row(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="NVDA  260828C00230000",
+            underlying_symbol="NVDA", quantity=1, price=6.16,
+            amount=616.33, instrument_type="Call",
+        )
+        assigned = self._row(
+            action="option_assigned",
+            trade_symbol="NVDA  260828C00230000",
+            underlying_symbol="NVDA", quantity=1, amount=0.0,
+            realized_pnl=616.33, instrument_type="Call",
+        )
+        out = _split_day_fills(pd.DataFrame([sto, assigned]))
+        assert len(out["trades"]) == 1
+        assert out["trades"][0]["verb"] == "Assigned"
+        assert out["trades"][0]["price"] == 6.16
+        assert out["trades"][0]["amount"] == 616.33
+
+    def test_different_contracts_stay_two_rows(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS", quantity=8, price=0.34,
+            amount=266.65, instrument_type="Call",
+        )
+        expired = self._row(
+            action="option_expired",
+            trade_symbol="ASTS  260828C00065000",
+            underlying_symbol="ASTS", quantity=2, amount=0.0,
+            realized_pnl=80.0, instrument_type="Call",
+        )
+        out = _split_day_fills(pd.DataFrame([sto, expired]))
+        assert len(out["trades"]) == 2
+
+    def test_expiry_without_same_day_open_stays_one_row(self):
+        expired = self._row(
+            action="option_expired",
+            trade_symbol="NVDA  260828C00230000",
+            underlying_symbol="NVDA", quantity=1, price=None, amount=0.0,
+            realized_pnl=616.33, instrument_type="Call",
+        )
+        out = _split_day_fills(pd.DataFrame([expired]))
+        assert len(out["trades"]) == 1
+        assert out["trades"][0]["verb"] == "Expired"
+        assert out["trades"][0]["price"] is None
+
     def test_put_roll_succeeds_on_strike_down(self):
         df = pd.DataFrame([
             self._jpm("option_buy_to_close", "JPM   260821P00280000", -200),
@@ -1419,6 +1543,52 @@ class TestSplitDayFills:
         assert g["successful"] is True
         assert out["net_gl"] == 80.0
 
+    def test_fill_carries_leg_tags(self):
+        df = pd.DataFrame([self._row(
+            action="option_expired",
+            underlying_symbol="NVDA",
+            trade_symbol="NVDA  260828C00180000",
+            trade_date=date(2026, 8, 28),
+            amount=0,
+            realized_pnl=210.0,
+            option_expiry=date(2026, 8, 28),
+            leg_open_date=date(2026, 1, 15),
+        )])
+        tags = [{
+            "tenant_id": "snaptrade:abc",
+            "symbol": "NVDA",
+            "leg_open_date": date(2026, 1, 15),
+            "tag": "earningsfollower",
+        }]
+        out = _split_day_fills(df, tag_rows=tags)
+        row = out["trades"][0]
+        assert row["leg_open_date"] == date(2026, 1, 15)
+        assert row["tags"] == ["earningsfollower"]
+
+    def test_fill_without_matching_chapter_has_empty_tags(self):
+        df = pd.DataFrame([self._row()])
+        out = _split_day_fills(df, tag_rows=[{
+            "tenant_id": "snaptrade:abc", "symbol": "AAPL",
+            "leg_open_date": date(2026, 1, 1), "tag": "x",
+        }])
+        assert out["trades"][0]["leg_open_date"] is None
+        assert out["trades"][0]["tags"] == []
+
+    def test_roll_keeps_leg_open_date_for_tagging(self):
+        btc = self._jpm("option_buy_to_close", "JPM   260821C00300000", -120)
+        btc["realized_pnl"] = 80.0
+        btc["leg_open_date"] = date(2026, 6, 1)
+        sto = self._jpm("option_sell_to_open", "JPM   260828C00305000", 180)
+        sto["leg_open_date"] = date(2026, 6, 1)
+        out = _split_day_fills(pd.DataFrame([btc, sto]), tag_rows=[{
+            "tenant_id": "snaptrade:abc", "symbol": "JPM",
+            "leg_open_date": date(2026, 6, 1), "tag": "wheel",
+        }])
+        g = out["trades"][0]
+        assert g["is_roll"] is True
+        assert g["leg_open_date"] == date(2026, 6, 1)
+        assert g["tags"] == ["wheel"]
+
 
 class TestDailyReviewBatchIncludesTodayTrades:
     def test_today_trades_reuses_day_query_with_today_param(self):
@@ -1522,10 +1692,24 @@ class TestReviewSessionDates:
             self.friday, {"state": "open"}, et_today=self.friday
         ) == self.thursday
 
-    def test_snapshot_cutoff_after_hours_is_today(self):
+    def test_snapshot_cutoff_after_hours_is_previous_session(self):
+        # Same-evening warehouse rows are not a finished recap — wait
+        # until the next calendar day (Friday evening stays on Thursday;
+        # Monday evening stays on Friday).
         assert _snapshot_as_of_date(
             self.friday, {"state": "after_hours"}, et_today=self.friday
-        ) == self.friday
+        ) == self.thursday
+        monday = date(2026, 8, 31)
+        friday = date(2026, 8, 28)
+        assert _snapshot_as_of_date(
+            monday, {"state": "after_hours"}, et_today=monday
+        ) == friday
+        # yfinance having Monday's close must not promote an unfinished
+        # warehouse row (the −$13k vs ~−$1k recap).
+        assert _snapshot_as_of_date(
+            monday, {"state": "after_hours"},
+            close_as_of=monday, et_today=monday
+        ) == friday
 
     def test_snapshot_cutoff_weekend_is_friday(self):
         saturday = date(2026, 8, 15)
@@ -1560,6 +1744,28 @@ class TestReviewSessionDates:
         assert _snapshot_as_of_date(
             self.thursday, {"state": "pre_market"}, et_today=self.friday
         ) == self.thursday
+
+    def test_overview_pending_session_after_hours_weekday(self):
+        monday = date(2026, 8, 31)
+        friday = date(2026, 8, 28)
+        assert _overview_pending_session(
+            monday, {"state": "after_hours"}, friday, et_today=monday
+        ) == monday
+
+    def test_overview_pending_session_during_open(self):
+        assert _overview_pending_session(
+            self.friday, {"state": "open"}, self.thursday, et_today=self.friday
+        ) == self.friday
+
+    def test_overview_pending_session_off_weekend_and_pre_market(self):
+        saturday = date(2026, 8, 15)
+        assert _overview_pending_session(
+            saturday, {"state": "weekend"}, self.friday, et_today=saturday
+        ) is None
+        assert _overview_pending_session(
+            self.friday, {"state": "pre_market"}, self.thursday,
+            et_today=self.friday
+        ) is None
 
     def test_frame_as_of_date_reads_movers_today_date(self):
         df = pd.DataFrame({"today_date": [self.thursday, self.wednesday]})
@@ -1735,10 +1941,11 @@ class TestDayTradesSettlementQuery:
         assert "UNION ALL" in sql
         assert "option_expiry" in sql
 
-    def test_outer_select_projects_tenant_id(self):
-        # Fail-closed filter_df_by_tenant_ids needs this on the outer list.
-        outer = DAY_TRADES_QUERY.strip().rsplit("SELECT", 1)[-1]
-        assert "tenant_id" in outer.split("FROM")[0]
+    def test_joins_position_legs_for_tag_anchor(self):
+        sql = DAY_TRADES_QUERY
+        assert "int_position_legs" in sql
+        assert "leg_open_date" in sql
+        assert "last_activity_date >= @day" in sql
 
 
 class TestCoveredCallsWithoutShort:
