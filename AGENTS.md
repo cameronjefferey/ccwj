@@ -620,9 +620,10 @@ files are both optional (upload either or both). The account picker is
 **tenant-addressed** (same nicknames as Positions, `option value` is
 `tenant_id`) so picking an existing account merges into that tenant —
 it must not mint a new `manual:manual:<label>` from a nickname. “Create
-new account” is the only path that creates a manual tenant, and even
-then a typed name that uniquely matches an owned nickname/account_name
-attaches instead of duplicating. An ambiguous shared broker label
+new account” is the only path that creates an owner-scoped manual tenant
+(`manual:manual:<user_id>:<label>`), and even then a typed name that
+uniquely matches an owned nickname/account_name attaches instead of
+duplicating. An ambiguous shared broker label
 (several SnapTrade tenants all named `Schwab Account`) is rejected —
 it must not mint `manual:manual:Schwab Account` beside them. Schwab CSV
 equity Price is cents (`$58.97`) while SnapTrade keeps the fill Price

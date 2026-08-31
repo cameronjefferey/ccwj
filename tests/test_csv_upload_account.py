@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.upload import (
+    _create_manual_csv_tenant,
     _csv_upload_account_choices,
     _normalize_account_seed_frames,
     _resolve_csv_upload_target,
@@ -37,6 +38,20 @@ _CAMERON_401K = {
 }
 
 _HOUSEHOLD = [_EMMORY_SNAPTRADE, _EMMORY_INVESTMENT_SNAPTRADE, _CAMERON_401K]
+
+
+def test_manual_tenant_key_is_scoped_to_its_owner(monkeypatch):
+    def _create(**kwargs):
+        return f"{kwargs['broker_slug']}:{kwargs['broker_uuid']}"
+
+    monkeypatch.setattr("app.upload.get_or_create_broker_tenant", _create)
+
+    first = _create_manual_csv_tenant(7, "Family IRA")
+    second = _create_manual_csv_tenant(9, "Family IRA")
+
+    assert first == "manual:manual:7:Family IRA"
+    assert second == "manual:manual:9:Family IRA"
+    assert first != second
 
 
 def test_picker_lists_nicknames_with_tenant_id_values():
