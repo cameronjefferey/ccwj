@@ -123,6 +123,20 @@ def test_eras_one_row_per_year_with_new_names_and_premium():
     assert "1 new symbol" in eras[1]["line"]
 
 
+def test_eras_and_busiest_day_ignore_drip_reinvestments():
+    """Monthly JEPI DRIPs must not inflate fill counts or invent a busiest day."""
+    drips = _trades([
+        (date(2024, 6, 3), "JEPI", "dividend_reinvest", "Equity", "JEPI", 0.12, 56.0, -6.72)
+        for _ in range(6)
+    ])
+    mixed = pd.concat([_BOOK_TRADES, drips], ignore_index=True)
+    eras = _build_eras(mixed)
+    assert [e["year"] for e in eras] == [2024, 2025]
+    assert "6 fills" not in eras[0]["line"]
+    assert _busiest_day(drips) is None
+    assert _busiest_day(mixed) is None  # still < 5 placed fills on any day
+
+
 def test_busiest_day_requires_a_real_cluster():
     assert _busiest_day(_BOOK_TRADES) is None  # max 1 fill/day here
 

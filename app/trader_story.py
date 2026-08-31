@@ -48,10 +48,12 @@ from app.routes import (
 
 # ── Queries ──────────────────────────────────────────────────────────────
 # All-symbol versions of the Position Detail story inputs. Same DRIP
-# detection join as POSITION_TRADES_QUERY so reinvestments narrate (and
-# count) identically to the per-position page. Tenant-scoped in SQL via
-# {tenant_filter} AND DataFrame-filtered after fetch — both queries project
-# tenant_id (pinned by tests/test_tenant_filtered_queries_carry_tenant_id.py).
+# detection join as POSITION_TRADES_QUERY so reinvestments narrate
+# identically to the per-position page. Fill *counts* on the profile
+# (eras / busiest day) exclude them — they are not trades placed.
+# Tenant-scoped in SQL via {tenant_filter} AND DataFrame-filtered after
+# fetch — both queries project tenant_id (pinned by
+# tests/test_tenant_filtered_queries_carry_tenant_id.py).
 
 STORY_TRADES_QUERY = """
     SELECT
@@ -75,6 +77,7 @@ STORY_TRADES_QUERY = """
         AND (d.user_id IS NOT DISTINCT FROM h.user_id)
         AND d.trade_date         = h.trade_date
         AND d.underlying_symbol  = h.underlying_symbol
+        AND ABS(COALESCE(h.quantity, 0) - COALESCE(d.quantity, 0)) < 1e-9
     WHERE h.trade_date IS NOT NULL
       AND h.underlying_symbol IS NOT NULL
     {tenant_filter}
@@ -313,11 +316,25 @@ def _compose_profile(totals, busiest):
     return {"headline": headline, "facts": facts[:6]}
 
 
+# Fills the trader placed. DRIPs still narrate on Position Detail; they
+# must not inflate profile fill counts or "busiest day".
+_NOT_PLACED_TRADE_ACTIONS = frozenset({
+    "dividend_reinvest", "dividend", "cash_transfer",
+})
+
+
+def _placed_trades_df(trades_df):
+    if trades_df is None or trades_df.empty or "action" not in trades_df.columns:
+        return trades_df
+    return trades_df[~trades_df["action"].astype(str).isin(_NOT_PLACED_TRADE_ACTIONS)]
+
+
 def _build_eras(trades_df):
     """One narrative row per calendar year, computed straight from fills."""
-    if trades_df is None or trades_df.empty:
+    df = _placed_trades_df(trades_df)
+    if df is None or df.empty:
         return []
-    df = trades_df.copy()
+    df = df.copy()
     df["_d"] = pd.to_datetime(df["trade_date"], errors="coerce")
     df = df.dropna(subset=["_d"])
     if df.empty:
@@ -470,9 +487,10 @@ def _build_scoreboard(book):
 def _busiest_day(trades_df):
     """The single heaviest fill day, as a {value, detail} fact row
     (None when no day clears the 5-fill bar)."""
-    if trades_df is None or trades_df.empty:
+    df = _placed_trades_df(trades_df)
+    if df is None or df.empty:
         return None
-    df = trades_df.copy()
+    df = df.copy()
     df["_d"] = pd.to_datetime(df["trade_date"], errors="coerce").dt.date
     df = df.dropna(subset=["_d"])
     if df.empty:

@@ -49,7 +49,9 @@ STRATEGY_QUERY = """
     FROM `ccwj-dbt.analytics.positions_summary`
     {where}
     GROUP BY strategy
-    ORDER BY SUM(total_return) DESC
+    -- ``total_return`` is the SELECT alias here. Wrapping it in SUM()
+    -- again makes BigQuery reject this as an aggregation of aggregations.
+    ORDER BY total_return DESC
 """
 
 SYMBOL_QUERY = """

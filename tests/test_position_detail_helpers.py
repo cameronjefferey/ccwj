@@ -1257,5 +1257,20 @@ def test_chart_partition_current_prefers_explicit_user_id_when_both_present():
     assert float(out["unrealized_pnl"].iloc[0]) == 888.0
 
 
+def test_count_placed_fills_excludes_drips_and_dividends():
+    from app.position_detail import _count_placed_fills
+
+    df = pd.DataFrame([
+        {"action": "equity_buy", "is_dividend_reinvestment": False},
+        {"action": "equity_buy", "is_dividend_reinvestment": True},
+        {"action": "dividend_reinvest", "is_dividend_reinvestment": True},
+        {"action": "dividend", "is_dividend_reinvestment": False},
+        {"action": "equity_sell", "is_dividend_reinvestment": False},
+    ])
+    assert _count_placed_fills(df) == 2
+    assert _count_placed_fills(pd.DataFrame()) == 0
+    assert _count_placed_fills(None) == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

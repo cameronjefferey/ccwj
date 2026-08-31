@@ -85,8 +85,11 @@ in a fresh trial and not straight to disconnected — a grandfathered beta
 user returns to `beta` via `plan_before_subscription`; (3) **webhook
 signature verification is mandatory and deliveries are idempotent** via the
 `stripe_events` table, a handler failure returns 500 WITHOUT recording so
-Stripe retries, and an event whose customer can't be matched to a user is
-acked but logged at ERROR (an unlinked subscription needs a human); (4) **the
+Stripe retries. A guarded activation that updates zero rows is also a failure,
+not success: otherwise a second paid subscription is acknowledged while the
+old subscription id remains mirrored. An event whose customer can't be
+matched to a user is acked but logged at ERROR (an unlinked subscription needs
+a human); (4) **the
 live Stripe account is SHARED with sibling products (EarningsFollower, Job
 Glow) and Stripe gives every endpoint the ACCOUNT's whole event stream**, so
 every plan write is gated on `subscription_is_ours(sub)` — a price-id match
@@ -197,7 +200,7 @@ What's working:
 - Account snapshot row: close / vs prior session / vs 1w / vs 1m (per-account and total)
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff)
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI.
+- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position / strategy / sector / subsector scorecards (performance by account)

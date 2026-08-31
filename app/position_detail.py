@@ -76,6 +76,30 @@ from app.routes import (
 
 _log = logging.getLogger(__name__)
 
+# Fills the trader placed — not broker DRIPs, cash dividends, or transfers.
+_NOT_PLACED_TRADE_ACTIONS = frozenset({
+    "dividend_reinvest", "dividend", "cash_transfer",
+    "margin_interest", "credit_interest", "adr_fee",
+})
+
+
+def _count_placed_fills(df):
+    """Count history rows that are trades the user placed.
+
+    DRIP reinvestments stay in the raw log (labeled) and in share lots;
+    they must not inflate the hero fill count. Cash dividends / transfers
+    / interest are the same class — income or cash movement, not a trade.
+    """
+    if df is None or df.empty:
+        return 0
+    mask = pd.Series(True, index=df.index)
+    if "action" in df.columns:
+        mask &= ~df["action"].astype(str).isin(_NOT_PLACED_TRADE_ACTIONS)
+    if "is_dividend_reinvestment" in df.columns:
+        drip = df["is_dividend_reinvestment"]
+        mask &= ~drip.fillna(False).astype(bool)
+    return int(mask.sum())
+
 
 # ======================================================================
 # Position Detail  (/position/<symbol>)
@@ -121,6 +145,7 @@ POSITION_TRADES_QUERY = """
         AND (d.user_id IS NOT DISTINCT FROM h.user_id)
         AND d.trade_date         = h.trade_date
         AND d.underlying_symbol  = h.underlying_symbol
+        AND ABS(COALESCE(h.quantity, 0) - COALESCE(d.quantity, 0)) < 1e-9
     WHERE h.trade_date IS NOT NULL
       AND (
         UPPER(TRIM(COALESCE(h.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
@@ -1784,15 +1809,15 @@ def position_detail(symbol):
 
         # Trade count: use row count when summary is empty (e.g. Schwab positions-only path)
         if leg_param or summary_df.empty:
-            trade_count = len(trades_df)
-            if trade_count == 0 and not trades_pre_leg.empty:
-                trade_count = len(trades_pre_leg)
+            trade_count = _count_placed_fills(trades_df)
+            if trade_count == 0:
+                trade_count = _count_placed_fills(trades_pre_leg)
         else:
             trade_count = int(
                 summary_df["num_individual_trades"].sum()
             ) if "num_individual_trades" in summary_df.columns else 0
-            if trade_count == 0 and not trades_pre_leg.empty:
-                trade_count = len(trades_pre_leg)
+            if trade_count == 0:
+                trade_count = _count_placed_fills(trades_pre_leg)
 
         # Date range: prefer stg (trades_pre_leg) when present — positions_summary can lag
         # and show 0 trades + a bogus same-day "first" and "last" as-of stamp.
@@ -1835,8 +1860,10 @@ def position_detail(symbol):
                 first_trade = str(d0)[:10]
                 last_trade = str(date.today())
 
-        # Stg row count for hero; if summary says 0 trades but legs exist, show leg count.
-        _fills = len(trades_pre_leg) if not trades_pre_leg.empty else 0
+        # Stg placed-fill count for hero. Prefer it when history exists so a
+        # lagging positions_summary cannot show 0; DRIPs / cash dividends
+        # are not trades the user placed (see _count_placed_fills).
+        _fills = _count_placed_fills(trades_pre_leg)
         _n_legs = (
             (len(closed_legs_pre_leg) if not closed_legs_pre_leg.empty else 0)
             + (len(closed_equity_pre_leg) if not closed_equity_pre_leg.empty else 0)

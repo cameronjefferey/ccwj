@@ -6,15 +6,24 @@
 
 with trades as (
     select
-        account,
-        user_id,
-        tenant_id,
-        trade_date,
-        underlying_symbol as symbol,
-        coalesce(abs(cast(amount as float64)), 0) as position_size
-    from {{ ref('stg_history') }}
-    where trade_date is not null
-      and instrument_type not in ('Dividend', 'Cash Event')
+        h.account,
+        h.user_id,
+        h.tenant_id,
+        h.trade_date,
+        h.underlying_symbol as symbol,
+        coalesce(abs(cast(h.amount as float64)), 0) as position_size
+    from {{ ref('stg_history') }} h
+    left join {{ ref('int_drip_fills') }} d
+        on  (h.tenant_id is not distinct from d.tenant_id)
+        and h.account = d.account
+        and (h.user_id is not distinct from d.user_id)
+        and h.trade_date = d.trade_date
+        and h.underlying_symbol = d.underlying_symbol
+        and abs(coalesce(h.quantity, 0) - coalesce(d.quantity, 0)) < 1e-9
+    where h.trade_date is not null
+      and h.instrument_type not in ('Dividend', 'Cash Event')
+      -- DRIP reinvestments are not trades the user placed.
+      and d.matched_ex_div_date is null
 ),
 
 daily as (

@@ -63,7 +63,8 @@ strategy_summary as (
         sum(premium_received) as total_premium_received,
         sum(abs(premium_paid)) as total_premium_paid,
 
-        -- Trade counts
+        -- Trade counts (DRIP reinvestments excluded upstream in
+        -- int_equity_sessions.num_trades — they are lots, not placed trades)
         count(*) as num_trade_groups,
         sum(num_trades) as num_individual_trades,
         countif(is_winner and status = 'Closed') as num_winners,

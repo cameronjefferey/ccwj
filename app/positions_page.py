@@ -139,7 +139,7 @@ strategy_summary AS (
         SUM(ABS(premium_paid)) AS total_premium_paid,
 
         COUNT(*) AS num_trade_groups,
-        SUM(num_trades) AS num_individual_trades,
+        SUM(num_trades) AS num_individual_trades,  -- DRIPs excluded in int_equity_sessions
         COUNTIF(is_winner AND status = 'Closed') AS num_winners,
         COUNTIF(NOT is_winner AND status = 'Closed') AS num_losers,
 
