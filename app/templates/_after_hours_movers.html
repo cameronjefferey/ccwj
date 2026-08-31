@@ -19,7 +19,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up after hours</div>
             <div class="movers-list">
                 {% for m in after_hours_movers.winners %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
                         <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
@@ -39,7 +39,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down after hours</div>
             <div class="movers-list">
                 {% for m in after_hours_movers.losers %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
                         <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>

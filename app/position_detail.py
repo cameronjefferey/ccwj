@@ -2680,6 +2680,252 @@ def position_detail(symbol):
     )
 
 
+def _peek_num(val):
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f in (float("inf"), float("-inf")):
+        return None
+    return f
+
+
+def _peek_date(val):
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(val, datetime):
+        return val.date().isoformat()
+    if isinstance(val, date):
+        return val.isoformat()
+    text = str(val).strip()
+    return text[:10] if len(text) >= 10 else None
+
+
+def compose_position_peek(symbol, summary_df, current_df, label_map=None,
+                          today=None):
+    """JSON-ready snapshot for the right-side position peek drawer.
+
+    Rolls ``positions_summary`` (lifetime) together with live
+    ``int_enriched_current`` lots so Today / Overview can show the
+    position without navigating to the full page. ``label_map`` is
+    tenant_id → display nickname.
+    """
+    from app.option_formatting import format_option_symbol
+
+    symbol = str(symbol or "").strip().upper()
+    label_map = label_map or {}
+    today = today or date.today()
+    empty = {
+        "symbol": symbol,
+        "company_name": None,
+        "status": None,
+        "strategies": [],
+        "total_pnl": 0.0,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "dividends": 0.0,
+        "fills": 0,
+        "winners": 0,
+        "losers": 0,
+        "win_rate": None,
+        "first_trade": None,
+        "last_trade": None,
+        "accounts": [],
+        "holdings": [],
+        "position_url": url_for("position_detail", symbol=symbol),
+    }
+    summary = summary_df if summary_df is not None else pd.DataFrame()
+    current = current_df if current_df is not None else pd.DataFrame()
+
+    strategies = []
+    seen_strat = set()
+    statuses = set()
+    total_pnl = realized = unrealized = dividends = 0.0
+    fills = winners = losers = 0
+    first_trade = last_trade = None
+    company_name = None
+    per_account = {}
+
+    if not summary.empty:
+        for _, r in summary.iterrows():
+            strat = str(r.get("strategy") or "").strip()
+            if strat and strat not in seen_strat:
+                seen_strat.add(strat)
+                strategies.append(strat)
+            st = str(r.get("status") or "").strip()
+            if st:
+                statuses.add(st)
+            total_pnl += _peek_num(r.get("total_pnl")) or 0.0
+            realized += _peek_num(r.get("realized_pnl")) or 0.0
+            unrealized += _peek_num(r.get("unrealized_pnl")) or 0.0
+            dividends += _peek_num(r.get("total_dividend_income")) or 0.0
+            fills += int(_peek_num(r.get("num_individual_trades")) or 0)
+            winners += int(_peek_num(r.get("num_winners")) or 0)
+            losers += int(_peek_num(r.get("num_losers")) or 0)
+            fd = _peek_date(r.get("first_trade_date"))
+            ld = _peek_date(r.get("last_trade_date"))
+            if fd and (first_trade is None or fd < first_trade):
+                first_trade = fd
+            if ld and (last_trade is None or ld > last_trade):
+                last_trade = ld
+            if company_name is None:
+                cn = r.get("company_name")
+                if cn is not None and not (isinstance(cn, float) and pd.isna(cn)):
+                    text = str(cn).strip()
+                    if text and text.lower() != "nan":
+                        company_name = text
+            tid = str(r.get("tenant_id") or "").strip()
+            bucket = per_account.setdefault(tid, {
+                "tenant_id": tid,
+                "account": label_map.get(tid, str(r.get("account") or "")),
+                "total_pnl": 0.0,
+                "status": st,
+            })
+            bucket["total_pnl"] += _peek_num(r.get("total_pnl")) or 0.0
+            if st == "Open":
+                bucket["status"] = "Open"
+
+    if "Open" in statuses and ("Closed" in statuses or "Mixed" in statuses):
+        status = "Mixed"
+    elif "Open" in statuses:
+        status = "Open"
+    elif "Mixed" in statuses:
+        status = "Mixed"
+    elif statuses:
+        status = "Closed"
+    else:
+        status = None
+
+    closed = winners + losers
+    win_rate = (winners / closed) if closed else None
+
+    holdings = []
+    if current is not None and not current.empty:
+        current = _dedupe_enriched_current_positions(current)
+        for _, r in current.iterrows():
+            qty = _peek_num(r.get("quantity")) or 0.0
+            if abs(qty) < 1e-9:
+                continue
+            itype = str(r.get("instrument_type") or "")
+            is_opt = itype.lower() in ("call", "put") or itype.lower().startswith("option")
+            expiry = _peek_date(r.get("option_expiry"))
+            if is_opt and expiry and expiry < today.isoformat():
+                continue
+            tid = str(r.get("tenant_id") or "").strip()
+            trade_symbol = str(r.get("trade_symbol") or "").strip()
+            if is_opt:
+                label = format_option_symbol(trade_symbol or symbol, with_ticker=False)
+                qty_label = f"{abs(qty):.0f} ct"
+            else:
+                label = "Shares"
+                if abs(qty - round(qty)) < 1e-6:
+                    qty_label = f"{abs(round(qty)):,.0f} sh"
+                else:
+                    qty_label = f"{abs(qty):,.4f} sh".rstrip("0").rstrip(".") + " sh"
+            holdings.append({
+                "kind": "option" if is_opt else "equity",
+                "label": label,
+                "qty_label": qty_label,
+                "quantity": qty,
+                "price": _peek_num(r.get("current_price")),
+                "market_value": _peek_num(r.get("market_value")),
+                "cost_basis": _peek_num(r.get("cost_basis")),
+                "unrealized_pnl": _peek_num(r.get("unrealized_pnl")),
+                "account": label_map.get(tid, str(r.get("account") or "")),
+                "tenant_id": tid,
+            })
+        holdings.sort(key=lambda h: (0 if h["kind"] == "equity" else 1, h["label"]))
+
+    accounts = sorted(
+        ({**b, "total_pnl": round(b["total_pnl"], 2)} for b in per_account.values()),
+        key=lambda a: abs(a["total_pnl"]),
+        reverse=True,
+    )
+    return {
+        "symbol": symbol,
+        "company_name": company_name,
+        "status": status,
+        "strategies": strategies,
+        "total_pnl": round(total_pnl, 2),
+        "realized_pnl": round(realized, 2),
+        "unrealized_pnl": round(unrealized, 2),
+        "dividends": round(dividends, 2),
+        "fills": fills,
+        "winners": winners,
+        "losers": losers,
+        "win_rate": round(win_rate, 4) if win_rate is not None else None,
+        "first_trade": first_trade,
+        "last_trade": last_trade,
+        "accounts": accounts,
+        "holdings": holdings,
+        "position_url": url_for("position_detail", symbol=symbol),
+    }
+
+
+_PEEK_SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,16}$")
+
+
+@app.route("/api/position/<symbol>/peek")
+@login_required
+def position_peek(symbol):
+    """Lightweight JSON for the right-side position drawer on Today / Overview.
+
+    Reuses Position Detail's summary + current queries (same tenant scope
+    and cache keys) so a click does not pay for the full page build.
+    """
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return jsonify({"error": "no_accounts"}), 403
+    if not _PEEK_SYMBOL_RE.match(symbol or ""):
+        return jsonify({"error": "not_found"}), 404
+
+    safe_symbol = symbol.replace("'", "''")
+    selected_account = request.args.get("account", "").strip()
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+    client = get_bigquery_client()
+    try:
+        batch = _bq_parallel(client, {
+            "summary": POSITION_SUMMARY_QUERY.format(
+                symbol=safe_symbol, tenant_filter=tenant_filter),
+            "current": POSITION_CURRENT_QUERY.format(
+                symbol=safe_symbol, tenant_filter=tenant_filter),
+        })
+    except Exception as exc:
+        _log.warning("position peek query failed for %s: %s", symbol, exc)
+        return jsonify({"error": "unavailable"}), 503
+
+    summary_df = _filter_df_by_tenant_ids(batch.get("summary"), tenant_ids)
+    current_df = _filter_df_by_tenant_ids(batch.get("current"), tenant_ids)
+    if (summary_df is None or summary_df.empty) and (
+            current_df is None or current_df.empty):
+        return jsonify({"error": "not_found"}), 404
+
+    label_map = _tenant_label_map_for_user(current_user.id)
+    payload = compose_position_peek(
+        symbol, summary_df, current_df, label_map=label_map)
+    qs = []
+    for key in ("account", "tenant", "tenants", "groups"):
+        val = request.args.get(key)
+        if val:
+            qs.append(f"{key}={quote_plus(val)}")
+    if qs:
+        payload["position_url"] = payload["position_url"] + "?" + "&".join(qs)
+    return jsonify(payload)
+
+
 def _position_redirect_back(symbol):
     """Bounce back to the position page after a tag write, preserving the leg /
     account / tenant query string the user was looking at."""

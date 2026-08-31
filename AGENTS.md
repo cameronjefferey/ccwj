@@ -183,7 +183,10 @@ callers don't break.
 What's working:
 - Session hero: last-close account delta + market context + that session's fill count
 - Session trades: every fill dated the **review session** from `stg_history`
- (`DAY_TRADES_QUERY`, shared with the time-machine day page). The dollar
+ (`DAY_TRADES_QUERY`, shared with the time-machine day page), plus option
+ expiry / assignment / exercise from `int_option_contracts` on
+ `realized_close_date` (Friday OTM is known Friday; the Monday T+1
+ `option_expired` broker line is dropped). The dollar
  column is **realized G/L** (equity: `int_closed_equity_legs.realized_pnl`
  = sale vs average cost; option: `int_option_contracts.realized_pnl` on
  `realized_close_date`), not fill cash/proceeds. Opens and closes that
@@ -199,7 +202,8 @@ What's working:
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
 - Account snapshot row: close / vs prior session / vs 1w / vs 1m (per-account and total)
 - Session movers: $ price-impact on currently-held shares for that close
-  (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff)
+  (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
+  Clicking a mover opens the same right-side position drawer as Today.
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
@@ -216,11 +220,18 @@ already has the last completed session. `/today` then shows an empty
 "no live session" state.
 
 - Calendar-today fills (`DAY_TRADES_QUERY` with `@day` = user today). Same-day
-  trades often land after the next sync (activities are T+1).
+  trades often land after the next sync (activities are T+1). Friday-expiry
+  `option_expired` / assigned / exercised lines that the broker posts Monday
+  are ignored here and attributed to Friday's session instead.
 - Movers (only while `_session_is_live`: open or after-hours) use the two
   newest `stg_daily_prices` rows with `date <=` calendar today — includes
   in-session last-trade bars. Header is holdings price impact, not full
-  account value.
+  account value. Clicking a mover (or an open-contract row) opens the
+  right-side position drawer (same motion as Strategy Fit's cell panel)
+  with lifetime P&amp;L, open lots, and a link to the full position page;
+  cmd/ctrl-click still goes straight there. Covered Call names that
+  currently hold ≥100 shares with no open short call are noted under
+  Trades Today (observational — stock only, not a prompt to write).
 - After-hours movers: broker mark vs official close (moved here from Overview).
   Only rendered once `_us_market_session()` is `after_hours` AND the broker mark
   is post-close (`post_close_broker_tenant_ids` in `app/snaptrade.py`). Gate is
