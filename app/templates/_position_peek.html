@@ -1,0 +1,319 @@
+{# Right-side position drawer — same motion as Strategy Fit's cell panel.
+   Any <a data-peek-symbol="NVDA"> opens it (cmd/ctrl/shift/middle-click
+   still goes to the full position page). Included from Today + Overview. #}
+<style>
+    .ht-peek-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(15, 23, 42, .35);
+        opacity: 0; pointer-events: none;
+        transition: opacity .18s ease;
+        z-index: 1040;
+    }
+    .ht-peek-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .ht-peek {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: min(440px, 92vw);
+        background: #fff;
+        box-shadow: -8px 0 24px rgba(15, 23, 42, .15);
+        transform: translateX(100%);
+        transition: transform .22s ease;
+        display: flex; flex-direction: column;
+        z-index: 1050;
+        color: var(--ht-ink, #0f172a);
+    }
+    .ht-peek.open { transform: translateX(0); }
+
+    .ht-peek header {
+        padding: 1.1rem 1.2rem .9rem;
+        border-bottom: 1px solid #e7e5e4;
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        color: #fff;
+        position: relative;
+        flex-shrink: 0;
+    }
+    .ht-peek header .close {
+        position: absolute; top: .8rem; right: .9rem;
+        background: rgba(255,255,255,.15); border: 0; color: #fff;
+        width: 30px; height: 30px; border-radius: 999px;
+        cursor: pointer; font-size: 1.05rem;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .ht-peek header .close:hover { background: rgba(255,255,255,.25); }
+    .ht-peek header .tags {
+        display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .15rem;
+        padding-right: 2.2rem;
+    }
+    .ht-peek header .ht-peek-tag {
+        font-size: .62rem; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; padding: .2rem .5rem; border-radius: 999px;
+        background: rgba(255,255,255,.16);
+    }
+    .ht-peek header h2 {
+        font-size: 1.15rem; font-weight: 700; margin: .7rem 0 .15rem;
+    }
+    .ht-peek header .ht-peek-co {
+        color: rgba(255,255,255,.7); font-size: .78rem; margin: 0;
+    }
+    .ht-peek header .pnl-headline {
+        font-size: 1.6rem; font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        margin-top: .4rem;
+    }
+    .ht-peek header .pnl-headline.pos { color: #6ee7b7; }
+    .ht-peek header .pnl-headline.neg { color: #fca5a5; }
+    .ht-peek header .pnl-sub { color: rgba(255,255,255,.7); font-size: .78rem; margin-top: .15rem; }
+
+    .ht-peek .body { padding: 1rem 1.2rem; overflow-y: auto; flex: 1; }
+
+    .ht-peek .panel-stats {
+        display: grid; grid-template-columns: 1fr 1fr; gap: .6rem;
+        margin-bottom: 1.1rem;
+    }
+    .ht-peek .panel-stats .stat {
+        background: #f8fafc; padding: .6rem .75rem; border-radius: 9px;
+    }
+    .ht-peek .panel-stats .stat .lbl {
+        font-size: .62rem; text-transform: uppercase; letter-spacing: .04em;
+        color: var(--ht-muted, #64748b);
+    }
+    .ht-peek .panel-stats .stat .val {
+        font-size: .95rem; font-weight: 700; font-variant-numeric: tabular-nums;
+        color: var(--ht-ink, #0f172a);
+    }
+    .ht-peek .panel-stats .stat .val.pos { color: #059669; }
+    .ht-peek .panel-stats .stat .val.neg { color: #b91c1c; }
+
+    .ht-peek .panel-section-title {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+        color: var(--ht-muted, #64748b); font-weight: 700;
+        margin: 1rem 0 .55rem;
+    }
+    .ht-peek .hold-row, .ht-peek .acct-row {
+        display: grid; grid-template-columns: 1fr auto; align-items: center;
+        gap: .4rem .6rem; padding: .55rem .75rem;
+        border-radius: 8px; margin-bottom: .35rem;
+        background: #fafafa;
+    }
+    .ht-peek .hold-row .sym, .ht-peek .acct-row .sym {
+        font-weight: 700; font-size: .85rem;
+    }
+    .ht-peek .hold-row .meta, .ht-peek .acct-row .meta {
+        font-size: .65rem; color: var(--ht-muted, #64748b); margin-top: .1rem;
+    }
+    .ht-peek .hold-row .pnl, .ht-peek .acct-row .pnl {
+        font-weight: 700; font-variant-numeric: tabular-nums; font-size: .85rem;
+        white-space: nowrap;
+    }
+    .ht-peek .hold-row .pnl.pos, .ht-peek .acct-row .pnl.pos { color: #059669; }
+    .ht-peek .hold-row .pnl.neg, .ht-peek .acct-row .pnl.neg { color: #b91c1c; }
+    .ht-peek .ht-peek-empty { color: var(--ht-muted, #64748b); font-size: .82rem; padding: .4rem 0; }
+    .ht-peek .ht-peek-err { color: #b91c1c; font-size: .85rem; }
+
+    .ht-peek .panel-actions {
+        display: flex; gap: .5rem; margin-top: 1.1rem;
+        padding-top: .9rem; border-top: 1px solid #e7e5e4;
+    }
+    .ht-peek .panel-actions a, .ht-peek .panel-actions button {
+        flex: 1; text-align: center; padding: .55rem .85rem;
+        border-radius: 999px; font-size: .8rem; font-weight: 600;
+        text-decoration: none; border: 0; cursor: pointer;
+    }
+    .ht-peek .panel-actions a.primary { background: #0f172a; color: #fafaf9; }
+    .ht-peek .panel-actions a.primary:hover { background: #1e293b; color: #fafaf9; }
+    .ht-peek .panel-actions button.secondary {
+        background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0;
+    }
+    .ht-peek .panel-actions button.secondary:hover { background: #e0e7ff; }
+
+    [data-bs-theme="dark"] .ht-peek { background: #151e30; }
+    [data-bs-theme="dark"] .ht-peek .panel-stats .stat,
+    [data-bs-theme="dark"] .ht-peek .hold-row,
+    [data-bs-theme="dark"] .ht-peek .acct-row { background: #10192b; }
+    [data-bs-theme="dark"] .ht-peek .panel-actions {
+        border-top-color: #1f2a3f;
+    }
+    [data-bs-theme="dark"] .ht-peek .panel-actions a.primary { background: #e2e8f0; color: #0f172a; }
+    [data-bs-theme="dark"] .ht-peek .panel-actions button.secondary {
+        background: #1c2942; color: #e2e8f0; border-color: #33415e;
+    }
+</style>
+
+<div class="ht-peek-backdrop" id="htPeekBackdrop"></div>
+<aside class="ht-peek" id="htPeek" aria-hidden="true" role="dialog" aria-labelledby="htPeekTitle">
+    <header>
+        <button type="button" class="close" id="htPeekClose" aria-label="Close">×</button>
+        <div class="tags" id="htPeekTags"></div>
+        <h2 id="htPeekTitle">Position</h2>
+        <p class="ht-peek-co" id="htPeekCompany"></p>
+        <div class="pnl-headline" id="htPeekPnl">—</div>
+        <div class="pnl-sub" id="htPeekSub">—</div>
+    </header>
+    <div class="body">
+        <div id="htPeekBody">
+            <div class="ht-peek-empty">Loading…</div>
+        </div>
+        <div class="panel-actions">
+            <a href="#" id="htPeekOpen" class="primary">Open full position →</a>
+            <button type="button" class="secondary" id="htPeekCloseBottom">Close</button>
+        </div>
+    </div>
+</aside>
+
+<script>
+(function () {
+    var panel = document.getElementById('htPeek');
+    var backdrop = document.getElementById('htPeekBackdrop');
+    if (!panel || !backdrop) return;
+    var titleEl = document.getElementById('htPeekTitle');
+    var companyEl = document.getElementById('htPeekCompany');
+    var tagsEl = document.getElementById('htPeekTags');
+    var pnlEl = document.getElementById('htPeekPnl');
+    var subEl = document.getElementById('htPeekSub');
+    var bodyEl = document.getElementById('htPeekBody');
+    var openEl = document.getElementById('htPeekOpen');
+    var inflight = 0;
+
+    function money(n, digits) {
+        if (n === null || n === undefined || n !== n) return '—';
+        if (digits === undefined) digits = Math.abs(n) < 100 && n !== 0 ? 2 : 0;
+        var sign = n > 0 ? '+' : (n < 0 ? '-' : '');
+        return sign + '$' + Math.abs(n).toLocaleString('en-US', {
+            minimumFractionDigits: digits, maximumFractionDigits: digits
+        });
+    }
+    function tone(n) { return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); }
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function closePeek() {
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+        backdrop.classList.remove('open');
+    }
+
+    function setLoading(symbol, href, impact) {
+        titleEl.textContent = symbol;
+        companyEl.textContent = '';
+        tagsEl.innerHTML = '';
+        pnlEl.textContent = impact != null && impact !== '' ? money(parseFloat(impact), 0) : '—';
+        pnlEl.className = 'pnl-headline ' + tone(parseFloat(impact));
+        subEl.textContent = 'Loading…';
+        bodyEl.innerHTML = '<div class="ht-peek-empty">Loading…</div>';
+        openEl.href = href || ('/position/' + encodeURIComponent(symbol));
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+        backdrop.classList.add('open');
+        document.getElementById('htPeekClose').focus();
+    }
+
+    function render(data, impact) {
+        titleEl.textContent = data.symbol || 'Position';
+        companyEl.textContent = data.company_name || '';
+        var tags = [];
+        if (data.status) tags.push(data.status);
+        (data.strategies || []).forEach(function (s) { tags.push(s); });
+        tagsEl.innerHTML = tags.map(function (t) {
+            return '<span class="ht-peek-tag">' + esc(t) + '</span>';
+        }).join('');
+        pnlEl.textContent = money(data.total_pnl);
+        pnlEl.className = 'pnl-headline ' + tone(data.total_pnl);
+        var bits = [];
+        if (data.fills) bits.push(data.fills + (data.fills === 1 ? ' fill' : ' fills'));
+        if (data.win_rate != null) bits.push(Math.round(data.win_rate * 100) + '% win');
+        if (data.first_trade) bits.push('since ' + data.first_trade);
+        subEl.textContent = bits.join(' · ') || '—';
+
+        var html = '<div class="panel-stats">';
+        function stat(lbl, val, cls) {
+            html += '<div class="stat"><div class="lbl">' + lbl + '</div>'
+                 + '<div class="val ' + (cls || '') + '">' + val + '</div></div>';
+        }
+        stat('Realized', money(data.realized_pnl), tone(data.realized_pnl));
+        stat('Unrealized', money(data.unrealized_pnl), tone(data.unrealized_pnl));
+        stat('Dividends', money(data.dividends), tone(data.dividends));
+        if (impact != null && impact !== '' && !isNaN(parseFloat(impact))) {
+            var imp = parseFloat(impact);
+            stat('This session', money(imp, 0), tone(imp));
+        } else {
+            stat('Record', (data.winners || 0) + ' W / ' + (data.losers || 0) + ' L');
+        }
+        html += '</div>';
+
+        var holds = data.holdings || [];
+        html += '<div class="panel-section-title">Open now</div>';
+        if (!holds.length) {
+            html += '<div class="ht-peek-empty">No open lots in this view.</div>';
+        } else {
+            holds.forEach(function (h) {
+                html += '<div class="hold-row"><div>'
+                     + '<div class="sym">' + esc(h.label) + '</div>'
+                     + '<div class="meta">' + esc(h.qty_label)
+                     + (h.price != null ? ' @ $' + Number(h.price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '')
+                     + (h.account ? ' · ' + esc(h.account) : '')
+                     + '</div></div>'
+                     + '<span class="pnl ' + tone(h.unrealized_pnl) + '">' + money(h.unrealized_pnl) + '</span>'
+                     + '</div>';
+            });
+        }
+
+        var accts = data.accounts || [];
+        if (accts.length > 1) {
+            html += '<div class="panel-section-title">By account</div>';
+            accts.forEach(function (a) {
+                html += '<div class="acct-row"><div>'
+                     + '<div class="sym">' + esc(a.account || 'Account') + '</div>'
+                     + '<div class="meta">' + esc(a.status || '') + '</div></div>'
+                     + '<span class="pnl ' + tone(a.total_pnl) + '">' + money(a.total_pnl) + '</span>'
+                     + '</div>';
+            });
+        }
+
+        bodyEl.innerHTML = html;
+        if (data.position_url) openEl.href = data.position_url;
+    }
+
+    function openPeek(symbol, href, impact) {
+        inflight += 1;
+        var seq = inflight;
+        setLoading(symbol, href, impact);
+        var qs = window.location.search || '';
+        fetch('/api/position/' + encodeURIComponent(symbol) + '/peek' + qs, {
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        }).then(function (r) {
+            if (!r.ok) throw new Error('peek ' + r.status);
+            return r.json();
+        }).then(function (data) {
+            if (seq !== inflight) return;
+            render(data, impact);
+        }).catch(function () {
+            if (seq !== inflight) return;
+            subEl.textContent = '';
+            bodyEl.innerHTML = '<div class="ht-peek-err">Couldn\'t load this position. Open the full page instead.</div>';
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        var a = e.target.closest('[data-peek-symbol]');
+        if (!a) return;
+        if (e.defaultPrevented) return;
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        openPeek(
+            a.getAttribute('data-peek-symbol'),
+            a.getAttribute('href'),
+            a.getAttribute('data-peek-impact')
+        );
+    });
+    document.getElementById('htPeekClose').addEventListener('click', closePeek);
+    document.getElementById('htPeekCloseBottom').addEventListener('click', closePeek);
+    backdrop.addEventListener('click', closePeek);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && panel.classList.contains('open')) closePeek();
+    });
+})();
+</script>

@@ -361,7 +361,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
+        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. Expiries and assignments belong on the expiry session, even when the broker posts them the next trading day. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -433,7 +433,8 @@
             closed leg's G/L, and a short roll meets the bar on a credit
             (or flat) or a strike that moved in the covered direction
             (calls up, puts down). Same-day trades appear after the next
-            sync.
+            sync. Option expiry, assignment, and exercise are dated to
+            the expiry session even when the broker posts them on Monday.
         </p>
     </details>
 </div>
@@ -467,7 +468,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.winners %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -498,7 +499,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.losers %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row">
+                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -535,6 +536,7 @@
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
             <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
+               data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
                style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
@@ -1245,5 +1247,7 @@
 })();
 </script>
 {% endif %}
+
+{% include "_position_peek.html" %}
 
 {% endblock %}

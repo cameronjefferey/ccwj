@@ -61,6 +61,7 @@ FILTERED_QUERIES = [
     ("app.weekly_review", "TODAY_SNAPSHOT_ENRICHED_QUERY"),
     ("app.weekly_review", "DAY_ACCOUNTS_QUERY"),
     ("app.weekly_review", "DAY_TRADES_QUERY"),
+    ("app.weekly_review", "COVERED_CALL_UNWRITTEN_QUERY"),
     ("app.insights", "BEHAVIOR_OBSERVATIONS_QUERY"),
     ("app.wealth", "WEALTH_DAILY_QUERY"),
     ("app.wealth", "WEALTH_DAILY_QUERY_LEGACY"),

@@ -3471,6 +3471,8 @@ def build_today_batch(tenant_filter, today):
         ),
         "open_options": _OPEN_OPTION_RECORD_QUERY.format(
             tenant_filter=tenant_filter),
+        "cc_unwritten": COVERED_CALL_UNWRITTEN_QUERY.format(
+            tenant_filter=tenant_filter),
     }
 
 
@@ -4238,6 +4240,7 @@ def today_view():
             "net_gl": 0.0, "symbols": [], "has_any": False,
         },
         "open_option_record": None,
+        "covered_call_unwritten": None,
     }
 
     try:
@@ -4269,7 +4272,7 @@ def today_view():
 
         batch = _bq_parallel(client, batch_queries)
 
-        for k in ("today_trades", "open_options"):
+        for k in ("today_trades", "open_options", "cc_unwritten"):
             df = batch.get(k)
             if df is not None and not df.empty:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -4301,6 +4304,9 @@ def today_view():
         label_map = _tenant_label_map_for_user(current_user.id)
         context["trades_today"] = _split_day_fills(
             batch.get("today_trades", pd.DataFrame()), label_map=label_map)
+        if live:
+            context["covered_call_unwritten"] = _covered_calls_without_short(
+                batch.get("cc_unwritten", pd.DataFrame()), label_map)
     except Exception as e:
         app.logger.warning("Today page failed: %s", e)
         context["error"] = str(e)
@@ -4344,9 +4350,65 @@ WHERE date = @day
   {tenant_filter}
 """
 
+# Covered Call / Partially Covered Call names that currently hold ≥100
+# shares with no open short call. Observation for Today's fill list —
+# not a prompt to write. Friday expiry leaves stock on Monday with the
+# CC label still on the books (NVDA) or a Closed CC + remaining shares
+# (BE). Stock-only Buy and Hold with no CC history is excluded.
+COVERED_CALL_UNWRITTEN_QUERY = """
+WITH equity AS (
+    SELECT
+        tenant_id,
+        ANY_VALUE(account) AS account,
+        underlying_symbol AS symbol,
+        SUM(quantity) AS shares
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE UPPER(TRIM(COALESCE(instrument_type, ''))) = 'EQUITY'
+      AND quantity IS NOT NULL
+      {tenant_filter}
+    GROUP BY tenant_id, underlying_symbol
+    HAVING SUM(quantity) >= 100
+),
+cc AS (
+    SELECT DISTINCT tenant_id, symbol
+    FROM `ccwj-dbt.analytics.positions_summary`
+    WHERE strategy IN ('Covered Call', 'Partially Covered Call')
+      {tenant_filter}
+),
+shorts AS (
+    SELECT DISTINCT tenant_id, underlying_symbol AS symbol
+    FROM `ccwj-dbt.analytics.int_option_contracts`
+    WHERE status = 'Open'
+      AND direction = 'Sold'
+      AND UPPER(CAST(option_type AS STRING)) IN ('C', 'CALL')
+      {tenant_filter}
+)
+SELECT
+    e.tenant_id,
+    e.account,
+    e.symbol,
+    ROUND(e.shares, 4) AS shares
+FROM equity e
+INNER JOIN cc
+    ON (e.tenant_id IS NOT DISTINCT FROM cc.tenant_id)
+   AND UPPER(TRIM(e.symbol)) = UPPER(TRIM(cc.symbol))
+LEFT JOIN shorts s
+    ON (e.tenant_id IS NOT DISTINCT FROM s.tenant_id)
+   AND UPPER(TRIM(e.symbol)) = UPPER(TRIM(s.symbol))
+WHERE s.symbol IS NULL
+"""
+
 # Fill-level trades for one calendar day. Shared by the time-machine
 # day page AND Daily Review (`today_trades` in build_daily_review_batch)
 # so today's fills and a past day's page can never drift.
+#
+# Option expiry / assignment / exercise date to option_expiry
+# (int_option_contracts.realized_close_date = least(broker fill, expiry),
+# plus OTM-at-expiry inference on Friday). Schwab posts the matching
+# option_expired line T+1 (Friday expiry → Monday). Those Monday rows
+# must not inflate Today's fill count: drop them from history-by-
+# trade_date and UNION the contract rows onto the expiry session so
+# Friday Overview / the Friday day page show them before Monday's sync.
 DAY_TRADES_QUERY = """
 WITH raw AS (
     -- Filter history first so {tenant_filter} stays unambiguous (the
@@ -4354,10 +4416,13 @@ WITH raw AS (
     SELECT
         tenant_id, account, user_id, trade_date, action, trade_symbol,
         underlying_symbol, description, quantity, price, amount,
-        instrument_type
+        instrument_type, option_expiry
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE trade_date = @day
       AND action != 'dividend'  -- dividends render from int_dividend_events
+      -- Lifecycle settlements are attributed on expiry, not the T+1 post.
+      AND action NOT IN (
+          'option_expired', 'option_assigned', 'option_exercised')
       {tenant_filter}
 ),
 fills AS (
@@ -4385,37 +4450,93 @@ equity_gl AS (
       {tenant_filter}
 ),
 option_gl AS (
+    -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
+    -- from the settlements UNION so they date to realized_close_date.
     SELECT tenant_id, trade_symbol, realized_pnl
     FROM `ccwj-dbt.analytics.int_option_contracts`
     WHERE realized_close_date = @day
       {tenant_filter}
+),
+history_rows AS (
+    SELECT
+        f.tenant_id, f.account, f.user_id, f.trade_date, f.action,
+        f.trade_symbol, f.underlying_symbol, f.description, f.quantity,
+        f.price, f.amount, f.instrument_type, f.option_expiry,
+        CASE
+            WHEN f.action IN ('equity_sell', 'equity_sell_short')
+                THEN e.realized_pnl
+            WHEN f.action IN (
+                'option_buy_to_close', 'option_sell_to_close')
+                THEN o.realized_pnl
+            ELSE CAST(NULL AS FLOAT64)
+        END AS realized_pnl
+    FROM fills f
+    LEFT JOIN equity_gl e
+        ON (f.tenant_id IS NOT DISTINCT FROM e.tenant_id)
+        AND f.account = e.account
+        AND (f.user_id IS NOT DISTINCT FROM e.user_id)
+        AND f.underlying_symbol = e.symbol
+        AND ABS(COALESCE(f.quantity, 0) - COALESCE(e.sell_qty, 0)) < 0.011
+        AND ABS(COALESCE(f.amount, 0) - COALESCE(e.sell_proceeds, 0)) < 1.0
+    LEFT JOIN option_gl o
+        ON (f.tenant_id IS NOT DISTINCT FROM o.tenant_id)
+        AND f.trade_symbol = o.trade_symbol
+),
+settlements AS (
+    -- Closed via expiry / assignment / exercise (including OTM
+    -- inference and calendar-close before the Monday broker line).
+    -- close_type 'Closed' is a BTC/STC — already in history_rows.
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        realized_close_date AS trade_date,
+        CASE
+            WHEN close_type = 'Assigned' THEN 'option_assigned'
+            WHEN close_type = 'Exercised' THEN 'option_exercised'
+            ELSE 'option_expired'
+        END AS action,
+        trade_symbol,
+        underlying_symbol,
+        CAST(NULL AS STRING) AS description,
+        COALESCE(
+            NULLIF(contracts_closed, 0),
+            contracts_sold_to_open,
+            contracts_bought_to_open
+        ) AS quantity,
+        CAST(NULL AS FLOAT64) AS price,
+        CAST(0 AS FLOAT64) AS amount,
+        CASE
+            WHEN UPPER(CAST(option_type AS STRING)) IN ('P', 'PUT')
+                THEN 'Put'
+            ELSE 'Call'
+        END AS instrument_type,
+        option_expiry,
+        realized_pnl
+    FROM `ccwj-dbt.analytics.int_option_contracts`
+    WHERE realized_close_date = @day
+      AND status = 'Closed'
+      AND (
+            close_type IN (
+                'Expired', 'ExpiredOTM', 'Assigned', 'Exercised')
+            OR (
+                close_type IS NULL
+                AND option_expiry = realized_close_date
+            )
+          )
+      {tenant_filter}
+),
+combined AS (
+    SELECT * FROM history_rows
+    UNION ALL
+    SELECT * FROM settlements
 )
 SELECT
-    f.tenant_id, f.account, f.user_id, f.trade_date, f.action, f.trade_symbol,
-    f.underlying_symbol, f.description, f.quantity, f.price, f.amount,
-    f.instrument_type,
-    CASE
-        WHEN f.action IN ('equity_sell', 'equity_sell_short')
-            THEN e.realized_pnl
-        WHEN f.action IN (
-            'option_buy_to_close', 'option_sell_to_close',
-            'option_expired', 'option_assigned', 'option_exercised'
-        )
-            THEN o.realized_pnl
-        ELSE CAST(NULL AS FLOAT64)
-    END AS realized_pnl
-FROM fills f
-LEFT JOIN equity_gl e
-    ON (f.tenant_id IS NOT DISTINCT FROM e.tenant_id)
-    AND f.account = e.account
-    AND (f.user_id IS NOT DISTINCT FROM e.user_id)
-    AND f.underlying_symbol = e.symbol
-    AND ABS(COALESCE(f.quantity, 0) - COALESCE(e.sell_qty, 0)) < 0.011
-    AND ABS(COALESCE(f.amount, 0) - COALESCE(e.sell_proceeds, 0)) < 1.0
-LEFT JOIN option_gl o
-    ON (f.tenant_id IS NOT DISTINCT FROM o.tenant_id)
-    AND f.trade_symbol = o.trade_symbol
-ORDER BY f.underlying_symbol, ABS(f.amount) DESC
+    tenant_id, account, user_id, trade_date, action, trade_symbol,
+    underlying_symbol, description, quantity, price, amount,
+    instrument_type, option_expiry, realized_pnl
+FROM combined
+ORDER BY underlying_symbol, ABS(amount) DESC
 """
 
 # Same shape as TODAY_OPTIONS_MOVES_QUERY but anchored on @day: option day
@@ -4551,6 +4672,11 @@ def _finite_or_none(val):
         return None
 
 
+_SETTLEMENT_ACTIONS = frozenset({
+    "option_expired", "option_assigned", "option_exercised",
+})
+
+
 def _is_drip_fill(row):
     """True when this fill is a broker dividend reinvestment, not a placed trade."""
     if str(row.get("action") or "") == "dividend_reinvest":
@@ -4562,6 +4688,64 @@ def _is_drip_fill(row):
     except (TypeError, ValueError):
         pass
     return bool(flag)
+
+
+def _is_late_option_settlement(row):
+    """True when this is a T+1 broker expiry/assignment/exercise line.
+
+    Friday OTM/assignment is already realized on ``option_expiry`` (warehouse
+    ``realized_close_date``). Schwab posts the matching ``option_expired``
+    (etc.) on Monday. That Monday row is bookkeeping, not a new session
+    event — drop it so Today does not count Friday's expiry as today's fill.
+    """
+    if str(row.get("action") or "") not in _SETTLEMENT_ACTIONS:
+        return False
+    expiry = _coerce_date(row.get("option_expiry"))
+    trade_date = _coerce_date(row.get("trade_date"))
+    if expiry is None or trade_date is None:
+        return False
+    return expiry < trade_date
+
+
+_CC_UNWRITTEN_LIMIT = 8
+
+
+def _covered_calls_without_short(df, label_map=None, limit=_CC_UNWRITTEN_LIMIT):
+    """Covered Call names holding ≥100 shares with no open short call.
+
+    Observational only — Today uses this under Trades to note stock that
+    is no longer covered, not to suggest writing a call. Collapses to
+    one row per symbol (shares summed) so a shared ticker across
+    accounts is one name.
+    """
+    if df is None or df.empty:
+        return None
+    label_map = label_map or {}
+    by_sym = {}
+    for _, r in df.iterrows():
+        sym = str(r.get("symbol") or "").strip().upper()
+        if not sym:
+            continue
+        try:
+            shares = float(r.get("shares") or 0)
+        except (TypeError, ValueError):
+            shares = 0.0
+        if shares < 100:
+            continue
+        tid = str(r.get("tenant_id") or "").strip()
+        acct = label_map.get(tid, str(r.get("account") or "").strip())
+        slot = by_sym.setdefault(
+            sym, {"symbol": sym, "shares": 0.0, "accounts": []})
+        slot["shares"] += shares
+        if acct and acct not in slot["accounts"]:
+            slot["accounts"].append(acct)
+    rows = sorted(by_sym.values(), key=lambda x: -x["shares"])[:limit]
+    if not rows:
+        return None
+    for row in rows:
+        sh = row["shares"]
+        row["shares"] = int(round(sh)) if abs(sh - round(sh)) < 1e-6 else round(sh, 2)
+    return {"rows": rows}
 
 
 def _split_day_fills(trades_df, label_map=None):
@@ -4589,6 +4773,8 @@ def _split_day_fills(trades_df, label_map=None):
     net_cash = 0.0
     for _, r in trades_df.iterrows():
         if _is_drip_fill(r):
+            continue
+        if _is_late_option_settlement(r):
             continue
         action = str(r.get("action") or "")
         qty = r.get("quantity")

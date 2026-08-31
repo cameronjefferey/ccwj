@@ -16,6 +16,7 @@ import pandas as pd
 from app.weekly_review import (
     ANNUALIZED_DENOMINATOR_FLOOR,
     ANNUALIZED_MIN_DAYS,
+    DAY_TRADES_QUERY,
     TODAY_OPTIONS_MOVES_QUERY,
     _aggregate_breakdown_by,
     _annualized_pct,
@@ -29,6 +30,7 @@ from app.weekly_review import (
     _build_trades_this_week,
     _build_upcoming_dividends,
     _coerce_date,
+    _covered_calls_without_short,
     _group_day_rolls,
     _next_ex_div_on_or_after,
     _drop_stale_option_rows,
@@ -1144,6 +1146,67 @@ class TestSplitDayFills:
         assert out["count"] == 0
         assert out["trades"] == []
 
+    def test_monday_tplus1_expiry_is_not_a_session_trade(self):
+        # ASTS 260828 expired Friday; Schwab posts option_expired Monday.
+        df = pd.DataFrame([self._row(
+            trade_date=date(2026, 8, 31),
+            action="option_expired",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS",
+            quantity=8.0, price=None, amount=0.0,
+            instrument_type="Call",
+            option_expiry=date(2026, 8, 28),
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+        assert out["has_any"] is False
+
+    def test_friday_expiry_still_counts_on_expiry_session(self):
+        df = pd.DataFrame([self._row(
+            trade_date=date(2026, 8, 28),
+            action="option_expired",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS",
+            quantity=8.0, price=None, amount=0.0,
+            realized_pnl=2100.0,
+            instrument_type="Call",
+            option_expiry=date(2026, 8, 28),
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        assert out["trades"][0]["verb"] == "Expired"
+        assert out["trades"][0]["symbol"] == "ASTS"
+        assert out["net_gl"] == 2100.0
+
+    def test_monday_assignment_is_not_a_session_trade(self):
+        df = pd.DataFrame([self._row(
+            trade_date=date(2026, 8, 31),
+            action="option_assigned",
+            trade_symbol="NVDA  260828C00230000",
+            underlying_symbol="NVDA",
+            quantity=1.0, amount=0.0,
+            instrument_type="Call",
+            option_expiry=date(2026, 8, 28),
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+
+    def test_monday_btc_still_counts(self):
+        df = pd.DataFrame([self._row(
+            trade_date=date(2026, 8, 31),
+            action="option_buy_to_close",
+            trade_symbol="MRVL  260904C00242500",
+            underlying_symbol="MRVL",
+            quantity=10.0, price=17.75, amount=-17742.97,
+            realized_pnl=2100.0, instrument_type="Call",
+            option_expiry=date(2026, 9, 4),
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        assert out["trades"][0]["verb"] == "Bought to close"
+
     def test_real_buy_on_payable_day_still_counts(self):
         df = pd.DataFrame([
             self._row(quantity=1.0, price=60.17, amount=-60.17,
@@ -1652,4 +1715,83 @@ class TestOverviewVoice:
             from flask import url_for
             assert url_for("weekly_review") == "/overview"
             assert url_for("today_view") == "/today"
+
+
+class TestDayTradesSettlementQuery:
+    """DAY_TRADES_QUERY dates expiry to Friday and drops the Monday post."""
+
+    def test_history_excludes_settlement_actions(self):
+        sql = DAY_TRADES_QUERY
+        assert "AND action NOT IN (" in sql
+        assert "'option_expired'" in sql
+        assert "'option_assigned'" in sql
+        assert "'option_exercised'" in sql
+
+    def test_unions_contracts_on_realized_close_date(self):
+        sql = DAY_TRADES_QUERY
+        assert "int_option_contracts" in sql
+        assert "realized_close_date = @day" in sql
+        assert "ExpiredOTM" in sql
+        assert "UNION ALL" in sql
+        assert "option_expiry" in sql
+
+    def test_outer_select_projects_tenant_id(self):
+        # Fail-closed filter_df_by_tenant_ids needs this on the outer list.
+        outer = DAY_TRADES_QUERY.strip().rsplit("SELECT", 1)[-1]
+        assert "tenant_id" in outer.split("FROM")[0]
+
+
+class TestCoveredCallsWithoutShort:
+    """Today notes Covered Call names holding stock with no short call."""
+
+    def _row(self, symbol, shares, tenant="t1", account="Sara Investment"):
+        return {
+            "tenant_id": tenant, "account": account,
+            "symbol": symbol, "shares": shares,
+        }
+
+    def test_empty_frame_is_none(self):
+        assert _covered_calls_without_short(pd.DataFrame()) is None
+        assert _covered_calls_without_short(None) is None
+
+    def test_nvda_and_be_named(self):
+        df = pd.DataFrame([
+            self._row("NVDA", 100),
+            self._row("BE", 200),
+        ])
+        out = _covered_calls_without_short(df)
+        assert [r["symbol"] for r in out["rows"]] == ["BE", "NVDA"]
+        assert out["rows"][0]["shares"] == 200
+        assert out["rows"][1]["shares"] == 100
+
+    def test_drops_lots_under_100_shares(self):
+        df = pd.DataFrame([self._row("FOO", 50)])
+        assert _covered_calls_without_short(df) is None
+
+    def test_collapses_same_symbol_across_accounts(self):
+        df = pd.DataFrame([
+            self._row("NVDA", 100, tenant="t1", account="A"),
+            self._row("NVDA", 200, tenant="t2", account="B"),
+        ])
+        out = _covered_calls_without_short(
+            df, label_map={"t1": "A", "t2": "B"})
+        assert len(out["rows"]) == 1
+        assert out["rows"][0]["shares"] == 300
+        assert out["rows"][0]["accounts"] == ["A", "B"]
+
+    def test_query_requires_cc_history_and_no_open_short(self):
+        from app.weekly_review import COVERED_CALL_UNWRITTEN_QUERY
+        sql = COVERED_CALL_UNWRITTEN_QUERY
+        assert "Covered Call" in sql
+        assert "Partially Covered Call" in sql
+        assert "int_option_contracts" in sql
+        assert "HAVING SUM(quantity) >= 100" in sql
+        assert "direction = 'Sold'" in sql
+        assert "{tenant_filter}" in sql
+
+    def test_today_batch_includes_unwritten_query(self):
+        from datetime import date
+        from app.weekly_review import build_today_batch
+        batch = build_today_batch("", date(2026, 8, 31))
+        assert "cc_unwritten" in batch
 
