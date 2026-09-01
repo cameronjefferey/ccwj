@@ -39,6 +39,7 @@ from app.weekly_review import (
     _frame_as_of_date,
     _option_row_key,
     _overview_pending_session,
+    _overview_pending_banner,
     _pick_trades_week_frame,
     _snapshot_as_of_date,
     _split_day_fills,
@@ -1784,6 +1785,35 @@ class TestReviewSessionDates:
             et_today=self.friday
         ) is None
 
+    def test_overview_pending_banner_pre_market_vs_live_vs_after_hours(self):
+        monday = date(2026, 8, 31)
+        friday = date(2026, 8, 28)
+        tuesday = date(2026, 9, 1)
+        pre = _overview_pending_banner(
+            tuesday, {"state": "pre_market"}, monday, et_today=tuesday)
+        assert pre["live_link"] is False
+        assert "Monday's close" in pre["text"]
+        assert "9:30 ET" in pre["text"]
+        assert "lands tomorrow" not in pre["text"]
+
+        live = _overview_pending_banner(
+            tuesday, {"state": "open"}, monday, et_today=tuesday)
+        assert live["live_link"] is True
+        assert "Tuesday's session is live" in live["text"]
+        assert "Monday's close" in live["text"]
+        assert "lands tomorrow" not in live["text"]
+
+        after = _overview_pending_banner(
+            tuesday, {"state": "after_hours"}, monday, et_today=tuesday)
+        assert after["live_link"] is True
+        assert "Tuesday's close isn't on Overview yet" in after["text"]
+        assert "lands tomorrow" in after["text"]
+
+        assert _overview_pending_banner(
+            date(2026, 8, 15), {"state": "weekend"}, friday,
+            et_today=date(2026, 8, 15),
+        ) is None
+
     def test_frame_as_of_date_reads_movers_today_date(self):
         df = pd.DataFrame({"today_date": [self.thursday, self.wednesday]})
         assert _frame_as_of_date(df) == self.thursday
@@ -1913,6 +1943,7 @@ class TestTodayPageBatch:
         assert {p.name: p.value for p in batch["today_moves"][1].query_parameters}["as_of"] == friday
         assert {p.name: p.value for p in batch["today_trades"][1].query_parameters}["day"] == friday
         assert "open_options" in batch
+        assert "positions" in batch
 
     def test_delay_copy_always_warns(self):
         from app.weekly_review import _today_delay_copy
@@ -1943,6 +1974,43 @@ class TestOverviewVoice:
             from flask import url_for
             assert url_for("weekly_review") == "/overview"
             assert url_for("today_view") == "/today"
+
+    def test_since_last_looked_lives_on_today_not_overview(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1] / "app" / "templates"
+        overview = (root / "weekly_review.html").read_text()
+        today = (root / "today.html").read_text()
+        partial = (root / "_since_last_looked.html").read_text()
+        assert "Since you last looked" not in overview
+        assert "{% include '_since_last_looked.html' %}" in today
+        assert "Since you last looked" in partial
+
+
+class TestOpenPositionStrip:
+    def test_aggregates_equity_price_onto_strip(self):
+        from datetime import date
+        import pandas as pd
+        from app.weekly_review import _build_open_position_strip
+
+        df = pd.DataFrame([{
+            "symbol": "SMTC",
+            "trade_symbol": "SMTC",
+            "instrument_type": "Equity",
+            "market_value": 1000.0,
+            "cost_basis": 900.0,
+            "unrealized_pnl": 100.0,
+            "current_price": 50.0,
+            "quantity": 20,
+            "option_strike": 0,
+            "latest_stock_price": 50.0,
+            "option_expiry": None,
+            "option_type": None,
+        }])
+        strip, expiring = _build_open_position_strip(df, date(2026, 9, 1))
+        assert len(strip) == 1
+        assert strip[0]["symbol"] == "SMTC"
+        assert strip[0]["price"] == 50.0
+        assert expiring == []
 
 
 class TestDayTradesSettlementQuery:
