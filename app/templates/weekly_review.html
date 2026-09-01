@@ -11,7 +11,7 @@
      1. Session hero       — last-close account delta + market + fill count
      2. Since you last looked — diff vs prior visit
      3. Account snapshot   — per-account close / vs prior / week / month
-                             (blank dated column while this session is withheld)
+                             (unfinished session named in the nav strip)
      4. Session trades     — every fill dated the review session
      5. Session movers     — $ impact on holdings that session
      6. Watch list         — earnings, expiring options, projected ex-div
@@ -78,11 +78,6 @@
         <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}"
            style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
     </p>
-    {% if overview_pending_date %}
-    <p class="hero-subtitle" style="margin-top:.35rem; opacity:.88;">
-        {{ overview_pending_date.strftime('%A') }}'s close isn't on Overview yet — it lands tomorrow, once every account has settled.
-    </p>
-    {% endif %}
 
     <div class="hero-meta">
         {% if market_session %}
@@ -227,7 +222,7 @@
             <div class="snap-label">Account Value</div>
             {% if snap.today_value is not none %}
             <div class="snap-value">${{ "{:,.0f}".format(snap.today_value) }}</div>
-            {% if snap.today_date %}<div class="snap-meta">{{ snap.today_date }}</div>
+            {% if snap.today_date_label or snap.today_date %}<div class="snap-meta">{{ snap.today_date_label or snap.today_date }}</div>
             {% elif snap.today_is_live %}<div class="snap-meta">as of last sync</div>{% endif %}
             {% else %}<div class="snap-value text-muted">—</div>{% endif %}
         </div>
@@ -282,16 +277,13 @@
     {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
 {% endmacro %}
 <div class="review-section snapshot-section">
-    <div class="snapshot-table{% if overview_pending_date %} has-pending{% endif %}">
+    <div class="snapshot-table">
         <div class="snapshot-table-head">
             <div>Account</div>
             <div>Value</div>
             <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">{% if overview_prior_date %}vs {{ overview_prior_date.strftime('%a %-d') }}{% else %}vs prior close{% endif %}</div>
             <div class="snap-col-week">vs 1 Week</div>
             <div class="snap-col-month">vs 1 Month</div>
-            {% if overview_pending_date %}
-            <div class="snap-col-pending" title="{{ overview_pending_date.strftime('%A') }}'s close isn't on Overview yet. It lands tomorrow, once every account has settled.">{{ overview_pending_date.strftime('%a %-d') }}</div>
-            {% endif %}
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
@@ -301,7 +293,7 @@
                 {% else %}
                 <div class="acct-name">{{ snap.account | account_label }}</div>
                 {% endif %}
-                {% if snap.today_date %}<div class="acct-meta">{{ snap.today_date }}</div>
+                {% if snap.today_date_label or snap.today_date %}<div class="acct-meta">{{ snap.today_date_label or snap.today_date }}</div>
                 {% elif snap.today_is_live %}<div class="acct-meta">as of last sync</div>{% endif %}
             </div>
             <div>
@@ -312,9 +304,6 @@
             <div>{{ money_cell(snap.comparisons.day) }}</div>
             <div class="snap-col-week">{{ money_cell(snap.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
-            {% if overview_pending_date %}
-            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
-            {% endif %}
         </div>
         {% endfor %}
         {% if today_snapshots_total %}
@@ -331,9 +320,6 @@
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
             <div class="snap-col-week">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
             <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
-            {% if overview_pending_date %}
-            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
-            {% endif %}
         </div>
         {% endif %}
         {% for b in benchmark_snapshot or [] %}
@@ -346,9 +332,6 @@
             <div>{{ bench_pct_cell(b.day_pct) }}</div>
             <div class="snap-col-week">{{ bench_pct_cell(b.week_pct) }}</div>
             <div class="snap-col-month">{{ bench_pct_cell(b.month_pct) }}</div>
-            {% if overview_pending_date %}
-            <div class="snap-col-pending"><div class="snap-cell-val snap-cell-dash">—</div></div>
-            {% endif %}
         </div>
         {% endfor %}
     </div>

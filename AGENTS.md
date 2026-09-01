@@ -178,8 +178,8 @@ yfinance close with an incomplete broker sync (or a spine copy-forward) and
 look like a finished recap. During Friday's open *and* after the bell that is
 Thursday; Saturday morning is when Friday lands. Copy always names the session
 date. A stale warehouse close must not rewind Overview back to Thursday once
-Saturday has started. While a live session is being withheld, the snapshot
-table adds a blank dated column (dashes) so the close does not look missing.
+Saturday has started. While a live session is being withheld, the strip under
+the nav says so in plain language.
 
 The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
 callers don't break.
@@ -198,7 +198,10 @@ What's working:
  The session is always a settled ET weekday (`_snapshot_as_of_date`) —
  never calendar-today, even after the bell. Same-evening warehouse rows
  can mix a yfinance close with a partial broker sync; live numbers stay
- on Today until the next morning. Adds and
+ on Today until the next morning. Positions, watch list, and scorecards
+ on this page are current — not frozen at that close. While a live
+ session is withheld, the strip under the nav says so in plain language
+ ("Monday's close isn't on Overview yet"). Adds and
  trims on a long-held position show here even though **Trades this week**
  only lists groups that opened or closed this ISO week. Same-day close +
  open of the same option type (same symbol + tenant, different strike/expiry)
@@ -212,7 +215,7 @@ What's working:
  vanish. Lives in `build_daily_review_batch` as `today_trades` (same
  `trades_as_of` as `moves_as_of`) so the cache warmer replays it.
 - Since you last looked: stock moves / newly ITM / newly near expiry / opens & closes
-- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). While the current session is still being withheld, a blank dated column sits at the end so the unfinished close is visible as dashes, not as a wrong number.
+- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). The unfinished session is named in the nav strip, not as a blank extra column.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.

@@ -869,13 +869,21 @@
         </div>
     </nav>
 
-    {# Always-on data-freshness strip. SnapTrade's OWN "fresh from the broker"
-       timestamp (oldest across the user's connected accounts), NOT our cron's
-       cache-read time. Global via `_inject_broker_data_freshness` in
-       app/snaptrade.py so the trader knows on every page how current the
-       numbers are. Goes amber once data is older than 3 days (a weekend +
-       holiday of SnapTrade refresh skew is normal). #}
-    {% if current_user.is_authenticated and broker_data_as_of %}
+    {# Top strip under the nav. Overview pending-close is first — that
+       sentence used to live in the hero and was easy to miss. Broker
+       holdings freshness only shows when we can actually date the
+       accounts on the page. #}
+    {% if overview_pending_date is defined and overview_pending_date %}
+    <div class="data-freshness-strip">
+        <div class="container-fluid px-3 px-lg-4 d-flex flex-wrap align-items-center justify-content-center gap-2 text-center">
+            <span class="fresh-dot" aria-hidden="true"></span>
+            <span>
+                {{ overview_pending_date.strftime('%A') }}'s close isn't on Overview yet &mdash; it lands tomorrow, once every account has settled.
+            </span>
+            <a href="{{ url_for('today_view') }}" class="freshness-link">Live session</a>
+        </div>
+    </div>
+    {% elif current_user.is_authenticated and broker_data_as_of %}
     {% set _is_stale = broker_data_stale_days is not none and broker_data_stale_days > 3 %}
     <div class="data-freshness-strip{% if _is_stale %} is-stale{% endif %}">
         <div class="container-fluid px-3 px-lg-4 d-flex flex-wrap align-items-center justify-content-center gap-2 text-center">

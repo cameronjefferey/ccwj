@@ -620,18 +620,73 @@ def test_sync_one_persists_holdings_last_successful_sync(monkeypatch, _patched_m
     assert _patched_models["holdings_synced"] == [(9, "abc", when)]
 
 
-def test_broker_data_freshness_uses_oldest_across_accounts(monkeypatch):
-    """The always-on freshness strip must show the OLDEST timestamp across a
-    user's accounts (the weakest link) so it never overstates how current the
-    data is — and report whole days stale."""
+def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
+    """A Robinhood that last pulled Thursday must not freeze the strip
+    while Schwab marked this session."""
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
-        {"holdings_last_successful_sync": datetime(2026, 6, 19, 20, 6, 0)},
-        {"holdings_last_successful_sync": datetime(2026, 6, 12, 13, 0, 0)},  # oldest
-        {"holdings_last_successful_sync": None},  # ignored
+        {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
+        {"holdings_last_successful_sync": datetime(2026, 8, 27, 18, 0, 0)},
+        {"holdings_last_successful_sync": None},
+    ])
+    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    assert as_of == date(2026, 8, 31)
+    assert stale_days == 0
+
+
+def test_broker_data_freshness_same_session_keeps_earlier_pull(monkeypatch):
+    """Accounts that all pulled this session still report the earlier one."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
+        {"holdings_last_successful_sync": datetime(2026, 8, 30, 20, 0, 0)},
+    ])
+    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    assert as_of == date(2026, 8, 30)
+    assert stale_days == 1
+
+
+def test_broker_data_freshness_hides_when_scope_missing_stamps(monkeypatch):
+    """Warehouse-linked Schwab with no snaptrade_accounts row must not let
+    idle Robinhood date the page."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {
+            "snaptrade_account_id": "28a79f2e-2232-42ae-8756-8facda9e23fd",
+            "holdings_last_successful_sync": datetime(2026, 8, 27, 18, 0, 0),
+        },
+    ])
+    assert _snap.broker_data_freshness(
+        99,
+        today=date(2026, 8, 31),
+        tenant_ids=[
+            "snaptrade:28a79f2e-2232-42ae-8756-8facda9e23fd",
+            "snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87",
+        ],
+    ) == (None, None)
+
+
+def test_broker_data_freshness_skips_broken_connections(monkeypatch):
+    """A dead connection has its own reconnect banner; it must not freeze
+    the global strip on an old holdings stamp while live accounts are current."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {
+            "holdings_last_successful_sync": datetime(2026, 6, 12, 13, 0, 0),
+            "connection_broken_at": datetime(2026, 6, 12, 14, 0, 0),
+        },
+        {"holdings_last_successful_sync": datetime(2026, 6, 21, 16, 0, 0)},
     ])
     as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 6, 22))
-    assert as_of == date(2026, 6, 12)
-    assert stale_days == 10
+    assert as_of == date(2026, 6, 21)
+    assert stale_days == 1
+
+
+def test_broker_data_freshness_uses_et_session_date(monkeypatch):
+    """UTC Tuesday 01:00 is still Monday evening in New York."""
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
+        {"holdings_last_successful_sync": datetime(
+            2026, 9, 1, 1, 0, 0, tzinfo=ZoneInfo("UTC"))},
+    ])
+    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    assert as_of == date(2026, 8, 31)
+    assert stale_days == 0
 
 
 def test_broker_data_freshness_none_when_no_timestamps(monkeypatch):

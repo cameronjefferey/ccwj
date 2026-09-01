@@ -35,6 +35,7 @@ from app.weekly_review import (
     _next_ex_div_on_or_after,
     _drop_stale_option_rows,
     _format_trade_contract,
+    _format_session_date,
     _frame_as_of_date,
     _option_row_key,
     _overview_pending_session,
@@ -452,6 +453,22 @@ class TestBuildTodayMovers:
         assert result["losers"][0]["kind"] == "stock"
         assert result["total_impact"] == 50.0
         assert result["as_of"] == "2026-05-18"
+
+    def test_equity_as_of_is_latest_bar_not_first_row(self):
+        """A crypto/weekend symbol whose last close is Friday must not
+        label the whole movers card Friday when equities have Monday."""
+        df = pd.DataFrame([
+            {"symbol": "BTC", "shares": 1, "current_value": 100,
+             "today_close": 100, "prev_close": 99,
+             "price_change": 1.0, "price_change_pct": 1.0,
+             "dollar_impact": 1.0, "today_date": date(2026, 8, 28)},
+            {"symbol": "AAPL", "shares": 10, "current_value": 1700,
+             "today_close": 170, "prev_close": 167,
+             "price_change": 3.0, "price_change_pct": 1.8,
+             "dollar_impact": 30.0, "today_date": date(2026, 8, 31)},
+        ])
+        result = _build_today_movers(df)
+        assert result["as_of"] == "2026-08-31"
 
     def test_stocks_and_options_share_five_slots_per_side(self):
         # Six small stock winners plus a larger option winner: the option
@@ -1773,6 +1790,11 @@ class TestReviewSessionDates:
 
     def test_coerce_date_accepts_iso_string(self):
         assert _coerce_date("2026-08-13") == self.thursday
+
+    def test_format_session_date_matches_pulse_label(self):
+        assert _format_session_date(self.thursday) == "Thu Aug 13"
+        assert _format_session_date("2026-08-28") == "Fri Aug 28"
+        assert _format_session_date(None) is None
 
     def test_pulse_carries_date_label(self):
         pulse = _today_pulse([{

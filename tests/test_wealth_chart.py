@@ -1,6 +1,7 @@
 """Wealth chart helpers — collapse duplicate mart rows before groupby-sum."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -9,6 +10,9 @@ from app.wealth import (
     _build_income_panel,
     _build_summary,
     _collapse_wealth_daily_duplicate_grain,
+    _drop_dates_after,
+    _et_today,
+    _fmt_as_of,
     _slice_wealth_to_range,
     _wealth_no_match,
 )
@@ -378,4 +382,33 @@ def test_wealth_no_match_ignores_account_none_when_tenants_set():
     assert _wealth_no_match("Emmory", ["Emmory"], ["snaptrade:x"], False) is False
     assert _wealth_no_match("Nope", None, [], False) is True
     assert _wealth_no_match("Nope", None, ["snaptrade:x"], True) is False
+
+
+def test_summary_drops_utc_tomorrow_spine_row():
+    """BQ CURRENT_DATE() is UTC — after 8pm ET the mart already has tomorrow."""
+    et = datetime.now(ZoneInfo("America/New_York")).date()
+    tomorrow = et + timedelta(days=1)
+
+    def _row(d, value):
+        return {
+            "tenant_id": "snaptrade:abc",
+            "account": "Schwab Account",
+            "user_id": 4,
+            "date": pd.Timestamp(d),
+            "account_value": value,
+            "cash_value": value,
+            "equity_value": 0.0,
+            "option_value": 0.0,
+            "cumulative_net_deposits": 0.0,
+        }
+
+    df = pd.DataFrame([_row(et, 10000.0), _row(tomorrow, 99999.0)])
+    out = _build_summary(df)
+    assert out["as_of"] == _fmt_as_of(et)
+    assert out["account_value"] == 10000.0
+    chart = _build_chart_payload(df)
+    assert chart["dates"][-1] == et.isoformat()
+    assert 99999.0 not in chart["account_value"]
+    dropped = _drop_dates_after(df, _et_today())
+    assert dropped["date"].max().date() <= et
 
