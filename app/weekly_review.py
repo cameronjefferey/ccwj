@@ -1148,11 +1148,11 @@ ORDER BY date
 # "Since you last looked" — daily pull hook
 # ──────────────────────────────────────────────────────────────────
 #
-# The page is Today-first. We diff the current world against a snapshot of
-# the world at the user's previous visit (or yesterday if this is their first
-# real visit). Output is ALWAYS in the user's accounts only — every query
-# below is account-scoped at the SQL level (per BigQuery tenant-isolation
-# rules) and any DataFrame is filtered before merge.
+# The card lives on Today. We diff the current world against a snapshot of
+# the world at the user's previous Today visit (or yesterday if this is
+# their first real visit). Output is ALWAYS in the user's accounts only —
+# every query below is tenant-scoped at the SQL level (per BigQuery
+# tenant-isolation rules) and any DataFrame is filtered before merge.
 
 # Prior closes (one row per symbol) at the most recent close strictly BEFORE
 # the cutoff date. Used to compute "since you last looked" stock moves.
@@ -1222,7 +1222,7 @@ def _humanize_gap(gap):
 def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
                        expiring_options, user_tz, force_show=False):
     """
-    Build the "Since you last looked" diff card.
+    Build the "Since you last looked" catch-up card for ``/today``.
 
     Strategy:
       • Anchor date = the calendar date of prev_visit_dt in the user's TZ
@@ -1282,11 +1282,10 @@ def _since_last_looked(client, tenant_filter, prev_visit_dt, today, today_strip,
             if s.get("symbol")
         })
 
-        # Fire the (mutually independent) since-anchor queries in ONE parallel
-        # wave instead of three serial round trips. On the home page these were
-        # the serial tail after the main parallel batch — ~3× BQ fixed latency
-        # (~6s cold). The visibility gate above already returned early when
-        # nothing changed, so we only pay for these on a genuine new session.
+        # On the Today page these were the serial tail after the main
+        # parallel batch — ~3× BQ fixed latency (~6s cold). The visibility
+        # gate above already returned early when nothing changed, so we
+        # only pay for these on a genuine new session.
         trade_cfg = bigquery.QueryJobConfig(query_parameters=[
             bigquery.ScalarQueryParameter("since_date", "DATE", anchor_date),
             bigquery.ScalarQueryParameter("today_date", "DATE", today),
@@ -1672,6 +1671,118 @@ def _drop_stale_option_rows(positions_df, as_of, open_contracts_df=None):
     return df.loc[~(expired | stale_closed)].copy()
 
 
+def _build_open_position_strip(all_pos_df, as_of_date, open_contracts_df=None):
+    """Symbol strip + 14-day expiring options from ``int_enriched_current``.
+
+    Shared by Overview (positions strip / watch list) and Today's
+    since-you-last-looked card. Drops past-expiry / mart-Closed option
+    rows first so a stale Schwab snapshot can't keep an expired
+    contract on either surface.
+    """
+    strip, expiring_options = [], []
+    if all_pos_df is None or all_pos_df.empty:
+        return strip, expiring_options
+
+    all_pos_df = _drop_stale_option_rows(
+        all_pos_df, as_of_date, open_contracts_df=open_contracts_df)
+    if all_pos_df is None or all_pos_df.empty:
+        return strip, expiring_options
+
+    for col in ["market_value", "cost_basis", "unrealized_pnl",
+                "unrealized_pnl_pct", "current_price", "quantity",
+                "option_strike", "latest_stock_price"]:
+        if col in all_pos_df.columns:
+            all_pos_df[col] = pd.to_numeric(
+                all_pos_df[col], errors="coerce").fillna(0)
+
+    symbols_agg = all_pos_df.groupby("symbol").agg(
+        total_mv=("market_value", "sum"),
+        total_cost=("cost_basis", "sum"),
+        total_upnl=("unrealized_pnl", "sum"),
+        num_legs=("trade_symbol", "count"),
+    ).reset_index()
+
+    eq_rows = all_pos_df[all_pos_df["instrument_type"] == "Equity"]
+    eq_prices = (
+        dict(zip(eq_rows["symbol"], eq_rows["current_price"]))
+        if not eq_rows.empty else {}
+    )
+    stock_prices = dict(zip(all_pos_df["symbol"], all_pos_df["latest_stock_price"]))
+    for sym in stock_prices:
+        if sym not in eq_prices and stock_prices[sym]:
+            eq_prices[sym] = stock_prices[sym]
+
+    for _, row in symbols_agg.iterrows():
+        sym = row["symbol"]
+        mv = float(row["total_mv"])
+        cost = float(row["total_cost"])
+        upnl = float(row["total_upnl"])
+        upnl_pct = round(upnl / cost * 100, 1) if cost else None
+        strip.append({
+            "symbol": sym,
+            "market_value": round(mv, 2),
+            "unrealized_pnl": round(upnl, 2),
+            "unrealized_pnl_pct": upnl_pct,
+            "price": round(eq_prices.get(sym, 0), 2) if eq_prices.get(sym) else None,
+            "num_legs": int(row["num_legs"]),
+        })
+    strip.sort(key=lambda x: abs(x["market_value"]), reverse=True)
+
+    opts = all_pos_df[all_pos_df["instrument_type"].isin(["Call", "Put"])].copy()
+    if opts.empty or "option_expiry" not in opts.columns:
+        return strip, expiring_options
+
+    opts["option_expiry"] = pd.to_datetime(opts["option_expiry"])
+    expiry_cutoff = pd.Timestamp(as_of_date + timedelta(days=14))
+    today_ts = pd.Timestamp(as_of_date)
+    expiring = opts[opts["option_expiry"].notna()
+                    & (opts["option_expiry"] >= today_ts)
+                    & (opts["option_expiry"] <= expiry_cutoff)]
+
+    for _, row in expiring.iterrows():
+        sym = str(row.get("symbol", ""))
+        strike = float(row.get("option_strike") or 0)
+        opt_type = str(row.get("option_type") or "")
+        stock_price = (
+            float(eq_prices.get(sym, 0))
+            or float(row.get("latest_stock_price") or 0)
+        )
+        expiry = row.get("option_expiry")
+        expiry_str = (
+            expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime")
+            else str(expiry)[:10]
+        )
+        days_to_exp = (
+            (expiry.date() - as_of_date).days
+            if hasattr(expiry, "date") else None
+        )
+        itm, distance = _classify_expiring_moneyness(
+            instrument_type=row.get("instrument_type"),
+            option_type=opt_type,
+            stock_price=stock_price,
+            strike=strike,
+        )
+        expiring_options.append({
+            "symbol": sym,
+            "trade_symbol": str(row.get("trade_symbol", "")),
+            "instrument_type": row.get("instrument_type"),
+            "option_type": opt_type,
+            "strike": strike,
+            "expiry": expiry_str,
+            "days_to_exp": days_to_exp,
+            "quantity": int(row.get("quantity") or 0),
+            "market_value": round(float(row.get("market_value") or 0), 2),
+            "unrealized_pnl": round(float(row.get("unrealized_pnl") or 0), 2),
+            "stock_price": round(stock_price, 2),
+            "itm": itm,
+            "distance": distance,
+        })
+    expiring_options.sort(
+        key=lambda x: (x.get("days_to_exp") if x.get("days_to_exp") is not None else 999)
+    )
+    return strip, expiring_options
+
+
 def _frame_as_of_date(df):
     """Latest ``today_date`` in a movers-style frame, or None."""
     if df is None or getattr(df, "empty", True) or "today_date" not in df.columns:
@@ -1751,11 +1862,10 @@ def _snapshot_as_of_date(user_today, market_session, close_as_of=None,
 
 def _overview_pending_session(user_today, market_session, session_date,
                               et_today=None):
-    """Date of the live U.S. session Overview is withholding, or None.
+    """Date of the U.S. session Overview is withholding, or None.
 
-    Used to render a blank snapshot column so the table does not look
-    like it already includes this session's close. Weekend / pre-market
-    have no live session — Today is empty then, and the column stays off.
+    Open and after-hours only. Weekend / pre-market have no live
+    session on Today.
     """
     et_today = et_today or _date_in_user_tz("America/New_York")
     state = (market_session or {}).get("state")
@@ -1766,6 +1876,54 @@ def _overview_pending_session(user_today, market_session, session_date,
     if et_today > user_today:
         return None
     return et_today
+
+
+def _overview_pending_banner(user_today, market_session, session_date,
+                             et_today=None):
+    """Nav-strip copy while Overview is holding last close.
+
+    Pre-market, the open, and after-hours are three different facts:
+    the session has not started, it is live, or the bell rang and the
+    close is not settled yet. Weekend is quiet. Returns
+    ``{"text", "live_link"}`` or ``None``.
+    """
+    et_today = et_today or _date_in_user_tz("America/New_York")
+    state = (market_session or {}).get("state")
+    if session_date is None or et_today > user_today:
+        return None
+    session_name = session_date.strftime("%A")
+    today_name = et_today.strftime("%A")
+
+    if state == "pre_market":
+        if session_date >= et_today:
+            return None
+        return {
+            "text": (
+                f"This is {session_name}'s close. U.S. markets open at 9:30 ET."
+            ),
+            "live_link": False,
+        }
+    if state == "open":
+        if session_date >= et_today:
+            return None
+        return {
+            "text": (
+                f"{today_name}'s session is live. Overview still shows "
+                f"{session_name}'s close until it settles."
+            ),
+            "live_link": True,
+        }
+    if state == "after_hours":
+        if session_date >= et_today:
+            return None
+        return {
+            "text": (
+                f"{today_name}'s close isn't on Overview yet — it lands "
+                f"tomorrow, once every account has settled."
+            ),
+            "live_link": True,
+        }
+    return None
 
 
 def _us_market_session():
@@ -3609,6 +3767,11 @@ def build_today_batch(tenant_filter, today):
             tenant_filter=tenant_filter),
         "cc_unwritten": COVERED_CALL_UNWRITTEN_QUERY.format(
             tenant_filter=tenant_filter),
+        # Open positions feed the since-you-last-looked card (moves vs
+        # prior close + newly ITM / near-expiry). Same query Overview
+        # uses for its strip; warmer stays in lockstep because it calls
+        # this builder.
+        "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
     }
 
 
@@ -3670,7 +3833,6 @@ def weekly_review():
     week_end = this_week + timedelta(days=6)
 
     from_upload = request.args.get("from_upload") == "1"
-    from_sync = request.args.get("from_sync") == "1"
 
     # Brand-new accounts with zero linked broker accounts → bounce to
     # /get-started so they don't sit on a "still calculating" banner
@@ -3680,10 +3842,6 @@ def weekly_review():
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce
-
-    # ── Visit anchor for "Since you last looked" ──
-    prior_visit = bump_review_visit(current_user.id, datetime.now(ZoneInfo("UTC")))
-    since_anchor_dt = prior_visit.get("last_visit_at") if prior_visit else None
 
     context = {
         "title": "Overview",
@@ -3697,6 +3855,7 @@ def weekly_review():
         "review_date": today,
         "review_is_today": True,
         "overview_pending_date": None,
+        "overview_pending_banner": None,
         "overview_prior_date": None,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
@@ -3721,7 +3880,6 @@ def weekly_review():
         "market": None,
         "market_session": None,
         "market_neutral_line": None,
-        "since_last_looked": None,
         "calendar_grid": [],
         "calendar_weeks_back": DAILY_CALENDAR_WEEKS,
         "calendar_default_weeks": DAILY_CALENDAR_DEFAULT_WEEKS,
@@ -3803,6 +3961,8 @@ def weekly_review():
             et_today=market_today)
         context["review_date"] = snap_cutoff
         context["overview_pending_date"] = _overview_pending_session(
+            today, market_session, snap_cutoff, et_today=market_today)
+        context["overview_pending_banner"] = _overview_pending_banner(
             today, market_session, snap_cutoff, et_today=market_today)
         context["overview_prior_date"] = (
             _adjacent_weekday(snap_cutoff, -1) if snap_cutoff else None
@@ -3989,99 +4149,13 @@ def weekly_review():
 
         # ── Open positions: today strip + expiring options ────────────
         try:
-            all_pos_df = batch.get("positions", pd.DataFrame())
-            if not all_pos_df.empty:
-                # Drop past-expiry / mart-Closed option rows before any
-                # aggregation so a stale Schwab snapshot can't keep FN
-                # (or any expired contract) on the strip or watch list.
-                all_pos_df = _drop_stale_option_rows(
-                    all_pos_df, market_today,
-                    open_contracts_df=batch.get("open_options"),
-                )
-                for col in ["market_value", "cost_basis", "unrealized_pnl", "unrealized_pnl_pct",
-                             "current_price", "quantity", "option_strike", "latest_stock_price"]:
-                    if col in all_pos_df.columns:
-                        all_pos_df[col] = pd.to_numeric(all_pos_df[col], errors="coerce").fillna(0)
-
-                symbols_agg = all_pos_df.groupby("symbol").agg(
-                    total_mv=("market_value", "sum"),
-                    total_cost=("cost_basis", "sum"),
-                    total_upnl=("unrealized_pnl", "sum"),
-                    num_legs=("trade_symbol", "count"),
-                ).reset_index()
-
-                eq_rows = all_pos_df[all_pos_df["instrument_type"] == "Equity"]
-                eq_prices = dict(zip(eq_rows["symbol"], eq_rows["current_price"])) if not eq_rows.empty else {}
-                stock_prices = dict(zip(all_pos_df["symbol"], all_pos_df["latest_stock_price"]))
-                for sym in stock_prices:
-                    if sym not in eq_prices and stock_prices[sym]:
-                        eq_prices[sym] = stock_prices[sym]
-
-                for _, row in symbols_agg.iterrows():
-                    sym = row["symbol"]
-                    mv = float(row["total_mv"])
-                    cost = float(row["total_cost"])
-                    upnl = float(row["total_upnl"])
-                    upnl_pct = round(upnl / cost * 100, 1) if cost else None
-                    context["today_strip"].append({
-                        "symbol": sym,
-                        "market_value": round(mv, 2),
-                        "unrealized_pnl": round(upnl, 2),
-                        "unrealized_pnl_pct": upnl_pct,
-                        "price": round(eq_prices.get(sym, 0), 2) if eq_prices.get(sym) else None,
-                        "num_legs": int(row["num_legs"]),
-                    })
-                context["today_strip"].sort(key=lambda x: abs(x["market_value"]), reverse=True)
-
-                opts = all_pos_df[all_pos_df["instrument_type"].isin(["Call", "Put"])].copy()
-                if not opts.empty and "option_expiry" in opts.columns:
-                    opts["option_expiry"] = pd.to_datetime(opts["option_expiry"])
-                    # 14 day window for the daily review's "expiring soon" — a
-                    # weekly review's 7d hides the next-Mon expirations from a
-                    # trader checking on a Wednesday.
-                    expiry_cutoff = pd.Timestamp(
-                        market_today + timedelta(days=14))
-                    today_ts = pd.Timestamp(market_today)
-                    expiring = opts[opts["option_expiry"].notna()
-                                    & (opts["option_expiry"] >= today_ts)
-                                    & (opts["option_expiry"] <= expiry_cutoff)]
-
-                    for _, row in expiring.iterrows():
-                        sym = str(row.get("symbol", ""))
-                        strike = float(row.get("option_strike") or 0)
-                        opt_type = str(row.get("option_type") or "")
-                        stock_price = float(eq_prices.get(sym, 0)) or float(row.get("latest_stock_price") or 0)
-                        expiry = row.get("option_expiry")
-                        expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, "strftime") else str(expiry)[:10]
-                        days_to_exp = (
-                            (expiry.date() - market_today).days
-                            if hasattr(expiry, "date") else None
-                        )
-
-                        itm, distance = _classify_expiring_moneyness(
-                            instrument_type=row.get("instrument_type"),
-                            option_type=opt_type,
-                            stock_price=stock_price,
-                            strike=strike,
-                        )
-                        context["expiring_options"].append({
-                            "symbol": sym,
-                            "trade_symbol": str(row.get("trade_symbol", "")),
-                            "instrument_type": row.get("instrument_type"),
-                            "option_type": opt_type,
-                            "strike": strike,
-                            "expiry": expiry_str,
-                            "days_to_exp": days_to_exp,
-                            "quantity": int(row.get("quantity") or 0),
-                            "market_value": round(float(row.get("market_value") or 0), 2),
-                            "unrealized_pnl": round(float(row.get("unrealized_pnl") or 0), 2),
-                            "stock_price": round(stock_price, 2),
-                            "itm": itm,
-                            "distance": distance,
-                        })
-                    context["expiring_options"].sort(
-                        key=lambda x: (x.get("days_to_exp") if x.get("days_to_exp") is not None else 999)
-                    )
+            strip, expiring = _build_open_position_strip(
+                batch.get("positions", pd.DataFrame()),
+                market_today,
+                open_contracts_df=batch.get("open_options"),
+            )
+            context["today_strip"] = strip
+            context["expiring_options"] = expiring
         except Exception as e:
             app.logger.warning("Open positions processing failed: %s", e)
 
@@ -4231,21 +4305,6 @@ def weekly_review():
         except Exception as e:
             app.logger.warning("Account breakdown processing failed: %s", e)
 
-        # ── Since you last looked (through last close, not the live session)
-        try:
-            context["since_last_looked"] = _since_last_looked(
-                client=client,
-                tenant_filter=tenant_filter,
-                prev_visit_dt=since_anchor_dt,
-                today=session_date,
-                today_strip=context.get("today_strip", []),
-                expiring_options=context.get("expiring_options", []),
-                user_tz=user_tz,
-                force_show=from_upload or from_sync,
-            )
-        except Exception as e:
-            app.logger.warning("Since-last-looked failed: %s", e)
-
         # ── Daily account Δ calendar grid ─────────────────────────────
         try:
             cal_df = batch.get("calendar", pd.DataFrame())
@@ -4360,6 +4419,13 @@ def today_view():
     today = _date_in_user_tz(user_tz)
     market_session = _us_market_session()
 
+    from_upload = request.args.get("from_upload") == "1"
+    from_sync = request.args.get("from_sync") == "1"
+    # Stamp on Today, not Overview — home redirects to Overview, and
+    # bumping there would zero the catch-up gap before this page loads.
+    prior_visit = bump_review_visit(current_user.id, datetime.now(ZoneInfo("UTC")))
+    since_anchor_dt = prior_visit.get("last_visit_at") if prior_visit else None
+
     context = {
         "title": "Today",
         "today": today,
@@ -4384,6 +4450,7 @@ def today_view():
         "open_option_record": None,
         "covered_call_unwritten": None,
         "all_user_tags": [],
+        "since_last_looked": None,
     }
 
     try:
@@ -4403,6 +4470,7 @@ def today_view():
                     tenant_filter=_tenant_sql_and(sorted(ah_tenants)))
         else:
             # Weekend / pre-market: do not replay last session as "today".
+            # Positions + open options still feed the catch-up card.
             after_hours_ready = False
             batch_queries = {
                 "today_trades": (
@@ -4411,11 +4479,15 @@ def today_view():
                         bigquery.ScalarQueryParameter("day", "DATE", today),
                     ]),
                 ),
+                "positions": OPEN_POSITIONS_QUERY.format(
+                    tenant_filter=tenant_filter),
+                "open_options": _OPEN_OPTION_RECORD_QUERY.format(
+                    tenant_filter=tenant_filter),
             }
 
         batch = _bq_parallel(client, batch_queries)
 
-        for k in ("today_trades", "open_options", "cc_unwritten"):
+        for k in ("today_trades", "open_options", "cc_unwritten", "positions"):
             df = batch.get(k)
             if df is not None and not df.empty:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -4453,6 +4525,26 @@ def today_view():
         if live:
             context["covered_call_unwritten"] = _covered_calls_without_short(
                 batch.get("cc_unwritten", pd.DataFrame()), label_map)
+
+        try:
+            market_today = _date_in_user_tz("America/New_York")
+            strip, expiring = _build_open_position_strip(
+                batch.get("positions", pd.DataFrame()),
+                market_today,
+                open_contracts_df=batch.get("open_options"),
+            )
+            context["since_last_looked"] = _since_last_looked(
+                client=client,
+                tenant_filter=tenant_filter,
+                prev_visit_dt=since_anchor_dt,
+                today=today,
+                today_strip=strip,
+                expiring_options=expiring,
+                user_tz=user_tz,
+                force_show=from_upload or from_sync,
+            )
+        except Exception as e:
+            app.logger.warning("Since-last-looked failed: %s", e)
     except Exception as e:
         app.logger.warning("Today page failed: %s", e)
         context["error"] = str(e)

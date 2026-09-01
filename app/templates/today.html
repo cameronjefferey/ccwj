@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{# Live session. Last-trade / last-sync numbers. Official close is Overview. #}
+{# Live session. Last-trade / last-sync numbers. Official close is Overview.
+   Catch-up ("Since you last looked") lives here, not on Overview. #}
 
 {% block head %}
 {% include '_review_styles.html' %}
@@ -75,6 +76,8 @@
         <span style="color: rgba(255,255,255,.4);">Times in {{ user_timezone|replace('_', ' ') }}</span>
     </div>
 </div>
+
+{% include '_since_last_looked.html' %}
 
 {% set _tt = trades_today or {} %}
 <div class="review-section">

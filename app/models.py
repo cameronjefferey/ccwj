@@ -2894,22 +2894,29 @@ def list_dormant_email_recipients(min_days_away, max_days_away):
     ``max_days_away`` days ago (a window, so a daily cron doesn't re-nudge
     the same person every day) and are opted into product-update email.
 
-    Uses ``user_review_visits.last_visit_at`` (set by ``bump_review_visit``
-    on every Daily Review load) as the activity signal. Returns the same
-    shape as ``list_email_recipients_for_kind`` plus ``days_away``.
+    Uses the later of ``usage_events`` (any authenticated page) and
+    ``user_review_visits.last_visit_at`` (Today catch-up stamp) as the
+    activity signal. Returns the same shape as
+    ``list_email_recipients_for_kind`` plus ``days_away``.
     """
     rows = fetch_all(
         "SELECT u.id AS user_id, u.username, u.email, "
-        "p.email_unsubscribe_token, p.timezone, v.last_visit_at, "
-        "EXTRACT(DAY FROM (NOW() - v.last_visit_at))::int AS days_away "
+        "p.email_unsubscribe_token, p.timezone, "
+        "COALESCE(e.last_event_at, v.last_visit_at) AS last_visit_at, "
+        "EXTRACT(DAY FROM (NOW() - COALESCE(e.last_event_at, v.last_visit_at)))::int AS days_away "
         "FROM users u "
         "JOIN user_profiles p ON p.user_id = u.id "
-        "JOIN user_review_visits v ON v.user_id = u.id "
+        "LEFT JOIN user_review_visits v ON v.user_id = u.id "
+        "LEFT JOIN ("
+        "  SELECT user_id, MAX(created_at) AS last_event_at "
+        "  FROM usage_events GROUP BY user_id"
+        ") e ON e.user_id = u.id "
         "WHERE p.product_update_email = TRUE "
         "AND u.email IS NOT NULL AND length(trim(u.email)) > 0 "
         "AND lower(u.username) <> 'demo' "
-        "AND v.last_visit_at <= NOW() - (%s || ' days')::interval "
-        "AND v.last_visit_at >  NOW() - (%s || ' days')::interval "
+        "AND COALESCE(e.last_event_at, v.last_visit_at) IS NOT NULL "
+        "AND COALESCE(e.last_event_at, v.last_visit_at) <= NOW() - (%s || ' days')::interval "
+        "AND COALESCE(e.last_event_at, v.last_visit_at) >  NOW() - (%s || ' days')::interval "
         "ORDER BY u.id",
         (int(min_days_away), int(max_days_away)),
     )
@@ -2917,15 +2924,18 @@ def list_dormant_email_recipients(min_days_away, max_days_away):
 
 
 # ------------------------------------------------------------------
-# Review visit anchors  ("Since you last looked")
+# Review visit anchors  ("Since you last looked" on /today)
 #
 # We track two timestamps per user:
 #   prev_visit_at  → the visit BEFORE the current one (the one we diff against)
-#   last_visit_at  → the most recent visit (becomes prev on the next "real" visit)
+#   last_visit_at  → the most recent Today visit (becomes prev on the next
+#                    "real" visit)
 #
 # A "real" visit is one separated from last_visit_at by at least
 # REVIEW_VISIT_PROMOTE_GAP — otherwise rapid reloads would clobber the prev
-# anchor and make the diff strip useless.
+# anchor and make the diff strip useless. Overview does not stamp this
+# table: home redirects there, and bumping on Overview would zero the
+# gap before Today loads.
 # ------------------------------------------------------------------
 from datetime import timedelta as _timedelta
 
@@ -2947,7 +2957,7 @@ def get_review_visit(user_id):
 
 def bump_review_visit(user_id, now):
     """
-    Record a weekly-review visit. Debounced: if the prior last_visit_at is
+    Record a Today-page visit. Debounced: if the prior last_visit_at is
     within REVIEW_VISIT_PROMOTE_GAP, last_visit_at is NOT moved — that way a
     burst of reloads doesn't reset the "since you last looked" anchor and
     flatten the diff to nothing.

@@ -9,15 +9,14 @@
    Sections, top to bottom:
 
      1. Session hero       — last-close account delta + market + fill count
-     2. Since you last looked — diff vs prior visit
-     3. Account snapshot   — per-account close / vs prior / week / month
+     2. Account snapshot   — per-account close / vs prior / week / month
                              (unfinished session named in the nav strip)
-     4. Session trades     — every fill dated the review session
-     5. Session movers     — $ impact on holdings that session
-     6. Watch list         — earnings, expiring options, projected ex-div
-     7. Daily account Δ    — rolling 12-week heatmap
-     8. Performance by account — summarized scorecard
-     9. Trades this week   — one row per group opened or closed this week
+     3. Session trades     — every fill dated the review session
+     4. Session movers     — $ impact on holdings that session
+     5. Watch list         — earnings, expiring options, projected ex-div
+     6. Daily account Δ    — rolling 12-week heatmap
+     7. Performance by account — summarized scorecard
+     8. Trades this week   — one row per group opened or closed this week
    ════════════════════════════════════════════════════════════════════════ #}
 
 {% block head %}
@@ -116,97 +115,6 @@
             </div>
         </div>
     </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   SINCE YOU LAST LOOKED — daily-pull diff
-   ════════════════════════════════════ #}
-{% if since_last_looked %}
-{% set sll = since_last_looked %}
-<div class="since-card">
-    <div class="since-kicker">
-        <span class="since-dot"></span>
-        Since you last looked
-    </div>
-    <p class="since-headline">
-        {% if sll.is_first_visit %}
-        What changed yesterday
-        {% else %}
-        What changed since {{ sll.time_ago }}
-        {% endif %}
-    </p>
-
-    {% if sll.moves %}
-    <div class="since-row">
-        <span class="since-section-label">Moves</span>
-        {% for m in sll.moves %}
-        <a class="since-chip {% if m.positive %}up{% else %}down{% endif %}"
-           href="{{ url_for('position_detail', symbol=m.symbol) }}"
-           title="From ${{ '%.2f' % m.prior_price }} to ${{ '%.2f' % m.current_price }}">
-            <span class="sym">{{ m.symbol }}</span>
-            <span>{{ '+' if m.positive else '' }}{{ '%.2f' % m.delta_pct }}%</span>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if sll.newly_itm %}
-    <div class="since-row">
-        <span class="since-section-label">Newly ITM</span>
-        {% for opt in sll.newly_itm %}
-        <a class="since-chip warn"
-           href="{{ url_for('position_detail', symbol=opt.symbol) }}"
-           title="Stock moved across the {{ '%.2f' % opt.strike }} strike since your last visit">
-            <span class="sym">{{ opt.symbol }}</span>
-            <span>{{ opt.option_type|lower }} {{ '%.0f' % opt.strike }}</span>
-            {% if opt.days_to_exp is not none %}<span class="text-muted">{{ opt.days_to_exp }}d</span>{% endif %}
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if sll.newly_near_expiry %}
-    <div class="since-row">
-        <span class="since-section-label">Now expiring soon</span>
-        {% for opt in sll.newly_near_expiry %}
-        <a class="since-chip" href="{{ url_for('position_detail', symbol=opt.symbol) }}">
-            <span class="sym">{{ opt.symbol }}</span>
-            <span>{{ opt.option_type|lower }} {{ '%.0f' % (opt.strike or 0) }}</span>
-            <span class="text-muted">{{ opt.days_to_exp }}d</span>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if sll.closed_trades %}
-    <div class="since-row">
-        <span class="since-section-label">Closed</span>
-        {% for t in sll.closed_trades %}
-        <a class="since-chip {% if t.positive %}up{% else %}down{% endif %}"
-           href="{{ url_for('position_detail', symbol=t.symbol) }}">
-            <span class="sym">{{ t.symbol }}</span>
-            {% if t.total_pnl is not none %}
-            <span>{{ '+' if t.positive else '' }}${{ '{:,.0f}'.format(t.total_pnl) }}</span>
-            {% endif %}
-            <span class="text-muted">{{ t.close_date }}</span>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if sll.opened_trades %}
-    <div class="since-row">
-        <span class="since-section-label">Opened</span>
-        {% for t in sll.opened_trades %}
-        <a class="since-chip" href="{{ url_for('position_detail', symbol=t.symbol) }}">
-            <span class="sym">{{ t.symbol }}</span>
-            {% if t.strategy %}<span class="text-muted">{{ t.strategy }}</span>{% endif %}
-            <span class="text-muted">{{ t.open_date }}</span>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
 </div>
 {% endif %}
 
