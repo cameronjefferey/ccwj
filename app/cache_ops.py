@@ -101,6 +101,7 @@ def _warm_one_scope(client, uid, tenant_ids):
         _bq_parallel,
         _date_in_user_tz,
         _iso_week_start,
+        _review_session_cutoff_and_trade_query,
         _snapshot_as_of_date,
         _us_market_session,
         build_daily_review_batch,
@@ -124,7 +125,13 @@ def _warm_one_scope(client, uid, tenant_ids):
     batch = build_daily_review_batch(
         tenant_filter, today, this_week,
         trades_as_of=session_date, moves_as_of=session_date)
-    _bq_parallel(client, batch)
+    results = _bq_parallel(client, batch)
+    _, rewound_trade_query = _review_session_cutoff_and_trade_query(
+        tenant_filter, today, market_session, session_date, results)
+    if rewound_trade_query is not None:
+        # Match the view's second, cutoff-bound lookup so the shared cache
+        # contains the exact settled-session trade key it will request.
+        _bq_parallel(client, {"today_trades": rewound_trade_query})
 
     # Live /today page (calendar-today last-trade bars).
     _bq_parallel(client, build_today_batch(tenant_filter, today))

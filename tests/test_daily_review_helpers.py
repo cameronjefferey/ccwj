@@ -40,6 +40,7 @@ from app.weekly_review import (
     _option_row_key,
     _overview_pending_session,
     _pick_trades_week_frame,
+    _review_session_cutoff_and_trade_query,
     _snapshot_as_of_date,
     _split_day_fills,
     _today_headline,
@@ -1756,6 +1757,46 @@ class TestReviewSessionDates:
             self.friday, {"state": "after_hours"},
             close_as_of=self.thursday, et_today=self.friday
         ) == self.thursday
+
+    def test_rewound_cutoff_rebinds_session_trades_to_same_date(self):
+        # Tuesday's nominal recap is Monday, but the warehouse only proves
+        # Friday's close. The header and fill query must both rewind to Friday.
+        tuesday = date(2026, 9, 1)
+        monday = date(2026, 8, 31)
+        friday = date(2026, 8, 28)
+        tenant_filter = "AND tenant_id IN ('snaptrade:abc')"
+        batch = {"today_moves": pd.DataFrame({"today_date": [friday]})}
+
+        cutoff, trade_query = _review_session_cutoff_and_trade_query(
+            tenant_filter,
+            tuesday,
+            {"state": "after_hours"},
+            monday,
+            batch,
+            et_today=tuesday,
+        )
+
+        assert cutoff == friday
+        assert trade_query is not None
+        sql, cfg = trade_query
+        assert tenant_filter in sql
+        params = {p.name: p.value for p in cfg.query_parameters}
+        assert params["day"] == cutoff
+
+    def test_unchanged_cutoff_does_not_repeat_session_trade_query(self):
+        batch = {
+            "today_moves": pd.DataFrame({"today_date": [self.thursday]}),
+        }
+        cutoff, trade_query = _review_session_cutoff_and_trade_query(
+            "AND 1=0",
+            self.friday,
+            {"state": "after_hours"},
+            self.thursday,
+            batch,
+            et_today=self.friday,
+        )
+        assert cutoff == self.thursday
+        assert trade_query is None
 
     def test_snapshot_cutoff_never_after_user_today(self):
         assert _snapshot_as_of_date(

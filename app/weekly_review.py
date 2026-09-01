@@ -3505,6 +3505,41 @@ def _moves_job_config(as_of):
     ])
 
 
+def _day_trades_spec(tenant_filter, day):
+    """Cached-query spec for one settled session's fills."""
+    return (
+        DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
+        bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("day", "DATE", day),
+        ]),
+    )
+
+
+def _review_session_cutoff_and_trade_query(
+        tenant_filter, user_today, market_session, initial_session_date,
+        batch, *, et_today=None):
+    """Final Overview session date and any required trade-query rebind.
+
+    Movers are the first batch result that proves which official close is
+    actually available. If that date rewinds the recap, the fill query from
+    the initial batch is now for the wrong session and must be replaced.
+    """
+    close_as_of = (
+        _frame_as_of_date((batch or {}).get("today_moves"))
+        or _frame_as_of_date((batch or {}).get("today_options_moves"))
+    )
+    cutoff = _snapshot_as_of_date(
+        user_today, market_session, close_as_of=close_as_of,
+        et_today=et_today,
+    )
+    trade_query = (
+        _day_trades_spec(tenant_filter, cutoff)
+        if cutoff != initial_session_date
+        else None
+    )
+    return cutoff, trade_query
+
+
 def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
                              moves_as_of=None):
     """The tenant-scoped core of the Overview (close-based) parallel batch.
@@ -3564,13 +3599,8 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         # that OPENED or CLOSED this ISO week — adds/trims on a long-held
         # position never appear there. This query is the fill-level answer
         # to "what did I trade today?".
-        "today_trades": (
-            DAY_TRADES_QUERY.format(tenant_filter=tenant_filter),
-            bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "day", "DATE", trades_as_of or today),
-            ]),
-        ),
+        "today_trades": _day_trades_spec(
+            tenant_filter, trades_as_of or today),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
             tenant_filter=tenant_filter, week_start=this_week.isoformat()),
         "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
@@ -3794,13 +3824,27 @@ def weekly_review():
         # Official-close as-of (movers) + session heuristic: the latest
         # date whose snapshot/calendar cell is a real session, not a UTC
         # spine forward-fill with a $0 delta.
-        close_as_of = (
-            _frame_as_of_date(batch.get("today_moves"))
-            or _frame_as_of_date(batch.get("today_options_moves"))
+        snap_cutoff, rewound_trade_query = (
+            _review_session_cutoff_and_trade_query(
+                tenant_filter,
+                today,
+                market_session,
+                session_date,
+                batch,
+                et_today=market_today,
+            )
         )
-        snap_cutoff = _snapshot_as_of_date(
-            today, market_session, close_as_of=close_as_of,
-            et_today=market_today)
+        if rewound_trade_query is not None:
+            # The first batch queried the nominal prior weekday. Movers can
+            # prove that the latest published close is older (for example,
+            # Monday prices are missing on Tuesday). Never render Monday
+            # fills under a Friday recap header: replace the frame, failing
+            # closed to an empty session-trades section if this query fails.
+            rewound = _bq_parallel(
+                client, {"today_trades": rewound_trade_query})
+            batch["today_trades"] = _filter_df_by_tenant_ids(
+                rewound.get("today_trades", pd.DataFrame()), tenant_ids)
+        session_date = snap_cutoff
         context["review_date"] = snap_cutoff
         context["overview_pending_date"] = _overview_pending_session(
             today, market_session, snap_cutoff, et_today=market_today)
