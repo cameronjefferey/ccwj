@@ -1608,6 +1608,12 @@ def _coerce_date(value):
         return None
 
 
+def _format_session_date(value):
+    """Short weekday label for snapshot meta (``Fri Aug 28``), or None."""
+    d = _coerce_date(value)
+    return d.strftime("%a %b %-d") if d else None
+
+
 _OSI_CORE = re.compile(r"(\d{6}[CP]\d{8})")
 
 
@@ -2711,10 +2717,9 @@ def _build_today_movers(today_moves_df, account_total_value=None,
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         total_impact = float(df["dollar_impact"].sum()) if "dollar_impact" in df.columns else 0.0
+        as_of_date = _frame_as_of_date(df)
+        as_of = as_of_date.isoformat() if as_of_date else None
         for _, r in df.iterrows():
-            td = r.get("today_date")
-            if as_of is None and td is not None:
-                as_of = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
             equity_items.append({
                 "symbol": str(r.get("symbol") or ""),
                 "kind": "stock",
@@ -3931,6 +3936,7 @@ def weekly_review():
                         # deep-link the account name to /accounts?tenant=<id>,
                         # mirroring the Performance by Account rows.
                         "tenant_id": tid,
+                        "today_date_label": _format_session_date(today_date),
                         "today_value": today_value,
                         "today_date": today_date,
                         "today_is_live": False,

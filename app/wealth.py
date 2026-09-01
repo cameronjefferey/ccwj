@@ -14,7 +14,8 @@ scoping) and every DataFrame is then passed through
 ``docs/V2_TENANT_KEY_DESIGN.md``.
 """
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from flask import redirect, render_template, request, url_for
@@ -211,6 +212,26 @@ def _fmt_as_of(val):
     return str(val)
 
 
+def _et_today():
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _drop_dates_after(df, cutoff):
+    """Drop warehouse rows dated after ``cutoff`` (typically ET today).
+
+    BigQuery ``CURRENT_DATE()`` is UTC. After 8pm ET the spine already
+    has tomorrow's copy-forward row, and Accounts Value would say
+    "as of Sep 1" on Monday evening. Same UTC-tomorrow class Overview
+    already caps with ``_snapshot_as_of_date``.
+    """
+    if df is None or df.empty or "date" not in df.columns or cutoff is None:
+        return df
+    days = pd.to_datetime(df["date"], errors="coerce")
+    keep = days.dt.date <= cutoff
+    keep = keep.fillna(False)
+    return df.loc[keep].copy()
+
+
 def _build_history_coverage(wealth_df, fills_df=None):
     """Facts for the value-view disclosure: when snapshots start, when
     fills start, and the inferred opening cash (first snapshot value).
@@ -337,6 +358,9 @@ def _build_chart_payload(df, exclude_transfers=False):
         option_value=("option_value", "sum"),
     ).sort_values("date")
     by_date["date"] = pd.to_datetime(by_date["date"], errors="coerce").dt.normalize()
+    by_date = _drop_dates_after(by_date, _et_today())
+    if by_date is None or by_date.empty:
+        return empty
 
     net_dep = _net_deposits_by_date(df)
     if net_dep is not None:
@@ -409,9 +433,13 @@ def _build_summary(df, exclude_transfers=False, lookback_df=None):
     by_date = _by_date(df)
     if by_date.empty:
         return None
+    by_date = _drop_dates_after(by_date, _et_today())
+    if by_date is None or by_date.empty:
+        return None
 
     lookback = _by_date(lookback_df) if lookback_df is not None and not lookback_df.empty else by_date
-    if lookback.empty:
+    lookback = _drop_dates_after(lookback, _et_today())
+    if lookback is None or lookback.empty:
         lookback = by_date
 
     latest = by_date.iloc[-1]
@@ -629,6 +657,7 @@ def render_wealth_view():
             # row whose ``user_id`` doesn't match the signed-in user.
             df = _filter_df_by_tenant_ids(df, tenant_ids)
             df = _collapse_wealth_daily_duplicate_grain(df)
+            df = _drop_dates_after(df, _et_today())
 
             try:
                 span_sql = HISTORY_SPAN_QUERY.format(tenant_filter=tenant_filter)

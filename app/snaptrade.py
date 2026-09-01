@@ -2302,6 +2302,30 @@ def _as_date(value):
     return None
 
 
+def _as_et_date(value):
+    """Calendar date in America/New_York for a freshness stamp.
+
+    Naive datetimes are treated as UTC (SnapTrade ISO after tz-strip;
+    ``post_close_broker_tenant_ids`` uses the same convention). A UTC
+    Monday 21:00 ET stamp stored as Tuesday 01:00Z must not publish as
+    Tuesday on the strip.
+    """
+    from zoneinfo import ZoneInfo
+
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        stamp = value if value.tzinfo is not None else value.replace(
+            tzinfo=ZoneInfo("UTC"))
+        return stamp.astimezone(ZoneInfo("America/New_York")).date()
+    return _as_date(value)
+
+
+def _et_today():
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
 def _parse_iso_datetime(value):
     """Parse a SnapTrade ISO-8601 timestamp (possibly ``Z``-suffixed) into a
     naive ``datetime``; ``None`` on failure. Tolerates already-parsed
@@ -2466,29 +2490,77 @@ def _inject_snaptrade_reauth_needed():
         return {"snaptrade_reauth_needed": []}
 
 
-def broker_data_freshness(user_id, *, today=None):
-    """Honest "broker data as of" for the always-on freshness strip.
+# Idle extra brokerages (a Robinhood that last pulled Thursday while
+# Schwab marked this session) used to freeze the global strip. Cluster
+# around the newest live pull; anything more than this many calendar
+# days behind is a different connection, not the page's as-of.
+_FRESHNESS_LAG_DAYS = 1
 
-    Returns ``(as_of_date, stale_days)`` where ``as_of_date`` is the OLDEST
-    ``holdings_last_successful_sync`` across the user's connected accounts —
-    the weakest link, so we NEVER overstate freshness when one connection has
-    stalled — and ``stale_days`` is whole days since that date. ``(None, None)``
-    when no account reports a usable timestamp (cold start / pre-migration /
-    unauthorized creds). This is SnapTrade's own "fresh from the broker" clock,
-    NOT our cron's cache-read ``last_sync_at``."""
-    stamps = [
-        r.get("holdings_last_successful_sync")
-        for r in (get_snaptrade_accounts(user_id) or [])
-        if r.get("holdings_last_successful_sync") is not None
+
+def _snaptrade_tenant_id_for_account(acc_row):
+    aid = (acc_row.get("snaptrade_account_id") or "").strip()
+    if not aid:
+        return None
+    try:
+        return build_tenant_id(SNAPTRADE_BROKER_SLUG, aid)
+    except ValueError:
+        return None
+
+
+def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
+    """When the numbers on the page were last pulled from the broker.
+
+    Returns ``(as_of_date, stale_days)``. Dates are America/New_York
+    session dates. ``(None, None)`` means hide the strip — better than a
+    date that does not describe the accounts the trader is looking at.
+
+    Rules:
+    - Broken connections are ignored (they have a reconnect banner).
+    - When ``tenant_ids`` is passed, every in-scope SnapTrade tenant must
+      have a holdings stamp. Local warehouse-linked Schwab with no
+      ``snaptrade_accounts`` row used to let idle Robinhood say "Aug 27"
+      on a page of Monday marks.
+    - Among remaining stamps, drop laggards more than
+      ``_FRESHNESS_LAG_DAYS`` behind the newest pull, then take the
+      oldest of that cluster. One Thursday Robinhood must not freeze a
+      Monday Schwab book; two accounts that both pulled this session
+      still report the earlier of those pulls.
+    """
+    rows = [
+        r for r in (get_snaptrade_accounts(user_id) or [])
+        if not r.get("connection_broken_at")
     ]
+    if tenant_ids is not None:
+        wanted = {str(t) for t in tenant_ids if t}
+        snap_wanted = {t for t in wanted if t.startswith("snaptrade:")}
+        if not snap_wanted:
+            return None, None
+        by_tid = {}
+        for r in rows:
+            tid = _snaptrade_tenant_id_for_account(r)
+            if tid:
+                by_tid[tid] = r
+        if any(t not in by_tid or by_tid[t].get("holdings_last_successful_sync") is None
+               for t in snap_wanted):
+            return None, None
+        rows = [by_tid[t] for t in snap_wanted]
+
+    stamps = []
+    for r in rows:
+        stamp = r.get("holdings_last_successful_sync")
+        if stamp is None:
+            continue
+        d = _as_et_date(stamp)
+        if d is not None:
+            stamps.append(d)
     if not stamps:
         return None, None
-    oldest = _as_date(min(stamps))
-    if oldest is None:
-        return None, None
-    today = today or date.today()
-    days = (today - oldest).days
-    return oldest, (days if days >= 0 else 0)
+    newest = max(stamps)
+    clustered = [d for d in stamps if (newest - d).days <= _FRESHNESS_LAG_DAYS]
+    as_of = min(clustered) if clustered else newest
+    today = today or _et_today()
+    days = (today - as_of).days
+    return as_of, (days if days >= 0 else 0)
 
 
 def post_close_broker_tenant_ids(user_id, *, now=None):
@@ -2555,15 +2627,32 @@ def post_close_broker_tenant_ids(user_id, *, now=None):
     return out
 
 
+_EMPTY_FRESHNESS = {
+    "broker_data_as_of": None,
+    "broker_data_stale_days": None,
+}
+
+
 @app.context_processor
 def _inject_broker_data_freshness():
-    """Global "broker data as of" — surfaced on EVERY page via the slim strip
-    in base.html so a trader always knows how current their numbers are.
+    """Global "broker data as of" strip. Hidden when we cannot date the
+    accounts on the page (incomplete SnapTrade stamps, CSV-only, etc.).
     Best-effort; never breaks a render."""
     try:
         if not getattr(current_user, "is_authenticated", False):
-            return {"broker_data_as_of": None, "broker_data_stale_days": None}
-        as_of, stale_days = broker_data_freshness(current_user.id)
-        return {"broker_data_as_of": as_of, "broker_data_stale_days": stale_days}
+            return dict(_EMPTY_FRESHNESS)
+        tenant_ids = None
+        try:
+            from app.routes import _tenants_for_scope
+            tenant_ids = _tenants_for_scope()
+        except Exception:
+            from app.models import get_tenant_ids_for_user
+            tenant_ids = get_tenant_ids_for_user(current_user.id)
+        as_of, stale_days = broker_data_freshness(
+            current_user.id, tenant_ids=tenant_ids)
+        return {
+            "broker_data_as_of": as_of,
+            "broker_data_stale_days": stale_days,
+        }
     except Exception:
-        return {"broker_data_as_of": None, "broker_data_stale_days": None}
+        return dict(_EMPTY_FRESHNESS)

@@ -148,9 +148,6 @@
         grid-template-columns: minmax(140px, 1.4fr) repeat(4, 1fr);
         gap: 0; align-items: baseline;
     }
-    .snapshot-table.has-pending {
-        grid-template-columns: minmax(140px, 1.4fr) repeat(5, 1fr);
-    }
     .snapshot-table-head, .snapshot-table-row { display: contents; }
     .snapshot-table-head > div {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .4px;
@@ -188,7 +185,6 @@
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
         .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, 1fr); }
-        .snapshot-table.has-pending { grid-template-columns: minmax(110px, 1.2fr) repeat(4, 1fr); }
         .snapshot-table .snap-col-month { display: none; }
     }
     @media (max-width: 480px) {
@@ -196,8 +192,6 @@
            value + vs-yesterday + vs-1w columns fit unclipped at 390px. */
         .snapshot-section { padding: .9rem .75rem; }
         .snapshot-table { grid-template-columns: minmax(88px, 1.1fr) repeat(3, minmax(0, 1fr)); }
-        .snapshot-table.has-pending { grid-template-columns: minmax(88px, 1.1fr) repeat(3, minmax(0, 1fr)); }
-        .snapshot-table.has-pending .snap-col-week { display: none; }
         .snapshot-table-head > div { padding-right: .35rem; font-size: .62rem; }
         .snapshot-table-row > div { padding-right: .35rem; }
         .snapshot-table .acct-name { font-size: .82rem; }
