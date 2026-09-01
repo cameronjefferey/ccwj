@@ -44,7 +44,7 @@
                 </thead>
                 <tbody>
                     {% for r in strategy_breakdown %}
-                    <tr data-href="{{ url_for('strategies', strategy=r.strategy, account=(selected_account|default('')) or none) }}">
+                    <tr data-href="{{ scoped_url('strategies', strategy=r.strategy) }}">
                         <td data-val="{{ r.strategy }}">
                             <span class="fw-semibold">{{ r.strategy }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.num_open }} open &middot; {{ r.num_closed }} closed &middot; {{ r.num_winners }}W / {{ r.num_losers }}L</div>
@@ -107,7 +107,7 @@
                 </thead>
                 <tbody>
                     {% for r in sector_breakdown %}
-                    <tr data-href="{{ url_for('positions', sector=r.sector, account=(selected_account|default('')) or none) }}">
+                    <tr data-href="{{ scoped_url('positions', sector=r.sector) }}">
                         <td data-val="{{ r.sector }}">
                             <span class="fw-semibold">{{ r.sector }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
@@ -148,7 +148,7 @@
                 </thead>
                 <tbody>
                     {% for r in subsector_breakdown %}
-                    <tr data-href="{{ url_for('positions', subsector=r.subsector, account=(selected_account|default('')) or none) }}">
+                    <tr data-href="{{ scoped_url('positions', subsector=r.subsector) }}">
                         <td data-val="{{ r.subsector }}">
                             <span class="fw-semibold">{{ r.subsector }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.symbols[:6]|join(', ') }}{% if r.num_symbols > 6 %} &hellip;{% endif %}</div>
@@ -200,9 +200,9 @@
                 </thead>
                 <tbody>
                     {% for r in position_breakdown %}
-                    <tr data-href="{{ url_for('position_detail', symbol=r.symbol, account=(selected_account|default('')) or none) }}">
+                    <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
                         <td data-val="{{ r.symbol }}">
-                            <a href="{{ url_for('position_detail', symbol=r.symbol, account=(selected_account|default('')) or none) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
+                            <a href="{{ scoped_url('position_detail', symbol=r.symbol) }}" class="fw-semibold text-decoration-none">{{ r.symbol }}</a>
                             {% if r.strategy %}<div class="text-muted" style="font-size:.72rem;">{{ r.strategy }}{% if r.sector and r.sector != 'Unknown' %} &middot; {{ r.sector }}{% endif %}</div>{% endif %}
                         </td>
                         {{ money_cell(r.equity_pnl) }}

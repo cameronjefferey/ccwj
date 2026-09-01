@@ -13,6 +13,7 @@ from app.trader_story import (
     _build_scoreboard,
     _build_standouts,
     _busiest_day,
+    _open_held_symbol_count,
 )
 
 
@@ -169,3 +170,20 @@ def test_compose_novel_shape():
 
 def test_compose_novel_empty_book():
     assert compose_novel({}, pd.DataFrame()) is None
+
+
+def test_open_held_symbol_count_is_unique_open_symbols():
+    df = pd.DataFrame([
+        {"has_open_leg": 1, "symbol": "AAPL"},
+        {"has_open_leg": 1, "symbol": "aapl"},
+        {"has_open_leg": 1, "symbol": "MSFT"},
+        {"has_open_leg": 0, "symbol": "TSLA"},
+    ])
+    assert _open_held_symbol_count(df) == 2
+    assert _open_held_symbol_count(pd.DataFrame()) == 0
+    assert _open_held_symbol_count(None) == 0
+    status_df = pd.DataFrame([
+        {"status": "Open", "symbol": "NVDA"},
+        {"status": "Closed", "symbol": "AMD"},
+    ])
+    assert _open_held_symbol_count(status_df) == 1

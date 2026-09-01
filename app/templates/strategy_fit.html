@@ -400,9 +400,9 @@
 {# View switch — one Strategies surface, two lenses. #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Performance</a>
+       href="{{ scoped_url('strategies') }}">Performance</a>
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Fit matrix</a>
+       href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
@@ -425,7 +425,7 @@
             <div class="val">{{ grand_total.num_trades | int }}</div>
         </div>
         <div class="fit-baseline">
-            <div class="lbl">Total P&amp;L</div>
+            <div class="lbl">Total Return</div>
             <div class="val">${{ "{:,.0f}".format(grand_total.total_pnl) }}</div>
         </div>
     </div>
@@ -551,14 +551,14 @@
     <div>
         <label class="lblh">Slice by</label>
         <div class="metric-toggle" id="dimSwitcher">
-            <a href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account, groups=groups_query) }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='sector') }}"
                class="{% if dim == 'sector' %}active{% endif %}">Sector</a>
             {% if dim == 'subsector' %}
             <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
-            <a href="{{ url_for('strategies', view='fit', dim='dte', account=selected_account, groups=groups_query) }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='dte') }}"
                class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
-            <a href="{{ url_for('strategies', view='fit', dim='moneyness', account=selected_account, groups=groups_query) }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='moneyness') }}"
                class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
         </div>
     </div>
@@ -566,7 +566,7 @@
     <div>
         <label class="lblh">View metric</label>
         <div class="metric-toggle" id="metricToggle">
-            <button type="button" data-metric="total_pnl" class="active">Total P&amp;L</button>
+            <button type="button" data-metric="total_pnl" class="active">Total Return</button>
             <button type="button" data-metric="expectancy">Per trade</button>
             <button type="button" data-metric="win_rate">Win rate</button>
             <button type="button" data-metric="edge">Edge vs. you</button>
@@ -598,7 +598,7 @@
 
     {% if dim == 'subsector' %}
     <a class="btn btn-sm btn-outline-secondary"
-       href="{{ url_for('strategies', view='fit', dim='sector', account=selected_account, groups=groups_query) }}">
+       href="{{ scoped_url('strategies', view='fit', dim='sector') }}">
         ← Back to all sectors
     </a>
     <span class="text-muted small">Drilled into <strong>{{ drill_sector }}</strong>.</span>
@@ -629,7 +629,7 @@
                 {% for col in col_labels %}
                 <th class="{% if col == 'Unknown' %}col-unknown{% endif %}">
                     {% if dim == 'sector' %}
-                    <a href="{{ url_for('strategies', view='fit', sector=col, account=selected_account) }}"
+                    <a href="{{ scoped_url('strategies', view='fit', sector=col) }}"
                        title="Drill into {{ col }} subsectors">{{ col }}</a>
                     {% else %}
                     {{ col }}
@@ -671,7 +671,7 @@
                     {% set c = cells.get(strat, {}).get(col) %}
                     {% if c and c.num_trades and c.num_trades > 0 %}
                         {% if positions_dim %}
-                            {% set drill_url = url_for('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), subsector=('' if dim == 'sector' else col), account=selected_account) %}
+                            {% set drill_url = scoped_url('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), subsector=('' if dim == 'sector' else col)) %}
                         {% else %}
                             {% set drill_url = '' %}
                         {% endif %}

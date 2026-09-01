@@ -44,9 +44,9 @@
    the "Value & composition" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Accounts view">
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('accounts', account=selected_account or none, tenant=request.args.get('tenant') or none, tenants=tenants_query, groups=groups_query) }}">Performance</a>
+       href="{{ scoped_url('accounts') }}">Performance</a>
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('accounts', view='value', account=selected_account or none, tenant=request.args.get('tenant') or none, tenants=tenants_query, groups=groups_query) }}">Value &amp; composition</a>
+       href="{{ scoped_url('accounts', view='value') }}">Value &amp; composition</a>
 </div>
 
 {% if kpis and (selected_range or 'ALL') == 'ALL' %}
@@ -248,7 +248,7 @@
                         {# data-m="hide": collapsed on phones (tables.js). #}
                         <th>Account</th>
                         <th>Strategy</th>
-                        <th class="sortable" data-sort="num">Total P&amp;L</th>
+                        <th class="sortable" data-sort="num" title="Realized + unrealized + dividends. Same number as Total Return on Positions.">Total Return</th>
                         <th class="sortable" data-sort="num" data-m="hide">Realized</th>
                         <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
                         <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
@@ -256,12 +256,11 @@
                         <th class="sortable" data-sort="num" data-m="hide">W / L</th>
                         <th class="sortable" data-sort="num" data-m="hide">Premium</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Total Return</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in strategy_rows %}
-                    {% set strat_href = url_for('strategies', strategy=row.strategy, account=row.account or none) %}
+                    {% set strat_href = scoped_url('strategies', strategy=row.strategy, tenant=row.tenant_id, tenants=none) %}
                     <tr class="strat-row" data-href="{{ strat_href }}" style="cursor:pointer;">
                         <td>{{ row.account | account_label }}</td>
                         <td>
@@ -272,9 +271,9 @@
                                 </span>
                             </a>
                         </td>
-                        <td data-val="{{ row.total_pnl }}"
-                            class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-semibold">
-                            ${{ "{:,.2f}".format(row.total_pnl) }}
+                        <td data-val="{{ row.total_return }}"
+                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-semibold">
+                            ${{ "{:,.2f}".format(row.total_return) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
                             class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
@@ -298,10 +297,6 @@
                         </td>
                         <td data-val="{{ row.dividend_income }}">
                             ${{ "{:,.2f}".format(row.dividend_income) }}
-                        </td>
-                        <td data-val="{{ row.total_return }}"
-                            class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-bold">
-                            ${{ "{:,.2f}".format(row.total_return) }}
                         </td>
                     </tr>
                     {% endfor %}
@@ -361,7 +356,7 @@
                 </thead>
                 <tbody>
                     {% for r in tag_breakdown %}
-                    <tr data-href="{{ url_for('positions', tag=r.tag, account=selected_account or none) }}">
+                    <tr data-href="{{ scoped_url('positions', tag=r.tag) }}">
                         <td data-val="{{ r.tag }}">
                             <span class="fw-semibold">{{ r.tag }}</span>
                             <div class="text-muted" style="font-size:.72rem;">{{ r.wins }}W / {{ r.losses }}L</div>
@@ -400,6 +395,7 @@
         'Put Spread':       '#d63384',
         'Iron Condor':      '#e8590c',
         'Naked Call':       '#dc3545',
+        'Poor Man Covered Call': '#6f42c1',
         'Protective Put':   '#ffc107',
         'Partially Covered Call': '#4d94ff',
         'Diagonal Call Spread':   '#7950f2',

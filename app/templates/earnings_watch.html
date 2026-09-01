@@ -120,7 +120,7 @@
         <div class="ew-card">
             <div class="top">
                 <div>
-                    <div class="sym"><a href="{{ url_for('position_detail', symbol=e.symbol) }}">{{ e.symbol }}</a>{% if e.subsector %}<span class="ew-badge">{{ e.subsector }}</span>{% endif %}</div>
+                    <div class="sym"><a href="{{ scoped_url('position_detail', symbol=e.symbol) }}">{{ e.symbol }}</a>{% if e.subsector %}<span class="ew-badge">{{ e.subsector }}</span>{% endif %}</div>
                     {% if e.company %}<div class="company">{{ e.company }}</div>{% endif %}
                 </div>
                 <div class="when {% if e.days_until is not none and e.days_until <= 1 %}imminent{% elif e.days_until is not none and e.days_until <= 7 %}soon{% endif %}">
@@ -155,7 +155,7 @@
                 <div class="ew-group-held">
                     <span class="lbl">You hold</span>
                     {% for h in g.held %}
-                    <a class="ew-held-pill" href="{{ url_for('position_detail', symbol=h) }}">{{ h }}</a>
+                    <a class="ew-held-pill" href="{{ scoped_url('position_detail', symbol=h) }}">{{ h }}</a>
                     {% endfor %}
                     <span class="ew-group-sector">&middot; {{ g.sector }}</span>
                 </div>

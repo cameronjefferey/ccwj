@@ -285,9 +285,9 @@
                     <tbody>
                         {% for e in coaching.recent_exits %}
                         {% if e.given_back > 10 %}
-                        <tr data-href="{{ url_for('position_detail', symbol=e.symbol) }}">
+                        <tr data-href="{{ scoped_url('position_detail', symbol=e.symbol) }}">
                             <td data-val="{{ e.symbol }}">
-                                <a href="{{ url_for('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
+                                <a href="{{ scoped_url('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
                             </td>
                             <td class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
                             <td class="small" data-val="{{ e.close_date }}">{{ e.close_date }}</td>

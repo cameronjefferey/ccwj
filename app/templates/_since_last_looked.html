@@ -18,7 +18,7 @@
         <span class="since-section-label">Moves</span>
         {% for m in sll.moves %}
         <a class="since-chip {% if m.positive %}up{% else %}down{% endif %}"
-           href="{{ url_for('position_detail', symbol=m.symbol) }}"
+           href="{{ scoped_url('position_detail', symbol=m.symbol) }}"
            title="From ${{ '%.2f' % m.prior_price }} to ${{ '%.2f' % m.current_price }}">
             <span class="sym">{{ m.symbol }}</span>
             <span>{{ '+' if m.positive else '' }}{{ '%.2f' % m.delta_pct }}%</span>
@@ -32,7 +32,7 @@
         <span class="since-section-label">Newly ITM</span>
         {% for opt in sll.newly_itm %}
         <a class="since-chip warn"
-           href="{{ url_for('position_detail', symbol=opt.symbol) }}"
+           href="{{ scoped_url('position_detail', symbol=opt.symbol) }}"
            title="Stock moved across the {{ '%.2f' % opt.strike }} strike since your last visit">
             <span class="sym">{{ opt.symbol }}</span>
             <span>{{ opt.option_type|lower }} {{ '%.0f' % opt.strike }}</span>
@@ -46,7 +46,7 @@
     <div class="since-row">
         <span class="since-section-label">Now expiring soon</span>
         {% for opt in sll.newly_near_expiry %}
-        <a class="since-chip" href="{{ url_for('position_detail', symbol=opt.symbol) }}">
+        <a class="since-chip" href="{{ scoped_url('position_detail', symbol=opt.symbol) }}">
             <span class="sym">{{ opt.symbol }}</span>
             <span>{{ opt.option_type|lower }} {{ '%.0f' % (opt.strike or 0) }}</span>
             <span class="text-muted">{{ opt.days_to_exp }}d</span>
@@ -60,7 +60,7 @@
         <span class="since-section-label">Closed</span>
         {% for t in sll.closed_trades %}
         <a class="since-chip {% if t.positive %}up{% else %}down{% endif %}"
-           href="{{ url_for('position_detail', symbol=t.symbol) }}">
+           href="{{ scoped_url('position_detail', symbol=t.symbol) }}">
             <span class="sym">{{ t.symbol }}</span>
             {% if t.total_pnl is not none %}
             <span>{{ '+' if t.positive else '' }}${{ '{:,.0f}'.format(t.total_pnl) }}</span>
@@ -75,7 +75,7 @@
     <div class="since-row">
         <span class="since-section-label">Opened</span>
         {% for t in sll.opened_trades %}
-        <a class="since-chip" href="{{ url_for('position_detail', symbol=t.symbol) }}">
+        <a class="since-chip" href="{{ scoped_url('position_detail', symbol=t.symbol) }}">
             <span class="sym">{{ t.symbol }}</span>
             {% if t.strategy %}<span class="text-muted">{{ t.strategy }}</span>{% endif %}
             <span class="text-muted">{{ t.open_date }}</span>

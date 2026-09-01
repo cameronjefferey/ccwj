@@ -149,6 +149,7 @@ def _inject_feature_flags():
     scope_account_choices = []
     selected_tenant_ids = []
     tenants_query = None
+    scope_query_string = ""
     scope_is_filtered = False
     try:
         if current_user.is_authenticated:
@@ -164,6 +165,7 @@ def _inject_feature_flags():
                 _requested_account,
                 _requested_group_ids,
                 _scope_filter_options,
+                _scope_query_string,
                 _tenant_label_map_for_user,
             )
 
@@ -184,6 +186,7 @@ def _inject_feature_flags():
                 _args = {}
             selected_tenant_ids = _picker_tenant_ids(_args, _owned_rows, _label_map)
             tenants_query = ",".join(selected_tenant_ids) if selected_tenant_ids else None
+            scope_query_string = _scope_query_string(_args)
             visible_account_groups, visible_account_choices = _scope_filter_options(
                 account_groups, selected_group_ids, selected_tenant_ids,
                 scope_account_choices,
@@ -202,6 +205,7 @@ def _inject_feature_flags():
         scope_account_choices = []
         selected_tenant_ids = []
         tenants_query = None
+        scope_query_string = ""
         scope_is_filtered = False
 
     # Stripe is only offered when fully configured (keys + both price IDs);
@@ -246,6 +250,7 @@ def _inject_feature_flags():
         "scope_account_choices": scope_account_choices,
         "selected_tenant_ids": selected_tenant_ids,
         "tenants_query": tenants_query,
+        "scope_query_string": scope_query_string,
         "scope_is_filtered": scope_is_filtered,
         "billing_enabled": billing_enabled,
         "price_monthly": price_monthly,

@@ -194,7 +194,7 @@
             {% if (symbol_subsector and symbol_subsector != 'Unknown') or symbol_next_earnings %}
             <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
                 {% if symbol_subsector and symbol_subsector != 'Unknown' %}
-                <a href="{{ url_for('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
+                <a href="{{ scoped_url('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
                    class="text-decoration-none"
                    style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
                     {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
@@ -427,7 +427,7 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0">Position Legs</h6>
         {% if leg_param %}
-        <a href="{{ url_for('position_detail', symbol=symbol, account=(selected_account or None), tenants=(tenants_param or None), groups=groups_query) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
+        <a href="{{ scoped_url('position_detail', symbol=symbol) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
         {% endif %}
     </div>
     <p class="text-muted small mb-2">
@@ -603,7 +603,7 @@
         <p class="mb-1">{{ s }}</p>
         {% endfor %}
         <p class="mb-0 mt-2 small">
-            <a href="{{ url_for('trader_story') }}" style="color:#6366f1; font-weight:600; text-decoration:none;">
+            <a href="{{ scoped_url('trader_story') }}" style="color:#6366f1; font-weight:600; text-decoration:none;">
                 See your full trader profile &rarr;
             </a>
         </p>
@@ -746,7 +746,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Type</th>
-                    <th title="Realized + unrealized for this type, scoped to the current leg filter.">Total P&amp;L</th>
+                    <th title="This type's contribution to Total Return (realized + unrealized; dividends are their own row).">Total Return</th>
                     <th title="Closed-out P&amp;L: equity sale proceeds vs cost, settled options, cash dividends received.">Realized</th>
                     <th title="Mark-to-market on what's still open. Dividends have no unrealized component.">Unrealized</th>
                     <th data-m="hide">Count</th>
@@ -818,7 +818,7 @@
                     <th class="sortable" data-sort="str" data-m="hide">Account</th>
                     <th class="sortable" data-sort="str">Strategy</th>
                     <th class="sortable" data-sort="str">Status</th>
-                    <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total P&amp;L</th>
+                    <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total Return</th>
                     <th class="sortable" data-sort="num" data-m="hide">Realized</th>
                     <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
                     <th class="sortable" data-sort="num" data-m="hide" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
@@ -831,7 +831,7 @@
             </thead>
             <tbody>
                 {% for r in strategy_rows %}
-                <tr data-href="{{ url_for('strategies', account=r.account, strategy=r.strategy) }}">
+                <tr data-href="{{ scoped_url('strategies', tenant=r.tenant_id, tenants=none, strategy=r.strategy) }}">
                     <td data-val="{{ r.account_display or r.account }}">{{ r.account_display or (r.account | account_label) }}</td>
                     <td data-val="{{ r.strategy }}">
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">

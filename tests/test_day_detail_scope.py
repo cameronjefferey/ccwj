@@ -96,7 +96,7 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert queries
     assert queries[0]["tenant"] == [TENANT]
     assert queries[0]["tenants"] == [TENANTS]
-    assert "1 open position is adding to your track record" in rendered
+    assert "1 symbol is currently held." in rendered
     assert "of your stories" not in rendered
     assert "Trades — Wed Jan 3" in rendered
     assert "Bought" in rendered
@@ -109,6 +109,14 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert story_queries
     assert story_queries[0]["tenant"] == [TENANT]
     assert story_queries[0]["tenants"] == [TENANTS]
+
+    today_queries = _queries_for_path(rendered, "/today")
+    assert today_queries
+    assert today_queries[0]["tenants"] == [TENANTS]
+
+    pos_queries = _queries_for_path(rendered, "/position/AAPL")
+    assert pos_queries
+    assert pos_queries[0]["tenants"] == [TENANTS]
 
 
 def test_day_navigation_and_back_link_preserve_tenant_scope():

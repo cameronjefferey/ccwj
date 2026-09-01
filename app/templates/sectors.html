@@ -127,7 +127,7 @@
     {% if kpis and kpis.num_subsectors > 0 %}
     <div class="ind-kpis">
         <div class="ind-kpi">
-            <div class="lbl">Total P&amp;L</div>
+            <div class="lbl">Total Return</div>
             <div class="val {% if kpis.total_pnl < 0 %}ind-neg{% elif kpis.total_pnl > 0 %}ind-pos{% endif %}">
                 ${{ "{:,.2f}".format(kpis.total_pnl) }}
             </div>
@@ -236,7 +236,7 @@
             {% if s.top_symbol %}
             <div class="ex">
                 <div class="lbl">Best</div>
-                <a href="{{ url_for('position_detail', symbol=s.top_symbol, account=selected_account) }}"
+                <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.top_symbol }}</span>
                     <span class="ret pos">${{ "{:,.0f}".format(s.top_symbol_return or 0) }}</span>
@@ -247,7 +247,7 @@
             {% if s.worst_symbol and s.worst_symbol != s.top_symbol and (s.worst_symbol_return or 0) < 0 %}
             <div class="ex">
                 <div class="lbl">Worst</div>
-                <a href="{{ url_for('position_detail', symbol=s.worst_symbol, account=selected_account) }}"
+                <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.worst_symbol }}</span>
                     <span class="ret neg">${{ "{:,.0f}".format(s.worst_symbol_return or 0) }}</span>
@@ -264,7 +264,7 @@
                 <span class="chev">▾</span>
             </button>
             {% endif %}
-            <a class="btn-positions" href="{{ url_for('positions', sector=s.sector, account=selected_account) }}">
+            <a class="btn-positions" href="{{ scoped_url('positions', sector=s.sector) }}">
                 View positions
             </a>
         </div>
@@ -274,7 +274,7 @@
             {% for r in subs %}
             <div class="ind-row">
                 <div class="ind-name" title="{{ r.subsector }}">
-                    <a href="{{ url_for('positions', subsector=r.subsector, account=selected_account) }}">{{ r.subsector }}</a>
+                    <a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a>
                     <div class="ind-meta">
                         {{ r.num_symbols }} symbol{% if r.num_symbols != 1 %}s{% endif %}
                         &middot; {{ r.num_trades | int }} trade{% if r.num_trades != 1 %}s{% endif %}
@@ -286,7 +286,7 @@
                 <div class="ind-pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
                     ${{ "{:,.0f}".format(r.total_pnl) }}
                 </div>
-                <a class="ind-link" href="{{ url_for('positions', subsector=r.subsector, account=selected_account) }}">View</a>
+                <a class="ind-link" href="{{ scoped_url('positions', subsector=r.subsector) }}">View</a>
             </div>
             {% endfor %}
         </div>

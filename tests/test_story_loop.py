@@ -556,7 +556,7 @@ def test_template_never_uses_this_week_items():
             / "app" / "templates" / "trader_story.html").read_text()
     assert "this_week.items" not in html
     assert "this_week.watches" in html
-    assert "This week" in html
+    assert "On the clock" in html
     assert "Last week" in html
     assert "trader-story-loop" in html or "ts-loop-kicker" in html
 

@@ -314,6 +314,7 @@ ERROR_DEFAULTS = dict(
     tags=[],
     user_accounts=[],
     status_counts={"Open": 0, "Closed": 0, "Mixed": 0},
+    open_symbol_count=0,
     selected_account="",
     selected_strategy="",
     selected_statuses=[],
@@ -751,10 +752,16 @@ def positions():
     # Position Detail's "Strategy Breakdown didn't update" — a
     # sub-aggregation reading from the wrong source.
     status_counts = {"Open": 0, "Closed": 0, "Mixed": 0}
+    open_symbol_count = 0
     if "status" in filtered.columns and not filtered.empty:
         vc = filtered["status"].fillna("").value_counts()
         for k in list(status_counts.keys()):
             status_counts[k] = int(vc.get(k, 0))
+        if "symbol" in filtered.columns:
+            open_mask = filtered["status"].astype(str).eq("Open")
+            open_symbol_count = int(
+                filtered.loc[open_mask, "symbol"].astype(str).str.upper().nunique()
+            )
 
     # ------------------------------------------------------------------
     # 5. KPIs
@@ -920,6 +927,7 @@ def positions():
         user_accounts=user_accounts,
         view_accounts=view_accounts,
         status_counts=status_counts,
+        open_symbol_count=open_symbol_count,
         selected_account=selected_account,
         selected_strategy=selected_strategy,
         selected_statuses=selected_statuses,

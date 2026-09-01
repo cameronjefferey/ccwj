@@ -754,6 +754,7 @@ def strategies():
                         raw_wr = r.get("win_rate")
                         acct_rows.append({
                             "account": _acct_label(r),
+                            "tenant_id": str(r.get("tenant_id") or "") or None,
                             "total_return": float(r.get("total_return") or 0),
                             "realized_pnl": float(r.get("realized_pnl") or 0),
                             "num_trades": int(r.get("num_trades") or 0),
