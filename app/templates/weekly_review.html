@@ -74,7 +74,7 @@
 
     <p class="hero-subtitle">
         Last close: what you traded, what moved, and what to watch next.
-        <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}"
+        <a href="{{ scoped_url('today_view') }}"
            style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
     </p>
 
@@ -109,7 +109,7 @@
             <div style="color:#1e3a5f; font-size:.85rem; margin-top:.25rem;">
                 Your full trade history is already in &mdash; positions, P&amp;L and the breakdowns below
                 are complete from day one. What takes time are the <em>comparisons</em>: HappyTrader
-                snapshots your account value once a day, so &ldquo;vs yesterday&rdquo; unlocks tomorrow,
+                snapshots your account value once a day, so vs prior close unlocks tomorrow,
                 the weekly comparison after a week, and the daily G/L calendar fills in one square per
                 trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
             </div>
@@ -197,7 +197,7 @@
         <div class="snapshot-table-row">
             <div>
                 {% if snap.tenant_id %}
-                <a href="{{ url_for('accounts', tenant=snap.tenant_id) }}" class="acct-name acct-link">{{ snap.account | account_label }}</a>
+                <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label }}</a>
                 {% else %}
                 <div class="acct-name">{{ snap.account | account_label }}</div>
                 {% endif %}
@@ -271,7 +271,7 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. A same-day open that expires or is assigned is one row. Expiries and assignments belong on the expiry session, even when the broker posts them the next trading day. Live fills from the current session are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
+        Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }} — including adds and trims on positions you already hold. Same-day close + open of the same option type is grouped as a roll. A same-day open that expires or is assigned is one row. Expiries and assignments belong on the expiry session, even when the broker posts them the next trading day. Live fills from the current session are on <a href="{{ scoped_url('today_view') }}">Today</a>.
     </p>
     {% if _tt.trades %}
     <div class="breakdown-wrap">
@@ -282,7 +282,7 @@
                     <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                 </td>
                 <td>
-                    {% if t.symbol %}<a class="tt-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                    {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
                     {% if t.is_roll %}
                     <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
                     {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
@@ -376,14 +376,14 @@
         {% endif %}
     </div>
     <p class="section-sub">
-        Stock and option P&amp;L moves on {{ tm_day }} for positions you hold{% if today_movers.dividends %} — plus dividends paid that day{% endif %}. Top 5 up and top 5 down by dollar impact. Live last-trade figures are on <a href="{{ url_for('today_view', account=selected_account or None, tenant=selected_tenant) }}">Today</a>.
+        Stock and option P&amp;L moves on {{ tm_day }} for positions you hold{% if today_movers.dividends %} — plus dividends paid that day{% endif %}. Top 5 up and top 5 down by dollar impact. Live last-trade figures are on <a href="{{ scoped_url('today_view') }}">Today</a>.
     </p>
     <div class="movers-grid">
         <div>
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.winners %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -414,7 +414,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.losers %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -450,7 +450,7 @@
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
                style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
@@ -481,7 +481,7 @@
             <div class="watch-item">
                 {# display:contents lets the anchor's two cells participate in
                    the watch-item grid while the EF pill stays its own link #}
-                <a href="{{ url_for('position_detail', symbol=e.symbol) }}"
+                <a href="{{ scoped_url('position_detail', symbol=e.symbol) }}"
                    style="display:contents; color:inherit; text-decoration:none;">
                     <div>
                         <div class="watch-days {% if e.days_until is not none and e.days_until <= 1 %}text-negative{% elif e.days_until is not none and e.days_until <= 7 %}text-warning{% else %}text-muted{% endif %}">{{ e.days_until if e.days_until is not none else '?' }}</div>
@@ -515,7 +515,7 @@
             {% if expiring_options %}
             <div class="watch-list">
             {% for opt in expiring_options[:10] %}
-            <a href="{{ url_for('position_detail', symbol=opt.symbol) }}" class="watch-item">
+            <a href="{{ scoped_url('position_detail', symbol=opt.symbol) }}" class="watch-item">
                 <div>
                     <div class="watch-days {% if opt.days_to_exp is not none and opt.days_to_exp <= 1 %}text-negative{% elif opt.days_to_exp is not none and opt.days_to_exp <= 3 %}text-warning{% else %}text-muted{% endif %}">{{ opt.days_to_exp if opt.days_to_exp is not none else '?' }}</div>
                     <div class="watch-days-label">{{ 'day' if opt.days_to_exp == 1 else 'days' }}</div>
@@ -554,7 +554,7 @@
             {% if upcoming_ex_dividends %}
             <div class="watch-list">
             {% for d in upcoming_ex_dividends %}
-            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="watch-item">
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="watch-item">
                 <div>
                     <div class="watch-days {% if d.days_until is not none and d.days_until <= 3 %}text-warning{% else %}text-muted{% endif %}">{{ d.days_until if d.days_until is not none else '?' }}</div>
                     <div class="watch-days-label">{{ 'day' if d.days_until == 1 else 'days' }}</div>
@@ -595,13 +595,13 @@
         {% if exit_verdicts_landed or exit_verdicts_pending %}
         <div class="watch-block">
             <div class="wb-title">
-                <span>Verdicts This Week</span>
+                <span>Verdicts (last 7 days)</span>
                 <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ exit_verdicts_landed|length }} landed</span>
             </div>
             {% if exit_verdicts_landed %}
             <div class="watch-list">
             {% for v in exit_verdicts_landed[:8] %}
-            <a href="{{ url_for('position_detail', symbol=v.symbol) }}" class="watch-item exec">
+            <a href="{{ scoped_url('position_detail', symbol=v.symbol) }}" class="watch-item exec">
                 <div>
                     <div class="watch-days {% if v.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if v.delta >= 0 else "-" }}${{ "{:,.0f}".format(v.delta|abs) }}</div>
                     <div class="watch-days-label">vs expiry</div>
@@ -616,7 +616,7 @@
             {% endfor %}
             </div>
             {% else %}
-            <div class="wb-empty">No verdicts matured this week.</div>
+            <div class="wb-empty">No verdicts matured in the last 7 days.</div>
             {% endif %}
             {% if exit_verdicts_pending %}
             <div class="text-muted small" style="margin-top:.6rem;">
@@ -639,7 +639,7 @@
             </div>
             <div class="watch-list">
             {% for s in open_option_record.shorts[:8] %}
-            <a href="{{ url_for('position_detail', symbol=s.symbol) }}" class="watch-item exec">
+            <a href="{{ scoped_url('position_detail', symbol=s.symbol) }}" class="watch-item exec">
                 <div>
                     <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
                     <div class="watch-days-label">captured</div>
@@ -654,7 +654,7 @@
             </a>
             {% endfor %}
             {% for l in open_option_record.longs[:8] %}
-            <a href="{{ url_for('position_detail', symbol=l.symbol) }}" class="watch-item exec">
+            <a href="{{ scoped_url('position_detail', symbol=l.symbol) }}" class="watch-item exec">
                 <div>
                     <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
                     <div class="watch-days-label">vs paid</div>
@@ -727,11 +727,10 @@
                    the day-detail review for that date (day_detail route). #}
                 {% if not c.is_future and not c.is_today %}
                 <a class="cal-day cal-day-link{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};"
-                   href="{{ url_for('day_detail', day_str=c.date.isoformat(),
+                   href="{{ scoped_url('day_detail', day_str=c.date.isoformat(),
                                     account=selected_account or None,
                                     tenant=selected_tenant,
-                                    tenants=selected_tenants,
-                                    groups=groups_query) }}"
+                                    tenants=selected_tenants) }}"
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
@@ -781,24 +780,23 @@
 
 {# ════════════════════════════════════
    THE MIRROR TEASER — one-line weave to the trader profile (/story). Uses
-   only data this page already computed (today_strip length — one entry
-   per symbol with an open position, so "open positions" names the exact
-   metric); zero extra queries on the hottest page.
+   only data this page already computed (today_strip length — unique
+   currently-held symbols, same grain as Positions' symbol chip). Zero extra
+   queries on the hottest page.
    ════════════════════════════════════ #}
 {% if today_strip %}
 <div class="review-section">
-    <a href="{{ url_for('trader_story',
+    <a href="{{ scoped_url('trader_story',
                         account=selected_account,
                         tenant=selected_tenant,
-                        tenants=selected_tenants,
-                        groups=groups_query) }}"
+                        tenants=selected_tenants) }}"
        style="display:block; text-decoration:none; color:inherit;
               border-left:3px solid #6366f1; border-radius:0 10px 10px 0;
               background:linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
               padding:.8rem 1rem;">
         <span style="font-weight:700; color:#6366f1; font-size:.72rem; letter-spacing:.8px; text-transform:uppercase;">Your trading mirror</span>
         <div style="margin-top:.15rem; font-size:.95rem;">
-            {{ today_strip|length }} open position{{ 's are' if today_strip|length != 1 else ' is' }} adding to your track record.
+            {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
             <span style="color:#6366f1; font-weight:600;">See your trader profile &rarr;</span>
         </div>
     </a>
@@ -827,7 +825,9 @@
 <div class="review-section">
     <div class="section-label">Performance by Account</div>
     <p class="section-sub">
-        This week's result per account &mdash; stock, options, and dividends.
+        Open positions plus anything closed since
+        {{ week_start.strftime('%a %-d') if week_start else 'this week' }}
+        &mdash; stock, options, and lifetime dividends for those rows.
         Click an account for its full lifetime breakdown.
     </p>
     <div class="breakdown-wrap">
@@ -846,9 +846,9 @@
             </thead>
             <tbody>
                 {% for a in account_breakdown.rows %}
-                <tr data-href="{{ url_for('accounts', tenant=a.tenant_id) }}">
+                <tr data-href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}">
                     <td class="left" data-val="{{ a.account_display }}">
-                        <a href="{{ url_for('accounts', tenant=a.tenant_id) }}" class="row-symbol">{{ a.account_display }}</a>
+                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display }}</a>
                     </td>
                     {{ acct_money_cell(a.equity_pnl) }}
                     {{ acct_money_cell(a.option_pnl) }}
@@ -965,10 +965,10 @@
             </thead>
             <tbody>
                 {% for r in tw.trades %}
-                <tr data-href="{{ url_for('position_detail', symbol=r.symbol) }}">
+                <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
                     <td class="left" data-val="{{ r.account_display }}">{{ r.account_display }}</td>
                     <td class="left" data-val="{{ r.symbol }}">
-                        <a href="{{ url_for('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
+                        <a href="{{ scoped_url('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
                     <td class="left" data-val="{{ r.strategy }}">{{ r.strategy }}</td>

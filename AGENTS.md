@@ -223,7 +223,9 @@ What's working:
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
-- Position / strategy / sector / subsector scorecards (performance by account)
+- Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since this ISO week's Monday** (dividends on those rows are lifetime too) — not a week-to-date clock. Copy names the Monday, not "this week's result".
+- Trader Profile teaser under the strip: unique currently-held symbols (same grain as the strip), not "open positions".
+- Execution Review: verdicts that matured in the **last 7 days**, labeled as such — not "this week".
 
 ### Today (`/today`, endpoint `today_view`) — LIVE SESSION
 **Status: In-session last-trade / last-sync page with an always-on delay disclaimer.**
@@ -418,9 +420,11 @@ There is no separate dashboard page — Overview is the authenticated home.
 
 Runs the position-review engine over the user's whole history and folds the
 per-symbol fingerprints into one profile. The page opens with a recurring
-**This week / Last week** loop (`app/story_loop.py`) so the profile is
-worth opening again: this week lists open options inside 14d (spreads
-grouped) with the live mark (`+$450 · 3d`). Each watch runs the same
+**On the clock / Last week** loop (`app/story_loop.py`) so the profile is
+worth opening again: on the clock lists open options inside 14d (spreads
+grouped) with the live mark (`+$450 · 3d`). Hero "currently held" is unique
+Open symbols from `positions_summary` (same grain as Overview's strip), not
+the review-engine `open_stories` count. Each watch runs the same
 insight picker (`_collect_watch_insights` / `_pick_watch_insight`):
 leftover-vs-expiry at this structure × this DTE, leftover on this
 symbol, hold-later / close-earlier vs other shorts, roll/expire rate
@@ -444,7 +448,10 @@ What's working:
 - Hero "X open / Y closed" chips **and** the "Across N accounts" line honor
   every active filter (account,
   strategy, symbol, status, subsector, sector, date range). Pre-fix the
-  chips read off the unfiltered df and lied about the body.
+  chips read off the unfiltered df and lied about the body. "Open" is the
+  list grain (one row per account × symbol × strategy). When unique Open
+  symbols differ, a second chip names that count so it matches Overview's
+  "currently held" teaser.
 - Pagination + symbol-cell links preserve all 7 filter dimensions.
 - "No accounts linked yet" copy fires only when the user genuinely has no
   linked accounts. Connected-but-empty users get a "data is pending"
@@ -525,7 +532,9 @@ made a buy-and-hold account look like a cliff.
 audit; `/wealth` 301s): reads `mart_wealth_daily` (account_value / cash /
 equity / options per day, plus cumulative dividends / interest / fees).
 Stacked-area chart of composition with a total line; hero shows allocation
-+ change-over-time.
++ change-over-time. While a U.S. session is live (or after the bell before
+the next morning), the as-of date is Overview's `_snapshot_as_of_date` —
+not the unfinished mart-today row — so Value and Overview agree on last close.
 
 **History gap is disclosed, not hidden (Aug 2026).** Broker sync is not a
 lifetime or 5-year archive: we *request* up to 1825 days; SnapTrade clamps
@@ -535,8 +544,8 @@ Accounts Performance (All range) and Value (All range) share a quiet,
 dismissible note with Positions (All time), Position Detail, Strategies,
 Strategy fit, Sectors, Trader Profile, and Insights
 (``_history_window_note.html``, localStorage key `ht-history-note-dismissed`)
-that the record is complete from account creation (the date the account
-was connected), with a CSV link for earlier years. Sync copy on
+that the record is complete from the date the account was **connected**
+(`broker_tenants.created_at`, not the brokerage open date), with a CSV link for earlier years. Sync copy on
 profile / get-started / snaptrade_accounts must not say "~5 years". CSV
 fills in *trades*; it cannot recreate daily balances before snapshots started.
 
@@ -748,7 +757,11 @@ hide the others). Selecting groups limits the account list to members.
 With two or more accounts and no groups yet, the Groups slot is a quiet
 "Group accounts" link to Settings → Accounts & data (`#account-groups`) —
 not an empty dropdown. Never key groups on the SnapTrade `"Schwab Account"`
-label.
+label. In-page links (status pills, movers, pagination, Cmd+K, the logo)
+must keep `?tenants=` / `?groups=` via the `scoped_url` template global —
+plain `url_for` drops the picker. Reset links keep using `url_for` so they
+actually clear. Drill-ins to one physical account use `tenant=<tenant_id>`,
+never the colliding display label.
 
 ### 4. Performance Rules
 
@@ -1299,9 +1312,10 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   tenant-scoped in SQL AND DataFrame-filtered, pinned in
   `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
   the per-symbol fingerprints into one profile. Recurring loop first
-  (`app/story_loop.py`, `compose_story_loop`): THIS WEEK is open options
+  (`app/story_loop.py`, `compose_story_loop`): ON THE CLOCK is open options
   expiring within 14d (same-tenant complementary legs grouped like
-  Execution Review). Each watch shows live unrealized P&L from
+  Execution Review). Hero currently-held is unique Open symbols from
+  `positions_summary`. Each watch shows live unrealized P&amp;L from
   `OPEN_OPTION_RECORD_QUERY` plus the single strongest claim from the
   same insight picker (leftover at this structure × DTE, leftover on
   this symbol, hold-later / close-earlier, horizon roll/expire, rare

@@ -97,7 +97,7 @@ def test_trader_story_template_renders_loop_from_builders():
     assert novel["loop"]["this_week"]["watches"]
 
     html = _render_trader_story(novel)
-    assert "This week" in html
+    assert "On the clock" in html
     assert "Last week" in html
     assert "VICR" in html
     assert "roll it, or let this one expire?" in html
@@ -128,7 +128,7 @@ def test_trader_story_template_renders_empty_loop_card():
 
     html = _render_trader_story(novel)
     assert "Nothing on the clock" in html
-    assert "This week" in html
+    assert "On the clock" in html
     assert "A quiet book." in html
 
 

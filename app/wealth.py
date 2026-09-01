@@ -216,13 +216,35 @@ def _et_today():
     return datetime.now(ZoneInfo("America/New_York")).date()
 
 
-def _drop_dates_after(df, cutoff):
-    """Drop warehouse rows dated after ``cutoff`` (typically ET today).
+def _value_as_of_cutoff(user_today=None, market_session=None):
+    """Last settled session — same cap Overview uses for account value.
 
-    BigQuery ``CURRENT_DATE()`` is UTC. After 8pm ET the spine already
-    has tomorrow's copy-forward row, and Accounts Value would say
-    "as of Sep 1" on Monday evening. Same UTC-tomorrow class Overview
-    already caps with ``_snapshot_as_of_date``.
+    ET today still has an unfinished warehouse row during the live
+    session (and after the bell until the next morning). Value &
+    composition must not publish that as "as of today" while Overview
+    is holding last close.
+    """
+    from app.weekly_review import (
+        _date_in_user_tz,
+        _snapshot_as_of_date,
+        _us_market_session,
+    )
+    today = user_today or _date_in_user_tz("America/New_York")
+    session = market_session if market_session is not None else _us_market_session()
+    if isinstance(session, str):
+        session = {"state": session}
+    # Pin et_today to the same day so tests (and a caller that already
+    # knows the viewer's date) don't mix a frozen user_today with wall-clock ET.
+    return _snapshot_as_of_date(today, session, et_today=today)
+
+
+def _drop_dates_after(df, cutoff):
+    """Drop warehouse rows dated after ``cutoff``.
+
+    The Value view passes ``_value_as_of_cutoff()`` (Overview's last
+    settled session) so a live-session mart row is never published as
+    "as of today". Helpers still cap at ET today for the UTC-tomorrow
+    spine that appears after 8pm ET.
     """
     if df is None or df.empty or "date" not in df.columns or cutoff is None:
         return df
@@ -657,7 +679,7 @@ def render_wealth_view():
             # row whose ``user_id`` doesn't match the signed-in user.
             df = _filter_df_by_tenant_ids(df, tenant_ids)
             df = _collapse_wealth_daily_duplicate_grain(df)
-            df = _drop_dates_after(df, _et_today())
+            df = _drop_dates_after(df, _value_as_of_cutoff())
 
             try:
                 span_sql = HISTORY_SPAN_QUERY.format(tenant_filter=tenant_filter)

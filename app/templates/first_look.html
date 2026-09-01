@@ -151,7 +151,7 @@
         <div class="col-md-6">
             <div class="strat-card" style="border-left: 4px solid var(--color-positive);">
                 <div class="small text-muted mb-1">Best Performing Symbol</div>
-                <a href="{{ url_for('position_detail', symbol=profile.best_symbol.symbol) }}"
+                <a href="{{ scoped_url('position_detail', symbol=profile.best_symbol.symbol) }}"
                    class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.best_symbol.symbol }}</a>
                 <div class="small text-muted">{{ profile.best_symbol.strategies }}</div>
                 <div class="h4 fw-bold text-positive mt-2 mb-0">${{ "{:,.2f}".format(profile.best_symbol.total_return) }}</div>
@@ -162,7 +162,7 @@
         <div class="col-md-6">
             <div class="strat-card" style="border-left: 4px solid var(--color-negative);">
                 <div class="small text-muted mb-1">Worst Performing Symbol</div>
-                <a href="{{ url_for('position_detail', symbol=profile.worst_symbol.symbol) }}"
+                <a href="{{ scoped_url('position_detail', symbol=profile.worst_symbol.symbol) }}"
                    class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.worst_symbol.symbol }}</a>
                 <div class="small text-muted">{{ profile.worst_symbol.strategies }}</div>
                 <div class="h4 fw-bold text-negative mt-2 mb-0">${{ "{:,.2f}".format(profile.worst_symbol.total_return) }}</div>

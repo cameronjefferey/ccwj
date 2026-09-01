@@ -688,7 +688,7 @@
     {% endif %}
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('weekly_review') if current_user.is_authenticated else url_for('index') }}">
+            <a class="navbar-brand" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">
                 HappyTrader
                 <small>your trading mirror</small>
             </a>
@@ -698,6 +698,7 @@
                    the quick-switcher is the fastest way between symbols, so
                    it must not hide behind the hamburger. #}
                 <button type="button" class="ht-search-btn d-lg-none ht-palette-open"
+                        data-scope-qs="{{ scope_query_string }}"
                         aria-label="Quick switcher" title="Jump to a symbol or page">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
                 </button>
@@ -803,6 +804,7 @@
                 <li class="nav-item py-1 py-lg-0 me-lg-2 d-none d-lg-block">
                     <button type="button" class="ht-search-btn ht-palette-open" id="ht-palette-trigger"
                             data-cache-scope="{{ current_user.get_id() }}"
+                            data-scope-qs="{{ scope_query_string }}"
                             aria-label="Quick switcher" title="Jump to a symbol or page">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
                         <span>Jump to&hellip;</span>
@@ -879,7 +881,7 @@
             <span class="fresh-dot" aria-hidden="true"></span>
             <span>{{ overview_pending_banner.text }}</span>
             {% if overview_pending_banner.live_link %}
-            <a href="{{ url_for('today_view') }}" class="freshness-link">Live session</a>
+            <a href="{{ scoped_url('today_view') }}" class="freshness-link">Live session</a>
             {% endif %}
         </div>
     </div>
@@ -890,11 +892,9 @@
             <span class="fresh-dot" aria-hidden="true"></span>
             <span>
                 Broker data as of <strong>{{ broker_data_as_of.strftime('%b %-d, %Y') }}</strong>
-                {% if broker_data_stale_days == 0 %}
-                    &middot; updated today
-                {% elif broker_data_stale_days == 1 %}
+                {% if broker_data_stale_days == 1 %}
                     &middot; 1 day ago
-                {% elif broker_data_stale_days is not none %}
+                {% elif broker_data_stale_days is not none and broker_data_stale_days > 1 %}
                     &middot; {{ broker_data_stale_days }} days ago
                 {% endif %}
             </span>

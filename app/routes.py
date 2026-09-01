@@ -423,6 +423,75 @@ def _groups_query_value(args=None):
     return ",".join(str(i) for i in ids) if ids else None
 
 
+def _scope_keep_kwargs(args=None):
+    """Query kwargs so in-page links keep the current account/group picker.
+
+    Prefers ``?tenants=`` / ``?tenant=`` over ``?account=`` so colliding
+    display labels (several "Schwab Account" rows) are not reintroduced.
+    ``?groups=`` always rides along. Both ``tenant`` and ``tenants`` are
+    kept when the URL already has both — Overview's heatmap round-trips
+    that pair so the day page can restore the same picker.
+    """
+    if args is None:
+        try:
+            args = request.args
+        except Exception:
+            args = None
+    out = {}
+    groups = _groups_query_value(args)
+    if groups:
+        out["groups"] = groups
+    tenants = _requested_csv_values(args, "tenants")
+    if tenants:
+        out["tenants"] = ",".join(tenants)
+    tenant = ""
+    if args is not None:
+        try:
+            tenant = _blank_query_text(args.get("tenant"))
+        except Exception:
+            tenant = ""
+    if tenant:
+        out["tenant"] = tenant
+    elif not tenants:
+        account = _requested_account(args)
+        if account:
+            out["account"] = account
+    return out
+
+
+def _scope_query_string(args=None):
+    """``tenants=…&groups=…`` (no leading ``?``) for Cmd+K / JS hrefs."""
+    from urllib.parse import urlencode
+    keep = _scope_keep_kwargs(args)
+    return urlencode(keep) if keep else ""
+
+
+def scoped_url(endpoint, **values):
+    """``url_for`` that carries the current account/group query.
+
+    Explicit kwargs override the request (pass ``tenants=none`` to drop
+    a parent multi-select when drilling into one ``tenant=``). Empty
+    values are omitted so colliding ``account=Schwab Account`` is not
+    added when ``tenant`` / ``tenants`` already address the row.
+    Reset links should keep using ``url_for`` so they actually clear.
+    """
+    try:
+        keep = _scope_keep_kwargs()
+    except Exception:
+        keep = {}
+    merged = {**keep, **values}
+    if merged.get("tenant") or merged.get("tenants"):
+        merged.pop("account", None)
+    cleaned = {
+        k: v for k, v in merged.items()
+        if v is not None and v != "" and v != [] and v != ()
+    }
+    return url_for(endpoint, **cleaned)
+
+
+app.add_template_global(scoped_url)
+
+
 def _scope_filter_options(
     account_groups,
     selected_group_ids,

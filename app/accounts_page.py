@@ -521,7 +521,11 @@ def _account_created_label(tenant_rows):
 
 
 def _account_created_for_scope(tenant_ids):
-    """Account-creation date for the current /accounts scope."""
+    """Connect date for the current scope (broker_tenants.created_at).
+
+    This is when the account was linked here, not the brokerage open
+    date — the history note must say "connected".
+    """
     from app.models import get_broker_tenant, get_broker_tenants_for_user
 
     if tenant_ids is None:
@@ -891,13 +895,17 @@ def accounts():
     # ------------------------------------------------------------------
     # Strategy summary table
     # ------------------------------------------------------------------
-    # The SQL is tenant-grained (so the tenant filter above can apply);
-    # collapse back to the (account, strategy) display grain here so a user
-    # with colliding account labels doesn't see duplicate strategy rows.
+    # SQL is tenant-grained. Keep tenant_id through the display collapse
+    # so colliding "Schwab Account" labels stay separate and drill links
+    # can use ?tenant= instead of the shared display name.
     if not strat_summary_df.empty:
         _sum_cols = [c for c in num_cols if c in strat_summary_df.columns]
+        _group_cols = [
+            c for c in ("tenant_id", "account", "strategy")
+            if c in strat_summary_df.columns
+        ]
         strat_summary_df = (
-            strat_summary_df.groupby(["account", "strategy"], as_index=False)[_sum_cols]
+            strat_summary_df.groupby(_group_cols, as_index=False)[_sum_cols]
             .sum()
         )
         strat_summary_df["win_rate"] = strat_summary_df.apply(

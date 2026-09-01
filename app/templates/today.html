@@ -24,7 +24,7 @@
     <strong>{{ delay.shared if delay else 'These numbers can lag your broker.' }}</strong>
     {{ delay.extra if delay }}
     Official close is on
-    <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Overview</a>.
+    <a href="{{ scoped_url('weekly_review') }}">Overview</a>.
 </div>
 
 <div class="review-hero">
@@ -57,7 +57,7 @@
         {% else %}
         Last close is on
         {% endif %}
-        <a href="{{ url_for('weekly_review', account=selected_account or None, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}"
+        <a href="{{ scoped_url('weekly_review') }}"
            style="color: rgba(255,255,255,.75);">Overview</a>.
         {% else %}
         Last-trade prices and last broker sync — not the official close.
@@ -111,7 +111,7 @@
                     <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                 </td>
                 <td>
-                    {% if t.symbol %}<a class="tt-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                    {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
                     {% if t.is_roll %}
                     <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
                     {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
@@ -155,7 +155,7 @@
         <ol class="tt-cc-list">
             {% for r in _ccu.rows %}
             <li>
-                <a class="tt-sym" href="{{ url_for('position_detail', symbol=r.symbol) }}"
+                <a class="tt-sym" href="{{ scoped_url('position_detail', symbol=r.symbol) }}"
                    data-peek-symbol="{{ r.symbol }}">{{ r.symbol }}</a>
                 <span class="tt-cc-shares">({{ "{:,.0f}".format(r.shares) }} share{{ 's' if r.shares != 1 }})</span>
             </li>
@@ -193,7 +193,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up today</div>
             <div class="movers-list">
                 {% for m in today_movers.winners %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -224,7 +224,7 @@
             <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down today</div>
             <div class="movers-list">
                 {% for m in today_movers.losers %}
-                <a href="{{ url_for('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -260,7 +260,7 @@
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ url_for('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
                style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
@@ -280,7 +280,7 @@
     <p class="section-sub">Live marks on open options — last broker sync, not the official close.</p>
     <div class="watch-list">
         {% for s in open_option_record.shorts[:12] %}
-        <a href="{{ url_for('position_detail', symbol=s.symbol) }}" class="watch-item exec" data-peek-symbol="{{ s.symbol }}" data-peek-impact="{{ s.unrealized }}">
+        <a href="{{ scoped_url('position_detail', symbol=s.symbol) }}" class="watch-item exec" data-peek-symbol="{{ s.symbol }}" data-peek-impact="{{ s.unrealized }}">
             <div>
                 <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
                 <div class="watch-days-label">captured</div>
@@ -295,7 +295,7 @@
         </a>
         {% endfor %}
         {% for l in open_option_record.longs[:12] %}
-        <a href="{{ url_for('position_detail', symbol=l.symbol) }}" class="watch-item exec" data-peek-symbol="{{ l.symbol }}" data-peek-impact="{{ l.unrealized }}">
+        <a href="{{ scoped_url('position_detail', symbol=l.symbol) }}" class="watch-item exec" data-peek-symbol="{{ l.symbol }}" data-peek-impact="{{ l.unrealized }}">
             <div>
                 <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
                 <div class="watch-days-label">vs paid</div>

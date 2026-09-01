@@ -134,9 +134,9 @@
    page is the "Fit matrix" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-primary" aria-current="page"
-       href="{{ url_for('strategies', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Performance</a>
+       href="{{ scoped_url('strategies') }}">Performance</a>
     <a class="btn btn-outline-secondary"
-       href="{{ url_for('strategies', view='fit', account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Fit matrix</a>
+       href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
 </div>
 
 {% include "_history_window_note.html" %}
@@ -180,7 +180,7 @@
 <div class="strat-hero">
     {% if selected_strategy and focus_strategy %}
     <div class="mb-2">
-        <a href="{{ url_for('strategies', account=selected_account if selected_account else none) }}"
+        <a href="{{ scoped_url('strategies') }}"
            style="color:rgba(255,255,255,.5); font-size:.82rem; text-decoration:none;">&larr; All strategies</a>
     </div>
     <p class="strat-hero-headline">{{ focus_strategy.strategy }}</p>
@@ -278,7 +278,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Type</th>
-                    <th class="text-end">Total P&amp;L</th>
+                    <th class="text-end">Total Return</th>
                     <th class="text-end">Realized</th>
                     <th class="text-end">Unrealized</th>
                     <th data-m="hide">Detail</th>
@@ -376,14 +376,14 @@
     <p class="text-muted small mb-3">
         Share of {{ focus_strategy.strategy }} P&amp;L by symbol (one row per name).
         The full list is on
-        <a href="{{ url_for('positions', strategy=focus_strategy.strategy, account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">Positions</a>.
+        <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">Positions</a>.
     </p>
     <div class="conc-grid">
         {% if focus_concentration.contributors %}
         <div>
             <div class="conc-col-title">Largest contributors</div>
             {% for r in focus_concentration.contributors %}
-            <a class="conc-row" href="{{ url_for('position_detail', symbol=r.symbol, account=selected_account or none) }}">
+            <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
                 <div class="conc-share {% if r.share_pct is not none %}text-positive{% endif %}">
                     {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
                 </div>
@@ -400,7 +400,7 @@
         <div>
             <div class="conc-col-title">Largest drags</div>
             {% for r in focus_concentration.drags %}
-            <a class="conc-row" href="{{ url_for('position_detail', symbol=r.symbol, account=selected_account or none) }}">
+            <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
                 <div class="conc-share text-negative">
                     {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
                 </div>
@@ -417,7 +417,7 @@
     {% if focus_concentration.symbol_count > (focus_concentration.contributors|length + focus_concentration.drags|length) %}
     <p class="small text-muted mb-0 mt-3">
         {{ focus_concentration.symbol_count }} symbols in this strategy ·
-        <a href="{{ url_for('positions', strategy=focus_strategy.strategy, account=selected_account or none, tenants=tenants_query, groups=groups_query) }}">see all on Positions</a>
+        <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">see all on Positions</a>
     </p>
     {% endif %}
 </div>
@@ -438,7 +438,7 @@
         </thead>
         <tbody>
             {% for a in focus_accounts %}
-            <tr data-href="{{ url_for('strategies', strategy=focus_strategy.strategy, account=a.account) }}">
+            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none) }}">
                 <td class="fw-semibold" data-val="{{ a.account }}">{{ a.account | account_label }}</td>
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
                 <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
@@ -453,7 +453,7 @@
 {% endif %}
 
 <div class="mb-3">
-    <a href="{{ url_for('strategies', account=selected_account if selected_account else none) }}"
+    <a href="{{ scoped_url('strategies') }}"
        class="small text-muted">&larr; All strategies</a>
 </div>
 
@@ -464,7 +464,7 @@
    ══════════════════════════════ #}
 <div class="strat-cards">
     {% for s in strategies %}
-    <a href="{{ url_for('strategies', strategy=s.strategy, account=selected_account if selected_account else none) }}"
+    <a href="{{ scoped_url('strategies', strategy=s.strategy) }}"
        class="strat-card {% if s.is_selected %}selected{% endif %}">
         <div class="strat-card-header">
             <div>
@@ -489,7 +489,7 @@
                 <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
                     {{ "+" if s.total_return >= 0 else "" }}${{ "{:,.0f}".format(s.total_return) }}
                 </div>
-                <div class="sc-stat-label">Total P&amp;L</div>
+                <div class="sc-stat-label">Total Return</div>
             </div>
             {% if s.avg_days > 0 %}
             <div>
@@ -527,7 +527,7 @@
 <p class="small text-muted">
     Based on your full history.
     For this week&rsquo;s breakdown, see
-    <a href="{{ url_for('weekly_review', account=selected_account) if selected_account else url_for('weekly_review') }}">Overview</a>.
+    <a href="{{ scoped_url('weekly_review') }}">Overview</a>.
 </p>
 
 {% endif %}{# end strategies block #}

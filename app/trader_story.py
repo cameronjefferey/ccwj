@@ -510,6 +510,31 @@ def _busiest_day(trades_df):
     }
 
 
+def _open_held_symbol_count(summary_df):
+    """Unique currently-held symbols from the story summary rollup.
+
+    Distinct from ``open_stories`` in the review engine, which only
+    counts symbols that also have a fingerprint. Overview's strip and
+    Positions' symbol chip use this grain (Open rows in
+    ``positions_summary``). The story query projects ``has_open_leg``
+    rather than raw ``status``.
+    """
+    if summary_df is None or summary_df.empty:
+        return 0
+    if "symbol" not in summary_df.columns:
+        return 0
+    if "has_open_leg" in summary_df.columns:
+        flag = pd.to_numeric(summary_df["has_open_leg"], errors="coerce").fillna(0)
+        open_ = summary_df[flag.astype(int) > 0]
+    elif "status" in summary_df.columns:
+        open_ = summary_df[summary_df["status"].astype(str).eq("Open")]
+    else:
+        return 0
+    if open_.empty:
+        return 0
+    return int(open_["symbol"].astype(str).str.upper().nunique())
+
+
 def compose_novel(book, trades_df):
     """Assemble the full template context from the per-symbol book."""
     if not book:
@@ -606,6 +631,9 @@ def trader_story():
         book = build_book(trades_df, div_df, splits_df, summary_df)
         context["novel"] = compose_novel(book, trades_df)
         if context["novel"] is not None:
+            held = _open_held_symbol_count(summary_df)
+            context["novel"]["hero_counts"]["open_held"] = held
+            context["novel"]["open_held"] = held
             # Execution review: the same record, graded. None until the
             # account clears the data-sufficiency gate (>= 5 contracts
             # with a known expiry outcome), so young accounts see the

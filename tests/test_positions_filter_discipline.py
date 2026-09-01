@@ -186,7 +186,7 @@ def _hero_chips(html):
     import re
     out = {}
     for m in re.finditer(
-        r'class="hero-chip">\s*<span class="dot (open|closed|mixed)"></span>(\d+)\s*\1',
+        r'class="hero-chip"[^>]*>\s*<span class="dot (open|closed|mixed)"></span>\s*(\d+)\s*\1',
         html,
     ):
         out[m.group(1)] = int(m.group(2))

@@ -82,6 +82,23 @@
   var trigger = document.getElementById("ht-palette-trigger");
   var cacheScope = trigger && trigger.getAttribute("data-cache-scope");
   var SYMBOL_CACHE_KEY = cacheScope ? "ht-nav-symbols:" + cacheScope : null;
+
+  function scopeQs() {
+    var el = trigger || document.querySelector(".ht-palette-open");
+    return (el && el.getAttribute("data-scope-qs")) || "";
+  }
+
+  function withScope(href) {
+    var qs = scopeQs();
+    if (!qs || !href || href.charAt(0) !== "/") return href;
+    var skip = ["/profile", "/upload", "/get-started", "/pricing", "/contact", "/admin"];
+    for (var i = 0; i < skip.length; i++) {
+      if (href === skip[i] || href.indexOf(skip[i] + "?") === 0 || href.indexOf(skip[i] + "/") === 0) {
+        return href;
+      }
+    }
+    return href + (href.indexOf("?") >= 0 ? "&" : "?") + qs;
+  }
   // The first quick-switcher release used one unscoped key, so user B could
   // see user A's symbols after an account switch in the same browser tab.
   // Never read it again, and remove it as soon as authenticated nav loads.
@@ -224,7 +241,7 @@
     if (!it) return;
     closePalette();
     startProgress();
-    window.location.href = it.href;
+    window.location.href = withScope(it.href);
   }
 
   function openPalette() {

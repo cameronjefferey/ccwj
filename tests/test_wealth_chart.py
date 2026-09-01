@@ -412,3 +412,29 @@ def test_summary_drops_utc_tomorrow_spine_row():
     dropped = _drop_dates_after(df, _et_today())
     assert dropped["date"].max().date() <= et
 
+
+def test_value_as_of_cutoff_holds_last_close_while_session_is_live():
+    """Value & composition must not publish the unfinished mart-today row."""
+    from app.wealth import _value_as_of_cutoff
+
+    tuesday = date(2026, 9, 1)
+    monday = date(2026, 8, 31)
+    assert _value_as_of_cutoff(user_today=tuesday, market_session="open") == monday
+    assert _value_as_of_cutoff(
+        user_today=tuesday, market_session="after_hours") == monday
+    assert _value_as_of_cutoff(
+        user_today=tuesday, market_session="pre_market") == monday
+    saturday = date(2026, 9, 5)
+    friday = date(2026, 9, 4)
+    assert _value_as_of_cutoff(
+        user_today=saturday, market_session="weekend") == friday
+
+    df = pd.DataFrame([
+        {"date": pd.Timestamp(monday), "account_value": 994704.0},
+        {"date": pd.Timestamp(tuesday), "account_value": 981831.0},
+    ])
+    out = _drop_dates_after(
+        df, _value_as_of_cutoff(user_today=tuesday, market_session="open"))
+    assert list(out["date"].dt.date) == [monday]
+    assert float(out.iloc[-1]["account_value"]) == 994704.0
+

@@ -85,25 +85,22 @@
             {% endif %}
         </div>
         <div class="dd-nav text-end">
-            <a href="{{ url_for('day_detail', day_str=prev_day.isoformat(),
+            <a href="{{ scoped_url('day_detail', day_str=prev_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants,
-                                groups=groups_query) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+                                tenants=selected_tenants) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
             <span class="mx-1" style="color:#475569;">|</span>
-            <a href="{{ url_for('day_detail', day_str=next_day.isoformat(),
+            <a href="{{ scoped_url('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants,
-                                groups=groups_query) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+                                tenants=selected_tenants) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
-                <a href="{{ url_for('weekly_review',
+                <a href="{{ scoped_url('weekly_review',
                                     account=selected_account or None,
                                     tenant=selected_tenant,
-                                    tenants=selected_tenants,
-                                    groups=groups_query) }}">Back to Overview</a>
+                                    tenants=selected_tenants) }}">Back to Overview</a>
             </div>
         </div>
     </div>
@@ -146,7 +143,7 @@
                             <span class="dd-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                         </td>
                         <td>
-                            {% if t.symbol %}<a class="dd-sym" href="{{ url_for('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
+                            {% if t.symbol %}<a class="dd-sym" href="{{ scoped_url('position_detail', symbol=t.symbol) }}">{{ t.symbol }}</a>{% endif %}
                             {% if t.is_roll %}
                             <div class="dd-muted">{{ t.close_label }} → {{ t.open_label }}</div>
                             {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
@@ -186,7 +183,7 @@
                 <table class="dd-table">
                     {% for o in option_rows %}
                     <tr>
-                        <td><a class="dd-sym" href="{{ url_for('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
+                        <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
                         <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ "+" if o.impact > 0 else "" }}${{ "{:,.2f}".format(o.impact) }}</td>
                     </tr>
                     {% endfor %}
@@ -205,7 +202,7 @@
                 <table class="dd-table">
                     {% for d in dividend_rows %}
                     <tr>
-                        <td><a class="dd-sym" href="{{ url_for('position_detail', symbol=d.symbol) }}">{{ d.symbol }}</a></td>
+                        <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=d.symbol) }}">{{ d.symbol }}</a></td>
                         <td class="dd-money pos">+${{ "{:,.2f}".format(d.amount) }}</td>
                     </tr>
                     {% endfor %}
