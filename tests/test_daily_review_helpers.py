@@ -1998,6 +1998,17 @@ class TestOverviewVoice:
         assert "Today's Biggest" not in src
         assert "{% if _pulse_is_today %}Today:" not in src
 
+    def test_overview_hero_is_date_then_book(self):
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[1]
+               / "app/templates/weekly_review.html").read_text()
+        assert "Overview &middot;" not in src
+        assert "hero-kicker" in src
+        assert "Your book" in src
+        assert "hero-book" in src
+        assert 'class="hero-headline">Overview</p>' in src
+        assert "{% if today_pulse %}" not in src
+
     def test_weekly_review_url_is_overview(self):
         from app import app
         with app.test_request_context():

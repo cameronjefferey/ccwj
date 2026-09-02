@@ -187,7 +187,10 @@ The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', 
 callers don't break.
 
 What's working:
-- Session hero: last-close account delta + market context + that session's fill count
+- Session hero: date kicker (no page name), **Overview** headline, then a
+ **Your book** strip (close value / vs prior close / vs 1w / % invested),
+ plus market context and that session's fill count. Session P&amp;L is in
+ the book row, not the headline.
 - Session trades: every fill dated the **review session** from `stg_history`
  (`DAY_TRADES_QUERY`, shared with the time-machine day page), plus option
  expiry / assignment / exercise from `int_option_contracts` on
