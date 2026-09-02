@@ -62,6 +62,17 @@ def test_connect_processing_copy_and_overview_ready_poll():
     assert "you don't need to hit Sync again" in html
 
 
+def test_onboarding_holds_redirect_until_save_or_skip():
+    """The survey must stay put until Save or Skip — not until first
+    focus, and not because Overview already has rows from older accounts."""
+    html = Path("app/templates/sync_processing.html").read_text()
+    assert "window.__onboardingHoldRedirect = true;" in html
+    assert "window.__onboardingHoldRedirect = false;" in html
+    assert 'form.addEventListener("focusin", hold' not in html
+    poll = Path("app/templates/includes/_github_actions_poll.html").read_text()
+    assert "if (!window.__onboardingHoldRedirect)" in poll
+
+
 def test_poll_gives_up_with_email_copy_instead_of_silent_redirect():
     js = Path("app/templates/includes/_github_actions_poll.html").read_text()
     assert "n < 300" in js

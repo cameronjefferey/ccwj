@@ -471,13 +471,11 @@
 
     var current = 1;
 
-    // Pause the sync poll's auto-redirect as soon as the user starts
-    // engaging with the form, so we don't yank them out mid-question.
-    // Cleared on submit / skip.
-    window.__onboardingHoldRedirect = false;
-    var hold = function () { window.__onboardingHoldRedirect = true; };
-    form.addEventListener("focusin", hold, { once: true });
-    form.addEventListener("change", hold, { once: true });
+    // Hold auto-redirect for the whole time the survey is on screen.
+    // Waiting for first focus/change used to yank people out while they
+    // were still reading Q1 (and the post-connect poll can fire "ready"
+    // from accounts they already had). Cleared only on Save or Skip.
+    window.__onboardingHoldRedirect = true;
 
     // Reveal-on-select for "Something else" rows. Hide all reveals
     // initially, then toggle when their controlling input is the
@@ -684,7 +682,9 @@
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (d && d.ready) {
-                    if (label) label.textContent = "All set — bringing you to Overview…";
+                    if (label && !window.__onboardingHoldRedirect) {
+                        label.textContent = "All set — bringing you to Overview…";
+                    }
                     __ghaSafeRedirect(doneUrl, label);
                     return;
                 }
