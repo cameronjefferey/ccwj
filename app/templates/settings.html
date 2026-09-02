@@ -84,7 +84,13 @@
                         They show up here after you add data—either by connecting a broker or uploading CSVs on the
                         <a href="{{ url_for('upload') }}">Upload</a> page.
                     </p>
-                    {% if accounts %}
+                    {% if group_tenant_choices is defined and group_tenant_choices %}
+                    <div class="mt-2">
+                        {% for c in group_tenant_choices %}
+                        <span class="account-badge">{{ c.label | account_label(c.tenant_id) }}</span>
+                        {% endfor %}
+                    </div>
+                    {% elif accounts %}
                     <div class="mt-2">
                         {% for acct in accounts %}
                         <span class="account-badge">{{ acct | account_label }}</span>
@@ -177,7 +183,7 @@
                         <tbody>
                             {% for u in recent_uploads %}
                             <tr>
-                                <td>{{ u.account_name | account_label }}</td>
+                                <td>{{ u.account_name | account_label(u.tenant_id) }}</td>
                                 <td>{{ u.history_rows }}</td>
                                 <td>{{ u.current_rows }}</td>
                                 <td class="text-muted small">{{ u.uploaded_at }}</td>

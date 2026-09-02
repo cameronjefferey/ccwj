@@ -28,6 +28,7 @@ from app.routes import (
     _bq_parallel,
     _parse_date,
     _tags_for_leg_range,
+    _tenant_label_map_for_user,
     _tenants_for_scope,
     _user_account_list,
 )
@@ -888,6 +889,15 @@ def accounts():
             axis=1,
         )
         strategy_rows = strat_summary_df.to_dict(orient="records")
+        try:
+            _tlabels = _tenant_label_map_for_user(getattr(current_user, "id", None))
+        except Exception:
+            _tlabels = {}
+        if _tlabels:
+            for _row in strategy_rows:
+                _tid = _row.get("tenant_id")
+                if _tid and _tid in _tlabels:
+                    _row["account"] = _tlabels[_tid]
     else:
         strategy_rows = []
 

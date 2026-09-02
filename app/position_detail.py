@@ -2526,6 +2526,14 @@ def position_detail(symbol):
             agg_funcs["strategies_pipe"] = lambda s: "|".join(sorted({
                 p for v in s.dropna() for p in str(v).split("|") if p
             }))
+        if "tenant_id" in tdf.columns:
+            tdf["account"] = tdf.apply(
+                lambda r: _account_display_for(
+                    str(r.get("tenant_id") or "").strip() or None,
+                    r.get("account"),
+                ),
+                axis=1,
+            )
         if "account" in tdf.columns:
             agg_funcs["account"] = lambda s: ", ".join(sorted({str(v) for v in s.dropna() if str(v).strip()}))
         rolled = tdf.groupby("symbol", as_index=False).agg(agg_funcs)
@@ -2562,7 +2570,10 @@ def position_detail(symbol):
                 if qty <= 0:
                     continue
                 opening_balances.append({
-                    "account": str(ob.get("account") or ""),
+                    "account": _account_display_for(
+                        str(ob.get("tenant_id") or "").strip() or None,
+                        ob.get("account"),
+                    ),
                     "qty": round(qty, 2),
                     "first_trade_date": ob.get("first_trade_date"),
                     "est_cost": round(abs(float(ob.get("est_amount") or 0.0)), 2),

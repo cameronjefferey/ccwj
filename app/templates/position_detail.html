@@ -832,7 +832,7 @@
             <tbody>
                 {% for r in strategy_rows %}
                 <tr data-href="{{ scoped_url('strategies', tenant=r.tenant_id, tenants=none, strategy=r.strategy) }}">
-                    <td data-val="{{ r.account_display or r.account }}">{{ r.account_display or (r.account | account_label) }}</td>
+                    <td data-val="{{ r.account_display or r.account }}">{{ r.account_display or (r.account | account_label(r.tenant_id)) }}</td>
                     <td data-val="{{ r.strategy }}">
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
                             {{ r.strategy }}
@@ -1001,7 +1001,7 @@
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
                     <td class="text-muted small">{{ p.instrument_type }}</td>
-                    <td class="text-muted small">{{ p.account_display or (p.account | account_label) }}</td>
+                    <td class="text-muted small">{{ p.account_display or (p.account | account_label(p.tenant_id)) }}</td>
                     <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
                     <td class="text-nowrap"></td>
                     <td class="text-nowrap"></td>
@@ -1061,7 +1061,7 @@
                         {% endif %}
                     </td>
                     <td class="text-muted small">{{ o.strategy }}</td>
-                    <td class="text-muted small">{{ o.account_display or (o.account | account_label) }}</td>
+                    <td class="text-muted small">{{ o.account_display or (o.account | account_label(o.tenant_id)) }}</td>
                     <td class="text-end">{{ o.quantity | int if o.quantity is defined and o.quantity else '' }}</td>
                     <td class="text-nowrap">{{ o.open_date }}</td>
                     <td class="text-nowrap">{{ o.close_date }}</td>
@@ -1181,7 +1181,7 @@
                         {% for t in trades %}
                         <tr>
                             <td class="text-nowrap" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
-                            <td>{{ t.account_display or (t.account | account_label) }}</td>
+                            <td>{{ t.account_display or (t.account | account_label(t.tenant_id)) }}</td>
                             <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">
                                 {% if t.is_dividend_reinvestment %}
                                 <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>

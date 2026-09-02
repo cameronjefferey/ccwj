@@ -228,6 +228,59 @@ def _disambiguated_tenant_labels(rows) -> dict:
     return out
 
 
+def _unique_account_name_labels(rows, tenant_labels) -> dict:
+    """``account_name -> display label`` only when that broker name is
+    unambiguous for this user.
+
+    Several SnapTrade Schwab tenants share ``account_name = "Schwab
+    Account"`` with different nicknames — those names are omitted so a
+    name-only lookup cannot stamp the wrong nickname. A single Schwab
+    tenant nicknamed Emmory still maps.
+    """
+    from collections import defaultdict
+
+    by_name = defaultdict(set)
+    for row in rows or []:
+        name = (row.get("account_name") or "").strip()
+        tid = row.get("tenant_id")
+        if not name or not tid:
+            continue
+        disp = (tenant_labels or {}).get(tid)
+        if disp:
+            by_name[name].add(disp)
+    return {name: next(iter(disp)) for name, disp in by_name.items() if len(disp) == 1}
+
+
+def _resolve_account_display(
+    account_name,
+    tenant_id=None,
+    *,
+    tenant_labels=None,
+    unique_name_labels=None,
+):
+    """Pick the profile nickname for a warehouse account label.
+
+    ``tenant_id`` wins (the only safe key when several physical accounts
+    share ``Schwab Account``). Name-only lookup is unique-name fallback
+    for logs that never stored a tenant (old CSV upload rows).
+    """
+    tenant_labels = tenant_labels or {}
+    unique_name_labels = unique_name_labels or {}
+    tid = ""
+    if tenant_id is not None:
+        tid = str(tenant_id).strip()
+        if tid in ("", "None", "nan"):
+            tid = ""
+    if tid and tid in tenant_labels:
+        return tenant_labels[tid]
+    raw = (account_name or "").strip() if account_name is not None else ""
+    if raw in unique_name_labels:
+        return unique_name_labels[raw]
+    if raw and raw in tenant_labels.values():
+        return raw
+    return account_name
+
+
 def _tenant_label_map_for_user(user_id) -> dict:
     """``tenant_id -> disambiguated display label`` for one user, or ``{}``.
 

@@ -57,34 +57,41 @@ from app.option_formatting import format_option_symbol as _format_option_symbol
 app.add_template_filter(_format_option_symbol, name="option_symbol")
 
 
-def _account_label_filter(account_name):
-    """Render an ``account_name`` with the user's SnapTrade ``display_nickname``
-    when one is set, otherwise the raw account_name.
+def _account_label_filter(account_name, tenant_id=None):
+    """Render a warehouse ``account`` string as the user's nickname.
 
-    Lives in the application factory rather than next to the data layer so
-    every template — positions hero, account dropdowns on every page,
-    profile badges, upload picker — can use ``{{ a | account_label }}``
-    (or ``user_accounts | map('account_label') | join(', ')``) without
-    each route having to remember to pass a nickname dict.
+    Prefer ``{{ row.account | account_label(row.tenant_id) }}`` — several
+    SnapTrade Schwab tenants share the broker name ``Schwab Account`` and
+    a name-only map cannot pick the right nickname. ``tenant_id`` looks
+    up ``broker_tenants.display_nickname`` (disambiguated when needed).
 
-    Looks up the per-user mapping once per request via ``flask.g`` so a
-    page with several account dropdowns doesn't fan out into one DB
-    query per cell. Falls back to the raw value on any error so a DB
-    hiccup never blanks an account label.
+    Name-only calls still work when that broker name is unique for the
+    user, or when the value is already a nickname / picker label.
     """
-    if not account_name:
+    if not account_name and not tenant_id:
         return account_name
     try:
         from flask import g
         from flask_login import current_user
         if not current_user.is_authenticated:
             return account_name
-        nicknames = getattr(g, "_account_nicknames", None)
-        if nicknames is None:
-            from app.models import get_snaptrade_account_nicknames
-            nicknames = get_snaptrade_account_nicknames(current_user.id) or {}
-            g._account_nicknames = nicknames
-        return nicknames.get(account_name, account_name)
+        maps = getattr(g, "_account_display_maps", None)
+        if maps is None:
+            from app.models import get_broker_tenants_for_user
+            from app.routes import (
+                _disambiguated_tenant_labels,
+                _unique_account_name_labels,
+            )
+            rows = get_broker_tenants_for_user(current_user.id) or []
+            tmap = _disambiguated_tenant_labels(rows)
+            umap = _unique_account_name_labels(rows, tmap)
+            maps = (tmap, umap)
+            g._account_display_maps = maps
+        from app.routes import _resolve_account_display
+        return _resolve_account_display(
+            account_name, tenant_id,
+            tenant_labels=maps[0], unique_name_labels=maps[1],
+        )
     except Exception:
         return account_name
 

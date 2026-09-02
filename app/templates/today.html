@@ -118,7 +118,7 @@
                     <div class="tt-muted">{{ t.trade_symbol }}</div>
                     {% endif %}
                     {% if t.account and accounts and accounts|length > 1 %}
-                    <div class="tt-muted">{{ t.account }}</div>
+                    <div class="tt-muted">{{ t.account | account_label(t.tenant_id) }}</div>
                     {% endif %}
                 </td>
                 <td class="tt-muted d-none d-sm-table-cell">
