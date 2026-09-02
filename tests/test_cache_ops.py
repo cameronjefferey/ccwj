@@ -152,7 +152,11 @@ def test_send_data_ready_emails_users_with_tenants(monkeypatch):
 
     sent = []
     monkeypatch.setattr(db_mod, "fetch_all",
-                        lambda sql: [{"user_id": 9}])
+                        lambda sql: [{"user_id": 9, "tenant_id": "snaptrade:abc"}])
+    monkeypatch.setattr(
+        cache_ops, "warehouse_tenants_present",
+        lambda tids: {"snaptrade:abc"},
+    )
     monkeypatch.setattr("app.models.User.get_by_id", lambda uid: _U())
     monkeypatch.setattr(
         "app.models.record_email_send",
@@ -167,6 +171,77 @@ def test_send_data_ready_emails_users_with_tenants(monkeypatch):
     assert len(sent) == 1
     assert sent[0]["to"] == "a@example.com"
     assert sent[0]["dashboard_url"] == "https://ht.test/overview"
+
+
+def test_send_data_ready_skips_when_warehouse_empty(monkeypatch):
+    """Connect creates broker_tenants before any sync. A coincidental
+    rebuild must not mail 'data is ready' or record the send (retry later)."""
+    import app.cache_ops as cache_ops
+    import app.db as db_mod
+
+    class _U:
+        email = "a@example.com"
+        username = "ada"
+
+    recorded = []
+    sent = []
+    monkeypatch.setattr(
+        db_mod, "fetch_all",
+        lambda sql: [{"user_id": 9, "tenant_id": "snaptrade:new"}],
+    )
+    monkeypatch.setattr(
+        cache_ops, "warehouse_tenants_present", lambda tids: set(),
+    )
+    monkeypatch.setattr("app.models.User.get_by_id", lambda uid: _U())
+    monkeypatch.setattr(
+        "app.models.record_email_send",
+        lambda *a, **k: recorded.append(1) or True,
+    )
+    monkeypatch.setattr(
+        "app.email.send_data_ready_email",
+        lambda **k: sent.append(k),
+    )
+    cache_ops._send_data_ready_after_rebuild()
+    assert recorded == []
+    assert sent == []
+
+
+def test_send_data_ready_skips_demo_user(monkeypatch):
+    import app.cache_ops as cache_ops
+    import app.db as db_mod
+
+    class _Demo:
+        email = "demo@example.com"
+        username = "demo"
+
+    recorded = []
+    sent = []
+    monkeypatch.setattr(
+        db_mod, "fetch_all",
+        lambda sql: [{"user_id": 1, "tenant_id": "demo:demo-account"}],
+    )
+    monkeypatch.setattr(
+        cache_ops, "warehouse_tenants_present",
+        lambda tids: {"demo:demo-account"},
+    )
+    monkeypatch.setattr("app.models.User.get_by_id", lambda uid: _Demo())
+    monkeypatch.setattr(
+        "app.models.record_email_send",
+        lambda *a, **k: recorded.append(1) or True,
+    )
+    monkeypatch.setattr(
+        "app.email.send_data_ready_email",
+        lambda **k: sent.append(k),
+    )
+    cache_ops._send_data_ready_after_rebuild()
+    assert recorded == []
+    assert sent == []
+
+
+def test_warehouse_tenants_present_empty_list_is_false():
+    import app.cache_ops as cache_ops
+    assert cache_ops.warehouse_tenants_present([]) == set()
+    assert cache_ops.warehouse_has_rows_for_tenants([]) is False
 
 
 def test_accounts_query_batch_skips_full_history_by_default():

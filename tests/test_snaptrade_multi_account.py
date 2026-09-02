@@ -1553,3 +1553,52 @@ def test_set_brokerage_authorization_id_short_circuits_on_empty_input():
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", None) is False
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", "") is False
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", "   ") is False
+
+
+def test_kick_post_connect_sync_pulls_each_account_without_force_refresh(
+        monkeypatch):
+    """Portal callback must start the pull immediately — first-sync
+    accounts get the long lookback, already-synced get the routine
+    window, and we must not bill a force-refresh on the real-time plan."""
+    from app import app as flask_app
+
+    called = []
+
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda uid: [
+        {"snaptrade_account_id": "new", "first_sync_completed": False},
+        {"snaptrade_account_id": "old", "first_sync_completed": True},
+    ])
+    monkeypatch.setattr(
+        _snap, "_routine_lookback_days", lambda: 60,
+    )
+    monkeypatch.setattr(
+        _snap, "SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS", 1825,
+    )
+
+    def _sync(uid, row, **kwargs):
+        called.append({
+            "uid": uid,
+            "account": row["snaptrade_account_id"],
+            "lookback": kwargs.get("lookback_days"),
+            "force_refresh": kwargs.get("force_refresh", False),
+        })
+        return {"ok": True}
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _sync)
+
+    class _ImmediateThread:
+        def __init__(self, target=None, name=None, daemon=None):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(_snap.threading, "Thread", _ImmediateThread)
+
+    with flask_app.app_context():
+        _snap._kick_post_connect_sync(7)
+
+    assert [c["account"] for c in called] == ["new", "old"]
+    assert called[0]["lookback"] == 1825
+    assert called[1]["lookback"] == 60
+    assert all(c["force_refresh"] is False for c in called)

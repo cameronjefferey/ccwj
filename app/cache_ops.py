@@ -63,25 +63,105 @@ if not _log.handlers:
 _warm_lock = threading.Lock()
 
 
+def warehouse_tenants_present(tenant_ids):
+    """Return the subset of ``tenant_ids`` that already have Overview rows.
+
+    Reads ``positions_summary`` (same grain as Get Started / first look).
+    Fail closed: missing tenants, a BQ error, or an empty list → empty set,
+    so a later rebuild can retry the data-ready email.
+    """
+    from app.tenant_scope import (
+        filter_df_by_tenant_ids,
+        sanitize_tenant_id,
+        tenant_sql_filter,
+    )
+
+    safe = [sanitize_tenant_id(t) for t in (tenant_ids or [])]
+    safe = [t for t in safe if t]
+    if not safe:
+        return set()
+    try:
+        from app.bigquery_client import get_bigquery_client
+        from app.query_cache import cached_query_df
+        where = tenant_sql_filter(safe)
+        sql = (
+            "SELECT DISTINCT tenant_id "
+            "FROM `ccwj-dbt.analytics.positions_summary` "
+            f"{where}"
+        )
+        # After ?ready=1 the cache was just flushed; a miss is a real BQ
+        # read. The post-connect poll reuses the same helper, so an empty
+        # result stays cached until the next flush instead of re-querying
+        # every 8s.
+        df = cached_query_df(
+            get_bigquery_client(), sql, label="data_ready_tenants",
+        )
+        # SQL already scopes to ``safe``; DataFrame filter is the same
+        # belt-and-suspenders as every user-facing BQ read (fail closed
+        # if tenant_id is missing from the frame).
+        df = filter_df_by_tenant_ids(df, safe)
+    except Exception as exc:
+        _log.warning("warehouse_tenants_present failed: %s", exc)
+        return set()
+    if df is None or df.empty or "tenant_id" not in df.columns:
+        return set()
+    found = set()
+    for raw in df["tenant_id"].tolist():
+        tid = sanitize_tenant_id(raw)
+        if tid:
+            found.add(tid)
+    return found
+
+
+def warehouse_has_rows_for_tenants(tenant_ids):
+    """True when Overview can render at least one row for these tenants."""
+    return bool(warehouse_tenants_present(tenant_ids))
+
+
 def _send_data_ready_after_rebuild():
     """Email users whose first warehouse is now queryable.
 
-    Dedupe: ``email_sends`` kind ``data_ready``, key ``user_id``. Never
-    raises into the flush request.
+    A tenant row is not enough — connect registers ``broker_tenants``
+    before any sync, so a coincidental rebuild used to mail "your data
+    is ready" while Overview was still empty. Require
+    ``positions_summary`` rows for that user's tenants. Dedupe:
+    ``email_sends`` kind ``data_ready``, key ``user_id``. Do not record
+    a send when the warehouse is still empty (retry on the next
+    ``?ready=1`` flush). Never raises into the flush request.
     """
     try:
         from app.db import fetch_all
         from app.email import app_base_url, send_data_ready_email
         from app.models import User, record_email_send
+        from app.utils import DEMO_USERNAME
 
         rows = fetch_all(
-            "SELECT DISTINCT user_id FROM broker_tenants "
-            "WHERE user_id IS NOT NULL"
+            "SELECT user_id, tenant_id FROM broker_tenants "
+            "WHERE user_id IS NOT NULL AND connection_status = 'active'"
         ) or []
+        by_user = {}
         for row in rows:
             uid = row.get("user_id")
+            tid = row.get("tenant_id")
+            if uid is None or not tid:
+                continue
+            by_user.setdefault(uid, []).append(tid)
+        if not by_user:
+            return
+
+        live = warehouse_tenants_present(
+            [t for tids in by_user.values() for t in tids]
+        )
+        if not live:
+            return
+
+        for uid, tids in by_user.items():
+            if not any(t in live for t in tids):
+                continue
             u = User.get_by_id(uid)
             if not u or not (u.email or "").strip():
+                continue
+            if (u.username or "").lower() == DEMO_USERNAME:
                 continue
             if not record_email_send(
                 "data_ready", str(uid), user_id=uid, to_email=u.email

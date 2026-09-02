@@ -2395,7 +2395,11 @@ def upload_processing():
 @app.route("/sync/processing")
 @login_required
 def sync_processing():
-    """After Schwab seed push, wait for GitHub Actions dbt to finish (optional poll by commit SHA)."""
+    """After a SnapTrade (or CSV) seed push, wait for the warehouse rebuild.
+
+    ``?connecting=1`` is the post-portal path: the pull is already running
+    in the background; copy says so instead of asking them to Sync now.
+    """
     from app.models import get_onboarding_response
 
     expected_minutes = 25
@@ -2417,15 +2421,33 @@ def sync_processing():
     )
 
     from app.early_broker import early_broker_notice_for_user
+    connecting = (request.args.get("connecting") or "").strip() == "1"
     return render_template(
         "sync_processing.html",
-        title="Processing Schwab sync",
+        title="Pulling your brokerage data" if connecting else "Processing sync",
         expected_minutes=expected_minutes,
         head_sha=head_sha,
         done_url=done_url,
         show_onboarding=show_onboarding,
+        connecting=connecting,
         early_broker=early_broker_notice_for_user(current_user.id),
     )
+
+
+@app.route("/api/sync/overview-ready")
+@login_required
+def api_sync_overview_ready():
+    """Poll for whether this user's Overview can actually render.
+
+    Used by the post-connect processing page. Must match the data-ready
+    email gate (``positions_summary`` rows for the user's tenants) so we
+    never send someone to an empty Overview.
+    """
+    from app.cache_ops import warehouse_has_rows_for_tenants
+    from app.models import get_tenant_ids_for_user
+
+    tids = get_tenant_ids_for_user(current_user.id) or []
+    return jsonify({"ready": warehouse_has_rows_for_tenants(tids)})
 
 
 @app.route("/unclaim-account", methods=["POST"])

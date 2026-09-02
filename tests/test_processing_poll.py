@@ -54,6 +54,14 @@ def test_poll_failure_stops_spinner_and_redirects():
     assert 'id="pipelineIcon"' in html
 
 
+def test_connect_processing_copy_and_overview_ready_poll():
+    html = Path("app/templates/sync_processing.html").read_text()
+    assert "We connected your brokerage" in html
+    assert "Now pulling your trade history" in html
+    assert "api_sync_overview_ready" in html
+    assert "you don't need to hit Sync again" in html
+
+
 def test_poll_gives_up_with_email_copy_instead_of_silent_redirect():
     js = Path("app/templates/includes/_github_actions_poll.html").read_text()
     assert "n < 300" in js
