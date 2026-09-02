@@ -67,6 +67,7 @@ from app.routes import (
     _parse_date,
     _redirect_if_no_accounts,
     _resolve_position_leg_filter,
+    _scope_query_string,
     _tags_for_leg_range,
     _tenant_label_map_for_user,
     _tenants_for_scope,
@@ -81,6 +82,12 @@ _NOT_PLACED_TRADE_ACTIONS = frozenset({
     "dividend_reinvest", "dividend", "cash_transfer",
     "margin_interest", "credit_interest", "adr_fee",
 })
+
+
+def _position_tab_scope_suffix():
+    """Applied account/group query for Position Detail tab navigation."""
+    scope = _scope_query_string()
+    return f"?{scope}" if scope else ""
 
 
 def _count_placed_fills(df):
@@ -2561,12 +2568,10 @@ def position_detail(symbol):
                 "strategies": [s for s in strats_pipe.split("|") if s] if strats_pipe else [],
             })
 
-    # Tab strip uses navigate-mode anchors. Preserve ?account= so the
-    # destination page stays in the same scope (admin + non-admin tenancy
-    # reasoning above continues to hold).
-    tab_qs = ""
-    if selected_account:
-        tab_qs = "?account=" + quote_plus(selected_account)
+    # Tab strip uses navigate-mode anchors. Preserve the complete applied
+    # account/group scope; keeping only the legacy ?account= label widened
+    # ?tenants= / ?groups= views back to every owned tenant on the next tab.
+    tab_qs = _position_tab_scope_suffix()
 
     # ── "History starts here" disclosure ─────────────────────────────
     # One row per account whose imported history begins mid-position

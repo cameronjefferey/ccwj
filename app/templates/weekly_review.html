@@ -965,10 +965,10 @@
             </thead>
             <tbody>
                 {% for r in tw.trades %}
-                <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
+                <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}">
                     <td class="left" data-val="{{ r.account_display }}">{{ r.account_display }}</td>
                     <td class="left" data-val="{{ r.symbol }}">
-                        <a href="{{ scoped_url('position_detail', symbol=r.symbol) }}" class="row-symbol">{{ r.symbol }}</a>
+                        <a href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
                     <td class="left" data-val="{{ r.strategy }}">{{ r.strategy }}</td>

@@ -2,6 +2,7 @@
 colliding account= labels). See routes.scoped_url."""
 
 from html import unescape
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from app import app
@@ -66,6 +67,31 @@ def test_scope_query_string_for_cmdk():
     parsed = parse_qs(qs)
     assert parsed["tenants"] == [TENANTS]
     assert parsed["groups"] == ["1"]
+
+
+def test_position_tab_strip_keeps_full_account_scope():
+    from app.position_detail import _position_tab_scope_suffix
+
+    with app.test_request_context(
+        f"/position/AAPL?tenants={TENANTS}&groups=1"
+    ):
+        suffix = _position_tab_scope_suffix()
+    parsed = parse_qs(urlparse("/position/MSFT" + suffix).query)
+    assert parsed["tenants"] == [TENANTS]
+    assert parsed["groups"] == ["1"]
+
+
+def test_fill_and_weekly_trade_drills_pin_row_tenant():
+    templates = Path(app.root_path) / "templates"
+    today = (templates / "today.html").read_text()
+    day = (templates / "day_detail.html").read_text()
+    overview = (templates / "weekly_review.html").read_text()
+
+    assert "symbol=t.symbol, tenant=t.tenant_id or none" in today
+    assert "symbol=t.symbol, tenant=t.tenant_id or none" in day
+    assert overview.count(
+        "symbol=r.symbol, tenant=r.tenant_id or none"
+    ) >= 2
 
 
 def test_positions_open_pill_keeps_tenants():
