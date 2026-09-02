@@ -262,7 +262,7 @@
                     {% for row in strategy_rows %}
                     {% set strat_href = scoped_url('strategies', strategy=row.strategy, tenant=row.tenant_id, tenants=none) %}
                     <tr class="strat-row" data-href="{{ strat_href }}" style="cursor:pointer;">
-                        <td>{{ row.account | account_label }}</td>
+                        <td>{{ row.account | account_label(row.tenant_id) }}</td>
                         <td>
                             <a href="{{ strat_href }}" class="text-decoration-none">
                                 <span class="badge badge-strategy"

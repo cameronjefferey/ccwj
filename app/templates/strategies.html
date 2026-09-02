@@ -439,7 +439,8 @@
         <tbody>
             {% for a in focus_accounts %}
             <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none) }}">
-                <td class="fw-semibold" data-val="{{ a.account }}">{{ a.account | account_label }}</td>
+                {% set _acct = a.account | account_label(a.tenant_id) %}
+                <td class="fw-semibold" data-val="{{ _acct }}">{{ _acct }}</td>
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
                 <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
                 <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">

@@ -79,6 +79,7 @@ def init_db():
             id            SERIAL PRIMARY KEY,
             user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             account_name  TEXT NOT NULL,
+            tenant_id     TEXT,
             history_rows  INTEGER NOT NULL DEFAULT 0,
             current_rows  INTEGER NOT NULL DEFAULT 0,
             uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -568,6 +569,7 @@ def init_db():
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
     _migrate_insight_messages_table()
+    _migrate_uploads_tenant_id_column()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -603,6 +605,21 @@ def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
         )
     except Exception as exc:
         _log.warning("broker_tenants nickname backfill skipped: %s", exc)
+
+
+def _migrate_uploads_tenant_id_column():
+    """Idempotent: stamp CSV/sync upload log rows with ``tenant_id``.
+
+    Profile / Settings / Upload history used to render ``account_name``
+    through a name-only nickname map. Several SnapTrade Schwab tenants
+    share ``account_name = 'Schwab Account'`` with different nicknames,
+    so that map drops the name and the history table prints the broker
+    label. ``tenant_id`` lets ``account_label`` look up the nickname.
+    """
+    try:
+        execute("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS tenant_id TEXT")
+    except Exception as exc:
+        _log.warning("uploads.tenant_id migration skipped: %s", exc)
 
 
 def _migrate_users_email_verified_column():
@@ -1830,17 +1847,17 @@ def get_broken_broker_tenants(user_id):
 # Uploads
 # ------------------------------------------------------------------
 
-def record_upload(user_id, account_name, history_rows, current_rows):
+def record_upload(user_id, account_name, history_rows, current_rows, tenant_id=None):
     execute(
-        "INSERT INTO uploads (user_id, account_name, history_rows, current_rows) "
-        "VALUES (%s, %s, %s, %s)",
-        (user_id, account_name, history_rows, current_rows),
+        "INSERT INTO uploads (user_id, account_name, history_rows, current_rows, tenant_id) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (user_id, account_name, history_rows, current_rows, tenant_id),
     )
 
 
 def get_uploads_for_user(user_id, limit=10):
     return fetch_all(
-        "SELECT account_name, history_rows, current_rows, uploaded_at "
+        "SELECT account_name, history_rows, current_rows, uploaded_at, tenant_id "
         "FROM uploads WHERE user_id = %s ORDER BY uploaded_at DESC LIMIT %s",
         (user_id, limit),
     )

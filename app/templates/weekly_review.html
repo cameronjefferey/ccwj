@@ -223,9 +223,9 @@
         <div class="snapshot-table-row">
             <div>
                 {% if snap.tenant_id %}
-                <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label }}</a>
+                <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label(snap.tenant_id) }}</a>
                 {% else %}
-                <div class="acct-name">{{ snap.account | account_label }}</div>
+                <div class="acct-name">{{ snap.account | account_label(snap.tenant_id) }}</div>
                 {% endif %}
                 {% if snap.today_date_label or snap.today_date %}<div class="acct-meta">{{ snap.today_date_label or snap.today_date }}</div>
                 {% elif snap.today_is_live %}<div class="acct-meta">as of last sync</div>{% endif %}
@@ -315,7 +315,7 @@
                     <div class="tt-muted">{{ t.trade_symbol }}</div>
                     {% endif %}
                     {% if t.account and accounts and accounts|length > 1 %}
-                    <div class="tt-muted">{{ t.account }}</div>
+                    <div class="tt-muted">{{ t.account | account_label(t.tenant_id) }}</div>
                     {% endif %}
                 </td>
                 <td class="tt-muted d-none d-sm-table-cell">

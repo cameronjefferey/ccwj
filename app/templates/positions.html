@@ -508,7 +508,7 @@
                 <tbody>
                     {% for row in symbol_rows %}
                     <tr data-href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label) }}</td>
+                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
                         <td class="fw-semibold">
                             <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
                                 {{ row.symbol }}
@@ -633,7 +633,7 @@
 
                     {% for row in rows %}
                     <tr data-href="{{ scoped_url('strategies', tenant=row.tenant_id, tenants=none, strategy=row.strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label) }}</td>
+                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
                         <td>
                             <a href="{{ scoped_url('strategies',
                                                 tenant=row.tenant_id,

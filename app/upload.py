@@ -1641,7 +1641,7 @@ def merge_and_push_seeds(
         return False, str(exc), history_rows, current_rows, None, False
 
     add_account_for_user(user_id_int, account_name)
-    record_upload(user_id_int, account_name, history_rows, current_rows)
+    record_upload(user_id_int, account_name, history_rows, current_rows, tenant_id=tenant_id_str)
 
     return True, None, history_rows, current_rows, head_sha, no_changes
 
@@ -1738,7 +1738,10 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     # Per-account bookkeeping (idempotent), matching the single-push path.
     for e, hr, cr in prepared_counts:
         add_account_for_user(int(e["user_id"]), e["account_name"])
-        record_upload(int(e["user_id"]), e["account_name"], hr, cr)
+        record_upload(
+            int(e["user_id"]), e["account_name"], hr, cr,
+            tenant_id=e.get("tenant_id"),
+        )
 
     return True, None, head_sha, no_changes, len(valid)
 
@@ -2175,12 +2178,22 @@ def upload():
     except Exception:
         pass
 
+    display_name = account_name
+    try:
+        from app.routes import _tenant_label_map_for_user
+        display_name = (
+            _tenant_label_map_for_user(current_user.id).get(tenant_id)
+            or account_name
+        )
+    except Exception:
+        display_name = account_name
+
     if no_changes:
         # Identical upload — nothing changed on the branch, so no rebuild ran.
         # Don't send the user to the processing page to watch a build that
         # will never start.
         flash(
-            f"That upload for {account_name} matches what's already on file — "
+            f"That upload for {display_name} matches what's already on file — "
             "nothing changed, so there's nothing new to process.",
             "info",
         )
@@ -2188,19 +2201,19 @@ def upload():
 
     if history_df is None:
         flash(
-            f"Upload saved for {account_name} ({current_rows:,} positions). "
+            f"Upload saved for {display_name} ({current_rows:,} positions). "
             "Your data is updating in the background.",
             "success",
         )
     elif current_df is None:
         flash(
-            f"Upload saved for {account_name} ({history_rows:,} trades). "
+            f"Upload saved for {display_name} ({history_rows:,} trades). "
             "Your data is updating in the background.",
             "success",
         )
     else:
         flash(
-            f"Upload saved for {account_name} ({history_rows:,} trades, {current_rows:,} positions). "
+            f"Upload saved for {display_name} ({history_rows:,} trades, {current_rows:,} positions). "
             "Your data is updating in the background.",
             "success",
         )

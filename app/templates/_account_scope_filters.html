@@ -88,7 +88,7 @@
                 <label class="dropdown-item ht-ms-item">
                     <input type="checkbox" value="{{ c.tenant_id }}"
                            {% if c.tenant_id in selected_tenant_ids %}checked{% endif %}>
-                    <span>{{ c.label | account_label }}</span>
+                    <span>{{ c.label | account_label(c.tenant_id) }}</span>
                 </label>
                 {% endfor %}
             </div>
