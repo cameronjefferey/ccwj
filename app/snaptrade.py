@@ -102,27 +102,6 @@ def _ensure_snaptrade_tenant_id(
 SYNC_FULL_HISTORY_LOOKBACK_DAYS = 1825
 SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS = SYNC_FULL_HISTORY_LOOKBACK_DAYS
 
-# Live SnapTrade accounts per user. Each connected account is billed to us
-# by the aggregator; Pro is $19.99. Override with SNAPTRADE_MAX_ACCOUNTS_PER_USER.
-_DEFAULT_MAX_ACCOUNTS_PER_USER = 4
-
-
-def snaptrade_max_accounts_per_user():
-    raw = (os.environ.get("SNAPTRADE_MAX_ACCOUNTS_PER_USER") or "").strip()
-    try:
-        n = int(raw) if raw else _DEFAULT_MAX_ACCOUNTS_PER_USER
-    except ValueError:
-        n = _DEFAULT_MAX_ACCOUNTS_PER_USER
-    return max(1, n)
-
-
-def snaptrade_account_count(user_id):
-    return len(get_snaptrade_accounts(user_id) or [])
-
-
-def snaptrade_at_account_cap(user_id):
-    return snaptrade_account_count(user_id) >= snaptrade_max_accounts_per_user()
-
 
 def _routine_lookback_days() -> int:
     """Calendar days of transactions to request each routine sync."""
@@ -288,15 +267,6 @@ def snaptrade_connect():
     reconnect_auth_id = (request.form.get("reconnect_authorization_id") or "").strip()
     reconnect_broker_label = (request.form.get("reconnect_broker_label") or "").strip()
     is_reconnect = bool(reconnect_auth_id or reconnect_broker_label)
-    if not is_reconnect and snaptrade_at_account_cap(current_user.id):
-        cap = snaptrade_max_accounts_per_user()
-        flash(
-            f"You already have {cap} live broker accounts, which is the "
-            "included limit (each one is billed to us by the aggregator). "
-            "Disconnect one first, or upload a CSV for extra history.",
-            "warning",
-        )
-        return redirect(url_for("snaptrade_accounts_page"))
     client = _get_snaptrade_client()
     if not client:
         flash("Multi-broker connect is not configured. Contact the administrator.", "danger")
@@ -469,8 +439,6 @@ def snaptrade_callback():
         return redirect(url_for("snaptrade_accounts_page"))
 
     saved = 0
-    skipped_new = 0
-    cap = snaptrade_max_accounts_per_user()
     for acc in accounts:
         snaptrade_account_id = str(acc.get("id") or "").strip()
         if not snaptrade_account_id:
@@ -484,9 +452,6 @@ def snaptrade_callback():
         account_name = _stable_account_name(broker_slug, masked)
 
         existed = get_snaptrade_account(user_id, snaptrade_account_id)
-        if not existed and snaptrade_account_count(user_id) >= cap:
-            skipped_new += 1
-            continue
         upsert_snaptrade_account(
             user_id,
             snaptrade_account_id,
@@ -540,14 +505,6 @@ def snaptrade_callback():
             )
         saved += 1
 
-    if skipped_new:
-        flash(
-            f"{skipped_new} extra account{'s' if skipped_new != 1 else ''} "
-            f"from the portal {'were' if skipped_new != 1 else 'was'} not "
-            f"added — the included limit is {cap} live broker accounts. "
-            "Disconnect one first, or upload a CSV for extra history.",
-            "warning",
-        )
     if reconnect_label:
         flash(
             f"{reconnect_label} reconnected — your connection is healthy "
@@ -555,12 +512,6 @@ def snaptrade_callback():
             "success",
         )
     elif saved:
-        flash(
-            f"Connected {saved} account{'s' if saved != 1 else ''}. "
-            f"Use Sync now to pull your data.",
-            "success",
-        )
-    elif not skipped_new:
         flash(
             f"Connected {saved} account{'s' if saved != 1 else ''}. "
             f"Use Sync now to pull your data.",
@@ -2529,36 +2480,13 @@ def _inject_snaptrade_reauth_needed():
     try:
         from flask import g as _g
         if getattr(_g, "_ht_skeleton", False):
-            return {
-                "snaptrade_reauth_needed": [],
-                "snaptrade_account_cap": snaptrade_max_accounts_per_user(),
-                "snaptrade_account_count": 0,
-                "snaptrade_at_cap": False,
-            }
+            return {"snaptrade_reauth_needed": []}
         if not getattr(current_user, "is_authenticated", False):
-            return {
-                "snaptrade_reauth_needed": [],
-                "snaptrade_account_cap": snaptrade_max_accounts_per_user(),
-                "snaptrade_account_count": 0,
-                "snaptrade_at_cap": False,
-            }
+            return {"snaptrade_reauth_needed": []}
         rows = snaptrade_accounts_needing_attention(current_user.id)
-        uid = current_user.id
-        cap = snaptrade_max_accounts_per_user()
-        n = snaptrade_account_count(uid)
-        return {
-            "snaptrade_reauth_needed": rows,
-            "snaptrade_account_cap": cap,
-            "snaptrade_account_count": n,
-            "snaptrade_at_cap": n >= cap,
-        }
+        return {"snaptrade_reauth_needed": rows}
     except Exception:
-        return {
-            "snaptrade_reauth_needed": [],
-            "snaptrade_account_cap": snaptrade_max_accounts_per_user(),
-            "snaptrade_account_count": 0,
-            "snaptrade_at_cap": False,
-        }
+        return {"snaptrade_reauth_needed": []}
 
 
 # Idle extra brokerages (a Robinhood that last pulled Thursday while
