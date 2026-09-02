@@ -11,9 +11,30 @@
         color: rgba(255,255,255,.5); font-weight: 700; margin-bottom: .35rem;
     }
     .review-hero .hero-headline {
-        font-size: 1.65rem; font-weight: 700; line-height: 1.2; margin: 0 0 .35rem;
+        font-size: 1.65rem; font-weight: 700; line-height: 1.2; margin: 0;
     }
-    .review-hero .hero-headline .delta-num { font-variant-numeric: tabular-nums; }
+    .review-hero .hero-book-label {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
+        color: rgba(255,255,255,.5); font-weight: 700; margin: 1.15rem 0 .55rem;
+    }
+    .review-hero .hero-book {
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .75rem 1.25rem;
+    }
+    .review-hero .hero-book-k {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .6px;
+        color: rgba(255,255,255,.45); font-weight: 600; margin-bottom: .2rem;
+    }
+    .review-hero .hero-book-value {
+        font-size: 1.15rem; font-weight: 700; line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+    }
+    .review-hero .hero-book-meta {
+        font-size: .72rem; color: rgba(255,255,255,.45); margin-top: .15rem;
+    }
+    .review-hero .hero-book-dash { color: rgba(255,255,255,.35); font-weight: 600; }
+    .review-hero .text-positive { color: #86efac; }
+    .review-hero .text-negative { color: #fca5a5; }
     .review-hero .hero-subtitle {
         font-size: .9rem; color: rgba(255,255,255,.65); margin: 0;
     }
@@ -22,6 +43,9 @@
         display: flex; flex-wrap: wrap; gap: .65rem; align-items: center;
     }
     .review-hero .badge { font-size: .65rem; padding: .2rem .55rem; }
+    @media (max-width: 700px) {
+        .review-hero .hero-book { grid-template-columns: 1fr 1fr; }
+    }
 
     /* Section card. Ink/surface colors are --ht-* tokens from base.html
        so they flip with data-bs-theme. Hardcoded #0f172a / #94a3b8 each

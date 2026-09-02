@@ -1,9 +1,9 @@
 {% set _done = done_url|default(url_for("weekly_review")) %}
 <script>
-// Shared helper: defer a redirect while the user is mid-onboarding-form
-// on /sync/processing. ``window.__onboardingHoldRedirect`` is set true
-// by sync_processing.html when the user focuses the form; cleared on
-// submit / skip. On every other page the var is undefined → falsy →
+// Shared helper: defer a redirect while the onboarding survey is on
+// screen. ``window.__onboardingHoldRedirect`` is set true for the whole
+// time the form is visible (sync_processing.html); cleared only on
+// Save or Skip. On every other page the var is undefined → falsy →
 // no behavior change. The "ready when you are" label fires once the
 // first deferral happens so the user knows they're the gate.
 function __ghaSafeRedirect(url, label) {

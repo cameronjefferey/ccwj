@@ -8,7 +8,8 @@
 
    Sections, top to bottom:
 
-     1. Session hero       — last-close account delta + market + fill count
+     1. Session hero       — date kicker, Overview, Your book strip
+                             (value / vs prior close / vs 1w / invested)
      2. Account snapshot   — per-account close / vs prior / week / month
                              (unfinished session named in the nav strip)
      3. Session trades     — every fill dated the review session
@@ -45,38 +46,61 @@
 
 {# ════════════════════════════════════
    HERO — last completed session
+   Date kicker (no page name) · Overview · Your book (four numbers).
    ════════════════════════════════════ #}
-<div class="review-hero">
-    <div class="hero-kicker">Overview &middot; {{ (review_date or today).strftime('%A, %b %-d') }} close</div>
-    {% if today_pulse %}
-    {% set _pos = today_pulse.delta >= 0 %}
-    <p class="hero-headline">
-        {{ today_pulse.date_label or (review_date.strftime('%a %b %-d') if review_date else 'Last close') }}:
-        <span class="delta-num {% if _pos %}text-positive{% else %}text-negative{% endif %}"
-              style="color: {% if _pos %}#86efac{% else %}#fca5a5{% endif %};">
-            {% if _pos %}+{% else %}-{% endif %}${{ "{:,.0f}".format(today_pulse.delta|abs) }}
-        </span>
-        {% if hero_account_value and (hero_account_value - today_pulse.delta) > 0 %}
-        {% set _pct = today_pulse.delta / (hero_account_value - today_pulse.delta) * 100 %}
-        <span style="font-size:1rem; color: rgba(255,255,255,.6); font-weight:500;">
-            ({{ "+" if _pct >= 0 else "" }}{{ "%.2f"|format(_pct) }}%)
-        </span>
-        {% endif %}
-        {% if hero_account_value %}
-        <span style="font-size:.85rem; color: rgba(255,255,255,.45); font-weight:500;">
-            &middot; ${{ "{:,.0f}".format(hero_account_value) }} total
-        </span>
-        {% endif %}
-    </p>
-    {% else %}
-    <p class="hero-headline">Overview</p>
+{% set _snaps = today_snapshots_by_account or [] %}
+{% set _book = today_snapshots_total or (_snaps[0] if _snaps|length == 1 else none) %}
+{% set _book_n = (today_snapshots_total.accounts_count if today_snapshots_total else (_snaps|length)) %}
+{% set _book_value = hero_account_value if (hero_account_value is defined and hero_account_value is not none) else ((_book.today_value if _book else none)) %}
+{% macro hero_book_delta(comp) %}
+    {% if comp and comp.has_data and comp.delta is not none %}
+    {% set pos = comp.delta >= 0 %}
+    <div class="hero-book-value {% if pos %}text-positive{% else %}text-negative{% endif %}">
+        {% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+    </div>
+    {% if comp.delta_pct is not none %}
+    <div class="hero-book-meta">{{ "+" if comp.delta_pct >= 0 else "" }}{{ "%.2f"|format(comp.delta_pct) }}%</div>
     {% endif %}
+    {% else %}
+    <div class="hero-book-value hero-book-dash">—</div>
+    {% endif %}
+{% endmacro %}
+<div class="review-hero">
+    <div class="hero-kicker">{{ (review_date or today).strftime('%A, %b %-d') }} close</div>
+    <p class="hero-headline">Overview</p>
 
-    <p class="hero-subtitle">
-        Last close: what you traded, what moved, and what to watch next.
-        <a href="{{ scoped_url('today_view') }}"
-           style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
-    </p>
+    {% if _book_value is not none or _book or equity_snapshot %}
+    <div class="hero-book-label">Your book</div>
+    <div class="hero-book">
+        <div class="hero-book-cell">
+            <div class="hero-book-k">{% if _book_n %}{{ _book_n }} account{{ 's' if _book_n != 1 }}{% else %}Value{% endif %}</div>
+            {% if _book_value is not none %}
+            <div class="hero-book-value">${{ "{:,.0f}".format(_book_value) }}</div>
+            {% else %}
+            <div class="hero-book-value hero-book-dash">—</div>
+            {% endif %}
+        </div>
+        <div class="hero-book-cell">
+            <div class="hero-book-k">{% if overview_prior_date %}vs {{ overview_prior_date.strftime('%a %-d') }}{% else %}vs prior close{% endif %}</div>
+            {{ hero_book_delta(_book.comparisons.day if _book else none) }}
+        </div>
+        <div class="hero-book-cell">
+            <div class="hero-book-k">vs 1 week</div>
+            {{ hero_book_delta(_book.comparisons.week if _book else none) }}
+        </div>
+        <div class="hero-book-cell">
+            <div class="hero-book-k">Invested</div>
+            {% if equity_snapshot and equity_snapshot.pct_invested is not none %}
+            <div class="hero-book-value">{{ "%.0f"|format(equity_snapshot.pct_invested) }}%</div>
+            {% if equity_snapshot.cash_balance is not none %}
+            <div class="hero-book-meta">${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash</div>
+            {% endif %}
+            {% else %}
+            <div class="hero-book-value hero-book-dash">—</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <div class="hero-meta">
         {% if market_session %}
@@ -90,6 +114,8 @@
         {% if market_neutral_line %}
         <span style="color: rgba(255,255,255,.65);">{{ market_neutral_line }}</span>
         {% endif %}
+        <a href="{{ scoped_url('today_view') }}"
+           style="color: rgba(255,255,255,.75);">Live session &rarr;</a>
         <span style="color: rgba(255,255,255,.4);">Times in {{ user_timezone|replace('_', ' ') }}</span>
     </div>
 </div>
