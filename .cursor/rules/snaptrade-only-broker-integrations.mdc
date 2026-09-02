@@ -78,9 +78,7 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
 - **Connection health webhooks:** `CONNECTION_BROKEN` / `CONNECTION_FIXED` mark
   or clear `connection_broken_at` on every `snaptrade_accounts` row for that
   `brokerageAuthorizationId` (`_handle_connection_health` in `app/webhooks.py`).
-  A successful sync still clears the flag reactively. Live SnapTrade accounts
-  per user are capped (`SNAPTRADE_MAX_ACCOUNTS_PER_USER`, default 4) because
-  the aggregator bills per account.
+  A successful sync still clears the flag reactively.
 
 ## Verification
 

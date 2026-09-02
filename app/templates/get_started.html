@@ -183,8 +183,6 @@
                         {% if snaptrade_connected %}
                         <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#snaptrade-sync">Continue sync &rarr;</a>
                         <span class="text-success small ms-2">Connection saved</span>
-                        {% elif snaptrade_at_cap %}
-                        <p class="fine-print mb-0">You already have {{ snaptrade_account_cap }} live broker accounts. Disconnect one in Account settings, or upload a CSV.</p>
                         {% else %}
                         <a class="btn btn-primary" href="{{ url_for('snaptrade_connect') }}">Connect a broker</a>
                         {% endif %}

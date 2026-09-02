@@ -58,10 +58,7 @@ webhook + nightly CLI have efficiency skips; manual routes
 (connect/sync/refresh/upload) use `plan_block_writes` (the
 `demo_block_writes` twin, redirects to /pricing) and `email_block_writes`
 (unverified email cannot open SnapTrade connections or dispatch warehouse
-rebuilds; admins exempt, fails open). Live SnapTrade accounts per user
-are capped (`SNAPTRADE_MAX_ACCOUNTS_PER_USER`, default 4) because the
-aggregator bills per account — reconnect is exempt; the callback skips
-*new* portal accounts over the cap. Existing users were
+rebuilds; admins exempt, fails open). Existing users were
 grandfathered to `plan='beta'` (never freezes) by the one-shot backfill in
 `_migrate_users_plan_columns`; admins + demo are always exempt. Banners
 live in base.html via `plan_status` (context processor in
