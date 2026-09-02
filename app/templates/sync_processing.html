@@ -422,9 +422,12 @@
               role="status" aria-hidden="true"></span>
     </div>
     <div>
-        <h2 class="fw-bold mb-2" id="pipelineHeading">{% if show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
+        <h2 class="fw-bold mb-2" id="pipelineHeading">{% if connecting %}We connected your brokerage{% elif show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
         <p class="processing-sub mb-2">
-            {% if show_onboarding %}
+            {% if connecting %}
+                Now pulling your trade history. Then we build Overview (usually <strong>15–40 minutes</strong>).
+                We'll email you when it's ready — you don't need to hit Sync again.
+            {% elif show_onboarding %}
                 Usually 15–40 minutes. If several accounts synced at once, yours waits in line — we'll email you when Overview is ready. Take your time with the survey.
             {% else %}
                 Your latest info is uploaded. Building the warehouse usually takes <strong>15–40 minutes</strong>.
@@ -668,4 +671,40 @@
 </style>
 {% endif %}
 {% include "includes/_github_actions_poll.html" %}
+{% if connecting %}
+<script>
+(function () {
+    var doneUrl = {{ done_url|tojson }};
+    var statusEndpoint = {{ url_for("api_sync_overview_ready")|tojson }};
+    var label = document.getElementById("pipelineStateLabel");
+    var n = 0;
+    function tick() {
+        n += 1;
+        fetch(statusEndpoint, { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d && d.ready) {
+                    if (label) label.textContent = "All set — bringing you to Overview…";
+                    __ghaSafeRedirect(doneUrl, label);
+                    return;
+                }
+                if (label) {
+                    if (n < 8) {
+                        label.textContent = "Pulling your accounts from the broker…";
+                    } else if (n < 40) {
+                        label.textContent = "Building Overview — usually 15–40 minutes.";
+                    } else {
+                        label.textContent = "Still working — we'll email you when Overview is ready.";
+                    }
+                }
+                if (n < 300) setTimeout(tick, 8000);
+            })
+            .catch(function () {
+                if (n < 300) setTimeout(tick, 10000);
+            });
+    }
+    setTimeout(tick, 2000);
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -505,19 +506,71 @@ def snaptrade_callback():
             )
         saved += 1
 
-    if reconnect_label:
-        flash(
-            f"{reconnect_label} reconnected — your connection is healthy "
-            f"again. Use Sync now to pull the latest data.",
-            "success",
+    if saved:
+        _kick_post_connect_sync(user_id)
+        pending_first = any(
+            not bool(r.get("first_sync_completed"))
+            for r in (get_snaptrade_accounts(user_id) or [])
         )
-    elif saved:
-        flash(
-            f"Connected {saved} account{'s' if saved != 1 else ''}. "
-            f"Use Sync now to pull your data.",
-            "success",
-        )
+        qp = {"connecting": 1}
+        if pending_first:
+            qp["first"] = 1
+        if reconnect_label:
+            flash(
+                f"{reconnect_label} reconnected. We're pulling the latest "
+                "data now.",
+                "success",
+            )
+        else:
+            flash(
+                f"Connected {saved} account{'s' if saved != 1 else ''}. "
+                "We're pulling your trade history now.",
+                "success",
+            )
+        return redirect(url_for("sync_processing", **qp))
     return redirect(url_for("snaptrade_accounts_page"))
+
+
+def _kick_post_connect_sync(user_id):
+    """Start a full pull in the background after the Connection Portal.
+
+    The callback HTTP request must not wait on SnapTrade + seed write
+    (four full-history accounts can outlive the web timeout). No
+    force-refresh: the real-time plan already has the new grant, and
+    that endpoint 403s. First-sync rows still get the long lookback.
+    Nightly ``happytrader-snaptrade-sync`` is the backstop if this
+    worker dies with the gunicorn process.
+    """
+    def _worker():
+        with app.app_context():
+            try:
+                rows = get_snaptrade_accounts(user_id) or []
+                if not rows:
+                    return
+                routine_days = _routine_lookback_days()
+                full_days = SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS
+                for acc_row in rows:
+                    first_done = bool(acc_row.get("first_sync_completed"))
+                    lookback = _bulk_sync_lookback_days(
+                        first_done,
+                        force_full_history=False,
+                        routine_days=routine_days,
+                        full_days=full_days,
+                    )
+                    _sync_one_connection(
+                        user_id, acc_row, lookback_days=lookback,
+                    )
+            except Exception as exc:
+                app.logger.exception(
+                    "post-connect SnapTrade sync failed user_id=%s: %s",
+                    user_id, exc,
+                )
+
+    threading.Thread(
+        target=_worker,
+        name=f"snaptrade-connect-sync-{user_id}",
+        daemon=True,
+    ).start()
 
 
 def _list_snaptrade_accounts(client, snap):
