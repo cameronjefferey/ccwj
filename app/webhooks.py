@@ -334,14 +334,77 @@ def _queue_snaptrade_sync(user_id, snaptrade_account_id):
     return True
 
 
+def _handle_connection_health(event_type, snap_user_id, authorization_id):
+    """CONNECTION_BROKEN / CONNECTION_FIXED: one SnapTrade grant, many accounts."""
+    from app.models import (
+        clear_snaptrade_connection_broken,
+        get_snaptrade_accounts,
+        get_user_id_by_snaptrade_user_id,
+        mark_snaptrade_connection_broken,
+    )
+
+    auth_id = (authorization_id or "").strip()
+    if not auth_id:
+        _log.warning(
+            "snaptrade_webhook: %s missing brokerageAuthorizationId userId=%s",
+            event_type, snap_user_id,
+        )
+        return
+    user_id = get_user_id_by_snaptrade_user_id(str(snap_user_id))
+    if user_id is None:
+        _log.warning(
+            "snaptrade_webhook: %s no HappyTrader user for SnapTrade userId=%s",
+            event_type, snap_user_id,
+        )
+        return
+    rows = [
+        r for r in (get_snaptrade_accounts(user_id) or [])
+        if (r.get("brokerage_authorization_id") or "").strip() == auth_id
+    ]
+    if not rows:
+        _log.warning(
+            "snaptrade_webhook: %s no local rows for auth=%s user_id=%s",
+            event_type, auth_id, user_id,
+        )
+        return
+    if event_type == "CONNECTION_BROKEN":
+        from app.snaptrade_sync_cli import _notify_connection_dropped
+        for r in rows:
+            aid = r.get("snaptrade_account_id")
+            if not aid:
+                continue
+            if mark_snaptrade_connection_broken(user_id, aid):
+                _notify_connection_dropped(user_id, aid, r)
+        _log.info(
+            "snaptrade_webhook: CONNECTION_BROKEN user_id=%s auth=%s accounts=%d",
+            user_id, auth_id, len(rows),
+        )
+        return
+    for r in rows:
+        aid = r.get("snaptrade_account_id")
+        if not aid:
+            continue
+        clear_snaptrade_connection_broken(user_id, aid)
+        _queue_snaptrade_sync(user_id, aid)
+    _log.info(
+        "snaptrade_webhook: CONNECTION_FIXED user_id=%s auth=%s accounts=%d",
+        user_id, auth_id, len(rows),
+    )
+
+
 @app.route("/webhooks/snaptrade", methods=["POST"])
 @csrf.exempt
 @limiter.limit("240 per minute")
 def snaptrade_webhook():
-    """Handle SnapTrade webhooks. The one we act on is
-    ``ACCOUNT_HOLDINGS_UPDATED`` — fired when SnapTrade finishes syncing an
-    account's holdings from the broker — which triggers our own sync for that
-    account. Other event types are acknowledged (200) but not acted on yet.
+    """Handle SnapTrade webhooks. We act on:
+
+    * ``ACCOUNT_HOLDINGS_UPDATED`` — SnapTrade finished syncing holdings;
+      queue our seed sync (debounced).
+    * ``CONNECTION_BROKEN`` / ``CONNECTION_FIXED`` — mark or clear
+      ``connection_broken_at`` on every account under that brokerage
+      authorization so the reconnect banner does not wait for the next cron.
+
+    Other event types are acknowledged (200) but not acted on.
     """
     body = request.get_data() or b""
     try:
@@ -375,6 +438,10 @@ def snaptrade_webhook():
     event_type = (event.get("eventType") or "").strip().upper()
     snap_user_id = event.get("userId")
     account_id = (event.get("accountId") or "").strip()
+    authorization_id = (event.get("brokerageAuthorizationId") or "").strip()
+
+    if event_type in ("CONNECTION_BROKEN", "CONNECTION_FIXED") and snap_user_id:
+        _handle_connection_health(event_type, str(snap_user_id), authorization_id)
 
     if event_type == "ACCOUNT_HOLDINGS_UPDATED" and snap_user_id and account_id:
         from app.models import get_user_id_by_snaptrade_user_id

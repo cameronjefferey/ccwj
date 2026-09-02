@@ -486,8 +486,8 @@ def send_data_ready_email(
     username: str,
     dashboard_url: str,
 ) -> None:
-    """Fired once after a user's first successful broker sync — their data
-    is now in the product. Transactional (one-time activation moment)."""
+    """Fired once after a user's first warehouse rebuild — Overview
+    actually has rows. Transactional (one-time activation moment)."""
     subject = "Your HappyTrader data is ready"
     body = (
         f"Hi {username},\n\n"

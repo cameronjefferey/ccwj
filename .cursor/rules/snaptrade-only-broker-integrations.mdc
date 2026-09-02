@@ -75,12 +75,12 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
   (subscribe/list/cancel) or a `TRADE_DETECTION` webhook branch until a supported
   broker is actually connected and the per-account cost is signed off. Docs:
   https://docs.snaptrade.com/docs/trade-detection
-- **Known gap (accepted):** we do NOT consume SnapTrade's `CONNECTION_BROKEN` /
-  `CONNECTION_FIXED` webhooks. Broken state is inferred *reactively* during a sync
-  attempt (`mark_snaptrade_connection_broken` on an auth error in `app/snaptrade.py`).
-  If Trade Detection is ever built, pair it with these connection-health events
-  (per SnapTrade guidance) so a subscribed account with a dead connection is
-  surfaced instead of silently emitting nothing.
+- **Connection health webhooks:** `CONNECTION_BROKEN` / `CONNECTION_FIXED` mark
+  or clear `connection_broken_at` on every `snaptrade_accounts` row for that
+  `brokerageAuthorizationId` (`_handle_connection_health` in `app/webhooks.py`).
+  A successful sync still clears the flag reactively. Live SnapTrade accounts
+  per user are capped (`SNAPTRADE_MAX_ACCOUNTS_PER_USER`, default 4) because
+  the aggregator bills per account.
 
 ## Verification
 

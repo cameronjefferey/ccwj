@@ -57,7 +57,7 @@ HTTP backend without re-confirming Render egress is no longer 403'd.
 | Password reset | `/forgot-password` | `send_password_reset_email` (`app/auth.py`) |
 | Welcome + verify email | Signup | `send_welcome_verify_email` (`_send_welcome_verification` in `app/auth.py`) |
 | Email verification (resend) | `/resend-verification` or the base.html banner | `send_welcome_verify_email` |
-| Your data is ready | First successful broker sync (rows landed) | `send_data_ready_email` (fired from `_sync_one_connection` in `app/snaptrade.py`, dedupe `data_ready:<user_id>`) |
+| Your data is ready | First warehouse rebuild that is queryable on Overview | `send_data_ready_email` (fired from `_send_data_ready_after_rebuild` on `POST /internal/cache/flush?ready=1` at the end of `bigquery_update.yml`, dedupe `data_ready:<user_id>`). Not the seed write, and not the evening prices flush. |
 | Broker connection dropped | A sync flips `connection_broken_at` NULL→set (week 0) | `send_connection_dropped_email` (fired from `app/snaptrade_sync_cli.py`, dedupe `connection_dropped:<account>:<broken_at_iso>`) |
 | Still disconnected (recurring) | Connection still broken ≥7 days, then weekly | `send_connection_reminder_email` (fired from `run_connection_reminder` in `app/email_digests_cli.py`, dedupe `connection_reminder:<account>:<broken_at_iso>:w<week_index>`) |
 
@@ -75,8 +75,10 @@ which surfaces "stopped syncing X days ago" / "expires in X days").
 and sends the welcome+verify email. `/verify-email/<token>` consumes it and
 stamps `users.email_verified_at`. Unverified signed-in users see a
 "confirm your email" banner (base.html, `email_unverified` from
-`email_needs_verification`) with a resend button. Verification is **not**
-required to use the app — it protects deliverability and account recovery.
+`email_needs_verification`) with a resend button. Pages stay readable;
+connecting a broker, syncing, refreshing, or uploading is blocked until
+the address is confirmed (`email_block_writes` in `app/auth.py`; admins
+exempt, fails open). Pinned by `tests/test_email_verification.py`.
 
 ### Lifecycle / product-marketing (opt-out)
 

@@ -145,6 +145,7 @@ POSITION_TRADES_QUERY = """
         AND (d.user_id IS NOT DISTINCT FROM h.user_id)
         AND d.trade_date         = h.trade_date
         AND d.underlying_symbol  = h.underlying_symbol
+        AND UPPER(TRIM(COALESCE(d.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
         AND ABS(COALESCE(h.quantity, 0) - COALESCE(d.quantity, 0)) < 1e-9
     WHERE h.trade_date IS NOT NULL
       AND (
@@ -1206,6 +1207,63 @@ from app.execution_quality import (  # noqa: E402
 )
 
 
+def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
+    """The tenant-scoped Position Detail parallel batch.
+
+    Shared by the view and the cache warmer so warmed keys match a request.
+    ``safe_symbol`` is already SQL-escaped (``'`` → ``''``).
+    """
+    from app.upload import is_crypto_symbol
+
+    _pos_acct = _tenant_sql_and(tenant_scope)
+    _pos_all_acct = _tenant_sql_and(all_owned_scope)
+    _pos_sc_acct = _tenant_sql_and(tenant_scope, col="sc.tenant_id")
+    _pos_h_acct = _tenant_sql_and(tenant_scope, col="h.tenant_id")
+    queries = {
+        "summary": POSITION_SUMMARY_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "trades": POSITION_TRADES_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_h_acct
+        ),
+        "current": POSITION_CURRENT_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(
+            symbol=safe_symbol, sc_tenant_filter=_pos_sc_acct
+        ),
+        "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "matrix": POSITION_MATRIX_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "legs": POSITION_LEGS_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "accounts_all": POSITION_ACCOUNTS_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_all_acct
+        ),
+        "tabs": SYMBOL_TABS_QUERY.format(tenant_filter=_pos_acct),
+        "earnings": POSITION_EARNINGS_QUERY.format(symbol=safe_symbol),
+        "chart": CHART_DATA_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "splits": POSITION_SPLITS_QUERY.format(symbol=safe_symbol),
+        "execution": POSITION_EXECUTION_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+        "opening": POSITION_OPENING_BALANCES_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        ),
+    }
+    if not is_crypto_symbol(safe_symbol):
+        queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
+            symbol=safe_symbol, tenant_filter=_pos_acct
+        )
+    return queries
+
+
 @app.route("/position/<symbol>")
 @login_required
 @skeleton_page
@@ -1231,88 +1289,10 @@ def position_detail(symbol):
     all_owned_scope = _user_tenant_list()
 
     try:
-        _pos_acct = _tenant_sql_and(tenant_scope)
-        _pos_all_acct = _tenant_sql_and(all_owned_scope)
-        _pos_sc_acct = _tenant_sql_and(tenant_scope, col="sc.tenant_id")
-        # POSITION_TRADES_QUERY joins stg_history (alias h) to int_drip_fills (alias d);
-        # both tables have an `account` column so the filter must be scoped to h.
-        _pos_h_acct = _tenant_sql_and(tenant_scope, col="h.tenant_id")
-        # Single parallel wave. Every query below is a tiny (~MB) read whose
-        # cost is BigQuery's fixed per-job latency, so the win is running them
-        # ALL AT ONCE rather than in serial phases. The chart (mart_daily_pnl)
-        # and dividends (int_dividend_events) reads used to run serially AFTER
-        # this batch (a ~2s round trip each); they are URL-derived and
-        # independent of the batch, so they join the wave here. All the
-        # batch-result-dependent logic (summary narrowing, leg filtering)
-        # stays in Python after the fetch.
         from app.upload import is_crypto_symbol
         _is_crypto = is_crypto_symbol(safe_symbol)
-        _pos_queries = {
-            "summary": POSITION_SUMMARY_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            "trades": POSITION_TRADES_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_h_acct
-            ),
-            "current": POSITION_CURRENT_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            "closed_legs": POSITION_CLOSED_LEGS_QUERY.format(
-                symbol=safe_symbol, sc_tenant_filter=_pos_sc_acct
-            ),
-            "closed_equity": POSITION_CLOSED_EQUITY_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            "matrix": POSITION_MATRIX_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            "legs": POSITION_LEGS_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            # Account-toggle bar source: every account that traded this
-            # symbol across the viewer's FULL owned set (not the ?tenants=
-            # subset), so a toggled-off account is still listed.
-            "accounts_all": POSITION_ACCOUNTS_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_all_acct
-            ),
-            # Lightweight all-symbols rollup that powers the symbol tab strip
-            # at the top of the page. Scoped by `tenant_scope` so the
-            # tabs match the page's account filter (when ?account= is set the
-            # strip narrows; otherwise it spans the viewer's accounts).
-            "tabs": SYMBOL_TABS_QUERY.format(tenant_filter=_pos_acct),
-            # Symbol-level next-earnings date for the hero pill. No account
-            # filter — stg_earnings_calendar is symbol-grain public data.
-            "earnings": POSITION_EARNINGS_QUERY.format(symbol=safe_symbol),
-            # Cumulative daily P&L for the chart (post-processed below).
-            "chart": CHART_DATA_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            # Stock splits for the story engine: a split is both a story
-            # beat ("your 100 shares became 300") and required for correct
-            # running-share state — stg_history quantities are in the
-            # share-units of their fill date (see stock-splits rule). No
-            # tenant filter — stg_split_events is symbol-grain public
-            # market data (like earnings above); running it through the
-            # tenant filter would fail-closed to empty.
-            "splits": POSITION_SPLITS_QUERY.format(symbol=safe_symbol),
-            # Execution review (int_option_exit_quality): after-the-fact
-            # verdicts on early closes / rolls, graded against the
-            # underlying's close at each contract's expiry. Feeds the
-            # mirror sentences and the day-row verdict notes.
-            "execution": POSITION_EXECUTION_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-            # Synthesized opening balances → "history starts here" banner.
-            "opening": POSITION_OPENING_BALANCES_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            ),
-        }
-        # Crypto positions don't pay dividends in our pipeline, so
-        # _compute_breakdown_by_type skips them — don't fetch the frame.
-        if not _is_crypto:
-            _pos_queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
-                symbol=safe_symbol, tenant_filter=_pos_acct
-            )
+        _pos_queries = position_detail_query_batch(
+            safe_symbol, tenant_scope, all_owned_scope)
         dfs = _bq_parallel(client, _pos_queries)
         summary_df = dfs["summary"]
         trades_df = dfs["trades"]

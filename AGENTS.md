@@ -56,7 +56,12 @@ Gating: the MANDATORY chokepoint is `user_sync_allowed` at the top of
 sync attempt — a frozen skip must never look like a broken connection);
 webhook + nightly CLI have efficiency skips; manual routes
 (connect/sync/refresh/upload) use `plan_block_writes` (the
-`demo_block_writes` twin, redirects to /pricing). Existing users were
+`demo_block_writes` twin, redirects to /pricing) and `email_block_writes`
+(unverified email cannot open SnapTrade connections or dispatch warehouse
+rebuilds; admins exempt, fails open). Live SnapTrade accounts per user
+are capped (`SNAPTRADE_MAX_ACCOUNTS_PER_USER`, default 4) because the
+aggregator bills per account — reconnect is exempt; the callback skips
+*new* portal accounts over the cap. Existing users were
 grandfathered to `plan='beta'` (never freezes) by the one-shot backfill in
 `_migrate_users_plan_columns`; admins + demo are always exempt. Banners
 live in base.html via `plan_status` (context processor in
@@ -775,22 +780,32 @@ Page speed matters.
 **Query-cache lifecycle (Aug 2026).** Every user-facing BQ read goes through
 `cached_query_df` (`app/query_cache.py`): per-worker L1 TTLCache (10 min) +
 shared Redis L2 (`ccwj-query-cache` on Render, `QUERY_CACHE_REDIS_URL`, TTL
-24h). The long L2 TTL is safe ONLY because the cache is explicitly flushed
-when the data actually changes: `bigquery_update.yml` and
-`prices_refresh.yml` end with a `curl POST /internal/cache/flush`
-(`X-Cache-Flush-Token` = `CACHE_FLUSH_TOKEN` secret, set both as a GitHub
-secret and a Render env var). The endpoint (`app/cache_ops.py`) clears the
-cache and warms the hottest per-user query sets in a background thread —
-the Overview core batch (`build_daily_review_batch` in
-`app/weekly_review.py`, shared with the view so warmed keys are EXACTLY the
-keys a request looks up) plus the positions-list default query, per user
-with linked tenants plus one unscoped (admin) pass. If you change any of
-those queries' SQL construction, keep the view and the warmer reading the
-same builder or warming silently stops matching. New page queries should
-use `cached_query_df` (or `_bq_parallel`, which wraps it) — a direct
-`client.query().to_dataframe()` in a request handler bypasses the whole
-cache and re-pays 1-5s per load. The BigQuery client itself is memoized
-process-wide (`get_bigquery_client`) — do not construct per-request clients.
+24h — default `QUERY_CACHE_REDIS_TTL_SECONDS=86400`). The long L2 TTL is safe
+ONLY because the cache is explicitly flushed when the data actually changes:
+`bigquery_update.yml` and `prices_refresh.yml` end with a
+`curl POST /internal/cache/flush` (`X-Cache-Flush-Token` =
+`CACHE_FLUSH_TOKEN` secret, set both as a GitHub secret and a Render env
+var). The warehouse rebuild also passes `?ready=1` so the first queryable
+Overview can email `data_ready` (dedupe `email_sends`); the evening prices
+flush must not, or a user still waiting on their first rebuild gets a
+false "your data is ready." The Flask-Limiter store uses
+`RATELIMIT_STORAGE_URI`, else the same `QUERY_CACHE_REDIS_URL`, else
+`memory://`. The endpoint (`app/cache_ops.py`) clears the cache and warms the
+hottest per-user query sets in a background thread — Overview (full batch,
+including `/overview/below`), Today, Positions (all-time), Accounts
+(plus the `acct_chart` payload), Trader Profile, and the top open Position
+Detail symbols, per user with linked tenants plus one unscoped (admin)
+pass. Users with a handful of accounts also get each tenant warmed so a
+`?tenant=` click is a cache hit. If you change any of those queries' SQL
+construction, keep the view and the warmer reading the same builder
+(`build_daily_review_batch`, `accounts_query_batch`,
+`position_detail_query_batch`, `story_query_batch`) or warming silently
+stops matching. The warmer stamps a Redis sentinel so the skeleton shell
+skips on the next navigation. New page queries should use `cached_query_df`
+(or `_bq_parallel`, which wraps it) — a direct `client.query().to_dataframe()`
+in a request handler bypasses the whole cache and re-pays 1-5s per load.
+The BigQuery client itself is memoized process-wide (`get_bigquery_client`)
+— do not construct per-request clients.
 
 ### 5. Pricing Precedence (CLOSE-BASED for equities; broker for cash/options/intraday)
 
@@ -1251,14 +1266,18 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
 
 **App-shell UX layer (Aug 2026).** Five surfaces added in one pass:
 - **Skeleton-first render** (`app/skeleton.py` + `templates/_skeleton.html`):
-  the four BigQuery-heavy pages (`/daily-review`, `/positions`, `/accounts`,
-  `/position/<symbol>`) serve an instant shimmer shell to genuine browser
-  navigations (`Sec-Fetch-Mode: navigate`), which re-fetches the same URL
-  with `X-HT-Full: 1` and document.write()s the real page. A fast full
-  render (<1.5s, i.e. warm query cache) sets a 10-min per-endpoint cookie
-  that skips the shell entirely. Test clients / curl / monitors send no
-  Sec-Fetch-Mode header and always get the full page; `?_full=1` is the
-  JS-error escape hatch. Pinned by `tests/test_skeleton_shell.py`.
+  the four BigQuery-heavy pages (`/overview`, `/positions`, `/accounts`,
+  `/position/<symbol>`) serve a standalone shimmer shell to genuine browser
+  navigations (`Sec-Fetch-Mode: navigate`) — no base.html Postgres context
+  processors — which re-fetches the same URL with `X-HT-Full: 1` and
+  document.write()s the real page. A full render under 4s (warm cache) sets
+  a 24h per-endpoint cookie **and** a Redis sentinel; the post-rebuild
+  warmer stamps the same sentinel so the next click skips the shell. Test
+  clients / curl / monitors send no Sec-Fetch-Mode header and always get
+  the full page; `?_full=1` is the JS-error escape hatch. Overview's
+  X-HT-Full response defers watch/heatmap/scorecards to `/overview/below`
+  so first paint is not gated on attribution. Pinned by
+  `tests/test_skeleton_shell.py`.
 - **PWA install** (`app/static/manifest.webmanifest`, `app/static/sw.js`
   served at `/sw.js` scope-root from `app/marketing.py`, icons generated by
   `scripts/generate_pwa_icons.py`): service worker caches STATIC assets +
@@ -1276,8 +1295,12 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   names keep the `story` vocabulary): plain-English day-by-day review of
   the position, not a transaction-log rehash. A per-account state machine
   detects and names maneuvers — rolls (same-day close+open, strike/expiry
-  direction, net credit), wheels (CSP → assignment → covered calls →
-  called away, with cumulative premium), covered vs naked calls, kept
+  direction, net credit), defined-risk structures whose opens span ≤7 days
+  (iron condor / vertical / strangle named from matching opens on the last
+  wing so a condor short put is not a wheel), wheels (named at assignment
+  of a standalone CSP, then
+  covered calls → called away, with cumulative premium — the put sale
+  itself is not a wheel), covered vs naked calls, kept
   premium on OTM expiry, splits ("your 100 shares became 300", also
   required to keep running-share state honest across pre/post-split
   fill units), assignment/exercise voice (short vs long inferred from

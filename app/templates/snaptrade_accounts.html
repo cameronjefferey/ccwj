@@ -311,14 +311,21 @@
         <h2>Add a broker or another account</h2>
         {% if snaptrade_enabled %}
         <p class="empty-hint mb-3">
+            {% if snaptrade_at_cap %}
+            You have {{ snaptrade_account_count }} of {{ snaptrade_account_cap }} live broker accounts.
+            Disconnect one to add another, or <a href="{{ url_for('upload') }}">upload a CSV</a> for extra history.
+            {% else %}
             Opens the connection portal. Use this for a new brokerage, or
             another account at a broker you already use.
+            {% endif %}
         </p>
 
+        {% if not snaptrade_at_cap %}
         <form method="POST" action="{{ url_for('snaptrade_connect') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary">Connect an account</button>
         </form>
+        {% endif %}
         {% else %}
         <p class="empty-hint">
             Multi-broker connect is not configured in this environment.

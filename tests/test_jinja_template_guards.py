@@ -55,6 +55,22 @@ def test_templates_do_not_use_dict_method_attributes():
     )
 
 
+def test_all_templates_compile():
+    """A nesting mistake 500s the page at request time. Compile every
+    template so a broken `{% if %}` cannot ship green."""
+    from app import app as flask_app
+
+    env = flask_app.jinja_env
+    failed = []
+    for path in sorted(_TEMPLATES.rglob("*.html")):
+        rel = str(path.relative_to(_TEMPLATES))
+        try:
+            env.get_template(rel)
+        except Exception as exc:
+            failed.append(f"{rel}: {exc}")
+    assert not failed, "\n".join(failed)
+
+
 def test_guard_flags_the_story_500_pattern():
     bad = "{% for w in novel.loop.this_week.items %}"
     assert _jinja_dict_method_hits(bad) == [("items", bad)]

@@ -30,14 +30,26 @@ def _rate_limit_key():
 
 
 csrf = CSRFProtect()
-# storage_uri='memory://': counters live in-process. With Gunicorn's
-# multi-worker setup that means each worker has its own counter, so a
-# 30/day cap is effectively (30 * num_workers)/day. That's still a real
-# ceiling for closed-beta sharing — moving to Redis is the right answer
-# once the user count or worker count grows enough that the multiplier
-# matters. Set RATELIMIT_STORAGE_URI=redis://host:port/0 in env to flip.
+
+
+def _rate_limit_storage_uri():
+    """Shared Redis when we have it, so a 30/day cap is 30/day across workers.
+
+    ``RATELIMIT_STORAGE_URI`` wins when set. Otherwise reuse the query-cache
+    Redis (``QUERY_CACHE_REDIS_URL``) so production does not need a second
+    env var. ``memory://`` is the last resort (tests / a laptop with no Redis).
+    """
+    explicit = (os.environ.get("RATELIMIT_STORAGE_URI") or "").strip()
+    if explicit:
+        return explicit
+    redis_url = (os.environ.get("QUERY_CACHE_REDIS_URL") or "").strip()
+    if redis_url:
+        return redis_url
+    return "memory://"
+
+
 limiter = Limiter(
     key_func=_rate_limit_key,
     default_limits=[],
-    storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://"),
+    storage_uri=_rate_limit_storage_uri(),
 )

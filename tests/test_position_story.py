@@ -1,7 +1,8 @@
 """Position story engine (app/position_story.py).
 
-Pins the semantic maneuver detection — rolls, wheels, covered calls,
-kept premium, scale-in/out — and the interlude narration built from the
+Pins the semantic maneuver detection — rolls, wheels, defined-risk
+structures (iron condor / vertical / strangle), covered calls, kept
+premium, scale-in/out — and the interlude narration built from the
 daily-mark chart series. All synthetic frames; no BigQuery.
 """
 
@@ -74,7 +75,9 @@ def test_wheel_full_cycle_narrated():
     ])
     items, _, _stats = build_position_story(df, None)
     text = _headlines(items)
-    assert "Opened a wheel" in text
+    assert "Opened a wheel" not in text
+    assert "Sold 1 contract of the $12 put" in text
+    assert "starting a wheel" in text
     assert "lowers your effective cost basis" in text
     assert "$60 of premium already collected" in text
     assert "covered call" in text
@@ -85,7 +88,122 @@ def test_wheel_full_cycle_narrated():
     assert "Sold the last" not in text
 
 
-def test_short_put_expiry_keeps_premium():
+def test_iron_condor_open_is_not_a_wheel():
+    """DAL-shaped tape: four same-expiry wings. Strategy Breakdown
+    correctly says Iron Condor; the review must not call the short put
+    a wheel (it used to, because any STO put with <100 shares got that
+    lead-in)."""
+    df = _trades([
+        (date(2026, 7, 8), "option_buy_to_open", "Call",
+         "DAL 260717C00095000", 10, 0.82, -817.0),
+        (date(2026, 7, 8), "option_buy_to_open", "Put",
+         "DAL 260717P00083000", 10, 1.75, -1747.0),
+        (date(2026, 7, 8), "option_sell_to_open", "Call",
+         "DAL 260717C00093000", 10, 1.14, 1143.0),
+        (date(2026, 7, 8), "option_sell_to_open", "Put",
+         "DAL 260717P00086000", 10, 2.90, 2903.0),
+        (date(2026, 7, 10), "option_sell_to_close", "Call",
+         "DAL 260717C00095000", 10, 0.40, 400.0),
+        (date(2026, 7, 10), "option_sell_to_close", "Put",
+         "DAL 260717P00083000", 10, 0.80, 800.0),
+        (date(2026, 7, 10), "option_buy_to_close", "Call",
+         "DAL 260717C00093000", 10, 0.50, -500.0),
+        (date(2026, 7, 10), "option_buy_to_close", "Put",
+         "DAL 260717P00086000", 10, 1.20, -1200.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a wheel" not in text
+    assert "bullish" not in text
+    assert "bearish" not in text
+    assert "Opened an iron condor, 10 contracts expiring Jul 17" in text
+    assert "$86 put / $93 call" in text
+    assert "$83 / $95 wings" in text
+    open_day = [i for i in items if i["type"] == "day"
+                and i["date_iso"] == "2026-07-08"][0]
+    assert len(open_day["headlines"]) == 1
+    assert stats["wheels_opened"] == 0
+
+
+def test_put_spread_open_is_not_a_wheel():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put",
+         "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 3), "option_buy_to_open", "Put",
+         "F 240621P00011000", 1, 0.25, -25.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a wheel" not in text
+    assert "Opened a put spread, 1 contract expiring Jun 21" in text
+    assert stats["wheels_opened"] == 0
+
+
+def test_short_strangle_open_is_not_a_wheel():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put",
+         "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 3), "option_sell_to_open", "Call",
+         "F 240621C00014000", 1, 0.45, 45.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a wheel" not in text
+    assert "Opened a short strangle, 1 contract expiring Jun 21" in text
+    assert "$12 put / $14 call" in text
+    assert stats["wheels_opened"] == 0
+
+
+def test_iron_condor_legged_in_over_two_days_is_not_a_wheel():
+    """Classification window is ±7d; the review must name the condor when
+    the last wing lands, not call the first day's short put a wheel."""
+    df = _trades([
+        (date(2026, 7, 8), "option_sell_to_open", "Put",
+         "DAL 260717P00086000", 10, 2.90, 2903.0),
+        (date(2026, 7, 10), "option_buy_to_open", "Call",
+         "DAL 260717C00095000", 10, 0.82, -817.0),
+        (date(2026, 7, 10), "option_buy_to_open", "Put",
+         "DAL 260717P00083000", 10, 1.75, -1747.0),
+        (date(2026, 7, 10), "option_sell_to_open", "Call",
+         "DAL 260717C00093000", 10, 1.14, 1143.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a wheel" not in text
+    assert "starting a wheel" not in text
+    assert "Opened an iron condor over 2 sessions, 10 contracts expiring Jul 17" in text
+    complete = [i for i in items if i["type"] == "day"
+                and i["date_iso"] == "2026-07-10"][0]
+    assert any("iron condor" in h for h in complete["headlines"])
+    assert stats["wheels_opened"] == 0
+
+
+def test_put_spread_legged_in_over_two_days():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put",
+         "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 5), "option_buy_to_open", "Put",
+         "F 240621P00011000", 1, 0.25, -25.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a wheel" not in text
+    assert "Opened a put spread over 2 sessions, 1 contract expiring Jun 21" in text
+    assert stats["wheels_opened"] == 0
+
+
+def test_structure_not_grouped_beyond_seven_days():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put",
+         "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 11), "option_buy_to_open", "Put",
+         "F 240621P00011000", 1, 0.25, -25.0),
+    ])
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Opened a put spread" not in text
+    assert "Sold 1 contract of the $12 put" in text
+    assert stats["wheels_opened"] == 0
     df = _trades([
         (date(2024, 3, 1), "option_sell_to_open", "Put", "T 240315P00016000", 2, 1.15, 230.0),
         (date(2024, 3, 15), "option_expired", "Put", "T 240315P00016000", 2, None, 0.0),
@@ -94,6 +212,9 @@ def test_short_put_expiry_keeps_premium():
     text = _headlines(items)
     assert "expired worthless" in text
     assert "kept the full $230 premium" in text
+    assert "Opened a wheel" not in text
+    assert "starting a wheel" not in text
+    assert _stats["wheels_opened"] == 0
 
 
 def test_long_option_expiry_loses_premium():

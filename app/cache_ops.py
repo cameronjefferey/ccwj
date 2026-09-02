@@ -63,6 +63,40 @@ if not _log.handlers:
 _warm_lock = threading.Lock()
 
 
+def _send_data_ready_after_rebuild():
+    """Email users whose first warehouse is now queryable.
+
+    Dedupe: ``email_sends`` kind ``data_ready``, key ``user_id``. Never
+    raises into the flush request.
+    """
+    try:
+        from app.db import fetch_all
+        from app.email import app_base_url, send_data_ready_email
+        from app.models import User, record_email_send
+
+        rows = fetch_all(
+            "SELECT DISTINCT user_id FROM broker_tenants "
+            "WHERE user_id IS NOT NULL"
+        ) or []
+        for row in rows:
+            uid = row.get("user_id")
+            u = User.get_by_id(uid)
+            if not u or not (u.email or "").strip():
+                continue
+            if not record_email_send(
+                "data_ready", str(uid), user_id=uid, to_email=u.email
+            ):
+                continue
+            send_data_ready_email(
+                to=u.email,
+                username=u.username,
+                dashboard_url=f"{app_base_url()}/overview",
+            )
+            _log.info("data_ready emailed user_id=%s", uid)
+    except Exception as exc:
+        _log.warning("data_ready after rebuild failed: %s", exc)
+
+
 def _warm_scopes():
     """(user_id, tenant_id list) pairs to warm: every user with linked
     tenants, plus one unscoped pass (admin view / shared queries).
@@ -92,11 +126,30 @@ def _warm_scopes():
     return scopes
 
 
-def _warm_one_scope(client, uid, tenant_ids):
+_PER_TENANT_WARM_CAP = 6
+_PD_WARM_SYMBOLS = 8
+
+
+def _stamp_pages_warm(uid, tenant_ids, symbols=()):
+    from app.query_cache import mark_page_warm
+    if uid is None:
+        return
+    extra = ""
+    if tenant_ids is not None and len(tenant_ids) == 1:
+        extra = tenant_ids[0]
+    for page in ("weekly_review", "today_view", "positions", "accounts",
+                 "trader_story"):
+        mark_page_warm(uid, page, extra)
+    if not extra:
+        for sym in symbols:
+            mark_page_warm(uid, "position_detail", str(sym).strip())
+
+
+def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     """Run the hot query sets for one tenant scope through the cache."""
     from app.models import get_user_profile
     from app.query_cache import cached_query_df
-    from app.tenant_scope import tenant_sql_and
+    from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and
     from app.weekly_review import (
         _bq_parallel,
         _date_in_user_tz,
@@ -108,6 +161,13 @@ def _warm_one_scope(client, uid, tenant_ids):
     )
     from app.positions_page import DEFAULT_QUERY as POSITIONS_DEFAULT_QUERY
     from app.trader_story import story_query_batch
+    from app.accounts_page import (
+        _apply_dividend_strategy_labels,
+        _primary_strategy_map,
+        accounts_chart_payload,
+        accounts_query_batch,
+    )
+    from app.position_detail import position_detail_query_batch
 
     tenant_filter = tenant_sql_and(tenant_ids)
 
@@ -120,11 +180,11 @@ def _warm_one_scope(client, uid, tenant_ids):
     market_session = _us_market_session()
     session_date = _snapshot_as_of_date(today, market_session)
 
-    # Overview (close-based landing page).
+    # Overview (close-based landing page) — full batch so /overview/below hits too.
     batch = build_daily_review_batch(
         tenant_filter, today, this_week,
         trades_as_of=session_date, moves_as_of=session_date)
-    _bq_parallel(client, batch)
+    overview_dfs = _bq_parallel(client, batch)
 
     # Live /today page (calendar-today last-trade bars).
     _bq_parallel(client, build_today_batch(tenant_filter, today))
@@ -136,12 +196,49 @@ def _warm_one_scope(client, uid, tenant_ids):
         label="warm_positions",
     )
 
-    # Trader novel (/story): its trades query is the one all-history scan
-    # in the product (~3s cold), so warming it is the difference between
-    # the book opening instantly and the page feeling like a report job.
-    # story_query_batch is the SAME builder the view uses, so the warmed
-    # SQL text is guaranteed to match what a request looks up.
-    _bq_parallel(client, story_query_batch(tenant_ids))
+    # Accounts performance + the Python chart payload (the 4s walk).
+    acct_dfs = _bq_parallel(
+        client, accounts_query_batch(tenant_filter, include_trades=False))
+    try:
+        current_df = filter_df_by_tenant_ids(
+            acct_dfs.get("current"), tenant_ids)
+        strat_summary_df = filter_df_by_tenant_ids(
+            acct_dfs.get("strat_summary"), tenant_ids)
+        strat_class_df = filter_df_by_tenant_ids(
+            acct_dfs.get("strat_class"), tenant_ids)
+        strat_class_df = _apply_dividend_strategy_labels(
+            strat_class_df, strat_summary_df)
+        strategy_map = _primary_strategy_map(strat_summary_df, strat_class_df)
+        accounts_chart_payload(client, tenant_ids, current_df, strategy_map)
+    except Exception as exc:
+        _log.warning("cache warm: accounts chart user=%r failed: %s", uid, exc)
+
+    symbols = []
+    pos = overview_dfs.get("positions") if isinstance(overview_dfs, dict) else None
+    if pos is not None and not getattr(pos, "empty", True) and "symbol" in pos.columns:
+        symbols = (
+            pos["symbol"].dropna().astype(str).str.upper().str.strip()
+            .loc[lambda s: s != ""]
+            .unique()
+            .tolist()
+        )
+        symbols = symbols[:_PD_WARM_SYMBOLS]
+
+    if heavy:
+        _bq_parallel(client, story_query_batch(tenant_ids))
+        owned = tenant_ids
+        for sym in symbols:
+            try:
+                _bq_parallel(
+                    client,
+                    position_detail_query_batch(
+                        str(sym).replace("'", "''"), tenant_ids, owned),
+                )
+            except Exception as exc:
+                _log.warning(
+                    "cache warm: position %s user=%r failed: %s", sym, uid, exc)
+
+    _stamp_pages_warm(uid, tenant_ids, symbols if heavy else ())
 
 
 def _warm_worker():
@@ -154,8 +251,20 @@ def _warm_worker():
         client = get_bigquery_client()
         for uid, tenant_ids in _warm_scopes():
             try:
-                _warm_one_scope(client, uid, tenant_ids)
+                _warm_one_scope(client, uid, tenant_ids, heavy=True)
                 ok += 1
+                ids = list(tenant_ids or [])
+                if uid is not None and 1 < len(ids) <= _PER_TENANT_WARM_CAP:
+                    for tid in ids:
+                        try:
+                            _warm_one_scope(
+                                client, uid, [tid], heavy=False)
+                            ok += 1
+                        except Exception as exc:
+                            failed += 1
+                            _log.warning(
+                                "cache warm: tenant %s user=%r failed: %s",
+                                tid, uid, exc)
             except Exception as exc:
                 failed += 1
                 _log.warning("cache warm: scope user=%r failed: %s", uid, exc)
@@ -178,6 +287,8 @@ def internal_cache_flush():
     Auth: constant-time compare of ``X-Cache-Flush-Token`` against the
     ``CACHE_FLUSH_TOKEN`` env var. Fails closed when the env var is unset.
     ``?warm=0`` skips the warm pass (flush only).
+    ``?ready=1`` (warehouse rebuild only) emails users whose first
+    Overview is now queryable.
     """
     expected = (os.environ.get("CACHE_FLUSH_TOKEN") or "").strip()
     provided = (request.headers.get("X-Cache-Flush-Token") or "").strip()
@@ -185,6 +296,18 @@ def internal_cache_flush():
         abort(403)
 
     query_cache.clear()
+
+    # Seed write is not yet queryable. bigquery_update.yml passes
+    # ``?ready=1`` after a warehouse rebuild so Overview actually has
+    # rows. prices_refresh.yml flushes without that flag — a close snap
+    # must not tell a user whose first rebuild is still queued that
+    # their data is ready.
+    if request.args.get("ready") == "1":
+        threading.Thread(
+            target=_send_data_ready_after_rebuild,
+            name="data-ready-email",
+            daemon=True,
+        ).start()
 
     warming = False
     if request.args.get("warm", "1") != "0":

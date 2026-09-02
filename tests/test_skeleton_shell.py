@@ -11,8 +11,9 @@ gating contract on a dummy decorated route so they run without BigQuery:
   - no Sec-Fetch-Mode header at all    -> full page (test clients, curl,
                                           monitors, old browsers)
 
-A fast (<1.5s) 200 full render must set the warm cookie so the next
-navigation skips the shell while the query cache is hot.
+A fast (<4s) 200 full render must set the warm cookie so the next
+navigation skips the shell while the query cache is hot. A Redis
+sentinel (warmer or prior fast render) also skips the shell.
 """
 
 from app import app
@@ -63,6 +64,20 @@ def test_warm_cookie_skips_shell():
     c.set_cookie("ht_fast__skeleton_test_page", "1")
     r = c.get("/_test/skeleton-page", headers={"Sec-Fetch-Mode": "navigate"})
     assert r.get_data(as_text=True) == "FULL_PAGE_BODY"
+
+
+def test_warm_sentinel_skips_shell(monkeypatch):
+    monkeypatch.setattr("app.skeleton._redis_says_warm", lambda: True)
+    r = _client().get(
+        "/_test/skeleton-page", headers={"Sec-Fetch-Mode": "navigate"}
+    )
+    assert r.get_data(as_text=True) == "FULL_PAGE_BODY"
+
+
+def test_fast_render_threshold_covers_warm_pages():
+    from app.skeleton import _FAST_RENDER_SECONDS, _WARM_COOKIE_MAX_AGE
+    assert _FAST_RENDER_SECONDS >= 4.0
+    assert _WARM_COOKIE_MAX_AGE >= 86400
 
 
 def test_non_navigation_clients_get_full_page():

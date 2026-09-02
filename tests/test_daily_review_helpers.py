@@ -345,11 +345,13 @@ class TestBuildBreakdownTotals:
 
 class TestBuildTodayMovers:
     def test_option_query_caps_mart_rows_at_latest_official_close(self):
-        """UTC tomorrow rows must not replace the latest U.S. trading day."""
+        """Cap option day-moves at @as_of (the session date), not a
+        full-symbol stg_daily_prices scan. UTC-tomorrow mart rows are
+        excluded by ``m.date <= @as_of``."""
         normalized = " ".join(TODAY_OPTIONS_MOVES_QUERY.lower().split())
-        assert "max(date) as as_of_date" in normalized
-        assert "analytics.stg_daily_prices" in normalized
-        assert "m.date <= c.as_of_date" in normalized
+        assert "m.date <= @as_of" in normalized
+        assert "date_sub(@as_of, interval 10 day)" in normalized
+        assert "stg_daily_prices" not in normalized
 
     def test_empty_input(self):
         result = _build_today_movers(None)
@@ -1664,6 +1666,34 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "ex_div_calendar" in batch
         assert "stg_ex_div_calendar" in batch["ex_div_calendar"]
         assert "upcoming_divs" in batch
+
+
+    def test_core_and_below_keys_partition_the_batch(self):
+        from app.weekly_review import (
+            OVERVIEW_BELOW_KEYS, OVERVIEW_CORE_KEYS, build_daily_review_batch,
+        )
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 8, 13), date(2026, 8, 10))
+        assert OVERVIEW_CORE_KEYS.isdisjoint(OVERVIEW_BELOW_KEYS)
+        assert OVERVIEW_CORE_KEYS | OVERVIEW_BELOW_KEYS == set(batch)
+        assert "attribution" in OVERVIEW_BELOW_KEYS
+        assert "today_trades" in OVERVIEW_CORE_KEYS
+
+
+    def test_options_moves_does_not_scan_all_symbols_prices(self):
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 8, 13), date(2026, 8, 10))
+        opt_sql, _ = batch["today_options_moves"]
+        assert "stg_daily_prices" not in opt_sql
+        assert "date <= @as_of" in opt_sql
+        assert "DATE_SUB(@as_of, INTERVAL 10 DAY)" in opt_sql
+
+
+    def test_upcoming_divs_guards_zero_spacing(self):
+        from app.weekly_review import UPCOMING_DIVIDENDS_QUERY
+        assert "NULLIF(c.median_spacing_days, 0)" in UPCOMING_DIVIDENDS_QUERY
 
 
 class TestReviewSessionDates:

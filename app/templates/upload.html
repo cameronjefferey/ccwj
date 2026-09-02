@@ -142,8 +142,12 @@
             You can still connect Schwab — or any other broker via SnapTrade —
             to bring in your trades automatically.
             <div class="mt-2 d-flex gap-2 flex-wrap">
+                {% if snaptrade_at_cap %}
+                <span class="small">You have {{ snaptrade_account_count }} of {{ snaptrade_account_cap }} live broker accounts. Disconnect one to add another.</span>
+                {% else %}
                 <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-sm btn-primary">Connect your broker</a>
                 <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-sm btn-outline-primary">Connect another broker</a>
+                {% endif %}
             </div>
             {# Operator note: set the GITHUB_PAT environment variable to enable CSV uploads. #}
         </div>

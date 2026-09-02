@@ -298,3 +298,16 @@ def test_stats_helpers_noop_without_active_request(cache_on):
     # cached_query_df must still work when there's no stats object.
     df = cached_query_df(client, "SELECT 1 FROM t", label="x")
     assert not df.empty
+
+
+def test_redis_ttl_defaults_to_a_day():
+    assert query_cache._REDIS_DEFAULT_TTL == 86400
+    # L1 stays short; L2 is the 24h layer (flush on warehouse rebuild).
+    assert query_cache._TTL_SECONDS <= 600
+
+
+def test_page_warm_sentinel_roundtrip(cache_on):
+    query_cache.mark_page_warm(9, "weekly_review")
+    assert query_cache.is_page_warm(9, "weekly_review") is True
+    assert query_cache.is_page_warm(9, "accounts") is False
+    assert query_cache.is_page_warm(8, "weekly_review") is False

@@ -425,10 +425,10 @@
         <h2 class="fw-bold mb-2" id="pipelineHeading">{% if show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
         <p class="processing-sub mb-2">
             {% if show_onboarding %}
-                Usually about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}. Take your time with the survey.
+                Usually 15–40 minutes. If several accounts synced at once, yours waits in line — we'll email you when Overview is ready. Take your time with the survey.
             {% else %}
-                Your latest info is uploaded and we’re creating fresh insights just for you.
-                This usually takes about {{ expected_minutes }} minute{{ 's' if expected_minutes != 1 }}.
+                Your latest info is uploaded. Building the warehouse usually takes <strong>15–40 minutes</strong>.
+                If several accounts synced at once, yours waits in line. We'll email you when Overview is ready.
             {% endif %}
         </p>
         <p class="small text-muted mb-{% if show_onboarding %}0{% else %}3{% endif %}" id="pipelineStateLabel" aria-live="polite">Just a sec…</p>
@@ -437,7 +437,7 @@
             Open Overview
         </a>
         <p class="processing-sub small mt-3 mb-0">
-            We’ll take you to Overview when it’s ready, or you can open it anytime.
+            We’ll take you to Overview when the build finishes, or you can open it anytime. If this takes a while, we’ll email you.
         </p>
         {% endif %}
     </div>

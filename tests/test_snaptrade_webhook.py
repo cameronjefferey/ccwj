@@ -149,6 +149,54 @@ def test_webhook_ignores_non_holdings_events():
     assert _FakeThread.instances == [], "only ACCOUNT_HOLDINGS_UPDATED syncs"
 
 
+def test_webhook_connection_broken_marks_every_account_on_the_grant(monkeypatch):
+    marked = []
+    monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id",
+                        lambda sid: 9 if sid == "snap-user-1" else None)
+    monkeypatch.setattr(_models, "get_snaptrade_accounts", lambda uid: [
+        {"snaptrade_account_id": "acc-1", "brokerage_authorization_id": "auth-a"},
+        {"snaptrade_account_id": "acc-2", "brokerage_authorization_id": "auth-a"},
+        {"snaptrade_account_id": "acc-other", "brokerage_authorization_id": "auth-b"},
+    ])
+    monkeypatch.setattr(_models, "mark_snaptrade_connection_broken",
+                        lambda uid, aid: marked.append((uid, aid)) or True)
+    monkeypatch.setattr(
+        "app.snaptrade_sync_cli._notify_connection_dropped",
+        lambda *a, **k: None,
+    )
+    payload = {
+        "eventType": "CONNECTION_BROKEN",
+        "userId": "snap-user-1",
+        "brokerageAuthorizationId": "auth-a",
+    }
+    r = _post(payload, signature=_sign(payload))
+    assert r.status_code == 200
+    assert marked == [(9, "acc-1"), (9, "acc-2")]
+    assert _FakeThread.instances == [], "a break must not queue a holdings sync"
+
+
+def test_webhook_connection_fixed_clears_and_resyncs(monkeypatch):
+    cleared = []
+    monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id",
+                        lambda sid: 9 if sid == "snap-user-1" else None)
+    monkeypatch.setattr(_models, "get_snaptrade_accounts", lambda uid: [
+        {"snaptrade_account_id": "acc-1", "brokerage_authorization_id": "auth-a"},
+        {"snaptrade_account_id": "acc-2", "brokerage_authorization_id": "auth-a"},
+    ])
+    monkeypatch.setattr(_models, "clear_snaptrade_connection_broken",
+                        lambda uid, aid: cleared.append(aid))
+    payload = {
+        "eventType": "CONNECTION_FIXED",
+        "userId": "snap-user-1",
+        "brokerageAuthorizationId": "auth-a",
+    }
+    r = _post(payload, signature=_sign(payload))
+    assert r.status_code == 200
+    assert cleared == ["acc-1", "acc-2"]
+    assert len(_FakeThread.instances) == 2
+    assert {t.args for t in _FakeThread.instances} == {(9, "acc-1"), (9, "acc-2")}
+
+
 def test_webhook_unknown_user_no_sync(monkeypatch):
     monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id",
                         lambda sid: None)

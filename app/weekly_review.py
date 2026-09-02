@@ -61,7 +61,7 @@ def _bq_parallel(client, queries):
 
     # Cap at 16 (was 8): Daily Review fans out to ~16 tiny queries, each
     # dominated by BigQuery's fixed per-job latency; one wave beats two.
-    with ThreadPoolExecutor(max_workers=min(len(queries), 16)) as pool:
+    with ThreadPoolExecutor(max_workers=min(len(queries), 20)) as pool:
         # Copy the request context per task so the query-cache stats
         # ContextVar reaches the worker thread (per-query timing).
         futures = [
@@ -751,29 +751,20 @@ WHERE h.shares > 0
 # Symbol-grain aggregate (like TODAY_MOVES_QUERY): tenant-scoped in SQL,
 # no account column → not DataFrame-filtered (nothing leakable to merge).
 TODAY_OPTIONS_MOVES_QUERY = """
-WITH close_as_of AS (
-    SELECT
-        symbol,
-        MAX(date) AS as_of_date
-    FROM `ccwj-dbt.analytics.stg_daily_prices`
-    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
-      AND date <= @as_of
-      AND close_price IS NOT NULL
-      AND close_price > 0
-    GROUP BY symbol
-),
-opt AS (
+WITH opt AS (
     SELECT
         m.tenant_id, m.account, m.user_id, m.symbol, m.date,
         COALESCE(m.cumulative_options_pnl, 0)
           + COALESCE(m.open_options_unrealized_pnl, 0) AS opt_total,
         COALESCE(m.open_options_unrealized_pnl, 0) AS open_mtm
     FROM `ccwj-dbt.analytics.mart_daily_pnl` m
-    JOIN close_as_of c
-      ON m.symbol = c.symbol
-     AND m.date <= c.as_of_date
-    WHERE m.date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)
+    WHERE m.date >= DATE_SUB(@as_of, INTERVAL 10 DAY)
+      AND m.date <= @as_of
       {tenant_filter}
+      AND (
+        COALESCE(m.open_options_unrealized_pnl, 0) != 0
+        OR COALESCE(m.cumulative_options_pnl, 0) != 0
+      )
 ),
 ranked AS (
     SELECT *,
@@ -965,11 +956,11 @@ projected AS (
               GREATEST(
                 CEIL(
                   DATE_DIFF(CURRENT_DATE(), le.last_ex_div_date, DAY)
-                  / CAST(COALESCE(c.median_spacing_days, 91) AS FLOAT64)
+                  / CAST(COALESCE(NULLIF(c.median_spacing_days, 0), 91) AS FLOAT64)
                 ),
                 1
               ) AS INT64
-            ) * COALESCE(c.median_spacing_days, 91)
+            ) * COALESCE(NULLIF(c.median_spacing_days, 0), 91)
             DAY)
         END AS projected_next_ex_div_date
     FROM last_event le
@@ -3741,6 +3732,25 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
     }
 
 
+# Hero / snapshot / session trades / movers / strip — what the first screen
+# needs. Watch list, heatmap, scorecards, and trades-this-week wait on a
+# second request when the skeleton's X-HT-Full fetch is in flight so that
+# round-trip is not gated on attribution / upcoming_divs / calendar.
+OVERVIEW_CORE_KEYS = frozenset({
+    "account_value", "snapshots", "positions",
+    "today_moves", "today_options_moves", "today_dividends",
+    "today_trades", "benchmark_snapshot", "market_perf",
+})
+OVERVIEW_BELOW_KEYS = frozenset({
+    "calendar", "earnings", "upcoming_divs", "ex_div_calendar",
+    "weekly_trades", "attribution", "exit_verdicts",
+})
+
+
+def _slice_daily_review_batch(batch, keys):
+    return {k: batch[k] for k in keys if k in batch}
+
+
 def build_today_batch(tenant_filter, today):
     """Live-session queries for ``/today``.
 
@@ -3800,6 +3810,122 @@ def _today_delay_copy(market_session):
             "until the next open."
         )
     return {"shared": shared, "extra": extra, "state": state}
+
+
+def _apply_overview_below(context, batch, *, today, this_week, market_today,
+                          snap_cutoff, tenant_ids):
+    """Watch list / execution / heatmap / scorecards / trades-this-week.
+
+    Shared by the full Overview render and the deferred ``overview_below``
+    fragment so the two cannot drift.
+    """
+    from app.routes import _tenant_label_map_for_user
+
+    try:
+        earn_df = batch.get("earnings", pd.DataFrame())
+        if earn_df is not None and not earn_df.empty:
+            for _, row in earn_df.iterrows():
+                ed = row.get("next_earnings_date")
+                if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
+                    continue
+                ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
+                try:
+                    days_until = (ed_date - today).days
+                except TypeError:
+                    days_until = None
+                if days_until is not None and days_until < 0:
+                    continue
+                item = {
+                    "symbol": str(row["symbol"]),
+                    "company": str(row.get("long_name") or ""),
+                    "sector": str(row.get("sector") or "") if row.get("sector") not in (None, "Unknown") else "",
+                    "subsector": str(row.get("subsector") or "") if row.get("subsector") not in (None, "Unknown") else "",
+                    "earnings_date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                    "earnings_date_display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                    "days_until": days_until,
+                }
+                if days_until is not None and days_until <= 7:
+                    context["upcoming_earnings_this_week"].append(item)
+                else:
+                    context["upcoming_earnings_next_week"].append(item)
+    except Exception as e:
+        app.logger.warning("Earnings processing failed: %s", e)
+
+    try:
+        ud_df = batch.get("upcoming_divs", pd.DataFrame())
+        cal_df = batch.get("ex_div_calendar", pd.DataFrame())
+        context["upcoming_ex_dividends"] = _build_upcoming_dividends(
+            ud_df, today=today, calendar_df=cal_df)
+    except Exception as e:
+        app.logger.warning("Upcoming ex-div processing failed: %s", e)
+
+    try:
+        ev_df = batch.get("exit_verdicts", pd.DataFrame())
+        context["exit_verdicts_landed"] = _verdicts_landed(
+            ev_df, market_today - timedelta(days=6), market_today)
+        context["exit_verdicts_pending"] = _verdicts_pending(
+            ev_df, market_today)
+    except Exception as e:
+        app.logger.warning("Execution verdicts processing failed: %s", e)
+    context["open_option_record"] = None
+
+    _wk_tag_rows, context["all_user_tags"] = _user_leg_tags(
+        current_user.id, tenant_ids)
+    context["_wk_tag_rows"] = _wk_tag_rows
+    try:
+        label_map = _tenant_label_map_for_user(current_user.id)
+        wt_df, tw_start, tw_is_prior = _pick_trades_week_frame(
+            batch.get("weekly_trades", pd.DataFrame()), this_week)
+        context["trades_week_is_prior"] = tw_is_prior
+        context["trades_week_start"] = tw_start
+        context["trades_this_week"] = _build_trades_this_week(
+            wt_df, tw_start, tw_start + timedelta(days=6),
+            label_map=label_map,
+            tag_rows=_wk_tag_rows,
+        )
+    except Exception as e:
+        app.logger.warning("Trades-this-week processing failed: %s", e)
+
+    try:
+        attr_df = batch.get("attribution", pd.DataFrame())
+        label_map = _tenant_label_map_for_user(current_user.id)
+        ab = _build_account_breakdown(
+            attr_df, label_map=label_map, week_start=this_week,
+        )
+        basis = ab.get("basis")
+        if basis and basis.get("days"):
+            bench_start = today - timedelta(days=int(basis["days"]))
+            ab["benchmarks"] = _build_benchmark_rows(
+                basis, _get_benchmark_returns(bench_start)
+            )
+            ab["benchmark_start"] = bench_start
+        context["account_breakdown"] = ab
+    except Exception as e:
+        app.logger.warning("Account breakdown processing failed: %s", e)
+
+    daily_changes_map = {}
+    try:
+        cal_df = batch.get("calendar", pd.DataFrame())
+        if cal_df is not None and not cal_df.empty:
+            for col in ["account_value", "daily_change"]:
+                if col in cal_df.columns:
+                    cal_df[col] = pd.to_numeric(cal_df[col], errors="coerce").fillna(0)
+            if "date" in cal_df.columns:
+                cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
+            for _, row in cal_df.iterrows():
+                d = row["date"]
+                if snap_cutoff is not None and d > snap_cutoff:
+                    continue
+                daily_changes_map[d] = round(float(row.get("daily_change") or 0), 2)
+            context["daily_calendar_no_query_rows"] = False
+        else:
+            context["daily_calendar_no_query_rows"] = True
+        context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)
+    except Exception as e:
+        app.logger.warning("Calendar grid failed: %s", e)
+        context["daily_calendar_no_query_rows"] = True
+        context["calendar_grid"] = _build_calendar_grid({}, today)
+    return daily_changes_map
 
 
 # Decorator order is intentional: ``/overview`` is the innermost (applied
@@ -3899,6 +4025,8 @@ def weekly_review():
         "exit_verdicts_landed": [],
         "exit_verdicts_pending": None,
         "open_option_record": None,
+        "overview_below_deferred": False,
+        "overview_below_url": None,
     }
 
     daily_changes_map = {}
@@ -3923,9 +4051,23 @@ def weekly_review():
         context["review_date"] = session_date
         context["review_is_today"] = False
 
-        batch_queries = build_daily_review_batch(
+        full_batch = build_daily_review_batch(
             tenant_filter, today, this_week,
             trades_as_of=session_date, moves_as_of=session_date)
+        # The skeleton's X-HT-Full fetch is the round-trip the user stares
+        # at. Drop watch/heatmap/scorecards/week-trades from that request
+        # and fill them in via /overview/below (same query-cache keys the
+        # warmer already populated). Test clients / curl get everything
+        # in one response (no X-HT-Full).
+        defer_below = request.headers.get("X-HT-Full") == "1"
+        context["overview_below_deferred"] = defer_below
+        if defer_below:
+            context["overview_below_url"] = url_for(
+                "overview_below", **request.args.to_dict())
+            batch_queries = _slice_daily_review_batch(
+                full_batch, OVERVIEW_CORE_KEYS)
+        else:
+            batch_queries = full_batch
 
         try:
             batch = _bq_parallel(client, batch_queries)
@@ -4159,39 +4301,6 @@ def weekly_review():
         except Exception as e:
             app.logger.warning("Open positions processing failed: %s", e)
 
-        # ── Upcoming earnings ─────────────────────────────────────────
-        try:
-            earn_df = batch.get("earnings", pd.DataFrame())
-            if not earn_df.empty:
-                for _, row in earn_df.iterrows():
-                    ed = row.get("next_earnings_date")
-                    if ed is None or (hasattr(ed, "__float__") and pd.isna(ed)):
-                        continue
-                    ed_date = ed.date() if hasattr(ed, "date") and not isinstance(ed, date) else ed
-                    # Day count vs the USER's today (profile tz), not SQL's
-                    # UTC CURRENT_DATE() — see EARNINGS_UPCOMING_QUERY comment.
-                    try:
-                        days_until = (ed_date - today).days
-                    except TypeError:
-                        days_until = None
-                    if days_until is not None and days_until < 0:
-                        continue  # already reported in the user's timezone
-                    item = {
-                        "symbol": str(row["symbol"]),
-                        "company": str(row.get("long_name") or ""),
-                        "sector": str(row.get("sector") or "") if row.get("sector") not in (None, "Unknown") else "",
-                        "subsector": str(row.get("subsector") or "") if row.get("subsector") not in (None, "Unknown") else "",
-                        "earnings_date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
-                        "earnings_date_display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
-                        "days_until": days_until,
-                    }
-                    if days_until is not None and days_until <= 7:
-                        context["upcoming_earnings_this_week"].append(item)
-                    else:
-                        context["upcoming_earnings_next_week"].append(item)
-        except Exception as e:
-            app.logger.warning("Earnings processing failed: %s", e)
-
         # ── Today's stock movers (held symbols) ───────────────────────
         # Now includes option P&L day-moves and dividends paid today, so
         # "today's $ impact" is the whole story, not just equity closes.
@@ -4223,52 +4332,10 @@ def weekly_review():
 
         context["after_hours_movers"] = None
 
-        # ── Projected ex-dividend dates ───────────────────────────────
-        try:
-            ud_df = batch.get("upcoming_divs", pd.DataFrame())
-            # Symbol-grain public calendar (stg_ex_div_calendar). Holdings
-            # were tenant-scoped in SQL; no tenant_id on the frame — do
-            # not run it through _filter_df_by_tenant_ids.
-            cal_df = batch.get("ex_div_calendar", pd.DataFrame())
-            context["upcoming_ex_dividends"] = _build_upcoming_dividends(
-                ud_df, today=today, calendar_df=cal_df)
-        except Exception as e:
-            app.logger.warning("Upcoming ex-div processing failed: %s", e)
-
-        # ── Execution verdicts + live open-option record ──────────────
-        # Verdicts MATURE on their expiry date (that's when the expiry
-        # counterfactual becomes knowable), so the feed shows the ones
-        # that landed in the last 7 days plus the pending open loop —
-        # new information on the day it arrives, not a lifetime rehash.
-        try:
-            ev_df = batch.get("exit_verdicts", pd.DataFrame())
-            context["exit_verdicts_landed"] = _verdicts_landed(
-                ev_df, market_today - timedelta(days=6), market_today)
-            context["exit_verdicts_pending"] = _verdicts_pending(
-                ev_df, market_today)
-        except Exception as e:
-            app.logger.warning("Execution verdicts processing failed: %s", e)
-        # Live open-contract marks live on /today, not the close-based recap.
-        context["open_option_record"] = None
-
-        # ── Trades opened / closed this week ──────────────────────────
+        # Session-trade tags always; week-trades / watch / heatmap / scorecards
+        # are either in this response (test clients) or /overview/below.
         _wk_tag_rows, context["all_user_tags"] = _user_leg_tags(
             current_user.id, tenant_ids)
-        try:
-            label_map = _tenant_label_map_for_user(current_user.id)
-            wt_df, tw_start, tw_is_prior = _pick_trades_week_frame(
-                batch.get("weekly_trades", pd.DataFrame()), this_week)
-            context["trades_week_is_prior"] = tw_is_prior
-            context["trades_week_start"] = tw_start
-            context["trades_this_week"] = _build_trades_this_week(
-                wt_df, tw_start, tw_start + timedelta(days=6),
-                label_map=label_map,
-                tag_rows=_wk_tag_rows,
-            )
-        except Exception as e:
-            app.logger.warning("Trades-this-week processing failed: %s", e)
-
-        # ── Fills dated the review session (adds/trims, not just new groups)
         try:
             label_map = _tenant_label_map_for_user(current_user.id)
             fills = _split_day_fills(
@@ -4277,74 +4344,35 @@ def weekly_review():
                 tag_rows=_wk_tag_rows,
             )
             context["trades_today"] = fills
-            today_syms = {s.upper() for s in fills.get("symbols") or [] if s}
-            for row in (context.get("trades_this_week") or {}).get("trades") or []:
-                row["traded_today"] = str(row.get("symbol") or "").upper() in today_syms
         except Exception as e:
             app.logger.warning("Trades-today processing failed: %s", e)
+            fills = context.get("trades_today") or {}
 
-        # ── Performance by account (summarized scorecard) ─────────────
-        try:
-            attr_df = batch.get("attribution", pd.DataFrame())
-            label_map = _tenant_label_map_for_user(current_user.id)
-            ab = _build_account_breakdown(
-                attr_df, label_map=label_map, week_start=this_week,
+        if not defer_below:
+            daily_changes_map = _apply_overview_below(
+                context, batch,
+                today=today, this_week=this_week,
+                market_today=market_today, snap_cutoff=snap_cutoff,
+                tenant_ids=tenant_ids,
             )
-            # Benchmark "did I beat the index?" rows: index return over the
-            # SAME holding window on the SAME capital, rendered under the
-            # totals line. One extra small market-data query (window depends
-            # on the attribution result, so it can't join the parallel batch).
-            basis = ab.get("basis")
-            if basis and basis.get("days"):
-                bench_start = today - timedelta(days=int(basis["days"]))
-                ab["benchmarks"] = _build_benchmark_rows(
-                    basis, _get_benchmark_returns(bench_start)
-                )
-                ab["benchmark_start"] = bench_start
-            context["account_breakdown"] = ab
-        except Exception as e:
-            app.logger.warning("Account breakdown processing failed: %s", e)
+            today_syms = {s.upper() for s in (fills.get("symbols") or []) if s}
+            for row in (context.get("trades_this_week") or {}).get("trades") or []:
+                row["traded_today"] = str(row.get("symbol") or "").upper() in today_syms
+        else:
+            daily_changes_map = {}
 
-        # ── Daily account Δ calendar grid ─────────────────────────────
+        # First-week framing from the snapshot frame (already in the core
+        # batch) so a deferred Overview still shows the banner without
+        # waiting on the calendar query.
         try:
-            cal_df = batch.get("calendar", pd.DataFrame())
-            if not cal_df.empty:
-                for col in ["account_value", "daily_change"]:
-                    if col in cal_df.columns:
-                        cal_df[col] = pd.to_numeric(cal_df[col], errors="coerce").fillna(0)
-                if "date" in cal_df.columns:
-                    cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
-                for _, row in cal_df.iterrows():
-                    d = row["date"]
-                    if d > snap_cutoff:
-                        continue
-                    daily_changes_map[d] = round(float(row.get("daily_change") or 0), 2)
-
-            context["daily_calendar_no_query_rows"] = cal_df.empty
-            context["calendar_grid"] = _build_calendar_grid(daily_changes_map, today)
-        except Exception as e:
-            app.logger.warning("Calendar grid failed: %s", e)
-            context["daily_calendar_no_query_rows"] = True
-            context["calendar_grid"] = _build_calendar_grid({}, today)
-
-        # ── First-week framing ─────────────────────────────────────────
-        # A brand-new user's Daily Review is structurally dash-heavy: the
-        # vs-yesterday / 1w / 1m comparisons and the Δ calendar all need
-        # accumulated daily snapshots, which only start the day they
-        # connect. Without framing that reads as "broken page" (the exact
-        # first impression we can't afford). ``snapshot_days`` counts the
-        # distinct snapshot dates in the calendar window; under 5 we show
-        # a "day N — comparisons unlock as history accumulates" banner and
-        # soften the calendar empty-state. Trade history itself backfills
-        # in full on the first sync, so positions/breakdowns are complete
-        # from day one — the banner says so explicitly.
-        try:
+            snap_df = batch.get("snapshots", pd.DataFrame())
             snapshot_days = len(daily_changes_map)
+            if snapshot_days == 0 and snap_df is not None and not snap_df.empty and "date" in snap_df.columns:
+                snapshot_days = int(snap_df["date"].nunique())
             has_any_accounts = bool(user_accounts)
             if has_any_accounts and snapshot_days < 5 and not context.get("error"):
                 context["building_history"] = {
                     "days": snapshot_days,
-                    # day 0 = first snapshot lands tonight; render as day 1
                     "day_number": max(snapshot_days, 0) + 1,
                 }
         except Exception:
@@ -4391,6 +4419,114 @@ def weekly_review():
     # every page — no per-page context needed here.
 
     return render_template("weekly_review.html", **context)
+
+
+@app.route("/overview/below")
+@login_required
+def overview_below():
+    """Deferred Overview sections (watch, heatmap, scorecards, week trades).
+
+    Same tenant-scoped SQL as ``build_daily_review_batch``'s below-fold
+    keys so the query cache populated by the core page / warmer is reused.
+    """
+    from app.routes import _redirect_if_no_accounts, _tenant_label_map_for_user
+
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
+
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+    user_accounts = _user_account_list()
+
+    prof = get_user_profile(current_user.id) or {}
+    user_tz = (prof.get("timezone") or "America/New_York").strip() or "America/New_York"
+    today = _date_in_user_tz(user_tz)
+    this_week = _iso_week_start(today)
+    market_session = _us_market_session()
+    market_today = _date_in_user_tz("America/New_York")
+    session_date = _snapshot_as_of_date(today, market_session, et_today=market_today)
+
+    context = {
+        "today": today,
+        "review_date": session_date,
+        "week_start": this_week,
+        "accounts": user_accounts or [],
+        "selected_account": selected_account,
+        "selected_tenant": request.args.get("tenant") or None,
+        "selected_tenants": request.args.get("tenants") or None,
+        "upcoming_earnings_this_week": [],
+        "upcoming_earnings_next_week": [],
+        "upcoming_ex_dividends": [],
+        "expiring_options": [],
+        "exit_verdicts_landed": [],
+        "exit_verdicts_pending": None,
+        "open_option_record": None,
+        "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
+                             "closed_count": 0, "realized_pnl": 0.0,
+                             "unrealized_pnl": 0.0, "has_any": False},
+        "trades_week_is_prior": False,
+        "trades_week_start": this_week,
+        "all_user_tags": [],
+        "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
+        "calendar_grid": [],
+        "calendar_weeks_back": DAILY_CALENDAR_WEEKS,
+        "calendar_default_weeks": DAILY_CALENDAR_DEFAULT_WEEKS,
+        "calendar_extra_weeks": max(0, DAILY_CALENDAR_WEEKS - DAILY_CALENDAR_DEFAULT_WEEKS),
+        "daily_calendar_no_query_rows": True,
+        "today_strip": [],
+        "building_history": None,
+        "overview_below_deferred": False,
+    }
+
+    try:
+        client = get_bigquery_client()
+        full = build_daily_review_batch(
+            tenant_filter, today, this_week,
+            trades_as_of=session_date, moves_as_of=session_date)
+        # positions is a core key; include it here so expiring-options on
+        # the watch list can rebuild (L2 hit from the core request).
+        keys = set(OVERVIEW_BELOW_KEYS) | {"positions", "today_trades"}
+        batch = _bq_parallel(client, _slice_daily_review_batch(full, keys))
+        for k in ("calendar", "weekly_trades", "attribution", "exit_verdicts",
+                  "positions", "today_trades"):
+            df = batch.get(k)
+            if df is not None and not df.empty and "account" in df.columns:
+                batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
+        if "today_trades" in batch:
+            batch["today_trades"] = _filter_df_by_tenant_ids(
+                batch["today_trades"], tenant_ids)
+
+        try:
+            strip, expiring = _build_open_position_strip(
+                batch.get("positions", pd.DataFrame()),
+                market_today,
+            )
+            context["today_strip"] = strip
+            context["expiring_options"] = expiring
+        except Exception as e:
+            app.logger.warning("Overview below positions failed: %s", e)
+
+        snap_cutoff = session_date
+        _apply_overview_below(
+            context, batch,
+            today=today, this_week=this_week,
+            market_today=market_today, snap_cutoff=snap_cutoff,
+            tenant_ids=tenant_ids,
+        )
+        fills = _split_day_fills(
+            batch.get("today_trades", pd.DataFrame()),
+            label_map=_tenant_label_map_for_user(current_user.id),
+            tag_rows=context.get("_wk_tag_rows") or [],
+        )
+        today_syms = {s.upper() for s in (fills.get("symbols") or []) if s}
+        for row in (context.get("trades_this_week") or {}).get("trades") or []:
+            row["traded_today"] = str(row.get("symbol") or "").upper() in today_syms
+    except Exception as e:
+        app.logger.warning("Overview below fragment failed: %s", e)
+
+    return render_template("_overview_below.html", **context)
 
 
 @app.route("/today")

@@ -2,7 +2,7 @@ import hmac
 import os
 import re
 import click
-from flask import render_template, redirect, url_for, request, flash, abort
+from flask import render_template, redirect, url_for, request, flash, abort, jsonify
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.email import send_password_reset_email, send_welcome_verify_email
@@ -551,11 +551,49 @@ def _inject_email_verification_needed():
     """Expose ``email_unverified`` so base.html can show a confirm-your-email
     banner. Anonymous requests get False."""
     try:
+        from flask import g as _g
+        if getattr(_g, "_ht_skeleton", False):
+            return {"email_unverified": False}
         if current_user.is_authenticated:
             return {"email_unverified": email_needs_verification(current_user.id)}
     except Exception:
         pass
     return {"email_unverified": False}
+
+
+def email_block_writes(action: str = "this action"):
+    """Short-circuit data-write POSTs until the signed-in user confirms
+    their email. Mirrors ``plan_block_writes`` / ``demo_block_writes``.
+
+    Unverified signups must not be able to open SnapTrade connections
+    (aggregator billing) or dispatch warehouse rebuilds. Admins and
+    accounts with no email on file are exempt. Fails open on DB errors
+    so a stale column cannot freeze a paying customer.
+    """
+    try:
+        if not current_user.is_authenticated:
+            return None
+        from app.models import is_admin
+        if is_admin(getattr(current_user, "username", None)):
+            return None
+        if not email_needs_verification(current_user.id):
+            return None
+    except Exception:
+        return None
+
+    msg = (
+        f"Confirm your email before {action}. Check your inbox "
+        "(and spam) for the link, or resend it from the banner."
+    )
+    wants_json = (
+        request.path.startswith("/api/")
+        or request.accept_mimetypes.best == "application/json"
+        or (request.headers.get("X-Requested-With", "") == "XMLHttpRequest")
+    )
+    if wants_json:
+        return jsonify({"error": "email_unverified", "message": msg}), 403
+    flash(msg, "warning")
+    return redirect(url_for("profile", tab="security"))
 
 
 # ------------------------------------------------------------------

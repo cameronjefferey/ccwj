@@ -116,7 +116,7 @@ def _bq_parallel(client, queries):
     # the old cap of 8 an 11-query page ran in 2 waves (~2x the floor); 16
     # lets the whole batch run in a single wave. BQ handles the concurrent
     # small jobs fine and the pool is per-request/short-lived.
-    with ThreadPoolExecutor(max_workers=min(len(queries), 16)) as pool:
+    with ThreadPoolExecutor(max_workers=min(len(queries), 20)) as pool:
         # Copy the request context per task so the query-cache stats
         # ContextVar reaches the worker thread (per-query timing).
         futures = [

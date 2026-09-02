@@ -93,7 +93,7 @@
                     {% else %}
                     <p class="text-muted small mb-0 mt-2">
                         <span class="fw-medium text-body-secondary">None yet.</span>
-                        <a href="{{ url_for('snaptrade_connect') }}">Connect a broker</a> or use a manual upload to create your first account label.
+                        {% if snaptrade_at_cap %}Disconnect a broker account to add another, or{% else %}<a href="{{ url_for('snaptrade_connect') }}">Connect a broker</a> or{% endif %} use a manual upload to create your first account label.
                     </p>
                     {% endif %}
                 </div>
