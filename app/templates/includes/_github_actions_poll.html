@@ -86,18 +86,22 @@ function __ghaSafeRedirect(url, label) {
                     return;
                 }
                 if (d.state === "pending") {
-                    if (label) label.textContent = "Getting things started…";
+                    if (n < 8) {
+                        if (label) label.textContent = "In the build queue…";
+                    } else {
+                        if (label) label.textContent = "Still queued — usually 15–40 minutes. We'll email you when Overview is ready.";
+                    }
                 } else if (d.state === "running") {
-                    if (label) label.textContent = "Crunching your latest numbers—almost there…";
+                    if (label) label.textContent = "Crunching your latest numbers — this can take a while.";
                 } else {
                     if (label) label.textContent = "Working on it…";
                 }
-                if (n < 120) {
+                if (n < 300) {
                     setTimeout(tick, 8000);
                 } else {
                     stopSpinner();
-                    if (label) label.textContent = "Still going — taking you to Overview. Your new data might already be there.";
-                    leaveSoon(4000);
+                    setHeading("Still building your mirror");
+                    if (label) label.textContent = "This is taking longer than usual — often because several accounts synced at once. Stay here or open Overview; we'll email you when the numbers are ready.";
                 }
             })
             .catch(function () {
@@ -119,8 +123,7 @@ function __ghaSafeRedirect(url, label) {
 (function () {
     var doneUrl = {{ _done|tojson }};
     var label = document.getElementById("pipelineStateLabel");
-    if (label) { label.textContent = "We can’t show live progress for this one—we’ll take you to Overview in a few minutes, or you can go there now."; }
-    setTimeout(function () { __ghaSafeRedirect(doneUrl, label); }, 3 * 60 * 1000);
+    if (label) { label.textContent = "We can’t show live progress for this one. Stay here or open Overview — we’ll email you when the numbers are ready."; }
 })();
 </script>
 {% endif %}

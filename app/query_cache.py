@@ -77,15 +77,21 @@ _lock = threading.Lock()
 # visits are spread out (and load-balanced across workers) misses L1 on
 # essentially every page, forcing a fresh 2-4s BigQuery round trip. A shared
 # L2 lets any worker reuse any other worker's (and prior request's) result.
-# Reporting is CLOSE-BASED, so a shared short-TTL cache is safe — same
+# Reporting is CLOSE-BASED, so a shared day-long L2 is safe — same
 # tenant-isolation guarantee as L1 (keys derive from the tenant-scoped SQL /
-# tenant-scoped frame fingerprint; see module docstring).
+# tenant-scoped frame fingerprint; see module docstring). The warehouse
+# rebuild flushes L2 via POST /internal/cache/flush.
 #
 # ROBUSTNESS CONTRACT: Redis is a SPEEDUP, never a hard dependency. Every op
 # is wrapped so a missing / slow / broken instance silently degrades to L1
 # (and then to a live BQ query). We NEVER raise from a cache path.
 _REDIS_URL = os.environ.get("QUERY_CACHE_REDIS_URL", "").strip()
-_REDIS_TTL = _env_int("QUERY_CACHE_REDIS_TTL_SECONDS", _TTL_SECONDS)
+# Close-based reporting: L2 can live until the warehouse rebuild flushes
+# it. L1 stays at ``_TTL_SECONDS`` (10 min) so a recycled Gunicorn worker
+# still has a short in-process cache; the shared store is the 24h layer.
+# Override with QUERY_CACHE_REDIS_TTL_SECONDS (AGENTS.md documents 86400).
+_REDIS_DEFAULT_TTL = 86400
+_REDIS_TTL = _env_int("QUERY_CACHE_REDIS_TTL_SECONDS", _REDIS_DEFAULT_TTL)
 # Don't round-trip values too big to be worth (de)serialization + network,
 # or that would thrash a small shared store.
 _REDIS_MAX_BYTES = _env_int("QUERY_CACHE_REDIS_MAX_BYTES", 8 * 1024 * 1024)
@@ -453,6 +459,37 @@ def frame_fingerprint(*frames) -> str:
             # shape+columns signature. Never raise from a cache-key helper.
             parts.append(f"{getattr(df, 'shape', None)}:{tuple(getattr(df, 'columns', []))}")
     return "|".join(parts)
+
+
+def _page_warm_key(user_id, page, extra=""):
+    """Sentinel key: this user+page (and optional tenant/symbol) is warm in L2.
+
+    Distinct from SQL-hash keys used by ``cached_query_df``. The skeleton
+    checks this to skip the extra round-trip after the post-rebuild warmer
+    (or a prior fast full render) has already populated the query cache.
+    """
+    return (
+        "page_warm",
+        str(user_id if user_id is not None else ""),
+        str(page or ""),
+        (extra or "").strip().lower(),
+    )
+
+
+def mark_page_warm(user_id, page, extra=""):
+    """Stamp a warm sentinel (L1 + Redis). Never raises."""
+    try:
+        set(_page_warm_key(user_id, page, extra), True)
+    except Exception:
+        pass
+
+
+def is_page_warm(user_id, page, extra="") -> bool:
+    """True when the warmer or a fast render stamped this user+page."""
+    try:
+        return get(_page_warm_key(user_id, page, extra)) is not None
+    except Exception:
+        return False
 
 
 def cached_payload(key, producer):

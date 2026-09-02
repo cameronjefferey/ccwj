@@ -31,31 +31,33 @@
 </div>
 
 <div class="static-card">
-    <p class="text-muted small mb-4">Last updated: April 2026</p>
+    <p class="text-muted small mb-4">Last updated: September 2026</p>
 
     <h2>What we collect</h2>
-    <p>HappyTrader stores the trade history and account positions you upload (via CSV) or sync (via Schwab), plus basic account info — your username, email, and password (hashed).</p>
+    <p>HappyTrader stores the trade history and account positions you upload (CSV) or sync through SnapTrade, plus basic account info — username, email, hashed password, and billing metadata from Stripe (no card numbers).</p>
 
     <h2>What we do with it</h2>
-    <p>We use it to render your dashboards, weekly reviews, and AI insights. We do not sell your data. We do not share your individual trade data with third parties for advertising.</p>
+    <p>We use it to render your dashboards, recaps, and optional AI insights. We do not sell your data. We do not share your individual trade data with third parties for advertising.</p>
 
     <h2>Where it's stored</h2>
-    <p>Your trades live in our analytics warehouse (BigQuery) and our application database (Postgres). Both are hosted on managed cloud providers with industry-standard encryption in transit and at rest.</p>
+    <p>Your trades live in our analytics warehouse (BigQuery) and our application database (Postgres). Both are hosted on managed cloud providers with encryption in transit and at rest.</p>
 
     <h2>Third-party services</h2>
     <p>We use a small set of vendors to operate the product:</p>
     <ul>
-        <li><strong>Charles Schwab</strong> — only if you connect Schwab. We use OAuth so we never see your Schwab password.</li>
-        <li><strong>Google Gemini</strong> — when you generate AI insights, we send a deterministic summary of your aggregated trading stats (no personal info) to Gemini for narration.</li>
-        <li><strong>Sentry</strong> — for error monitoring. We strip query strings and sensitive payloads before they leave our servers.</li>
-        <li><strong>Render</strong> and <strong>Google Cloud</strong> — hosting our app and warehouse.</li>
+        <li><strong>SnapTrade</strong> — if you connect a brokerage. You sign in on your broker's own page. SnapTrade hands HappyTrader a read-only pass; we never see your broker password. Schwab, Fidelity, Vanguard, Robinhood, IBKR, and others go through this one path.</li>
+        <li><strong>Stripe</strong> — subscriptions. Card data never touches our servers.</li>
+        <li><strong>Resend</strong> — transactional and product email (password reset, data-ready, weekly recap if you opt in).</li>
+        <li><strong>Google Gemini</strong> and <strong>Anthropic Claude</strong> — when you use Insights or Ask AI, we send a deterministic summary of aggregated trading stats (not your password or raw brokerage credentials) to the model you pick.</li>
+        <li><strong>Sentry</strong> — error monitoring. We strip query strings and sensitive payloads before they leave our servers.</li>
+        <li><strong>Render</strong> and <strong>Google Cloud</strong> — hosting the app, Redis cache, and warehouse.</li>
     </ul>
 
     <h2>What's public</h2>
     <p>Nothing. Everything you upload or sync is private to your login — there are no public profiles or shared feeds.</p>
 
     <h2>Deleting your data</h2>
-    <p>You can disconnect Schwab, remove uploaded accounts, and delete your account from <a href="{{ url_for('profile') }}">Settings</a>. If you'd like a full export or deletion of everything, <a href="{{ url_for('contact') }}">contact us</a>.</p>
+    <p>You can disconnect a broker, remove uploaded accounts, and delete your account from <a href="{{ url_for('profile') }}">Settings</a>. Deleting cancels a live Stripe subscription, removes warehouse rows, and deregisters the SnapTrade user. If you'd like a copy of your data first, <a href="{{ url_for('contact') }}">contact us</a>.</p>
 
     <h2>Cookies</h2>
     <p>We use a session cookie to keep you logged in. We don't use third-party advertising or tracking cookies.</p>

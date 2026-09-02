@@ -2027,6 +2027,10 @@ def upload():
         blocked = plan_block_writes("uploading new trade data")
         if blocked:
             return blocked
+        from app.auth import email_block_writes
+        blocked = email_block_writes("uploading new trade data")
+        if blocked:
+            return blocked
 
     if request.method == "GET":
         user_accounts = get_accounts_for_user(current_user.id)
@@ -2370,7 +2374,7 @@ def api_github_workflow_status():
 @login_required
 def upload_processing():
     """Intermediary page shown after upload while data refreshes."""
-    expected_minutes = 3
+    expected_minutes = 25
     head_sha = (request.args.get("sha") or "").strip() or None
     is_first = (request.args.get("first") or "").strip() == "1"
 
@@ -2394,7 +2398,7 @@ def sync_processing():
     """After Schwab seed push, wait for GitHub Actions dbt to finish (optional poll by commit SHA)."""
     from app.models import get_onboarding_response
 
-    expected_minutes = 5
+    expected_minutes = 25
     head_sha = (request.args.get("sha") or "").strip() or None
     is_first = (request.args.get("first") or "").strip() == "1"
 

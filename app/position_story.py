@@ -1,8 +1,8 @@
 """Position story engine — plain-English narrative of a position.
 
 Turns the raw fill stream into the story a trader would tell a friend:
-"opened a wheel", "rolled the calls up and out", "kept the full premium",
-"three quiet weeks of theta doing the work". Two outputs feed the
+"opened an iron condor", "rolled the calls up and out", "kept the full
+premium", "three quiet weeks of theta doing the work". Two outputs feed the
 Position Detail page:
 
   story_items   — chronological narrative rows for the Story card. Two
@@ -13,11 +13,16 @@ Position Detail page:
   story_markers — one dot per event day for the chart overlay; tooltip
                   leads with the headline.
 
-Detection is deliberately heuristic and NEVER speculative about intent
-beyond what the fills mechanically show (see AGENTS.md pattern-detection
-rules: evidence, not psychology). "Cash-secured" for a short put and
-"covered" for a short call describe the standard structure implied by
-the position state we can see, not the trader's margin arrangement.
+This is a deterministic fill state machine, not an LLM. It never reads
+Strategy Breakdown; it names maneuvers from the fills and the running
+share/option state. Defined-risk opens (iron condor, vertical, strangle)
+whose legs land within 7 days are grouped from matching fills so a
+condor's short put is not mislabeled a wheel — named on the last wing.
+Detection is NEVER speculative about intent beyond
+what the fills mechanically show (see AGENTS.md pattern-detection rules:
+evidence, not psychology). "Cash-secured" for a short put and "covered"
+for a short call describe the standard structure implied by the position
+state we can see, not the trader's margin arrangement.
 
 Dividends come from int_dividend_events (synthetic pipeline covers
 JEPI-class positions where the broker never shipped explicit dividend
@@ -55,6 +60,10 @@ _INTERLUDE_MIN_MOVE = 250.0
 # A "break" is a long silence while FLAT — you closed out and walked away.
 # Chapter-break copy instead of P&L narration (there is no position to mark).
 _BREAK_MIN_DAYS = 45
+
+# Classification pairs verticals / condors within 7 days. The review uses
+# the same window so a condor legged in Monday–Wednesday is one structure.
+_STRUCTURE_MAX_SPAN_DAYS = 7
 
 
 def parse_occ(trade_symbol):
@@ -176,6 +185,8 @@ def _normalize_fills(trades_df):
             "amount": _num(r.get("amount")) or 0.0,
         })
     fills.sort(key=lambda f: f["date"])
+    for i, f in enumerate(fills):
+        f["uid"] = i
     return fills
 
 
@@ -237,7 +248,7 @@ class _AccountState:
 
 
 def _day_headline(day_fills, state_by_account, multi_account, stats,
-                  exit_notes=None, label_map=None):
+                  exit_notes=None, label_map=None, structure_plan=None):
     """Compose the plain-English sentences for one day's fills.
 
     Mutates per-account state as it consumes fills and accumulates the
@@ -388,6 +399,33 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         _detect_rolls(closes_short, opens_short, short_side=True)
         _detect_rolls(closes_long, opens_long, short_side=False)
 
+        # Defined-risk opens (same day or legged in within 7 days). Named
+        # on the LAST open date; earlier days apply state without a
+        # directional one-liner so a condor short put is never a wheel.
+        planned_uids = _all_planned_uids(structure_plan)
+        day_date = fills[0]["date"] if fills else None
+        completions = (structure_plan or {}).get((day_date, state_key), [])
+        for f in opt_fills:
+            if f.get("uid") in planned_uids:
+                consumed.add(id(f))
+                _apply_option_open_state(f, st, stats)
+        for sentence, _uids, kind in completions:
+            sentences.append(_tag(sentence, account))
+            kinds.append(kind)
+
+        remaining_opens = [
+            f for f in opt_fills
+            if id(f) not in consumed
+            and f["action"] in ("option_sell_to_open", "option_buy_to_open")
+        ]
+        day_ctx["option_open_count"] = len(remaining_opens)
+        day_ctx["has_long_open"] = any(
+            f["action"] == "option_buy_to_open" for f in remaining_opens)
+        day_ctx["has_short_call"] = any(
+            f["action"] == "option_sell_to_open"
+            and f.get("occ") and f["occ"]["option_type"] == "call"
+            for f in remaining_opens)
+
         # ── Equity fills (before remaining option opens, so same-day
         # "buy shares then sell a call" reads as covered).
         for f in eq_fills:
@@ -435,6 +473,218 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
             dominant = k
             break
     return sentences, dominant
+
+
+def _one_of_type(fills, otype):
+    hits = [f for f in fills if f["occ"]["option_type"] == otype]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _matching_qty_phrase(fills):
+    """'10 contracts' when every leg is the same size; else empty."""
+    qs = [abs(f["quantity"]) for f in fills]
+    if not qs:
+        return ""
+    rounded = []
+    for q in qs:
+        r = round(q)
+        rounded.append(int(r) if abs(q - r) < 1e-6 else q)
+    if len(set(rounded)) != 1:
+        return ""
+    return _contracts(rounded[0])
+
+
+def _structure_cash(net):
+    if net > 0.005:
+        return f"collecting a net {_money(net)} credit"
+    if net < -0.005:
+        return f"putting {_money(net)} at risk"
+    return "even on cash"
+
+
+def _apply_option_open_state(f, st, stats):
+    """Apply an STO/BTO fill to running state without composing copy.
+
+    Used by same-day structure detection so a named condor still updates
+    net/cash/premium the way the per-leg phrases would — minus the wheel
+    flag a lone short put would have set.
+    """
+    n = abs(f["quantity"])
+    rec = st.opt(f["trade_symbol"])
+    amt = f["amount"]
+    occ = f.get("occ")
+    if f["action"] == "option_sell_to_open":
+        rec["net"] -= n
+        rec["cash"] += amt
+        stats["premium_collected"] += max(amt, 0.0)
+        if occ and occ["option_type"] == "put":
+            stats["puts_sold"] += 1
+    elif f["action"] == "option_buy_to_open":
+        rec["net"] += n
+        rec["cash"] += amt
+        stats["long_opens"] += 1
+        stats["long_risk"] += abs(min(amt, 0.0))
+
+
+def _opened_lead(name, fills, exp):
+    qty = _matching_qty_phrase(fills)
+    qty_bit = f", {qty}" if qty else ""
+    uniq = sorted({f["date"] for f in fills if f.get("date")})
+    span_bit = ""
+    if len(uniq) >= 2:
+        span_bit = f" over {len(uniq)} sessions"
+    return f"Opened {name}{span_bit}{qty_bit} expiring {exp}"
+
+
+def _try_iron(group):
+    """Four legs, same expiry: long/short put + long/short call, wings outside."""
+    shorts = [f for f in group if f["action"] == "option_sell_to_open"]
+    longs = [f for f in group if f["action"] == "option_buy_to_open"]
+    if len(group) != 4 or len(shorts) != 2 or len(longs) != 2:
+        return None
+    sp, sc = _one_of_type(shorts, "put"), _one_of_type(shorts, "call")
+    lp, lc = _one_of_type(longs, "put"), _one_of_type(longs, "call")
+    if not all((sp, sc, lp, lc)):
+        return None
+    if not (lp["occ"]["strike"] < sp["occ"]["strike"]
+            and lc["occ"]["strike"] > sc["occ"]["strike"]):
+        return None
+    fly = abs(sp["occ"]["strike"] - sc["occ"]["strike"]) < 0.01
+    name = "an iron butterfly" if fly else "an iron condor"
+    legs = [sp, sc, lp, lc]
+    net = sum(f["amount"] for f in legs)
+    anchor = max(f["date"] for f in legs)
+    exp = _fmt_expiry(sp["occ"]["expiry"], anchor)
+    if fly:
+        detail = (
+            f"short the {_fmt_strike(sp['occ']['strike'])} straddle, "
+            f"long the {_fmt_strike(lp['occ']['strike'])} / "
+            f"{_fmt_strike(lc['occ']['strike'])} wings"
+        )
+    else:
+        detail = (
+            f"short the {_fmt_strike(sp['occ']['strike'])} put / "
+            f"{_fmt_strike(sc['occ']['strike'])} call, "
+            f"long the {_fmt_strike(lp['occ']['strike'])} / "
+            f"{_fmt_strike(lc['occ']['strike'])} wings"
+        )
+    sentence = (
+        f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
+    )
+    return sentence, legs, "sell" if net >= 0 else "buy"
+
+
+def _try_vertical(group):
+    shorts = [f for f in group if f["action"] == "option_sell_to_open"]
+    longs = [f for f in group if f["action"] == "option_buy_to_open"]
+    if len(group) != 2 or len(shorts) != 1 or len(longs) != 1:
+        return None
+    s, lo = shorts[0], longs[0]
+    if s["occ"]["option_type"] != lo["occ"]["option_type"]:
+        return None
+    otype = s["occ"]["option_type"]
+    legs = [s, lo]
+    net = s["amount"] + lo["amount"]
+    exp = _fmt_expiry(s["occ"]["expiry"], s["date"])
+    detail = (
+        f"short {_fmt_strike(s['occ']['strike'])} / "
+        f"long {_fmt_strike(lo['occ']['strike'])}"
+    )
+    sentence = (
+        f"{_opened_lead(f'a {otype} spread', legs, exp)}: {detail}, "
+        f"{_structure_cash(net)}."
+    )
+    return sentence, legs, "sell" if net >= 0 else "buy"
+
+
+def _try_strangle(group):
+    shorts = [f for f in group if f["action"] == "option_sell_to_open"]
+    longs = [f for f in group if f["action"] == "option_buy_to_open"]
+    if len(group) != 2:
+        return None
+    if len(shorts) == 2 and not longs:
+        sp, sc = _one_of_type(shorts, "put"), _one_of_type(shorts, "call")
+        if not (sp and sc):
+            return None
+        same = abs(sp["occ"]["strike"] - sc["occ"]["strike"]) < 0.01
+        name = "a short straddle" if same else "a short strangle"
+        legs = [sp, sc]
+        net = sp["amount"] + sc["amount"]
+        exp = _fmt_expiry(sp["occ"]["expiry"], sp["date"])
+        if same:
+            detail = (
+                f"the {_fmt_strike(sp['occ']['strike'])} put and call"
+            )
+        else:
+            detail = (
+                f"{_fmt_strike(sp['occ']['strike'])} put / "
+                f"{_fmt_strike(sc['occ']['strike'])} call"
+            )
+        sentence = (
+            f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
+        )
+        return sentence, legs, "sell"
+    if len(longs) == 2 and not shorts:
+        lp, lc = _one_of_type(longs, "put"), _one_of_type(longs, "call")
+        if not (lp and lc):
+            return None
+        same = abs(lp["occ"]["strike"] - lc["occ"]["strike"]) < 0.01
+        name = "a long straddle" if same else "a long strangle"
+        legs = [lp, lc]
+        net = lp["amount"] + lc["amount"]
+        exp = _fmt_expiry(lp["occ"]["expiry"], lp["date"])
+        if same:
+            detail = (
+                f"the {_fmt_strike(lp['occ']['strike'])} put and call"
+            )
+        else:
+            detail = (
+                f"{_fmt_strike(lp['occ']['strike'])} put / "
+                f"{_fmt_strike(lc['occ']['strike'])} call"
+            )
+        sentence = (
+            f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
+        )
+        return sentence, legs, "buy"
+    return None
+
+
+def _all_planned_uids(structure_plan):
+    out = set()
+    for hits in (structure_plan or {}).values():
+        for _sentence, uids, _kind in hits:
+            out.update(uids)
+    return out
+
+
+def _plan_open_structures(all_fills):
+    """Name iron condor / vertical / strangle groups whose opens span ≤7 days.
+
+    Returns ``{(last_open_date, state_key): [(sentence, uids, kind), ...]}``
+    so the review names the structure when the last wing lands.
+    """
+    by = {}
+    for f in all_fills or []:
+        if f["action"] not in ("option_sell_to_open", "option_buy_to_open"):
+            continue
+        if not f.get("occ"):
+            continue
+        key = (f["state_key"], f["occ"]["expiry"])
+        by.setdefault(key, []).append(f)
+    plan = {}
+    for _key, group in by.items():
+        span = (max(f["date"] for f in group) - min(f["date"] for f in group)).days
+        if span > _STRUCTURE_MAX_SPAN_DAYS:
+            continue
+        hit = _try_iron(group) or _try_vertical(group) or _try_strangle(group)
+        if not hit:
+            continue
+        sentence, struct_fills, kind = hit
+        last = max(f["date"] for f in struct_fills)
+        sk = struct_fills[0]["state_key"]
+        uids = [f["uid"] for f in struct_fills]
+        plan.setdefault((last, sk), []).append((sentence, uids, kind))
+    return plan
 
 
 def _phrase_roll(close_fill, open_fill, short_side):
@@ -540,17 +790,25 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
         stats["premium_collected"] += max(amt, 0.0)
         if otype == "put":
             stats["puts_sold"] += 1
-            wheel_lead = ""
-            if not st.wheel_active and st.shares < 100:
+            # Track a possible wheel so assignment can name it — but do
+            # not say "Opened a wheel" here. A CSP that expires or is
+            # bought back never became one; classification only labels
+            # Wheel after the put is assigned. Same-day longs / short
+            # calls are a defined-risk structure, not a wheel seed.
+            can_seed_wheel = (
+                not st.wheel_active
+                and st.shares < 100
+                and not day_ctx.get("has_long_open")
+                and not day_ctx.get("has_short_call")
+                and day_ctx.get("option_open_count", 1) <= 1
+            )
+            if can_seed_wheel:
                 st.wheel_active = True
                 st.wheel_premium = 0.0
-                stats["wheels_opened"] += 1
-                wheel_lead = "Opened a wheel: "
             if st.wheel_active:
                 st.wheel_premium += max(amt, 0.0)
-            verb = f"{wheel_lead}sold" if wheel_lead else "Sold"
             return (
-                f"{verb} {_contracts(n)} of the {strike} put ({exp}), "
+                f"Sold {_contracts(n)} of the {strike} put ({exp}), "
                 f"collecting {_money(amt)}."
             )
         # Short call: covered if the account holds enough shares.
@@ -649,11 +907,18 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
         rec["cash"] = 0.0
         stats["assignments"] += 1
         if otype == "put":
+            wheel_bit = ""
             note = ""
-            if st.wheel_active and premium > 0.005:
-                note = (f" {_money(premium)} of premium already collected "
-                        f"lowers your effective cost basis.")
-            return f"Assigned on the {strike} put: took delivery of the shares at {strike}.{note}"
+            if st.wheel_active:
+                stats["wheels_opened"] += 1
+                wheel_bit = ", starting a wheel"
+                if premium > 0.005:
+                    note = (f" {_money(premium)} of premium already collected "
+                            f"lowers your effective cost basis.")
+            return (
+                f"Assigned on the {strike} put: took delivery of the "
+                f"shares at {strike}{wheel_bit}.{note}"
+            )
         # Short call assignment = shares called away.
         note = ""
         if st.wheel_active:
@@ -688,6 +953,10 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
                                 f"of premium collected over the cycle.")
                 return (f"Your short {strike} call was exercised — "
                         f"shares called away at {strike}.{note}")
+            if st.wheel_active:
+                stats["wheels_opened"] += 1
+                return (f"Your short {strike} put was exercised — "
+                        f"took delivery at {strike}, starting a wheel.")
             return (f"Your short {strike} put was exercised — "
                     f"took delivery at {strike}.")
         return f"Exercised the {strike} {otype} ({exp}) — converted into stock."
@@ -862,6 +1131,7 @@ def build_position_story(
     """
     fills = _normalize_fills(trades_df)
     seed_fills = _normalize_fills(seed_trades_df)
+    structure_plan = _plan_open_structures(fills)
 
     # Cash dividends (synthetic pipeline; see module docstring).
     div_by_day = {}
@@ -974,7 +1244,8 @@ def build_position_story(
         day_fills = fills_by_day.get(d, [])
         headlines, dominant = ([], "income") if not day_fills else _day_headline(
             day_fills, state_by_account, multi_account, stats,
-            exit_notes=exit_notes, label_map=label_map)
+            exit_notes=exit_notes, label_map=label_map,
+            structure_plan=structure_plan)
         if split_headlines:
             headlines = split_headlines + headlines
             if not day_fills:

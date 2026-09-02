@@ -1553,3 +1553,35 @@ def test_set_brokerage_authorization_id_short_circuits_on_empty_input():
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", None) is False
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", "") is False
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", "   ") is False
+
+
+# ---------------------------------------------------------------------------
+# Live-account cap (aggregator bills per account)
+# ---------------------------------------------------------------------------
+
+
+def test_snaptrade_max_accounts_defaults_to_four(monkeypatch):
+    monkeypatch.delenv("SNAPTRADE_MAX_ACCOUNTS_PER_USER", raising=False)
+    assert _snap.snaptrade_max_accounts_per_user() == 4
+
+
+def test_snaptrade_max_accounts_env_override(monkeypatch):
+    monkeypatch.setenv("SNAPTRADE_MAX_ACCOUNTS_PER_USER", "6")
+    assert _snap.snaptrade_max_accounts_per_user() == 6
+
+
+def test_snaptrade_max_accounts_rejects_junk_and_zero(monkeypatch):
+    monkeypatch.setenv("SNAPTRADE_MAX_ACCOUNTS_PER_USER", "nope")
+    assert _snap.snaptrade_max_accounts_per_user() == 4
+    monkeypatch.setenv("SNAPTRADE_MAX_ACCOUNTS_PER_USER", "0")
+    assert _snap.snaptrade_max_accounts_per_user() == 1
+
+
+def test_snaptrade_at_account_cap(monkeypatch):
+    monkeypatch.delenv("SNAPTRADE_MAX_ACCOUNTS_PER_USER", raising=False)
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts",
+                        lambda uid: [{} for _ in range(4)])
+    assert _snap.snaptrade_at_account_cap(7) is True
+    monkeypatch.setattr(_snap, "get_snaptrade_accounts",
+                        lambda uid: [{} for _ in range(3)])
+    assert _snap.snaptrade_at_account_cap(7) is False

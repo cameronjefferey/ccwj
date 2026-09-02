@@ -948,7 +948,7 @@
         <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
             <div>
                 <strong>Confirm your email.</strong>
-                <span class="small">Check your inbox for the link so we can send password resets and your recap.</span>
+                <span class="small">Check your inbox for the link before connecting a broker or uploading trades. We also use it for password resets and recaps.</span>
             </div>
             <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

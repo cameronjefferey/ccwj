@@ -183,6 +183,8 @@
                         {% if snaptrade_connected %}
                         <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#snaptrade-sync">Continue sync &rarr;</a>
                         <span class="text-success small ms-2">Connection saved</span>
+                        {% elif snaptrade_at_cap %}
+                        <p class="fine-print mb-0">You already have {{ snaptrade_account_cap }} live broker accounts. Disconnect one in Account settings, or upload a CSV.</p>
                         {% else %}
                         <a class="btn btn-primary" href="{{ url_for('snaptrade_connect') }}">Connect a broker</a>
                         {% endif %}
@@ -235,11 +237,11 @@
                 <p class="lead-sub mb-0">Trade-level analytics, strategy classification, and your behavioral baselines are computed and ready.</p>
                 {% elif has_uploaded %}
                 <h6>Crunching your trades&hellip;</h6>
-                <p class="lead-sub mb-2">This usually takes 3&ndash;5 minutes. We're computing every closed trade, classifying strategies, and building your behavioral baseline.</p>
+                <p class="lead-sub mb-2">Usually 15–40 minutes. If several accounts synced at once, yours waits in line. Refresh this page, or wait for the email that Overview is ready.</p>
                 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
                 {% else %}
                 <h6>We process your data</h6>
-                <p class="lead-sub mb-0">Once your files are in, processing finishes in 3&ndash;5 minutes. We classify strategies, compute trade-level P&amp;L, and build the baselines that drive Overview.</p>
+                <p class="lead-sub mb-0">Once your files are in, the warehouse build usually takes 15–40 minutes. We classify strategies, compute trade-level P&amp;L, and email you when Overview is ready.</p>
                 {% endif %}
             </div>
         </div>

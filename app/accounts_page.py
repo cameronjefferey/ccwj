@@ -581,23 +581,13 @@ def accounts():
     range_start = _accounts_range_start(selected_range)
 
     try:
-        dfs = _bq_parallel(client, {
-            "balances": ACCOUNT_BALANCES_QUERY.format(tenant_filter=tenant_filter),
-            "trades": TRADES_QUERY.format(tenant_filter=tenant_filter),
-            "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
-            "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
-            "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
-            "div_events": ACCOUNT_DIVIDEND_EVENTS_QUERY.format(tenant_filter=tenant_filter),
-            # Lifetime financial amounts; the selected range is applied only
-            # to symbol inclusion after the chart establishes its last date.
-            "attribution": _accounts_attribution_query(tenant_filter),
-            # Per-leg rollup for the Tag Breakdown card (leg grain).
-            "legs": ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter),
-            # External cash flow for the "Net deposits" KPI card.
-            "net_deposits": NET_DEPOSITS_QUERY.format(tenant_filter=tenant_filter),
-        })
+        include_trades = not bool(user_accounts)
+        dfs = _bq_parallel(client, accounts_query_batch(
+            tenant_filter, include_trades=include_trades))
+        if not include_trades:
+            dfs["trades"] = pd.DataFrame()
         _validate_accounts_financial_frames(
-            dfs, needs_trade_accounts=not bool(user_accounts)
+            dfs, needs_trade_accounts=include_trades
         )
         balances_df = dfs["balances"]
         trades_df = dfs["trades"]
@@ -796,25 +786,9 @@ def accounts():
     strategy_from_daily = {}
     try:
         chart_tenant_ids = _tenants_for_scope(selected_account)
-        chart_tenant_filter = _tenant_sql_and(chart_tenant_ids)
-        chart_df = cached_query_df(
-            client,
-            CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter)
+        built = accounts_chart_payload(
+            client, chart_tenant_ids, current_df, strategy_map,
         )
-        chart_df = _filter_df_by_tenant_ids(chart_df, chart_tenant_ids)
-        # tenant scope already narrowed chart_df to the selected account's tenant
-        with timed("acct_chart"):
-            built = cached_payload(
-                (
-                    "acct_chart",
-                    str(date.today()),
-                    frame_fingerprint(chart_df, current_df),
-                    tuple(sorted((f"{k[0]}|{k[1]}", str(v)) for k, v in strategy_map.items())),
-                ),
-                lambda: _build_account_chart_from_daily_pnl(
-                    chart_df, current_df, strategy_of=strategy_map,
-                ),
-            )
         summary_chart = {
             k: built.get(k, [])
             for k in ("dates", "equity", "options", "dividends", "total")
@@ -987,6 +961,55 @@ def accounts():
 # slice the charts + recompute the KPI cards in the browser (no round trip)
 # and fetch just this fragment to refresh the tables, instead of reloading the
 # whole page (which re-ran the full BQ wave + re-initialized both charts).
+def accounts_query_batch(tenant_filter, *, include_trades=False):
+    """The tenant-scoped /accounts parallel batch.
+
+    Shared by the view and the post-rebuild cache warmer. ``include_trades``
+    is only needed when the account picker has no Postgres list (admin
+    fallback); the full ``stg_history`` scan is skipped otherwise.
+    """
+    queries = {
+        "balances": ACCOUNT_BALANCES_QUERY.format(tenant_filter=tenant_filter),
+        "current": CURRENT_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+        "strat_class": STRATEGY_CLASSIFICATION_QUERY.format(tenant_filter=tenant_filter),
+        "strat_summary": ACCOUNT_POSITIONS_SUMMARY_QUERY.format(tenant_filter=tenant_filter),
+        "div_events": ACCOUNT_DIVIDEND_EVENTS_QUERY.format(tenant_filter=tenant_filter),
+        "attribution": _accounts_attribution_query(tenant_filter),
+        "legs": ACCOUNT_LEGS_QUERY.format(tenant_filter=tenant_filter),
+        "net_deposits": NET_DEPOSITS_QUERY.format(tenant_filter=tenant_filter),
+    }
+    if include_trades:
+        queries["trades"] = TRADES_QUERY.format(tenant_filter=tenant_filter)
+    return queries
+
+
+def accounts_chart_payload(client, tenant_ids, current_df, strategy_map):
+    """Build (or cache-hit) the Accounts P&L chart payload.
+
+    Same ``cached_payload`` key the view uses so a warmer run is a hit on
+    the next /accounts load.
+    """
+    chart_tenant_filter = _tenant_sql_and(tenant_ids)
+    chart_df = cached_query_df(
+        client,
+        CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter),
+        label="acct_chart_df",
+    )
+    chart_df = _filter_df_by_tenant_ids(chart_df, tenant_ids)
+    with timed("acct_chart"):
+        return cached_payload(
+            (
+                "acct_chart",
+                str(date.today()),
+                frame_fingerprint(chart_df, current_df),
+                tuple(sorted((f"{k[0]}|{k[1]}", str(v)) for k, v in strategy_map.items())),
+            ),
+            lambda: _build_account_chart_from_daily_pnl(
+                chart_df, current_df, strategy_of=strategy_map,
+            ),
+        )
+
+
 # Tenant-scoped exactly like /accounts; renders only the tables partial.
 # ----------------------------------------------------------------------
 @app.route("/accounts/breakdown")

@@ -31,13 +31,13 @@
 </div>
 
 <div class="static-card">
-    <p class="text-muted small mb-4">Last updated: April 2026</p>
+    <p class="text-muted small mb-4">Last updated: September 2026</p>
 
-    <h2>Beta software</h2>
-    <p>HappyTrader is a beta product built for individual traders to review their own performance. Bugs happen. Numbers may occasionally drift while we improve how we process your trades. If something looks wrong, <a href="{{ url_for('contact') }}">tell us</a>.</p>
+    <h2>The service</h2>
+    <p>HappyTrader is a trading mirror: analytics on the brokerage history you connect or upload. New accounts start a 30-day reverse trial (the clock starts when your first data lands). After that the pages stay readable; keeping the mirror live is a paid subscription. Numbers can still be wrong while we improve how we process trades. If something looks off, <a href="{{ url_for('contact') }}">tell us</a>.</p>
 
     <h2>You own your data</h2>
-    <p>The trade history and positions you upload or sync remain yours. You can export or delete them at any time. We don't claim any rights over them.</p>
+    <p>The trade history and positions you upload or sync remain yours. You can delete your account from <a href="{{ url_for('profile') }}">Settings</a>. For a copy of your data, <a href="{{ url_for('contact') }}">contact us</a>.</p>
 
     <h2>Not financial advice</h2>
     <p>HappyTrader is an analytics tool. Anything we display — including AI-generated narratives — is for informational purposes only. It is <strong>not</strong> investment advice, a recommendation to buy or sell any security, or a substitute for a licensed advisor. You are solely responsible for your trading decisions.</p>
@@ -48,8 +48,11 @@
     <h2>Acceptable use</h2>
     <p>Don't try to break the site, scrape other users' data, or upload anything you don't have the right to upload. We can suspend accounts that do.</p>
 
+    <h2>Payment</h2>
+    <p>Subscriptions (HappyTrader Pro and the HappyTrader AI add-on) are billed through Stripe. You can cancel in the billing portal. A freeze after trial or cancellation keeps your history readable; it does not keep pulling new trades from your broker.</p>
+
     <h2>Changes to the service</h2>
-    <p>Features may change, get added, or be removed during the beta. We'll do our best to give heads-up when something user-facing changes meaningfully.</p>
+    <p>Features may change, get added, or be removed. We'll do our best to give heads-up when something user-facing changes meaningfully.</p>
 
     <h2>Termination</h2>
     <p>You can delete your account at any time from <a href="{{ url_for('profile') }}">Settings</a>. We can suspend or close accounts that violate these terms.</p>

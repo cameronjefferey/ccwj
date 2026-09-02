@@ -99,10 +99,42 @@ app.add_template_global(_earnings_follower_url, name="earnings_follower_url")
 
 @app.context_processor
 def _inject_feature_flags():
-    from flask import current_app
+    from flask import current_app, g
     from flask_login import current_user
     from app.models import is_admin
     from app.utils import is_demo_user
+
+    # Instant shell: skip Postgres (groups, plan, history-since, tenant
+    # picker). The skeleton template is a standalone document and does not
+    # read these keys; returning empties keeps any stray base.html include safe.
+    if getattr(g, "_ht_skeleton", False):
+        return {
+            "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
+            "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
+            "earnings_follower_base_url": current_app.config.get("EARNINGS_FOLLOWER_URL", ""),
+            "is_admin_user": False,
+            "is_demo_user": False,
+            "signup_enabled": current_app.config.get("SIGNUP_ENABLED", True),
+            "signup_invite_required": bool(current_app.config.get("SIGNUP_INVITE_CODE", "")),
+            "plan_status": None,
+            "history_since": None,
+            "account_groups": [],
+            "selected_group_ids": [],
+            "groups_query": None,
+            "visible_account_groups": [],
+            "visible_account_choices": [],
+            "scope_account_choices": [],
+            "selected_tenant_ids": [],
+            "tenants_query": None,
+            "scope_query_string": "",
+            "scope_is_filtered": False,
+            "billing_enabled": False,
+            "price_monthly": None,
+            "price_annual": None,
+            "price_annual_equiv": None,
+            "ai_billing_enabled": False,
+            "price_ai": None,
+        }
 
     is_admin_user = False
     try:

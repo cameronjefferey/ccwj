@@ -92,3 +92,99 @@ def test_flush_warm_skippable(client, monkeypatch):
     # Lock must not be held after a warm-skipped flush.
     assert cache_ops._warm_lock.acquire(blocking=False)
     cache_ops._warm_lock.release()
+
+
+def test_flush_without_ready_does_not_email(client, monkeypatch):
+    import app.cache_ops as cache_ops
+
+    monkeypatch.setenv("CACHE_FLUSH_TOKEN", "correct-token")
+    monkeypatch.setattr(cache_ops.query_cache, "clear", lambda: None)
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target=None, name=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            if cache_ops._warm_lock.locked():
+                cache_ops._warm_lock.release()
+
+    monkeypatch.setattr(cache_ops.threading, "Thread", _FakeThread)
+    resp = client.post(
+        "/internal/cache/flush?warm=0",
+        headers={"X-Cache-Flush-Token": "correct-token"},
+    )
+    assert resp.status_code == 200
+    assert cache_ops._send_data_ready_after_rebuild not in started
+
+
+def test_flush_ready_starts_data_ready_email(client, monkeypatch):
+    import app.cache_ops as cache_ops
+
+    monkeypatch.setenv("CACHE_FLUSH_TOKEN", "correct-token")
+    monkeypatch.setattr(cache_ops.query_cache, "clear", lambda: None)
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target=None, name=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            if cache_ops._warm_lock.locked():
+                cache_ops._warm_lock.release()
+
+    monkeypatch.setattr(cache_ops.threading, "Thread", _FakeThread)
+    resp = client.post(
+        "/internal/cache/flush?ready=1&warm=0",
+        headers={"X-Cache-Flush-Token": "correct-token"},
+    )
+    assert resp.status_code == 200
+    assert started == [cache_ops._send_data_ready_after_rebuild]
+
+
+def test_send_data_ready_emails_users_with_tenants(monkeypatch):
+    import app.cache_ops as cache_ops
+    import app.db as db_mod
+
+    class _U:
+        email = "a@example.com"
+        username = "ada"
+
+    sent = []
+    monkeypatch.setattr(db_mod, "fetch_all",
+                        lambda sql: [{"user_id": 9}])
+    monkeypatch.setattr("app.models.User.get_by_id", lambda uid: _U())
+    monkeypatch.setattr(
+        "app.models.record_email_send",
+        lambda *a, **k: True,
+    )
+    monkeypatch.setattr(
+        "app.email.send_data_ready_email",
+        lambda **k: sent.append(k),
+    )
+    monkeypatch.setattr("app.email.app_base_url", lambda: "https://ht.test")
+    cache_ops._send_data_ready_after_rebuild()
+    assert len(sent) == 1
+    assert sent[0]["to"] == "a@example.com"
+    assert sent[0]["dashboard_url"] == "https://ht.test/overview"
+
+
+def test_accounts_query_batch_skips_full_history_by_default():
+    from app.accounts_page import accounts_query_batch
+    batch = accounts_query_batch("AND tenant_id IN ('snaptrade:abc')")
+    assert "trades" not in batch
+    assert "balances" in batch
+    assert "attribution" in batch
+    with_trades = accounts_query_batch(
+        "AND tenant_id IN ('snaptrade:abc')", include_trades=True)
+    assert "trades" in with_trades
+
+
+def test_position_detail_batch_includes_trades_and_chart():
+    from app.position_detail import position_detail_query_batch
+    batch = position_detail_query_batch(
+        "JPM", ["snaptrade:abc"], ["snaptrade:abc"])
+    assert "trades" in batch
+    assert "chart" in batch
+    assert "int_drip_fills" in batch["trades"]
+    assert "UPPER(TRIM('{symbol}'))" in batch["trades"] or "JPM" in batch["trades"]

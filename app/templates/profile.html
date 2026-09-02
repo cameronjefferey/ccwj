@@ -324,7 +324,11 @@
                         <a href="{{ url_for('upload') }}">upload a CSV</a>.
                     </p>
                     <div class="qa-grid">
+                        {% if snaptrade_at_cap %}
+                        <span class="atlas-hint mb-0">{{ snaptrade_account_count }} of {{ snaptrade_account_cap }} live broker accounts. Disconnect one to add another.</span>
+                        {% else %}
                         <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
+                        {% endif %}
                         <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
                     </div>
                     {% else %}
@@ -341,7 +345,7 @@
                 <div class="atlas-card-h">Quick actions</div>
                 <div class="atlas-card-b">
                     <div class="qa-grid">
-                        {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker or another account</a>{% endif %}
+                        {% if snaptrade_enabled and not snaptrade_at_cap %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker or another account</a>{% endif %}
                         <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV</a>
                         <a href="{{ url_for('profile', tab='preferences') }}" class="btn-sync-ghost">Edit profile</a>
                         <a href="{{ url_for('profile', tab='security') }}" class="btn-sync-ghost">Change password</a>
@@ -656,10 +660,16 @@
                         {% endfor %}
                     </ul>
                     <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
+                    {% if not snaptrade_at_cap %}
                     <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add a broker or another account</a>
-                    <p class="atlas-hint small mb-0 mt-2">Already on Schwab (or any connected broker)? Connect again and pick the extra account in the portal — another household Schwab, a second IBKR login, a TD RRSP. Same broker is fine.</p>
+                    {% endif %}
+                    <p class="atlas-hint small mb-0 mt-2">{% if snaptrade_at_cap %}You have {{ snaptrade_account_count }} of {{ snaptrade_account_cap }} live broker accounts. Disconnect one to add another, or upload a CSV.{% else %}Already on Schwab (or any connected broker)? Connect again and pick the extra account in the portal — another household Schwab, a second IBKR login, a TD RRSP. Same broker is fine.{% endif %}</p>
+                    {% else %}
+                    {% if snaptrade_at_cap %}
+                    <p class="atlas-hint mb-0">You already have {{ snaptrade_account_cap }} live broker accounts.</p>
                     {% else %}
                     <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary">Connect a brokerage</a>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>
@@ -751,7 +761,7 @@
                     {% if accounts %}
                     <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
                     {% else %}
-                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or <a href="{{ url_for('snaptrade_connect') }}">connect a broker</a>{% endif %}.</p>
+                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled and not snaptrade_at_cap %} or <a href="{{ url_for('snaptrade_connect') }}">connect a broker</a>{% endif %}.</p>
                     {% endif %}
                 </div>
             </div>

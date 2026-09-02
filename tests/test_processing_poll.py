@@ -52,3 +52,12 @@ def test_poll_failure_stops_spinner_and_redirects():
     html = Path("app/templates/upload_processing.html").read_text()
     assert 'id="pipelineHeading"' in html
     assert 'id="pipelineIcon"' in html
+
+
+def test_poll_gives_up_with_email_copy_instead_of_silent_redirect():
+    js = Path("app/templates/includes/_github_actions_poll.html").read_text()
+    assert "n < 300" in js
+    assert "we'll email you when the numbers are ready" in js
+    else_block = js.split("{% else %}")[-1]
+    assert "setTimeout" not in else_block
+    assert "leaveSoon" not in else_block
