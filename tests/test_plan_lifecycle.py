@@ -74,6 +74,28 @@ def test_missing_plan_defaults_to_trial():
     assert derive_plan_state("", None, now=NOW) == STATE_NO_DATA
 
 
+def test_day_60_disconnected_tenants_remain_readable(monkeypatch):
+    """Cleanup keeps the mirror, so read scoping must keep its tenant IDs."""
+    import app.models as models_mod
+
+    queries = []
+
+    def _fetch_all(sql, params):
+        queries.append((sql, params))
+        return [{"tenant_id": "snaptrade:kept"}]
+
+    monkeypatch.setattr(models_mod, "fetch_all", _fetch_all)
+
+    assert models_mod.get_tenant_ids_for_user(7) == ["snaptrade:kept"]
+    assert models_mod.get_broker_tenants_for_user(7) == [
+        {"tenant_id": "snaptrade:kept"}
+    ]
+    assert len(queries) == 2
+    for sql, params in queries:
+        assert "connection_status IN ('active', 'disconnected')" in sql
+        assert params == (7,)
+
+
 def test_plan_state_fails_open_when_row_missing(monkeypatch):
     monkeypatch.setattr(plan_mod, "get_user_plan_row", lambda uid: None)
     assert plan_mod.plan_state(123) == STATE_BETA

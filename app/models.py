@@ -1536,12 +1536,12 @@ def delete_broker_tenant(tenant_id):
 
 
 def get_tenant_ids_for_user(user_id):
-    """Active tenant_ids the user can see.
+    """Readable tenant_ids the user owns.
 
-    Excludes rows with ``connection_status != 'active'`` — disabled
-    connections still exist as rows so we can fire a "Reconnect"
-    banner, but their warehouse data is filtered out at the SQL
-    boundary until the user re-auths.
+    Day-60 reverse-trial cleanup marks SnapTrade tenants ``disconnected``
+    but deliberately keeps their warehouse rows so the frozen mirror stays
+    readable. Include those tenants in the read boundary. A ``disabled``
+    connection is still excluded until the user re-authenticates.
 
     Returns ``[]`` for None / unknown user / no connections.
     """
@@ -1549,7 +1549,8 @@ def get_tenant_ids_for_user(user_id):
         return []
     rows = fetch_all(
         "SELECT tenant_id FROM broker_tenants "
-        "WHERE user_id = %s AND connection_status = 'active' "
+        "WHERE user_id = %s "
+        "AND connection_status IN ('active', 'disconnected') "
         "ORDER BY created_at",
         (int(user_id),),
     )
@@ -1559,8 +1560,10 @@ def get_tenant_ids_for_user(user_id):
 def get_broker_tenants_for_user(user_id, include_inactive=False):
     """Full broker_tenants rows for this user (Settings → Account display).
 
-    ``include_inactive=True`` also returns rows whose connection has
-    been marked disabled, so the UI can show "Reconnect" CTAs for them.
+    By default this returns readable tenants: active connections plus
+    reverse-trial ``disconnected`` tenants whose warehouse mirror is kept.
+    ``include_inactive=True`` also returns disabled rows so connection
+    management can show "Reconnect" CTAs for them.
     """
     if user_id is None:
         return []
@@ -1573,7 +1576,7 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
         "WHERE user_id = %s"
     )
     if not include_inactive:
-        sql += " AND connection_status = 'active'"
+        sql += " AND connection_status IN ('active', 'disconnected')"
     sql += " ORDER BY created_at"
     return fetch_all(sql, (int(user_id),))
 
