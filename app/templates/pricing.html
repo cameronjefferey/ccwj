@@ -67,10 +67,10 @@
         <div class="row g-4 justify-content-center mb-5">
             <div class="col-md-6 col-lg-4">
                 <div class="pricing-card featured">
-                    <span class="badge-top">Start here</span>
+                    <span class="badge-top">{{ trial_card.badge if trial_card else "Start here" }}</span>
                     <h3>Full-access trial</h3>
                     <div class="price">$0</div>
-                    <div class="price-note">30 days from your first data &mdash; no card required</div>
+                    <div class="price-note">{{ trial_card.note if trial_card else "30 days from your first data — no card required" }}</div>
                     <ul>
                         <li>Complete history analyzed on day one</li>
                         <li>Overview, updated every close</li>
@@ -82,10 +82,15 @@
                         <li>After day 30, everything stays readable &mdash; daily updates pause until you subscribe</li>
                     </ul>
                     {% if current_user.is_authenticated %}
-                        {# Already signed up — the trial is theirs, so point at
-                           the thing that starts the clock (first data) rather
-                           than a signup form they can't use. #}
+                        {# The card reflects THIS user's actual plan state
+                           (trial_card_context in app/plan.py) rather than a
+                           generic "Start here" once they've connected data —
+                           see plan_status for the phrasing this mirrors. #}
+                        {% if trial_card and trial_card.cta_label %}
+                        <a href="{{ url_for(trial_card.cta_endpoint) }}" class="btn btn-outline-primary w-100">{{ trial_card.cta_label }}</a>
+                        {% elif not trial_card %}
                         <a href="{{ url_for('get_started') }}" class="btn btn-outline-primary w-100">Connect your data</a>
+                        {% endif %}
                     {% else %}
                         {% if signup_enabled %}
                         <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
@@ -97,7 +102,7 @@
                 </div>
             </div>
             <div class="col-md-6 col-lg-4">
-                <div class="pricing-card">
+                <div class="pricing-card" id="pro-plan">
                     <h3>Pro</h3>
                     <div class="price">${{ price_monthly or '19.99' }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
                     <div class="price-note">or ${{ price_annual or '199.99' }}/yr &mdash; ${{ price_annual_equiv or '16.67' }}/mo, two months free</div>

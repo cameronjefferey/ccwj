@@ -508,9 +508,9 @@ def snaptrade_callback():
 
     if saved:
         _kick_post_connect_sync(user_id)
+        all_accounts = get_snaptrade_accounts(user_id) or []
         pending_first = any(
-            not bool(r.get("first_sync_completed"))
-            for r in (get_snaptrade_accounts(user_id) or [])
+            not bool(r.get("first_sync_completed")) for r in all_accounts
         )
         qp = {"connecting": 1}
         if pending_first:
@@ -527,8 +527,66 @@ def snaptrade_callback():
                 "We're pulling your trade history now.",
                 "success",
             )
+        # Ask for nicknames right after the portal, before Overview — a
+        # fresh connect (never a reconnect, which is just re-auth on
+        # already-named accounts) with at least one account that still
+        # reads generic (Schwab Account, Robinhood ••••1876). Skippable;
+        # continues to the exact same sync_processing URL either way.
+        if not reconnect_label:
+            from app.routes import _snaptrade_accounts_needing_nickname
+            if _snaptrade_accounts_needing_nickname(all_accounts):
+                return redirect(url_for("snaptrade_name_accounts", **qp))
         return redirect(url_for("sync_processing", **qp))
     return redirect(url_for("snaptrade_accounts_page"))
+
+
+@app.route("/snaptrade/accounts/name-now", methods=["GET", "POST"])
+@login_required
+def snaptrade_name_accounts():
+    """One-time "name your accounts" step right after the Connection
+    Portal, before the user ever sees a generic ``Schwab Account`` label
+    on Overview. Only shown once per connect (whatever is still generic
+    after Save/Skip never comes back here automatically — the ongoing
+    rename affordance lives inline on Overview / Positions via
+    ``account_rename_urls``).
+    """
+    qp = {}
+    for key in ("connecting", "first"):
+        val = (request.args.get(key) or "").strip()
+        if val:
+            qp[key] = val
+    continue_url = url_for("sync_processing", **qp)
+
+    if request.method == "POST":
+        blocked = demo_block_writes("naming a brokerage account")
+        if blocked:
+            return blocked
+        rows = get_snaptrade_accounts(current_user.id) or []
+        for r in rows:
+            acct_id = r.get("snaptrade_account_id")
+            if not acct_id:
+                continue
+            field = f"nickname_{acct_id}"
+            if field not in request.form:
+                continue
+            nickname = (request.form.get(field) or "").strip()
+            if nickname:
+                update_snaptrade_account_nickname(
+                    current_user.id, acct_id, nickname)
+        flash("Got it — nicknames saved.", "success")
+        return redirect(continue_url)
+
+    from app.routes import _snaptrade_accounts_needing_nickname
+    rows = get_snaptrade_accounts(current_user.id) or []
+    generic = _snaptrade_accounts_needing_nickname(rows)
+    if not generic:
+        return redirect(continue_url)
+    return render_template(
+        "name_accounts.html",
+        title="Name your accounts",
+        generic_accounts=generic,
+        continue_url=continue_url,
+    )
 
 
 def _kick_post_connect_sync(user_id):

@@ -99,7 +99,7 @@
         {% if not session_is_live %}
         No U.S. cash session today.
         {% else %}
-        Today's trades usually show up after the next sync. An option that expired or was assigned is listed on that day, not the next morning.
+        Brokers post today's transactions overnight, so a fill placed this session usually doesn't show here until after the next sync — check back after the close, or see it confirmed on tomorrow's Overview. An option that expired or was assigned is listed on that day, not the next morning.
         {% endif %}
     </p>
     {% if _tt.trades %}
@@ -146,7 +146,13 @@
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">{% if not session_is_live %}No session today.{% else %}No trades recorded for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.{% endif %}</div>
+    <div class="tt-empty">
+        {% if not session_is_live %}No session today.
+        {% else %}
+        No trades confirmed for today{% if market_session and market_session.state == 'open' %} yet{% endif %}.
+        {% if market_session and market_session.state == 'open' %}If you traded this session, that's expected — it lands after the next sync, not immediately.{% endif %}
+        {% endif %}
+    </div>
     {% endif %}
     {% set _ccu = covered_call_unwritten %}
     {% if session_is_live and _ccu and _ccu.rows %}

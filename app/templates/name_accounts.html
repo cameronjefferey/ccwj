@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{# One-time "name your accounts" step, shown right after the SnapTrade
+   Connection Portal, before the user's first Overview. Multi-account
+   users otherwise land on rows of "Schwab Account (••1234)" — this asks
+   once, while it's top of mind, instead of relying on them to notice the
+   rename link later. #}
+
+{% block head %}
+<style>
+    .na-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 2rem 2.25rem;
+        color: #fff;
+        margin-bottom: 1.5rem;
+    }
+    .na-hero h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: .35rem; }
+    .na-hero p { font-size: .95rem; margin-bottom: 0; opacity: .9; }
+    .na-card {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 1.5rem 1.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.03);
+    }
+    .na-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: .85rem 0;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .na-row:last-child { border-bottom: none; }
+    .na-who { flex: 0 0 auto; min-width: 200px; }
+    .na-who .name { font-weight: 600; color: #212529; font-size: .92rem; }
+    .na-who .meta { color: #6c757d; font-size: .78rem; }
+    .na-input { flex: 1; }
+    .na-actions {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 1.25rem; padding-top: 1.1rem; border-top: 1px solid #f1f3f5;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="na-hero">
+            <h1>Name your accounts</h1>
+            <p>
+                Your broker sent us generic labels like "Schwab Account." Give each one a
+                name you'll recognize on Overview — or skip and rename anytime from
+                Account settings.
+            </p>
+        </div>
+
+        <div class="na-card">
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% for c in generic_accounts %}
+                <div class="na-row">
+                    <div class="na-who">
+                        <div class="name">{{ c.account_name }}</div>
+                        {% if c.account_number_masked %}
+                        <div class="meta">••••{{ c.account_number_masked[-4:] }}</div>
+                        {% elif c.broker_slug %}
+                        <div class="meta">{{ c.broker_slug|title }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="na-input">
+                        <input type="text" name="nickname_{{ c.snaptrade_account_id }}"
+                               maxlength="80" class="form-control"
+                               placeholder="e.g. Retirement, Sara's IRA, Trading"
+                               aria-label="Nickname for {{ c.account_name }}">
+                    </div>
+                </div>
+                {% endfor %}
+
+                <div class="na-actions">
+                    <a href="{{ continue_url }}" class="text-muted small">Skip for now</a>
+                    <button type="submit" class="btn btn-primary px-4">Save and continue</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

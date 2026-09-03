@@ -278,8 +278,13 @@
             background-image: none;
             padding-right: 2rem;
         }
-        .ht-ms-menu { min-width: 14rem; padding: .25rem 0 0; }
+        .ht-ms-menu { min-width: 16rem; padding: .25rem 0 0; }
         .ht-ms-list { max-height: 14rem; overflow-y: auto; }
+        .ht-ms-item-row {
+            display: flex; align-items: center; gap: .15rem;
+            padding-right: .45rem;
+        }
+        .ht-ms-item-row .ht-ms-item { flex: 1; min-width: 0; }
         .ht-ms-item {
             display: flex; align-items: center; gap: .5rem;
             font-size: .82rem; cursor: pointer;
@@ -288,6 +293,16 @@
         .ht-ms-item span {
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
+        .ht-ms-rename {
+            flex: 0 0 auto;
+            font-size: .68rem;
+            font-weight: 500;
+            color: var(--ht-muted);
+            text-decoration: none;
+            white-space: nowrap;
+            padding: .1rem .15rem;
+        }
+        .ht-ms-rename:hover { color: var(--ht-ink); text-decoration: underline; }
         .ht-ms-apply-row {
             position: sticky; bottom: 0;
             display: flex; gap: .4rem;
@@ -585,6 +600,8 @@
         [data-bs-theme="dark"] .filter-bar .lblh { color: var(--ht-muted); }
         [data-bs-theme="dark"] .ht-ms-hint { color: var(--ht-muted); }
         [data-bs-theme="dark"] .ht-ms-hint:hover { color: var(--ht-ink); }
+        [data-bs-theme="dark"] .ht-ms-rename { color: var(--ht-muted); }
+        [data-bs-theme="dark"] .ht-ms-rename:hover { color: var(--ht-ink); }
         [data-bs-theme="dark"] .ht-ms-apply-row {
             border-top-color: #3f3f46; background: var(--ht-surface);
         }
@@ -722,7 +739,7 @@
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_review %}active{% endif %}" href="#"
                        id="navReview" data-bs-toggle="dropdown" aria-expanded="false">
-                        {% if ep == 'today_view' %}Today{% else %}Overview{% endif %}
+                        Review
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navReview">
                         <li>

@@ -345,6 +345,9 @@
                 <tr data-href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}">
                     <td class="left" data-val="{{ a.account_display }}">
                         <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display }}</a>
+                        {% if account_rename_urls is defined and a.tenant_id in account_rename_urls %}
+                        <a class="acct-rename" href="{{ account_rename_urls[a.tenant_id] }}">rename</a>
+                        {% endif %}
                     </td>
                     {{ acct_money_cell(a.equity_pnl) }}
                     {{ acct_money_cell(a.option_pnl) }}

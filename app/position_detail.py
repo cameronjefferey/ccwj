@@ -18,7 +18,7 @@ import re
 from datetime import datetime, date, timedelta  # noqa: F401
 
 import pandas as pd
-from flask import render_template, request, redirect, url_for, flash, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_login import login_required, current_user
 from urllib.parse import quote_plus
 
@@ -1271,6 +1271,12 @@ def position_detail(symbol):
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce
+    # First-visit calm (any symbol, cookie-gated so there's no
+    # localStorage flash-of-content): a brand-new user's very first
+    # Position Detail load collapses the analytical tables behind one
+    # toggle — hero + one review sentence + chart stay up front. Every
+    # subsequent visit (same or different symbol) renders fully expanded.
+    first_visit = not request.cookies.get("ht_pd_seen")
     client = get_bigquery_client()
     user_accounts = _user_account_list()
 
@@ -1327,6 +1333,7 @@ def position_detail(symbol):
             "position_detail.html",
             symbol=symbol,
             error=str(exc),
+            first_visit=False,
             kpis={},
             strategy_rows=[],
             breakdown_rows=[],
@@ -2630,7 +2637,7 @@ def position_detail(symbol):
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []
 
-    return render_template(
+    resp = make_response(render_template(
         "position_detail.html",
         symbol=symbol,
         kpis=kpis,
@@ -2668,7 +2675,15 @@ def position_detail(symbol):
         tab_href_base="/position/",
         tab_href_suffix=tab_qs,
         mode="navigate",
-    )
+        first_visit=first_visit,
+    ))
+    if first_visit:
+        resp.set_cookie(
+            "ht_pd_seen", "1",
+            max_age=60 * 60 * 24 * 365 * 2,
+            httponly=True, samesite="Lax", secure=not app.debug,
+        )
+    return resp
 
 
 def _peek_num(val):

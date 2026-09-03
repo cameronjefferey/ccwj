@@ -529,7 +529,12 @@ def verify_email(token):
         return redirect(url_for("login"))
     flash("Email confirmed — thanks!", "success")
     if current_user.is_authenticated:
-        return redirect(url_for("weekly_review"))
+        # The next step after verifying is connecting/uploading a
+        # brokerage, not Overview (which has nothing to show yet for a
+        # brand-new signup). get_started already branches to the
+        # first-look profile once data exists, so this is safe for a
+        # returning user who verifies later too.
+        return redirect(url_for("get_started"))
     return redirect(url_for("login"))
 
 

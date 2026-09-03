@@ -57,6 +57,7 @@ FILTERED_QUERIES = [
     ("app.strategy_fit", "STRATEGY_FIT_OPTIONS_QUERY"),
     ("app.strategy_fit_insights", "STRATEGY_FIT_QUERY"),
     ("app.weekly_review", "OPEN_POSITIONS_QUERY"),
+    ("app.weekly_review", "OVERVIEW_STYLE_QUERY"),
     ("app.weekly_review", "ACCOUNT_VALUE_QUERY"),
     ("app.weekly_review", "TODAY_SNAPSHOT_ENRICHED_QUERY"),
     ("app.weekly_review", "DAY_ACCOUNTS_QUERY"),
