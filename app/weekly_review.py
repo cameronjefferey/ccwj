@@ -1047,6 +1047,26 @@ ORDER BY e.underlying_symbol, e.instrument_type
 """
 
 
+# Lightweight lifetime income-vs-directional signal for the FIRST-WEEK
+# "this is you" strip on Overview (building_history). Premium collected
+# (option_sell fills) vs option capital paid (option_buy fills) is the
+# same income/directional split trader_story.classify_style uses
+# conceptually, but as a single cheap tenant-scoped aggregate — no
+# per-symbol story loop, so it's safe to run on every Overview load
+# (only rendered while building_history is true, i.e. a user's first
+# ~4 snapshot days).
+OVERVIEW_STYLE_QUERY = """
+SELECT
+    tenant_id,
+    SUM(CASE WHEN action = 'option_sell' THEN ABS(amount) ELSE 0 END) AS premium_collected,
+    SUM(CASE WHEN action = 'option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid
+FROM `ccwj-dbt.analytics.stg_history`
+WHERE underlying_symbol IS NOT NULL
+  {tenant_filter}
+GROUP BY tenant_id
+"""
+
+
 
 
 
@@ -1772,6 +1792,63 @@ def _build_open_position_strip(all_pos_df, as_of_date, open_contracts_df=None):
         key=lambda x: (x.get("days_to_exp") if x.get("days_to_exp") is not None else 999)
     )
     return strip, expiring_options
+
+
+def _build_this_is_you_facts(strip, expiring_options, style_df):
+    """Three honest, already-computed facts for the FIRST-WEEK Overview.
+
+    New users don't open Trader Profile — this is the same "who are you as
+    a trader" signal surfaced right where they land, using data the page
+    already has (``strip`` / ``expiring_options``) plus one cheap tenant-
+    scoped aggregate (``style_df``, see ``OVERVIEW_STYLE_QUERY``). No
+    fabricated labels: the style fact only appears when there's enough
+    premium/capital to say something real.
+    """
+    facts = []
+    if strip:
+        facts.append({
+            "label": "Symbols held",
+            "value": str(len(strip)),
+            "detail": "currently open",
+        })
+    if expiring_options:
+        nxt = expiring_options[0]
+        d = nxt.get("days_to_exp")
+        facts.append({
+            "label": "Next on the clock",
+            "value": nxt.get("symbol") or "—",
+            "detail": (f"{d} day{'s' if d != 1 else ''}" if d is not None else "expiring soon"),
+        })
+    else:
+        facts.append({
+            "label": "Next on the clock",
+            "value": "Nothing",
+            "detail": "in the next 14 days",
+        })
+    try:
+        premium = 0.0
+        paid = 0.0
+        if style_df is not None and not style_df.empty:
+            premium = float(pd.to_numeric(
+                style_df.get("premium_collected"), errors="coerce").fillna(0).sum())
+            paid = float(pd.to_numeric(
+                style_df.get("option_capital_paid"), errors="coerce").fillna(0).sum())
+        if premium > 1 or paid > 1:
+            if premium >= paid:
+                facts.append({
+                    "label": "Leaning income",
+                    "value": f"${premium:,.0f}",
+                    "detail": "premium collected so far",
+                })
+            else:
+                facts.append({
+                    "label": "Leaning directional",
+                    "value": f"${paid:,.0f}",
+                    "detail": "paid buying options so far",
+                })
+    except Exception:
+        pass
+    return facts
 
 
 def _frame_as_of_date(df):
@@ -3696,6 +3773,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
         "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
         "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
+        "style_snapshot": OVERVIEW_STYLE_QUERY.format(tenant_filter=tenant_filter),
         "calendar": (DAILY_CALENDAR_QUERY.format(tenant_filter=tenant_filter), cal_cfg),
         "earnings": EARNINGS_UPCOMING_QUERY.format(tenant_filter=tenant_filter),
         "today_moves": (
@@ -3737,7 +3815,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
 # second request when the skeleton's X-HT-Full fetch is in flight so that
 # round-trip is not gated on attribution / upcoming_divs / calendar.
 OVERVIEW_CORE_KEYS = frozenset({
-    "account_value", "snapshots", "positions",
+    "account_value", "snapshots", "positions", "style_snapshot",
     "today_moves", "today_options_moves", "today_dividends",
     "today_trades", "benchmark_snapshot", "market_perf",
 })
@@ -4084,6 +4162,12 @@ def weekly_review():
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
+        # style_snapshot has no ``account`` column (tenant_id only) — filter
+        # unconditionally rather than gating on the "account" column check
+        # above.
+        if "style_snapshot" in batch:
+            batch["style_snapshot"] = _filter_df_by_tenant_ids(
+                batch["style_snapshot"], tenant_ids)
         # today_trades always has tenant_id (pinned in
         # test_tenant_filtered_queries_carry_tenant_id); filter even when
         # the account-column gate above skipped an empty/odd frame.
@@ -4374,6 +4458,11 @@ def weekly_review():
                 context["building_history"] = {
                     "days": snapshot_days,
                     "day_number": max(snapshot_days, 0) + 1,
+                    "facts": _build_this_is_you_facts(
+                        context.get("today_strip") or [],
+                        context.get("expiring_options") or [],
+                        batch.get("style_snapshot"),
+                    ),
                 }
         except Exception:
             pass

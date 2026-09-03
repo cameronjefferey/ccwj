@@ -2054,6 +2054,68 @@ class TestOpenPositionStrip:
         assert expiring == []
 
 
+class TestThisIsYouFacts:
+    """First-week Overview strip: symbols held / next on the clock / style."""
+
+    def test_empty_everything_still_returns_next_on_clock_fact(self):
+        from app.weekly_review import _build_this_is_you_facts
+        facts = _build_this_is_you_facts([], [], None)
+        assert len(facts) == 1
+        assert facts[0]["label"] == "Next on the clock"
+        assert facts[0]["value"] == "Nothing"
+
+    def test_symbols_held_counts_strip(self):
+        from app.weekly_review import _build_this_is_you_facts
+        strip = [{"symbol": "AAPL"}, {"symbol": "MSFT"}]
+        facts = _build_this_is_you_facts(strip, [], None)
+        held = next(f for f in facts if f["label"] == "Symbols held")
+        assert held["value"] == "2"
+
+    def test_next_on_clock_uses_nearest_expiring_option(self):
+        from app.weekly_review import _build_this_is_you_facts
+        expiring = [{"symbol": "TSLA", "days_to_exp": 3},
+                    {"symbol": "NVDA", "days_to_exp": 9}]
+        facts = _build_this_is_you_facts([], expiring, None)
+        clock = next(f for f in facts if f["label"] == "Next on the clock")
+        assert clock["value"] == "TSLA"
+        assert "3 day" in clock["detail"]
+
+    def test_style_fact_leans_income_when_premium_dominates(self):
+        from app.weekly_review import _build_this_is_you_facts
+        style_df = pd.DataFrame([
+            {"tenant_id": "t1", "premium_collected": 500.0, "option_capital_paid": 50.0},
+        ])
+        facts = _build_this_is_you_facts([], [], style_df)
+        style = next(f for f in facts if "Leaning" in f["label"])
+        assert style["label"] == "Leaning income"
+        assert style["value"] == "$500"
+
+    def test_style_fact_leans_directional_when_paid_dominates(self):
+        from app.weekly_review import _build_this_is_you_facts
+        style_df = pd.DataFrame([
+            {"tenant_id": "t1", "premium_collected": 20.0, "option_capital_paid": 400.0},
+        ])
+        facts = _build_this_is_you_facts([], [], style_df)
+        style = next(f for f in facts if "Leaning" in f["label"])
+        assert style["label"] == "Leaning directional"
+        assert style["value"] == "$400"
+
+    def test_style_fact_omitted_when_no_option_activity(self):
+        from app.weekly_review import _build_this_is_you_facts
+        style_df = pd.DataFrame([
+            {"tenant_id": "t1", "premium_collected": 0.0, "option_capital_paid": 0.0},
+        ])
+        facts = _build_this_is_you_facts([], [], style_df)
+        assert not any("Leaning" in f["label"] for f in facts)
+
+    def test_style_fact_omitted_when_frame_none_or_empty(self):
+        from app.weekly_review import _build_this_is_you_facts
+        assert not any("Leaning" in f["label"]
+                       for f in _build_this_is_you_facts([], [], None))
+        assert not any("Leaning" in f["label"]
+                       for f in _build_this_is_you_facts([], [], pd.DataFrame()))
+
+
 class TestDayTradesSettlementQuery:
     """DAY_TRADES_QUERY dates expiry to Friday and drops the Monday post."""
 

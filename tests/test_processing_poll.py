@@ -57,9 +57,32 @@ def test_poll_failure_stops_spinner_and_redirects():
 def test_connect_processing_copy_and_overview_ready_poll():
     html = Path("app/templates/sync_processing.html").read_text()
     assert "We connected your brokerage" in html
-    assert "Now pulling your trade history" in html
+    assert "We're pulling your trade history now" in html
     assert "api_sync_overview_ready" in html
     assert "you don't need to hit Sync again" in html
+    # The live "Building Overview — usually 15-40 minutes" ticker below
+    # (see the connecting-scoped poll script) owns the timing estimate —
+    # the static confirmation copy above must not repeat it (Sep 2026
+    # duplicative-language fix).
+    assert "Then we build Overview" not in html
+
+
+def test_onboarding_validation_scrolls_and_names_the_offending_question():
+    """Sep 2026 bug: a min-length error (e.g. the free-text 'one thing'
+    question) rendered its message in the shared banner AFTER every
+    question in the section, including the unrelated digest-email toggle
+    at the very bottom — looked like the wrong question was failing, and
+    the user couldn't find the actual offending field to fix it. Fix is
+    to scroll/focus the highlighted question and name it in the message."""
+    html = Path("app/templates/sync_processing.html").read_text()
+    assert "function focusMissing(q)" in html
+    assert "scrollIntoView" in html
+    assert "function questionLabel(q)" in html
+    # The old generic message named nothing; the new one embeds the
+    # question's own label so it can't be misread as the last question.
+    assert "That last one needs at least" not in html
+    assert "questionLabel(q)" in html and "needs at least" in html
+    assert "focusMissing(q);" in html
 
 
 def test_onboarding_holds_redirect_until_save_or_skip():

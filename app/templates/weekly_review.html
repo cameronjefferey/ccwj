@@ -128,7 +128,7 @@
 <div class="review-section" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:1rem 1.25rem;">
     <div style="display:flex; gap:.75rem; align-items:flex-start;">
         <div style="font-size:1.4rem; line-height:1;">&#128200;</div>
-        <div>
+        <div style="flex:1; min-width:0;">
             <div style="font-weight:700; color:#1e40af; font-size:.95rem;">
                 Building your history &mdash; day {{ building_history.day_number }}
             </div>
@@ -139,6 +139,22 @@
                 the weekly comparison after a week, and the daily G/L calendar fills in one square per
                 trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
             </div>
+            {% if building_history.facts %}
+            <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-top:.75rem; padding-top:.75rem; border-top:1px solid #bfdbfe;">
+                {% for f in building_history.facts %}
+                <div>
+                    <div style="font-size:1.05rem; font-weight:700; color:#1e40af;">{{ f.value }}</div>
+                    <div style="font-size:.68rem; color:#1e3a5f; text-transform:uppercase; letter-spacing:.05em; font-weight:600;">{{ f.label }}</div>
+                    <div style="font-size:.75rem; color:#1e3a5f; opacity:.8;">{{ f.detail }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            <div style="margin-top:.6rem;">
+                <a href="{{ scoped_url('trader_story') }}" style="font-size:.8rem; color:#1e40af; font-weight:600; text-decoration:none;">
+                    See your full trader profile &rarr;
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -222,11 +238,16 @@
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
             <div>
+                <div class="acct-name-row">
                 {% if snap.tenant_id %}
                 <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label(snap.tenant_id) }}</a>
                 {% else %}
                 <div class="acct-name">{{ snap.account | account_label(snap.tenant_id) }}</div>
                 {% endif %}
+                {% if account_rename_urls is defined and snap.tenant_id and snap.tenant_id in account_rename_urls %}
+                <a class="acct-rename" href="{{ account_rename_urls[snap.tenant_id] }}">rename</a>
+                {% endif %}
+                </div>
                 {% if snap.today_date_label or snap.today_date %}<div class="acct-meta">{{ snap.today_date_label or snap.today_date }}</div>
                 {% elif snap.today_is_live %}<div class="acct-meta">as of last sync</div>{% endif %}
             </div>

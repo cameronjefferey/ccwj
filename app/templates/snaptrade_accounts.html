@@ -128,6 +128,30 @@
     }
     .reconnect-banner .reconnect-btn:hover { background: #b91c1c; border-color: #b91c1c; }
     .needs-reconnect-note { font-size: .8125rem; color: #b91c1c; font-weight: 600; }
+
+    /* "Complete this account" — nickname (form above) + older CSV history
+       + opening-balance disclosure, assembled in one place per account. */
+    .complete-account {
+        flex: 1 1 100%;
+        width: 100%;
+        margin-top: .1rem;
+    }
+    .complete-account > summary {
+        cursor: pointer;
+        list-style: none;
+        font-size: .8125rem;
+        font-weight: 600;
+        color: #6366f1;
+    }
+    .complete-account > summary:hover { text-decoration: underline; }
+    .complete-account > summary::-webkit-details-marker { display: none; }
+    .complete-account-body {
+        margin-top: .6rem;
+        padding: .8rem .9rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+    }
 </style>
 {% endblock %}
 
@@ -298,6 +322,40 @@
                     <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
                     <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
                 </form>
+                {# ── Complete this account: the broker's own window is not a
+                   lifetime archive. Assemble the three levers in one place —
+                   nickname (form above), older history via CSV (Schwab only,
+                   the only parser that exists today), and an honest note that
+                   pre-window positions are estimated, not fabricated. ── #}
+                {% set _is_schwab = c.broker_slug and 'schwab' in c.broker_slug|lower %}
+                <details class="complete-account">
+                    <summary>Complete this account</summary>
+                    <div class="complete-account-body">
+                        {% if _is_schwab %}
+                        <p class="small text-body-secondary mb-2">
+                            Schwab only hands SnapTrade a recent window of trade history.
+                            If you have an older Schwab CSV export, upload it here to fill in
+                            the years before this account connected.
+                        </p>
+                        <a href="{{ url_for('upload') }}?tenant=snaptrade:{{ c.snaptrade_account_id }}"
+                           class="btn btn-sm btn-outline-primary">Upload older Schwab CSV</a>
+                        {% else %}
+                        <p class="small text-body-secondary mb-2">
+                            We don't have a CSV parser for {{ c.broker_slug|title if c.broker_slug else 'this broker' }}
+                            yet, so pre-window history can't be backfilled here.
+                            <a href="{{ url_for('upload') }}#export-other">Request it</a> and we'll use it to
+                            decide which broker to parse next.
+                        </p>
+                        {% endif %}
+                        <p class="small text-body-secondary mb-0">
+                            Positions already open before this account's connection date show an
+                            <strong>estimated opening balance</strong> on Position Detail (cost is
+                            inferred from the broker snapshot or first available price — the share
+                            count is exact). Uploading older history replaces the estimate with
+                            your real fills.
+                        </p>
+                    </div>
+                </details>
             </div>
             {% endfor %}
         </div>

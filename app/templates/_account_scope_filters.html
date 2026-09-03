@@ -85,11 +85,16 @@
         <div class="dropdown-menu ht-ms-menu">
             <div class="ht-ms-list">
                 {% for c in visible_account_choices %}
+                <div class="ht-ms-item-row">
                 <label class="dropdown-item ht-ms-item">
                     <input type="checkbox" value="{{ c.tenant_id }}"
                            {% if c.tenant_id in selected_tenant_ids %}checked{% endif %}>
                     <span>{{ c.label | account_label(c.tenant_id) }}</span>
                 </label>
+                {% if account_rename_urls is defined and c.tenant_id in account_rename_urls %}
+                <a class="ht-ms-rename" href="{{ account_rename_urls[c.tenant_id] }}">rename</a>
+                {% endif %}
+                </div>
                 {% endfor %}
             </div>
             <div class="ht-ms-apply-row">

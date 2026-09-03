@@ -281,6 +281,54 @@ def _resolve_account_display(
     return account_name
 
 
+def _account_rename_urls_for_rows(rows) -> dict:
+    """``tenant_id -> /snaptrade/accounts#acct-<id>`` for generic SnapTrade names.
+
+    A nickname that is missing or identical to the broker ``account_name``
+    (``Schwab Account``, ``Robinhood ••••1876``) still reads as generic.
+    Manual / demo tenants have no nickname form on that page, so they
+    are omitted. Empty dict when nothing needs renaming.
+    """
+    from flask import url_for
+
+    out = {}
+    for row in rows or []:
+        nick = (row.get("display_nickname") or "").strip()
+        name = (row.get("account_name") or "").strip()
+        if nick and nick != name:
+            continue
+        tid = (row.get("tenant_id") or "").strip()
+        if not tid.startswith("snaptrade:"):
+            continue
+        acct_id = (row.get("broker_uuid") or "").strip() or tid.split(":", 1)[-1]
+        if not acct_id:
+            continue
+        try:
+            out[tid] = url_for(
+                "snaptrade_accounts_page", _anchor=f"acct-{acct_id}",
+            )
+        except Exception:
+            continue
+    return out
+
+
+def _is_generic_account_name(row) -> bool:
+    """Same "reads as generic" predicate as ``_account_rename_urls_for_rows``,
+    but usable directly on ``snaptrade_accounts`` rows (``account_name`` /
+    ``display_nickname``) — no ``tenant_id`` / ``broker_uuid`` required.
+    Used by the post-connect "name your accounts" step.
+    """
+    nick = (row.get("display_nickname") or "").strip()
+    name = (row.get("account_name") or "").strip()
+    return not nick or nick == name
+
+
+def _snaptrade_accounts_needing_nickname(rows):
+    """Subset of ``get_snaptrade_accounts()`` rows that still read generic
+    (``Schwab Account``, ``Robinhood ••••1876``) — no nickname yet."""
+    return [r for r in (rows or []) if _is_generic_account_name(r)]
+
+
 def _tenant_label_map_for_user(user_id) -> dict:
     """``tenant_id -> disambiguated display label`` for one user, or ``{}``.
 

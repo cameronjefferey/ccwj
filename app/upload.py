@@ -2046,6 +2046,14 @@ def upload():
         )
         accounts = sorted(set(user_accounts))
         recent_uploads = get_uploads_for_user(current_user.id)
+        # "Complete this account" (snaptrade_accounts.html) deep-links here
+        # with ?tenant=<tenant_id> so the picker lands pre-selected instead
+        # of making the user re-find the account they just clicked from.
+        preselect_tenant = request.args.get("tenant", "").strip()
+        if preselect_tenant and not any(
+            c.get("tenant_id") == preselect_tenant for c in account_choices
+        ):
+            preselect_tenant = ""
         return render_template(
             "upload.html", title="Upload Data",
             accounts=accounts,
@@ -2053,6 +2061,7 @@ def upload():
             recent_uploads=recent_uploads,
             github_upload_enabled=seed_writes_enabled,
             csv_export_brokers=CSV_EXPORT_BROKERS,
+            preselect_tenant=preselect_tenant,
         )
 
     # ------------------------------------------------------------------

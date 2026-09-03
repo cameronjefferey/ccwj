@@ -291,9 +291,9 @@
                             </p>
                             <select class="form-select mb-2" name="account_name" id="accountSelect"
                                     {% if not upload_cfg_ok %}disabled{% endif %}>
-                                <option value="" selected>-- Select an account --</option>
+                                <option value="" {% if not preselect_tenant %}selected{% endif %}>-- Select an account --</option>
                                 {% for choice in account_choices|default([]) %}
-                                <option value="{{ choice.tenant_id }}">{{ choice.label }}</option>
+                                <option value="{{ choice.tenant_id }}" {% if preselect_tenant and choice.tenant_id == preselect_tenant %}selected{% endif %}>{{ choice.label }}</option>
                                 {% endfor %}
                                 <option value="__new__">+ Create new account...</option>
                             </select>

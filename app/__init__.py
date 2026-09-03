@@ -135,6 +135,7 @@ def _inject_feature_flags():
             "tenants_query": None,
             "scope_query_string": "",
             "scope_is_filtered": False,
+            "account_rename_urls": {},
             "billing_enabled": False,
             "price_monthly": None,
             "price_annual": None,
@@ -190,6 +191,7 @@ def _inject_feature_flags():
     tenants_query = None
     scope_query_string = ""
     scope_is_filtered = False
+    account_rename_urls = {}
     try:
         if current_user.is_authenticated:
             from flask import request as _req
@@ -198,6 +200,7 @@ def _inject_feature_flags():
                 list_account_groups as _list_account_groups,
             )
             from app.routes import (
+                _account_rename_urls_for_rows,
                 _blank_query_text,
                 _groups_query_value,
                 _picker_tenant_ids,
@@ -213,6 +216,7 @@ def _inject_feature_flags():
             groups_query = _groups_query_value()
             _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
             _label_map = _tenant_label_map_for_user(current_user.id) or {}
+            account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
             scope_account_choices = [
                 {"tenant_id": tid, "label": lab}
                 for tid, lab in sorted(
@@ -246,6 +250,7 @@ def _inject_feature_flags():
         tenants_query = None
         scope_query_string = ""
         scope_is_filtered = False
+        account_rename_urls = {}
 
     # Stripe is only offered when fully configured (keys + both price IDs);
     # checkout routes refuse otherwise so a half-configured deploy cannot
@@ -291,6 +296,7 @@ def _inject_feature_flags():
         "tenants_query": tenants_query,
         "scope_query_string": scope_query_string,
         "scope_is_filtered": scope_is_filtered,
+        "account_rename_urls": account_rename_urls,
         "billing_enabled": billing_enabled,
         "price_monthly": price_monthly,
         "price_annual": price_annual,

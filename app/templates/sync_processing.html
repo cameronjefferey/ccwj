@@ -425,8 +425,8 @@
         <h2 class="fw-bold mb-2" id="pipelineHeading">{% if connecting %}We connected your brokerage{% elif show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
         <p class="processing-sub mb-2">
             {% if connecting %}
-                Now pulling your trade history. Then we build Overview (usually <strong>15–40 minutes</strong>).
-                We'll email you when it's ready — you don't need to hit Sync again.
+                We're pulling your trade history now. We'll email you when it's ready —
+                you don't need to hit Sync again.
             {% elif show_onboarding %}
                 Usually 15–40 minutes. If several accounts synced at once, yours waits in line — we'll email you when Overview is ready. Take your time with the survey.
             {% else %}
@@ -535,8 +535,29 @@
         return form.querySelector(".ob-section.is-active");
     }
 
+    // Scrolls/highlights the offending question so a red-bordered field
+    // buried mid-section (or above the fold) doesn't just leave the error
+    // text sitting at the bottom looking like it's complaining about
+    // whatever question happens to be last.
+    function focusMissing(q) {
+        if (q.scrollIntoView) {
+            q.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        var field = q.querySelector("textarea, input[type=text], input:checked, input[type=radio], input[type=checkbox]");
+        if (field && field.focus) {
+            try { field.focus({ preventScroll: true }); } catch (e) { field.focus(); }
+        }
+    }
+
+    function questionLabel(q) {
+        var el = q.querySelector(".ob-q-label");
+        return el ? el.textContent.trim() : "That question";
+    }
+
     // Returns null on success, or an error message string. Highlights
-    // the first missing question by adding .border-danger to its wrapper.
+    // the first missing question by adding .is-missing to its wrapper and
+    // scrolling it into view — the error banner alone isn't enough since
+    // it always renders after every question in the section.
     function validateActive() {
         var section = activeSection();
         if (!section) return null;
@@ -560,12 +581,14 @@
                 ok = v.length >= (minLen || 1);
                 if (!ok && minLen) {
                     q.classList.add("is-missing");
-                    return "That last one needs at least " + minLen + " characters.";
+                    focusMissing(q);
+                    return "\u201c" + questionLabel(q) + "\u201d needs at least " + minLen + " characters (highlighted above).";
                 }
             }
             if (!ok) {
                 q.classList.add("is-missing");
-                return "Please answer the highlighted question.";
+                focusMissing(q);
+                return "\u201c" + questionLabel(q) + "\u201d still needs an answer (highlighted above).";
             }
         }
         return null;
@@ -663,8 +686,12 @@
 <style>
     .ob-question.is-missing {
         border-left: 3px solid #dc3545;
-        padding-left: .75rem;
+        background: #fff5f5;
+        padding: .6rem .75rem;
         margin-left: -.75rem;
+        margin-right: -.75rem;
+        border-radius: 4px;
+        transition: background .3s ease;
     }
 </style>
 {% endif %}

@@ -253,6 +253,92 @@ def plan_status_for_banner(user_id, now=None):
     }
 
 
+_TRIAL_CARD_DEFAULT = {
+    "badge": "Start here",
+    "note": "30 days from your first data \u2014 no card required",
+    "cta_label": "Connect your data",
+    "cta_endpoint": "get_started",
+}
+
+
+def trial_card_context(user_id, now=None):
+    """Presentation data for the Pricing page's "Full-access trial" card.
+
+    Someone who has already connected data and started their trial (or is
+    frozen, subscribed, or grandfathered) should NOT see generic "Start
+    here" / "Connect your data" marketing copy for a step they already
+    took \u2014 the card should read as THEIR plan. Returns a dict with
+    ``badge`` (top pill), ``note`` (replaces the price sub-text), and an
+    optional ``cta_label`` / ``cta_endpoint`` (a route name the caller
+    resolves with ``url_for``; ``None`` means no button, just the note).
+    Mirrors the phrasing already used by the ``plan_status`` nav banner
+    (see ``plan_status_for_banner``) so the two surfaces never disagree.
+    Fails open to the generic trial copy on any error.
+    """
+    try:
+        row = get_user_plan_row(user_id)
+        if not row:
+            return dict(_TRIAL_CARD_DEFAULT)
+        state = derive_plan_state(
+            row.get("plan"),
+            row.get("trial_started_at"),
+            exempt=_is_exempt_username(row.get("username")),
+            now=now,
+        )
+        if state == STATE_NO_DATA:
+            return dict(_TRIAL_CARD_DEFAULT)
+
+        from datetime import timedelta
+
+        started = row.get("trial_started_at")
+
+        if state == STATE_TRIALING:
+            days = _days_since(started, now=now) or 0
+            frozen_on = (started + timedelta(days=TRIAL_DAYS)).date() if started else None
+            note = f"Day {days} of {TRIAL_DAYS} \u2014 full access"
+            if frozen_on:
+                note += f" through {frozen_on.strftime('%b %-d, %Y')}"
+            return {
+                "badge": "Your current plan",
+                "note": note,
+                "cta_label": "Manage your accounts",
+                "cta_endpoint": "snaptrade_accounts_page",
+            }
+        if state == STATE_FROZEN:
+            frozen_on = (started + timedelta(days=TRIAL_DAYS)).date() if started else None
+            note = "Trial ended"
+            if frozen_on:
+                note += f" {frozen_on.strftime('%b %-d, %Y')}"
+            note += " \u2014 subscribe below to resume daily updates."
+            return {"badge": "Trial ended", "note": note, "cta_label": None, "cta_endpoint": None}
+        if state == STATE_GRACE_EXPIRED:
+            disconnect_on = (
+                (started + timedelta(days=TRIAL_DAYS + GRACE_DAYS)).date() if started else None
+            )
+            note = "Broker disconnected"
+            if disconnect_on:
+                note += f" {disconnect_on.strftime('%b %-d, %Y')}"
+            note += " \u2014 subscribe below to reconnect."
+            return {"badge": "Trial ended", "note": note, "cta_label": None, "cta_endpoint": None}
+        if state == STATE_ACTIVE:
+            return {
+                "badge": "Included",
+                "note": "You're subscribed to Pro \u2014 everything here is included.",
+                "cta_label": None,
+                "cta_endpoint": None,
+            }
+        if state == STATE_BETA:
+            return {
+                "badge": "Your plan",
+                "note": "Grandfathered beta access \u2014 thanks for being an early user.",
+                "cta_label": None,
+                "cta_endpoint": None,
+            }
+    except Exception as exc:
+        _log.warning("trial_card_context(%s) failed: %s", user_id, exc)
+    return dict(_TRIAL_CARD_DEFAULT)
+
+
 def plan_block_writes(action: str = "this action"):
     """Short-circuit data-write POST handlers when the signed-in user's trial
     has lapsed. Mirrors ``demo_block_writes`` in app/utils.py: returns a

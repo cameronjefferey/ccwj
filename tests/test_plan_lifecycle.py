@@ -153,6 +153,75 @@ def test_banner_shapes(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# trial_card_context — Pricing page "Full-access trial" card reflects the
+# viewer's OWN plan state instead of generic "Start here" marketing copy.
+# ---------------------------------------------------------------------------
+
+
+def _mock_plan_row(monkeypatch, plan, started, username="u"):
+    monkeypatch.setattr(plan_mod, "_is_exempt_username", lambda u: False)
+    monkeypatch.setattr(
+        plan_mod, "get_user_plan_row",
+        lambda uid: {"plan": plan, "trial_started_at": started, "username": username},
+    )
+
+
+def test_trial_card_no_data_is_generic_start_here(monkeypatch):
+    _mock_plan_row(monkeypatch, "trial", None)
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Start here"
+    assert card["cta_endpoint"] == "get_started"
+
+
+def test_trial_card_trialing_shows_day_progress_and_manage_cta(monkeypatch):
+    _mock_plan_row(monkeypatch, "trial", _started(10))
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Your current plan"
+    assert "Day 10 of 30" in card["note"]
+    assert card["cta_endpoint"] == "snaptrade_accounts_page"
+
+
+def test_trial_card_frozen_has_no_cta_and_names_the_date(monkeypatch):
+    _mock_plan_row(monkeypatch, "trial", _started(35))
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Trial ended"
+    assert "subscribe" in card["note"].lower()
+    assert card["cta_label"] is None
+
+
+def test_trial_card_grace_expired_mentions_disconnect(monkeypatch):
+    _mock_plan_row(monkeypatch, "trial", _started(TRIAL_DAYS + GRACE_DAYS + 5))
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Trial ended"
+    assert "reconnect" in card["note"].lower()
+    assert card["cta_label"] is None
+
+
+def test_trial_card_active_says_included(monkeypatch):
+    _mock_plan_row(monkeypatch, "active", _started(400))
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Included"
+    assert card["cta_label"] is None
+
+
+def test_trial_card_beta_says_grandfathered(monkeypatch):
+    _mock_plan_row(monkeypatch, "beta", _started(400))
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Your plan"
+    assert card["cta_label"] is None
+
+
+def test_trial_card_fails_open_on_error(monkeypatch):
+    def boom(uid):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(plan_mod, "get_user_plan_row", boom)
+    card = plan_mod.trial_card_context(1, now=NOW)
+    assert card["badge"] == "Start here"
+    assert card["cta_endpoint"] == "get_started"
+
+
+# ---------------------------------------------------------------------------
 # plan_block_writes — route-level gate
 # ---------------------------------------------------------------------------
 

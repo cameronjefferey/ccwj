@@ -110,10 +110,21 @@ def pricing():
                 subscription = subscription_summary(current_user.id)
     except Exception:
         subscription = None
+
+    trial_card = None
+    try:
+        if current_user.is_authenticated:
+            from app.plan import trial_card_context
+
+            trial_card = trial_card_context(current_user.id)
+    except Exception:
+        trial_card = None
+
     return render_template(
         "pricing.html",
         title="Pricing",
         subscription=subscription,
+        trial_card=trial_card,
     )
 
 
