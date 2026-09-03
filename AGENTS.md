@@ -650,8 +650,11 @@ post-sync processing pages land here on first data.
 The SnapTrade Connection Portal callback **starts the first pull in the
 background** (`_kick_post_connect_sync`) and sends the user to
 `/sync/processing?connecting=1` — they should not have to click Sync now.
-The `data_ready` email waits until `positions_summary` actually has rows
-for that user's tenants (a tenant row from connect is not enough).
+The processing redirect and one-time `data_ready` email wait until **every**
+active tenant has queryable position or account-balance rows (a tenant row
+from connect, or only the first account in a multi-account build, is not
+enough). Account balances cover legitimate cash-only accounts that never
+appear in `positions_summary`.
 
 After SnapTrade connect, the first 10 users of a brokerage we have not
 modeled yet (anything outside schwab / alpaca / fidelity / interactive —
@@ -792,9 +795,9 @@ ONLY because the cache is explicitly flushed when the data actually changes:
 `curl POST /internal/cache/flush` (`X-Cache-Flush-Token` =
 `CACHE_FLUSH_TOKEN` secret, set both as a GitHub secret and a Render env
 var). The warehouse rebuild also passes `?ready=1` so users whose
-`positions_summary` now has rows can get the `data_ready` email (dedupe
-`email_sends`; skip if they only have a tenant row from connect and no
-warehouse data yet). The evening prices
+every active tenant now has position or account-balance rows can get the
+`data_ready` email (dedupe `email_sends`; skip tenant-only or partial
+multi-account builds). The evening prices
 flush must not, or a user still waiting on their first rebuild gets a
 false "your data is ready." The Flask-Limiter store uses
 `RATELIMIT_STORAGE_URI`, else the same `QUERY_CACHE_REDIS_URL`, else

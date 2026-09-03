@@ -206,6 +206,47 @@ def test_send_data_ready_skips_when_warehouse_empty(monkeypatch):
     assert sent == []
 
 
+def test_send_data_ready_waits_for_every_connected_tenant(monkeypatch):
+    """A first multi-account rebuild must not consume the one-time email
+    while only the first account is queryable."""
+    import app.cache_ops as cache_ops
+    import app.db as db_mod
+
+    class _U:
+        email = "a@example.com"
+        username = "ada"
+
+    recorded = []
+    sent = []
+    monkeypatch.setattr(
+        db_mod,
+        "fetch_all",
+        lambda sql: [
+            {"user_id": 9, "tenant_id": "snaptrade:first"},
+            {"user_id": 9, "tenant_id": "snaptrade:second"},
+        ],
+    )
+    monkeypatch.setattr(
+        cache_ops,
+        "warehouse_tenants_present",
+        lambda tids: {"snaptrade:first"},
+    )
+    monkeypatch.setattr("app.models.User.get_by_id", lambda uid: _U())
+    monkeypatch.setattr(
+        "app.models.record_email_send",
+        lambda *a, **k: recorded.append(1) or True,
+    )
+    monkeypatch.setattr(
+        "app.email.send_data_ready_email",
+        lambda **k: sent.append(k),
+    )
+
+    cache_ops._send_data_ready_after_rebuild()
+
+    assert recorded == []
+    assert sent == []
+
+
 def test_send_data_ready_skips_demo_user(monkeypatch):
     import app.cache_ops as cache_ops
     import app.db as db_mod
@@ -242,6 +283,44 @@ def test_warehouse_tenants_present_empty_list_is_false():
     import app.cache_ops as cache_ops
     assert cache_ops.warehouse_tenants_present([]) == set()
     assert cache_ops.warehouse_has_rows_for_tenants([]) is False
+
+
+def test_warehouse_ready_requires_every_requested_tenant(monkeypatch):
+    import app.cache_ops as cache_ops
+
+    monkeypatch.setattr(
+        cache_ops,
+        "warehouse_tenants_present",
+        lambda tids: {"snaptrade:first"},
+    )
+
+    assert cache_ops.warehouse_has_rows_for_tenants(
+        ["snaptrade:first", "snaptrade:second"]
+    ) is False
+    assert cache_ops.warehouse_has_rows_for_tenants(
+        ["snaptrade:first"]
+    ) is True
+
+
+def test_warehouse_presence_query_includes_cash_only_accounts(monkeypatch):
+    import pandas as pd
+    import app.bigquery_client as bq
+    import app.cache_ops as cache_ops
+    import app.query_cache as query_cache
+
+    captured = {}
+    monkeypatch.setattr(bq, "get_bigquery_client", lambda: object())
+
+    def _query(client, sql, label):
+        captured["sql"] = sql
+        return pd.DataFrame({"tenant_id": ["snaptrade:cash"]})
+
+    monkeypatch.setattr(query_cache, "cached_query_df", _query)
+
+    found = cache_ops.warehouse_tenants_present(["snaptrade:cash"])
+
+    assert found == {"snaptrade:cash"}
+    assert "stg_account_balances" in captured["sql"]
 
 
 def test_accounts_query_batch_skips_full_history_by_default():
