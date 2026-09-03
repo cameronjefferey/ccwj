@@ -1593,7 +1593,14 @@ def test_kick_post_connect_sync_pulls_each_account_without_force_refresh(
         def start(self):
             self._target()
 
-    monkeypatch.setattr(_snap.threading, "Thread", _ImmediateThread)
+    # Patch ONLY the snaptrade module's own `threading` reference (not the
+    # global stdlib module — flask-limiter uses threading.Timer internally,
+    # and mutating the shared module's Thread attribute corrupts any Timer
+    # created elsewhere for the rest of the test session; see the same
+    # pattern in tests/test_snaptrade_webhook.py).
+    import types
+
+    monkeypatch.setattr(_snap, "threading", types.SimpleNamespace(Thread=_ImmediateThread))
 
     with flask_app.app_context():
         _snap._kick_post_connect_sync(7)

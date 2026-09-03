@@ -6,6 +6,8 @@ fail closed (no token / wrong token / unset env -> 403) and flush + kick
 the warm thread on a valid token.
 """
 
+import types
+
 import pytest
 
 from app import app as flask_app
@@ -62,7 +64,11 @@ def test_flush_ok_clears_and_warms(client, monkeypatch):
             # the endpoint acquired so later tests aren't wedged.
             cache_ops._warm_lock.release()
 
-    monkeypatch.setattr(cache_ops.threading, "Thread", _FakeThread)
+    # Patch ONLY cache_ops's own `threading` reference (not the global
+    # stdlib module — flask-limiter uses threading.Timer internally, and
+    # mutating the shared module's Thread attribute corrupts any Timer
+    # created elsewhere for the rest of the test session).
+    monkeypatch.setattr(cache_ops, "threading", types.SimpleNamespace(Thread=_FakeThread))
 
     resp = client.post(
         "/internal/cache/flush",
@@ -109,7 +115,9 @@ def test_flush_without_ready_does_not_email(client, monkeypatch):
             if cache_ops._warm_lock.locked():
                 cache_ops._warm_lock.release()
 
-    monkeypatch.setattr(cache_ops.threading, "Thread", _FakeThread)
+    # Patch ONLY cache_ops's own `threading` reference — see comment on
+    # the corresponding line in test_flush_ok_clears_and_warms.
+    monkeypatch.setattr(cache_ops, "threading", types.SimpleNamespace(Thread=_FakeThread))
     resp = client.post(
         "/internal/cache/flush?warm=0",
         headers={"X-Cache-Flush-Token": "correct-token"},
@@ -133,7 +141,9 @@ def test_flush_ready_starts_data_ready_email(client, monkeypatch):
             if cache_ops._warm_lock.locked():
                 cache_ops._warm_lock.release()
 
-    monkeypatch.setattr(cache_ops.threading, "Thread", _FakeThread)
+    # Patch ONLY cache_ops's own `threading` reference — see comment on
+    # the corresponding line in test_flush_ok_clears_and_warms.
+    monkeypatch.setattr(cache_ops, "threading", types.SimpleNamespace(Thread=_FakeThread))
     resp = client.post(
         "/internal/cache/flush?ready=1&warm=0",
         headers={"X-Cache-Flush-Token": "correct-token"},
