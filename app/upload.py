@@ -2453,8 +2453,8 @@ def api_sync_overview_ready():
     """Poll for whether this user's Overview can actually render.
 
     Used by the post-connect processing page. Must match the data-ready
-    email gate (``positions_summary`` rows for the user's tenants) so we
-    never send someone to an empty Overview.
+    email gate: every active tenant needs position or account-balance rows,
+    so a partial multi-account build cannot redirect early.
     """
     from app.cache_ops import warehouse_has_rows_for_tenants
     from app.models import get_tenant_ids_for_user
