@@ -118,9 +118,9 @@ def _create_user(conn, username, password="testpass123", email=None):
             "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s) RETURNING id",
             (username, generate_password_hash(password), email),
         )
-        user_id = cur.fetchone()[0]
+        row = cur.fetchone()
     conn.commit()
-    return user_id
+    return int(row["id"])
 
 
 @pytestmark_db
