@@ -4,10 +4,11 @@
     Produces one row per classified "trade group" — either an equity session
     or an option contract — tagged with a strategy label:
 
-      - Covered Call      (sold call FULLY covered by shares held when the
-                           call was written — contracts × 100 vs shares
-                           as-of the write date, with a 3-day buy-write
-                           lookahead; see coverage_at_write)
+      - Covered Call      (sold call FULLY covered by shares held when
+                           the call was written — contracts × 100 vs
+                           shares as-of the write date, with a 3-day
+                           buy-write lookahead; see coverage_at_write.
+                           Current holdings do not matter.)
       - Partially Covered Call (>= 100 shares at write but fewer than
                            contracts × 100 — some contracts are naked)
       - Cash-Secured Put  (sold put without equity)
@@ -25,7 +26,8 @@
       - Long Call          (bought call, standalone)
       - Long Put           (bought put,  standalone, no equity)
       - Protective Put     (bought put while holding >= 100 shares at write)
-      - Naked Call         (sold call without any coverage at write)
+      - Naked Call         (sold call without coverage in the write-date
+                           + 3-day buy-write window)
       - Poor Man Covered Call (sold call covered by long call matching the
                             int_pmcc_pairs windows — long >= 180d, short <= 60d)
       - Buy and Hold       (equity only, no associated options; a nominal
@@ -42,7 +44,18 @@
     includes synthesized opening balances for pre-window holdings), not from
     the session's lifetime max_quantity_held — a trader who once held 500
     shares but had sold them before writing a call was previously labeled
-    Covered when the call was in fact naked.
+    Covered when the call was in fact naked. Current holdings do not
+    flip the label: a call written without shares in the 3-day buy-write
+    window stays Naked even if the stock is bought later.
+
+    Sep 2026 (CCJ): the equity session used a different test (100+ shares
+    + a sold call live for >= 30% of session days) than the contract
+    (write-date coverage), so a later-covered or still-held lot read as
+    Covered Call (equity) AND Naked Call (the short call). Equity is now
+    Covered Call only when at least one overlapping sold call was
+    write-date covered. Synthetic opening fills count at write even when
+    they are dated after the write (they are "day before first fill"
+    placeholders for pre-window shares, not the true acquisition date).
 */
 
 with equity_sessions as (
@@ -326,11 +339,19 @@ coverage_at_write as (
         oc.account,
         oc.user_id,
         oc.trade_symbol,
+        -- Synthetic openings are dated "day before first real fill" as a
+        -- sort key, not the true acquisition date. Those shares were held
+        -- before the history window, so they count at every in-window
+        -- write. Real fills still have to land on/before open+3d.
         greatest(
-            sum(case when f.trade_date <= oc.open_date
-                     then f.signed_quantity else 0 end),
-            sum(case when f.trade_date <= date_add(oc.open_date, interval 3 day)
-                     then f.signed_quantity else 0 end)
+            sum(case
+                    when coalesce(f.is_synthetic_opening, false)
+                      or f.trade_date <= oc.open_date
+                    then f.signed_quantity else 0 end),
+            sum(case
+                    when coalesce(f.is_synthetic_opening, false)
+                      or f.trade_date <= date_add(oc.open_date, interval 3 day)
+                    then f.signed_quantity else 0 end)
         ) as coverage_qty,
         any_value(100.0 * coalesce(sf.cumulative_split_factor, 1.0))
             as shares_per_contract,
@@ -342,7 +363,12 @@ coverage_at_write as (
             ) * 100.0 * coalesce(sf.cumulative_split_factor, 1.0)
         ) as required_shares
     from option_contracts oc
-    join {{ ref('int_equity_fills') }} f
+    -- LEFT JOIN so a contract with no equity fills still emits
+    -- required_shares / shares_per_contract (INNER JOIN dropped the row
+    -- and coalesce(coverage_qty, 0) then labeled it Naked). No fills in
+    -- the 3-day window still means coverage_qty = 0 — current holdings
+    -- do not fill that gap.
+    left join {{ ref('int_equity_fills') }} f
         on  f.account = oc.account
         and (f.user_id is not distinct from oc.user_id)
         and (f.tenant_id is not distinct from oc.tenant_id)
@@ -453,9 +479,11 @@ options_classified as (
         oc.premium_paid,
 
         -- Strategy. Coverage branches use coverage_at_write (shares held
-        -- as of the write date, quantity-aware) — NOT the session-lifetime
-        -- max_quantity_held, which labeled calls Covered when the shares
-        -- had already been sold (Aug 2026 audit F2).
+        -- as of the write date + 3-day buy-write lookahead) — NOT current
+        -- holdings and NOT the session-lifetime max_quantity_held.
+        -- max_quantity_held labeled calls Covered when the shares had
+        -- already been sold (Aug 2026 audit F2). Current holdings labeled
+        -- a later-covered short call Covered (CCJ, Sep 2026).
         case
             -- Iron Condor: this leg is part of a call spread + put spread
             -- on the same underlying/expiry legged in together. Checked
@@ -501,7 +529,7 @@ options_classified as (
                          < coalesce(cov.shares_per_contract, 100))
                 then stl.pair_label
 
-            -- Sold call without any coverage at write → Naked Call
+            -- Sold call without coverage in the 3-day write window
             when oc.direction = 'Sold' and oc.option_type = 'C'
                 then 'Naked Call'
 
@@ -570,6 +598,35 @@ options_classified as (
         and (oc.user_id is not distinct from stl.user_id)
         and (oc.tenant_id is not distinct from stl.tenant_id)
         and oc.trade_symbol = stl.trade_symbol
+),
+
+-- Sold calls that were covered in the 3-day write window, rolled up to
+-- the overlapping equity session. The equity Covered Call label must
+-- require this — otherwise a later stock lot + a live naked short call
+-- reads as Covered Call (equity) AND Naked Call (the contract). CCJ.
+write_covered_calls_on_session as (
+    select
+        e.tenant_id,
+        e.account,
+        e.user_id,
+        e.symbol,
+        e.session_id,
+        count(*) as num_write_covered_sold_calls
+    from equity_sessions e
+    join options_classified oc
+        on e.account = oc.account
+        and (e.user_id is not distinct from oc.user_id)
+        and (e.tenant_id is not distinct from oc.tenant_id)
+        and e.symbol = oc.symbol
+        and oc.direction = 'Sold'
+        and oc.option_type = 'C'
+        and oc.strategy in ('Covered Call', 'Partially Covered Call')
+        and oc.open_date >= e.open_date
+        and oc.open_date <= case
+            when e.status = 'Open' then current_date()
+            else e.last_trade_date
+        end
+    group by 1, 2, 3, 4, 5
 ),
 
 -- Dominant option strategy per (tenant, account, user, underlying). Used to
@@ -698,9 +755,12 @@ equity_classified as (
             -- days (Aug 2026 audit F5). A multi-year holding that carried
             -- a call for a few weeks is a Buy and Hold — attributing its
             -- entire equity P&L to 'Covered Call' mis-bucketed -$77K at
-            -- audit time. The call contracts themselves keep their own
-            -- (option-side) labels regardless of this branch.
+            -- audit time. Also requires at least one of those sold calls
+            -- to have been covered in the 3-day write window — otherwise
+            -- a later stock lot + a naked short call splits into Covered
+            -- Call (equity) AND Naked Call (the contract).
             when eos.num_sold_calls > 0 and e.max_quantity_held >= 100
+                 and coalesce(wcc.num_write_covered_sold_calls, 0) > 0
                  and safe_divide(
                          eos.sold_call_covered_days,
                          date_diff(
@@ -744,6 +804,12 @@ equity_classified as (
         and (e.tenant_id is not distinct from eos.tenant_id)
         and e.symbol = eos.symbol
         and e.session_id = eos.session_id
+    left join write_covered_calls_on_session wcc
+        on e.account = wcc.account
+        and (e.user_id is not distinct from wcc.user_id)
+        and (e.tenant_id is not distinct from wcc.tenant_id)
+        and e.symbol = wcc.symbol
+        and e.session_id = wcc.session_id
     left join equity_from_assignment efa
         on e.account = efa.account
         and (e.user_id is not distinct from efa.user_id)

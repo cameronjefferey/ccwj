@@ -386,11 +386,16 @@ banner (`opening_balances` context, `POSITION_OPENING_BALANCES_QUERY`) naming
 the pricing method and linking the CSV-upload path to replace estimates with
 real fills. Strategy classification judges coverage **as of the write date**
 (`coverage_at_write`: split-aware contracts × 100 vs shares held at open + 3-day
-buy-write lookahead), labels partial coverage (`Partially Covered Call`),
+buy-write lookahead). Current holdings do not flip the label. Synthetic
+opening-balance fills count at write even when dated after it (they are
+pre-window shares, dated "day before first fill" as a sort key). An equity
+session is labeled `Covered Call` only when at least one overlapping sold call
+was write-date covered (plus the ≥30% covered-days test) — otherwise a later
+stock lot + a naked short call splits into Covered Call (equity) AND Naked Call
+(the contract). Labels partial coverage (`Partially Covered Call`),
 detects diagonals (`Diagonal Call/Put Spread` — live longer-dated long cover
 outside PMCC windows), straddles/strangles, pairs verticals by lifetime overlap
-(not just ±7d legging), requires ≥30% covered-days for an equity session to be
-labeled `Covered Call`, and folds <25-share tracker lots (was ≤1) into the
+(not just ±7d legging), and folds <25-share tracker lots (was ≤1) into the
 dominant option strategy. Regression tests:
 `dbt/tests/no_unexplained_negative_running_equity_qty.sql`,
 `dbt/tests/covered_call_has_coverage_at_write.sql`,

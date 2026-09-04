@@ -5,17 +5,22 @@
     Call' must have been backed by at least ~100 shares (one contract's
     deliverable, in the write date's share-units) held by the SAME
     (tenant, account, user) as of the contract's open date + the 3-day
-    buy-write lookahead. Pre-fix, coverage was judged off the session's
-    lifetime max_quantity_held — a call written AFTER the shares were
-    sold still read as Covered.
+    buy-write lookahead — including synthesized opening-balance fills,
+    which count at write even when dated after the write (they are
+    "day before first fill" placeholders for pre-window shares).
 
-    Re-derives coverage independently from int_equity_fills (the same
-    source the model uses, but a fresh computation) so a refactor of
-    coverage_at_write that silently breaks the join surfaces here.
+    Current holdings do not count. Pre-fix, coverage was judged off the
+    session's lifetime max_quantity_held — a call written AFTER the
+    shares were sold still read as Covered.
 
-    Fails (returns rows) for any (Partially) Covered Call whose recomputed
-    at-write share count is under 95% of one contract's deliverable
-    (5% tolerance for float noise on fractional-share accounts).
+    Re-derives coverage independently from int_equity_fills so a
+    refactor of coverage_at_write that silently breaks the join
+    surfaces here.
+
+    Fails (returns rows) for any (Partially) Covered Call whose
+    recomputed at-write share count is under 95% of one contract's
+    deliverable (5% tolerance for float noise on fractional-share
+    accounts).
 #}
 
 with covered_calls as (
@@ -38,14 +43,17 @@ shares_at_write as (
         cc.account,
         cc.user_id,
         cc.trade_symbol,
-        -- Mirrors the model's greatest(at-open, at-open + 3d lookahead):
-        -- a buy-write's shares may land after the call, and a sale within
-        -- the lookahead must not retroactively strip the at-open coverage.
+        -- Mirrors the model: synthetic openings always count; real fills
+        -- must land on/before open or open+3d.
         greatest(
-            sum(case when f.trade_date <= cc.open_date
-                     then f.signed_quantity else 0 end),
-            sum(case when f.trade_date <= date_add(cc.open_date, interval 3 day)
-                     then f.signed_quantity else 0 end)
+            sum(case
+                    when coalesce(f.is_synthetic_opening, false)
+                      or f.trade_date <= cc.open_date
+                    then f.signed_quantity else 0 end),
+            sum(case
+                    when coalesce(f.is_synthetic_opening, false)
+                      or f.trade_date <= date_add(cc.open_date, interval 3 day)
+                    then f.signed_quantity else 0 end)
         ) as shares_held
     from covered_calls cc
     left join {{ ref('int_equity_fills') }} f
