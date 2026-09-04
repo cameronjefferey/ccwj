@@ -87,6 +87,30 @@ class TestAnnualizedPct:
         assert ANNUALIZED_MIN_DAYS >= 14
 
 
+def test_overview_option_cash_queries_use_canonical_staging_actions():
+    """stg_history never emits the retired ``option_buy``/``option_sell``
+    labels. Using them silently zeros option capital on every scorecard and
+    suppresses the first-week income/directional fact.
+    """
+    from app.weekly_review import (
+        OVERVIEW_STYLE_QUERY,
+        POSITION_ATTRIBUTION_QUERY,
+    )
+
+    assert "action='option_buy'" not in POSITION_ATTRIBUTION_QUERY
+    assert "action='option_sell'" not in POSITION_ATTRIBUTION_QUERY
+    assert (
+        "action IN ('option_buy_to_open', 'option_buy_to_close')"
+        in POSITION_ATTRIBUTION_QUERY
+    )
+    assert (
+        "action IN ('option_sell_to_open', 'option_sell_to_close')"
+        in POSITION_ATTRIBUTION_QUERY
+    )
+    assert "action = 'option_buy_to_open'" in OVERVIEW_STYLE_QUERY
+    assert "action = 'option_sell_to_open'" in OVERVIEW_STYLE_QUERY
+
+
 class TestBuildPositionBreakdown:
     """Per-symbol breakdown row builder. Mirrors the trader's external
     Excel: Stock | G/L Stock | G/L Option | Dividend | Net | …"""
