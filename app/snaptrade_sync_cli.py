@@ -81,11 +81,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("FLASK_APP", "app:app")
 
 
-def _notify_connection_dropped(user_id, snaptrade_account_id, row):
+def _notify_connection_dropped(user_id, snaptrade_account_id, row, *, seen=None):
     """Send a one-time "reconnect your broker" email when a connection just
     broke. Idempotent via the email_sends log keyed on the account + the
     broken-at timestamp, so re-breaks after a reconnect notify again but a
     daily cron over a still-broken connection does not re-spam.
+
+    ``seen`` — an optional set shared across ONE cron run, used to collapse
+    SIBLING accounts under the same brokerage authorization. One SnapTrade
+    grant commonly backs several tenant rows (e.g. one Schwab login -> 6
+    accounts here), and each row is synced + flagged independently — without
+    this, a single real break fired one near-identical "reconnect" email PER
+    SIBLING ACCOUNT in the same run (real case: user_id=9 testingcameron got
+    6 emails per break episode, 2026-09-04). Keyed on
+    ``(brokerage_authorization_id or account, break date)`` so distinct
+    breaks on distinct days still each notify — this only collapses the
+    fan-out within one connection's one break.
 
     Best-effort: never raises into the sync loop.
     """
@@ -100,6 +111,22 @@ def _notify_connection_dropped(user_id, snaptrade_account_id, row):
         acct = get_snaptrade_account(user_id, snaptrade_account_id) or {}
         broken_at = acct.get("connection_broken_at")
         broken_key = broken_at.isoformat() if hasattr(broken_at, "isoformat") else str(broken_at or "")
+
+        if seen is not None:
+            auth_id = (
+                row.get("brokerage_authorization_id")
+                or acct.get("brokerage_authorization_id")
+                or ""
+            ).strip()
+            connection_key = auth_id or f"{user_id}:{snaptrade_account_id}"
+            broken_date = (
+                broken_at.date().isoformat() if hasattr(broken_at, "date") else broken_key
+            )
+            seen_key = f"{connection_key}:{broken_date}"
+            if seen_key in seen:
+                return  # A sibling account under the same grant already notified.
+            seen.add(seen_key)
+
         dedupe_key = f"{snaptrade_account_id}:{broken_key}"
 
         if not record_email_send(
@@ -254,7 +281,17 @@ def main():
     total = len(rows)
     succeeded = 0
     broken = 0
+    pending = 0
     errors = 0
+    # Debounce for the "reconnect your broker" email: one SnapTrade
+    # brokerage authorization backs many accounts (e.g. one Schwab grant ->
+    # 6 tenant rows for the same login), and each row is synced + flagged
+    # independently. Without this, a single real break fires one email PER
+    # SIBLING ACCOUNT (6 near-identical "Action needed: reconnect Schwab"
+    # emails in the same run — the exact symptom reported for user_id=9,
+    # 2026-09-04). Track which (auth_id, break-date) pairs already got a
+    # mail THIS run so only the first sibling notifies.
+    _notified_connections_this_run = set()
 
     routine_days = _routine_lookback_days()
     full_days = SNAPTRADE_FULL_HISTORY_LOOKBACK_DAYS
@@ -350,7 +387,23 @@ def main():
                     "broker connection needs reconnect (flagged in app)",
                     file=sys.stderr,
                 )
-                _notify_connection_dropped(user_id, snaptrade_account_id, row)
+                _notify_connection_dropped(
+                    user_id, snaptrade_account_id, row,
+                    seen=_notified_connections_this_run,
+                )
+            elif err == "connection_broken_pending":
+                # First disabled=true sighting this episode — not yet
+                # confirmed (see the debounce comment in
+                # app.snaptrade._sync_one_connection). Quiet log line only:
+                # no banner, no email, and NOT counted as a hard error so a
+                # transient blip across several accounts can't fail the cron
+                # (Render "notify on fail" / the ops-alert hotfix pipeline
+                # would otherwise treat routine flapping as an outage).
+                pending += 1
+                print(
+                    f"User {user_id} ({snaptrade_account_id}): "
+                    "broker reported disabled once (pending — retrying next run)",
+                )
             else:
                 errors += 1
                 print(
@@ -411,10 +464,15 @@ def main():
     )
     print(
         f"SnapTrade {mode} sync summary: {succeeded}/{total} succeeded, "
-        f"{broken} broken connections, {errors} errors{pushed_note}"
+        f"{broken} broken connections, {pending} pending (unconfirmed), "
+        f"{errors} errors{pushed_note}"
     )
 
-    if total > 0 and succeeded == 0:
+    # A run where every account is merely "pending" (disabled seen once,
+    # awaiting the next poll's confirmation — see the debounce in
+    # app.snaptrade._sync_one_connection) is NOT a system-wide outage; don't
+    # flag the cron red for what is very likely a transient SnapTrade blip.
+    if total > 0 and succeeded == 0 and pending == 0:
         return 1
     return 0
 

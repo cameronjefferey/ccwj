@@ -1509,6 +1509,44 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         endpoint = getattr(auth_exc, "endpoint", "unknown")
         broker_slug = acc_row.get("broker_slug") or "unknown"
         first_done = bool(acc_row.get("first_sync_completed"))
+
+        # DEBOUNCE the disabled-flag signal specifically (2026-09-04 incident:
+        # SnapTrade's own `list_brokerage_authorizations.disabled` boolean was
+        # observed flapping true -> false -> true within a single Schwab
+        # authorization's ~15-min intraday-poll cadence — user_id=9 got 3
+        # separate "reconnect your broker" email bursts (6 accounts each) in
+        # under 3 hours while the connection was never actually dead (it
+        # self-healed on the very next poll every time). A single disabled=
+        # true read is no longer enough to trip the user-facing banner/email;
+        # require the SAME signal on two CONSECUTIVE sync attempts for this
+        # account first. `acc_row["last_sync_error"]` reflects the PREVIOUS
+        # attempt (this row was fetched before this run began), so it is a
+        # free, already-persisted debounce counter — no schema change. The
+        # activities-feed auth-error path (revoked/expired grant, a real API
+        # rejection) is NOT debounced — that signal has never been observed
+        # to flap and delaying it would leave a genuinely revoked connection
+        # silently unsynced for an extra cycle.
+        if endpoint == _DISABLED_FLAG_ENDPOINT and not (
+            acc_row.get("last_sync_error") or ""
+        ).startswith("connection_broken"):
+            _app.logger.warning(
+                "SnapTrade disabled-flag seen ONCE for user_id=%s account=%s "
+                "broker=%s (pending confirmation next sync — no banner/email "
+                "yet) exc_type=%s msg=%s",
+                user_id, snaptrade_account_id, broker_slug,
+                type(orig).__name__, str(orig)[:500],
+            )
+            record_snaptrade_sync_attempt(
+                user_id, snaptrade_account_id,
+                error=f"connection_broken_pending:{endpoint}",
+            )
+            record_snaptrade_sync_observation(
+                user_id, snaptrade_account_id,
+                broker_slug=acc_row.get("broker_slug"), ok=False,
+            )
+            out["error"] = "connection_broken_pending"
+            return out
+
         _app.logger.warning(
             "SnapTrade sync flagged connection_broken for user_id=%s "
             "account=%s broker=%s first_done=%s endpoint=%s exc_type=%s msg=%s",
@@ -1669,6 +1707,13 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
 # ---------------------------------------------------------------------------
 # The sync itself — broker fetches, normalize, push
 # ---------------------------------------------------------------------------
+
+# Endpoint tag used for the AUTHORITATIVE disabled-connection gate (see
+# ``_brokerage_authorization_disabled`` / ``_run_sync``). Shared constant so
+# the raise site and the debounce check in ``_sync_one_connection`` can never
+# drift apart on the literal string.
+_DISABLED_FLAG_ENDPOINT = "connections.list_brokerage_authorizations[disabled=true]"
+
 
 class _SnapTradeAuthError(RuntimeError):
     """Raised when SnapTrade reports the broker connection is broken
@@ -1845,7 +1890,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # broker-sync-safety SKILL.md first-Fidelity misclassification).
     if _brokerage_authorization_disabled(client, snap, acc_row, user_id=user_id) is True:
         raise _SnapTradeAuthError(
-            "connections.list_brokerage_authorizations[disabled=true]",
+            _DISABLED_FLAG_ENDPOINT,
             RuntimeError(
                 "SnapTrade reports this brokerage authorization is disabled; "
                 "it is serving stale cached holdings until the user reconnects."
