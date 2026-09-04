@@ -513,7 +513,7 @@ ORDER BY e.next_earnings_date, e.symbol
 # Capital deployed (the denominator of the annualized return) is the sum
 # of:
 #   • equity buy cash      — abs(amount) on stg_history.action='equity_buy'
-#   • option buy cash      — abs(amount) on stg_history.action='option_buy'
+#   • option buy cash      — abs(amount) on canonical buy-to-open/close rows
 #   • current equity cost  — broker snapshot cost_basis on Equity rows
 #                            still held (covers transferred-in lots that
 #                            don't have a buy row in stg_history)
@@ -584,8 +584,10 @@ per_sym_capital AS (
     SELECT
         tenant_id, account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
         SUM(CASE WHEN action='equity_buy' THEN ABS(amount) ELSE 0 END) AS equity_capital,
-        SUM(CASE WHEN action='option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
-        SUM(CASE WHEN action='option_sell' THEN ABS(amount) ELSE 0 END) AS option_premium_collected
+        SUM(CASE WHEN action IN ('option_buy_to_open', 'option_buy_to_close')
+                 THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
+        SUM(CASE WHEN action IN ('option_sell_to_open', 'option_sell_to_close')
+                 THEN ABS(amount) ELSE 0 END) AS option_premium_collected
     FROM (
         SELECT tenant_id, account, user_id, underlying_symbol, action, amount
         FROM `ccwj-dbt.analytics.stg_history`
@@ -1049,17 +1051,17 @@ ORDER BY e.underlying_symbol, e.instrument_type
 
 # Lightweight lifetime income-vs-directional signal for the FIRST-WEEK
 # "this is you" strip on Overview (building_history). Premium collected
-# (option_sell fills) vs option capital paid (option_buy fills) is the
-# same income/directional split trader_story.classify_style uses
-# conceptually, but as a single cheap tenant-scoped aggregate — no
+# (sell-to-open fills) vs option capital paid (buy-to-open fills) is the
+# same income/directional split trader_story.classify_style uses, but as
+# a single cheap tenant-scoped aggregate — no
 # per-symbol story loop, so it's safe to run on every Overview load
 # (only rendered while building_history is true, i.e. a user's first
 # ~4 snapshot days).
 OVERVIEW_STYLE_QUERY = """
 SELECT
     tenant_id,
-    SUM(CASE WHEN action = 'option_sell' THEN ABS(amount) ELSE 0 END) AS premium_collected,
-    SUM(CASE WHEN action = 'option_buy' THEN ABS(amount) ELSE 0 END) AS option_capital_paid
+    SUM(CASE WHEN action = 'option_sell_to_open' THEN ABS(amount) ELSE 0 END) AS premium_collected,
+    SUM(CASE WHEN action = 'option_buy_to_open' THEN ABS(amount) ELSE 0 END) AS option_capital_paid
 FROM `ccwj-dbt.analytics.stg_history`
 WHERE underlying_symbol IS NOT NULL
   {tenant_filter}
