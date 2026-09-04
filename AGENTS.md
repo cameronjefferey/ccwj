@@ -384,9 +384,13 @@ running-quantity consumer reads it: `int_equity_sessions`,
 estimate — Position Detail renders a "history starts mid-position" disclosure
 banner (`opening_balances` context, `POSITION_OPENING_BALANCES_QUERY`) naming
 the pricing method and linking the CSV-upload path to replace estimates with
-real fills. Strategy classification judges coverage **as of the write date**
-(`coverage_at_write`: split-aware contracts × 100 vs shares held at open + 3-day
-buy-write lookahead), labels partial coverage (`Partially Covered Call`),
+real fills. Strategy classification judges coverage **as of the write date for CLOSED
+contracts** (`coverage_at_write`: split-aware contracts × 100 vs shares held
+at open + 3-day buy-write lookahead) and **as of now for OPEN contracts**
+(greater of `int_equity_fills` running qty and `stg_current` snapshot — so a
+live 100-share + 1 short call is Covered Call even when the stock arrived via
+transfer, a snapshot-only lot, or a buy more than 3 days after the write).
+Labels partial coverage (`Partially Covered Call`),
 detects diagonals (`Diagonal Call/Put Spread` — live longer-dated long cover
 outside PMCC windows), straddles/strangles, pairs verticals by lifetime overlap
 (not just ±7d legging), requires ≥30% covered-days for an equity session to be
@@ -394,6 +398,7 @@ labeled `Covered Call`, and folds <25-share tracker lots (was ≤1) into the
 dominant option strategy. Regression tests:
 `dbt/tests/no_unexplained_negative_running_equity_qty.sql`,
 `dbt/tests/covered_call_has_coverage_at_write.sql`,
+`dbt/tests/no_open_naked_call_when_shares_cover.sql`,
 `dbt/tests/tracker_lot_folds_into_option_strategy.sql`. When adding a new
 strategy label: update the FIVE template color maps (`position_detail.html`,
 `positions.html` ×2, `accounts.html` ×2) and check the dividend-rank CASEs

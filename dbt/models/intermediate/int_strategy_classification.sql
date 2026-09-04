@@ -4,12 +4,16 @@
     Produces one row per classified "trade group" — either an equity session
     or an option contract — tagged with a strategy label:
 
-      - Covered Call      (sold call FULLY covered by shares held when the
-                           call was written — contracts × 100 vs shares
-                           as-of the write date, with a 3-day buy-write
-                           lookahead; see coverage_at_write)
-      - Partially Covered Call (>= 100 shares at write but fewer than
-                           contracts × 100 — some contracts are naked)
+      - Covered Call      (sold call FULLY covered by shares: CLOSED
+                           contracts use shares held when the call was
+                           written — contracts × 100 vs shares as-of
+                           the write date, with a 3-day buy-write
+                           lookahead; OPEN contracts use shares held
+                           NOW — ledger running qty or broker snapshot,
+                           whichever is larger. See option_coverage)
+      - Partially Covered Call (>= 100 shares at the coverage check
+                           but fewer than contracts × 100 — some
+                           contracts are naked)
       - Cash-Secured Put  (sold put without equity)
       - Wheel             (put assigned → equity acquired, possibly with CCs)
       - Call Spread        (bought + sold call, same expiry, different strikes,
@@ -25,7 +29,8 @@
       - Long Call          (bought call, standalone)
       - Long Put           (bought put,  standalone, no equity)
       - Protective Put     (bought put while holding >= 100 shares at write)
-      - Naked Call         (sold call without any coverage at write)
+      - Naked Call         (sold call without coverage: write-date for
+                           closed contracts, current holdings for open)
       - Poor Man Covered Call (sold call covered by long call matching the
                             int_pmcc_pairs windows — long >= 180d, short <= 60d)
       - Buy and Hold       (equity only, no associated options; a nominal
@@ -37,12 +42,21 @@
                             mirror reflects asset-class choice rather than fusing BTC
                             with the trader's VOO / JEPI buckets)
 
-    Aug 2026 classification audit: coverage is judged AS OF THE WRITE DATE
-    from the split-adjusted running share count (int_equity_fills, which
-    includes synthesized opening balances for pre-window holdings), not from
-    the session's lifetime max_quantity_held — a trader who once held 500
-    shares but had sold them before writing a call was previously labeled
-    Covered when the call was in fact naked.
+    Aug 2026 classification audit: CLOSED-contract coverage is judged AS OF
+    THE WRITE DATE from the split-adjusted running share count
+    (int_equity_fills, which includes synthesized opening balances for
+    pre-window holdings), not from the session's lifetime max_quantity_held
+    — a trader who once held 500 shares but had sold them before writing a
+    call was previously labeled Covered when the call was in fact naked.
+
+    Sep 2026 (CCJ): OPEN sold calls use shares held NOW (fill ledger or
+    broker snapshot). Write-date-only missed transfers (dropped from
+    stg_history), snapshot-only lots, and stock bought more than 3 days
+    after the call — so a live 100-share + 1 short call read as Covered
+    Call (equity session) AND Naked Call (the contract). Current qty for
+    open contracts; write-date stays for closed. Do not take
+    greatest(write_date, current) on open contracts or F2 returns
+    (shares sold, call still labeled Covered from the old holding).
 */
 
 with equity_sessions as (
@@ -342,7 +356,11 @@ coverage_at_write as (
             ) * 100.0 * coalesce(sf.cumulative_split_factor, 1.0)
         ) as required_shares
     from option_contracts oc
-    join {{ ref('int_equity_fills') }} f
+    -- LEFT JOIN: a contract with no equity fills still needs
+    -- required_shares / shares_per_contract. The old INNER JOIN dropped
+    -- those rows, and coalesce(coverage_qty, 0) in the CASE then treated
+    -- every snapshot-only / transfer-in covered call as Naked.
+    left join {{ ref('int_equity_fills') }} f
         on  f.account = oc.account
         and (f.user_id is not distinct from oc.user_id)
         and (f.tenant_id is not distinct from oc.tenant_id)
@@ -351,6 +369,86 @@ coverage_at_write as (
         on  sf.symbol     = oc.underlying_symbol
         and sf.trade_date = oc.open_date
     group by 1, 2, 3, 4
+),
+
+---------------------------------------------------------------------
+-- 3c2. Shares held NOW — OPEN-contract coverage (Sep 2026 / CCJ).
+--
+--     Write-date coverage misses three real covered-call setups:
+--       (a) share TRANSFERs (deliberately dropped from stg_history)
+--       (b) snapshot-only lots (int_opening_balances skips symbols
+--           with no history rows — those land in snapshot_equity_sessions)
+--       (c) stock bought more than 3 days after the call was written
+--     The equity session still labeled Covered Call (100+ shares + a
+--     live sold call for >= 30% of session days) while the contract
+--     fell through to Naked Call. Take the greater of the fill
+--     ledger's running total and the broker snapshot so a transfer-in
+--     (snapshot only) and a same-day buy (ledger only, snapshot lag)
+--     both count.
+---------------------------------------------------------------------
+ledger_equity_qty as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        sum(signed_quantity) as qty
+    from {{ ref('int_equity_fills') }}
+    group by 1, 2, 3, 4
+),
+
+snapshot_equity_qty as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        underlying_symbol as symbol,
+        sum(quantity) as qty
+    from {{ ref('stg_current') }}
+    where instrument_type = 'Equity'
+      and coalesce(quantity, 0) != 0
+      and trim(coalesce(underlying_symbol, '')) != ''
+    group by 1, 2, 3, 4
+),
+
+option_coverage as (
+    select
+        oc.tenant_id,
+        oc.account,
+        oc.user_id,
+        oc.trade_symbol,
+        case
+            when oc.status = 'Open' then greatest(
+                coalesce(led.qty, 0),
+                coalesce(snap.qty, 0)
+            )
+            else coalesce(cov.coverage_qty, 0)
+        end as coverage_qty,
+        coalesce(cov.shares_per_contract, 100.0) as shares_per_contract,
+        coalesce(
+            cov.required_shares,
+            greatest(
+                coalesce(oc.contracts_sold_to_open, 0),
+                coalesce(oc.contracts_bought_to_open, 0),
+                1.0
+            ) * 100.0
+        ) as required_shares
+    from option_contracts oc
+    left join coverage_at_write cov
+        on oc.account = cov.account
+        and (oc.user_id is not distinct from cov.user_id)
+        and (oc.tenant_id is not distinct from cov.tenant_id)
+        and oc.trade_symbol = cov.trade_symbol
+    left join ledger_equity_qty led
+        on oc.account = led.account
+        and (oc.user_id is not distinct from led.user_id)
+        and (oc.tenant_id is not distinct from led.tenant_id)
+        and oc.underlying_symbol = led.symbol
+    left join snapshot_equity_qty snap
+        on oc.account = snap.account
+        and (oc.user_id is not distinct from snap.user_id)
+        and (oc.tenant_id is not distinct from snap.tenant_id)
+        and oc.underlying_symbol = snap.symbol
 ),
 
 ---------------------------------------------------------------------
@@ -452,10 +550,11 @@ options_classified as (
         oc.premium_received,
         oc.premium_paid,
 
-        -- Strategy. Coverage branches use coverage_at_write (shares held
-        -- as of the write date, quantity-aware) — NOT the session-lifetime
-        -- max_quantity_held, which labeled calls Covered when the shares
-        -- had already been sold (Aug 2026 audit F2).
+        -- Strategy. Coverage branches use option_coverage: write-date
+        -- shares for CLOSED contracts, current holdings for OPEN ones.
+        -- NOT the session-lifetime max_quantity_held, which labeled
+        -- calls Covered when the shares had already been sold (Aug 2026
+        -- audit F2).
         case
             -- Iron Condor: this leg is part of a call spread + put spread
             -- on the same underlying/expiry legged in together. Checked
@@ -467,8 +566,9 @@ options_classified as (
             when sl.trade_symbol is not null then
                 case when oc.option_type = 'C' then 'Call Spread' else 'Put Spread' end
 
-            -- Sold call fully covered at write (contracts × 100 vs shares
-            -- held on the write date, 3-day buy-write lookahead)
+            -- Sold call fully covered (contracts × 100 vs shares held
+            -- on the write date for closed contracts, or shares held
+            -- now for open ones; 3-day buy-write lookahead on write-date)
             when oc.direction = 'Sold' and oc.option_type = 'C'
                  and coalesce(cov.coverage_qty, 0) + 1e-6
                      >= coalesce(cov.required_shares, 100)
@@ -501,7 +601,7 @@ options_classified as (
                          < coalesce(cov.shares_per_contract, 100))
                 then stl.pair_label
 
-            -- Sold call without any coverage at write → Naked Call
+            -- Sold call without coverage (write-date if closed, now if open)
             when oc.direction = 'Sold' and oc.option_type = 'C'
                 then 'Naked Call'
 
@@ -547,13 +647,12 @@ options_classified as (
         and (oc.user_id is not distinct from pmcc.user_id)
         and (oc.tenant_id is not distinct from pmcc.tenant_id)
         and oc.trade_symbol = pmcc.trade_symbol
-    -- Shares held as of the write date (Covered / Partially Covered /
-    -- Protective Put detection). One row per contract by construction
-    -- (GROUP BY trade_symbol in coverage_at_write), so — unlike the old
+    -- Effective coverage (write-date if closed, current holdings if
+    -- open). One row per contract by construction, so — unlike the old
     -- session-overlap join this replaced — it cannot fan a contract into
     -- multiple classification rows even if int_equity_sessions ever holds
     -- duplicates (the 2026-05-11 poisoned-source incident).
-    left join coverage_at_write cov
+    left join option_coverage cov
         on oc.account = cov.account
         and (oc.user_id is not distinct from cov.user_id)
         and (oc.tenant_id is not distinct from cov.tenant_id)
