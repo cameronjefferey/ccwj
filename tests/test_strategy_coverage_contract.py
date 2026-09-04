@@ -1,9 +1,9 @@
-"""Pin open-vs-closed covered-call coverage (Sep 2026 / CCJ).
+"""Pin covered-call coverage to the 3-day buy-write window (Sep 2026 / CCJ).
 
-An open 100-share + 1 short call must classify as Covered Call even when
-write-date fills are missing (transfer, snapshot-only lot, or stock bought
-more than 3 days after the write). Closed contracts stay write-date-only
-so Aug 2026 audit F2 still holds.
+Current holdings do not flip the label. A sold call is Covered Call only
+when the fill ledger shows enough shares at write or within 3 days
+(synthetic opening-balance fills count at write — they are pre-window
+shares, dated "day before first fill" as a sort key).
 """
 from pathlib import Path
 
@@ -13,11 +13,23 @@ CLASSIFICATION_SQL = (
 ).read_text()
 
 
-def _effective_coverage(*, status, write_qty, ledger_qty, snapshot_qty):
-    """Mirrors option_coverage.coverage_qty in int_strategy_classification."""
-    if status == "Open":
-        return max(ledger_qty or 0, snapshot_qty or 0)
-    return write_qty or 0
+def _coverage_at_write(*, open_date, fills, lookahead_days=3):
+    """Mirrors coverage_at_write.coverage_qty.
+
+    fills: list of (trade_date, signed_qty, is_synthetic_opening)
+    Dates are datetime.date or comparable.
+    """
+    from datetime import timedelta
+
+    cutoff = open_date + timedelta(days=lookahead_days)
+    at_open = 0.0
+    at_lookahead = 0.0
+    for trade_date, qty, synthetic in fills:
+        if synthetic or trade_date <= open_date:
+            at_open += qty
+        if synthetic or trade_date <= cutoff:
+            at_lookahead += qty
+    return max(at_open, at_lookahead)
 
 
 def _label_sold_call(coverage_qty, required_shares=100.0, shares_per_contract=100.0):
@@ -28,71 +40,90 @@ def _label_sold_call(coverage_qty, required_shares=100.0, shares_per_contract=10
     return "Naked Call"
 
 
-def test_open_call_uses_current_shares_not_write_date():
-    # CCJ: 100 shares in the snapshot, no write-date fills.
-    qty = _effective_coverage(
-        status="Open", write_qty=0, ledger_qty=0, snapshot_qty=100
+def test_buy_write_within_three_days_is_covered():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    fills = [(date(2026, 6, 3), 100.0, False)]
+    assert _label_sold_call(_coverage_at_write(open_date=write, fills=fills)) == (
+        "Covered Call"
     )
-    assert _label_sold_call(qty) == "Covered Call"
 
 
-def test_open_call_uses_ledger_when_snapshot_lags():
-    qty = _effective_coverage(
-        status="Open", write_qty=0, ledger_qty=100, snapshot_qty=0
+def test_stock_bought_after_three_days_stays_naked():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    fills = [(date(2026, 6, 10), 100.0, False)]
+    assert _label_sold_call(_coverage_at_write(open_date=write, fills=fills)) == (
+        "Naked Call"
     )
-    assert _label_sold_call(qty) == "Covered Call"
 
 
-def test_open_call_becomes_naked_after_shares_sold():
-    # Do NOT keep write-date coverage on an open call (reopens F2).
-    qty = _effective_coverage(
-        status="Open", write_qty=100, ledger_qty=0, snapshot_qty=0
+def test_current_holdings_do_not_cover_a_naked_write():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    # 100 shares held now, but the only fill is after the 3-day window.
+    fills = [(date(2026, 8, 1), 100.0, False)]
+    assert _label_sold_call(_coverage_at_write(open_date=write, fills=fills)) == (
+        "Naked Call"
     )
-    assert _label_sold_call(qty) == "Naked Call"
 
 
-def test_closed_call_stays_write_date_only():
-    qty = _effective_coverage(
-        status="Closed", write_qty=0, ledger_qty=100, snapshot_qty=100
+def test_shares_sold_before_write_are_naked():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    fills = [
+        (date(2026, 1, 1), 100.0, False),
+        (date(2026, 5, 1), -100.0, False),
+    ]
+    assert _label_sold_call(_coverage_at_write(open_date=write, fills=fills)) == (
+        "Naked Call"
     )
-    assert _label_sold_call(qty) == "Naked Call"
 
-    qty = _effective_coverage(
-        status="Closed", write_qty=100, ledger_qty=0, snapshot_qty=0
+
+def test_synthetic_opening_counts_even_when_dated_after_write():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    # Opening balance dated day-before-first-fill (Aug), but it stands
+    # for pre-window shares that were held at the June write.
+    fills = [(date(2026, 8, 14), 100.0, True)]
+    assert _label_sold_call(_coverage_at_write(open_date=write, fills=fills)) == (
+        "Covered Call"
     )
-    assert _label_sold_call(qty) == "Covered Call"
 
 
-def test_partial_coverage_still_distinct():
-    qty = _effective_coverage(
-        status="Open", write_qty=0, ledger_qty=100, snapshot_qty=100
-    )
+def test_partial_coverage_at_write():
+    from datetime import date
+
+    write = date(2026, 6, 1)
+    fills = [(date(2026, 6, 1), 100.0, False)]
+    qty = _coverage_at_write(open_date=write, fills=fills)
     assert _label_sold_call(qty, required_shares=200.0) == "Partially Covered Call"
 
 
-def test_classification_sql_has_open_current_coverage_path():
-    assert "option_coverage as (" in CLASSIFICATION_SQL
-    assert "ledger_equity_qty as (" in CLASSIFICATION_SQL
-    assert "snapshot_equity_qty as (" in CLASSIFICATION_SQL
-    assert "left join option_coverage cov" in CLASSIFICATION_SQL
-    # Write-date CTE must not INNER JOIN fills (drops snapshot-only lots).
+def test_classification_sql_is_write_window_only():
+    assert "coverage_at_write as (" in CLASSIFICATION_SQL
+    assert "left join coverage_at_write cov" in CLASSIFICATION_SQL
+    assert "option_coverage as (" not in CLASSIFICATION_SQL
+    assert "ledger_equity_qty as (" not in CLASSIFICATION_SQL
+    assert "snapshot_equity_qty as (" not in CLASSIFICATION_SQL
+    assert "write_covered_calls_on_session as (" in CLASSIFICATION_SQL
+    assert "num_write_covered_sold_calls" in CLASSIFICATION_SQL
     write_block = CLASSIFICATION_SQL.split("coverage_at_write as (")[1].split(
-        "ledger_equity_qty as ("
-    )[0]
-    assert "left join {{ ref('int_equity_fills') }}" in write_block
-    assert "\n    join {{ ref('int_equity_fills') }}" not in write_block
-    # Open path uses current holdings, not greatest(write, current).
-    open_block = CLASSIFICATION_SQL.split("option_coverage as (")[1].split(
         "diagonal_cover as ("
     )[0]
-    assert "when oc.status = 'Open' then greatest(" in open_block
-    assert "coalesce(led.qty, 0)" in open_block
-    assert "coalesce(snap.qty, 0)" in open_block
+    assert "left join {{ ref('int_equity_fills') }}" in write_block
+    assert "is_synthetic_opening" in write_block
+    assert "\n    join {{ ref('int_equity_fills') }}" not in write_block
 
 
-def test_dbt_invariant_files_exist():
-    assert (ROOT / "dbt/tests/covered_call_has_coverage_at_write.sql").is_file()
-    assert (ROOT / "dbt/tests/no_open_naked_call_when_shares_cover.sql").is_file()
-    naked_sql = (ROOT / "dbt/tests/no_open_naked_call_when_shares_cover.sql").read_text()
-    assert "strategy = 'Naked Call'" in naked_sql
-    assert "status = 'Open'" in naked_sql
+def test_dbt_invariant_is_write_date_only():
+    path = ROOT / "dbt/tests/covered_call_has_coverage_at_write.sql"
+    sql = path.read_text()
+    assert "is_synthetic_opening" in sql
+    assert "shares held now" not in sql.lower()
+    assert not (ROOT / "dbt/tests/no_open_naked_call_when_shares_cover.sql").exists()
