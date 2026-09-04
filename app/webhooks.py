@@ -369,12 +369,18 @@ def _handle_connection_health(event_type, snap_user_id, authorization_id):
         return
     if event_type == "CONNECTION_BROKEN":
         from app.snaptrade_sync_cli import _notify_connection_dropped
+        # `rows` is every account under this ONE authorization — dedupe the
+        # "reconnect your broker" email at the connection level (shared
+        # ``seen`` set) so one CONNECTION_BROKEN webhook doesn't fire one
+        # near-identical email per sibling account (same fan-out fixed for
+        # the poller in app.snaptrade_sync_cli.main, 2026-09-04).
+        seen = set()
         for r in rows:
             aid = r.get("snaptrade_account_id")
             if not aid:
                 continue
             if mark_snaptrade_connection_broken(user_id, aid):
-                _notify_connection_dropped(user_id, aid, r)
+                _notify_connection_dropped(user_id, aid, r, seen=seen)
         _log.info(
             "snaptrade_webhook: CONNECTION_BROKEN user_id=%s auth=%s accounts=%d",
             user_id, auth_id, len(rows),

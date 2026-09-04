@@ -356,6 +356,41 @@ def test_incomplete_transaction_sync_stays_pending_after_batch(
     assert _wire["first_sync_marked"] == []
 
 
+# ---------------------------------------------------------------------------
+# "connection_broken_pending" — the debounced disabled-flag signal (see
+# app.snaptrade._sync_one_connection). Must NOT be treated as a hard error
+# or trigger a reconnect email; a run where every account is merely pending
+# must not fail the cron.
+# ---------------------------------------------------------------------------
+
+def test_pending_disabled_flag_is_not_notified_and_not_a_hard_error(_wire, monkeypatch):
+    rows = [_row(9, "a1", "Schwab Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap, "_sync_one_connection",
+        lambda *a, **k: {"ok": False, "error": "connection_broken_pending"},
+    )
+    notified = []
+    monkeypatch.setattr(cli, "_notify_connection_dropped",
+                        lambda *a, **k: notified.append(a))
+
+    rc = cli.main()
+    # succeeded == 0 but pending > 0 -> not treated as a system-wide outage.
+    assert rc == 0
+    assert notified == []
+    assert _wire["batch"] == []
+
+
+def test_all_accounts_pending_does_not_fail_cron(_wire, monkeypatch):
+    rows = [_row(9, "a1", "Schwab Account"), _row(9, "a2", "Schwab Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap, "_sync_one_connection",
+        lambda *a, **k: {"ok": False, "error": "connection_broken_pending"},
+    )
+    assert cli.main() == 0
+
+
 def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
     rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
@@ -374,3 +409,94 @@ def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
 
     assert cli.main() == 0
     assert _wire["first_sync_marked"] == []
+
+
+# ---------------------------------------------------------------------------
+# _notify_connection_dropped — connection-level email dedupe. One SnapTrade
+# authorization commonly backs several tenant rows (e.g. one Schwab login ->
+# 6 accounts); without the ``seen`` dedupe a single real break fired one
+# near-identical "reconnect" email PER SIBLING ACCOUNT in the same run (real
+# case: user_id=9 testingcameron, 6 emails per break episode, 2026-09-04).
+# ---------------------------------------------------------------------------
+
+class _FakeUser:
+    id = 9
+    username = "testingcameron"
+    email = "user@example.com"
+
+
+def _wire_notify(monkeypatch, *, accounts, broken_at):
+    """Wire the Postgres/email deps ``_notify_connection_dropped`` touches.
+
+    ``accounts`` maps snaptrade_account_id -> brokerage_authorization_id.
+    ``broken_at`` is returned for every account (same break instant, as a
+    single poll marking several sibling rows would produce).
+    """
+    from app import email as _email
+    from app import models as _m
+
+    sent = []
+    monkeypatch.setattr(_m.User, "get_by_id", staticmethod(lambda uid: _FakeUser()))
+    monkeypatch.setattr(
+        _m, "get_snaptrade_account",
+        lambda uid, aid: {
+            "brokerage_authorization_id": accounts.get(aid),
+            "connection_broken_at": broken_at,
+            "broker_slug": "schwab",
+            "display_nickname": aid,
+            "account_name": aid,
+        },
+    )
+    monkeypatch.setattr(_m, "record_email_send", lambda *a, **k: True)
+    monkeypatch.setattr(_email, "app_base_url", lambda: "https://app.example.com")
+    monkeypatch.setattr(
+        _email, "send_connection_dropped_email",
+        lambda **kwargs: sent.append(kwargs),
+    )
+    return sent
+
+
+def test_notify_connection_dropped_collapses_siblings_under_one_authorization(monkeypatch):
+    import datetime
+
+    broken_at = datetime.datetime(2026, 9, 4, 14, 31, tzinfo=datetime.timezone.utc)
+    accounts = {"a1": "auth-X", "a2": "auth-X", "a3": "auth-X"}
+    sent = _wire_notify(monkeypatch, accounts=accounts, broken_at=broken_at)
+
+    seen = set()
+    for aid in ("a1", "a2", "a3"):
+        cli._notify_connection_dropped(
+            9, aid, {"brokerage_authorization_id": accounts[aid], "broker_slug": "schwab"},
+            seen=seen,
+        )
+    # Same authorization, same break instant -> ONE email, not three.
+    assert len(sent) == 1
+
+
+def test_notify_connection_dropped_notifies_each_distinct_authorization(monkeypatch):
+    import datetime
+
+    broken_at = datetime.datetime(2026, 9, 4, 14, 31, tzinfo=datetime.timezone.utc)
+    accounts = {"a1": "auth-X", "b1": "auth-Y"}
+    sent = _wire_notify(monkeypatch, accounts=accounts, broken_at=broken_at)
+
+    seen = set()
+    for aid in ("a1", "b1"):
+        cli._notify_connection_dropped(
+            9, aid, {"brokerage_authorization_id": accounts[aid], "broker_slug": "schwab"},
+            seen=seen,
+        )
+    # Different authorizations -> both notify.
+    assert len(sent) == 2
+
+
+def test_notify_connection_dropped_without_seen_kwarg_still_sends(monkeypatch):
+    """Callers that don't pass ``seen`` (e.g. any future caller) keep the
+    original per-account behavior — the dedupe is opt-in via the kwarg."""
+    import datetime
+
+    broken_at = datetime.datetime(2026, 9, 4, 14, 31, tzinfo=datetime.timezone.utc)
+    sent = _wire_notify(monkeypatch, accounts={"a1": "auth-X"}, broken_at=broken_at)
+
+    cli._notify_connection_dropped(9, "a1", {"brokerage_authorization_id": "auth-X"})
+    assert len(sent) == 1
