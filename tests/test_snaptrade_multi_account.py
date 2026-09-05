@@ -1371,6 +1371,19 @@ def test_record_sync_attempt_updates_last_at_and_error(monkeypatch):
     assert spy.calls[1][1] == ("boom", 7, "abc")
 
 
+def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):
+    """The next cron run must see the prior pending disabled signal."""
+    queries = []
+    monkeypatch.setattr(
+        _models, "fetch_all",
+        lambda sql: queries.append(sql) or [],
+    )
+
+    assert _models.list_all_snaptrade_accounts() == []
+    assert len(queries) == 1
+    assert "last_sync_error" in queries[0]
+
+
 # ---------------------------------------------------------------------------
 # Force-refresh throttle — must NOT call SnapTrade's billed endpoint
 # when the user pressed Refresh-from-broker recently. SnapTrade charges
