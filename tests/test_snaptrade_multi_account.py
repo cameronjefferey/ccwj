@@ -266,11 +266,7 @@ def test_sync_one_disabled_flag_second_sighting_escalates_to_broken(monkeypatch,
 
 
 def test_sync_one_disabled_flag_already_broken_stays_broken(monkeypatch, _patched_models):
-    """A connection already confirmed broken (``last_sync_error`` starts
-    with the FULL ``connection_broken:`` marker, not just the pending one)
-    re-flags immediately on the next disabled=true read — the debounce only
-    guards the transition INTO the broken state, not every subsequent
-    poll of an already-known-bad connection."""
+    """A connection whose broken timestamp is still set remains broken."""
     monkeypatch.setattr(_snap, "get_snaptrade_user",
                         lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
     monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
@@ -285,11 +281,40 @@ def test_sync_one_disabled_flag_already_broken_stays_broken(monkeypatch, _patche
     res = _snap._sync_one_connection(
         user_id=9,
         acc_row={"snaptrade_account_id": "abc", "account_name": "X",
-                 "last_sync_error": f"connection_broken:{_snap._DISABLED_FLAG_ENDPOINT}"},
+                 "last_sync_error": f"connection_broken:{_snap._DISABLED_FLAG_ENDPOINT}",
+                 "connection_broken_at": "2026-09-04T12:00:00Z"},
         lookback_days=60,
     )
     assert res["error"] == "connection_broken"
     assert _patched_models["broken_marked"] == [(9, "abc")]
+
+
+def test_sync_one_disabled_flag_after_reconnect_starts_new_debounce(
+    monkeypatch, _patched_models,
+):
+    """A reconnect clears the broken timestamp. A stale error string must
+    not make the next single disabled=true flap look like confirmation."""
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _boom(*args, **kwargs):
+        raise _snap._SnapTradeAuthError(
+            _snap._DISABLED_FLAG_ENDPOINT, RuntimeError("disabled=true"),
+        )
+
+    monkeypatch.setattr(_snap, "_run_sync", _boom)
+
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X",
+                 "last_sync_error": f"connection_broken:{_snap._DISABLED_FLAG_ENDPOINT}",
+                 "connection_broken_at": None},
+        lookback_days=60,
+    )
+
+    assert res["error"] == "connection_broken_pending"
+    assert _patched_models["broken_marked"] == []
 
 
 def test_sync_one_clears_broken_flag_and_marks_first_sync_on_success(monkeypatch, _patched_models):
@@ -1257,6 +1282,22 @@ def test_upsert_snaptrade_account_resets_broken_flag(monkeypatch):
 
     sql, _ = spy.calls[0]
     assert "connection_broken_at  = NULL" in sql or "connection_broken_at = NULL" in sql.replace("  ", " ")
+    assert "last_sync_error" in sql
+    assert "connection_broken%%" in sql
+
+
+def test_clear_snaptrade_connection_broken_resets_debounce_error(monkeypatch):
+    """Reconnect and CONNECTION_FIXED must start disabled-flag debounce fresh."""
+    spy = _ExecuteSpy()
+    monkeypatch.setattr(_models, "execute", spy)
+
+    _models.clear_snaptrade_connection_broken(7, "abc")
+
+    sql, params = spy.calls[0]
+    assert "connection_broken_at = NULL" in sql
+    assert "last_sync_error" in sql
+    assert "connection_broken%%" in sql
+    assert params == (7, "abc")
 
 
 def test_get_snaptrade_accounts_short_circuits_for_none_user(monkeypatch):
