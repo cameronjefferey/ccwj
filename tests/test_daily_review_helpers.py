@@ -1551,6 +1551,57 @@ class TestSplitDayFills:
         assert r["amount"] == 2100.0
         assert out["net_gl"] == 2100.0
 
+    def test_split_option_close_credits_contract_realized_once(self):
+        # DAY_TRADES_QUERY joins contract-grain realized_pnl to fill-grain
+        # history. A close split into two broker fills must not report the
+        # full contract result twice.
+        contract = "MRVL  260904C00242500"
+        df = pd.DataFrame([
+            self._row(
+                action="option_sell_to_close",
+                trade_symbol=contract,
+                underlying_symbol="MRVL", quantity=6, price=17.75,
+                amount=10645.78, realized_pnl=2100.0,
+                instrument_type="Call",
+            ),
+            self._row(
+                action="option_sell_to_close",
+                trade_symbol=contract,
+                underlying_symbol="MRVL", quantity=4, price=17.75,
+                amount=7097.19, realized_pnl=2100.0,
+                instrument_type="Call",
+            ),
+        ])
+
+        out = _split_day_fills(df)
+
+        assert out["count"] == 2
+        assert len(out["trades"]) == 2
+        assert [r["amount"] for r in out["trades"]] == [2100.0, None]
+        assert out["net_gl"] == 2100.0
+
+    def test_same_contract_in_two_tenants_keeps_each_realized_result(self):
+        contract = "MRVL  260904C00242500"
+        df = pd.DataFrame([
+            self._row(
+                tenant_id="snaptrade:one",
+                action="option_sell_to_close", trade_symbol=contract,
+                underlying_symbol="MRVL", quantity=1, amount=1775.0,
+                realized_pnl=210.0, instrument_type="Call",
+            ),
+            self._row(
+                tenant_id="snaptrade:two",
+                action="option_sell_to_close", trade_symbol=contract,
+                underlying_symbol="MRVL", quantity=1, amount=1775.0,
+                realized_pnl=180.0, instrument_type="Call",
+            ),
+        ])
+
+        out = _split_day_fills(df)
+
+        assert [r["amount"] for r in out["trades"]] == [210.0, 180.0]
+        assert out["net_gl"] == 390.0
+
     def test_roll_dollar_is_closed_leg_gl_not_net_credit(self):
         btc = self._jpm("option_buy_to_close", "JPM   260821C00300000", -120)
         btc["realized_pnl"] = 80.0
