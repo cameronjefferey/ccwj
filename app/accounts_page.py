@@ -86,7 +86,7 @@ ACCOUNT_DIVIDEND_EVENTS_QUERY = """
 # predates transfer capture the query fails, the frame comes back
 # column-less, and the card simply hides itself.
 NET_DEPOSITS_QUERY = """
-    SELECT tenant_id, account, user_id, date, net_deposit_today
+    SELECT tenant_id, account, user_id, date, net_deposit_today, fees_today
     FROM `ccwj-dbt.analytics.mart_wealth_daily`
     WHERE 1=1 {tenant_filter}
     ORDER BY date
@@ -739,6 +739,15 @@ def accounts():
     # ------------------------------------------------------------------
     net_deposits_lifetime = 0.0
     net_deposit_events = []
+    # Fees — commissions, options contract/regulatory fees, ADR management
+    # (Sep 2026, same mart_wealth_daily.fees_today fix as Value &
+    # composition's income panel: previously ``fees_today`` only summed the
+    # standalone ``adr_fee`` action, which is $0 for almost everyone even
+    # though real per-trade fees on options contracts often run into the
+    # thousands). Same day-events pattern as net deposits so the card
+    # re-windows client-side without a round trip.
+    fees_lifetime = 0.0
+    fee_events = []
     nd_df = None
     try:
         nd_df = _filter_df_by_tenant_ids(net_deposits_df, tenant_ids)
@@ -758,6 +767,21 @@ def accounts():
                     continue
                 d_iso = d_.isoformat() if hasattr(d_, "isoformat") else str(d_)
                 net_deposit_events.append([d_iso, round(amt, 2)])
+            if "fees_today" in nd_df.columns:
+                nd_df["fees_today"] = pd.to_numeric(
+                    nd_df["fees_today"], errors="coerce"
+                ).fillna(0)
+                fee_by_day = (
+                    nd_df.groupby("date", as_index=False)["fees_today"].sum()
+                    .sort_values("date")
+                )
+                fees_lifetime = float(fee_by_day["fees_today"].sum())
+                for d_, a_ in zip(fee_by_day["date"], fee_by_day["fees_today"]):
+                    amt = float(a_ or 0)
+                    if abs(amt) < 0.005:
+                        continue
+                    d_iso = d_.isoformat() if hasattr(d_, "isoformat") else str(d_)
+                    fee_events.append([d_iso, round(amt, 2)])
     except Exception as exc:
         app.logger.warning("Account net-deposits rollup failed: %s", exc)
 
@@ -773,6 +797,8 @@ def accounts():
         "total_return": total_return,
         "net_deposits": round(net_deposits_lifetime, 2),
         "has_transfers": abs(net_deposits_lifetime) > 0.005,
+        "fees": round(fees_lifetime, 2),
+        "has_fees": abs(fees_lifetime) > 0.005,
     }
 
     # ------------------------------------------------------------------
@@ -845,10 +871,14 @@ def accounts():
                 & (cd >= card_cutoff)
             )
             realized_period = float(strat_class_df.loc[mask, "total_pnl"].sum())
+        fees_period = sum(
+            amt for d_iso, amt in fee_events if d_iso >= card_cutoff.isoformat()
+        )
         period_kpis = {
             "net": net_period,
             "dividends": div_period,
             "realized": round(realized_period, 2),
+            "fees": round(fees_period, 2),
             "start": dts[start_idx] if dts else None,
         }
 
@@ -948,6 +978,7 @@ def accounts():
         strategy_chart_json=json.dumps(strategy_chart),
         realized_events_json=json.dumps(realized_events),
         net_deposit_events_json=json.dumps(net_deposit_events),
+        fee_events_json=json.dumps(fee_events),
         strategy_rows=strategy_rows,
         position_breakdown=breakdowns["position_breakdown"],
         position_breakdown_totals=breakdowns["position_breakdown_totals"],

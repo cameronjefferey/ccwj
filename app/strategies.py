@@ -123,7 +123,10 @@ SELECT
   ROUND(SUM(realized_pnl), 2) AS realized_sum,
   ROUND(SUM(unrealized_pnl), 2) AS unrealized_sum,
   COUNT(*) AS num_groups,
-  COUNTIF(status = 'Open') AS num_open_groups
+  COUNTIF(status = 'Open') AS num_open_groups,
+  -- Real broker fees (informational — already netted into realized_pnl
+  -- above via net_cash_flow, NOT an additional deduction). Sep 2026.
+  ROUND(SUM(IFNULL(total_fees, 0)), 2) AS fees_sum
 FROM `ccwj-dbt.analytics.int_strategy_classification`
 WHERE strategy = @strategy
   {tenant_filter}
@@ -692,6 +695,15 @@ def strategies():
                         div_tot = float(div_df.iloc[0].get("dividend_total") or 0)
                         div_ev = int(div_df.iloc[0].get("dividend_events") or 0)
                     context["focus_breakdown_rows"] = _focus_breakdown_rows(bdf, div_tot, div_ev)
+                    # Fee drag — informational only, deliberately NOT folded
+                    # into the breakdown rows above (broker fees are already
+                    # netted into each row's realized_pnl; adding a row here
+                    # would double-subtract). Rendered as a caption under
+                    # the table, same pattern as Position Detail.
+                    context["focus_breakdown_fees"] = (
+                        round(float(pd.to_numeric(bdf["fees_sum"], errors="coerce").fillna(0).sum()), 2)
+                        if not bdf.empty and "fees_sum" in bdf.columns else 0.0
+                    )
                 except Exception:
                     app.logger.exception("strategy focus type breakdown failed")
 

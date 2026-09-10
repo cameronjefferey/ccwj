@@ -337,6 +337,20 @@ What's working:
   + `current_df` + `int_dividend_events`, all leg-aware. Equity row
   collapses multiple closure events for one session into "1 session" so
   partially-sold positions don't read as multiple chapters.
+- **Fee drag caption (Sep 2026).** A small muted line under the table
+  ("This included $X.XX in broker-reported fees ... already reflected
+  in Realized above") sums `trades_df["fees"]` (real per-fill broker fee,
+  already leg- + tenant-filtered by the point it's read) for the
+  position's scope. Deliberately a CAPTION, not a row in the table:
+  broker fees are already netted into each fill's cash flow, so they're
+  already inside Realized — adding a Fees row to `breakdown_rows` would
+  double-subtract and trip the Hero/Breakdown/chart-terminal
+  reconciliation invariant this page is audited against. Hidden when $0.
+  Strategies' drill-in (`?strategy=`) mirrors this exactly
+  (`focus_breakdown_fees`, summed from `int_strategy_classification
+  .total_fees` — sourced from `int_option_contracts.total_fees` for
+  options and the new `int_equity_sessions.total_fees` for equity, both
+  informational-only for the same double-subtract reason).
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
@@ -527,7 +541,10 @@ Symbol links in the concentration list preserve the selected account filter (`?a
 **Status: Working. One surface for per-account performance AND value/composition.**
 
 **Performance** (default, `app/accounts_page.py`): per-account KPI cards,
-P&L-earned charts, windowed KPI cards, Net deposits KPI.
+P&L-earned charts, windowed KPI cards, Net deposits KPI, Fees KPI (Sep
+2026 — lifetime/period sum of `mart_wealth_daily.fees_today`, the same
+corrected source as Value & composition's income panel; re-windows
+client-side via day-events like Net deposits, hidden when $0).
 Breakdown tables list positions active in the selected range with
 **lifetime** Stock/Option/Dividend/capital (do not feed Daily Review's
 ``week_start`` into attribution — that mixed full-to-date open P&L with

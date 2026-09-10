@@ -477,6 +477,12 @@ options_classified as (
         oc.close_type,
         oc.premium_received,
         oc.premium_paid,
+        -- Real per-contract broker fees (commissions, regulatory/exchange
+        -- fees), already summed by int_option_contracts. Informational —
+        -- already netted into net_cash_flow/total_pnl above, NOT an
+        -- additional deduction. Powers the Strategies drill-in fee-drag
+        -- caption (Sep 2026).
+        oc.total_fees                                         as total_fees,
 
         -- Strategy. Coverage branches use coverage_at_write (shares held
         -- as of the write date + 3-day buy-write lookahead) — NOT current
@@ -709,6 +715,10 @@ equity_classified as (
         cast(null as string)                   as close_type,
         cast(0 as float64)                     as premium_received,
         cast(0 as float64)                     as premium_paid,
+        -- Real per-fill broker fees for this equity session (informational
+        -- — already netted into net_cash_flow/total_pnl above). Sourced
+        -- from int_equity_sessions.total_fees (Sep 2026).
+        e.total_fees                                          as total_fees,
 
         case
             -- Crypto wins first: BTC / ETH / USDC etc. land here from a

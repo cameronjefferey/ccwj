@@ -27,6 +27,7 @@ with equity_trades as (
         quantity,
         quantity_raw,            -- fill-date units; join key to int_drip_fills
         amount,
+        fees,
         is_synthetic_opening
     from {{ ref('int_equity_fills') }}
 ),
@@ -132,6 +133,11 @@ trade_session_summary as (
         max(trade_date)  as last_trade_date,
         max(running_qty) as max_quantity_held,
         sum(amount)      as net_cash_flow,   -- total cash in/out from buys and sells
+        -- Real per-fill broker fees for this session (informational —
+        -- already netted into amount/net_cash_flow above, NOT a
+        -- separate deduction). Powers the Position Detail / Strategies
+        -- fee-drag caption (Sep 2026).
+        sum(fees)        as total_fees,
         sum(case when action = 'equity_buy' then abs(amount) else 0 end)
                          as total_buy_cost,
         sum(case when action = 'equity_buy' then quantity else 0 end)
@@ -209,6 +215,9 @@ snapshot_equity_sessions as (
             coalesce(c.cost_basis, 0)
             - coalesce(tsbs.cost_from_open_trade_sessions, 0)
         ) as net_cash_flow,
+        -- No trade rows underlie a snapshot-inferred session (that's the
+        -- whole point of this branch), so there's no fee to attribute.
+        cast(0 as float64) as total_fees,
         coalesce(c.cost_basis, 0) - coalesce(tsbs.cost_from_open_trade_sessions, 0)
             as total_buy_cost,
         greatest(
@@ -321,6 +330,7 @@ final as (
         s.last_trade_date,
         s.max_quantity_held,
         s.net_cash_flow,
+        s.total_fees,
         s.num_trades,
 
         -- A session is Open only when:

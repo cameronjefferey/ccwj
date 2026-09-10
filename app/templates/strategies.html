@@ -324,6 +324,16 @@
             </tfoot>
         </table>
     </div>
+    {# Fee drag — informational only, deliberately NOT a row above (it
+       would double-subtract; broker fees are already netted into each
+       group's realized_pnl). Hidden when there's nothing to show. #}
+    {% if focus_breakdown_fees | default(0) %}
+    <p class="text-muted small mt-3 mb-0">
+        This included <strong>${{ "{:,.2f}".format(focus_breakdown_fees) }}</strong>
+        in broker-reported fees (commissions, contract &amp; regulatory fees) —
+        already reflected in Realized above, not an additional cost.
+    </p>
+    {% endif %}
 </div>
 {% endif %}
 

@@ -2008,6 +2008,21 @@ def position_detail(symbol):
         dividends_df=dividends_df,
     )
 
+    # Fee drag (Sep 2026) — informational only, NOT folded into
+    # breakdown_rows / bd_total. ``trades_df`` at this point is already
+    # tenant-filtered and leg-filtered (same scope as the rows above), and
+    # its ``fees`` column is the real per-fill broker fee (SnapTrade's
+    # per-fill ``fee`` / Schwab CSV "Fees & Comm") — already netted into
+    # each fill's ``amount``, and therefore already inside Realized above.
+    # This is deliberately a caption under the card, not a new row: adding
+    # it to the sum would double-subtract fees and trip the Hero/Breakdown/
+    # chart-terminal reconciliation invariant this page is audited against.
+    breakdown_fees_total = 0.0
+    if trades_df is not None and not trades_df.empty and "fees" in trades_df.columns:
+        breakdown_fees_total = float(
+            pd.to_numeric(trades_df["fees"], errors="coerce").fillna(0).sum()
+        )
+
     # Headline KPI used ``Σ positions_summary.total_dividend_income`` + realized
     # frames + unreal — but Breakdown-by-type / mart chart fold dividends from
     # ``int_dividend_events`` (synthesised ex-div × holdings etc.). Those streams
@@ -2644,6 +2659,7 @@ def position_detail(symbol):
         overall_status=overall_status,
         strategy_rows=strategy_rows,
         breakdown_rows=breakdown_rows,
+        breakdown_fees_total=round(breakdown_fees_total, 2),
         trades=trades,
         trade_outcomes=trade_outcomes,
         current_positions=current_positions,

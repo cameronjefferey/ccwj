@@ -25,6 +25,9 @@
       signed_quantity — quantity signed by side (buy +, sell/short -)
       amount          — cash flow, split-invariant, synthetic rows carry
                         the estimated opening cost (negative = cash out)
+      fees            — real per-fill broker fee/commission (positive
+                        magnitude, a cost); 0 for synthetic openings (no
+                        real fill exists to have billed a fee)
       is_synthetic_opening — true for inferred opening-balance rows; the
                         UI discloses these (Position Detail banner), and
                         int_drip_fills deliberately does NOT read this view
@@ -55,6 +58,7 @@ with real_fills as (
             else 0
         end as signed_quantity,
         h.amount,
+        h.fees,
         false as is_synthetic_opening
     from {{ ref('stg_history') }} h
     left join {{ ref('int_split_factors') }} sf
@@ -76,6 +80,7 @@ synthetic_openings as (
         ob.opening_qty as quantity,          -- already today's units
         ob.opening_qty as signed_quantity,
         ob.est_amount as amount,
+        cast(0 as float64) as fees,  -- synthetic opening, no real fill/fee
         true as is_synthetic_opening
     from {{ ref('int_opening_balances') }} ob
     where ob.opening_qty > 0.01

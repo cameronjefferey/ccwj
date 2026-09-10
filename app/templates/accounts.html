@@ -107,9 +107,16 @@
 </div>
 {% endif %}
 
-{# ── KPI Cards ────────────────────────────────────────────────────── #}
+{# ── KPI Cards ────────────────────────────────────────────────────────
+   Split into two rows so it's never ambiguous which numbers move when the
+   time frame changes. Row 1 is always "as of now" (never reacts to the
+   time-frame buttons). Row 2 re-windows on every time-frame click (see
+   updateCards() in the scripts block) — its own label switches between
+   "Lifetime" / "This period" so the row itself announces that it moved,
+   not just the individual card labels. ── #}
 {% if kpis %}
-<div class="row g-3 mb-4">
+<div class="text-muted small fw-semibold mb-2">As of now</div>
+<div class="row g-3 mb-3">
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Account Value</div>
@@ -128,6 +135,20 @@
             <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
         </div>
     </div>
+    <div class="col">
+        <div class="card kpi-card p-3 text-center">
+            <div class="kpi-label">Unrealized P&amp;L</div>
+            <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="text-muted small fw-semibold mb-2" id="periodGroupLabel">
+    {{ 'This period' if period_kpis else 'Lifetime' }}
+</div>
+<div class="row g-3 mb-4">
     {# Net deposits / withdrawals — the trader's own money moved in/out. Not
        trading P&L (the P&L cards + chart already exclude it), shown so
        Account Value isn't misread as performance. Re-windows client-side
@@ -152,14 +173,6 @@
             </div>
         </div>
     </div>
-    <div class="col">
-        <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Unrealized P&amp;L</div>
-            <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
-            </div>
-        </div>
-    </div>
     {# Dividends KPI surfaces the missing reconciliation piece so a reader
        can verify realized + unrealized + dividends = total return at a
        glance. Hidden when lifetime dividends are zero AND no window is
@@ -178,6 +191,21 @@
             <div class="kpi-label">{{ 'Net P&L this period' if period_kpis else 'Total Return' }}</div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.net if period_kpis else kpis.total_return) >= 0 else 'text-negative' }}">
                 ${{ "{:,.0f}".format(period_kpis.net if period_kpis else kpis.total_return) }}
+            </div>
+        </div>
+    </div>
+    {# Fees — commissions, options contract/regulatory fees, ADR management.
+       Already netted into Realized/Total Return above (the broker's
+       reported cash flow is post-fee); this card is an informational
+       breakout of how much of that return was eaten by fees, not an
+       additional deduction. Hidden when lifetime fees round to $0 (an
+       equity-only account whose broker never billed a per-trade fee). #}
+    <div class="col" id="kpiFeesCol"
+         style="{{ '' if kpis.has_fees else 'display:none;' }}">
+        <div class="card kpi-card p-3 text-center" id="kpiFees">
+            <div class="kpi-label">{{ 'Fees (period)' if period_kpis else 'Fees' }}</div>
+            <div class="kpi-value {{ 'text-positive' if (period_kpis.fees if period_kpis else kpis.fees) >= 0 else 'text-negative' }}">
+                ${{ "{:,.0f}".format(period_kpis.fees if period_kpis else kpis.fees) }}
             </div>
         </div>
     </div>
@@ -425,11 +453,15 @@
     /* Per-day [date, signed amount] external cash flow so "Net deposits"
        re-windows in the browser exactly like Realized. */
     var NET_DEPOSIT_EVENTS = {{ net_deposit_events_json | default('[]') | safe }};
+    /* Per-day [date, signed fee amount] so "Fees" re-windows in the browser
+       exactly like Net deposits / Realized. */
+    var FEE_EVENTS = {{ fee_events_json | default('[]') | safe }};
     var KPI_LIFETIME = {
         realized:     {{ (kpis.realized_pnl or 0) | tojson }},
         dividends:    {{ (kpis.dividend_income or 0) | tojson }},
         total_return: {{ (kpis.total_return or 0) | tojson }},
-        net_deposits: {{ (kpis.net_deposits or 0) | tojson }}
+        net_deposits: {{ (kpis.net_deposits or 0) | tojson }},
+        fees:         {{ (kpis.fees or 0) | tojson }}
     };
 
     var RANGE_DAYS   = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
@@ -550,6 +582,17 @@
         return sum;
     }
 
+    function feesInWindow(key) {
+        if (key === 'ALL') return KPI_LIFETIME.fees;
+        var cutoff = windowCutoff(key);
+        if (!cutoff) return 0;
+        var sum = 0;
+        for (var i = 0; i < FEE_EVENTS.length; i++) {
+            if (parseDate(FEE_EVENTS[i][0]) >= cutoff) sum += FEE_EVENTS[i][1];
+        }
+        return sum;
+    }
+
     function seriesDelta(arr, key) {
         if (!arr || !arr.length) return 0;
         var sIdx = startIndexFor(summaryData.dates, key);
@@ -571,6 +614,11 @@
 
     function updateCards(key) {
         var isAll = (key === 'ALL');
+        // The row label itself announces the switch (not just the individual
+        // card labels) — see the "It's confusing when only some of the cards
+        // change" fix: this whole row is the one that moves with the filter.
+        var groupLabel = document.getElementById('periodGroupLabel');
+        if (groupLabel) groupLabel.textContent = isAll ? 'Lifetime' : 'This period';
         if (isAll) {
             setCard('kpiRealized', 'Realized P\u0026L', KPI_LIFETIME.realized);
             setCard('kpiNet',      'Total Return',      KPI_LIFETIME.total_return);
@@ -602,6 +650,22 @@
                 setCard('kpiNetDeposits',
                         isAll ? 'Net deposits' : 'Net deposits (period)',
                         netDepositsInWindow(key));
+            }
+        }
+
+        // Fees card: lifetime for ALL, else summed over the window. Hidden
+        // entirely when there's genuinely nothing to show — see the same
+        // "don't show a suspicious $0.00" call on Value & composition.
+        var feesCol = document.getElementById('kpiFeesCol');
+        if (feesCol) {
+            var hasFeeEvents = FEE_EVENTS && FEE_EVENTS.length;
+            if (!hasFeeEvents && !KPI_LIFETIME.fees) {
+                feesCol.style.display = 'none';
+            } else {
+                feesCol.style.display = '';
+                setCard('kpiFees',
+                        isAll ? 'Fees' : 'Fees (period)',
+                        feesInWindow(key));
             }
         }
     }
