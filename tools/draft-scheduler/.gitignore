@@ -1,0 +1,5 @@
+poll.json
+poll.json.tmp
+.venv/
+__pycache__/
+*.pyc
