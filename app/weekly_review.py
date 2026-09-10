@@ -5311,6 +5311,12 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     trade_rows, cash_rows = [], []
     symbols = []
     seen_sym = set()
+    # DAY_TRADES_QUERY joins option G/L from int_option_contracts, whose
+    # grain is one row per contract.  A contract closed in several broker
+    # fills therefore carries the same full-contract realized_pnl on every
+    # fill row.  Keep every fill for the activity count, but credit the
+    # contract result only once per account/contract/day.
+    seen_option_close_gl = set()
     net_cash = 0.0
     for _, r in trades_df.iterrows():
         if _is_drip_fill(r):
@@ -5327,11 +5333,28 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         )
         symbol = str(r.get("underlying_symbol") or "").strip()
         tenant_id = str(r.get("tenant_id") or "").strip()
+        trade_symbol = str(r.get("trade_symbol") or "").strip()
+        trade_date = _coerce_date(r.get("trade_date"))
+        if (
+            realized is not None
+            and action in ("option_buy_to_close", "option_sell_to_close")
+            and trade_symbol
+        ):
+            option_close_key = (
+                tenant_id,
+                str(r.get("account") or ""),
+                trade_symbol.upper(),
+                trade_date,
+            )
+            if option_close_key in seen_option_close_gl:
+                realized = None
+            else:
+                seen_option_close_gl.add(option_close_key)
         row = {
             "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
             "action": action,
             "symbol": symbol,
-            "trade_symbol": str(r.get("trade_symbol") or "").strip(),
+            "trade_symbol": trade_symbol,
             "description": str(r.get("description") or "").strip(),
             "quantity": float(qty) if pd.notna(qty) else None,
             "price": float(price) if pd.notna(price) else None,
@@ -5342,7 +5365,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
             "account": label_map.get(tenant_id, str(r.get("account") or "")),
             "is_option": action.startswith("option_"),
             "leg_open_date": _coerce_date(r.get("leg_open_date")),
-            "trade_date": _coerce_date(r.get("trade_date")),
+            "trade_date": trade_date,
         }
         if action in _TRADE_ACTIONS:
             trade_rows.append(row)
