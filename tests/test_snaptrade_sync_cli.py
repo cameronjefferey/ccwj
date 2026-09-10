@@ -391,6 +391,25 @@ def test_all_accounts_pending_does_not_fail_cron(_wire, monkeypatch):
     assert cli.main() == 0
 
 
+@pytest.mark.parametrize("hard_error", ["session_expired", "connection_broken"])
+def test_pending_account_does_not_mask_hard_failures(
+    _wire, monkeypatch, hard_error,
+):
+    """One flapping connection must not make unrelated sync failures green."""
+    rows = [_row(9, "pending", "Schwab Account"), _row(18, "failed", "Fidelity Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+
+    def _sync(_user_id, row, **_kwargs):
+        if row["snaptrade_account_id"] == "pending":
+            return {"ok": False, "error": "connection_broken_pending"}
+        return {"ok": False, "error": hard_error}
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _sync)
+
+    assert cli.main() == 1
+    assert _wire["batch"] == []
+
+
 def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
     rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)

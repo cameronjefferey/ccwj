@@ -468,11 +468,11 @@ def main():
         f"{errors} errors{pushed_note}"
     )
 
-    # A run where every account is merely "pending" (disabled seen once,
-    # awaiting the next poll's confirmation — see the debounce in
-    # app.snaptrade._sync_one_connection) is NOT a system-wide outage; don't
-    # flag the cron red for what is very likely a transient SnapTrade blip.
-    if total > 0 and succeeded == 0 and pending == 0:
+    # Only an otherwise-clean run of unconfirmed disabled signals may pass
+    # without a successful account. A pending account must not mask hard
+    # failures on its siblings: that would make a system-wide API/session
+    # outage exit green and suppress the cron/ops alert.
+    if succeeded == 0 and (errors > 0 or broken > 0):
         return 1
     return 0
 
