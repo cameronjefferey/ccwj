@@ -13,8 +13,19 @@
         recorded in stg_history on this trade date for this account.
         ``interest_net`` is ``credit_interest + margin_interest`` so the
         sign on margin (already negative) cancels naturally.
-        Fees are ``adr_fee`` (also signed-negative). All three are 0
-        on days with no matching history rows.
+        Fees are TWO sources combined (Sep 2026 — see ``trade_fees_by_day``
+        below): the standalone ``adr_fee`` action (already signed-negative
+        in ``amount``) PLUS ``stg_history.fees`` summed across every OTHER
+        action (options regulatory/exchange fees, equity commissions —
+        SnapTrade's per-fill ``fee`` field / Schwab CSV "Fees & Comm").
+        ``fees`` is a positive-magnitude cost column, distinct from
+        ``amount`` (which is already the broker's net, post-fee cash
+        movement) — summing it separately and negating is NOT double
+        counting. Pre-fix this card only ever showed ADR fees, which are
+        $0 for the overwhelming majority of users (no ADR holdings) even
+        though real per-trade fees — mostly options contract fees — often
+        run into the thousands of dollars over a trading history. All
+        three are 0 on days with no matching history rows.
       - cumulative_dividends, cumulative_interest_net, cumulative_fees
         — running totals from the start of each account's snapshot
         history. Lets the page render "where the growth came from"
@@ -106,6 +117,28 @@ history_by_day as (
         sum(case when action = 'adr_fee'         then amount else 0 end) as fees_today
     from {{ ref('stg_history') }}
     where action in ('dividend', 'credit_interest', 'margin_interest', 'adr_fee')
+    group by 1, 2, 3, 4
+),
+
+-- Real per-trade fees/commissions — SnapTrade's per-fill ``fee`` field
+-- (Schwab CSV: "Fees & Comm"), recorded on the trade row itself
+-- (equity_buy/sell, every option_* action), NOT on a standalone
+-- transaction. This is the bulk of what traders actually pay: options
+-- contracts commonly carry a small regulatory/exchange fee per leg that
+-- adds up fast across hundreds of contracts, while ``adr_fee`` above is
+-- $0 for anyone who has never held an ADR. ``fees`` is a positive
+-- magnitude (cost); negated below so it combines with adr_fee's own
+-- signed-negative convention. Filtering to ``fees != 0`` keeps this CTE
+-- small — most rows carry no fee.
+trade_fees_by_day as (
+    select
+        account,
+        user_id,
+        tenant_id,
+        trade_date as date,
+        sum(fees) as trade_fees_today
+    from {{ ref('stg_history') }}
+    where fees != 0
     group by 1, 2, 3, 4
 ),
 
@@ -213,7 +246,10 @@ joined as (
         e.option_value,
         coalesce(h.dividend_today, 0)      as dividend_today,
         coalesce(h.interest_net_today, 0)  as interest_net_today,
-        coalesce(h.fees_today, 0)          as fees_today,
+        -- adr_fee (standalone, already negative) minus real per-trade
+        -- fees/commissions (positive magnitude, negated here) — see
+        -- trade_fees_by_day above.
+        coalesce(h.fees_today, 0) - coalesce(tf.trade_fees_today, 0) as fees_today,
         case
             when i.tenant_id is not null then e.itemized_cum
             else coalesce(o.opening_deposit, 0)
@@ -234,6 +270,11 @@ joined as (
      and (tr.user_id is not distinct from e.user_id)
      and (tr.tenant_id is not distinct from e.tenant_id)
      and tr.date <= e.date
+    left join trade_fees_by_day tf
+      on tf.account = e.account
+     and (tf.user_id is not distinct from e.user_id)
+     and (tf.tenant_id is not distinct from e.tenant_id)
+     and tf.date    = e.date
     left join itemized_tenants i
       on (i.tenant_id is not distinct from e.tenant_id)
      and i.account = e.account

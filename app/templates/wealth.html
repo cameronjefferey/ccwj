@@ -154,7 +154,6 @@
     <h1>Account value &amp; composition</h1>
     <p class="lede">
         Daily account value over time, broken into cash, equity, and option positions.
-        Days without a snapshot are simply not plotted.
     </p>
 </div>
 
@@ -211,9 +210,12 @@
 </div>
 {% else %}
 
-{% if selected_range == 'all' %}
+{# Shown on EVERY range, not just "All" — the hero used to carry this fact
+   as a quiet one-line caveat that was easy to miss and didn't say WHEN the
+   record starts. This is the same bordered, dismissible note Positions /
+   Position Detail / Strategies use, so it earns real attention instead of
+   competing with the hero's white-on-dark small text. #}
 {% include "_history_window_note.html" %}
-{% endif %}
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
@@ -347,6 +349,7 @@
     <h2>Account value over time</h2>
     <p class="chart-sub">
         Stacked: cash, equity, options. The black line is total account value.
+        Days without a snapshot aren't plotted.
         {% if exclude_transfers and ever_has_transfers %}
         The dashed line removes deposits &amp; withdrawals. When those
         rows are in trade history, trading P&amp;L from before snapshots
@@ -417,17 +420,25 @@
         </div>
     </div>
 
+    {# Hidden entirely when there's genuinely nothing to show (e.g. an
+       equity-only account whose broker never billed a per-trade fee) —
+       a suspicious-looking "$0.00 Fees" card is worse than no card.
+       When shown, this is real broker-reported fees (commissions,
+       options contract/regulatory fees, ADR management) summed from
+       stg_history — not just the narrow ADR bucket it used to be. #}
+    {% if income_panel.fees %}
     <div class="col-md-4 col-12">
         <div class="income-card">
             <div class="income-label">Fees</div>
             <div class="income-value
                 {% if income_panel.fees < 0 %}kpi-delta-neg
                 {% elif income_panel.fees > 0 %}kpi-delta-pos{% endif %}">
-                ${{ "{:,.2f}".format(income_panel.fees) }}
+                {{ '-' if income_panel.fees < 0 }}${{ "{:,.2f}".format(income_panel.fees|abs) }}
             </div>
-            <div class="income-meta">ADR management fees</div>
+            <div class="income-meta">Commissions, contract &amp; regulatory fees your broker reported</div>
         </div>
     </div>
+    {% endif %}
 </div>
 {% endif %}
 

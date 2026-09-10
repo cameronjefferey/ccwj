@@ -550,7 +550,9 @@ not the unfinished mart-today row — so Value and Overview agree on last close.
 lifetime or 5-year archive: we *request* up to 1825 days; SnapTrade clamps
 to whatever the broker still has on file (often ~1–2 years of trades).
 Daily values start even later — the first SCD2 snapshot after connect.
-Accounts Performance (All range) and Value (All range) share a quiet,
+Accounts Performance (All range) and Value & composition (EVERY range —
+Sep 2026: the hero used to carry this as a quiet one-line caveat that
+never appeared at all on Value's non-"All" default) share a quiet,
 dismissible note with Positions (All time), Position Detail, Strategies,
 Strategy fit, Sectors, Trader Profile, and Insights
 (``_history_window_note.html``, localStorage key `ht-history-note-dismissed`)
