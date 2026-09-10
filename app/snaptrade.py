@@ -1442,13 +1442,16 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
         clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
         record_snaptrade_sync_attempt(user_id, snaptrade_account_id, error=None)
-        # Reverse trial: the 30-day clock starts at FIRST DATA, not signup.
-        # Once-only + trial-plan-only inside the helper; best-effort.
-        try:
-            from app.plan import start_trial_clock
-            start_trial_clock(user_id)
-        except Exception:
-            pass
+        # Reverse trial: the 30-day clock starts at FIRST DATA, not merely
+        # after a successful broker read. Deferred cron reads have not written
+        # their batch yet, so the caller starts the clock only after that
+        # batch is durable (including a byte-identical no-op).
+        if not result.get("deferred") and seed_write_confirmed:
+            try:
+                from app.plan import start_trial_clock
+                start_trial_clock(user_id)
+            except Exception:
+                pass
         # Persist SnapTrade's honest "broker data as of" timestamp (best-effort;
         # None is a no-op so a missing signal never clobbers a good value).
         record_snaptrade_holdings_sync(
