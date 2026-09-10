@@ -2238,6 +2238,11 @@ def upsert_snaptrade_account(
                account_number_masked = EXCLUDED.account_number_masked,
                account_name          = EXCLUDED.account_name,
                connection_broken_at  = NULL,
+               last_sync_error       = CASE
+                   WHEN snaptrade_accounts.last_sync_error LIKE 'connection_broken%%'
+                   THEN NULL
+                   ELSE snaptrade_accounts.last_sync_error
+               END,
                updated_at            = NOW()""",
         (
             user_id,
@@ -2491,10 +2496,16 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
 
 
 def clear_snaptrade_connection_broken(user_id, snaptrade_account_id):
-    """Clear the broken-connection flag after a successful sync."""
+    """Clear connection-break state after reconnect, fix webhook, or sync."""
     try:
         execute(
-            "UPDATE snaptrade_accounts SET connection_broken_at = NULL, updated_at = NOW() "
+            "UPDATE snaptrade_accounts "
+            "SET connection_broken_at = NULL, "
+            "    last_sync_error = CASE "
+            "        WHEN last_sync_error LIKE 'connection_broken%%' THEN NULL "
+            "        ELSE last_sync_error "
+            "    END, "
+            "    updated_at = NOW() "
             "WHERE user_id = %s AND snaptrade_account_id = %s",
             (user_id, snaptrade_account_id),
         )

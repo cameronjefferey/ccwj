@@ -1520,15 +1520,25 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         # true read is no longer enough to trip the user-facing banner/email;
         # require the SAME signal on two CONSECUTIVE sync attempts for this
         # account first. `acc_row["last_sync_error"]` reflects the PREVIOUS
-        # attempt (this row was fetched before this run began), so it is a
-        # free, already-persisted debounce counter — no schema change. The
+        # attempt (this row was fetched before this run began), while
+        # `connection_broken_at` distinguishes a still-broken connection
+        # from a stale pre-reconnect error marker. Together they are a free,
+        # already-persisted debounce state — no schema change. The
         # activities-feed auth-error path (revoked/expired grant, a real API
         # rejection) is NOT debounced — that signal has never been observed
         # to flap and delaying it would leave a genuinely revoked connection
         # silently unsynced for an extra cycle.
-        if endpoint == _DISABLED_FLAG_ENDPOINT and not (
-            acc_row.get("last_sync_error") or ""
-        ).startswith("connection_broken"):
+        prior_error = acc_row.get("last_sync_error") or ""
+        prior_pending = (
+            prior_error
+            == f"connection_broken_pending:{_DISABLED_FLAG_ENDPOINT}"
+        )
+        already_broken = bool(acc_row.get("connection_broken_at"))
+        if (
+            endpoint == _DISABLED_FLAG_ENDPOINT
+            and not prior_pending
+            and not already_broken
+        ):
             _app.logger.warning(
                 "SnapTrade disabled-flag seen ONCE for user_id=%s account=%s "
                 "broker=%s (pending confirmation next sync — no banner/email "
