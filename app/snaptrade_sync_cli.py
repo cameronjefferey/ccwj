@@ -231,7 +231,11 @@ def _force_refresh_all(rows):
 
 
 def main():
-    from app.models import init_db, list_all_snaptrade_accounts
+    from app.models import (
+        init_db,
+        list_all_snaptrade_accounts,
+        record_snaptrade_sync_attempt,
+    )
 
     init_db()
     rows = list_all_snaptrade_accounts() or []
@@ -304,6 +308,7 @@ def main():
     # semantics are preserved because the batch folds accounts in the same
     # order sequential pushes did.
     batch_entries = []
+    batch_account_ids = []
     pending_first_sync_marks = []
 
     for row in rows:
@@ -365,6 +370,7 @@ def main():
                 or frames.get("history_df") is not None
             ):
                 batch_entries.append(frames)
+                batch_account_ids.append((user_id, snaptrade_account_id))
                 # Positions and recent orders often arrive before SnapTrade
                 # finishes indexing activities on a new connection. Keep that
                 # account on the full-history window until SnapTrade's own
@@ -413,12 +419,16 @@ def main():
 
     # Single batched push for every account synced this run.
     pushed_note = ""
+    batch_failed = False
+    batch_error = None
     if batch_entries:
         ok_cfg, cfg_err = _upload_github_config_ok()
         if not ok_cfg:
+            batch_failed = True
+            batch_error = cfg_err or "seed store not configured"
             print(
                 f"WARNING: {len(batch_entries)} synced account(s) did not reach "
-                f"GitHub. Reason: {cfg_err or 'GitHub seed push not configured.'}",
+                f"the seed store. Reason: {batch_error}",
                 file=sys.stderr,
             )
         else:
@@ -437,9 +447,23 @@ def main():
             elif ok and no_changes:
                 pushed_note = f", no changes across {n} accounts (no push)"
             else:
+                batch_failed = True
+                batch_error = str(err or "unknown batch write error")
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
             if ok:
+                # The broker read is not end-to-end successful until its
+                # deferred frames are durable. Start the reverse-trial clock
+                # here, not in _sync_one_connection, so a failed first batch
+                # cannot consume trial days before any data exists.
+                from app.plan import start_trial_clock
+                for synced_user_id in {
+                    user_id for user_id, _account_id in batch_account_ids
+                }:
+                    try:
+                        start_trial_clock(synced_user_id)
+                    except Exception:
+                        pass
                 # The completed historical import is not durable until this
                 # batch succeeds. A byte-identical no-op also proves its rows
                 # are already on the seed branch.
@@ -456,6 +480,25 @@ def main():
                             f"user {pending_user_id} ({pending_account_id}): {exc}",
                             file=sys.stderr,
                         )
+    if batch_failed:
+        # _sync_one_connection records a successful broker read before the
+        # deferred batch is attempted. Replace that false-green status with
+        # the actual end-to-end failure so the UI and operators do not claim
+        # stale warehouse data was synced successfully.
+        sync_error = f"seed_write_failed:{batch_error}"[:500]
+        for failed_user_id, failed_account_id in batch_account_ids:
+            try:
+                record_snaptrade_sync_attempt(
+                    failed_user_id, failed_account_id, error=sync_error,
+                )
+            except Exception as exc:
+                print(
+                    "WARNING: could not record deferred seed-write failure for "
+                    f"user {failed_user_id} ({failed_account_id}): {exc}",
+                    file=sys.stderr,
+                )
+        succeeded = max(0, succeeded - len(batch_account_ids))
+        errors += len(batch_account_ids)
 
     mode = (
         "intraday poll" if intraday
@@ -468,6 +511,14 @@ def main():
         f"{errors} errors{pushed_note}"
     )
 
+    # A batch write failure must fail the cron even if some accounts synced
+    # via a non-batched path (their broker read succeeded but the durable
+    # write to the seed store did not) — the "succeeded" count already
+    # excludes the batch-failed accounts below, but this still catches the
+    # case where succeeded > 0 from other accounts while the batch itself
+    # never landed.
+    if batch_failed:
+        return 1
     # Only an otherwise-clean run of unconfirmed disabled signals may pass
     # without a successful account. A pending account must not mask hard
     # failures on its siblings: that would make a system-wide API/session

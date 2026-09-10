@@ -16,6 +16,7 @@ os.environ.setdefault("HAPPYTRADER_SKIP_DB_INIT", "1")
 import pytest
 
 from app import models as _models
+from app import plan as _plan
 from app import snaptrade as _snap
 from app.snaptrade import _bulk_sync_lookback_days
 
@@ -442,6 +443,12 @@ def _ok_run_sync(extra=None):
 def test_sync_one_marks_first_sync_only_after_completed_durable_history(
     monkeypatch, _patched_models, extra, should_mark,
 ):
+    trial_started = []
+    monkeypatch.setattr(
+        _plan,
+        "start_trial_clock",
+        lambda user_id: trial_started.append(user_id),
+    )
     monkeypatch.setattr(
         _snap,
         "get_snaptrade_user",
@@ -465,6 +472,11 @@ def test_sync_one_marks_first_sync_only_after_completed_durable_history(
 
     assert res["ok"] is True
     assert bool(_patched_models["first_sync_marked"]) is should_mark
+    seed_write_confirmed = bool(
+        extra.get("github_pushed") or extra.get("github_no_changes")
+    )
+    should_start_trial = not bool(extra.get("deferred")) and seed_write_confirmed
+    assert bool(trial_started) is should_start_trial
 
 
 def test_sync_one_force_refresh_calls_broker_repoll(monkeypatch, _patched_models):

@@ -12,6 +12,7 @@ import pytest
 
 import app.snaptrade_sync_cli as cli
 from app import models as _models
+from app import plan as _plan
 from app import snaptrade as _snap
 from app import upload as _upload
 
@@ -72,13 +73,31 @@ def _wire(monkeypatch):
     monkeypatch.setattr(_upload, "_upload_github_config_ok", lambda: (True, None))
     monkeypatch.setattr(cli, "_notify_connection_dropped", lambda *a, **k: None)
 
-    calls = {"batch": [], "synced": [], "first_sync_marked": []}
+    calls = {
+        "batch": [],
+        "synced": [],
+        "first_sync_marked": [],
+        "sync_attempts": [],
+        "trial_started": [],
+    }
     monkeypatch.setattr(
         _snap,
         "mark_snaptrade_first_sync_completed",
         lambda user_id, account_id: calls["first_sync_marked"].append(
             (user_id, account_id)
         ),
+    )
+    monkeypatch.setattr(
+        _models,
+        "record_snaptrade_sync_attempt",
+        lambda user_id, account_id, *, error=None: calls["sync_attempts"].append(
+            (user_id, account_id, error)
+        ),
+    )
+    monkeypatch.setattr(
+        _plan,
+        "start_trial_clock",
+        lambda user_id: calls["trial_started"].append(user_id),
     )
 
     def _fake_batch(entries, *, commit_message):
@@ -121,6 +140,7 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
     # Exactly ONE batched push, carrying all three accounts.
     assert len(_wire["batch"]) == 1
     assert len(_wire["batch"][0]["entries"]) == 3
+    assert sorted(_wire["trial_started"]) == [9, 18]
 
 
 def test_cron_skips_broken_connection_from_batch(_wire, monkeypatch):
@@ -426,8 +446,46 @@ def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
         lambda *args, **kwargs: (False, "GitHub unavailable", None, False, 0),
     )
 
-    assert cli.main() == 0
+    assert cli.main() == 1
     assert _wire["first_sync_marked"] == []
+    assert _wire["trial_started"] == []
+    assert len(_wire["sync_attempts"]) == 1
+    uid, account_id, error = _wire["sync_attempts"][0]
+    assert (uid, account_id) == (14, "new-account")
+    assert error.startswith("seed_write_failed:")
+
+
+def test_unconfigured_seed_store_fails_cron_and_records_each_account(
+    _wire, monkeypatch,
+):
+    rows = [
+        _row(9, "a1", "Schwab Account"),
+        _row(18, "a2", "Fidelity Account"),
+    ]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"],
+            user_id,
+            f"snaptrade:{row['snaptrade_account_id']}",
+        ),
+    )
+    monkeypatch.setattr(
+        _upload,
+        "_upload_github_config_ok",
+        lambda: (False, "seed store unavailable"),
+    )
+
+    assert cli.main() == 1
+    assert _wire["batch"] == []
+    assert _wire["trial_started"] == []
+    assert {
+        (uid, account_id)
+        for uid, account_id, error in _wire["sync_attempts"]
+        if error.startswith("seed_write_failed:")
+    } == {(9, "a1"), (18, "a2")}
 
 
 # ---------------------------------------------------------------------------
