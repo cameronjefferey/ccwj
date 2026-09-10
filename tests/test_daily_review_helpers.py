@@ -700,6 +700,34 @@ class TestBuildUpcomingDividends:
         rows = _build_upcoming_dividends(df, today=date(2026, 8, 10))
         assert rows == []
 
+    def test_est_income_is_last_amount_times_shares_held(self):
+        # Sep 2026: estimated income projection off the most recent declared
+        # per-share amount × shares currently held.
+        df = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 8, 1),
+             "last_amount_per_share": 0.45, "shares_held": 200,
+             "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 8, 9),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+        rows = _build_upcoming_dividends(df, today=date(2026, 8, 5))
+        assert rows[0]["shares_held"] == 200.0
+        assert rows[0]["est_income"] == 90.0
+
+    def test_est_income_zero_when_shares_held_missing(self):
+        # Calendar-only symbols have no shares_held column at all — must not
+        # crash, and est_income should come back 0 rather than NaN/None.
+        calendar = pd.DataFrame([{
+            "symbol": "SCHD",
+            "next_ex_div_date": date(2026, 9, 15),
+            "next_dividend_pay_date": date(2026, 9, 22),
+        }])
+        rows = _build_upcoming_dividends(
+            pd.DataFrame(), today=date(2026, 8, 25), calendar_df=calendar,
+        )
+        assert rows[0]["shares_held"] == 0.0
+        assert rows[0]["est_income"] == 0.0
+
 
 class TestTodayHeadline:
     def test_no_pulse_returns_none(self):

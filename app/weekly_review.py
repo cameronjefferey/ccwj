@@ -894,11 +894,18 @@ WHERE h.shares > 0
 # dividend reminder.
 UPCOMING_DIVIDENDS_QUERY = """
 WITH holdings AS (
-    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    -- shares_held sums quantity ACROSS this user's own tenants/accounts for
+    -- the symbol (rows are already scoped to the caller's tenants by
+    -- {tenant_filter} before the SUM — same "SQL-only aggregate" pattern as
+    -- Strategies' pure SUM(...) queries; no per-row tenant_id survives the
+    -- GROUP BY to carry through a DataFrame filter, and none is needed).
+    SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
+           SUM(quantity) AS shares_held
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
       {tenant_filter}
+    GROUP BY 1
 ),
 ex_divs AS (
     SELECT
@@ -972,6 +979,7 @@ projected AS (
 -- today and drops past dates. See EARNINGS_UPCOMING_QUERY comment.
 SELECT
     h.symbol,
+    h.shares_held,
     p.last_ex_div_date,
     p.last_amount_per_share,
     p.median_spacing_days,
@@ -995,14 +1003,18 @@ ORDER BY p.projected_next_ex_div_date
 # deploy before the warehouse build) cannot blank the heuristic query.
 EX_DIV_CALENDAR_QUERY = """
 WITH holdings AS (
-    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    -- shares_held: see the identical comment in UPCOMING_DIVIDENDS_QUERY.
+    SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
+           SUM(quantity) AS shares_held
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
       {tenant_filter}
+    GROUP BY 1
 )
 SELECT
     h.symbol,
+    h.shares_held,
     c.next_ex_div_date,
     c.next_dividend_pay_date
 FROM holdings h
@@ -3184,6 +3196,16 @@ def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
             last.isoformat() if hasattr(last, "isoformat") and not isinstance(last, str)
             else str(last)[:10] if last is not None else None
         )
+        last_amount = float(r.get("last_amount_per_share") or 0)
+        # Shares currently held (summed across this user's own accounts —
+        # see the SQL comment in UPCOMING_DIVIDENDS_QUERY). Estimated
+        # income is last-per-share × shares held: a projection off the
+        # MOST RECENT declared amount, not a guarantee (issuers change
+        # payouts) — labeled "est." in the UI for that reason. Zero when
+        # either side is missing (calendar-only rows have no cadence
+        # history yet, so no last_amount_per_share to project from).
+        shares_held = float(r.get("shares_held") or 0)
+        est_income = round(last_amount * shares_held, 2) if last_amount and shares_held else 0.0
         out.append({
             "symbol": symbol,
             "company": str(r.get("long_name") or "") or None,
@@ -3191,7 +3213,9 @@ def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
             "subsector": str(r.get("subsector") or "") if r.get("subsector") not in (None, "Unknown") else "",
             "projected_date": proj_s,
             "last_ex_div_date": last_s,
-            "last_amount_per_share": float(r.get("last_amount_per_share") or 0),
+            "last_amount_per_share": last_amount,
+            "shares_held": shares_held,
+            "est_income": est_income,
             "days_until": d_until,
             "median_spacing_days": int(r.get("median_spacing_days") or 0) or None,
             "source": source,
