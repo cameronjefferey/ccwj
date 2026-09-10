@@ -64,9 +64,13 @@ _warm_lock = threading.Lock()
 
 
 def warehouse_tenants_present(tenant_ids):
-    """Return the subset of ``tenant_ids`` that already have Overview rows.
+    """Return the subset of ``tenant_ids`` that already have Overview data.
 
-    Reads ``positions_summary`` (same grain as Get Started / first look).
+    A tenant is present when either its position rows or its account-balance
+    rows are queryable. The balance fallback matters for cash-only accounts,
+    which legitimately never appear in ``positions_summary`` but can still
+    render the Overview account-value strip.
+
     Fail closed: missing tenants, a BQ error, or an empty list → empty set,
     so a later rebuild can retry the data-ready email.
     """
@@ -85,9 +89,13 @@ def warehouse_tenants_present(tenant_ids):
         from app.query_cache import cached_query_df
         where = tenant_sql_filter(safe)
         sql = (
-            "SELECT DISTINCT tenant_id "
-            "FROM `ccwj-dbt.analytics.positions_summary` "
+            "SELECT DISTINCT tenant_id FROM ("
+            "SELECT tenant_id FROM `ccwj-dbt.analytics.positions_summary` "
+            f"{where} "
+            "UNION ALL "
+            "SELECT tenant_id FROM `ccwj-dbt.analytics.stg_account_balances` "
             f"{where}"
+            ") WHERE tenant_id IS NOT NULL"
         )
         # After ?ready=1 the cache was just flushed; a miss is a real BQ
         # read. The post-connect poll reuses the same helper, so an empty
@@ -114,20 +122,36 @@ def warehouse_tenants_present(tenant_ids):
 
 
 def warehouse_has_rows_for_tenants(tenant_ids):
-    """True when Overview can render at least one row for these tenants."""
-    return bool(warehouse_tenants_present(tenant_ids))
+    """True only when every requested tenant can render in Overview.
+
+    The post-connect callback registers all portal accounts before starting
+    their sequential pulls. An any-tenant check therefore declares a
+    multi-account connect ready as soon as the first account lands (or
+    immediately for an existing user), while the remaining accounts are
+    still absent.
+    """
+    from app.tenant_scope import sanitize_tenant_id
+
+    expected = set()
+    for raw in tenant_ids or []:
+        tid = sanitize_tenant_id(raw)
+        if tid:
+            expected.add(tid)
+    if not expected:
+        return False
+    return expected.issubset(warehouse_tenants_present(expected))
 
 
 def _send_data_ready_after_rebuild():
     """Email users whose first warehouse is now queryable.
 
-    A tenant row is not enough — connect registers ``broker_tenants``
-    before any sync, so a coincidental rebuild used to mail "your data
-    is ready" while Overview was still empty. Require
-    ``positions_summary`` rows for that user's tenants. Dedupe:
-    ``email_sends`` kind ``data_ready``, key ``user_id``. Do not record
-    a send when the warehouse is still empty (retry on the next
-    ``?ready=1`` flush). Never raises into the flush request.
+    A Postgres tenant row is not enough — connect registers every portal
+    account before any sync, so a coincidental or partial rebuild used to
+    mail "your data is ready" while Overview was still missing accounts.
+    Require position or balance rows for every active tenant. Dedupe:
+    ``email_sends`` kind ``data_ready``, key ``user_id``. Do not record a
+    send when the warehouse is incomplete (retry on the next ``?ready=1``
+    flush). Never raises into the flush request.
     """
     try:
         from app.db import fetch_all
@@ -156,7 +180,9 @@ def _send_data_ready_after_rebuild():
             return
 
         for uid, tids in by_user.items():
-            if not any(t in live for t in tids):
+            # Do not consume the once-per-user email on a partial
+            # multi-account build. The final account's rebuild will retry.
+            if not set(tids).issubset(live):
                 continue
             u = User.get_by_id(uid)
             if not u or not (u.email or "").strip():
