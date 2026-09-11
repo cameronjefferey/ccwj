@@ -768,7 +768,7 @@ class TestBuildUpcomingDividends:
         assert rows[0]["est_income"] == 0.0
 
 
-def test_upcoming_dividend_income_queries_only_sum_long_shares():
+def test_upcoming_dividend_income_queries_dedupe_and_only_sum_long_shares():
     from app.weekly_review import (
         EX_DIV_CALENDAR_QUERY,
         UPCOMING_DIVIDENDS_QUERY,
@@ -782,6 +782,12 @@ def test_upcoming_dividend_income_queries_only_sum_long_shares():
         # Short-only positions still belong in the ex-div watch list because
         # they owe the distribution; they simply must not become income.
         assert "quantity != 0" in query
+        # int_enriched_current has emitted duplicate position rows during
+        # source/staging regressions. Collapse its canonical tenant/position
+        # grain before quantity is aggregated into the estimate.
+        assert "ROW_NUMBER() OVER (" in query
+        assert "WHERE position_rn = 1" in query
+        assert "COALESCE(\n                    tenant_id," in query
 
 
 class TestTodayHeadline:
