@@ -895,18 +895,47 @@ WHERE h.shares > 0
 # JEPI / JEPQ / SCHD / VYM / DELL etc. surfaced for the day-before-ex
 # dividend reminder.
 UPCOMING_DIVIDENDS_QUERY = """
-WITH holdings AS (
-    -- shares_held sums quantity ACROSS this user's own tenants/accounts for
-    -- the symbol (rows are already scoped to the caller's tenants by
-    -- {tenant_filter} before the SUM — same "SQL-only aggregate" pattern as
-    -- Strategies' pure SUM(...) queries; no per-row tenant_id survives the
-    -- GROUP BY to carry through a DataFrame filter, and none is needed).
-    SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
-           SUM(quantity) AS shares_held
+WITH scoped_holdings AS (
+    SELECT
+        UPPER(TRIM(underlying_symbol)) AS symbol,
+        quantity,
+        ROW_NUMBER() OVER (
+            -- tenant_id is the physical-account grain. The legacy fallback
+            -- keeps admin/old NULL-tenant rows separated by account + user.
+            PARTITION BY
+                COALESCE(
+                    tenant_id,
+                    FORMAT(
+                        '__legacy__:%s:%s',
+                        COALESCE(account, ''),
+                        COALESCE(CAST(user_id AS STRING), '')
+                    )
+                ),
+                UPPER(TRIM(underlying_symbol)),
+                instrument_type,
+                UPPER(TRIM(COALESCE(trade_symbol, underlying_symbol, '')))
+            ORDER BY snapshot_date DESC, ABS(quantity) DESC
+        ) AS position_rn
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
       {tenant_filter}
+),
+holdings AS (
+    -- shares_held sums LONG quantity ACROSS this user's own tenants/accounts
+    -- for the symbol (rows are already scoped to the caller's tenants by
+    -- {tenant_filter} before the SUM — same "SQL-only aggregate" pattern as
+    -- Strategies' pure SUM(...) queries; no per-row tenant_id survives the
+    -- GROUP BY to carry through a DataFrame filter, and none is needed).
+    -- Deduplicate the canonical position grain before summing: source/staging
+    -- regressions have emitted twin current rows, which otherwise multiply
+    -- this estimate while the rest of the UI collapses them.
+    SELECT symbol,
+           -- Keep short symbols in the ex-div watch list (they owe the
+           -- distribution), but only long lots can contribute income.
+           SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) AS shares_held
+    FROM scoped_holdings
+    WHERE position_rn = 1
     GROUP BY 1
 ),
 ex_divs AS (
@@ -1004,14 +1033,36 @@ ORDER BY p.projected_next_ex_div_date
 # it). Independent batch key so a missing stg_ex_div_calendar (app
 # deploy before the warehouse build) cannot blank the heuristic query.
 EX_DIV_CALENDAR_QUERY = """
-WITH holdings AS (
-    -- shares_held: see the identical comment in UPCOMING_DIVIDENDS_QUERY.
-    SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
-           SUM(quantity) AS shares_held
+WITH scoped_holdings AS (
+    SELECT
+        UPPER(TRIM(underlying_symbol)) AS symbol,
+        quantity,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+                COALESCE(
+                    tenant_id,
+                    FORMAT(
+                        '__legacy__:%s:%s',
+                        COALESCE(account, ''),
+                        COALESCE(CAST(user_id AS STRING), '')
+                    )
+                ),
+                UPPER(TRIM(underlying_symbol)),
+                instrument_type,
+                UPPER(TRIM(COALESCE(trade_symbol, underlying_symbol, '')))
+            ORDER BY snapshot_date DESC, ABS(quantity) DESC
+        ) AS position_rn
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
       {tenant_filter}
+),
+holdings AS (
+    -- shares_held: see the identical comment in UPCOMING_DIVIDENDS_QUERY.
+    SELECT symbol,
+           SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) AS shares_held
+    FROM scoped_holdings
+    WHERE position_rn = 1
     GROUP BY 1
 )
 SELECT
@@ -3206,7 +3257,9 @@ def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
         # payouts) — labeled "est." in the UI for that reason. Zero when
         # either side is missing (calendar-only rows have no cadence
         # history yet, so no last_amount_per_share to project from).
-        shares_held = float(r.get("shares_held") or 0)
+        # Defense in depth for directly supplied/stale frames: short shares
+        # are a dividend liability, never positive estimated income.
+        shares_held = max(float(r.get("shares_held") or 0), 0.0)
         est_income = round(last_amount * shares_held, 2) if last_amount and shares_held else 0.0
         out.append({
             "symbol": symbol,
