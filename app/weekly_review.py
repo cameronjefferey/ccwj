@@ -896,13 +896,15 @@ WHERE h.shares > 0
 # dividend reminder.
 UPCOMING_DIVIDENDS_QUERY = """
 WITH holdings AS (
-    -- shares_held sums quantity ACROSS this user's own tenants/accounts for
-    -- the symbol (rows are already scoped to the caller's tenants by
+    -- shares_held sums LONG quantity ACROSS this user's own tenants/accounts
+    -- for the symbol (rows are already scoped to the caller's tenants by
     -- {tenant_filter} before the SUM — same "SQL-only aggregate" pattern as
     -- Strategies' pure SUM(...) queries; no per-row tenant_id survives the
     -- GROUP BY to carry through a DataFrame filter, and none is needed).
     SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
-           SUM(quantity) AS shares_held
+           -- Keep short symbols in the ex-div watch list (they owe the
+           -- distribution), but only long lots can contribute income.
+           SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) AS shares_held
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
@@ -1007,7 +1009,7 @@ EX_DIV_CALENDAR_QUERY = """
 WITH holdings AS (
     -- shares_held: see the identical comment in UPCOMING_DIVIDENDS_QUERY.
     SELECT UPPER(TRIM(underlying_symbol)) AS symbol,
-           SUM(quantity) AS shares_held
+           SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) AS shares_held
     FROM `ccwj-dbt.analytics.int_enriched_current`
     WHERE quantity IS NOT NULL AND quantity != 0
       AND instrument_type = 'Equity'
@@ -3206,7 +3208,9 @@ def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
         # payouts) — labeled "est." in the UI for that reason. Zero when
         # either side is missing (calendar-only rows have no cadence
         # history yet, so no last_amount_per_share to project from).
-        shares_held = float(r.get("shares_held") or 0)
+        # Defense in depth for directly supplied/stale frames: short shares
+        # are a dividend liability, never positive estimated income.
+        shares_held = max(float(r.get("shares_held") or 0), 0.0)
         est_income = round(last_amount * shares_held, 2) if last_amount and shares_held else 0.0
         out.append({
             "symbol": symbol,

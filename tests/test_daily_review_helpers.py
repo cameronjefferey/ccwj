@@ -753,6 +753,36 @@ class TestBuildUpcomingDividends:
         assert rows[0]["shares_held"] == 0.0
         assert rows[0]["est_income"] == 0.0
 
+    def test_est_income_never_treats_short_shares_as_income(self):
+        df = pd.DataFrame([
+            {"symbol": "JEPI", "last_ex_div_date": date(2026, 8, 1),
+             "last_amount_per_share": 0.45, "shares_held": -200,
+             "median_spacing_days": 30,
+             "projected_next_ex_div_date": date(2026, 8, 9),
+             "sector": "", "subsector": "", "long_name": "JPMorgan EPI"},
+        ])
+
+        rows = _build_upcoming_dividends(df, today=date(2026, 8, 5))
+
+        assert rows[0]["shares_held"] == 0.0
+        assert rows[0]["est_income"] == 0.0
+
+
+def test_upcoming_dividend_income_queries_only_sum_long_shares():
+    from app.weekly_review import (
+        EX_DIV_CALENDAR_QUERY,
+        UPCOMING_DIVIDENDS_QUERY,
+    )
+
+    for query in (UPCOMING_DIVIDENDS_QUERY, EX_DIV_CALENDAR_QUERY):
+        assert (
+            "SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) AS shares_held"
+            in query
+        )
+        # Short-only positions still belong in the ex-div watch list because
+        # they owe the distribution; they simply must not become income.
+        assert "quantity != 0" in query
+
 
 class TestTodayHeadline:
     def test_no_pulse_returns_none(self):
