@@ -104,6 +104,18 @@ from app.utils import earnings_follower_url as _earnings_follower_url
 app.add_template_global(_earnings_follower_url, name="earnings_follower_url")
 
 
+def _current_year() -> int:
+    """Year for the footer copyright notice. Template global (not a
+    context-processor key) so it's available even on the standalone
+    skeleton shell template."""
+    import datetime
+
+    return datetime.datetime.now().year
+
+
+app.add_template_global(_current_year, name="current_year")
+
+
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app, g

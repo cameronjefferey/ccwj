@@ -1099,7 +1099,7 @@
                 <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
                 <a href="{{ url_for('contact') }}" class="text-muted">Contact</a>
             </div>
-            <p class="text-center text-muted small mt-3 mb-0">&copy; HappyTrader. Your trading mirror.</p>
+            <p class="text-center text-muted small mt-3 mb-0">&copy; {{ current_year() }} HappyTrader. All rights reserved. Your trading mirror.</p>
         </div>
     </footer>
     {% else %}
@@ -1110,7 +1110,7 @@
                 <a href="{{ url_for('privacy') }}" class="text-muted">Privacy</a>
                 <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
                 <a href="{{ url_for('contact') }}" class="text-muted">Contact</a>
-                <span>&copy; HappyTrader</span>
+                <span>&copy; {{ current_year() }} HappyTrader. All rights reserved.</span>
             </div>
         </div>
     </footer>

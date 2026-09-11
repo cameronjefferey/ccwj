@@ -473,12 +473,42 @@ def offline():
     return render_template("offline.html")
 
 
+# AI crawler/training user-agents (Sep 2026). Compliance is voluntary/
+# best-effort on the crawler's side — this does NOT stop a human from
+# screenshotting a public page and pasting it into an AI chat (nothing
+# server-side can). It DOES stop these specific bots' own automated
+# fetches, which is the actual attack surface robots.txt can address.
+# Keep the generic "User-agent: *" block below unchanged for normal
+# search engines (Google, Bing) — this is an ADDITIONAL block, not a
+# replacement.
+_AI_CRAWLER_USER_AGENTS = (
+    "GPTBot",              # OpenAI
+    "ChatGPT-User",        # OpenAI (on-demand browsing)
+    "OAI-SearchBot",       # OpenAI search
+    "ClaudeBot",           # Anthropic
+    "Claude-Web",          # Anthropic (legacy)
+    "anthropic-ai",        # Anthropic
+    "CCBot",               # Common Crawl (feeds many LLM training sets)
+    "Google-Extended",     # Google Gemini training (separate from Googlebot)
+    "PerplexityBot",       # Perplexity
+    "Bytespider",          # ByteDance/TikTok
+    "Amazonbot",           # Amazon
+    "Applebot-Extended",   # Apple Intelligence training (separate from Applebot)
+    "Meta-ExternalAgent",  # Meta AI
+    "Diffbot",             # scraping-as-a-service, commonly resold to AI pipelines
+)
+
+
 @app.route("/robots.txt")
 def robots():
-    """Basic robots.txt for crawlers."""
+    """Basic robots.txt for crawlers, plus explicit AI-crawler disallows."""
     base = request.url_root.rstrip("/")
+    ai_blocks = "".join(
+        f"User-agent: {ua}\nDisallow: /\n" for ua in _AI_CRAWLER_USER_AGENTS
+    )
     return Response(
-        f"User-agent: *\nAllow: /\nDisallow: /positions\nDisallow: /upload\nDisallow: /insights\nDisallow: /settings\nDisallow: /accounts\nDisallow: /symbols\nDisallow: /position/\nSitemap: {base}/sitemap.xml\n",
+        f"User-agent: *\nAllow: /\nDisallow: /positions\nDisallow: /upload\nDisallow: /insights\nDisallow: /settings\nDisallow: /accounts\nDisallow: /symbols\nDisallow: /position/\nSitemap: {base}/sitemap.xml\n\n"
+        f"{ai_blocks}",
         mimetype="text/plain",
     )
 
