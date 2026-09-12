@@ -1710,6 +1710,32 @@ def test_set_brokerage_authorization_id_short_circuits_on_empty_input():
     assert _models.set_snaptrade_brokerage_authorization_id(7, "acc-1", "   ") is False
 
 
+def test_snaptrade_callback_replay_without_session_marker_does_not_start_sync(
+        monkeypatch):
+    """The callback is a one-shot GET.
+
+    After auto-sync-on-connect shipped, accepting a missing callback marker
+    lets a signed-in user replay the URL to spawn unlimited background sync
+    threads.  Reject before touching SnapTrade or starting a worker.
+    """
+    import types
+    from app import app as flask_app
+
+    monkeypatch.setattr(_snap, "current_user", types.SimpleNamespace(id=7))
+
+    def _must_not_run(*args, **kwargs):
+        raise AssertionError("replayed callback reached SnapTrade")
+
+    monkeypatch.setattr(_snap, "get_snaptrade_user", _must_not_run)
+    monkeypatch.setattr(_snap, "_kick_post_connect_sync", _must_not_run)
+
+    with flask_app.test_request_context("/snaptrade/callback"):
+        response = _snap.snaptrade_callback.__wrapped__()
+
+    assert response.status_code == 302
+    assert response.location.endswith("/profile?tab=account")
+
+
 def test_kick_post_connect_sync_pulls_each_account_without_force_refresh(
         monkeypatch):
     """Portal callback must start the pull immediately — first-sync
