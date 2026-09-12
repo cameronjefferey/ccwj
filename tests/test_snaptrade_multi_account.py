@@ -394,9 +394,13 @@ def _ok_run_sync(extra=None):
 
 
 @pytest.mark.parametrize(
-    ("extra", "should_mark"),
+    ("extra", "should_mark", "should_succeed"),
     [
-        ({"github_pushed": False, "github_error": "GitHub unavailable"}, False),
+        (
+            {"github_pushed": False, "github_error": "seed store unavailable"},
+            False,
+            False,
+        ),
         (
             {
                 "github_pushed": False,
@@ -405,8 +409,20 @@ def _ok_run_sync(extra=None):
                 "github_skip_reason": "not configured",
             },
             False,
+            False,
         ),
-        ({"github_pushed": False, "github_no_changes": True}, True),
+        ({"github_pushed": False, "github_no_changes": True}, True, True),
+        (
+            {
+                "history_rows": 0,
+                "current_rows": 0,
+                "github_pushed": False,
+                "github_no_changes": False,
+                "github_skip_reason": "history_only_no_new_trades",
+            },
+            False,
+            True,
+        ),
         (
             {
                 "history_rows": 0,
@@ -415,6 +431,7 @@ def _ok_run_sync(extra=None):
                 "transactions_initial_sync_completed": False,
             },
             False,
+            True,
         ),
         (
             {
@@ -423,6 +440,7 @@ def _ok_run_sync(extra=None):
                 "transactions_initial_sync_completed": False,
             },
             False,
+            True,
         ),
         (
             {
@@ -437,11 +455,12 @@ def _ok_run_sync(extra=None):
                 "skip_history": True,
             },
             False,
+            True,
         ),
     ],
 )
 def test_sync_one_marks_first_sync_only_after_completed_durable_history(
-    monkeypatch, _patched_models, extra, should_mark,
+    monkeypatch, _patched_models, extra, should_mark, should_succeed,
 ):
     trial_started = []
     monkeypatch.setattr(
@@ -470,13 +489,22 @@ def test_sync_one_marks_first_sync_only_after_completed_durable_history(
         defer_push=bool(extra.get("deferred")),
     )
 
-    assert res["ok"] is True
+    assert res["ok"] is should_succeed
     assert bool(_patched_models["first_sync_marked"]) is should_mark
     seed_write_confirmed = bool(
         extra.get("github_pushed") or extra.get("github_no_changes")
     )
     should_start_trial = not bool(extra.get("deferred")) and seed_write_confirmed
     assert bool(trial_started) is should_start_trial
+    if should_succeed:
+        assert _patched_models["broken_cleared"] == [(9, "abc")]
+        assert _patched_models["sync_attempts"] == [(9, "abc", None)]
+    else:
+        assert _patched_models["broken_cleared"] == []
+        assert res["error"] == "seed_write_failed"
+        assert _patched_models["sync_attempts"][0][2].startswith(
+            "seed_write_failed:"
+        )
 
 
 def test_sync_one_force_refresh_calls_broker_repoll(monkeypatch, _patched_models):

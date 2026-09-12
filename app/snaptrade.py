@@ -1435,6 +1435,47 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         seed_write_confirmed = bool(
             result.get("github_pushed") or result.get("github_no_changes")
         )
+        no_seed_write_required = (
+            result.get("github_skip_reason")
+            == "history_only_no_new_trades"
+        )
+        if (
+            not result.get("deferred")
+            and not seed_write_confirmed
+            and not no_seed_write_required
+        ):
+            # A broker read is not a successful sync until the normalized
+            # frames are durable.  Webhook callers retry only ``ok=False``;
+            # returning green here permanently loses transient option marks
+            # when the inline seed write fails.
+            detail = str(
+                result.get("github_error")
+                or result.get("github_skip_reason")
+                or "seed write was not confirmed"
+            )
+            sync_error = f"seed_write_failed:{detail}"[:500]
+            app.logger.error(
+                "SnapTrade seed write failed for user_id=%s account=%s: %s",
+                user_id, snaptrade_account_id, detail,
+            )
+            record_snaptrade_sync_attempt(
+                user_id, snaptrade_account_id, error=sync_error,
+            )
+            record_snaptrade_sync_observation(
+                user_id, snaptrade_account_id,
+                broker_slug=acc_row.get("broker_slug"), ok=False,
+            )
+            out.update({
+                "history_rows": int(result.get("history_rows", 0) or 0),
+                "current_rows": int(result.get("current_rows", 0) or 0),
+                "github_error": result.get("github_error") or detail,
+                "github_seed_push_skipped": bool(
+                    result.get("github_seed_push_skipped")
+                ),
+                "github_skip_reason": result.get("github_skip_reason"),
+                "error": "seed_write_failed",
+            })
+            return out
         history_ready = bool(
             result.get("transactions_initial_sync_completed")
         )
