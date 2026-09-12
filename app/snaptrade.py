@@ -379,10 +379,9 @@ def snaptrade_connect():
         )
         return redirect(url_for("profile", tab="account"))
 
-    # Stamp the originating user id into the session so /snaptrade/callback
-    # can verify the return matches the same login (defense-in-depth: the
-    # callback uses login_required already, but this guards against a
-    # race where a user logs out / in between connect and callback).
+    # One-shot callback state: /snaptrade/callback requires and consumes this
+    # marker. Besides binding the return to the same login, that prevents a
+    # bare callback replay from launching another background broker sync.
     session["snaptrade_callback_user_id"] = user_id
     # Remember this was a reconnect so the callback can confirm it
     # specifically ("Schwab reconnected") instead of the generic
@@ -398,15 +397,20 @@ def snaptrade_connect():
 @login_required
 def snaptrade_callback():
     """Handle SnapTrade's redirect after the user finishes the
-    Connection Portal flow. Lists the user's accounts via SnapTrade
-    and persists each one as a row in ``snaptrade_accounts``.
+    Connection Portal flow. Requires the one-shot session marker set by
+    ``snaptrade_connect``, then lists the user's accounts via SnapTrade and
+    persists each one as a row in ``snaptrade_accounts``.
     """
     expected_user_id = session.pop("snaptrade_callback_user_id", None)
     # Pop the reconnect marker unconditionally so it can never leak into a
     # later unrelated connect; only the success path below uses it.
     reconnect_label = session.pop("snaptrade_reconnect_label", None)
-    if expected_user_id and expected_user_id != current_user.id:
-        flash("Session mismatch. Please try connecting again.", "danger")
+    # This marker is the callback's one-shot state token.  Missing must fail
+    # closed as well as mismatched: since post-connect now launches a daemon
+    # full-history sync, accepting a bare replay of this GET would let any
+    # signed-in user repeatedly spawn unbounded broker-sync threads.
+    if expected_user_id is None or expected_user_id != current_user.id:
+        flash("Connection session expired or changed. Please try again.", "danger")
         return redirect(url_for("profile", tab="account"))
 
     user_id = current_user.id
@@ -1431,6 +1435,47 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         seed_write_confirmed = bool(
             result.get("github_pushed") or result.get("github_no_changes")
         )
+        no_seed_write_required = (
+            result.get("github_skip_reason")
+            == "history_only_no_new_trades"
+        )
+        if (
+            not result.get("deferred")
+            and not seed_write_confirmed
+            and not no_seed_write_required
+        ):
+            # A broker read is not a successful sync until the normalized
+            # frames are durable.  Webhook callers retry only ``ok=False``;
+            # returning green here permanently loses transient option marks
+            # when the inline seed write fails.
+            detail = str(
+                result.get("github_error")
+                or result.get("github_skip_reason")
+                or "seed write was not confirmed"
+            )
+            sync_error = f"seed_write_failed:{detail}"[:500]
+            app.logger.error(
+                "SnapTrade seed write failed for user_id=%s account=%s: %s",
+                user_id, snaptrade_account_id, detail,
+            )
+            record_snaptrade_sync_attempt(
+                user_id, snaptrade_account_id, error=sync_error,
+            )
+            record_snaptrade_sync_observation(
+                user_id, snaptrade_account_id,
+                broker_slug=acc_row.get("broker_slug"), ok=False,
+            )
+            out.update({
+                "history_rows": int(result.get("history_rows", 0) or 0),
+                "current_rows": int(result.get("current_rows", 0) or 0),
+                "github_error": result.get("github_error") or detail,
+                "github_seed_push_skipped": bool(
+                    result.get("github_seed_push_skipped")
+                ),
+                "github_skip_reason": result.get("github_skip_reason"),
+                "error": "seed_write_failed",
+            })
+            return out
         history_ready = bool(
             result.get("transactions_initial_sync_completed")
         )
