@@ -38,6 +38,18 @@ def test_daily_review_identity_text_uses_tokens():
     assert ".tt-muted { color: #475569" not in src
 
 
+def test_snapshot_table_numeric_columns_line_up():
+    """Overview multi-account snapshot: row rules + dollars share an edge."""
+    src = (ROOT / "app/templates/_review_styles.html").read_text()
+    table_idx = src.index(".snapshot-table {")
+    table_block = src[table_idx:table_idx + 900]
+    assert "align-items: stretch;" in table_block
+    assert "align-items: baseline;" not in table_block
+    assert "text-align: right;" in src
+    assert ".snapshot-table-row > div:not(:first-child)" in src
+    assert "font-variant-numeric: tabular-nums;" in src
+
+
 def test_day_detail_muted_uses_token():
     src = (ROOT / "app/templates/day_detail.html").read_text()
     assert ".dd-muted { color: var(--ht-muted);" in src
