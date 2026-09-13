@@ -83,14 +83,15 @@ def _wire(monkeypatch):
     monkeypatch.setattr(
         _snap,
         "mark_snaptrade_first_sync_completed",
-        lambda user_id, account_id: calls["first_sync_marked"].append(
+        lambda user_id, account_id, **_k: calls["first_sync_marked"].append(
             (user_id, account_id)
         ),
     )
     monkeypatch.setattr(
         _models,
         "record_snaptrade_sync_attempt",
-        lambda user_id, account_id, *, error=None: calls["sync_attempts"].append(
+        lambda user_id, account_id, *, error=None, **_k:
+        calls["sync_attempts"].append(
             (user_id, account_id, error)
         ),
     )
@@ -373,6 +374,37 @@ def test_incomplete_transaction_sync_stays_pending_after_batch(
 
     assert cli.main() == 0
     assert len(_wire["batch"]) == 1
+    assert _wire["first_sync_marked"] == []
+
+
+def test_superseded_deferred_snapshot_gets_no_first_data_credit(
+    _wire, monkeypatch,
+):
+    """A stale cron batch may merge history, but it cannot start the trial or
+    complete first sync on behalf of a newer generation that has not landed."""
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _models,
+        "snaptrade_snapshot_generation_is_current",
+        lambda _uid, _account_id, _generation: False,
+    )
+    frames = _frames("Fidelity Account", 14, "snaptrade:new")
+    frames.update({
+        "snapshot_account_id": "new-account",
+        "snapshot_generation": 1,
+    })
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda *_args, **_kwargs: {
+            **_ok("Fidelity Account", 14, "snaptrade:new"),
+            "frames": frames,
+        },
+    )
+
+    assert cli.main() == 0
+    assert _wire["trial_started"] == []
     assert _wire["first_sync_marked"] == []
 
 

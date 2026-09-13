@@ -30,6 +30,7 @@ import pandas as pd
 import pytest
 
 from app import db as _db
+from app import models as _models
 from app import upload as _upload
 
 
@@ -1749,6 +1750,105 @@ def test_seed_writers_share_one_reentrant_cluster_lock(monkeypatch):
         ("enter", _upload.SEED_WRITE_LOCK_KEY),
         ("exit", _upload.SEED_WRITE_LOCK_KEY),
     ]
+
+
+def test_superseded_snapshot_cannot_replace_newer_positions_but_keeps_history(
+    monkeypatch,
+):
+    """An older broker read that reaches the lock last must not regress the
+    replace-in-full snapshot; its append-only trade history is still useful."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _models,
+        "snaptrade_snapshot_generation_is_current",
+        lambda _uid, _account_id, generation: generation == 2,
+    )
+
+    ok, err, *_ = _upload.merge_and_push_seeds(
+        "Schwab Account",
+        None,
+        _cur_df("AAPL", 20, 205.0),
+        commit_message="newer webhook snapshot",
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+        skip_history=True,
+        snapshot_account_id="acct-1",
+        snapshot_generation=2,
+    )
+    assert ok, err
+
+    older_history = pd.DataFrame([
+        _row(
+            "Schwab Account", 9, "01/04/2025", "Buy", "MSFT",
+            1, 400.0, -400.0, tenant_id=TENANT_SCHWAB_5989,
+        ),
+    ])
+    ok, err, *_ = _upload.merge_and_push_seeds(
+        "Schwab Account",
+        older_history,
+        _cur_df("AAPL", 10, 200.0),
+        commit_message="older slow sync",
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+        snapshot_account_id="acct-1",
+        snapshot_generation=1,
+    )
+    assert ok, err
+
+    current = pd.read_csv(io.StringIO(store.files[_upload.CURRENT_PATH]))
+    assert current["Quantity"].astype(float).tolist() == [20.0]
+    history = pd.read_csv(io.StringIO(store.files[_upload.HISTORY_PATH]))
+    assert history["Symbol"].tolist() == ["MSFT"]
+
+
+def test_deferred_batch_discards_only_superseded_snapshot(monkeypatch):
+    """The cron's stale in-memory positions/balances are dropped under the
+    short write lock while its monotonic history still enters the batch."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _models,
+        "snaptrade_snapshot_generation_is_current",
+        lambda _uid, _account_id, generation: generation == 2,
+    )
+    fresh = {
+        "account_name": "Schwab Account",
+        "user_id": 9,
+        "tenant_id": TENANT_SCHWAB_5989,
+        "skip_history": True,
+        "history_df": None,
+        "current_df": _cur_df("AAPL", 20, 205.0),
+        "balances_df": None,
+        "snapshot_account_id": "acct-1",
+        "snapshot_generation": 2,
+    }
+    stale = {
+        **fresh,
+        "skip_history": False,
+        "history_df": pd.DataFrame([
+            _row(
+                "Schwab Account", 9, "01/04/2025", "Buy", "MSFT",
+                1, 400.0, -400.0, tenant_id=TENANT_SCHWAB_5989,
+            ),
+        ]),
+        "current_df": _cur_df("AAPL", 10, 200.0),
+        "snapshot_generation": 1,
+    }
+
+    ok, err, *_ = _upload.merge_and_push_seeds_batch(
+        [fresh], commit_message="newer webhook-equivalent batch",
+    )
+    assert ok, err
+    ok, err, *_ = _upload.merge_and_push_seeds_batch(
+        [stale], commit_message="older cron batch",
+    )
+    assert ok, err
+
+    current = pd.read_csv(io.StringIO(store.files[_upload.CURRENT_PATH]))
+    assert current["Quantity"].astype(float).tolist() == [20.0]
+    history = pd.read_csv(io.StringIO(store.files[_upload.HISTORY_PATH]))
+    assert history["Symbol"].tolist() == ["MSFT"]
 
 
 def test_batch_push_is_byte_identical_to_sequential_pushes(monkeypatch):

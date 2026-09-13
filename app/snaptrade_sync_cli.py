@@ -235,6 +235,7 @@ def main():
         init_db,
         list_all_snaptrade_accounts,
         record_snaptrade_sync_attempt,
+        snaptrade_snapshot_generation_is_current,
     )
 
     init_db()
@@ -421,6 +422,13 @@ def main():
     pushed_note = ""
     batch_failed = False
     batch_error = None
+    durable_batch_account_ids = set()
+    batch_generations = {
+        (int(entry["user_id"]), entry.get("snapshot_account_id")):
+            entry.get("snapshot_generation")
+        for entry in batch_entries
+        if entry.get("snapshot_account_id")
+    }
     if batch_entries:
         ok_cfg, cfg_err = _upload_github_config_ok()
         if not ok_cfg:
@@ -452,13 +460,40 @@ def main():
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
             if ok:
+                # A newer per-account fetch may have started while this cron
+                # was collecting deferred frames. The batch writer drops that
+                # tenant's stale positions/balances but can still merge its
+                # monotonic history. Only generations that still own their
+                # snapshot slot count as durable first data.
+                for entry in batch_entries:
+                    account_id = entry.get("snapshot_account_id")
+                    generation = entry.get("snapshot_generation")
+                    entry_user_id = int(entry["user_id"])
+                    if generation is None:
+                        # History-only entries intentionally carry no snapshot
+                        # generation. Older test/dry-run producers may also
+                        # omit the account id; preserve their prior bookkeeping.
+                        if account_id:
+                            durable_batch_account_ids.add(
+                                (entry_user_id, account_id)
+                            )
+                        else:
+                            durable_batch_account_ids.update(
+                                pair for pair in batch_account_ids
+                                if pair[0] == entry_user_id
+                            )
+                    elif snaptrade_snapshot_generation_is_current(
+                        entry_user_id, account_id, generation,
+                    ):
+                        pair = (entry_user_id, account_id)
+                        durable_batch_account_ids.add(pair)
                 # The broker read is not end-to-end successful until its
                 # deferred frames are durable. Start the reverse-trial clock
                 # here, not in _sync_one_connection, so a failed first batch
                 # cannot consume trial days before any data exists.
                 from app.plan import start_trial_clock
                 for synced_user_id in {
-                    user_id for user_id, _account_id in batch_account_ids
+                    user_id for user_id, _account_id in durable_batch_account_ids
                 }:
                     try:
                         start_trial_clock(synced_user_id)
@@ -468,9 +503,16 @@ def main():
                 # batch succeeds. A byte-identical no-op also proves its rows
                 # are already on the seed branch.
                 for pending_user_id, pending_account_id in pending_first_sync_marks:
+                    if (
+                        pending_user_id, pending_account_id
+                    ) not in durable_batch_account_ids:
+                        continue
                     try:
                         mark_snaptrade_first_sync_completed(
                             pending_user_id, pending_account_id,
+                            snapshot_generation=batch_generations.get(
+                                (pending_user_id, pending_account_id)
+                            ),
                         )
                     except Exception as exc:
                         # Safe failure mode: leave it pending so the next cron
@@ -490,6 +532,9 @@ def main():
             try:
                 record_snaptrade_sync_attempt(
                     failed_user_id, failed_account_id, error=sync_error,
+                    snapshot_generation=batch_generations.get(
+                        (failed_user_id, failed_account_id)
+                    ),
                 )
             except Exception as exc:
                 print(

@@ -1575,6 +1575,8 @@ def merge_and_push_seeds(
     tenant_id,
     skip_history=False,
     balances_df=None,
+    snapshot_account_id=None,
+    snapshot_generation=None,
 ):
     """
     Normalize DataFrames, merge into the BigQuery seed store, and write.
@@ -1597,6 +1599,10 @@ def merge_and_push_seeds(
             BALANCE_SEED_COLUMNS. Written in the same batch as the others.
             Any broker connector writes here.
         skip_history: when True, write positions only (and balances if given).
+        snapshot_account_id / snapshot_generation: SnapTrade's optimistic
+            ordering token, reserved before the broker fetch. If a newer fetch
+            has started by the time this serialized write runs, only monotonic
+            history is merged; the stale positions/balances are discarded.
 
     Returns:
         (ok, err_message, history_rows, current_rows, build_marker or None,
@@ -1607,11 +1613,6 @@ def merge_and_push_seeds(
 
     Caller must verify _upload_github_config_ok() first.
     """
-    # current_df=None is a HISTORY-ONLY push (intraday poll / weekend auto-sync):
-    # only trade_history is rewritten. It's valid as long as there's history to
-    # push — otherwise there's genuinely nothing to commit.
-    if current_df is None and (skip_history or history_df is None):
-        return False, "nothing to push (no positions and no history).", 0, 0, None, False
     if user_id is None:
         return False, "user_id is required.", 0, 0, None, False
     if tenant_id is None or not str(tenant_id).strip():
@@ -1619,6 +1620,32 @@ def merge_and_push_seeds(
 
     user_id_int = int(user_id)
     tenant_id_str = str(tenant_id).strip()
+    snapshot_superseded = False
+    if current_df is not None and snapshot_generation is not None:
+        if not snapshot_account_id:
+            return False, "snapshot_account_id is required.", 0, 0, None, False
+        from app.models import snaptrade_snapshot_generation_is_current
+        snapshot_superseded = not snaptrade_snapshot_generation_is_current(
+            user_id_int, snapshot_account_id, snapshot_generation,
+        )
+        if snapshot_superseded:
+            app.logger.info(
+                "Discarding superseded SnapTrade snapshot user_id=%s "
+                "account=%s generation=%s; history remains mergeable.",
+                user_id_int, snapshot_account_id, snapshot_generation,
+            )
+            current_df = None
+            balances_df = None
+
+    # current_df=None is a HISTORY-ONLY push (intraday poll / weekend auto-sync):
+    # only trade_history is rewritten. It's valid as long as there's history to
+    # push — otherwise there's genuinely nothing to commit. A superseded
+    # snapshot with no history is a successful no-op because a newer fetch owns
+    # the snapshot slot.
+    if current_df is None and (skip_history or history_df is None):
+        if snapshot_superseded:
+            return True, None, 0, 0, None, True
+        return False, "nothing to push (no positions and no history).", 0, 0, None, False
 
     specs, history_rows, current_rows = _normalize_account_seed_frames(
         account_name, history_df, current_df,
@@ -1663,7 +1690,8 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     ``entries`` — list of dicts, each:
         ``account_name`` (str), ``history_df`` (DataFrame|None),
         ``current_df`` (DataFrame|None), ``user_id`` (int), ``tenant_id`` (str),
-        ``skip_history`` (bool), ``balances_df`` (DataFrame|None).
+        ``skip_history`` (bool), ``balances_df`` (DataFrame|None), and optional
+        ``snapshot_account_id`` / ``snapshot_generation`` ordering metadata.
     ``current_df=None`` is a HISTORY-ONLY push (the intraday trade poll): only
     trade_history is rewritten — the positions/balances snapshots are left
     untouched so an intraday cadence doesn't rebuild the warehouse on snapshot
@@ -1676,16 +1704,36 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     first (same contract as ``merge_and_push_seeds``).
     """
     valid = []
-    for e in entries or []:
+    from app.models import snaptrade_snapshot_generation_is_current
+    for raw_entry in entries or []:
+        e = dict(raw_entry)
+        if e.get("user_id") is None:
+            continue
+        if e.get("tenant_id") is None or not str(e.get("tenant_id")).strip():
+            continue
+        if (
+            e.get("current_df") is not None
+            and e.get("snapshot_generation") is not None
+        ):
+            account_id = e.get("snapshot_account_id")
+            if not account_id:
+                continue
+            if not snaptrade_snapshot_generation_is_current(
+                int(e["user_id"]), account_id, e["snapshot_generation"],
+            ):
+                app.logger.info(
+                    "Discarding superseded deferred SnapTrade snapshot "
+                    "user_id=%s account=%s generation=%s; history remains "
+                    "mergeable.",
+                    e["user_id"], account_id, e["snapshot_generation"],
+                )
+                e["current_df"] = None
+                e["balances_df"] = None
         has_current = e.get("current_df") is not None
         # Intraday poll entries are history-only (current_df=None): keep them
         # as long as there are new trade fills to push.
         has_history = e.get("history_df") is not None and not e.get("skip_history")
         if not has_current and not has_history:
-            continue
-        if e.get("user_id") is None:
-            continue
-        if e.get("tenant_id") is None or not str(e.get("tenant_id")).strip():
             continue
         valid.append(e)
 
