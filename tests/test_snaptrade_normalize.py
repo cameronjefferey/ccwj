@@ -767,9 +767,8 @@ def test_balance_df_emits_two_rows_for_funded_account():
     assert set(df["row_type"]) == {"cash", "account_total"}
 
 
-def test_balance_df_returns_empty_for_zero_balance_account():
-    """Brand-new accounts with no cash and no positions should produce
-    zero rows so stg_account_balances doesn't index a phantom tenant."""
+def test_balance_df_returns_empty_when_summary_has_no_balance_signal():
+    """Missing summary data must not fabricate a zero-valued account."""
     df = balances_to_balance_df(
         account_summary={},
         balances=[{"cash": 0}],
@@ -779,6 +778,28 @@ def test_balance_df_returns_empty_for_zero_balance_account():
         tenant_id=TENANT_SNAPTRADE,
     )
     assert len(df) == 0
+
+
+def test_balance_df_emits_rows_for_explicit_zero_balance_account():
+    """A broker-confirmed $0 account is real, not missing data.
+
+    Keeping its tenant-stamped balance rows lets a seed write clear any prior
+    non-zero balance and lets multi-account onboarding count the empty account
+    as queryable instead of waiting forever.
+    """
+    df = balances_to_balance_df(
+        account_summary={"balance": {"total": {"amount": 0}}},
+        balances=[{"cash": 0}],
+        positions=[],
+        account_name="Empty Brokerage Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+
+    assert len(df) == 2
+    assert set(df["row_type"]) == {"cash", "account_total"}
+    assert set(df["tenant_id"]) == {TENANT_SNAPTRADE}
+    assert (df["market_value"] == 0).all()
 
 
 def test_balance_df_derives_total_when_summary_missing_it():
