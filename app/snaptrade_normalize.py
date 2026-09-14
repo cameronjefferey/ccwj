@@ -1011,14 +1011,23 @@ def balances_to_balance_df(
         )
 
     total = 0.0
+    # Distinguish an explicitly reported $0 account from an absent/malformed
+    # summary.  A real zero still needs balance rows: otherwise the seed merge
+    # cannot clear a prior non-zero balance, and the every-tenant onboarding
+    # readiness check can never observe a legitimately empty account.
+    has_explicit_total = False
     if isinstance(account_summary, Mapping):
         balance_block = account_summary.get("balance")
         if isinstance(balance_block, Mapping):
             total_block = balance_block.get("total")
             if isinstance(total_block, Mapping):
-                total = _safe_float(total_block.get("amount"), 0.0)
+                raw_total = total_block.get("amount")
+                if _is_finite_number(raw_total):
+                    total = _safe_float(raw_total, 0.0)
+                    has_explicit_total = True
             elif _is_finite_number(total_block):
                 total = _safe_float(total_block, 0.0)
+                has_explicit_total = True
 
     pos_mv = 0.0
     pos_cb = 0.0
@@ -1031,7 +1040,7 @@ def balances_to_balance_df(
     if total <= 0 and (cash != 0 or pos_mv > 0):
         total = pos_mv + cash
 
-    if total <= 0 and cash == 0 and not pos_mv:
+    if total <= 0 and cash == 0 and not pos_mv and not has_explicit_total:
         return pd.DataFrame(columns=BALANCE_SEED_COLUMNS)
 
     pct_cash = ""
