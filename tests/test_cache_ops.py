@@ -7,6 +7,7 @@ the warm thread on a valid token.
 """
 
 import types
+from datetime import date, timedelta
 
 import pytest
 
@@ -352,3 +353,77 @@ def test_position_detail_batch_includes_trades_and_chart():
     assert "chart" in batch
     assert "int_drip_fills" in batch["trades"]
     assert "UPPER(TRIM('{symbol}'))" in batch["trades"] or "JPM" in batch["trades"]
+
+
+# ---------------------------------------------------------------------------
+# Position Detail warm-symbol selection (Sep 2026)
+#
+# Previously capped at 8 and sourced ONLY from Overview's currently-open
+# positions, so (a) a user with >8 open symbols always had some cold, and
+# (b) a symbol closed yesterday was NEVER warmed (dropped off Overview the
+# moment it closed) even though "how did that just go" is a common visit.
+# ---------------------------------------------------------------------------
+
+def test_pd_warm_symbols_includes_recently_closed():
+    import pandas as pd
+    from app.cache_ops import _pd_warm_symbols
+
+    today = date(2026, 9, 15)
+    overview_dfs = {"positions": pd.DataFrame({"symbol": ["AAPL"]})}
+    positions_all_df = pd.DataFrame({
+        "symbol": ["AAPL", "MSFT", "OLD"],
+        "status": ["Open", "Closed", "Closed"],
+        "last_trade_date": [
+            today,
+            today - timedelta(days=10),
+            today - timedelta(days=200),
+        ],
+    })
+    out = _pd_warm_symbols(overview_dfs, positions_all_df, today)
+    assert "AAPL" in out  # currently open (Overview)
+    assert "MSFT" in out  # closed 10 days ago -- still within the window
+    assert "OLD" not in out  # closed 200 days ago -- stale, not warmed
+
+
+def test_pd_warm_symbols_ranks_most_recent_first_under_cap(monkeypatch):
+    import pandas as pd
+    import app.cache_ops as cache_ops
+
+    monkeypatch.setattr(cache_ops, "_PD_WARM_SYMBOLS", 2)
+    today = date(2026, 9, 15)
+    overview_dfs = {"positions": pd.DataFrame({"symbol": []})}
+    positions_all_df = pd.DataFrame({
+        "symbol": ["OLDEST", "MIDDLE", "NEWEST"],
+        "status": ["Closed", "Closed", "Closed"],
+        "last_trade_date": [
+            today - timedelta(days=5),
+            today - timedelta(days=3),
+            today - timedelta(days=1),
+        ],
+    })
+    out = cache_ops._pd_warm_symbols(overview_dfs, positions_all_df, today)
+    assert out == ["NEWEST", "MIDDLE"]
+
+
+def test_pd_warm_symbols_dedupes_open_and_recent_close():
+    import pandas as pd
+    from app.cache_ops import _pd_warm_symbols
+
+    today = date(2026, 9, 15)
+    overview_dfs = {"positions": pd.DataFrame({"symbol": ["AAPL"]})}
+    positions_all_df = pd.DataFrame({
+        "symbol": ["AAPL"],
+        "status": ["Open"],
+        "last_trade_date": [today],
+    })
+    out = _pd_warm_symbols(overview_dfs, positions_all_df, today)
+    assert out == ["AAPL"]
+
+
+def test_pd_warm_symbols_handles_empty_frames():
+    import pandas as pd
+    from app.cache_ops import _pd_warm_symbols
+
+    today = date(2026, 9, 15)
+    out = _pd_warm_symbols({"positions": pd.DataFrame()}, pd.DataFrame(), today)
+    assert out == []

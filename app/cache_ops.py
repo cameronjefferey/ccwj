@@ -39,6 +39,7 @@ import os
 import sys
 import threading
 import time
+from datetime import date, timedelta
 
 from flask import abort, jsonify, request
 
@@ -233,7 +234,95 @@ def _warm_scopes():
 
 
 _PER_TENANT_WARM_CAP = 6
-_PD_WARM_SYMBOLS = 8
+# Sep 2026: raised from 8. At the time of the raise the whole product had
+# 8 total linked users; the busiest held 38 open symbols, so an 8-symbol
+# cap left 30 of that one user's positions cold on every single visit --
+# even right after a rebuild. Position Detail warming is one BQ query
+# batch (~16 tiny queries) per symbol per scope, so at this user count the
+# BQ cost of warming everyone's whole book is negligible. Revisit the cap
+# (or make it BQ-cost-driven instead of a flat count) if the user base
+# grows enough that "warm every symbol for every user" stops being cheap.
+_PD_WARM_SYMBOLS = 40
+# A symbol closed within this many days is still worth pre-warming --
+# post-trade-close visits ("how did that just go") are common and were
+# previously guaranteed cold (only currently-OPEN symbols were warmed).
+_PD_WARM_CLOSED_WITHIN_DAYS = 60
+
+
+def _pd_warm_symbols(overview_dfs, positions_all_df, today):
+    """Which symbols to run through Position Detail's query batch.
+
+    Previously this only warmed symbols currently OPEN on Overview, capped
+    at 8. Two gaps that left real symbols cold on every single visit:
+    (1) a user with more than 8 open positions never got the rest warmed,
+    even right after a rebuild; (2) a symbol closed a day ago (the
+    "how did that just go" visit right after closing a trade) was never
+    warmed at all, since it drops off Overview's open-positions list the
+    moment it closes.
+
+    Fix: union Overview's open symbols with every symbol in the full
+    positions_summary pull that is either still Open/Mixed or closed
+    within ``_PD_WARM_CLOSED_WITHIN_DAYS``, ranked by most-recent activity
+    first so a cap (still needed -- each symbol is its own ~16-query
+    batch) drops the least-recently-relevant symbols, not an arbitrary
+    dict-iteration-order tail.
+    """
+    import pandas as pd
+
+    open_symbols = []
+    pos = overview_dfs.get("positions") if isinstance(overview_dfs, dict) else None
+    if pos is not None and not getattr(pos, "empty", True) and "symbol" in pos.columns:
+        open_symbols = (
+            pos["symbol"].dropna().astype(str).str.upper().str.strip()
+            .loc[lambda s: s != ""]
+            .unique()
+            .tolist()
+        )
+
+    ranked = []  # (symbol, last_activity_date)
+    if (
+        positions_all_df is not None
+        and not getattr(positions_all_df, "empty", True)
+        and {"symbol", "status", "last_trade_date"}.issubset(positions_all_df.columns)
+    ):
+        df = positions_all_df.copy()
+        df["symbol"] = df["symbol"].astype(str).str.upper().str.strip()
+        df["last_trade_date"] = pd.to_datetime(
+            df["last_trade_date"], errors="coerce"
+        ).dt.date
+        cutoff = today - timedelta(days=_PD_WARM_CLOSED_WITHIN_DAYS)
+        is_open = df["status"].astype(str).str.strip().str.lower().isin(
+            ("open", "mixed")
+        )
+        is_recent_close = df["last_trade_date"].apply(
+            lambda d: d is not None and d >= cutoff
+        )
+        eligible = df.loc[(is_open | is_recent_close) & (df["symbol"] != "")]
+        by_symbol = (
+            eligible.groupby("symbol")["last_trade_date"]
+            .max()
+            .reset_index()
+        )
+        # groupby key (symbol) comes first in column order / itertuples --
+        # keep the (symbol, last_date) shape explicit rather than relying
+        # on positional unpacking downstream matching column order.
+        ranked = [(row.symbol, row.last_trade_date) for row in by_symbol.itertuples(index=False)]
+
+    # Open-on-Overview symbols always qualify even without a matching
+    # positions_summary row (e.g. a brand-new fill the mart hasn't
+    # rebuilt for yet) -- treat them as "most recent" so they never lose
+    # a warming slot to the cap.
+    seen = set()
+    result = []
+    for sym in open_symbols:
+        if sym and sym not in seen:
+            seen.add(sym)
+            result.append(sym)
+    for sym, last_date in sorted(ranked, key=lambda t: t[1] or date.min, reverse=True):
+        if sym and sym not in seen:
+            seen.add(sym)
+            result.append(sym)
+    return result[:_PD_WARM_SYMBOLS]
 
 
 def _stamp_pages_warm(uid, tenant_ids, symbols=()):
@@ -303,11 +392,17 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     # Live /today page (calendar-today last-trade bars).
     _bq_parallel(client, build_today_batch(tenant_filter, today))
 
-    # Positions list default (all-time) query.
-    cached_query_df(
-        client,
-        POSITIONS_DEFAULT_QUERY.format(tenant_filter=tenant_filter),
-        label="warm_positions",
+    # Positions list default (all-time) query. Kept (not discarded) --
+    # it's also the source for which symbols are worth Position Detail
+    # warming below (open + recently-closed), so we don't pay for a
+    # second read of the same mart just to find that out.
+    positions_all_df = filter_df_by_tenant_ids(
+        cached_query_df(
+            client,
+            POSITIONS_DEFAULT_QUERY.format(tenant_filter=tenant_filter),
+            label="warm_positions",
+        ),
+        tenant_ids,
     )
 
     # Accounts performance + the Python chart payload (the 4s walk).
@@ -327,16 +422,7 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     except Exception as exc:
         _log.warning("cache warm: accounts chart user=%r failed: %s", uid, exc)
 
-    symbols = []
-    pos = overview_dfs.get("positions") if isinstance(overview_dfs, dict) else None
-    if pos is not None and not getattr(pos, "empty", True) and "symbol" in pos.columns:
-        symbols = (
-            pos["symbol"].dropna().astype(str).str.upper().str.strip()
-            .loc[lambda s: s != ""]
-            .unique()
-            .tolist()
-        )
-        symbols = symbols[:_PD_WARM_SYMBOLS]
+    symbols = _pd_warm_symbols(overview_dfs, positions_all_df, today)
 
     if heavy:
         _bq_parallel(client, story_query_batch(tenant_ids))

@@ -15,6 +15,7 @@ app/pnl_charts.py.
 import json
 import logging
 import re
+import time
 from datetime import datetime, date, timedelta  # noqa: F401
 
 import pandas as pd
@@ -25,7 +26,10 @@ from urllib.parse import quote_plus
 from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
-from app.query_cache import cached_query_df, cached_payload, frame_fingerprint, timed
+from app.query_cache import (
+    cached_query_df, cached_payload, frame_fingerprint, timed,
+    get_request_stats,
+)
 from app.skeleton import skeleton_page
 from app.models import get_tenant_ids_for_user, is_admin
 from app.utils import user_local_today
@@ -1371,6 +1375,15 @@ def position_detail(symbol):
             mode="navigate",
         )
 
+    # Diagnostic timer (Sep 2026): "story"/"chart"/"matrix" already report
+    # their own wall time via timed(), but a fully-warm page (every BQ
+    # query AND the chart/story payloads a cache hit) still measured
+    # 2.9-3.3s total_ms with nothing in REQUEST_TIMING to explain where it
+    # went. This brackets everything between the initial query batch and
+    # render_template so the next pass can see the real split between
+    # "pandas/leg/KPI computation" and "Jinja render" instead of guessing.
+    _compute_t0 = time.perf_counter()
+
     # Clean numeric types for summary
     num_cols = [
         "total_pnl", "realized_pnl", "unrealized_pnl",
@@ -2658,6 +2671,10 @@ def position_detail(symbol):
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []
 
+    _stats = get_request_stats()
+    if _stats is not None:
+        _stats.add_step("compute", (time.perf_counter() - _compute_t0) * 1000.0)
+    _render_t0 = time.perf_counter()
     resp = make_response(render_template(
         "position_detail.html",
         symbol=symbol,
@@ -2699,6 +2716,8 @@ def position_detail(symbol):
         mode="navigate",
         first_visit=first_visit,
     ))
+    if _stats is not None:
+        _stats.add_step("render", (time.perf_counter() - _render_t0) * 1000.0)
     if first_visit:
         resp.set_cookie(
             "ht_pd_seen", "1",
