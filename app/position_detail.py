@@ -2628,15 +2628,16 @@ def position_detail(symbol):
         # frame; the notes hook onto completing closes inside the engine.
         _exec_df = _filter_df_by_tenant_ids(execution_df, tenant_scope)
         _exit_notes = _execution_exit_notes(_exec_df)
-        story_days, story_markers, story_stats = build_position_story(
-            trades_df,
-            _story_div_df,
-            chart_data,
-            splits_df=splits_df,
-            seed_trades_df=story_seed_trades,
-            exit_notes=_exit_notes,
-            label_map=_tenant_label_map,
-        )
+        with timed("story"):
+            story_days, story_markers, story_stats = build_position_story(
+                trades_df,
+                _story_div_df,
+                chart_data,
+                splits_df=splits_df,
+                seed_trades_df=story_seed_trades,
+                exit_notes=_exit_notes,
+                label_map=_tenant_label_map,
+            )
         # The mirror prologue: how this position was traded + where it
         # sits in the trader's book. Rank comes from the tab-strip rollup
         # (already tenant-scoped) so the mirror needs no extra query.
