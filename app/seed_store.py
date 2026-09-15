@@ -112,9 +112,10 @@ def read_seed_csv(path: str, client=None, dataset: str | None = None) -> str | N
     table_id = _table_id(path, dataset)
     client = client or _get_client()
     try:
-        df = client.query(
+        from app.query_cache import _to_dataframe_fast
+        df = _to_dataframe_fast(client.query(
             f"SELECT * FROM `{table_id}` ORDER BY {_ROW_SEQ_COL}"
-        ).to_dataframe()
+        ))
     except NotFound:
         return None
     except Exception as exc:

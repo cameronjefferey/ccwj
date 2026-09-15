@@ -311,3 +311,73 @@ def test_page_warm_sentinel_roundtrip(cache_on):
     assert query_cache.is_page_warm(9, "weekly_review") is True
     assert query_cache.is_page_warm(9, "accounts") is False
     assert query_cache.is_page_warm(8, "weekly_review") is False
+
+
+# ---------------------------------------------------------------------------
+# Storage API opt-out (Sep 2026 perf fix)
+#
+# Benchmarked against prod BigQuery: the SAME query, same server-side
+# execution time, took ~2.0-2.6s via to_dataframe()'s default
+# create_bqstorage_client=True vs ~1.1-1.4s with it forced off, for result
+# sizes from 25 rows to 12.5k rows. With _bq_parallel firing up to 20 of
+# these concurrently per page load, this was a hidden multiplier on every
+# page's latency.
+# ---------------------------------------------------------------------------
+
+class _KwargAwareJob:
+    """Records the kwargs ``to_dataframe`` was called with."""
+
+    def __init__(self, df):
+        self._df = df
+        self.calls = []
+
+    def to_dataframe(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._df
+
+
+class _NoKwargJob:
+    """Mimics an older client / test double whose to_dataframe takes no
+    kwargs at all — the fallback path must not raise."""
+
+    def __init__(self, df):
+        self._df = df
+        self.calls = 0
+
+    def to_dataframe(self):
+        self.calls += 1
+        return self._df
+
+
+def test_to_dataframe_fast_disables_bqstorage_client():
+    job = _KwargAwareJob(pd.DataFrame({"v": [1]}))
+    out = query_cache._to_dataframe_fast(job)
+    assert list(out["v"]) == [1]
+    assert job.calls == [{"create_bqstorage_client": False}]
+
+
+def test_to_dataframe_fast_falls_back_for_kwarg_less_stub():
+    job = _NoKwargJob(pd.DataFrame({"v": [2]}))
+    out = query_cache._to_dataframe_fast(job)
+    assert list(out["v"]) == [2]
+    assert job.calls == 1
+
+
+def test_execute_routes_through_to_dataframe_fast(monkeypatch, cache_on):
+    """``_execute`` (used by every ``cached_query_df`` call) must use the
+    fast path, not a bare ``.to_dataframe()`` — this is the actual
+    production chokepoint the perf fix targets."""
+    seen = {}
+
+    class _Job:
+        def to_dataframe(self, **kwargs):
+            seen["kwargs"] = kwargs
+            return pd.DataFrame({"v": [1]})
+
+    class _Client:
+        def query(self, sql, job_config=None, **kwargs):
+            return _Job()
+
+    df = cached_query_df(_Client(), "SELECT 1", label="x")
+    assert not df.empty
+    assert seen["kwargs"] == {"create_bqstorage_client": False}

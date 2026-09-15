@@ -86,10 +86,12 @@ def _build_strategy_fit_brief(client, tenant_ids):
     in a form that's easy to render deterministically.
     Returns (None, {...}) when there isn't enough data.
     """
+    from app.query_cache import _to_dataframe_fast
+
     tenant_filter = _tenant_sql_and(tenant_ids)
-    df = client.query(
+    df = _to_dataframe_fast(client.query(
         STRATEGY_FIT_QUERY.format(tenant_filter=tenant_filter)
-    ).to_dataframe()
+    ))
     df = _filter_df_by_tenant_ids(df, tenant_ids)
     if df.empty:
         return None, {"has_data": False}
