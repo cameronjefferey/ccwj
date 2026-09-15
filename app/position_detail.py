@@ -1305,6 +1305,7 @@ def position_detail(symbol):
     # non-admin this is exactly their owned tenants, for admin it's None.
     all_owned_scope = _user_tenant_list()
 
+    _fetch_t0 = time.perf_counter()
     try:
         from app.upload import is_crypto_symbol
         _is_crypto = is_crypto_symbol(safe_symbol)
@@ -1375,13 +1376,18 @@ def position_detail(symbol):
             mode="navigate",
         )
 
-    # Diagnostic timer (Sep 2026): "story"/"chart"/"matrix" already report
+    # Diagnostic timers (Sep 2026): "story"/"chart"/"matrix" already report
     # their own wall time via timed(), but a fully-warm page (every BQ
     # query AND the chart/story payloads a cache hit) still measured
-    # 2.9-3.3s total_ms with nothing in REQUEST_TIMING to explain where it
-    # went. This brackets everything between the initial query batch and
-    # render_template so the next pass can see the real split between
-    # "pandas/leg/KPI computation" and "Jinja render" instead of guessing.
+    # 2.9-4.4s total_ms with nothing in REQUEST_TIMING to explain where it
+    # went. "fetch" covers the initial _bq_parallel call + account
+    # normalization (even on an all-cache-hit request this still pays 17x
+    # ThreadPoolExecutor dispatch + DataFrame .copy()); "compute" covers
+    # everything from there to render_template; "render" (below) covers
+    # the Jinja call itself.
+    _stats = get_request_stats()
+    if _stats is not None:
+        _stats.add_step("fetch", (time.perf_counter() - _fetch_t0) * 1000.0)
     _compute_t0 = time.perf_counter()
 
     # Clean numeric types for summary
@@ -2671,7 +2677,8 @@ def position_detail(symbol):
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []
 
-    _stats = get_request_stats()
+    # _stats set once near the top (right after the initial query batch);
+    # reused here and after render_template below.
     if _stats is not None:
         _stats.add_step("compute", (time.perf_counter() - _compute_t0) * 1000.0)
     _render_t0 = time.perf_counter()
