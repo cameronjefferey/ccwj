@@ -101,6 +101,183 @@ def test_stable_account_name_handles_empty_broker():
     assert name == "Broker ••••5678"
 
 
+def test_recreated_account_matches_retained_tenant_by_institution_id():
+    rows = [
+        {
+            "tenant_id": "snaptrade:old-uuid",
+            "broker_slug": "snaptrade",
+            "connection_status": "disconnected",
+            "institution_account_id": "institution-123",
+        },
+    ]
+    match = _snap._matching_retained_tenant(
+        rows,
+        institution_account_id="institution-123",
+        account_name="Schwab Account",
+    )
+    assert match["tenant_id"] == "snaptrade:old-uuid"
+
+
+def test_recreated_account_matches_retained_tenant_by_exact_broker_account():
+    rows = [
+        {
+            "tenant_id": "snaptrade:old-uuid",
+            "broker_slug": "snaptrade",
+            "connection_status": "disconnected",
+            "account_mask": "****1234",
+            "broker_label": "SCHWAB",
+        },
+    ]
+    match = _snap._matching_retained_tenant(
+        rows,
+        account_mask="****1234",
+        broker_label="Schwab",
+        account_name="Schwab ••••1234",
+    )
+    assert match["tenant_id"] == "snaptrade:old-uuid"
+
+
+def test_recreated_account_fails_closed_on_legacy_label_only_match():
+    rows = [
+        {
+            "tenant_id": "snaptrade:old-uuid",
+            "broker_slug": "snaptrade",
+            "connection_status": "disconnected",
+            "account_name": "Schwab Account",
+            "account_mask": None,
+            "broker_label": None,
+        },
+    ]
+    with pytest.raises(_snap._SnapTradeTenantIdentityConflict):
+        _snap._matching_retained_tenant(
+            rows,
+            institution_account_id="newly-visible-id",
+            account_name="Schwab Account",
+            broker_label="Schwab",
+        )
+
+
+def test_stable_identity_conflict_never_falls_back_to_mask_match():
+    rows = [
+        {
+            "tenant_id": "snaptrade:different-account",
+            "broker_slug": "snaptrade",
+            "connection_status": "disconnected",
+            "institution_account_id": "institution-old",
+            "account_mask": "****1234",
+            "broker_label": "Schwab",
+        },
+    ]
+    assert _snap._matching_retained_tenant(
+        rows,
+        institution_account_id="institution-new",
+        account_mask="****1234",
+        broker_label="Schwab",
+    ) is None
+
+
+def test_current_account_claim_blocks_second_transport_for_same_institution():
+    rows = [
+        {
+            "tenant_id": "snaptrade:canonical",
+            "broker_slug": "snaptrade",
+            "connection_status": "active",
+            "institution_account_id": "institution-123",
+        },
+    ]
+    with pytest.raises(_snap._SnapTradeTenantIdentityConflict):
+        _snap._matching_retained_tenant(
+            rows,
+            institution_account_id="institution-123",
+            claimed_tenant_ids={"snaptrade:canonical"},
+        )
+
+
+def test_partial_remote_list_disables_weak_reconnect_match():
+    rows = [
+        {
+            "tenant_id": "snaptrade:old",
+            "broker_slug": "snaptrade",
+            "connection_status": "disconnected",
+            "account_name": "Schwab ••••1234",
+            "account_mask": "****1234",
+            "broker_label": "Schwab",
+        },
+    ]
+    with pytest.raises(_snap._SnapTradeTenantIdentityConflict):
+        _snap._matching_retained_tenant(
+            rows,
+            account_mask="****1234",
+            broker_label="Schwab",
+            account_name="Schwab ••••1234",
+            allow_account_identity_match=False,
+        )
+
+
+def test_account_list_marks_partial_authorization_failure_incomplete():
+    class Connections:
+        @staticmethod
+        def list_brokerage_authorizations(**_kwargs):
+            return [{"id": "good"}, {"id": "broken"}]
+
+        @staticmethod
+        def list_brokerage_authorization_accounts(*, authorization_id, **_kwargs):
+            if authorization_id == "broken":
+                raise RuntimeError("temporary failure")
+            return [{"id": "account-1", "institution_name": "Schwab"}]
+
+    accounts, complete = _snap._list_snaptrade_accounts(
+        type("Client", (), {"connections": Connections()})(),
+        {"snaptrade_user_id": "user", "snaptrade_secret": "secret"},
+    )
+
+    assert [row["id"] for row in accounts] == ["account-1"]
+    assert complete is False
+
+
+def test_current_snaptrade_row_uses_persisted_canonical_tenant():
+    assert _snap._snaptrade_tenant_id_for_account({
+        "snaptrade_account_id": "new-transport-uuid",
+        "tenant_id": "snaptrade:old-canonical-uuid",
+    }) == "snaptrade:old-canonical-uuid"
+
+
+def test_ensure_recreated_account_reactivates_stable_retained_tenant(monkeypatch):
+    retained = {
+        "tenant_id": "snaptrade:old-canonical-uuid",
+        "user_id": 7,
+        "broker_slug": "snaptrade",
+        "connection_status": "disconnected",
+        "institution_account_id": "institution-123",
+    }
+    monkeypatch.setattr(_snap, "get_broker_tenant", lambda tid: None)
+    monkeypatch.setattr(
+        _snap, "get_broker_tenants_for_user", lambda uid, include_inactive: [retained],
+    )
+    reactivated = []
+    monkeypatch.setattr(
+        _snap,
+        "reactivate_snaptrade_tenant",
+        lambda uid, tid, **kw: reactivated.append((uid, tid, kw)) or tid,
+    )
+    monkeypatch.setattr(
+        _snap,
+        "get_or_create_broker_tenant",
+        lambda **kw: pytest.fail("must not mint a replacement tenant"),
+    )
+
+    tenant_id = _snap._ensure_snaptrade_tenant_id(
+        7,
+        "new-transport-uuid",
+        "Schwab Account",
+        institution_account_id="institution-123",
+        allow_disconnected_match=True,
+    )
+
+    assert tenant_id == "snaptrade:old-canonical-uuid"
+    assert reactivated[0][1] == tenant_id
+
+
 # ---------------------------------------------------------------------------
 # _bulk_sync_lookback_days — re-used from Schwab; assert SnapTrade
 # inherits the SAME first-sync-vs-routine semantics so both connectors'
@@ -141,6 +318,7 @@ def _patched_models(monkeypatch):
         "broken_cleared": [],
         "sync_attempts": [],
         "holdings_synced": [],
+        "identities": [],
     }
 
     monkeypatch.setattr(_snap, "mark_snaptrade_first_sync_completed",
@@ -156,6 +334,11 @@ def _patched_models(monkeypatch):
 
     monkeypatch.setattr(_snap, "record_snaptrade_holdings_sync",
                         lambda u, a, when: record["holdings_synced"].append((u, a, when)))
+    monkeypatch.setattr(
+        _snap,
+        "record_snaptrade_account_identity",
+        lambda u, a, **kw: record["identities"].append((u, a, kw)),
+    )
 
     return record
 
@@ -949,6 +1132,9 @@ def _patch_run_sync_fetches(monkeypatch, *, account_summary):
     monkeypatch.setattr(_snap, "_fetch_option_holdings", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_balances", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_account_summary", lambda *a, **k: account_summary)
+    monkeypatch.setattr(
+        _snap, "record_snaptrade_account_identity", lambda *a, **k: None,
+    )
 
 
 def test_run_sync_raises_on_stale_holdings(monkeypatch):
@@ -1287,6 +1473,8 @@ def test_upsert_snaptrade_account_resets_broken_flag(monkeypatch):
 
     _models.upsert_snaptrade_account(
         7, "abc",
+        tenant_id="snaptrade:abc",
+        institution_account_id="institution-1234",
         broker_slug="FIDELITY",
         account_number_masked="****1234",
         account_name="Fidelity ••••1234",
@@ -1296,6 +1484,32 @@ def test_upsert_snaptrade_account_resets_broken_flag(monkeypatch):
     assert "connection_broken_at  = NULL" in sql or "connection_broken_at = NULL" in sql.replace("  ", " ")
     assert "last_sync_error" in sql
     assert "connection_broken%%" in sql
+    assert "tenant_id" in sql
+    assert "institution_account_id" in sql
+
+
+def test_reactivate_snaptrade_tenant_preserves_canonical_account_name(monkeypatch):
+    captured = {}
+
+    def fake_returning(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return {"tenant_id": "snaptrade:old"}
+
+    monkeypatch.setattr(_models, "execute_returning", fake_returning)
+    tenant_id = _models.reactivate_snaptrade_tenant(
+        7,
+        "snaptrade:old",
+        account_name="new transport label",
+        account_mask="****1234",
+        broker_label="Schwab",
+        institution_account_id="institution-123",
+        snaptrade_connection_id="new-auth",
+    )
+
+    assert tenant_id == "snaptrade:old"
+    assert "account_name =" not in captured["sql"]
+    assert "institution_account_id IS NULL" in captured["sql"]
 
 
 def test_clear_snaptrade_connection_broken_resets_debounce_error(monkeypatch):

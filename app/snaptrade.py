@@ -48,6 +48,7 @@ from app.models import (
     mark_snaptrade_connection_broken,
     mark_snaptrade_first_sync_completed,
     record_snaptrade_holdings_sync,
+    record_snaptrade_account_identity,
     record_snaptrade_sync_attempt,
     record_snaptrade_sync_observation,
     remove_snaptrade_account,
@@ -57,7 +58,11 @@ from app.models import (
     stamp_snaptrade_force_refresh_attempt,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
+    get_broker_tenant,
+    get_broker_tenants_for_user,
     get_or_create_broker_tenant,
+    reactivate_snaptrade_tenant,
+    clear_tenant_connection_broken,
     build_tenant_id,
     SNAPTRADE_BROKER_SLUG,
 )
@@ -73,15 +78,99 @@ from app.plan import plan_block_writes
 _log = logging.getLogger(__name__)
 
 
+class _SnapTradeTenantIdentityConflict(ValueError):
+    """A recreated account cannot safely be mapped to one retained tenant."""
+
+
+def _matching_retained_tenant(
+    rows,
+    *,
+    institution_account_id=None,
+    account_mask=None,
+    broker_label=None,
+    account_name=None,
+    claimed_tenant_ids=None,
+    allow_account_identity_match=True,
+):
+    """Select one retained tenant without guessing across colliding accounts."""
+    rows = [
+        row for row in (rows or [])
+        if (row.get("broker_slug") or "").strip().lower() == SNAPTRADE_BROKER_SLUG
+    ]
+    claimed = {str(t) for t in (claimed_tenant_ids or []) if t}
+    institution_id = (institution_account_id or "").strip()
+    if institution_id:
+        stable = [
+            row for row in rows
+            if (row.get("institution_account_id") or "").strip() == institution_id
+        ]
+        if len(stable) == 1:
+            if str(stable[0].get("tenant_id") or "") in claimed:
+                raise _SnapTradeTenantIdentityConflict(
+                    "another current account already claims this institution account"
+                )
+            return stable[0]
+        if len(stable) > 1:
+            raise _SnapTradeTenantIdentityConflict(
+                "multiple tenants share the same institution account id"
+            )
+
+    reconnectable = [
+        row for row in rows
+        if (row.get("connection_status") or "").strip().lower() == "disconnected"
+        or str(row.get("tenant_id") or "") not in claimed
+    ]
+    if institution_id:
+        reconnectable = [
+            row for row in reconnectable
+            if not (row.get("institution_account_id") or "").strip()
+        ]
+    mask = (account_mask or "").strip()
+    broker = (broker_label or "").strip().casefold()
+    if allow_account_identity_match and mask and broker:
+        exact = [
+            row for row in reconnectable
+            if (row.get("account_mask") or "").strip() == mask
+            and (row.get("broker_label") or "").strip().casefold() == broker
+        ]
+        if len(exact) == 1:
+            return exact[0]
+        if len(exact) > 1:
+            raise _SnapTradeTenantIdentityConflict(
+                "multiple disconnected tenants share this broker account identity"
+            )
+
+    # Older retained rows may predate account-mask persistence. An exact
+    # masked display label signals a likely match but is not strong enough to
+    # merge automatically; fail closed instead of creating a second readable
+    # warehouse partition. Generic labels are included for the same reason.
+    label = (account_name or "").strip()
+    if label and any(
+        (row.get("account_name") or "").strip() == label for row in reconnectable
+    ):
+        raise _SnapTradeTenantIdentityConflict(
+            "a retained tenant has the same account label but no stable identity"
+        )
+    return None
+
+
 def _ensure_snaptrade_tenant_id(
     user_id, snaptrade_account_id, account_name, *,
     snaptrade_connection_id=None,
+    institution_account_id=None,
+    account_mask=None,
+    broker_label=None,
+    preferred_tenant_id=None,
+    allow_disconnected_match=False,
+    claimed_tenant_ids=None,
+    allow_account_identity_match=True,
 ):
     """Resolve (and persist) the v2 ``tenant_id`` for a SnapTrade account.
 
     ``snaptrade_account_id`` is SnapTrade's per-account UUID — stable
-    for the life of the broker connection and survives renames. The
-    resulting ``tenant_id`` is ``snaptrade:<uuid>``.
+    only for the life of the broker connection. Deleted/re-added connections
+    receive a new UUID, so a persisted or safely matched canonical tenant may
+    intentionally differ from ``snaptrade:<current uuid>``.
 
     Idempotent: calls ``get_or_create_broker_tenant`` which upserts
     ``broker_tenants``. See ``docs/V2_TENANT_KEY_DESIGN.md``.
@@ -90,13 +179,66 @@ def _ensure_snaptrade_tenant_id(
     if not ext_id:
         raise ValueError("SnapTrade account row has no snaptrade_account_id")
     label = (account_name or "SnapTrade Account").strip() or "SnapTrade Account"
-    return get_or_create_broker_tenant(
+    preferred = (preferred_tenant_id or "").strip()
+    direct_tenant_id = build_tenant_id(SNAPTRADE_BROKER_SLUG, ext_id)
+    if preferred:
+        row = get_broker_tenant(preferred)
+        if not row or int(row["user_id"]) != int(user_id):
+            raise ValueError("stored SnapTrade tenant mapping is missing or not owned")
+        return reactivate_snaptrade_tenant(
+            user_id, preferred,
+            account_name=label,
+            account_mask=account_mask,
+            broker_label=broker_label,
+            institution_account_id=institution_account_id,
+            snaptrade_connection_id=snaptrade_connection_id,
+        )
+
+    direct = get_broker_tenant(direct_tenant_id)
+    if direct:
+        if int(direct["user_id"]) != int(user_id):
+            raise ValueError("SnapTrade account tenant is owned by another user")
+        return reactivate_snaptrade_tenant(
+            user_id, direct_tenant_id,
+            account_name=label,
+            account_mask=account_mask,
+            broker_label=broker_label,
+            institution_account_id=institution_account_id,
+            snaptrade_connection_id=snaptrade_connection_id,
+        )
+
+    if allow_disconnected_match:
+        match = _matching_retained_tenant(
+            get_broker_tenants_for_user(user_id, include_inactive=True),
+            institution_account_id=institution_account_id,
+            account_mask=account_mask,
+            broker_label=broker_label,
+            account_name=label,
+            claimed_tenant_ids=claimed_tenant_ids,
+            allow_account_identity_match=allow_account_identity_match,
+        )
+        if match:
+            return reactivate_snaptrade_tenant(
+                user_id, match["tenant_id"],
+                account_name=label,
+                account_mask=account_mask,
+                broker_label=broker_label,
+                institution_account_id=institution_account_id,
+                snaptrade_connection_id=snaptrade_connection_id,
+            )
+
+    tenant_id = get_or_create_broker_tenant(
         user_id=user_id,
         broker_slug=SNAPTRADE_BROKER_SLUG,
         broker_uuid=ext_id,
         account_name=label,
+        account_mask=account_mask,
+        broker_label=broker_label,
+        institution_account_id=institution_account_id,
         snaptrade_connection_id=snaptrade_connection_id,
     )
+    clear_tenant_connection_broken(tenant_id)
+    return tenant_id
 
 # Full-history cap for first sync UX. Per-broker depth varies — we ask
 # for the full window and let SnapTrade clamp to what the broker carries.
@@ -421,7 +563,7 @@ def snaptrade_callback():
         return redirect(url_for("profile", tab="account"))
 
     try:
-        accounts = _list_snaptrade_accounts(client, snap)
+        accounts, accounts_complete = _list_snaptrade_accounts(client, snap)
     except Exception as exc:
         _log.exception("SnapTrade list_accounts failed for user_id=%s: %s", user_id, exc)
         flash(
@@ -440,6 +582,23 @@ def snaptrade_callback():
         return redirect(url_for("snaptrade_accounts_page"))
 
     saved = 0
+    identity_conflicts = 0
+    existing_accounts = get_snaptrade_accounts(user_id) or []
+    remote_account_ids = {
+        str(acc.get("id") or "").strip()
+        for acc in accounts
+        if isinstance(acc, dict) and acc.get("id")
+    }
+    existing_by_id = {
+        str(row.get("snaptrade_account_id") or ""): row
+        for row in existing_accounts
+    }
+    claimed_tenant_ids = {
+        str(row.get("tenant_id") or "")
+        for row in existing_accounts
+        if row.get("tenant_id")
+        and str(row.get("snaptrade_account_id") or "") in remote_account_ids
+    }
     for acc in accounts:
         snaptrade_account_id = str(acc.get("id") or "").strip()
         if not snaptrade_account_id:
@@ -451,15 +610,79 @@ def snaptrade_callback():
         )
         masked = (acc.get("number") or acc.get("account_number") or "").strip() or None
         account_name = _stable_account_name(broker_slug, masked)
+        institution_account_id = (
+            str(acc.get("institution_account_id") or "").strip() or None
+        )
+        auth_id = (
+            (acc.get("brokerage_authorization") or "").strip()
+            if isinstance(acc.get("brokerage_authorization"), str)
+            else ""
+        )
 
-        existed = get_snaptrade_account(user_id, snaptrade_account_id)
+        existed = existing_by_id.get(snaptrade_account_id)
+        try:
+            tenant_id = _ensure_snaptrade_tenant_id(
+                user_id=user_id,
+                snaptrade_account_id=snaptrade_account_id,
+                account_name=account_name,
+                account_mask=masked,
+                broker_label=broker_slug,
+                institution_account_id=institution_account_id,
+                snaptrade_connection_id=auth_id or None,
+                preferred_tenant_id=(existed or {}).get("tenant_id"),
+                allow_disconnected_match=True,
+                claimed_tenant_ids=claimed_tenant_ids,
+                allow_account_identity_match=accounts_complete,
+            )
+            canonical_tenant = get_broker_tenant(tenant_id)
+            if not canonical_tenant:
+                raise ValueError("canonical SnapTrade tenant was not persisted")
+            account_name = canonical_tenant["account_name"]
+            stale_account_ids = [
+                str(stale.get("snaptrade_account_id") or "")
+                for stale in existing_accounts
+                if str(stale.get("snaptrade_account_id") or "")
+                and str(stale.get("snaptrade_account_id") or "")
+                != snaptrade_account_id
+                and str(stale.get("snaptrade_account_id") or "")
+                not in remote_account_ids
+                and stale.get("tenant_id") == tenant_id
+            ]
+        except _SnapTradeTenantIdentityConflict as exc:
+            identity_conflicts += 1
+            app.logger.error(
+                "Refusing to create a duplicate SnapTrade tenant for user_id=%s "
+                "snaptrade_account_id=%s: %s",
+                user_id, snaptrade_account_id, exc,
+            )
+            continue
+        except Exception as exc:
+            app.logger.exception(
+                "SnapTrade tenant registration failed for user_id=%s "
+                "snaptrade_account_id=%s: %s",
+                user_id, snaptrade_account_id, exc,
+            )
+            continue
         upsert_snaptrade_account(
             user_id,
             snaptrade_account_id,
+            tenant_id=tenant_id,
+            institution_account_id=institution_account_id,
+            display_nickname=canonical_tenant.get("display_nickname"),
             broker_slug=broker_slug,
             account_number_masked=masked,
             account_name=account_name,
         )
+        claimed_tenant_ids.add(tenant_id)
+        for stale_account_id in stale_account_ids:
+            try:
+                remove_snaptrade_account(user_id, stale_account_id)
+            except Exception as exc:
+                app.logger.warning(
+                    "Could not retire obsolete SnapTrade account row "
+                    "user_id=%s account=%s: %s",
+                    user_id, stale_account_id, exc,
+                )
         if not existed:
             from app.early_broker import maybe_stamp_early_broker_cohort
             maybe_stamp_early_broker_cohort(
@@ -470,7 +693,6 @@ def snaptrade_callback():
         # ``get_user_account_details`` round-trip on first press. The
         # per-auth iteration in _list_snaptrade_accounts always
         # populates this field (see backstop in that function).
-        auth_id = (acc.get("brokerage_authorization") or "").strip() if isinstance(acc.get("brokerage_authorization"), str) else ""
         if auth_id:
             set_snaptrade_brokerage_authorization_id(
                 user_id, snaptrade_account_id, auth_id,
@@ -489,23 +711,15 @@ def snaptrade_callback():
                 user_id, snaptrade_account_id, exc,
             )
         add_account_for_user(user_id, account_name)
-        # v2 tenancy: register broker_tenants row so the first sync
-        # after callback has a real tenant_id to stamp into seed rows.
-        try:
-            _ensure_snaptrade_tenant_id(
-                user_id=user_id,
-                snaptrade_account_id=snaptrade_account_id,
-                account_name=account_name,
-                snaptrade_connection_id=auth_id or None,
-            )
-        except Exception as exc:
-            app.logger.warning(
-                "broker_tenants registration deferred for SnapTrade user_id=%s "
-                "snaptrade_account_id=%s: %s",
-                user_id, snaptrade_account_id, exc,
-            )
         saved += 1
 
+    if identity_conflicts:
+        flash(
+            "We kept a prior account separate because the broker did not "
+            "provide enough identity to reconnect it safely. Contact support "
+            "before syncing that account.",
+            "warning",
+        )
     if saved:
         _kick_post_connect_sync(user_id)
         all_accounts = get_snaptrade_accounts(user_id) or []
@@ -632,7 +846,7 @@ def _kick_post_connect_sync(user_id):
 
 
 def _list_snaptrade_accounts(client, snap):
-    """Return every SnapTrade-linked broker account for one user.
+    """Return ``(accounts, complete)`` for one SnapTrade user.
 
     Modern flow (post-deprecation of ``account_information.list_user_accounts``):
     iterate ``connections.list_brokerage_authorizations`` and for each
@@ -655,9 +869,10 @@ def _list_snaptrade_accounts(client, snap):
     "Refresh from broker" button without an extra
     ``get_user_account_details`` round-trip.
 
-    Defensive: any per-auth exception is logged and skipped — one
-    broken connection (e.g. revoked grant) must not blank out the
-    other linked brokerages.
+    Defensive: any per-auth exception is logged and skipped — one broken
+    connection must not blank out the other linked brokerages. ``complete`` is
+    then False so the callback will not use account-number fallback to rebind a
+    retained tenant from a partial remote view.
     """
     auth_resp = client.connections.list_brokerage_authorizations(
         user_id=snap["snaptrade_user_id"],
@@ -666,10 +881,13 @@ def _list_snaptrade_accounts(client, snap):
     auth_body = _unwrap_body(auth_resp)
     if isinstance(auth_body, dict):
         auths = auth_body.get("authorizations", []) or []
+        complete = True
     elif isinstance(auth_body, list):
         auths = auth_body
+        complete = True
     else:
         auths = []
+        complete = False
 
     out: list[dict] = []
     for auth in auths:
@@ -677,9 +895,11 @@ def _list_snaptrade_accounts(client, snap):
             try:
                 auth = auth.to_dict() if hasattr(auth, "to_dict") else {}
             except Exception:
+                complete = False
                 continue
         auth_id = (auth.get("id") or "").strip()
         if not auth_id:
+            complete = False
             continue
         try:
             acc_resp = client.connections.list_brokerage_authorization_accounts(
@@ -688,6 +908,7 @@ def _list_snaptrade_accounts(client, snap):
                 authorization_id=auth_id,
             )
         except Exception as exc:
+            complete = False
             app.logger.warning(
                 "SnapTrade list_brokerage_authorization_accounts failed for "
                 "auth=%s: %s — skipping this brokerage's accounts; the rest "
@@ -702,6 +923,7 @@ def _list_snaptrade_accounts(client, snap):
             items = body
         else:
             items = []
+            complete = False
         for item in items:
             if isinstance(item, dict):
                 # Backstop the brokerage_authorization field in case
@@ -716,8 +938,11 @@ def _list_snaptrade_accounts(client, snap):
                     d.setdefault("brokerage_authorization", auth_id)
                     out.append(d)
                 except Exception:
+                    complete = False
                     continue
-    return out
+            else:
+                complete = False
+    return out, complete
 
 
 def _institution_slug_from(acc) -> str:
@@ -1885,7 +2110,11 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         user_id=user_id,
         snaptrade_account_id=snaptrade_account_id,
         account_name=account_name,
+        account_mask=acc_row.get("account_number_masked"),
+        broker_label=acc_row.get("broker_slug"),
+        institution_account_id=acc_row.get("institution_account_id"),
         snaptrade_connection_id=acc_row.get("brokerage_authorization_id"),
+        preferred_tenant_id=acc_row.get("tenant_id"),
     )
 
     # AUTHORITATIVE disabled-connection gate — run FIRST, every sync.
@@ -1924,6 +2153,22 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
+    summary_institution_account_id = (
+        str(account_summary.get("institution_account_id") or "").strip()
+        if isinstance(account_summary, dict)
+        else ""
+    )
+    if (
+        summary_institution_account_id
+        and summary_institution_account_id
+        != (acc_row.get("institution_account_id") or "").strip()
+    ):
+        record_snaptrade_account_identity(
+            user_id,
+            snaptrade_account_id,
+            tenant_id=tenant_id,
+            institution_account_id=summary_institution_account_id,
+        )
 
     # BACKSTOP for the "enabled-but-stalled" failure mode the disabled flag
     # misses. SnapTrade can keep returning HTTP 200 from its last-cached
@@ -2666,6 +2911,9 @@ _FRESHNESS_LAG_DAYS = 1
 
 
 def _snaptrade_tenant_id_for_account(acc_row):
+    mapped = (acc_row.get("tenant_id") or "").strip()
+    if mapped:
+        return mapped
     aid = (acc_row.get("snaptrade_account_id") or "").strip()
     if not aid:
         return None
@@ -2751,9 +2999,9 @@ def post_close_broker_tenant_ids(user_id, *, now=None):
     section for everyone else), we return the SET of tenant_ids that ARE
     post-close so the caller can scope the query to exactly those accounts.
     Accounts that aren't post-close are dropped from the aggregate; healthy
-    post-close accounts still render. ``tenant_id`` is ``snaptrade:<uuid>``
-    where the uuid is the account's ``snaptrade_account_id`` (the after-hours
-    query is tenant-keyed, so scoping by tenant_id is exact).
+    post-close accounts still render. The mapped ``tenant_id`` may retain an
+    earlier SnapTrade account UUID after a lifecycle reconnect, so use the
+    persisted mapping rather than rebuilding it from the current transport ID.
 
     Returns an EMPTY set off-hours, on weekends, and on cold start / missing
     timestamps — which the caller treats as "hide the section"."""
@@ -2785,13 +3033,9 @@ def post_close_broker_tenant_ids(user_id, *, now=None):
         s = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=ZoneInfo("UTC"))
         if s.astimezone(et) < close_et:
             continue
-        acct_id = (r.get("snaptrade_account_id") or "").strip()
-        if not acct_id:
-            continue
-        try:
-            out.add(build_tenant_id(SNAPTRADE_BROKER_SLUG, acct_id))
-        except ValueError:
-            continue
+        tenant_id = _snaptrade_tenant_id_for_account(r)
+        if tenant_id:
+            out.add(tenant_id)
     return out
 
 
