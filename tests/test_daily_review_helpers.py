@@ -88,10 +88,10 @@ class TestAnnualizedPct:
         assert ANNUALIZED_MIN_DAYS >= 14
 
 
-def test_overview_option_cash_queries_use_canonical_staging_actions():
+def test_overview_option_capital_uses_opening_cash_flows_only():
     """stg_history never emits the retired ``option_buy``/``option_sell``
-    labels. Using them silently zeros option capital on every scorecard and
-    suppresses the first-week income/directional fact.
+    labels. Capital is deployed when a contract opens; including closing
+    cash flows double-counts completed round trips and understates returns.
     """
     from app.weekly_review import (
         OVERVIEW_STYLE_QUERY,
@@ -100,14 +100,10 @@ def test_overview_option_cash_queries_use_canonical_staging_actions():
 
     assert "action='option_buy'" not in POSITION_ATTRIBUTION_QUERY
     assert "action='option_sell'" not in POSITION_ATTRIBUTION_QUERY
-    assert (
-        "action IN ('option_buy_to_open', 'option_buy_to_close')"
-        in POSITION_ATTRIBUTION_QUERY
-    )
-    assert (
-        "action IN ('option_sell_to_open', 'option_sell_to_close')"
-        in POSITION_ATTRIBUTION_QUERY
-    )
+    assert "action = 'option_buy_to_open'" in POSITION_ATTRIBUTION_QUERY
+    assert "action = 'option_sell_to_open'" in POSITION_ATTRIBUTION_QUERY
+    assert "option_buy_to_close" not in POSITION_ATTRIBUTION_QUERY
+    assert "option_sell_to_close" not in POSITION_ATTRIBUTION_QUERY
     assert "action = 'option_buy_to_open'" in OVERVIEW_STYLE_QUERY
     assert "action = 'option_sell_to_open'" in OVERVIEW_STYLE_QUERY
 

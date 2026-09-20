@@ -513,7 +513,9 @@ ORDER BY e.next_earnings_date, e.symbol
 # Capital deployed (the denominator of the annualized return) is the sum
 # of:
 #   • equity buy cash      — abs(amount) on stg_history.action='equity_buy'
-#   • option buy cash      — abs(amount) on canonical buy-to-open/close rows
+#   • option opening cash  — abs(amount) on buy-to-open / sell-to-open rows
+#                            (closing cash settles P&L; it is not newly
+#                            deployed capital)
 #   • current equity cost  — broker snapshot cost_basis on Equity rows
 #                            still held (covers transferred-in lots that
 #                            don't have a buy row in stg_history)
@@ -584,9 +586,9 @@ per_sym_capital AS (
     SELECT
         tenant_id, account, user_id, UPPER(TRIM(underlying_symbol)) AS symbol,
         SUM(CASE WHEN action='equity_buy' THEN ABS(amount) ELSE 0 END) AS equity_capital,
-        SUM(CASE WHEN action IN ('option_buy_to_open', 'option_buy_to_close')
+        SUM(CASE WHEN action = 'option_buy_to_open'
                  THEN ABS(amount) ELSE 0 END) AS option_capital_paid,
-        SUM(CASE WHEN action IN ('option_sell_to_open', 'option_sell_to_close')
+        SUM(CASE WHEN action = 'option_sell_to_open'
                  THEN ABS(amount) ELSE 0 END) AS option_premium_collected
     FROM (
         SELECT tenant_id, account, user_id, underlying_symbol, action, amount
