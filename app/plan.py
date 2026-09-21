@@ -339,6 +339,64 @@ def trial_card_context(user_id, now=None):
     return dict(_TRIAL_CARD_DEFAULT)
 
 
+def pricing_story(trial_card):
+    """Headline for /pricing that matches this viewer's actual plan.
+
+    Logged-out visitors and trials that have not started share the public
+    30-day story. A grandfathered beta user must not also be told the
+    mirror freezes on day 30. The early-broker Checkout trial is a
+    separate subscribe offer (``subscribe_offer``), not this headline.
+    """
+    badge = (trial_card or {}).get("badge")
+    note = (trial_card or {}).get("note") or ""
+    freeze_bullet = (
+        "After day 30, everything stays readable \u2014 daily updates pause until you subscribe"
+    )
+    if badge == "Your plan":
+        return {
+            "title": "Grandfathered beta \u2014 free, no expiry.",
+            "lead": (
+                "You were here early, so the mirror keeps updating at no charge. "
+                "Subscribing is optional."
+            ),
+            "freeze_bullet": "Your mirror keeps updating. Subscribing is optional.",
+            "show_freeze_explainer": False,
+        }
+    if badge == "Your current plan":
+        return {
+            "title": note or "Full access during your 30 days.",
+            "lead": (
+                "No credit card during the trial. When it ends, every page stays "
+                "readable and daily updates pause until you subscribe."
+            ),
+            "freeze_bullet": freeze_bullet,
+            "show_freeze_explainer": True,
+        }
+    if badge == "Included":
+        return {
+            "title": "You're subscribed to Pro.",
+            "lead": "The mirror stays live. Change the card or cancel in the billing portal.",
+            "freeze_bullet": "Daily updates continue with Pro.",
+            "show_freeze_explainer": False,
+        }
+    if badge == "Trial ended":
+        return {
+            "title": "Your mirror is readable. Daily updates are paused.",
+            "lead": "Subscribe to pick the record back up. History stays put either way.",
+            "freeze_bullet": "Everything stays readable. Subscribe to resume daily updates.",
+            "show_freeze_explainer": True,
+        }
+    return {
+        "title": "Every feature, free for 30 days. No credit card.",
+        "lead": (
+            "Connect a broker and get your full trading profile in minutes. "
+            "Your data stays readable forever \u2014 the subscription is for keeping the mirror live."
+        ),
+        "freeze_bullet": freeze_bullet,
+        "show_freeze_explainer": True,
+    }
+
+
 def plan_block_writes(action: str = "this action"):
     """Short-circuit data-write POST handlers when the signed-in user's trial
     has lapsed. Mirrors ``demo_block_writes`` in app/utils.py: returns a

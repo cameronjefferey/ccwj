@@ -77,6 +77,31 @@ def trial_days() -> int:
     return n if n > 0 else 0
 
 
+def subscribe_offer_sentence(days) -> str | None:
+    """The one sentence every subscribe surface uses for this checkout trial.
+
+    Checkout applies ``trial_period_days``. Billing, pricing, and the
+    SnapTrade note must quote that same clock — not the 30-day no-card
+    reverse trial, which is a different offer.
+    """
+    try:
+        n = int(days)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    months = n // 30
+    if months >= 1 and n % 30 == 0:
+        unit = "month" if months == 1 else "months"
+        span = f"{months} {unit}"
+    else:
+        unit = "day" if n == 1 else "days"
+        span = f"{n} {unit}"
+    return (
+        f"If you subscribe, {span} of Pro is included before the first charge."
+    )
+
+
 def pro_trial_days_for_user(user_id) -> int | None:
     """Checkout ``trial_period_days`` for this user, or None."""
     note = early_broker_notice_for_user(user_id)
@@ -84,6 +109,18 @@ def pro_trial_days_for_user(user_id) -> int | None:
         return None
     days = note.get("trial_days")
     return int(days) if days else None
+
+
+def subscribe_offer_for_user(user_id, *, prior_subscription_status=None) -> str | None:
+    """Offer copy, or None when Checkout will not attach a trial.
+
+    A prior Pro subscription status is the same gate as
+    ``_with_early_broker_trial``: cancel and re-checkout must not be
+    promised another free stretch the session will not grant.
+    """
+    if str(prior_subscription_status or "").strip():
+        return None
+    return subscribe_offer_sentence(pro_trial_days_for_user(user_id))
 
 
 def notice_from_accounts(rows, *, promo=None) -> dict | None:
@@ -100,6 +137,7 @@ def notice_from_accounts(rows, *, promo=None) -> dict | None:
         "promo_code": (code or "").strip() or None,
         "trial_days": days or None,
         "trial_months": (days // 30) if days else None,
+        "offer": subscribe_offer_sentence(days),
     }
 
 

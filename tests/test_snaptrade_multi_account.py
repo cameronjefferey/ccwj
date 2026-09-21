@@ -1043,20 +1043,22 @@ def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
         {"holdings_last_successful_sync": datetime(2026, 8, 27, 18, 0, 0)},
         {"holdings_last_successful_sync": None},
     ])
-    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
     assert stale_days == 0
+    assert oldest is None
 
 
-def test_broker_data_freshness_same_session_keeps_earlier_pull(monkeypatch):
-    """Accounts that all pulled this session still report the earlier one."""
+def test_broker_data_freshness_same_session_names_oldest_account(monkeypatch):
+    """The headline is the newest pull. A one-day laggard is labeled, not the date."""
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
         {"holdings_last_successful_sync": datetime(2026, 8, 30, 20, 0, 0)},
     ])
-    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
-    assert as_of == date(2026, 8, 30)
-    assert stale_days == 1
+    as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    assert as_of == date(2026, 8, 31)
+    assert stale_days == 0
+    assert oldest == date(2026, 8, 30)
 
 
 def test_broker_data_freshness_hides_when_scope_missing_stamps(monkeypatch):
@@ -1075,7 +1077,7 @@ def test_broker_data_freshness_hides_when_scope_missing_stamps(monkeypatch):
             "snaptrade:28a79f2e-2232-42ae-8756-8facda9e23fd",
             "snaptrade:cf60f583-9ba6-4902-baf9-be9b02fe2a87",
         ],
-    ) == (None, None)
+    ) == (None, None, None)
 
 
 def test_broker_data_freshness_skips_broken_connections(monkeypatch):
@@ -1088,9 +1090,10 @@ def test_broker_data_freshness_skips_broken_connections(monkeypatch):
         },
         {"holdings_last_successful_sync": datetime(2026, 6, 21, 16, 0, 0)},
     ])
-    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 6, 22))
+    as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 6, 22))
     assert as_of == date(2026, 6, 21)
     assert stale_days == 1
+    assert oldest is None
 
 
 def test_broker_data_freshness_uses_et_session_date(monkeypatch):
@@ -1099,9 +1102,10 @@ def test_broker_data_freshness_uses_et_session_date(monkeypatch):
         {"holdings_last_successful_sync": datetime(
             2026, 9, 1, 1, 0, 0, tzinfo=ZoneInfo("UTC"))},
     ])
-    as_of, stale_days = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
+    as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
     assert stale_days == 0
+    assert oldest is None
 
 
 def test_broker_data_freshness_none_when_no_timestamps(monkeypatch):
@@ -1109,9 +1113,9 @@ def test_broker_data_freshness_none_when_no_timestamps(monkeypatch):
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": None},
     ])
-    assert _snap.broker_data_freshness(99, today=date(2026, 6, 22)) == (None, None)
+    assert _snap.broker_data_freshness(99, today=date(2026, 6, 22)) == (None, None, None)
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [])
-    assert _snap.broker_data_freshness(99) == (None, None)
+    assert _snap.broker_data_freshness(99) == (None, None, None)
 
 
 _ET = ZoneInfo("America/New_York")

@@ -16,6 +16,17 @@
 (function () {
   "use strict";
 
+  /* The nav hint is ⌘K in the HTML. Non-Mac browsers still listen for
+     Ctrl+K; show that chord so the label matches the key that works. */
+  var platform = navigator.platform || "";
+  var ua = navigator.userAgent || "";
+  var mac = /Mac|iPhone|iPad|iPod/.test(platform) || /Mac OS/.test(ua);
+  if (!mac) {
+    document.querySelectorAll(".ht-search-btn kbd").forEach(function (el) {
+      el.textContent = "Ctrl+K";
+    });
+  }
+
   /* ── 2. Progress bar ─────────────────────────────────────────── */
   var bar = document.createElement("div");
   bar.id = "ht-progress";
