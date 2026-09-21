@@ -436,6 +436,24 @@ def contact():
     return render_template("contact.html", title="Contact")
 
 
+@app.route("/docs")
+@app.route("/docs/")
+def docs_redirect():
+    """No public docs site. FAQ is the help surface visitors already have."""
+    return redirect(url_for("faq"), code=301)
+
+
+@app.route("/blog")
+@app.route("/blog/")
+def blog_redirect():
+    """No public blog. Send the bookmark to the landing page.
+
+    ``url_for('index')`` builds ``/index`` (the alias registered first).
+    ``/`` is the canonical home URL.
+    """
+    return redirect("/", code=301)
+
+
 @app.route("/sitemap.xml")
 def sitemap():
     """Simple sitemap for SEO."""
@@ -454,6 +472,12 @@ def sitemap():
         xml += f"  <url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>\n"
     xml += "</urlset>"
     return Response(xml, mimetype="application/xml")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Browsers request /favicon.ico even when an SVG icon is linked."""
+    return app.send_static_file("favicon.ico")
 
 
 @app.route("/sw.js")

@@ -1,4 +1,4 @@
-"""Generate PWA / home-screen icons from the favicon.svg design.
+"""Generate PWA / home-screen icons and favicon.ico from the favicon.svg design.
 
 Reproduces the mark (navy diagonal gradient, rounded corners, white
 chart-line zigzag) as PNGs at the sizes the web app manifest and iOS
@@ -42,7 +42,7 @@ def _rounded_mask(size, radius):
     return mask
 
 
-def make_icon(size, *, content_scale=1.0, rounded=True, path):
+def render_icon(size, *, content_scale=1.0, rounded=True):
     """content_scale < 1 shrinks the mark toward the center (maskable
     icons need the mark inside the ~80% safe zone)."""
     img = _gradient(size)
@@ -65,10 +65,15 @@ def make_icon(size, *, content_scale=1.0, rounded=True, path):
     if rounded:
         out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         out.paste(img, (0, 0), _rounded_mask(size, round(size * 6 / 32)))
-        out.save(path)
-    else:
-        img.save(path)
+        return out
+    return img
+
+
+def make_icon(size, *, content_scale=1.0, rounded=True, path):
+    img = render_icon(size, content_scale=content_scale, rounded=rounded)
+    img.save(path)
     print(f"wrote {path}")
+    return img
 
 
 def main():
@@ -81,6 +86,15 @@ def main():
     # iOS home screen: opaque, no rounding (iOS applies its own).
     make_icon(180, content_scale=0.78, rounded=False,
               path=OUT / "apple-touch-icon.png")
+    # Browsers request /favicon.ico from the site root regardless of the
+    # SVG <link>. Multi-size so 16px tabs and 32px bookmarks stay sharp.
+    static = OUT.parent
+    render_icon(48, rounded=True).save(
+        static / "favicon.ico",
+        format="ICO",
+        sizes=[(16, 16), (32, 32), (48, 48)],
+    )
+    print(f"wrote {static / 'favicon.ico'}")
 
 
 if __name__ == "__main__":
