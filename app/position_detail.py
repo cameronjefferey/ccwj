@@ -1343,6 +1343,7 @@ def position_detail(symbol):
     except Exception as exc:
         return render_template(
             "position_detail.html",
+            title=symbol,
             symbol=symbol,
             error=str(exc),
             first_visit=False,
@@ -2684,6 +2685,7 @@ def position_detail(symbol):
     _render_t0 = time.perf_counter()
     resp = make_response(render_template(
         "position_detail.html",
+        title=symbol,
         symbol=symbol,
         kpis=kpis,
         overall_status=overall_status,

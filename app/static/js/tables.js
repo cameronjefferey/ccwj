@@ -116,6 +116,59 @@
     pinned.forEach(function (r) { tbody.appendChild(r); });
   }
 
+  /* In-page table search. Opt in with:
+   *   <input data-ht-search="#tableId" data-ht-empty="#emptyId" data-ht-pager="#pagerId">
+   * An impossible query hides every row. The empty-state node is shown,
+   * and a pager's "Showing 1-25 of 26" label is zeroed so it doesn't
+   * claim rows that the filter removed. */
+  function bindTableSearch(input) {
+    var tableSel = input.getAttribute("data-ht-search");
+    var table = tableSel ? document.querySelector(tableSel) : null;
+    if (!table || !table.tBodies.length || input.dataset.htSearchBound) return;
+    input.dataset.htSearchBound = "1";
+    var emptySel = input.getAttribute("data-ht-empty");
+    var empty = emptySel ? document.querySelector(emptySel) : null;
+    var pagerSel = input.getAttribute("data-ht-pager");
+    var pager = pagerSel ? document.querySelector(pagerSel) : null;
+    var label = pager ? pager.querySelector("[data-page-label]") : null;
+    var pages = pager ? pager.querySelector(".pagination") : null;
+    var unfiltered = label ? (label.getAttribute("data-unfiltered") || label.textContent) : "";
+
+    input.addEventListener("input", function () {
+      var q = this.value.toLowerCase().trim();
+      var rows = Array.prototype.filter.call(table.tBodies[0].rows, function (row) {
+        return !row.classList.contains("ht-search-empty");
+      });
+      var shown = 0;
+      rows.forEach(function (row) {
+        var match = !q || row.textContent.toLowerCase().indexOf(q) !== -1;
+        row.style.display = match ? "" : "none";
+        if (match) shown += 1;
+      });
+      if (empty) empty.classList.toggle("d-none", !(q && shown === 0));
+      if (!label) return;
+      if (!q || shown === rows.length) {
+        label.textContent = unfiltered;
+        if (pages) pages.classList.remove("d-none");
+        return;
+      }
+      if (pages) pages.classList.toggle("d-none", shown === 0);
+      label.textContent = shown === 0
+        ? "Showing 0"
+        : ("Showing " + shown + " of " + rows.length + " on this page");
+    });
+  }
+
+  function bindTableSearches() {
+    document.querySelectorAll("input[data-ht-search]").forEach(bindTableSearch);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindTableSearches);
+  } else {
+    bindTableSearches();
+  }
+
   document.addEventListener("click", function (e) {
     // ---- Column sort ---------------------------------------------------
     var th = e.target.closest("th.sortable");

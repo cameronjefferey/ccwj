@@ -301,6 +301,7 @@ DEFAULT_QUERY = """
 """
 
 ERROR_DEFAULTS = dict(
+    title="Positions",
     error="",
     rows=[],
     symbol_rows=[],
@@ -909,6 +910,7 @@ def positions():
 
     return render_template(
         "positions.html",
+        title="Positions",
         rows=rows,
         symbol_rows=symbol_rows,
         kpis=kpis,

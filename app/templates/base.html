@@ -158,20 +158,50 @@
         }
         .navbar .btn.btn-auth-nav:active { transform: translateY(0); }
 
-        /* Floating feedback button (closed-beta channel for testers). */
+        /* Floating feedback button (closed-beta channel for testers).
+           Resting size is an icon parked in a right-hand gutter so it
+           does not cover table search fields, pagination, or KPI cards
+           at 1280×800. The label expands on hover/focus. Below the lg
+           breakpoint there is no gutter; the page reserves bottom
+           padding instead so the last control can scroll clear. */
         .ht-feedback-fab {
-            position: fixed; right: 18px; bottom: 18px; z-index: 1080;
+            position: fixed; right: 16px; bottom: 16px; z-index: 1040;
             background: #1a1a2e; color: #fff;
-            padding: .55rem 1rem; border-radius: 999px;
+            width: 2.75rem; height: 2.75rem; padding: 0;
+            border-radius: 999px;
             border: 0; font-weight: 600; font-size: .85rem;
             box-shadow: 0 4px 14px rgba(0,0,0,.18);
             cursor: pointer; line-height: 1;
-            display: inline-flex; align-items: center; gap: .45rem;
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 0; overflow: hidden; white-space: nowrap;
         }
-        .ht-feedback-fab:hover { background: #0f3460; color: #fff; }
+        .ht-feedback-fab .ht-feedback-label {
+            position: absolute; width: 1px; height: 1px; padding: 0;
+            margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0);
+            white-space: nowrap; border: 0;
+        }
+        .ht-feedback-fab:hover,
+        .ht-feedback-fab:focus-visible {
+            width: auto; height: auto;
+            padding: .55rem .95rem; gap: .45rem;
+            background: #0f3460; color: #fff; overflow: visible;
+        }
+        .ht-feedback-fab:hover .ht-feedback-label,
+        .ht-feedback-fab:focus-visible .ht-feedback-label {
+            position: static; width: auto; height: auto; margin: 0;
+            overflow: visible; clip: auto;
+        }
         .ht-feedback-fab:focus-visible { outline: 3px solid rgba(15,52,96,.35); outline-offset: 2px; }
-        @media (max-width: 540px) {
-            .ht-feedback-fab { right: 12px; bottom: 12px; padding: .45rem .85rem; font-size: .8rem; }
+        @media (min-width: 992px) {
+            /* Bootstrap spacing utilities are !important, so the gutter
+               has to be too — otherwise px-md-4 wins and the button sits
+               on top of the last column. */
+            .ht-page.container-fluid { padding-right: 5.25rem !important; }
+            footer.mt-5 { padding-right: 5.25rem; }
+        }
+        @media (max-width: 991.98px) {
+            .ht-feedback-fab { right: 12px; bottom: 12px; }
+            .ht-page.container-fluid { padding-bottom: 4.75rem !important; }
         }
 
         /* Always-on broker data-freshness strip (under the navbar). Subtle
@@ -959,7 +989,7 @@
         {% endwith %}
     </div>
 
-    <div class="container-fluid px-2 px-md-4">
+    <div class="container-fluid px-2 px-md-4 ht-page">
         {# Confirm-your-email nudge. Set by `_inject_email_verification_needed`
            in app/auth.py from users.email_verified_at. #}
         {% if email_unverified %}
@@ -1124,9 +1154,9 @@
        reportable. Server-side route is rate-limited; this widget itself
        degrades to a normal form post if JS is off. #}
     <button type="button" class="ht-feedback-fab" data-bs-toggle="modal" data-bs-target="#htFeedbackModal"
-            aria-label="Send feedback">
+            aria-label="Send feedback" title="Send feedback">
         <span aria-hidden="true">💬</span>
-        <span>Send feedback</span>
+        <span class="ht-feedback-label">Send feedback</span>
     </button>
 
     <div class="modal fade" id="htFeedbackModal" tabindex="-1" aria-labelledby="htFeedbackModalLabel" aria-hidden="true">
