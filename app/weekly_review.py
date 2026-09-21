@@ -4645,11 +4645,20 @@ def overview_below():
             tenant_filter, today, this_week,
             trades_as_of=session_date, moves_as_of=session_date)
         # positions is a core key; include it here so expiring-options on
-        # the watch list can rebuild (L2 hit from the core request).
-        keys = set(OVERVIEW_BELOW_KEYS) | {"positions", "today_trades"}
+        # the watch list can rebuild. The mover frames are also core keys and
+        # prove the latest official close that is actually available. They
+        # must be present here so the deferred fragment uses the same
+        # movers-driven session rewind as the hero instead of letting the
+        # heatmap / traded-session highlights advance to a newer nominal
+        # weekday. These are L2 hits from the core request.
+        keys = set(OVERVIEW_BELOW_KEYS) | {
+            "positions", "today_trades",
+            "today_moves", "today_options_moves",
+        }
         batch = _bq_parallel(client, _slice_daily_review_batch(full, keys))
         for k in ("calendar", "weekly_trades", "attribution", "exit_verdicts",
-                  "positions", "today_trades"):
+                  "positions", "today_trades", "today_moves",
+                  "today_options_moves"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -4667,7 +4676,22 @@ def overview_below():
         except Exception as e:
             app.logger.warning("Overview below positions failed: %s", e)
 
-        snap_cutoff = session_date
+        snap_cutoff, rewound_trade_query = (
+            _review_session_cutoff_and_trade_query(
+                tenant_filter,
+                today,
+                market_session,
+                session_date,
+                batch,
+                et_today=market_today,
+            )
+        )
+        if rewound_trade_query is not None:
+            rewound = _bq_parallel(
+                client, {"today_trades": rewound_trade_query})
+            batch["today_trades"] = _filter_df_by_tenant_ids(
+                rewound.get("today_trades", pd.DataFrame()), tenant_ids)
+        context["review_date"] = snap_cutoff
         _apply_overview_below(
             context, batch,
             today=today, this_week=this_week,
