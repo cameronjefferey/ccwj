@@ -167,10 +167,16 @@
         .snap-cell:nth-child(odd) { border-right: 1px solid #f0f0f0; padding-right: .75rem; margin-right: .75rem; }
         .snap-cell:nth-child(5) { border-right: none; }
     }
+    /* Stretch so each row's border-bottom is one continuous rule.
+       Baseline alignment left cells at different heights (a 1-line
+       Value next to a $ + % pair), so the lines did not line up.
+       Numeric columns are right-aligned + tabular-nums so dollar
+       amounts of different widths share a common edge. */
     .snapshot-table {
         display: grid;
-        grid-template-columns: minmax(140px, 1.4fr) repeat(4, 1fr);
-        gap: 0; align-items: baseline;
+        grid-template-columns: minmax(140px, 1.4fr) repeat(4, minmax(0, 1fr));
+        gap: 0;
+        align-items: stretch;
     }
     .snapshot-table-head, .snapshot-table-row { display: contents; }
     .snapshot-table-head > div {
@@ -182,6 +188,10 @@
     .snapshot-table-row > div {
         padding: .65rem .6rem .65rem 0;
         border-bottom: 1px solid var(--ht-line);
+    }
+    .snapshot-table-head > div:not(:first-child),
+    .snapshot-table-row > div:not(:first-child) {
+        text-align: right;
     }
     .snapshot-table-row.total > div {
         border-top: 2px solid var(--ht-line);
@@ -203,9 +213,15 @@
     .acct-rename:hover { color: var(--ht-ink); text-decoration: underline; }
     .snapshot-table .acct-meta { font-size: .68rem; color: var(--ht-muted); margin-top: .1rem; }
     .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
-    .snapshot-table .snap-cell-val { font-weight: 700; font-size: .98rem; line-height: 1.15; }
-    .snapshot-table-row.total .snap-cell-val { font-size: 1.1rem; }
-    .snapshot-table .snap-cell-pct { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; }
+    .snapshot-table .snap-cell-val {
+        font-weight: 700; font-size: .98rem; line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+    }
+    /* Same size as other rows so the Total dollars share the column edge. */
+    .snapshot-table .snap-cell-pct {
+        font-size: .72rem; color: var(--ht-muted); margin-top: .15rem;
+        font-variant-numeric: tabular-nums;
+    }
     .snapshot-table .snap-cell-dash { color: var(--ht-faint); font-weight: 600; }
     .snapshot-table-row.benchmark > div {
         border-bottom: none;
@@ -217,7 +233,7 @@
     .snap-bench { font-size: .68rem; color: var(--ht-faint); margin-top: .25rem; font-style: italic; }
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
-        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, 1fr); }
+        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, minmax(0, 1fr)); }
         .snapshot-table .snap-col-month { display: none; }
     }
     @media (max-width: 480px) {
@@ -229,7 +245,6 @@
         .snapshot-table-row > div { padding-right: .35rem; }
         .snapshot-table .acct-name { font-size: .82rem; }
         .snapshot-table .snap-cell-val { font-size: .88rem; }
-        .snapshot-table-row.total .snap-cell-val { font-size: .95rem; }
     }
 
     /* ── Today's movers ── */
