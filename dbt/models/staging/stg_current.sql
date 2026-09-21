@@ -182,13 +182,33 @@ cleaned as (
     from cleaned_raw
 ),
 
+-- Pair tickers (BTC-USD) collapse onto the bare crypto symbol history
+-- uses after the same rewrite in stg_history. Options keep OSI symbols.
+crypto_norm as (
+    select
+        c.* except (trade_symbol, underlying_symbol),
+        case
+            when c.instrument_type in ('Call', 'Put') then c.trade_symbol
+            else coalesce(ct.symbol, c.trade_symbol)
+        end as trade_symbol,
+        coalesce(cu.symbol, c.underlying_symbol) as underlying_symbol
+    from cleaned c
+    left join {{ ref('stg_crypto_symbols') }} cu
+        on cu.symbol = {{ crypto_pair_base_expr('c.underlying_symbol') }}
+       and cu.symbol != ''
+    left join {{ ref('stg_crypto_symbols') }} ct
+        on c.instrument_type not in ('Call', 'Put')
+       and ct.symbol = {{ crypto_pair_base_expr('c.trade_symbol') }}
+       and ct.symbol != ''
+),
+
 -- Belt-and-suspenders dedup on (tenant_id, trade_symbol). Under v2
 -- partition is on tenant_id (the structural tenant key) not on
 -- (account, user_id) — the same physical broker account is one
 -- tenant_id and dupes on it are real dupes.
 deduped as (
     select *
-    from cleaned
+    from crypto_norm
     qualify row_number() over (
         partition by coalesce(tenant_id, account), trade_symbol
         order by case when market_value is not null then 0 else 1 end,

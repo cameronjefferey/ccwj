@@ -131,19 +131,19 @@
             <tbody>
                 <tr>
                     <td class="text-muted">Hero total return</td>
-                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.hero_total_return) }}</td>
+                    <td class="text-end font-monospace">{{ money(invariant_warning.hero_total_return) }}</td>
                 </tr>
                 <tr>
                     <td class="text-muted">Breakdown by Type total</td>
-                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.breakdown_by_type_total) }}</td>
+                    <td class="text-end font-monospace">{{ money(invariant_warning.breakdown_by_type_total) }}</td>
                 </tr>
                 <tr>
                     <td class="text-muted">Chart terminal value</td>
-                    <td class="text-end font-monospace">${{ '{:,.2f}'.format(invariant_warning.chart_terminal) }}</td>
+                    <td class="text-end font-monospace">{{ money(invariant_warning.chart_terminal) }}</td>
                 </tr>
                 <tr>
                     <td class="fw-bold">Worst gap</td>
-                    <td class="text-end font-monospace fw-bold">${{ '{:,.2f}'.format(invariant_warning.worst_gap) }}</td>
+                    <td class="text-end font-monospace fw-bold">{{ money(invariant_warning.worst_gap) }}</td>
                 </tr>
             </tbody>
         </table>
@@ -166,10 +166,10 @@
                 {% if opening_balances|length > 1 and ob.account %}<strong>{{ ob.account }}:</strong> {% endif %}
                 {{ '{:,.2f}'.format(ob.qty).rstrip('0').rstrip('.') }} shares were already held when your
                 history begins{% if ob.first_trade_date %} ({{ ob.first_trade_date }}){% endif %}.
-                Opening value {% if ob.price_source == 'broker_cost_basis' %}${{ '{:,.0f}'.format(ob.est_cost) }},
+                Opening value {% if ob.price_source == 'broker_cost_basis' %}{{ money(ob.est_cost, 0) }},
                 taken from your broker's reported cost basis.{% elif ob.price_source == 'market_close' %}estimated
-                at ${{ '{:,.0f}'.format(ob.est_cost) }} from the market close just before your first imported
-                trade.{% else %}estimated at ${{ '{:,.0f}'.format(ob.est_cost) }} from your first imported
+                at {{ money(ob.est_cost, 0) }} from the market close just before your first imported
+                trade.{% else %}estimated at {{ money(ob.est_cost, 0) }} from your first imported
                 fill price.{% endif %}
             </div>
             {% endfor %}
@@ -226,9 +226,9 @@
                 {% if kpis.first_trade and kpis.last_trade %}
                 <span class="text-white-50 small">
                     {% if kpis.first_trade[:10] == kpis.last_trade[:10] %}
-                    as of {{ kpis.first_trade[:10] }}
+                    as of {{ kpis.first_trade|human_date }}
                     {% else %}
-                    {{ kpis.first_trade[:10] }} &mdash; {{ kpis.last_trade[:10] }}
+                    {{ kpis.first_trade|human_date }} &mdash; {{ kpis.last_trade|human_date }}
                     {% endif %}
                 </span>
                 {% endif %}
@@ -240,7 +240,7 @@
             <div class="small text-white-50">Total return</div>
             <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
             <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
-                ${{ "{:,.2f}".format(kpis.total_return) }}
+                {{ money(kpis.total_return) }}
             </div>
         </div>
         {% endif %}
@@ -280,9 +280,9 @@
         is open.
         {% endif %}
         {% if kpis.unrealized_pnl >= 0 %}
-        You’re <strong class="text-positive">up ${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> unrealized
+        You’re <strong class="text-positive">up {{ money(kpis.unrealized_pnl) }}</strong> unrealized
         {% else %}
-        You’re <strong class="text-negative">down ${{ "{:,.2f}".format(-kpis.unrealized_pnl) }}</strong> unrealized
+        You’re <strong class="text-negative">down {{ money(-kpis.unrealized_pnl) }}</strong> unrealized
         {% endif %}
         (mark-to-market on what’s still open).
     </p>
@@ -291,9 +291,9 @@
         Across everything you’ve done in <strong>{{ symbol }}</strong>
         {%- if kpis.first_trade and kpis.last_trade -%}
         {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
-        , with activity on <strong>{{ kpis.first_trade[:10] }}</strong>
+        , with activity on <strong>{{ kpis.first_trade|human_date }}</strong>
         {%- else -%}
-        , from <strong>{{ kpis.first_trade[:10] }}</strong> through <strong>{{ kpis.last_trade[:10] }}</strong>
+        , from <strong>{{ kpis.first_trade|human_date }}</strong> through <strong>{{ kpis.last_trade|human_date }}</strong>
         {%- endif -%}
         {%- endif -%}
         {%- if kpis.total_trades > 0 -%}
@@ -305,7 +305,7 @@
         {%- endif %}
         {% if kpis.avg_days > 0 %}Average time in trade (where we have it): {{ kpis.avg_days|int }} days.{% endif %}
         {% if kpis.premium_collected > 0 %}
-        Premium collected over time: <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong>.
+        Premium collected over time: <strong class="text-positive">{{ money(kpis.premium_collected) }}</strong>.
         {% endif %}
     </p>
     {% else %}
@@ -313,9 +313,9 @@
         Your work in <strong>{{ symbol }}</strong> is fully closed
         {% if kpis.first_trade and kpis.last_trade -%}
         {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
-        (activity on <strong>{{ kpis.first_trade[:10] }}</strong>)
+        (activity on <strong>{{ kpis.first_trade|human_date }}</strong>)
         {%- else -%}
-        (roughly <strong>{{ kpis.first_trade[:10] }}</strong> — <strong>{{ kpis.last_trade[:10] }}</strong>)
+        (roughly <strong>{{ kpis.first_trade|human_date }}</strong> — <strong>{{ kpis.last_trade|human_date }}</strong>)
         {%- endif -%}
         {%- endif %}
         {% if kpis.total_trades > 0 -%}
@@ -323,12 +323,12 @@
         {%- else -%}.
         {%- endif %}
         {% if kpis.total_return >= 0 %}
-        Net result: <strong class="text-positive">${{ "{:,.2f}".format(kpis.total_return) }}</strong> total return.
+        Net result: <strong class="text-positive">{{ money(kpis.total_return) }}</strong> total return.
         {% else %}
-        Net result: <strong class="text-negative">${{ "{:,.2f}".format(-kpis.total_return) }}</strong> loss.
+        Net result: <strong class="text-negative">{{ money(-kpis.total_return) }}</strong> loss.
         {% endif %}
         {% if kpis.premium_collected > 0 %}
-        Premium collected: <strong class="text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</strong>.
+        Premium collected: <strong class="text-positive">{{ money(kpis.premium_collected) }}</strong>.
         {% endif %}
     </p>
     {% endif %}
@@ -349,19 +349,19 @@
 <div class="ht-statbar mb-3">
     <div class="ht-stat">
         <span class="ht-stat-l">Realized P&amp;L</span>
-        <span class="ht-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.2f}".format(kpis.realized_pnl) }}</span>
+        <span class="ht-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.realized_pnl) }}</span>
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Unrealized P&amp;L</span>
-        <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</span>
+        <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.unrealized_pnl) }}</span>
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Premium Collected</span>
-        <span class="ht-stat-v text-positive">${{ "{:,.2f}".format(kpis.premium_collected) }}</span>
+        <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected) }}</span>
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Win Rate</span>
-        <span class="ht-stat-v">{{ "{:.0%}".format(kpis.win_rate) }}</span>
+        <span class="ht-stat-v">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</span>
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Avg Days</span>
@@ -369,7 +369,7 @@
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Dividends</span>
-        <span class="ht-stat-v text-positive">${{ "{:,.2f}".format(kpis.dividend_income) }}</span>
+        <span class="ht-stat-v text-positive">{{ money(kpis.dividend_income) }}</span>
     </div>
 </div>
 
@@ -450,12 +450,12 @@
                         {{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}
                     </span>
                     <span class="pill-pnl {% if s.combined_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        ${{ "{:,.0f}".format(s.combined_pnl) }}
+                        {{ money(s.combined_pnl, 0) }}
                     </span>
                     {% if s.options_only is defined and s.options_only %}
                     <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(options only)</span>
                     {% elif s.options_count > 0 and s.equity_pnl != 0 %}
-                    <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq ${{ "{:,.0f}".format(s.equity_pnl) }} + {{ s.options_count }} opt)</span>
+                    <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq {{ money(s.equity_pnl, 0) }} + {{ s.options_count }} opt)</span>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -628,7 +628,7 @@
                     <div class="story-meta">
                         {% if item.amount %}
                         <span class="story-amt {{ 'text-success' if item.amount > 0 else 'text-danger' }}">
-                            {{ "+" if item.amount > 0 else "" }}${{ "{:,.2f}".format(item.amount) }} cash
+                            {{ "+" if item.amount > 0 else "" }}{{ money(item.amount) }} cash
                         </span>
                         {% endif %}
                         {% if item.events %}
@@ -640,7 +640,7 @@
                                 {% if e.detail %}<span class="story-detail">{{ e.detail }}</span>{% endif %}
                                 {% if e.amount %}
                                 <span class="story-evt-amt {{ 'text-success' if e.amount > 0 else 'text-danger' }}">
-                                    {{ "+" if e.amount > 0 else "" }}${{ "{:,.2f}".format(e.amount) }}
+                                    {{ "+" if e.amount > 0 else "" }}{{ money(e.amount) }}
                                 </span>
                                 {% endif %}
                             </div>
@@ -781,16 +781,16 @@
                 <tr>
                     <td><strong>{{ r.type }}</strong></td>
                     <td class="{{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-bold">
-                        ${{ "{:,.2f}".format(r.total) }}
+                        {{ money(r.total) }}
                     </td>
                     <td class="{{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(r.realized) }}
+                        {{ money(r.realized) }}
                     </td>
                     <td class="{% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                         {% if r.unrealized is none %}
                         &mdash;
                         {% else %}
-                        ${{ "{:,.2f}".format(r.unrealized) }}
+                        {{ money(r.unrealized) }}
                         {% endif %}
                     </td>
                     <td class="text-muted small">
@@ -808,9 +808,21 @@
                 <tr class="border-top">
                     <th>Total</th>
                     <th class="{{ 'text-positive' if bd_total >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(bd_total) }}
+                        {{ money(bd_total) }}
                     </th>
-                    <th colspan="3"></th>
+                    <th class="{{ 'text-positive' if breakdown_totals.realized >= 0 else 'text-negative' }}">
+                        {{ money(breakdown_totals.realized) }}
+                    </th>
+                    <th class="{% if breakdown_totals.unrealized is none %}text-muted{% elif breakdown_totals.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {% if breakdown_totals.unrealized is none %}
+                        &mdash;
+                        {% else %}
+                        {{ money(breakdown_totals.unrealized) }}
+                        {% endif %}
+                    </th>
+                    <th class="text-muted small">
+                        {% if breakdown_totals.count %}{{ breakdown_totals.count }}{% else %}&mdash;{% endif %}
+                    </th>
                 </tr>
             </tfoot>
         </table>
@@ -821,7 +833,7 @@
        Hidden when there's nothing to show. #}
     {% if breakdown_fees_total | default(0) %}
     <p class="text-muted small mt-3 mb-0">
-        This included <strong>${{ "{:,.2f}".format(breakdown_fees_total) }}</strong>
+        This included <strong>{{ money(breakdown_fees_total) }}</strong>
         in broker-reported fees (commissions, contract &amp; regulatory fees) —
         already reflected in Realized above, not an additional cost.
     </p>
@@ -878,22 +890,22 @@
                         {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
                     </td>
                     <td data-val="{{ r.total_pnl }}" class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-bold">
-                        ${{ "{:,.2f}".format(r.total_pnl) }}
+                        {{ money(r.total_pnl) }}
                     </td>
                     <td data-val="{{ r.realized_pnl }}" class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(r.realized_pnl) }}
+                        {{ money(r.realized_pnl) }}
                     </td>
                     <td data-val="{{ r.unrealized_pnl }}" class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(r.unrealized_pnl) }}
+                        {{ money(r.unrealized_pnl) }}
                     </td>
                     <td data-val="{{ r.total_dividend_income or 0 }}" class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
                         {% if (r.total_dividend_income or 0) != 0 %}
-                        ${{ "{:,.2f}".format(r.total_dividend_income) }}
+                        {{ money(r.total_dividend_income) }}
                         {% else %}
                         &mdash;
                         {% endif %}
                     </td>
-                    <td data-val="{{ r.win_rate }}">{{ "{:.0%}".format(r.win_rate) }}</td>
+                    <td data-val="{{ r.win_rate if (r.num_winners or 0) + (r.num_losers or 0) else '' }}">{{ win_rate_label(r.win_rate, r.num_winners, r.num_losers) }}</td>
                     <td data-val="{{ r.num_individual_trades or 0 }}">
                         {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
                         <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
@@ -902,10 +914,10 @@
                         {% endif %}
                     </td>
                     <td data-val="{{ r.avg_pnl_per_trade }}" class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(r.avg_pnl_per_trade) }}
+                        {{ money(r.avg_pnl_per_trade) }}
                     </td>
                     <td data-val="{{ r.avg_days_in_trade }}">{{ "{:,.0f}".format(r.avg_days_in_trade) if r.avg_days_in_trade is not none else '—' }}</td>
-                    <td data-val="{{ r.total_premium_received }}" class="text-positive">${{ "{:,.2f}".format(r.total_premium_received) }}</td>
+                    <td data-val="{{ r.total_premium_received }}" class="text-positive">{{ money(r.total_premium_received) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -958,7 +970,7 @@
                         {% endif %}
                         <td class="text-center" style="background:{{ bg }};color:{{ fg }};padding:.4rem .3rem;line-height:1.3;">
                             <div style="font-weight:700;font-size:.8rem;">
-                                {% if cell.avg_pnl is not none %}${{ "{:,.0f}".format(cell.avg_pnl) }}{% else %}&mdash;{% endif %}
+                                {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
                             </div>
                             <div style="font-size:.6rem;color:{{ fg2 }};">
                                 {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
@@ -1035,16 +1047,16 @@
                     <td><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
-                    <td class="text-muted small">{{ p.instrument_type }}</td>
+                    <td class="text-muted small">{{ p.leg_kind or p.instrument_type }}</td>
                     <td class="text-muted small">{{ p.account_display or (p.account | account_label(p.tenant_id)) }}</td>
-                    <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
-                    <td class="text-nowrap">{{ p.open_date or '' }}</td>
-                    <td class="text-nowrap">{{ p.close_date or '' }}</td>
-                    <td class="text-end text-muted">{% if p.open_date and p.days_held is not none %}{{ p.days_held }}{% endif %}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(p.cost_basis) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(p.market_value) }}</td>
+                    <td class="text-end">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
+                    <td class="text-nowrap">{{ p.open_date|human_date if p.open_date else '—' }}</td>
+                    <td class="text-nowrap">—</td>
+                    <td class="text-end text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
+                    <td class="text-end">{{ money(p.cost_basis) }}</td>
+                    <td class="text-end">{{ money(p.market_value) }}</td>
                     <td class="text-end fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(p.unrealized_pnl) }}
+                        {{ money(p.unrealized_pnl) }}
                     </td>
                     <td class="text-end {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
                         {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
@@ -1054,10 +1066,10 @@
                 {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
                 <tr class="fw-semibold table-light" style="font-size:.8rem;">
                     <td colspan="9">Open Total</td>
-                    <td class="text-end">${{ "{:,.2f}".format(ocost) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(omv) }}</td>
+                    <td class="text-end">{{ money(ocost) }}</td>
+                    <td class="text-end">{{ money(omv) }}</td>
                     <td class="text-end {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(opnl) }}
+                        {{ money(opnl) }}
                     </td>
                     <td></td>
                 </tr>
@@ -1097,17 +1109,17 @@
                     </td>
                     <td class="text-muted small">{{ o.strategy }}</td>
                     <td class="text-muted small">{{ o.account_display or (o.account | account_label(o.tenant_id)) }}</td>
-                    <td class="text-end">{{ o.quantity | int if o.quantity is defined and o.quantity else '' }}</td>
-                    <td class="text-nowrap">{{ o.open_date }}</td>
-                    <td class="text-nowrap">{{ o.close_date }}</td>
-                    <td class="text-end text-muted">{{ o.days_held if o.days_held is not none else '' }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(o.cost) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(o.proceeds) }}</td>
+                    <td class="text-end">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
+                    <td class="text-nowrap">{{ o.open_date|human_date }}</td>
+                    <td class="text-nowrap">{{ o.close_date|human_date }}</td>
+                    <td class="text-end text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
+                    <td class="text-end">{{ money(o.cost) }}</td>
+                    <td class="text-end">{{ money(o.proceeds) }}</td>
                     <td class="text-end fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(o.pnl) }}
+                        {{ money(o.pnl) }}
                     </td>
                     <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
-                        {% if o.return_pct is not none %}{{ o.return_pct }}%{% endif %}
+                        {% if o.return_pct is not none %}{{ o.return_pct }}%{% else %}—{% endif %}
                     </td>
                 </tr>
                 {% if o.raw_trades %}
@@ -1145,7 +1157,7 @@
                                     <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
                                     <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
                                     <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
-                                        ${{ "{:,.2f}".format(t.amount) }}
+                                        {{ money(t.amount) }}
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -1161,20 +1173,20 @@
             <tfoot class="table-light">
                 <tr class="fw-semibold" style="font-size:.8rem;">
                     <td colspan="9">Closed Total</td>
-                    <td class="text-end">${{ "{:,.2f}".format(ccost) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(cproc) }}</td>
+                    <td class="text-end">{{ money(ccost) }}</td>
+                    <td class="text-end">{{ money(cproc) }}</td>
                     <td class="text-end {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(cpnl) }}
+                        {{ money(cpnl) }}
                     </td>
                     <td></td>
                 </tr>
                 {% if current_positions %}
                 <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
                     <td colspan="9">Total Total</td>
-                    <td class="text-end">${{ "{:,.2f}".format(gcost) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(gval) }}</td>
+                    <td class="text-end">{{ money(gcost) }}</td>
+                    <td class="text-end">{{ money(gval) }}</td>
                     <td class="text-end {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
-                        ${{ "{:,.2f}".format(gpnl) }}
+                        {{ money(gpnl) }}
                     </td>
                     <td></td>
                 </tr>
@@ -1239,10 +1251,10 @@
                                 {{ "{:,.0f}".format(t.quantity) }}
                                 {% endif %}
                             </td>
-                            <td data-val="{{ t.price }}">${{ "{:,.2f}".format(t.price) }}</td>
-                            <td data-val="{{ t.fees }}">${{ "{:,.2f}".format(t.fees) }}</td>
+                            <td data-val="{{ t.price }}">{{ money(t.price) }}</td>
+                            <td data-val="{{ t.fees }}">{{ money(t.fees) }}</td>
                             <td data-val="{{ t.amount }}" class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
-                                ${{ "{:,.2f}".format(t.amount) }}
+                                {{ money(t.amount) }}
                             </td>
                         </tr>
                         {% endfor %}

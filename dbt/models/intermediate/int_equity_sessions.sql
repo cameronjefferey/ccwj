@@ -426,11 +426,26 @@ final as (
                     -- realized = sell_proceeds − cost_of_sold_lots
                     -- sell_proceeds = net_cash_flow + total_buy_cost
                     -- cost_of_sold = max(0, total_buy_cost − cb_remaining)
+                    --
+                    -- That subtraction is the cost of shares that LEFT.
+                    -- With zero sells, total_buy_cost − cb is a pricing
+                    -- gap (DRIP marked at the print vs the broker's
+                    -- average cost, or an opening-balance estimate), not
+                    -- a sale. Booking it cut unrealized by the gap
+                    -- (IYW Sara 401k, Sep 2026: legs $38,363.73 vs
+                    -- strategy/list $38,302.28). No-sell open P&L is
+                    -- mv − cb, the same number Position Legs shows.
+                    -- DELL's interim-sell case still subtracts because
+                    -- total_sell_qty > 0.
                     (s.net_cash_flow + s.total_buy_cost)
-                    - greatest(
-                        0,
-                        s.total_buy_cost - coalesce(c.cost_basis, 0)
-                    )
+                    - case
+                        when coalesce(s.total_sell_qty, 0) > 1e-9
+                        then greatest(
+                            0,
+                            s.total_buy_cost - coalesce(c.cost_basis, 0)
+                        )
+                        else 0
+                      end
                     -- unrealized: close-based mv when today's close is
                     -- published (snap to close), else broker mark (intraday)
                     + (case

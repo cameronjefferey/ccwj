@@ -80,6 +80,10 @@
   function sortTable(th) {
     var table = th.closest("table");
     if (!table) return;
+    // Paginated tables sort on the server (full set, then the page).
+    // A header link navigates; sorting the rows already on screen would
+    // hide the real top and bottom of the book.
+    if (table.dataset.serverSort) return;
     var tbody = table.querySelector("tbody");
     if (!tbody) return;
 

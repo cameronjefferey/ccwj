@@ -41,6 +41,102 @@ from app.routes import (
 )
 
 
+# Strategy Detail is paginated. Client-side table sort only reorders the
+# current page, so the worst total on page 2 never reaches page 1.
+# Sort the full aggregate here, then slice.
+_STRATEGY_SORTS = {
+    "account": "str",
+    "strategy": "str",
+    "status": "str",
+    "total_return": "num",
+    "realized": "num",
+    "unrealized": "num",
+    "dividends": "num",
+    "win_rate": "num",
+    "trades": "num",
+    "wl": "num",
+    "avg_pnl": "num",
+    "avg_days": "num",
+    "premium": "num",
+}
+_STRATEGY_SORT_FIELDS = {
+    "total_return": "total_pnl",
+    "realized": "realized_pnl",
+    "unrealized": "unrealized_pnl",
+    "dividends": "total_dividend_income",
+    "win_rate": "win_rate",
+    "trades": "num_individual_trades",
+    "wl": "num_winners",
+    "avg_pnl": "avg_pnl_per_trade",
+    "avg_days": "avg_days_in_trade",
+    "premium": "total_premium_received",
+}
+
+
+def _sort_number(value):
+    if value is None:
+        return 0.0
+    try:
+        if pd.isna(value):
+            return 0.0
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:
+        return 0.0
+    return number
+
+
+def sort_strategy_detail_rows(rows, sort_key, sort_dir):
+    """Sort the full Strategy Detail set. Unknown keys fall back to total return desc."""
+    key = sort_key if sort_key in _STRATEGY_SORTS else "total_return"
+    direction = sort_dir if sort_dir in ("asc", "desc") else "desc"
+
+    def _value(row):
+        if key == "account":
+            primary = str(row.get("account_display") or row.get("account") or "").lower()
+        elif key == "strategy":
+            primary = str(row.get("strategy") or "").lower()
+        elif key == "status":
+            primary = str(row.get("status") or "").lower()
+        else:
+            primary = _sort_number(row.get(_STRATEGY_SORT_FIELDS[key]))
+        return (
+            primary,
+            str(row.get("account_display") or row.get("account") or "").lower(),
+            str(row.get("strategy") or "").lower(),
+        )
+
+    ordered = sorted(rows or [], key=_value, reverse=(direction == "desc"))
+    return ordered, key, direction
+
+
+def strategy_sort_next_dirs(active_key, active_dir):
+    """Direction a column header should request. First click on a number is descending."""
+    out = {}
+    for key, kind in _STRATEGY_SORTS.items():
+        if key == active_key:
+            out[key] = "asc" if active_dir == "desc" else "desc"
+        else:
+            out[key] = "asc" if kind == "str" else "desc"
+    return out
+
+
+def _blank_missing_win_rates(rows):
+    """0/0 closed groups are not a 0% win rate."""
+    for row in rows or []:
+        closed = _sort_number(row.get("num_winners")) + _sort_number(row.get("num_losers"))
+        rate = row.get("win_rate")
+        missing = rate is None or (isinstance(rate, float) and rate != rate)
+        try:
+            missing = missing or pd.isna(rate)
+        except (TypeError, ValueError):
+            pass
+        if closed <= 0 or missing:
+            row["win_rate"] = None
+    return rows
+
+
 # ------------------------------------------------------------------
 # SQL: date-filtered re-aggregation of positions_summary
 # This CANNOT be a dbt model because it requires runtime date parameters
@@ -326,6 +422,9 @@ ERROR_DEFAULTS = dict(
     selected_end_date="",
     date_filtered=False,
     page=1,
+    sort_key="total_return",
+    sort_dir="desc",
+    sort_next=strategy_sort_next_dirs("total_return", "desc"),
     total_pages=1,
     total_rows=0,
     per_page=25,
@@ -546,7 +645,7 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
     _n_closed = grouped["num_winners"] + grouped["num_losers"]
     _denom = _n_closed.where(_n_closed > 0, 1)
     grouped["status"] = grouped["_open_cnt"].gt(0).map({True: "Open", False: "Closed"})
-    grouped["win_rate"] = (grouped["num_winners"] / _denom).where(_n_closed > 0, 0.0)
+    grouped["win_rate"] = (grouped["num_winners"] / _denom).where(_n_closed > 0, pd.NA)
     grouped["avg_pnl_per_trade"] = (
         (grouped["_closed_pnl"] / _denom).where(_n_closed > 0, 0.0).round(2)
     )
@@ -605,7 +704,9 @@ def positions():
     selected_end_date = request.args.get("end_date", "")
     # User-defined leg tag filter (Postgres). Normalized to match stored tags.
     selected_tag = (request.args.get("tag", "") or "").strip().lower()
-    page = max(1, int(request.args.get("page", 1)))
+    page = max(1, int(request.args.get("page", 1) or 1))
+    sort_key = (request.args.get("sort") or "total_return").strip()
+    sort_dir = (request.args.get("dir") or "desc").strip().lower()
 
     start_date = _parse_date(selected_start_date)
     end_date = _parse_date(selected_end_date)
@@ -781,7 +882,7 @@ def positions():
             else 0.0
         ),
         "premium_collected": float(filtered["total_premium_received"].sum()),
-        "win_rate": total_winners / total_closed if total_closed else 0,
+        "win_rate": (total_winners / total_closed) if total_closed else None,
         "num_positions": len(filtered),
         "total_trades": int(filtered["num_individual_trades"].sum()),
         # Closed-trade-group counts. Distinct from total_trades, which sums
@@ -842,7 +943,6 @@ def positions():
         )
         closed = symbol_agg["num_winners"] + symbol_agg["num_losers"]
         symbol_agg["win_rate"] = symbol_agg["num_winners"] / closed.replace(0, pd.NA)
-        symbol_agg["win_rate"] = symbol_agg["win_rate"].fillna(0)
         symbol_agg = symbol_agg.sort_values("total_return", ascending=False)
         symbol_rows = symbol_agg.to_dict(orient="records")
     else:
@@ -878,8 +978,6 @@ def positions():
         )
         closed_ct = strat_agg["num_winners"] + strat_agg["num_losers"]
         strat_agg["win_rate"] = strat_agg["num_winners"] / closed_ct.replace(0, pd.NA)
-        strat_agg["win_rate"] = strat_agg["win_rate"].fillna(0)
-        strat_agg = strat_agg.sort_values("total_return", ascending=False)
         all_rows = strat_agg.to_dict(orient="records")
     else:
         all_rows = []
@@ -888,8 +986,6 @@ def positions():
     total_rows = len(all_rows)
     total_pages = max(1, (total_rows + per_page - 1) // per_page)
     page = min(page, total_pages)
-    start_idx = (page - 1) * per_page
-    rows = all_rows[start_idx : start_idx + per_page]
 
     # Resolve a per-row display label off the broker-stable tenant_id so the
     # Account column shows each account's own nickname (Emmory / Sara 401k /
@@ -905,8 +1001,14 @@ def positions():
             )
         return _rows
 
-    _label_rows(rows)
+    _label_rows(all_rows)
     _label_rows(symbol_rows)
+    _blank_missing_win_rates(all_rows)
+    _blank_missing_win_rates(symbol_rows)
+    all_rows, sort_key, sort_dir = sort_strategy_detail_rows(all_rows, sort_key, sort_dir)
+    sort_next = strategy_sort_next_dirs(sort_key, sort_dir)
+    start_idx = (page - 1) * per_page
+    rows = all_rows[start_idx : start_idx + per_page]
 
     return render_template(
         "positions.html",
@@ -941,6 +1043,9 @@ def positions():
         selected_end_date=selected_end_date,
         date_filtered=date_filtered,
         page=page,
+        sort_key=sort_key,
+        sort_dir=sort_dir,
+        sort_next=sort_next,
         total_pages=total_pages,
         total_rows=total_rows,
         per_page=per_page,

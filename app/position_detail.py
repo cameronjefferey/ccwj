@@ -112,6 +112,410 @@ def _count_placed_fills(df):
     return int(mask.sum())
 
 
+_OPEN_EQUITY_STRATEGIES = frozenset({"Buy and Hold", "Dividend", "Crypto"})
+
+
+def _format_share_qty(quantity):
+    """Render a share count without truncating fractional crypto lots.
+
+    ``|int`` turns 0.004 BTC into 0. Whole shares stay integers.
+    """
+    if quantity is None:
+        return ""
+    try:
+        if pd.isna(quantity):
+            return ""
+        qty = float(quantity)
+    except (TypeError, ValueError):
+        return ""
+    if abs(qty) < 1e-12:
+        return "0"
+    rounded = round(qty)
+    if abs(qty - rounded) < 1e-6:
+        return str(int(rounded))
+    return f"{qty:.8f}".rstrip("0").rstrip(".")
+
+
+def _option_leg_cost_proceeds(leg):
+    """Cost and proceeds for one option contract, both sides included.
+
+    Direction used to pick a single cash column, so a call spread that
+    was bought AND sold dropped the sell-to-open credit (CFLT Feb 21 '25
+    $40C: +$1,216.78). P&L then disagreed with Proceeds − Cost, and the
+    Closed Total inherited the same gap.
+
+    Cost is premium paid plus buy-to-close. Proceeds are premium received
+    plus sell-to-close. Any residual versus booked P&L (expiry /
+    assignment cash that is not in those four buckets) is folded into
+    the side that makes Proceeds − Cost equal P&L.
+    """
+    prem_recv = abs(float(leg.get("premium_received") or 0))
+    prem_paid = abs(float(leg.get("premium_paid") or 0))
+    cost_close = abs(float(leg.get("cost_to_close") or 0))
+    proceeds_close = abs(float(leg.get("proceeds_from_close") or 0))
+    cost = round(prem_paid + cost_close, 2)
+    proceeds = round(prem_recv + proceeds_close, 2)
+    pnl = round(float(leg.get("total_pnl") or 0), 2)
+    residual = round(pnl - (proceeds - cost), 2)
+    if residual >= 0.01:
+        proceeds = round(proceeds + residual, 2)
+    elif residual <= -0.01:
+        cost = round(cost - residual, 2)
+    return cost, proceeds, pnl
+
+
+def _option_return_pct(leg, pnl):
+    """Return on capital at risk, not on the buy-back.
+
+    Shorts: credit received (a $40 buy-back against a $3,933 credit is
+    ~99%, not 9680%). Longs: premium paid. No capital basis → None,
+    which the template renders as an em dash.
+    """
+    direction = str(leg.get("direction") or "")
+    prem_recv = abs(float(leg.get("premium_received") or 0))
+    prem_paid = abs(float(leg.get("premium_paid") or 0))
+    if direction == "Sold":
+        basis = prem_recv
+    elif direction == "Bought":
+        basis = prem_paid
+    else:
+        basis = prem_recv or prem_paid
+    if basis < 0.01:
+        return None
+    return round(float(pnl) / basis * 100, 1)
+
+
+def _equity_session_keys(closed_equity_df):
+    """One key per equity chapter, not per partial sell."""
+    if closed_equity_df is None or closed_equity_df.empty:
+        return []
+    if "session_id" not in closed_equity_df.columns:
+        return list(range(len(closed_equity_df)))
+    keys = []
+    seen = set()
+    for _, row in closed_equity_df.iterrows():
+        tid = str(row.get("tenant_id") or "")
+        acct = str(row.get("account") or "").strip()
+        key = (tid or acct, row.get("session_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+    return keys
+
+
+def _wl_from_closed_frames(closed_legs_df, closed_equity_df):
+    """Win/loss at the same grain as positions_summary.
+
+    One closed option contract, plus one equity session (partial sells
+    inside a chapter sum to a single win or loss). Breakeven is a loss,
+    matching ``is_winner`` (``total_pnl > 0``).
+    """
+    opt_wins = opt_losses = 0
+    if (
+        closed_legs_df is not None
+        and not closed_legs_df.empty
+        and "total_pnl" in closed_legs_df.columns
+    ):
+        pnl = pd.to_numeric(closed_legs_df["total_pnl"], errors="coerce").fillna(0)
+        opt_wins = int((pnl > 0).sum())
+        opt_losses = int((pnl <= 0).sum())
+
+    eq_wins = eq_losses = 0
+    if (
+        closed_equity_df is not None
+        and not closed_equity_df.empty
+        and "realized_pnl" in closed_equity_df.columns
+    ):
+        frame = closed_equity_df
+        if "session_id" in frame.columns:
+            group_cols = [
+                c for c in ("tenant_id", "account", "session_id") if c in frame.columns
+            ]
+            pnl = (
+                frame.groupby(group_cols, dropna=False)["realized_pnl"]
+                .sum()
+            )
+        else:
+            pnl = pd.to_numeric(frame["realized_pnl"], errors="coerce").fillna(0)
+        pnl = pd.to_numeric(pnl, errors="coerce").fillna(0)
+        eq_wins = int((pnl > 0).sum())
+        eq_losses = int((pnl <= 0).sum())
+    return opt_wins + eq_wins, opt_losses + eq_losses
+
+
+def _resolve_win_loss(
+    summary_winners,
+    summary_losers,
+    *,
+    leg_filtered,
+    summary_empty,
+    closed_legs_df,
+    closed_equity_df,
+):
+    """Unfiltered detail uses the list's positions_summary counts.
+
+    The old overwrite counted every partial equity sell, so UFO / CFLT /
+    PLTR disagreed with the Positions list. A leg filter (or an empty
+    mart) falls back to the same session grain.
+    """
+    if leg_filtered or summary_empty:
+        return _wl_from_closed_frames(closed_legs_df, closed_equity_df)
+    return int(summary_winners or 0), int(summary_losers or 0)
+
+
+def _resolve_trade_count(summary_count, placed_fills, closed_legs_df, closed_equity_df):
+    """Placed fills, then the mart count, then closed groups.
+
+    An open snapshot row is not a trade. Counting ``current_df`` made
+    snapshot-only crypto (BTC, SOL) read "1 trade" while the list said 0.
+    """
+    fills = int(placed_fills or 0)
+    if fills > 0:
+        return fills
+    summary_n = int(summary_count or 0)
+    if summary_n > 0:
+        return summary_n
+    n_opt = 0 if closed_legs_df is None or getattr(closed_legs_df, "empty", True) else len(closed_legs_df)
+    return n_opt + len(_equity_session_keys(closed_equity_df))
+
+
+def _matching_open_session(position, sessions_list):
+    """Open chapter for this holding, matched on tenant — not the last pill."""
+    inst = str(position.get("instrument_type") or "")
+    want_options = inst in ("Call", "Put")
+    tid = str(position.get("tenant_id") or "").strip()
+    acct = str(position.get("account") or "").strip()
+
+    def _owned(session):
+        s_tid = str(session.get("tenant_id") or "").strip()
+        if tid and s_tid:
+            return s_tid == tid
+        if acct:
+            return str(session.get("account") or "").strip() == acct
+        return True
+
+    open_sessions = [
+        s for s in (sessions_list or [])
+        if str(s.get("status") or "").strip().lower() == "open" and _owned(s)
+    ]
+    preferred = [
+        s for s in open_sessions if bool(s.get("options_only")) is want_options
+    ]
+    pool = preferred or open_sessions
+    if not pool:
+        return None
+    return max(pool, key=lambda s: int(s.get("display_leg") or 0))
+
+
+def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
+    """Opened / days / fractional qty / Crypto label for live holdings."""
+    from app.upload import is_crypto_symbol
+
+    today = today or date.today()
+    symbol_is_crypto = is_crypto_symbol(symbol)
+    for position in current_positions or []:
+        inst = str(position.get("instrument_type") or "")
+        trade_sym = str(position.get("trade_symbol") or "")
+        row_sym = str(position.get("symbol") or symbol or "")
+        if inst not in ("Call", "Put") and (
+            symbol_is_crypto or is_crypto_symbol(row_sym) or is_crypto_symbol(trade_sym)
+        ):
+            position["leg_kind"] = "Crypto"
+        else:
+            position["leg_kind"] = inst
+        position["quantity_display"] = _format_share_qty(position.get("quantity"))
+        session = _matching_open_session(position, sessions_list)
+        if session is None:
+            position.setdefault("open_date", "")
+            position.setdefault("close_date", "")
+            position.setdefault("days_held", None)
+            continue
+        position["leg_num"] = session.get("display_leg")
+        raw_open = session.get("open_date") or ""
+        position["open_date"] = str(raw_open)[:10]
+        position["close_date"] = ""
+        days = session.get("days_held")
+        if position["open_date"] and (days is None or days == ""):
+            try:
+                days = (today - pd.to_datetime(position["open_date"]).date()).days
+            except Exception:
+                days = None
+        position["days_held"] = days
+    return current_positions
+
+
+def _dedupe_trade_display_rows(trades_df):
+    """Collapse DRIP clones and drop zero-qty echoes of a dividend.
+
+    SnapTrade sometimes ships the same fractional reinvestment twice, and
+    the DRIP join can fan one history row into two when two drip candidates
+    share a quantity. A same-day ``other`` row with no shares and the same
+    dollar amount as the dividend is the cash leg of that reinvestment,
+    not a second event. Rows with shares, or an amount that does not match
+    the dividend, stay.
+    """
+    if trades_df is None or trades_df.empty:
+        return trades_df
+    frame = trades_df.copy().reset_index(drop=True)
+    if "action" not in frame.columns:
+        return frame
+
+    def _key_amount(value):
+        try:
+            if pd.isna(value):
+                return None
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
+
+    def _key_qty(value):
+        try:
+            if pd.isna(value):
+                return None
+            return round(float(value), 6)
+        except (TypeError, ValueError):
+            return None
+
+    actions = frame["action"].astype(str)
+    qtys = frame["quantity"].map(_key_qty) if "quantity" in frame.columns else pd.Series(0, index=frame.index)
+    amts = frame["amount"].map(_key_amount) if "amount" in frame.columns else pd.Series(None, index=frame.index)
+    dates = frame["trade_date"].astype(str) if "trade_date" in frame.columns else pd.Series("", index=frame.index)
+    symbols = (
+        frame["symbol"].astype(str) if "symbol" in frame.columns else pd.Series("", index=frame.index)
+    )
+    tenants = (
+        frame["tenant_id"].astype(str) if "tenant_id" in frame.columns else pd.Series("", index=frame.index)
+    )
+
+    dividend_amounts = {}
+    for idx in frame.index:
+        if actions.at[idx] != "dividend":
+            continue
+        bucket = (tenants.at[idx], dates.at[idx][:10], symbols.at[idx].upper())
+        amt = amts.at[idx]
+        if amt is None:
+            continue
+        dividend_amounts.setdefault(bucket, set()).add(abs(amt))
+
+    drop = set()
+    seen_clones = set()
+    for idx in frame.index:
+        action = actions.at[idx]
+        qty = qtys.at[idx]
+        amt = amts.at[idx]
+        qty_f = 0.0 if qty is None else qty
+        bucket = (tenants.at[idx], dates.at[idx][:10], symbols.at[idx].upper())
+        if action == "other" and abs(qty_f) < 1e-6 and amt is not None:
+            if abs(amt) in dividend_amounts.get(bucket, ()):
+                drop.add(idx)
+                continue
+        fractional_buy = action == "equity_buy" and 0 < abs(qty_f) < 1
+        if action == "dividend_reinvest" or fractional_buy:
+            clone = bucket + (action, qty, amt)
+            if clone in seen_clones:
+                drop.add(idx)
+                continue
+            seen_clones.add(clone)
+    if not drop:
+        return frame
+    return frame.drop(index=list(drop)).reset_index(drop=True)
+
+
+def _pin_strategy_open_unrealized_to_snapshot(strategy_rows, current_df):
+    """Make an open equity strategy row use the same unrealized as the legs.
+
+    ``int_equity_sessions`` used to subtract ``total_buy_cost − cost_basis``
+    even when nothing was sold. That booked a phantom reduction (IYW Sara
+    401k, Sep 2026: strategy/list $38,302.28 vs legs $38,363.73). The
+    warehouse formula is gated on sells; this pin keeps the page on the
+    snapshot number the hero and Position Legs already use, including
+    before the next dbt build.
+
+    Only a tenant with exactly one Open equity-bucket row is adjusted, and
+    only by the non-option snapshot unrealized. Option strategies are left
+    alone.
+    """
+    if not strategy_rows or current_df is None or getattr(current_df, "empty", True):
+        return strategy_rows
+    if "unrealized_pnl" not in current_df.columns:
+        return strategy_rows
+    snap = current_df
+    if "instrument_type" in snap.columns:
+        inst = snap["instrument_type"].astype(str)
+        snap = snap[~inst.isin(["Call", "Put"])]
+    by_tenant = {}
+    for _, row in snap.iterrows():
+        tid = str(row.get("tenant_id") or "").strip()
+        acct = str(row.get("account") or "").strip()
+        key = tid or acct
+        if not key:
+            continue
+        by_tenant[key] = by_tenant.get(key, 0.0) + float(row.get("unrealized_pnl") or 0)
+
+    groups = {}
+    for row in strategy_rows:
+        if str(row.get("status") or "") != "Open":
+            continue
+        if str(row.get("strategy") or "") not in _OPEN_EQUITY_STRATEGIES:
+            continue
+        tid = str(row.get("tenant_id") or "").strip()
+        acct = str(row.get("account") or "").strip()
+        key = tid or acct
+        groups.setdefault(key, []).append(row)
+
+    for key, rows in groups.items():
+        if len(rows) != 1 or key not in by_tenant:
+            continue
+        row = rows[0]
+        target = round(by_tenant[key], 2)
+        current = round(float(row.get("unrealized_pnl") or 0), 2)
+        delta = round(target - current, 2)
+        if abs(delta) < 0.01:
+            continue
+        row["unrealized_pnl"] = target
+        for field in ("total_pnl", "total_return"):
+            if row.get(field) is None:
+                continue
+            row[field] = round(float(row.get(field) or 0) + delta, 2)
+    return strategy_rows
+
+
+def _unique_open_strategy_labels(strategy_rows):
+    """One label per open strategy, in first-seen order.
+
+    Strategy Breakdown is one row per account, so four Buy and Hold rows
+    used to read "split across Buy and Hold, Buy and Hold, ...".
+    """
+    seen = []
+    for row in strategy_rows or []:
+        if str(row.get("status") or "") != "Open":
+            continue
+        name = str(row.get("strategy") or "").strip()
+        if name and name not in seen:
+            seen.append(name)
+    return seen
+
+
+def _breakdown_footer(breakdown_rows):
+    """Realized, unrealized, and count for the Breakdown-by-Type total."""
+    realized = 0.0
+    unrealized = 0.0
+    has_unrealized = False
+    count = 0
+    for row in breakdown_rows or []:
+        realized += float(row.get("realized") or 0)
+        if row.get("unrealized") is not None:
+            unrealized += float(row.get("unrealized") or 0)
+            has_unrealized = True
+        count += int(row.get("count") or 0)
+    return {
+        "realized": round(realized, 2),
+        "unrealized": round(unrealized, 2) if has_unrealized else None,
+        "count": count,
+    }
+
+
 # ======================================================================
 # Position Detail  (/position/<symbol>)
 # ======================================================================
@@ -158,6 +562,10 @@ POSITION_TRADES_QUERY = """
         AND d.underlying_symbol  = h.underlying_symbol
         AND UPPER(TRIM(COALESCE(d.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
         AND ABS(COALESCE(h.quantity, 0) - COALESCE(d.quantity, 0)) < 1e-9
+        -- Same share count is not enough: two drip candidates (or a
+        -- real fractional buy) can share a quantity and fan one history
+        -- row into duplicates. Amount keeps the match on the reinvestment.
+        AND ABS(ABS(COALESCE(h.amount, 0)) - ABS(COALESCE(d.amount, 0))) < 0.02
     WHERE h.trade_date IS NOT NULL
       AND (
         UPPER(TRIM(COALESCE(h.underlying_symbol, ''))) = UPPER(TRIM('{symbol}'))
@@ -1483,7 +1891,7 @@ def position_detail(symbol):
     except Exception as exc:
         return render_template(
             "position_detail.html",
-            title=f"{symbol} — Position",
+            title=f"{symbol} position",
             symbol=symbol,
             error=str(exc),
             first_visit=False,
@@ -1567,6 +1975,7 @@ def position_detail(symbol):
     # enforces the user_id boundary for non-admins.
     summary_df = _filter_df_by_tenant_ids(summary_df, tenant_scope)
     trades_df = _filter_df_by_tenant_ids(trades_df, tenant_scope)
+    trades_df = _dedupe_trade_display_rows(trades_df)
     current_df = _filter_df_by_tenant_ids(current_df, tenant_scope)
     closed_legs_df = _filter_df_by_tenant_ids(closed_legs_df, tenant_scope)
     closed_equity_df = _filter_df_by_tenant_ids(closed_equity_df, tenant_scope)
@@ -2017,35 +2426,35 @@ def position_detail(symbol):
         # Stg placed-fill count for hero. Prefer it when history exists so a
         # lagging positions_summary cannot show 0; DRIPs / cash dividends
         # are not trades the user placed (see _count_placed_fills).
-        _fills = _count_placed_fills(trades_pre_leg)
-        _n_legs = (
-            (len(closed_legs_pre_leg) if not closed_legs_pre_leg.empty else 0)
-            + (len(closed_equity_pre_leg) if not closed_equity_pre_leg.empty else 0)
-            + (len(current_df) if not current_df.empty else 0)
+        # Open snapshot rows are not fills — counting them made BTC read
+        # "1 trade" with an empty raw log.
+        _fills = _count_placed_fills(trades_df if leg_param else trades_pre_leg)
+        _closed_for_count = closed_legs_df if leg_param else closed_legs_pre_leg
+        _eq_for_count = closed_equity_df if leg_param else closed_equity_pre_leg
+        trade_count = _resolve_trade_count(
+            0 if (leg_param or summary_df.empty) else trade_count,
+            _fills,
+            _closed_for_count,
+            _eq_for_count,
         )
-        if _fills > 0:
-            trade_count = _fills
-        elif trade_count == 0 and _n_legs > 0:
-            trade_count = _n_legs
 
-        # Win/loss: from filtered closed legs when leg-filtered; otherwise from all
-        # symbol closed legs (positions_summary is wrong when open rows mask closed stats).
-        if leg_param and _leg_ranges:
-            opt_wins = int((closed_legs_df["total_pnl"] > 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
-            opt_losses = int((closed_legs_df["total_pnl"] <= 0).sum()) if not closed_legs_df.empty and "total_pnl" in closed_legs_df.columns else 0
-            eq_wins = int((closed_equity_df["realized_pnl"] > 0).sum()) if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns else 0
-            eq_losses = int((closed_equity_df["realized_pnl"] <= 0).sum()) if not closed_equity_df.empty and "realized_pnl" in closed_equity_df.columns else 0
-            total_winners = opt_wins + eq_wins
-            total_losers = opt_losses + eq_losses
-            total_closed = total_winners + total_losers
-        elif (not closed_legs_pre_leg.empty) or (not closed_equity_pre_leg.empty):
-            opt_wins = int((closed_legs_pre_leg["total_pnl"] > 0).sum()) if not closed_legs_pre_leg.empty and "total_pnl" in closed_legs_pre_leg.columns else 0
-            opt_losses = int((closed_legs_pre_leg["total_pnl"] <= 0).sum()) if not closed_legs_pre_leg.empty and "total_pnl" in closed_legs_pre_leg.columns else 0
-            eq_wins = int((closed_equity_pre_leg["realized_pnl"] > 0).sum()) if not closed_equity_pre_leg.empty and "realized_pnl" in closed_equity_pre_leg.columns else 0
-            eq_losses = int((closed_equity_pre_leg["realized_pnl"] <= 0).sum()) if not closed_equity_pre_leg.empty and "realized_pnl" in closed_equity_pre_leg.columns else 0
-            total_winners = opt_wins + eq_wins
-            total_losers = opt_losses + eq_losses
-            total_closed = total_winners + total_losers
+        # Win/loss matches the Positions list: positions_summary closed
+        # groups. A leg filter recounts at that same grain (one option
+        # contract, one equity session — not each partial sell).
+        total_winners, total_losers = _resolve_win_loss(
+            total_winners,
+            total_losers,
+            leg_filtered=bool(leg_param and _leg_ranges),
+            summary_empty=summary_df.empty,
+            closed_legs_df=closed_legs_df if (leg_param and _leg_ranges) else closed_legs_pre_leg,
+            closed_equity_df=closed_equity_df if (leg_param and _leg_ranges) else closed_equity_pre_leg,
+        )
+        total_closed = total_winners + total_losers
+        if trade_count == 0:
+            # No placed fills and no closed groups. A summary as-of stamp
+            # is not "activity on" a date (snapshot-only BTC / SOL).
+            first_trade = ""
+            last_trade = ""
 
         avg_days_val = float(summary_df["avg_days_in_trade"].mean()) if not summary_df.empty else 0.0
         if pd.isna(avg_days_val):
@@ -2066,7 +2475,7 @@ def position_detail(symbol):
             "premium_collected": premium_collected,
             "premium_paid": premium_paid,
             "dividend_income": div_income,
-            "win_rate": total_winners / total_closed if total_closed else 0,
+            "win_rate": (total_winners / total_closed) if total_closed else None,
             "avg_days": avg_days_val,
             "total_trades": trade_count,
             "num_winners": total_winners,
@@ -2155,6 +2564,12 @@ def position_detail(symbol):
         _lbl = _tenant_labels.get(_tid) if _tid else None
         _sr["account_display"] = _lbl or _norm_account_label(_sr.get("account"))
 
+    # Open equity unrealized follows the close-based snapshot (same number
+    # as Position Legs and the hero ledger). See
+    # _pin_strategy_open_unrealized_to_snapshot.
+    _pin_strategy_open_unrealized_to_snapshot(strategy_rows, current_df)
+    open_strategy_labels = _unique_open_strategy_labels(strategy_rows)
+
     # ── Breakdown by type (equity / options / dividends) ──
     # Sums roll up across the selected legs (or the whole symbol when no
     # leg filter is active). Sources:
@@ -2203,6 +2618,8 @@ def position_detail(symbol):
             if str(_br.get("type") or "") == "Dividends":
                 kpis["dividend_income"] = round(float(_br.get("total") or 0), 2)
                 break
+
+    breakdown_totals = _breakdown_footer(breakdown_rows)
 
     # Build chart data from pre-aggregated mart_daily_pnl
     chart_data = {"dates": [], "equity": [], "options": [], "dividends": [], "total": [], "underlying_price": [], "has_underlying_price": False}
@@ -2401,18 +2818,8 @@ def position_detail(symbol):
     trade_outcomes = []
     for leg in closed_legs_list:
         direction = str(leg.get("direction") or "")
-        prem_recv = float(leg.get("premium_received") or 0)
-        prem_paid = float(leg.get("premium_paid") or 0)
-        cost_close = float(leg.get("cost_to_close") or 0)
-        proceeds_close = float(leg.get("proceeds_from_close") or 0)
-        if direction == "Sold":
-            o_cost = abs(cost_close)
-            o_proceeds = abs(prem_recv)
-        else:
-            o_cost = abs(prem_paid)
-            o_proceeds = abs(proceeds_close)
-        o_pnl = float(leg.get("total_pnl") or 0)
-        o_return = round(o_pnl / o_cost * 100, 1) if o_cost else None
+        o_cost, o_proceeds, o_pnl = _option_leg_cost_proceeds(leg)
+        o_return = _option_return_pct(leg, o_pnl)
         trade_outcomes.append({
             "trade_symbol": leg.get("trade_symbol"),
             "strategy": leg.get("strategy") or "",
@@ -2468,6 +2875,7 @@ def position_detail(symbol):
             (_tenant_labels.get(_tid) if _tid else None)
             or _norm_account_label(_o.get("account"))
         )
+        _o["quantity_display"] = _format_share_qty(_o.get("quantity"))
 
     # Attach raw transactions to each outcome for drill-down
     # Build session date range lookup for scoping equity trades
@@ -2551,22 +2959,7 @@ def position_detail(symbol):
         for i, o in enumerate(lst_chrono, start=1):
             o["equity_partial_ix"] = i
             o["equity_partial_n"] = n
-    for p in current_positions:
-        # Open positions belong to the latest open session for this tenant
-        # when one exists; otherwise the latest open session on the symbol.
-        tid = str(p.get("tenant_id") or "")
-        open_sessions = [
-            s for s in sessions_list
-            if str(s.get("status", "")).strip().lower() == "open"
-            and (not tid or not str(s.get("tenant_id") or "") or str(s.get("tenant_id")) == tid)
-        ]
-        if not open_sessions:
-            open_sessions = [
-                s for s in sessions_list
-                if str(s.get("status", "")).strip().lower() == "open"
-            ]
-        p["leg_num"] = open_sessions[-1]["display_leg"] if open_sessions else (sessions_list[-1]["display_leg"] if sessions_list else None)
-    attach_open_leg_dates(current_positions, sessions_list)
+    _annotate_open_legs(current_positions, sessions_list, symbol)
 
     # ── Option matrices (DTE × Strike Distance heatmap) ──
     # (tenant scope already narrowed matrix_df to the selected account's tenant)
@@ -2839,13 +3232,15 @@ def position_detail(symbol):
     open_strategy_names = unique_open_strategy_names(strategy_rows)
     resp = make_response(render_template(
         "position_detail.html",
-        title=f"{symbol} — Position",
+        title=f"{symbol} position",
         symbol=symbol,
         open_strategy_names=open_strategy_names,
         kpis=kpis,
         overall_status=overall_status,
         strategy_rows=strategy_rows,
+        open_strategy_labels=open_strategy_labels,
         breakdown_rows=breakdown_rows,
+        breakdown_totals=breakdown_totals,
         breakdown_fees_total=round(breakdown_fees_total, 2),
         trades=trades,
         trade_outcomes=trade_outcomes,

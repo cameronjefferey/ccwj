@@ -1,6 +1,7 @@
 import hashlib
 import os
 import time
+from datetime import datetime
 
 import sentry_sdk
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
@@ -166,6 +167,42 @@ def _friendly_time_filter(value):
 
 
 app.add_template_filter(_friendly_time_filter, name="friendly_time")
+
+
+def _human_date(value):
+    """ISO ``2026-09-21`` → ``Sep 21, 2026``. Other strings pass through."""
+    if value is None or value == "":
+        return ""
+    text = str(value)[:10]
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return str(value)
+    return parsed.strftime("%b %-d, %Y")
+
+
+def _win_rate_label(rate, winners=None, losers=None):
+    """Em dash when nothing has closed. 0/0 is not a 0% win rate."""
+    if winners is not None or losers is not None:
+        try:
+            closed = int(winners or 0) + int(losers or 0)
+        except (TypeError, ValueError):
+            closed = 0
+        if closed <= 0:
+            return "—"
+    if rate is None:
+        return "—"
+    try:
+        number = float(rate)
+    except (TypeError, ValueError):
+        return "—"
+    if number != number:
+        return "—"
+    return "{:.0%}".format(number)
+
+
+app.add_template_filter(_human_date, name="human_date")
+app.add_template_global(_win_rate_label, name="win_rate_label")
 
 
 from app.utils import earnings_follower_url as _earnings_follower_url
